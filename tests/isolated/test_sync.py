@@ -6697,33 +6697,49 @@ def test_timeout_between_barriers_counts_from_joining_the_group(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_timeout_between_barriers_follows_a_timed_page(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, monkeypatch
 ):
     """A timed page moves the between-barrier timeout to the end of its time limit."""
     exp = get_experiment()
-    grouper = SimpleGrouper("main", initial_group_size=6, min_group_size=2)
-    participants = _working_participants(exp, 6)
-    waiting, deciding, moved_on, left_timed_page, no_time_limit, earlier_round = (
-        participants
-    )
-    timed_page = ModularPage("choose", "Pick", time_limit=60, time_estimate=5)
-    # Arriving at the grouper forgets this page.
-    timed_page.consume(exp, earlier_round)
+    grouper = SimpleGrouper("main", initial_group_size=7, min_group_size=2)
+    participants = _working_participants(exp, 7)
+    (
+        waiting,
+        deciding,
+        moved_on,
+        left_timed_page,
+        no_time_limit,
+        before_joining,
+        at_other_barrier,
+    ) = participants
+
+    def start_timed_page(participant, time_limit):
+        # These arrivals skip the timeline step that ends a barrier's waiting.
+        participant.waiting_barrier_id = None
+        ModularPage("choose", "Pick", time_limit=time_limit, time_estimate=5).consume(
+            exp, participant
+        )
+
+    start_timed_page(before_joining, 60)
     for participant in participants:
         _arrive_at_group_barrier(exp, grouper, participant)
     _commit_barrier_arrivals()
     group = participants[0].sync_group
     for link in group.participant_links:
         link.arrival_time -= timedelta(seconds=30)
-    for participant, seconds_left in [
-        (deciding, 5),
-        (moved_on, -6),
-        (left_timed_page, -12),
+    for participant, time_limit in [
+        (deciding, 25),
+        (moved_on, 14),
+        (left_timed_page, 8),
+        (at_other_barrier, 25),
     ]:
-        timed_page.consume(exp, participant)
-        participant.page_deadline_since_barrier = timenow() + timedelta(
-            seconds=seconds_left
-        )
+        start_timed_page(participant, time_limit)
+    # Another barrier on the way doesn't end this group's round.
+    _arrive_at_group_barrier(
+        exp, SimpleGrouper("other", initial_group_size=2), at_other_barrier
+    )
+    later = timenow() + timedelta(seconds=20)
+    monkeypatch.setattr("psynet.sync.timenow", lambda: later)
     barrier = GroupBarrier(
         id_="after_timed_page",
         group_type="main",
@@ -6733,10 +6749,14 @@ def test_timeout_between_barriers_follows_a_timed_page(
 
     barrier.check_waiting_participants([waiting])
 
-    assert set(group.active_participants) == {waiting, deciding, moved_on}
-    assert left_timed_page.sync_group_links[0].removal_reason == "out_of_time"
-    assert no_time_limit.sync_group_links[0].removal_reason == "out_of_time"
-    assert earlier_round.sync_group_links[0].removal_reason == "out_of_time"
+    assert set(group.active_participants) == {
+        waiting,
+        deciding,
+        moved_on,
+        at_other_barrier,
+    }
+    for participant in (left_timed_page, no_time_limit, before_joining):
+        assert participant.sync_group_links[0].removal_reason == "out_of_time"
 
 
 @pytest.mark.parametrize(

@@ -1106,7 +1106,7 @@ class Barrier(EltCollection):
             arrival_time=now,
             ran_out_of_time=bool(participant.timed_out_since_barrier),
         )
-        _start_between_barriers(participant)
+        participant.timed_out_since_barrier = False
         participant.waiting_barrier_id = self.id
         participant.active_barriers[self.id] = link
         if not self._uses_timeline_hold:
@@ -1808,6 +1808,8 @@ class GroupBarrier(Barrier):
                     participants_to_release.append(participant)
 
                 group.last_barrier_pass_time = timenow()
+                for link in group.participant_links:
+                    link.page_deadline = None
 
                 if self.on_release:
                     try:
@@ -1973,7 +1975,7 @@ class GroupBarrier(Barrier):
                 continue
             start = max(starts)
             allowed = timedelta(seconds=self.timeout_between_barriers_time)
-            deadline = participant.page_deadline_since_barrier
+            deadline = link.page_deadline
             # A timed page moves the start to its deadline, leaving time for
             # an answer sent at the deadline to arrive.
             if deadline is not None:
@@ -2318,7 +2320,7 @@ class SimpleGrouper(Grouper):
         from .timeline import conditional, join
 
         return join(
-            CodeBlock(self._join_on_arrival),
+            CodeBlock(self._join_existing_groups),
             conditional(
                 "joined_an_existing_group",
                 condition=lambda participant: (
@@ -2405,11 +2407,6 @@ class SimpleGrouper(Grouper):
                 continue
             return group
         return None
-
-    def _join_on_arrival(self, participant: Participant):
-        self._join_existing_groups(participant)
-        if self.group_type in participant.active_sync_groups:
-            _start_between_barriers(participant)
 
     def _join_existing_groups(self, participant: Participant):
         group = self._claim_group_to_join(participant)
@@ -3821,6 +3818,10 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     removal_reason = Column(String)
     # The member's role in the group (see ``Regrouper(roles=...)``).
     role = Column(String)
+    # The deadline of the latest timed page the member started outside
+    # waiting logic since the group's last barrier pass; see
+    # ``GroupBarrier.timeout_between_barriers_time``.
+    page_deadline = Column(DateTime)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
     participant = relationship(
@@ -4165,12 +4166,6 @@ def _interruptible_waiting_barrier(page, participant):
     if trial is not None and not trial.complete:
         return None
     return barrier
-
-
-def _start_between_barriers(participant):
-    """Forget the time limits of pages before this barrier or group."""
-    participant.page_deadline_since_barrier = None
-    participant.timed_out_since_barrier = False
 
 
 def _leave_waiting_logic(code_block, participant):

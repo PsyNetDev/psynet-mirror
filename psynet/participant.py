@@ -478,12 +478,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     # The barrier whose ``waiting_logic`` the participant is in, set on
     # arrival and handed back to the enclosing barrier, if any, on leaving.
     waiting_barrier_id = Column(String)
-    # Outside waiting logic, since the last barrier or joining a group: the
-    # latest timed page's deadline, and whether the latest answered page
-    # ended on its time limit. Barriers read and clear both; see
-    # ``GroupBarrier.timeout_between_barriers_time`` and
-    # ``ParticipantLinkBarrier.ran_out_of_time``.
-    page_deadline_since_barrier = Column(DateTime)
+    # Whether the latest page answered outside waiting logic since the last
+    # barrier ended on its time limit. The next barrier copies it onto the
+    # visit and clears it; see ``ParticipantLinkBarrier.ran_out_of_time``.
     timed_out_since_barrier = Column(Boolean, default=False)
     page_count = Column(Integer)
     early_exited = Column(Boolean)

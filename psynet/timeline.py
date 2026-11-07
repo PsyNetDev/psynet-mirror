@@ -1883,7 +1883,9 @@ class Page(Elt):
         if self.time_limit is not None:
             participant.page_deadline = timenow() + timedelta(seconds=self.time_limit)
             if participant.waiting_barrier_id is None:
-                participant.page_deadline_since_barrier = participant.page_deadline
+                for link in participant.sync_group_links:
+                    if link.active:
+                        link.page_deadline = participant.page_deadline
 
     def time_limit_seconds_left(self, participant) -> Optional[float]:
         """Return the seconds left before this page's ``time_limit``, or ``None`` without one."""
