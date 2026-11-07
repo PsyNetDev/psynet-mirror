@@ -137,9 +137,16 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
     html = GroupPrompt(group=group, participant=third).group_html
     assert "psynet-group-member--ran-out-of-time" not in html
 
+    # Nor does a timed page answered while waiting, such as a filler page.
+    time_out(first)
+    _arrive(exp, GroupBarrier("next", group_type="room"), [second, third])
+    _arrive(exp, GroupBarrier("after", group_type="room"), [first])
+    html = GroupPrompt(group=group, participant=third).group_html
+    assert "psynet-group-member--ran-out-of-time" not in html
+
     # A member removed for being late is shown as having left, without a dash.
     time_out(second)
-    _arrive(exp, GroupBarrier("next", group_type="room"), [second])
+    _arrive(exp, GroupBarrier("after", group_type="room"), [second])
     group.remove_participant(second, reason="out_of_time")
     html = GroupPrompt(group=group, participant=third).group_html
     assert "psynet-group-member--left" in html

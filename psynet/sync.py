@@ -4134,23 +4134,27 @@ def ran_out_of_time_in(participant, group):
 def _came_from_timed_out_page(participant, arrival_time):
     """Return whether the participant's last page ended on its time limit.
 
-    Only a page answered since the participant's previous barrier visit
-    (one that started before ``arrival_time``) counts, so the flag doesn't
-    carry over to a later barrier.
+    Only a page answered outside the participant's other barrier visits
+    (those that started before ``arrival_time``) counts: not one answered
+    before a later visit, so the flag doesn't carry over to a later barrier,
+    nor a ``waiting_logic`` page answered while waiting at an earlier one.
     """
     response = participant.response
     if response is None or not (response.metadata or {}).get("time_limit_reached"):
         return False
-    later_visit = (
+    visit_since = (
         ParticipantLinkBarrier.query.filter(
             ParticipantLinkBarrier.participant_id == participant.id,
-            ParticipantLinkBarrier.arrival_time >= response.creation_time,
             ParticipantLinkBarrier.arrival_time < arrival_time,
+            or_(
+                ParticipantLinkBarrier.departure_time.is_(None),
+                ParticipantLinkBarrier.departure_time >= response.creation_time,
+            ),
         )
         .with_entities(ParticipantLinkBarrier.id)
         .first()
     )
-    return later_visit is None
+    return visit_since is None
 
 
 def _interruptible_waiting_barrier(page, participant):

@@ -4499,6 +4499,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             page_type=type(page).__name__,
         )
         response.answer = None
+        # Only the server may say that a time limit ran out.
+        metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
         response.metadata = {**metadata, "interrupted": True}
         response.successful_validation = True
         db.session.add(response)
