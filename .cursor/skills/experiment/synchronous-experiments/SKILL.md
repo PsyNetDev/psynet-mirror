@@ -53,8 +53,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   vs chain-based makers, read `develop-experiment-back-end/SKILL.md`.
 - Use `SimpleGrouper(group_type=..., initial_group_size=...)` to create cohorts
   and `GroupBarrier(id_=..., group_type=..., waiting_message=...)` to release
-  group members together. Pass `waiting_message` to customize the hold overlay; omit
-  `waiting_logic` unless you need a full wait page or filler task. Arrival
+  group members together. Pass `waiting_message` to customize the hold
+  overlay; omit `waiting_logic` unless you need a full wait page or filler
+  task. Arrival
   notices are on by default. The partner-ready pill sits on the progress
   bar. Pair holds keep the title only; groups of three or more show
   remaining-not-ready copy (`2 of 3 not ready yet`). Keep
@@ -79,22 +80,21 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `group_type`.
 - For games played in rounds with changing partners or rooms, put a
   `Regrouper(group_type, max_group_size=..., deadline=..., within=...)` at the
-  start of each round instead of a grouper and closer. Slow participants miss a
-  round and join the next one rather than being failed. Pair it with
+  start of each round instead of a grouper and closer, as in the
+  `lowest_unique_number` and `ultimatum_pairing` demos. Slow participants miss
+  a round and join the next one rather than being failed. Pair it with
   `GroupBarrier(late_after=..., late_action="kick")` so late members are
-  removed and
-  pass the barrier, as in the `lowest_unique_number` and `ultimatum_pairing`
-  demos; removed members pass the round's later group barriers alone. On a
-  page with a `time_limit`, nobody is timed out before the limit has run out
-  plus 10 s, so the timeout need not cover the page; the demos use 30 s so that a background tab
-  can notice the round has started. The regrouper avoids repeat partners, sits out whoever has
-  played most, and counts rounds (`rounds_played`, `rounds_sat_out`); pass
-  `roles=[...]` (with `keep_roles=True` for fixed roles) and read
-  `regrouper.role(participant)` instead of assigning roles yourself. With
-  `release_left_over=True`, odd players out sit out the round; with
-  `within`, a player waiting alone first waits one more deadline for
-  cohort members; the default `max_wait_time` allows for this, and an
-  explicit one must exceed twice the deadline.
+  removed; they then pass the round's later group barriers alone. On a page
+  with a `time_limit`, nobody is late before the limit has run out plus 10 s,
+  so the timeout need not cover the page; the demos use 30 s so that a
+  background tab can notice the round has started. The regrouper avoids
+  repeat partners, sits out whoever has played most, and counts rounds
+  (`rounds_played`, `rounds_sat_out`); pass `roles=[...]` (with
+  `keep_roles=True` for fixed roles) and read `regrouper.role(participant)`
+  instead of assigning roles yourself. With `release_left_over=True`, odd
+  players out sit out the round; with `within`, a player waiting alone first
+  waits one more deadline for cohort members. The default `max_wait_time`
+  allows for this; an explicit one must exceed twice the deadline.
 - For a lobby that should not wait forever for a full group, use
   `SimpleGrouper(start_short_after=..., start_short_with=...)`, with
   `join_existing_groups=True` to let latecomers fill it up.
