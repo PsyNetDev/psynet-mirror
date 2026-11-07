@@ -45,8 +45,8 @@ At a grouper they are failed; at a barrier, depending on its settings, they
 are either failed or removed from the group so that they can continue alone.
 A barrier can also set a time limit between barriers, which catches members
 who fall behind: a member who hasn't reached the next barrier in time is
-failed or removed. A page with its own time limit counts towards that time,
-so a member is only caught once the page's time has run out. By default,
+failed or removed. If a member is on a page with its own time limit, that
+time counts from when the page's limit runs out. By default,
 participants are credited for the actual time
 they wait, up to the maximum.
 
@@ -102,11 +102,12 @@ the demo that implements each one.
    :width: 100%
    :alt: Four group experiments drawn as sequences of blocks. Rating stimuli
       together: a grouper, then each trial a page and a barrier. Discussing a
-      topic: a grouper, then each topic a barrier, a chat and a barrier. A
+      topic: a grouper forms pairs, then a barrier, a chat and a barrier. A
       game played in rounds: a grouper forms a team, then each round a
       regrouper forms pairs, players decide with a time limit, wait for their
-      partner at a barrier and see the outcome. Interacting live: a grouper,
-      then one group page that sends messages or moves through the server.
+      partner at a barrier and see the outcome. Interacting live: players
+      choose a room, then one group page sends their messages live to the
+      room.
 
 What to check when reviewing group experiments
 ----------------------------------------------

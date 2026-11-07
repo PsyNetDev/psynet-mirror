@@ -40,7 +40,8 @@ pair and wait for the next split:
    :end-before: def play_round
 
 The round starts as soon as the whole team is waiting, or at the
-``deadline`` without whoever isn't back yet, if enough players are waiting to
+``deadline`` (counted from when the first player is back) without whoever
+isn't back yet, if enough players are waiting to
 form a pair; latecomers join the next round.
 With ``roles``, each pair has a proposer and a responder, and each player
 alternates between them. Partners from last round are kept apart where
@@ -154,9 +155,9 @@ The results page passes both answers to the prompt as speech bubbles:
 Sitting out
 -----------
 
-With three players in a team, one of them has no partner. With
-``release_left_over=True``, the player who has played the most rounds sits
-the round out and sees a page saying so. A player who was paired but taken
+With three players in a team, one of them has no partner. The player who has
+played the most rounds sits the round out; with ``release_left_over=True``
+they move on to a page saying so instead of waiting. A player who was paired but taken
 out before reaching the decision page is told that they were away instead:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py

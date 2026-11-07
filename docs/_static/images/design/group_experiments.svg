@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 634" width="680" height="634" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-label="Four kinds of group experiment built from groupers, regroupers, barriers and pages">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 610" width="680" height="610" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-label="Four kinds of group experiment built from groupers, regroupers, barriers and pages">
 <defs>
 <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#6b7280"/></marker>
 <marker id="arrow-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9ca3af"/></marker>
 </defs>
-<rect width="680" height="634" rx="10" fill="#ffffff"/>
+<rect width="680" height="610" rx="10" fill="#ffffff"/>
 <text x="20" y="28" font-size="12" fill="#4b5563">Building blocks:</text>
 <rect x="130" y="18" width="14" height="12" rx="3" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2"/>
 <text x="150" y="28" font-size="12" fill="#374151">Grouper</text>
@@ -39,9 +39,6 @@
 <text x="74.0" y="261" font-size="10" font-weight="600" letter-spacing="0.6" fill="#1d4ed8" text-anchor="middle">GROUPER</text>
 <text x="74.0" y="286.0" font-size="13.5" fill="#111827" text-anchor="middle">Form pairs</text>
 <line x1="131" y1="276.0" x2="145" y2="276.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
-<rect x="140" y="234" width="388" height="84" rx="12" fill="none" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="5 4"/>
-<path d="M 494 318 q 0 8 -10 8 h -328 q -10 0 -10 -8" fill="none" stroke="#9ca3af" stroke-width="1.2" marker-end="url(#arrow-loop)"/>
-<text x="334.0" y="340" font-size="12" font-style="italic" fill="#6b7280" text-anchor="middle">repeat for each topic</text>
 <rect x="150" y="246" width="108" height="60" rx="8" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
 <text x="204.0" y="261" font-size="10" font-weight="600" letter-spacing="0.6" fill="#b45309" text-anchor="middle">BARRIER</text>
 <text x="204.0" y="278.5" font-size="13.5" fill="#111827" text-anchor="middle">Wait for</text>
@@ -49,47 +46,48 @@
 <line x1="261" y1="276.0" x2="275" y2="276.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
 <rect x="280" y="246" width="108" height="60" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="1.5"/>
 <text x="334.0" y="261" font-size="10" font-weight="600" letter-spacing="0.6" fill="#15803d" text-anchor="middle">GROUP PAGE</text>
-<text x="334.0" y="286.0" font-size="13.5" fill="#111827" text-anchor="middle">Chat</text>
+<text x="334.0" y="278.5" font-size="13.5" fill="#111827" text-anchor="middle">Chat about a</text>
+<text x="334.0" y="293.5" font-size="13.5" fill="#111827" text-anchor="middle">topic</text>
 <line x1="391" y1="276.0" x2="405" y2="276.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
 <rect x="410" y="246" width="108" height="60" rx="8" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
 <text x="464.0" y="261" font-size="10" font-weight="600" letter-spacing="0.6" fill="#b45309" text-anchor="middle">BARRIER</text>
 <text x="464.0" y="278.5" font-size="13.5" fill="#111827" text-anchor="middle">Wait until</text>
 <text x="464.0" y="293.5" font-size="13.5" fill="#111827" text-anchor="middle">both finish</text>
-<text x="20" y="372" font-size="15" font-weight="600" fill="#111827">A game played in rounds</text>
-<text x="660" y="372" font-size="12" fill="#6b7280" text-anchor="end" font-family="ui-monospace, Menlo, monospace">ultimatum_pairing</text>
-<rect x="20" y="396" width="108" height="60" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
-<text x="74.0" y="411" font-size="10" font-weight="600" letter-spacing="0.6" fill="#1d4ed8" text-anchor="middle">GROUPER</text>
-<text x="74.0" y="436.0" font-size="13.5" fill="#111827" text-anchor="middle">Form a team</text>
-<line x1="131" y1="426.0" x2="145" y2="426.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
-<rect x="140" y="384" width="518" height="84" rx="12" fill="none" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="5 4"/>
-<path d="M 624 468 q 0 8 -10 8 h -458 q -10 0 -10 -8" fill="none" stroke="#9ca3af" stroke-width="1.2" marker-end="url(#arrow-loop)"/>
-<text x="399.0" y="490" font-size="12" font-style="italic" fill="#6b7280" text-anchor="middle">repeat for each round</text>
-<rect x="150" y="396" width="108" height="60" rx="8" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
-<text x="204.0" y="411" font-size="10" font-weight="600" letter-spacing="0.6" fill="#6d28d9" text-anchor="middle">REGROUPER</text>
-<text x="204.0" y="428.5" font-size="13.5" fill="#111827" text-anchor="middle">New pairs; one</text>
-<text x="204.0" y="443.5" font-size="13.5" fill="#111827" text-anchor="middle">may sit out</text>
-<line x1="261" y1="426.0" x2="275" y2="426.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
-<rect x="280" y="396" width="108" height="60" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
-<text x="334.0" y="411" font-size="10" font-weight="600" letter-spacing="0.6" fill="#4b5563" text-anchor="middle">PAGE</text>
-<text x="334.0" y="428.5" font-size="13.5" fill="#111827" text-anchor="middle">Decide, with a</text>
-<text x="334.0" y="443.5" font-size="13.5" fill="#111827" text-anchor="middle">time limit</text>
-<line x1="391" y1="426.0" x2="405" y2="426.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
-<rect x="410" y="396" width="108" height="60" rx="8" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
-<text x="464.0" y="411" font-size="10" font-weight="600" letter-spacing="0.6" fill="#b45309" text-anchor="middle">BARRIER</text>
-<text x="464.0" y="428.5" font-size="13.5" fill="#111827" text-anchor="middle">Wait for</text>
-<text x="464.0" y="443.5" font-size="13.5" fill="#111827" text-anchor="middle">partner</text>
-<line x1="521" y1="426.0" x2="535" y2="426.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
-<rect x="540" y="396" width="108" height="60" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
-<text x="594.0" y="411" font-size="10" font-weight="600" letter-spacing="0.6" fill="#4b5563" text-anchor="middle">PAGE</text>
-<text x="594.0" y="428.5" font-size="13.5" fill="#111827" text-anchor="middle">See the</text>
-<text x="594.0" y="443.5" font-size="13.5" fill="#111827" text-anchor="middle">outcome</text>
-<text x="20" y="522" font-size="15" font-weight="600" fill="#111827">Interacting live on one page</text>
-<text x="660" y="522" font-size="12" fill="#6b7280" text-anchor="end" font-family="ui-monospace, Menlo, monospace">websocket_chatroom</text>
-<rect x="20" y="546" width="108" height="60" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
-<text x="74.0" y="561" font-size="10" font-weight="600" letter-spacing="0.6" fill="#1d4ed8" text-anchor="middle">GROUPER</text>
-<text x="74.0" y="586.0" font-size="13.5" fill="#111827" text-anchor="middle">Form a group</text>
-<line x1="131" y1="576.0" x2="145" y2="576.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
-<rect x="150" y="546" width="238" height="60" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="1.5"/>
-<text x="269.0" y="561" font-size="10" font-weight="600" letter-spacing="0.6" fill="#15803d" text-anchor="middle">GROUP PAGE</text>
-<text x="269.0" y="586.0" font-size="13.5" fill="#111827" text-anchor="middle">Messages or moves sent live</text>
+<text x="20" y="348" font-size="15" font-weight="600" fill="#111827">A game played in rounds</text>
+<text x="660" y="348" font-size="12" fill="#6b7280" text-anchor="end" font-family="ui-monospace, Menlo, monospace">ultimatum_pairing</text>
+<rect x="20" y="372" width="108" height="60" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="74.0" y="387" font-size="10" font-weight="600" letter-spacing="0.6" fill="#1d4ed8" text-anchor="middle">GROUPER</text>
+<text x="74.0" y="412.0" font-size="13.5" fill="#111827" text-anchor="middle">Form a team</text>
+<line x1="131" y1="402.0" x2="145" y2="402.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="140" y="360" width="518" height="84" rx="12" fill="none" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="5 4"/>
+<path d="M 624 444 q 0 8 -10 8 h -458 q -10 0 -10 -8" fill="none" stroke="#9ca3af" stroke-width="1.2" marker-end="url(#arrow-loop)"/>
+<text x="399.0" y="466" font-size="12" font-style="italic" fill="#6b7280" text-anchor="middle">repeat for each round</text>
+<rect x="150" y="372" width="108" height="60" rx="8" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
+<text x="204.0" y="387" font-size="10" font-weight="600" letter-spacing="0.6" fill="#6d28d9" text-anchor="middle">REGROUPER</text>
+<text x="204.0" y="404.5" font-size="13.5" fill="#111827" text-anchor="middle">New pairs; one</text>
+<text x="204.0" y="419.5" font-size="13.5" fill="#111827" text-anchor="middle">may sit out</text>
+<line x1="261" y1="402.0" x2="275" y2="402.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="280" y="372" width="108" height="60" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="334.0" y="387" font-size="10" font-weight="600" letter-spacing="0.6" fill="#4b5563" text-anchor="middle">PAGE</text>
+<text x="334.0" y="404.5" font-size="13.5" fill="#111827" text-anchor="middle">Decide, with a</text>
+<text x="334.0" y="419.5" font-size="13.5" fill="#111827" text-anchor="middle">time limit</text>
+<line x1="391" y1="402.0" x2="405" y2="402.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="410" y="372" width="108" height="60" rx="8" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text x="464.0" y="387" font-size="10" font-weight="600" letter-spacing="0.6" fill="#b45309" text-anchor="middle">BARRIER</text>
+<text x="464.0" y="404.5" font-size="13.5" fill="#111827" text-anchor="middle">Wait for</text>
+<text x="464.0" y="419.5" font-size="13.5" fill="#111827" text-anchor="middle">partner</text>
+<line x1="521" y1="402.0" x2="535" y2="402.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="540" y="372" width="108" height="60" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="594.0" y="387" font-size="10" font-weight="600" letter-spacing="0.6" fill="#4b5563" text-anchor="middle">PAGE</text>
+<text x="594.0" y="404.5" font-size="13.5" fill="#111827" text-anchor="middle">See the</text>
+<text x="594.0" y="419.5" font-size="13.5" fill="#111827" text-anchor="middle">outcome</text>
+<text x="20" y="498" font-size="15" font-weight="600" fill="#111827">Interacting live on one page</text>
+<text x="660" y="498" font-size="12" fill="#6b7280" text-anchor="end" font-family="ui-monospace, Menlo, monospace">websocket_chatroom</text>
+<rect x="20" y="522" width="108" height="60" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="74.0" y="537" font-size="10" font-weight="600" letter-spacing="0.6" fill="#4b5563" text-anchor="middle">PAGE</text>
+<text x="74.0" y="562.0" font-size="13.5" fill="#111827" text-anchor="middle">Choose a room</text>
+<line x1="131" y1="552.0" x2="145" y2="552.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="150" y="522" width="238" height="60" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="1.5"/>
+<text x="269.0" y="537" font-size="10" font-weight="600" letter-spacing="0.6" fill="#15803d" text-anchor="middle">GROUP PAGE</text>
+<text x="269.0" y="562.0" font-size="13.5" fill="#111827" text-anchor="middle">Messages sent live to the room</text>
 </svg>

@@ -7,8 +7,8 @@ still join a team until its round ``OPEN_UNTIL_ROUND`` starts.
 Each round, the :class:`~psynet.sync.Regrouper` pairs up the team's players,
 avoiding last round's partner, and gives each pair a proposer and a
 responder, alternating each player's role. It starts the round as soon as
-the whole team is ready, or ``ROUND_DEADLINE_SECONDS`` after the previous
-round started, without the players who aren't ready yet. With an odd number
+the whole team is ready, or ``ROUND_DEADLINE_SECONDS`` after the first
+player is back, without the players who aren't ready yet. With an odd number
 of players, one who has played the most rounds sits that round out; a
 player left waiting alone waits up to another ``ROUND_DEADLINE_SECONDS``
 for the others to finish their round instead. Players leave the team when
