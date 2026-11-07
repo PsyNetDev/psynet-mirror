@@ -5,7 +5,7 @@ Barrier instances must survive across web workers, but persisting an entire
 This module stores the importable barrier class, release-hook state, scalar
 presentation (``content``, timeouts), and arrival-notice settings. Waiting
 pages and hold-page construction (``waiting_logic``, ``waiting_screen``,
-``_uses_timeline_hold``, ``_waiting_loop_markers`` and the expected
+``_uses_timeline_hold`` and the expected
 repetitions of ``waiting_logic``) stay on the live timeline object.
 See :class:`~psynet.sync.Barrier` for which methods are live-only.
 Callback identity is kept separate from the ORM receiver selected for one
@@ -34,7 +34,6 @@ SPEC_VERSION = 1
 _PAGE_FIELDS = {
     "_uses_timeline_hold",
     "_waiting_logic_repetitions",
-    "_waiting_loop_markers",
     "waiting_logic",
     "waiting_logic_expected_repetitions",
     "waiting_screen",

@@ -114,9 +114,9 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
     group = third.active_sync_groups["room"]
 
     def time_out(participant, waiting_at=None):
+        # These arrivals skip the timeline step that ends a barrier's waiting.
+        participant.waiting_barrier_id = waiting_at
         page = ModularPage("choose", "Pick", time_limit=10, time_estimate=5)
-        if waiting_at is not None:
-            page.links["barrier"] = waiting_at
         participant.page_deadline = timenow() - timedelta(seconds=10)
         page.process_response(
             raw_answer=None,
@@ -143,7 +143,7 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
     assert "psynet-group-member--ran-out-of-time" not in html
 
     # Nor does a timed waiting page, such as a filler page.
-    time_out(first, waiting_at=GroupBarrier("next", group_type="room"))
+    time_out(first, waiting_at="next")
     _arrive(exp, GroupBarrier("next", group_type="room"), [second, third])
     _arrive(exp, GroupBarrier("after", group_type="room"), [first])
     html = GroupPrompt(group=group, participant=third).group_html

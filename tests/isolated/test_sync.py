@@ -6703,24 +6703,26 @@ def test_timeout_between_barriers_follows_a_timed_page(
     exp = get_experiment()
     grouper = SimpleGrouper("main", initial_group_size=6, min_group_size=2)
     participants = _working_participants(exp, 6)
+    waiting, deciding, moved_on, left_timed_page, no_time_limit, earlier_round = (
+        participants
+    )
+    timed_page = ModularPage("choose", "Pick", time_limit=60, time_estimate=5)
+    # Arriving at the grouper forgets this page.
+    timed_page.consume(exp, earlier_round)
     for participant in participants:
         _arrive_at_group_barrier(exp, grouper, participant)
     _commit_barrier_arrivals()
     group = participants[0].sync_group
     for link in group.participant_links:
         link.arrival_time -= timedelta(seconds=30)
-    waiting, deciding, moved_on, left_timed_page, no_time_limit, earlier_round = (
-        participants
-    )
-    for participant, started, limit in [
-        (deciding, -5, 10),
-        (moved_on, -16, 10),
-        (left_timed_page, -22, 10),
-        (earlier_round, -40, 60),
+    for participant, seconds_left in [
+        (deciding, 5),
+        (moved_on, -6),
+        (left_timed_page, -12),
     ]:
-        participant.page_deadline_set_at = timenow() + timedelta(seconds=started)
-        participant.page_deadline = participant.page_deadline_set_at + timedelta(
-            seconds=limit
+        timed_page.consume(exp, participant)
+        participant.page_deadline_since_barrier = timenow() + timedelta(
+            seconds=seconds_left
         )
     barrier = GroupBarrier(
         id_="after_timed_page",
@@ -6735,11 +6737,6 @@ def test_timeout_between_barriers_follows_a_timed_page(
     assert left_timed_page.sync_group_links[0].removal_reason == "out_of_time"
     assert no_time_limit.sync_group_links[0].removal_reason == "out_of_time"
     assert earlier_round.sync_group_links[0].removal_reason == "out_of_time"
-
-    # After the group's next barrier, a timed page started before it no longer counts.
-    group.last_barrier_pass_time = timenow() - timedelta(seconds=12)
-    barrier.check_waiting_participants([waiting])
-    assert set(group.active_participants) == {waiting, deciding}
 
 
 @pytest.mark.parametrize(

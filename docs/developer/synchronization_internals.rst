@@ -131,6 +131,17 @@ alone.
 Hold overlays for members who are already waiting are still sent with the
 update, so their counts can lag until the next arrival.
 
+Waiting pages
+-------------
+
+``Participant.waiting_barrier_id`` names the barrier whose
+``waiting_logic`` the participant is in. The barrier sets it on arrival,
+and a step after the waiting logic hands it back to the enclosing barrier,
+if any. A page tests it, not where the page came from, to decide whether a
+release may end it, and whether its time limit counts for the group's
+dashes and between-barrier timeout. Page makers can show waiting pages
+again outside the waiting logic, so the page itself can't tell.
+
 Time credit
 -----------
 

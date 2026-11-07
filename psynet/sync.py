@@ -166,8 +166,6 @@ from psynet.timeline import (
     TIME_LIMIT_GRACE_SECONDS,
     CodeBlock,
     EltCollection,
-    EndWhile,
-    StartWhile,
     _is_timeline_hold,
     conditional,
 )
@@ -1063,9 +1061,11 @@ class Barrier(EltCollection):
                 on_timeout=self.handle_max_wait_timeout,
             )
 
+        leave = CodeBlock(_leave_waiting_logic)
         elts = join(
             CodeBlock(lambda participant: self.receive_participant(participant)),
             waiting_elts,
+            leave,
             conditional(
                 "participant_failed",
                 condition=lambda participant: participant.failed,
@@ -1076,16 +1076,10 @@ class Barrier(EltCollection):
         )
         for elt in elts:
             # Keep an inner barrier's link: its waiting pages belong to it.
-            elt.links.setdefault("barrier", self)
-        # Page makers can resolve the waiting logic again elsewhere, carrying
-        # this link with it, so the loop's own markers say where it really is.
-        self._waiting_loop_markers = [
-            elt
-            for elt in elts
-            if isinstance(elt, (StartWhile, EndWhile))
-            and elt.label == f"barrier:{self.id}"
-        ]
-
+            # ``leave`` gets the enclosing barrier's link, if any, to hand
+            # the participant back to it.
+            if elt is not leave:
+                elt.links.setdefault("barrier", self)
         return elts
 
     def handle_max_wait_timeout(self, participant: Participant):
@@ -1120,7 +1114,8 @@ class Barrier(EltCollection):
             arrival_time=now,
             ran_out_of_time=bool(participant.timed_out_since_barrier),
         )
-        participant.timed_out_since_barrier = False
+        _start_between_barriers(participant)
+        participant.waiting_barrier_id = self.id
         participant.active_barriers[self.id] = link
         if not self._uses_timeline_hold:
             max_wait_time = call_if_callable(
@@ -1964,7 +1959,8 @@ class GroupBarrier(Barrier):
         Each member is timed from the group's last barrier pass or from when
         they joined the group, whichever is later, so newcomers to an open
         group are not late as soon as they join. A member who has started a
-        page with a time limit since then is timed from that page's deadline.
+        page with a time limit since then, outside waiting logic, is timed
+        from that page's deadline.
         """
         if self.timeout_between_barriers_time is None:
             return []
@@ -1985,12 +1981,11 @@ class GroupBarrier(Barrier):
                 continue
             start = max(starts)
             allowed = timedelta(seconds=self.timeout_between_barriers_time)
-            set_at = participant.page_deadline_set_at
-            # A timed page since the last barrier or joining moves the start
-            # to its deadline, leaving time for an answer sent at the deadline
-            # to arrive. An earlier timed page belongs to an earlier round.
-            if set_at is not None and set_at >= start:
-                start = participant.page_deadline
+            deadline = participant.page_deadline_since_barrier
+            # A timed page moves the start to its deadline, leaving time for
+            # an answer sent at the deadline to arrive.
+            if deadline is not None:
+                start = max(start, deadline)
                 allowed = max(allowed, left_timed_page)
             if now > start + allowed:
                 late.append(participant)
@@ -2331,7 +2326,7 @@ class SimpleGrouper(Grouper):
         from .timeline import conditional, join
 
         return join(
-            CodeBlock(self._join_existing_groups),
+            CodeBlock(self._join_on_arrival),
             conditional(
                 "joined_an_existing_group",
                 condition=lambda participant: (
@@ -2418,6 +2413,11 @@ class SimpleGrouper(Grouper):
                 continue
             return group
         return None
+
+    def _join_on_arrival(self, participant: Participant):
+        self._join_existing_groups(participant)
+        if self.group_type in participant.active_sync_groups:
+            _start_between_barriers(participant)
 
     def _join_existing_groups(self, participant: Participant):
         group = self._claim_group_to_join(participant)
@@ -4145,7 +4145,7 @@ def _interruptible_waiting_barrier(page, participant):
     barrier = (getattr(page, "links", None) or {}).get("barrier")
     if not isinstance(barrier, Barrier) or barrier.release_grace is None:
         return None
-    if not _is_inside_waiting_loop(barrier, participant):
+    if participant.waiting_barrier_id != barrier.id:
         return None
     if participant.failed:
         return None
@@ -4155,19 +4155,16 @@ def _interruptible_waiting_barrier(page, participant):
     return barrier
 
 
-def _is_inside_waiting_loop(barrier, participant):
-    """Return whether the participant's timeline position is inside the barrier's ``waiting_logic`` loop."""
-    markers = getattr(barrier, "_waiting_loop_markers", None)
-    position = participant.elt_id
-    if not markers or position is None:
-        return True
-    start, end = (marker.id for marker in markers)
-    depth = len(start)
-    return (
-        len(position) >= depth
-        and list(position[: depth - 1]) == list(start[:-1])
-        and start[-1] < position[depth - 1] < end[-1]
-    )
+def _start_between_barriers(participant):
+    """Forget the time limits of pages before this barrier or group."""
+    participant.page_deadline_since_barrier = None
+    participant.timed_out_since_barrier = False
+
+
+def _leave_waiting_logic(code_block, participant):
+    """Hand the participant back to the barrier whose waiting logic encloses this one, if any."""
+    outer = code_block.links.get("barrier")
+    participant.waiting_barrier_id = None if outer is None else outer.id
 
 
 def _has_left_barrier(participant, barrier_id):
@@ -4185,15 +4182,6 @@ def released_waiting_barrier(page, participant):
     barrier = _interruptible_waiting_barrier(page, participant)
     if barrier is not None and _has_left_barrier(participant, barrier.id):
         return barrier
-    return None
-
-
-def _waiting_page_barrier_id(participant):
-    """Return the ID of the barrier whose ``waiting_logic`` the participant is in, or ``None``."""
-    for barrier_id, link in participant.active_barriers.items():
-        # A hold's record may not be flushed yet, so test the object, not its id.
-        if not link.released and link.timeline_hold is None:
-            return barrier_id
     return None
 
 
@@ -4224,8 +4212,12 @@ def waiting_page_config(page, participant):
             "release_grace_ms": round(barrier.release_grace * 1000),
             "release_notice": _release_notice(barrier),
         }
-    barrier_id = None if participant.failed else _waiting_page_barrier_id(participant)
-    if barrier_id is None:
+    barrier_id = participant.waiting_barrier_id
+    if (
+        participant.failed
+        or barrier_id is None
+        or _has_left_barrier(participant, barrier_id)
+    ):
         return None
     return {"barrier_id": barrier_id, "release_grace_ms": None}
 

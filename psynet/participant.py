@@ -473,13 +473,17 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     progress_fixes = Column(PythonList)
 
     page_uuid = Column(String)
-    # When the latest timed page's ``time_limit`` runs out, and when that page
-    # started; see ``Page.time_limit``.
+    # When the latest timed page's ``time_limit`` runs out; see ``Page.time_limit``.
     page_deadline = Column(DateTime)
-    page_deadline_set_at = Column(DateTime)
-    # Whether the latest page answered since the last barrier, other than a
-    # barrier's waiting page, ended on its time limit; see
+    # The barrier whose ``waiting_logic`` the participant is in, set on
+    # arrival and handed back to the enclosing barrier, if any, on leaving.
+    waiting_barrier_id = Column(String)
+    # Outside waiting logic, since the last barrier or joining a group: the
+    # latest timed page's deadline, and whether the latest answered page
+    # ended on its time limit. Barriers read and clear both; see
+    # ``GroupBarrier.timeout_between_barriers_time`` and
     # ``ParticipantLinkBarrier.ran_out_of_time``.
+    page_deadline_since_barrier = Column(DateTime)
     timed_out_since_barrier = Column(Boolean, default=False)
     page_count = Column(Integer)
     early_exited = Column(Boolean)

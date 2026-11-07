@@ -240,6 +240,25 @@ def test_waiting_logic_reused_after_the_barrier_is_shown(
 
 
 @in_consents_experiment
+def test_waiting_pages_after_an_inner_barrier_belong_to_the_outer_one(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    original = exp.timeline
+    inner = SimpleGrouper("inner", initial_group_size=1, waiting_logic=_filler("x"))
+    _use_timeline(exp, join(inner, _filler("filler")))
+    try:
+        (participant,) = _working_participants(exp, 1)
+        waiting = _json_timeline(exp, participant).get_json()["attributes"]["waiting"]
+        page = exp.timeline.get_current_elt(exp, participant)
+        assert page.label == "filler"
+        assert waiting["barrier_id"] == page.links["barrier"].id
+        assert waiting["release_grace_ms"] == 3000
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
 def test_hold_pages_get_no_waiting_config(in_experiment_directory, db_session):
     exp = get_experiment()
     original = exp.timeline

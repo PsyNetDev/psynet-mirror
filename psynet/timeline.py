@@ -1880,13 +1880,10 @@ class Page(Elt):
     def consume(self, experiment, participant):
         participant.page_uuid = new_page_uuid()
         participant.page_count += 1
-        # Kept through later untimed pages, so a GroupBarrier can count its
-        # timeout from the last time limit.
         if self.time_limit is not None:
-            participant.page_deadline_set_at = timenow()
-            participant.page_deadline = participant.page_deadline_set_at + timedelta(
-                seconds=self.time_limit
-            )
+            participant.page_deadline = timenow() + timedelta(seconds=self.time_limit)
+            if participant.waiting_barrier_id is None:
+                participant.page_deadline_since_barrier = participant.page_deadline
 
     def time_limit_seconds_left(self, participant) -> Optional[float]:
         """Return the seconds left before this page's ``time_limit``, or ``None`` without one."""
@@ -1961,8 +1958,7 @@ class Page(Elt):
         else:
             # The flag skips validation, so only the server may set it.
             metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
-        if self.links.get("barrier") is None:
-            # Waiting pages don't count: the participant is already at a barrier.
+        if participant.waiting_barrier_id is None:
             participant.timed_out_since_barrier = timed_out
         if answer == NoArgumentProvided:
             answer = self.format_answer(
@@ -3847,12 +3843,6 @@ def _copy_elts(elts: List[Elt]) -> List[Elt]:
     for elt in copies:
         elt.__dict__.update({name: remap(value) for name, value in vars(elt).items()})
         elt.links = dict(getattr(elt, "links", {}))
-        # A barrier locates its waiting pages by its loop's markers, and only
-        # the copies end up in the timeline.
-        barrier = elt.links.get("barrier")
-        markers = getattr(barrier, "_waiting_loop_markers", None)
-        if markers:
-            barrier._waiting_loop_markers = [remap(marker) for marker in markers]
     return copies
 
 
