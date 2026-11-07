@@ -127,6 +127,19 @@ are no longer part of this pipeline. Put database preparation in
 ``pre_render()``, customize response data through ``ResponseResult``, and keep
 ``render()`` read-only.
 
+Before ``process_response``, and inside the same ``forbid_commits`` block,
+``POST /response`` calls the page's
+:meth:`~psynet.timeline.Page.check_ready_for_response`. ``ModularPage`` passes
+the call to its control. A refusal ends the request with a rejection before
+anything is written: no ``Response`` row, and no ``time_taken`` on the trial.
+A string becomes a ``FailedValidation`` without ``retry_after``, which the
+browser treats like a failed ``validate``. A ``FailedValidation`` with
+``retry_after`` puts it in the rejection payload. ``psynet.waitIfRetryLater``
+then shows the message in a status notice and resends the same submission
+after that many seconds, and the bot driver sleeps and resends, with no limit
+on attempts. ``LiveSessionControl`` uses this to keep a game page open until
+its session's result is saved.
+
 Participant-facing write phases use a bounded PostgreSQL ``lock_timeout`` so
 unexpected contention fails safely instead of occupying a web worker
 indefinitely. ``GET /timeline?mode=json`` and ``POST /response`` return
@@ -591,6 +604,12 @@ names the page load, so the session can tell two loads of the same page apart.
 page-ended notice goes only to the bare token, so a game socket for the same
 page in another tab plays on until it reconnects, and is then refused, or the
 session ends. A tab closes its own game socket when its page changes.
+
+When the control's ``auto_advance`` is on, which is the default, the game
+socket's ``onResultSaved`` and ``onRefused`` call ``psynet.nextPage()``. If
+the page isn't ready yet, as when a reload finds the session already ended,
+the call waits for ``timelinePageReady``, and is dropped if the page token
+has changed by then.
 
 Adding new frontend components
 ------------------------------

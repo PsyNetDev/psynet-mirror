@@ -11,3 +11,9 @@ Live Session
     :value: "The game hasn't started yet."
 
     The reason a message sent before the session starts is rejected.
+
+Testing
+-------
+
+.. automodule:: psynet.live_session.testing
+    :members:

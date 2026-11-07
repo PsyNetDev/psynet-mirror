@@ -13,17 +13,17 @@ class LiveSessionResult:
     ----------
 
     status
-        ``"ended"``, or ``"failed"`` if the game's code raised an error or
-        the session couldn't be started or recorded.
+        ``"ended"``, or ``"failed"`` if the game's code raised an error, or
+        the session couldn't be started or its record saved.
 
     end_reason
-        Why the session ended, the ``reason`` the game's ``outcome``
-        received, such as ``"finished"`` or ``"failed"``. ``None`` if the
-        session's record couldn't be saved.
+        Why the session ended. It's the ``reason`` that the game's
+        ``outcome`` received, such as ``"finished"`` or ``"failed"``, or
+        ``None`` if the session's record couldn't be saved.
 
     outcome
-        What the game's ``outcome`` returned, or ``None`` if the session's
-        record couldn't be saved.
+        The value that the game's ``outcome`` returned, or ``None`` if the
+        session's record couldn't be saved.
     """
 
     status: Literal["ended", "failed"]
@@ -32,11 +32,11 @@ class LiveSessionResult:
 
     @property
     def record_complete(self):
-        """Whether the session's whole record was saved, including its ending
-        and every message the game saves. A session that failed because of an
-        error in the game's code still has a complete record, up to the error.
-        A session whose record couldn't be saved keeps only what was saved
-        before the problem.
+        """Whether the session's whole record was saved. It's ``False`` only
+        if saving the record failed, and then the record keeps only the
+        messages saved before the problem. A session that failed because of an
+        error in the game's code still has a complete record, so check
+        :attr:`status` to see whether the game failed.
         """
         return self.end_reason is not None
 

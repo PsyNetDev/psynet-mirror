@@ -35,6 +35,7 @@ from psynet.live_session import (
     live_session_result,
 )
 from psynet.live_session import registry as game_registry
+from psynet.live_session.testing import start_session
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.participant import Participant
@@ -150,6 +151,7 @@ def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch)
         "initializerId": initializer.id,
         "sessionId": None,
         "gameChannel": None,
+        "autoAdvance": True,
     }
     for member in members:
         _arrive(initializer, member)
@@ -159,7 +161,22 @@ def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch)
         "initializerId": initializer.id,
         "sessionId": session_id,
         "gameChannel": "pick_numbers",
+        "autoAdvance": True,
     }
+
+
+def test_a_live_session_page_can_leave_moving_on_to_its_javascript(pair, monkeypatch):
+    members, initializer = pair
+    page = ModularPage(
+        "game",
+        "Play.",
+        LiveSessionControl(initializer.id, auto_advance=False),
+        time_estimate=5,
+    )
+
+    js_vars = _rendered_js_vars(page, members[0], monkeypatch)
+
+    assert js_vars["liveSession"]["autoAdvance"] is False
 
 
 def test_a_live_session_control_takes_any_control_parameter():
@@ -262,7 +279,7 @@ def _game_part(state):
 def test_a_message_that_doesn_t_match_its_type_is_rejected(message, reason):
     game = _pick_numbers()
     state = game.initial_state(["1", "2"])
-    game.start_session(state, 0)
+    start_session(game, state)
 
     with pytest.raises(Reject) as rejected:
         game.apply(state, "1", message, 0.5, Sent())
@@ -1155,7 +1172,7 @@ def test_a_game_can_turn_the_conversion_off(registry):
 
     game = Unconverted()
     state = game.initial_state(["1"])
-    game.start_session(state, 0)
+    start_session(game, state)
     game.tick(state, 0)
     game.apply(state, "1", {"type": "move", "message": {"to": [2, 3]}}, 0, Sent())
 
@@ -1454,6 +1471,15 @@ def test_a_deadline_due_by_the_ready_timeout_runs_when_the_session_starts(relay)
     assert waiting.next_due == 10
     assert ended.ended["reason"] == "finished"
     assert json.loads(ended.saved)["state"]["ticks"] == [10]
+
+
+def test_the_testing_helper_starts_a_session_at_the_time_given(relay):
+    state = relay.initial_state(["1", "2"])
+
+    start_session(relay, state, now=3)
+
+    assert state["live_session"]["started_at"] == 3
+    assert state["deadline"] == 8
 
 
 def test_an_on_start_that_ends_the_game_skips_its_tick(relay):

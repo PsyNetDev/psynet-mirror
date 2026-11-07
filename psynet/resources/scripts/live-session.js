@@ -10,9 +10,12 @@
    * the views the game sends back.
    *
    * The page joins the session when it first uses ``psynet.liveSession``,
-   * and leaves it when the participant moves on. Once it has measured its
-   * clock against the server's, it tells the game the player is ready, and
-   * the game starts when every player is. If the connection drops,
+   * and leaves it when the participant moves on. Once it has checked the
+   * server's time, it tells the game the player is ready, and the game
+   * starts when every player is. Unless the control's
+   * ``auto_advance`` is ``False``, the page moves on by itself once the
+   * session's result is saved, or if the server refuses its connection.
+   * If the connection drops,
    * it reconnects by itself and rejoins. The same page left open in another
    * tab can go on playing until its connection drops, or the session ends:
    * then it can't connect again.
@@ -23,12 +26,15 @@
    * scope, which the experiment's ``accept_websocket_connection`` checks.
    *
    * @param {function} liveSession - Returns the page's ``liveSession``
-   *   variable: the control's ``initializerId``, and the session's
-   *   ``sessionId`` and ``gameChannel``, which are ``null`` without a
-   *   session, or nothing on a page without a ``LiveSessionControl``
+   *   variable: the control's ``initializerId`` and ``autoAdvance``, and the
+   *   session's ``sessionId`` and ``gameChannel``, which are ``null``
+   *   without a session, or nothing on a page without a
+   *   ``LiveSessionControl``
    * @param {function} pageToken - Returns the current page's token
+   * @param {Object} page - ``ready()`` says whether the page is ready to
+   *   submit, and ``nextPage()`` submits it
    */
-  function createLiveSession(liveSession, pageToken) {
+  function createLiveSession(liveSession, pageToken, page) {
     let api = null;
 
     function session() {
@@ -61,6 +67,25 @@
       open: openSocket,
     });
 
+    // The result can arrive before the page is ready, as when the page
+    // reloads after the session ended, and nextPage alerts the participant
+    // then.
+    function moveOn(state) {
+      if (page.ready()) {
+        page.nextPage();
+      } else {
+        window.addEventListener(
+          "timelinePageReady",
+          () => {
+            if (pageToken() === state.token) {
+              page.nextPage();
+            }
+          },
+          { once: true },
+        );
+      }
+    }
+
     function openSocket(state) {
       let socket = dallinger.openExperimentSocket({
         session: state.session.sessionId,
@@ -79,6 +104,10 @@
           socket.send(socket.gameChannel, { type: READY, message: {} });
         }
       });
+      if (state.session.autoAdvance) {
+        socket.onResultSaved(() => moveOn(state));
+        socket.onRefused(() => moveOn(state));
+      }
       socket.onView((view) => {
         // A failed session's final view can be null.
         if (state.startedView === null && view !== null && view.live_session.started_at !== null) {
@@ -216,7 +245,8 @@
       onEnded: passOn("onEnded"),
       /**
        * Call ``callback`` once the session's result has been saved, after
-       * it ends, so the page can move on.
+       * it ends. The page then moves on by itself, unless the control's
+       * ``auto_advance`` is ``False``.
        *
        * @function onResultSaved
        * @param {function} callback - Called once the result is saved
@@ -226,8 +256,9 @@
       /**
        * Call ``callback`` with the close code and reason if the server
        * refuses the page's connection, as it does long after the session
-       * ended. The page then gets no ``onEnded`` or ``onResultSaved``, so
-       * move on here too.
+       * ended. The page then gets no ``onEnded`` or ``onResultSaved``. It
+       * moves on by itself unless the control's ``auto_advance`` is
+       * ``False``, in which case move on here too.
        *
        * @function onRefused
        * @param {function} callback - Called with the code and the reason

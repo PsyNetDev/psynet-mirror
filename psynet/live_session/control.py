@@ -12,11 +12,11 @@ _RETRY_AFTER = 1
 
 
 class LiveSessionControl(NullControl):
-    """The part of a page where the participant plays the session their
-    group started at a :class:`LiveSessionInitializer`.
+    """The part of a game page where the participant plays the live session
+    their group started at a :class:`LiveSessionInitializer`.
 
-    Give it the initializer's id, and give the page a JavaScript file that
-    plays the game, listed in its ``js_page_modules``:
+    Give it the initializer's id, and list the JavaScript file that plays the
+    game in the page's ``js_page_modules``:
 
     ::
 
@@ -28,18 +28,11 @@ class LiveSessionControl(NullControl):
             time_estimate=30,
         )
 
-    The JavaScript plays through ``psynet.liveSession``, which
-    :doc:`/code/multiplayer/live_sessions` describes, with the cases a game
-    page should allow for.
-
-    The page's answer is the session's outcome, the value the game's
-    ``outcome`` returned, whatever the page sends. Without a session, the
-    answer is ``None``. The participant can't leave the page until the
-    session's result is saved: a response sent earlier is refused, and the
-    page resends it a second later. When the participant leaves the page,
-    they get the game's :meth:`~LiveSession.bonus`, once per session. The
-    page can't have a ``validate`` of its own, whether passed as an argument
-    or defined in a subclass.
+    PsyNet sets the page's answer to the session's outcome, and pays the
+    game's :meth:`~LiveSession.bonus` when the participant leaves the page.
+    The page can't have a ``validate`` of its own.
+    :doc:`/code/multiplayer/live_sessions` explains how to write the page's
+    JavaScript.
 
     Parameters
     ----------
@@ -48,14 +41,20 @@ class LiveSessionControl(NullControl):
         The ``id_`` of the :class:`LiveSessionInitializer` that started the
         session.
 
+    auto_advance
+        Whether the page moves on by itself once the session's result is
+        saved. Set it to ``False`` to move on from the page's JavaScript
+        instead, for example after showing the result for a few seconds.
+
     **kwargs
         Any other parameter of :class:`~psynet.modular_page.Control`, such as
         ``show_next_button``.
     """
 
-    def __init__(self, initializer_id, **kwargs):
+    def __init__(self, initializer_id, auto_advance=True, **kwargs):
         super().__init__(**kwargs)
         self.initializer_id = initializer_id
+        self.auto_advance = auto_advance
 
     def check_ready_for_response(self, experiment, participant):
         session_id = live_session_id(participant, self.initializer_id)
@@ -105,5 +104,6 @@ class LiveSessionControl(NullControl):
                 "gameChannel": (
                     None if session_id is None else _game_channel(session_id)
                 ),
+                "autoAdvance": self.auto_advance,
             }
         }

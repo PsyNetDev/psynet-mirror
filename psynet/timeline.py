@@ -2043,8 +2043,10 @@ class Page(Elt):
         it, as the default does, or a :class:`psynet.timeline.FailedValidation`
         with a ``retry_after`` to refuse it for now, for example on a page
         that waits for something else to finish. The page then resends the
-        same response after ``retry_after`` seconds. A refused response
-        leaves nothing in the database.
+        same response after ``retry_after`` seconds. A message string, or a
+        ``FailedValidation`` without ``retry_after``, refuses the response as
+        a failed ``validate`` does, and the participant has to submit it
+        again. A refused response leaves nothing in the database.
         """
         return None
 

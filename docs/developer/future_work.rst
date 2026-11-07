@@ -822,8 +822,9 @@ Problem
 
 Dallinger forgets an ended session's live state an hour after it ends
 (``ENDED_SESSION_TTL``). A game page reloaded after that gets its connection
-refused, not the session's ending, so every game page has to move on in
-``onRefused``.
+refused, not the session's ending. The page moves on from ``onRefused``
+without ever getting ``onEnded``, and a page whose control has
+``auto_advance=False`` has to move on there itself.
 
 Idea
 ++++

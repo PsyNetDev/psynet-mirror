@@ -130,17 +130,19 @@ else changes only when Dallinger next saves the state or rejects a message,
 which restores the state from plain data: a tuple then becomes a list and
 ``{1: "a"}`` becomes ``{"1": "a"}``.
 
-To test a message, pass it to the game as a page would, with ``Sent`` from
-``dallinger.realtime``:
+To test a message, start the session with
+:func:`~psynet.live_session.testing.start_session`, since the game rejects
+messages until it starts. Then pass the message to the game as a page would,
+with ``Sent`` from ``dallinger.realtime``:
 
 .. code-block:: python
 
     from dallinger.realtime import Sent
+    from psynet.live_session.testing import start_session
 
     game = RockPaperScissors()
     state = game.initial_state(["1", "2"])
-    # As when every player is ready, since the game rejects messages before.
-    game.start_session(state, 0)
+    start_session(game, state)
     message = {"type": "choose", "message": {"action": "rock"}}
     game.apply(state, "1", message, 0, Sent())
     assert state["choices"]["1"] == "rock"
@@ -214,8 +216,6 @@ function, which PsyNet runs each time the page opens
         psynet.liveSession.onEnded(() => {
             status.textContent = "The game is over.";
         });
-        psynet.liveSession.onResultSaved(() => psynet.nextPage());
-        psynet.liveSession.onRefused(() => psynet.nextPage());
         for (let button of buttons) {
             button.addEventListener("click", () => {
                 psynet.liveSession.send("choose", {action: button.id});
@@ -242,9 +242,10 @@ function, which PsyNet runs each time the page opens
 - ``onEnded(callback)`` calls ``callback`` once the session ends, with why it
   ended and the player's final view.
 - ``onResultSaved(callback)`` calls ``callback`` once the session's result has
-  been saved.
+  been saved. The page then moves on by itself (see "The end" below).
 - ``onRefused(callback)`` calls ``callback`` with the close code and reason if
-  the server refuses the page's connection.
+  the server refuses the page's connection. The page then moves on by itself
+  too.
 - ``hasSession`` says whether the group started a session at the initializer.
   Without one, the other methods throw an error.
 - ``socket`` is the page's Dallinger socket, for anything else, such as
@@ -284,13 +285,20 @@ The end
     the final view can be ``null``, which the example above allows for.
 
     The participant can leave the game page only after the session's result
-    is saved (see `The answer and bonuses`_). To move on automatically, call
-    ``psynet.nextPage()`` in ``onResultSaved``, as the example does. Call it
-    in ``onRefused`` too, because a page whose connection is refused never
-    gets ``onResultSaved``. If you hide the Next button by passing
-    ``show_next_button=False`` to the control, give the page another way to
-    move on when there's no session, such as a button of its own that calls
-    ``psynet.nextPage()``.
+    is saved (see `The answer and bonuses`_), and the page then moves on by
+    itself. It also moves on if the server refuses its connection, as it
+    does when the participant reloads the page long after the session
+    ended.
+
+    To move on from the page's JavaScript instead, for example after showing
+    the result for a few seconds, pass ``auto_advance=False`` to the control.
+    Then call ``psynet.nextPage()`` in ``onResultSaved``, and in
+    ``onRefused`` too, because a page whose connection is refused never gets
+    ``onResultSaved``.
+
+    If you hide the Next button by passing ``show_next_button=False`` to the
+    control, give the page another way to move on when there's no session,
+    such as a button of its own that calls ``psynet.nextPage()``.
 
 Joining and leaving
     The game's ``on_join`` runs when a player opens their first page in the
@@ -316,11 +324,11 @@ Another tab
 The ready step
 --------------
 
-A session starts once every player is ready. A game page says so by itself,
-once it has measured its clock against the server's, which takes a moment
-after the page opens. A bot is ready at once, or, in a game with ticks, at
-the first tick. A player whose page closes before the start isn't ready any
-more, until the page reconnects or reloads.
+A session starts once every player is ready. A game page says so by itself a
+moment after it opens, once it has checked the server's time. A bot is ready
+at once, or at the first tick in a game with ticks. A player whose page
+closes before the start isn't ready any more, until the page reconnects or
+reloads.
 
 Until the start, the game rejects messages with the reason ``"The game hasn't
 started yet."``, and its ``tick`` and ``bot`` don't run. So a page disables
@@ -339,10 +347,14 @@ never reaches the game page, the group then waits until the game's
 ``max_duration = None``.
 
 PsyNet keeps track of the ready step in ``state["live_session"]``, and adds
-the same entry to each view: ``players``, the ids of the session's players,
-``ready``, those who are ready, and ``started_at``, the session time the
-session started, or ``None``. So don't use the name ``live_session`` in the
-state or a view.
+the same entry to each view. It holds:
+
+- ``players``, the ids of the session's players
+- ``ready``, the ids of the players who are ready
+- ``started_at``, the session time at which the session started, or ``None``
+  before the start
+
+Don't use the name ``live_session`` for anything else in the state or a view.
 
 The session time counts from when the group left the initializer, not from
 the start, and so does ``max_duration``. A game whose rounds have a time
@@ -380,9 +392,9 @@ the game carries on without them, unless its ``on_leave`` ends it.
 The answer and bonuses
 ----------------------
 
-The game page's answer is the session's outcome, the value the game's
-``outcome`` returned when the session ended. PsyNet sets the answer on the
-server and ignores whatever the page sends, so every player in a session gets
+The game page's answer is the session's outcome: the value that the game's
+``outcome`` method returned when the session ended. PsyNet sets the answer on
+the server and ignores what the page sends, so every player in a session gets
 the same answer. If you need each player's score, or why the session ended,
 include them in the outcome. If the participant has no session, the answer is
 ``None``.
@@ -438,7 +450,9 @@ before the game ends.
 Both kinds of bonus must be numbers of 0 or more.
 
 If the session's record couldn't be saved, the game page's answer is ``None``
-and no player gets a bonus from ``bonus``. To check how a session ended, call
+and PsyNet doesn't call ``bonus``. Bonuses from ``queue_bonus`` that were
+saved before the problem are still paid, so a game that needs to pay players
+whatever happens can pay them as it goes. To check how a session ended, call
 :func:`~psynet.live_session.live_session_result`. It returns the session's
 status, end reason and outcome, and whether its record is complete.
 
@@ -530,7 +544,8 @@ In a game with ticks, it runs once per tick. Dallinger's
 :meth:`~dallinger.realtime.RealtimeGame.bot` has the details.
 
 To test ``bot``, give it a view the game made after the start, such as
-``game.view(state, player_id)`` after ``game.start_session(state, 0)``.
+``game.view(state, player_id)`` after ``start_session(game, state)`` (see
+`Messages and the state`_).
 
 A group's bots have to reach the initializer together, so set the experiment's
 ``test_mode = "parallel"``, and ``test_n_bots`` to a multiple of the group

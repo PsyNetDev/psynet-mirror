@@ -8,8 +8,8 @@ from .messages import LiveMessage, _parse_message
 
 class Ready(LiveMessage):
     """The message that says a player is ready to play. A game page sends it
-    by itself once it has measured its clock against the server's, and a
-    bot sends it at once. The session starts when every player is ready, or
+    by itself a moment after it opens, once it has checked the server's time,
+    and a bot sends it at once. The session starts when every player is ready, or
     at the game's :attr:`~LiveSession.ready_timeout`.
 
     Every game reads it, so don't list it in a game's
@@ -26,7 +26,7 @@ class Ready(LiveMessage):
         if player_id not in ready_step["ready"]:
             ready_step["ready"].append(player_id)
         if set(ready_step["players"]) <= set(ready_step["ready"]):
-            game.start_session(state, now)
+            game._start_session(state, now)
 
 
 # Documented in docs/reference/api/live_session.rst, since Sphinx doesn't
@@ -57,7 +57,7 @@ def _tick_once_started(self, method, state, now):
     if _ready_step(state)["started_at"] is None:
         if self.ready_timeout is None or now < self.ready_timeout:
             return _UNCHANGED
-        self.start_session(state, now)
+        self._start_session(state, now)
         # Dallinger counts this tick as run, so a deadline due by now gets
         # no other.
         if self.is_over(state):

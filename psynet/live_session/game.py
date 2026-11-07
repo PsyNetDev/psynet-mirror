@@ -23,24 +23,16 @@ class LiveSession(RealtimeGame):
     """A game that a group plays in a live session.
 
     Set ``channel`` to a name for the game, list its message types in
-    :attr:`messages`, and define ``initial_state``, ``view`` and ``bot``,
-    which plays for bots, as in ``psynet test``. Dallinger's
-    :class:`~dallinger.realtime.RealtimeGame` documents these and the
-    optional methods, such as ``is_over`` and ``tick``. A subclass of a game
-    needs a ``channel`` of its own.
+    :attr:`messages`, and define ``initial_state``, ``view`` and ``bot``. The
+    ``bot`` method plays for bots, as in ``psynet test``. A game can also
+    define ``is_over``, ``outcome``, ``tick`` and the other methods of
+    :class:`~dallinger.realtime.RealtimeGame`, which this class extends. A
+    subclass of a game needs a ``channel`` of its own.
 
-    The state and each view are dicts, and hold only plain data, what JSON
-    can hold. PsyNet converts anything else, such as a tuple or an enum
-    member, after each method that changes the state, and a value it can't
-    convert, or ``NaN``, makes the session fail.
-    :doc:`/code/multiplayer/live_sessions` lists the conversions.
-
-    The session starts once every player is ready (see :class:`Ready`), or
-    at :attr:`ready_timeout`. Until then the game rejects messages, and
-    ``tick`` and ``bot`` don't run. PsyNet keeps track of this in
-    ``state["live_session"]``, and adds the same entry to each view:
-    ``players``, ``ready``, the players who are ready, and ``started_at``,
-    the session time the session started, or ``None``.
+    The state and each view are dicts that hold only plain data, such as
+    lists, strings and numbers. :doc:`/code/multiplayer/live_sessions` walks
+    through a whole game, including how the session starts and which values
+    PsyNet converts to plain data.
     """
 
     #: The game's message types, each a :class:`LiveMessage` subclass with
@@ -127,11 +119,7 @@ class LiveSession(RealtimeGame):
         """
 
     @_stores_json
-    def start_session(self, state, now):
-        """Start the session, as PsyNet does once every player is ready, and
-        run :meth:`on_start`. Call it in a test to play messages; a game
-        overrides :meth:`on_start` instead.
-        """
+    def _start_session(self, state, now):
         ready_step = _ready_step(state)
         if ready_step["started_at"] is None:
             ready_step["started_at"] = now
@@ -154,8 +142,8 @@ class LiveSession(RealtimeGame):
     def bonus(self, outcome, reason, player_id):
         """Return the bonus a player earns from the session's outcome, such as
         their winnings. PsyNet adds it to the player's performance reward when
-        they leave the game page, once per session, provided the session's
-        record is complete. By default, there's no bonus.
+        they leave the game page, once per session. It isn't paid if the
+        session's record couldn't be saved. By default, there's no bonus.
 
         Parameters
         ----------
@@ -164,8 +152,8 @@ class LiveSession(RealtimeGame):
             What the game's ``outcome`` returned.
 
         reason
-            Why the session ended, the ``reason`` the game's ``outcome``
-            received.
+            Why the session ended. It's the ``reason`` that the game's
+            ``outcome`` received.
 
         player_id
             The player's id.

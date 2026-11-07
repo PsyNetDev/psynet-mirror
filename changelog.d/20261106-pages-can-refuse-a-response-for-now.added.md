@@ -1,0 +1,1 @@
+Added `Page.check_ready_for_response`, which lets a page refuse a response until it can accept it, before PsyNet saves anything. It returns `FailedValidation(message, retry_after=seconds)`, and the browser or bot then resends the response after that many seconds.

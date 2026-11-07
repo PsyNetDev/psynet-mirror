@@ -4034,6 +4034,7 @@
   psynet.liveSession = window.PsyNetLiveSession.create(
     () => psynet.var.liveSession,
     () => psynet.var.pageToken,
+    { ready: () => psynet.pageReady, nextPage: () => psynet.nextPage() },
   );
   if (window.psynetLayout) {
     psynet.layout = window.psynetLayout;

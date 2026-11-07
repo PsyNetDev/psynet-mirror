@@ -51,13 +51,25 @@ let errors;
 let token;
 let session;
 let liveSession;
+let pageReady;
+let nextPages;
+let events;
 
 beforeEach(() => {
   sockets = [];
   errors = [];
   token = "token-1";
-  session = { initializerId: "pick_numbers", sessionId: 7, gameChannel: "pick_numbers" };
+  session = {
+    initializerId: "pick_numbers",
+    sessionId: 7,
+    gameChannel: "pick_numbers",
+    autoAdvance: true,
+  };
+  pageReady = true;
+  nextPages = 0;
+  events = new EventTarget();
   const context = {
+    addEventListener: events.addEventListener.bind(events),
     console: { error: (error) => errors.push(error.message) },
     dallinger: {
       pageScope: "load-1",
@@ -74,7 +86,8 @@ beforeEach(() => {
   vm.runInContext(SOURCE, context);
   liveSession = context.PsyNetLiveSession.create(
     () => session,
-    () => token
+    () => token,
+    { ready: () => pageReady, nextPage: () => nextPages++ }
   );
 });
 
@@ -170,6 +183,37 @@ describe("psynet.liveSession", () => {
     assert.ok(Object.keys(liveSession).includes("started"));
     token = "token-2";
     assert.equal(liveSession.started, false);
+  });
+
+  it("moves on once the result is saved, or the connection is refused", () => {
+    liveSession.onView(() => {});
+    sockets[0].fire("onResultSaved");
+    assert.equal(nextPages, 1);
+    sockets[0].fire("onRefused", 1008, "Gone");
+    assert.equal(nextPages, 2);
+
+    token = "token-2";
+    session = { ...session, autoAdvance: false };
+    liveSession.onView(() => {});
+    sockets[1].fire("onResultSaved");
+    sockets[1].fire("onRefused", 1008, "Gone");
+    assert.equal(nextPages, 2);
+  });
+
+  it("waits for the page to be ready before moving on, on that page only", () => {
+    pageReady = false;
+    liveSession.onView(() => {});
+    sockets[0].fire("onResultSaved");
+    assert.equal(nextPages, 0);
+    events.dispatchEvent(new Event("timelinePageReady"));
+    assert.equal(nextPages, 1);
+    events.dispatchEvent(new Event("timelinePageReady"));
+    assert.equal(nextPages, 1);
+
+    sockets[0].fire("onRefused", 1008, "Gone");
+    token = "token-2";
+    events.dispatchEvent(new Event("timelinePageReady"));
+    assert.equal(nextPages, 1);
   });
 
   it("leaves the session when the page changes", () => {
