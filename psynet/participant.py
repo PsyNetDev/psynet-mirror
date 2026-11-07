@@ -751,10 +751,12 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
                 "Use participant.active_sync_groups[group_type] to access the SyncGroup you need."
             )
 
+    # Unreleased visits by barrier ID. A view, so dropping a visit from it
+    # never deletes the row; visits are saved through ``barrier_links``.
     active_barriers = relationship(
         "ParticipantLinkBarrier",
         collection_class=attribute_mapped_collection("barrier_id"),
-        cascade="all, delete-orphan",
+        viewonly=True,
         primaryjoin=(
             "and_(psynet.participant.Participant.id==remote(ParticipantLinkBarrier.participant_id), "
             "ParticipantLinkBarrier.released==False)"

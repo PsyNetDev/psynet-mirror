@@ -1098,14 +1098,6 @@ class Barrier(EltCollection):
 
         barrier_instance = BarrierInstance.for_arrival(self, participant)
 
-        previous = participant.active_barriers.get(self.id)
-        if previous is not None and previous.released:
-            # A visit released earlier in this request is still in the
-            # collection; replacing it there would delete its row (and its
-            # ``sat_out``), so reload the collection without it first.
-            db.session.flush()
-            db.session.expire(participant, ["active_barriers"])
-
         now = timenow()
         link = ParticipantLinkBarrier(
             participant=participant,
