@@ -7,7 +7,7 @@ number, and the lowest number that nobody else in the room picked wins.
 The choice page has a ``time_limit`` of ``CHOICE_SECONDS``. A player who
 doesn't choose in time sits out the round and joins the next one, so the rest
 of the room isn't held up. A player who leaves the page, for example by
-closing the tab, is removed from their room soon after the time limit.
+closing the tab, is removed from their room 30 s after the time limit.
 Missing a round doesn't fail anyone. A player who comes back after the
 others' last round has started waits alone, though, and is failed once they
 reach the regrouper's ``max_wait_time`` (300 s by default), as at any barrier.
@@ -123,7 +123,7 @@ def show_result(participant):
     winner = result["winning_number"]
     if len(result["choices"]) == 1:
         return InfoPage(
-            "Everyone else in your room ran out of time, so nobody won this round.",
+            "Nobody else in your room picked a number in time, so nobody won this round.",
             time_estimate=5,
         )
     if winner is None:

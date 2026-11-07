@@ -3202,16 +3202,6 @@ class Regrouper(Grouper):
             if group_members
         ]
         self._check_plan(plan, members)
-        if self.roles:
-            for group_members in plan:
-                if len(group_members) != len(self.roles) or (
-                    self.keep_roles
-                    and {self.role(m) for m in group_members} != set(self.roles)
-                ):
-                    raise ValueError(
-                        f"Regrouper '{self.id}': with roles, form_groups must "
-                        f"return groups of {len(self.roles)}, one member per role."
-                    )
         groups = [
             self._make_group(group_members, within_group) for group_members in plan
         ]
@@ -3250,7 +3240,7 @@ class Regrouper(Grouper):
             visit.sat_out = True
 
     def _check_plan(self, plan, members):
-        """Raise if ``form_groups`` placed someone twice or placed a non-member."""
+        """Raise if ``form_groups`` placed someone twice, placed a non-member, or broke the roles."""
         member_ids = {p.id for p in members}
         placed = [p.id for group_members in plan for p in group_members]
         if len(placed) != len(set(placed)):
@@ -3263,6 +3253,15 @@ class Regrouper(Grouper):
                 f"Regrouper '{self.id}': form_groups placed participants "
                 f"{sorted(outsiders)}, who are not waiting in this pool."
             )
+        for group_members in plan if self.roles else []:
+            if len(group_members) != len(self.roles) or (
+                self.keep_roles
+                and {self.role(m) for m in group_members} != set(self.roles)
+            ):
+                raise ValueError(
+                    f"Regrouper '{self.id}': with roles, form_groups must "
+                    f"return groups of {len(self.roles)}, one member per role."
+                )
 
     def _make_group(self, participants, within_group=None):
         """Create a fixed group that never dissolves or fails its members."""

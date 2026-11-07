@@ -3823,20 +3823,24 @@ def _copy_elts(elts: List[Elt]) -> List[Elt]:
     """Return shallow copies of ``elts`` that refer to each other instead of the originals.
 
     Lets a loop scale its elements' estimates without changing elements that
-    are used elsewhere too, or that are resolved again later.
+    are used elsewhere too, or that are resolved again later. An element that
+    appears twice gets a copy for each place; references go to the first.
     """
-    copies = {id(elt): copy.copy(elt) for elt in elts}
+    copies = [copy.copy(elt) for elt in elts]
+    first_copy = {}
+    for original, elt_copy in zip(elts, copies):
+        first_copy.setdefault(id(original), elt_copy)
 
     def remap(value):
         if isinstance(value, Elt):
-            return copies.get(id(value), value)
+            return first_copy.get(id(value), value)
         if isinstance(value, dict) and any(isinstance(v, Elt) for v in value.values()):
             return {key: remap(item) for key, item in value.items()}
         if isinstance(value, list) and any(isinstance(v, Elt) for v in value):
             return [remap(item) for item in value]
         return value
 
-    for elt in copies.values():
+    for elt in copies:
         elt.__dict__.update({name: remap(value) for name, value in vars(elt).items()})
         elt.links = dict(getattr(elt, "links", {}))
         # A barrier locates its waiting pages by its loop's markers, and only
@@ -3845,7 +3849,7 @@ def _copy_elts(elts: List[Elt]) -> List[Elt]:
         markers = getattr(barrier, "_waiting_loop_markers", None)
         if markers:
             barrier._waiting_loop_markers = [remap(marker) for marker in markers]
-    return list(copies.values())
+    return copies
 
 
 def multiply_expected_repetitions(logic, factor: float):
