@@ -1521,6 +1521,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         When this is set, then the ordinary node allocation logic will only apply to the 'leader'
         of each SyncGroup. The other members of this SyncGroup will follow that leader around,
         so that in every given trial the SyncGroup works on the same node together.
+        The other ``sync_group_*`` options raise an error without it.
 
     sync_group_max_wait_time
         Acts on members waiting for their group at the trial maker's own barriers: the longest

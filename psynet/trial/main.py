@@ -95,6 +95,21 @@ def _warn_ignored_fail_trials_on_premature_exit(trial_maker_id):
     warn_from_caller(message, DeprecationWarning)
 
 
+def _check_no_sync_group_options(trial_maker_id, **options):
+    """Raise if a ``sync_group_*`` option differs from its default without ``sync_group_type``.
+
+    Each option is passed as ``name=(value, default)``.
+    """
+    passed = [name for name, (value, default) in options.items() if value != default]
+    if passed:
+        raise ValueError(
+            f"Trial maker {trial_maker_id!r} has sync_group_type=None, so it "
+            f"can't use {', '.join(passed)}: pass the sync_group_type of the "
+            "groups whose members take the trials together, or remove "
+            f"{'it' if len(passed) == 1 else 'them'}."
+        )
+
+
 def with_trial_maker_namespace(trial_maker_id: str, x: Optional[str] = None):
     if x is None:
         return trial_maker_id
@@ -1674,6 +1689,7 @@ class TrialMaker(Module):
         When this is set, then the ordinary node allocation logic will only apply to the 'leader'
         of each SyncGroup. The other members of this SyncGroup will follow that leader around,
         so that in every given trial the SyncGroup works on the same node together.
+        The other ``sync_group_*`` options raise an error without it.
 
     sync_group_max_wait_time
         Acts on members waiting for their group at the trial maker's own barriers: the longest
@@ -1790,6 +1806,18 @@ class TrialMaker(Module):
             )
         self.n_participants_completion = n_participants_completion
         self.n_repeat_trials = n_repeat_trials
+        if sync_group_type is None:
+            _check_no_sync_group_options(
+                id_,
+                sync_group_max_wait_time=(
+                    sync_group_max_wait_time,
+                    NoArgumentProvided,
+                ),
+                sync_group_max_wait_action=(sync_group_max_wait_action, "fail"),
+                sync_group_late_after=(sync_group_late_after, None),
+                sync_group_late_action=(sync_group_late_action, "fail"),
+                sync_group_waiting_message=(sync_group_waiting_message, None),
+            )
         self.sync_group_type = sync_group_type
         self.sync_group_max_wait_time = _group_max_wait_time(
             sync_group_max_wait_time,
@@ -2828,6 +2856,7 @@ class NetworkTrialMaker(TrialMaker):
         When this is set, then the ordinary node allocation logic will only apply to the 'leader'
         of each SyncGroup. The other members of this SyncGroup will follow that leader around,
         so that in every given trial the SyncGroup works on the same node together.
+        The other ``sync_group_*`` options raise an error without it.
 
     sync_group_max_wait_time
         Acts on members waiting for their group at the trial maker's own barriers: the longest

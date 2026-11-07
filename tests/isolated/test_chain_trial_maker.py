@@ -223,6 +223,22 @@ def test_sync_group_max_wait_time_with_late_after():
 
 
 @pytest.mark.parametrize(
+    "option",
+    [
+        {"sync_group_max_wait_time": 60},
+        {"sync_group_max_wait_action": "kick"},
+        {"sync_group_late_after": 30},
+        {"sync_group_late_action": "kick"},
+        {"sync_group_waiting_message": "Waiting for your partner"},
+    ],
+)
+def test_sync_group_options_need_sync_group_type(option):
+    (name,) = option
+    with pytest.raises(ValueError, match=f"sync_group_type=None.*{name}"):
+        make_trial_maker(**option)
+
+
+@pytest.mark.parametrize(
     "make, kwargs, message",
     [
         (

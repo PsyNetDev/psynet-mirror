@@ -1452,7 +1452,8 @@ class Page(Elt):
         - Cannot be combined with ``session_id``.
 
     time_limit_answer
-        The answer recorded when ``time_limit`` runs out (default ``None``).
+        The answer recorded when ``time_limit`` runs out (default ``None``),
+        so passing it without ``time_limit`` raises an error.
         Pass :data:`CURRENT_ANSWER` to record what the participant has
         entered so far instead: the page's controls submit their current
         answer, which is formatted as usual but not validated, so
@@ -1675,6 +1676,11 @@ class Page(Elt):
             # Same-session updates keep the page's scripts, so the countdown
             # would not restart and could submit the next page.
             raise ValueError("A page cannot have both time_limit and session_id.")
+        if time_limit is None and time_limit_answer is not None:
+            raise ValueError(
+                "time_limit_answer is the answer recorded when the page's "
+                "time_limit runs out, so it needs a time_limit."
+            )
         self.time_limit = time_limit
         self.time_limit_answer = time_limit_answer
         if show_abort_button is not None:

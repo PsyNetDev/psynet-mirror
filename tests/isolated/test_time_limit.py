@@ -112,6 +112,11 @@ def test_time_limit_cannot_share_a_session():
         ModularPage("guess", "Guess", TextControl(), time_limit=10, session_id="s")
 
 
+def test_time_limit_answer_needs_a_time_limit():
+    with pytest.raises(ValueError, match="needs a time_limit"):
+        ModularPage("guess", "Guess", TextControl(), time_limit_answer="timeout")
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )

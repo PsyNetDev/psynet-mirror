@@ -237,6 +237,7 @@ class StaticTrialMaker(ChainTrialMaker):
         When this is set, then the ordinary node allocation logic will only apply to the 'leader'
         of each SyncGroup. The other members of this SyncGroup will follow that leader around,
         so that in every given trial the SyncGroup works on the same node together.
+        The other ``sync_group_*`` options raise an error without it.
 
     sync_group_waiting_message
         Message shown by the trial maker's own sync-group waits. See

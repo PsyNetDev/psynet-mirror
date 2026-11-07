@@ -131,7 +131,7 @@ class EndLogic(ExitLogic):
             control,
             show_next_button=False,
             time_limit=self.time_limit,
-            time_limit_answer="Finish",
+            time_limit_answer=None if self.time_limit is None else "Finish",
         )
 
     @property
