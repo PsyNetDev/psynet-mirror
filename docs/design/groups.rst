@@ -45,8 +45,8 @@ At a grouper they are failed; at a barrier, depending on its settings, they
 are either failed or removed from the group so that they can continue alone.
 A barrier can also set a time limit between barriers, which catches members
 who fall behind: a member who hasn't reached the next barrier in time is
-failed or removed. If a member is on a page with its own time limit, that
-time counts from when the page's limit runs out. By default,
+failed or removed. For a member on a page with its own time limit, this
+between-barrier time counts from when the page's limit runs out. By default,
 participants are credited for the actual time
 they wait, up to the maximum.
 

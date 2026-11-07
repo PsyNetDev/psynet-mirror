@@ -6817,6 +6817,7 @@ def test_a_time_out_before_joining_an_open_group_gives_no_dash(
         experiment=exp,
         participant=newcomer,
     )
+    assert newcomer.timed_out_since_barrier
     grouper._join_existing_groups(newcomer)
     _arrive_at_group_barrier(exp, GroupBarrier("next", group_type="main"), newcomer)
     assert not newcomer.active_barriers["next"].ran_out_of_time

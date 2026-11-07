@@ -477,6 +477,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     page_deadline = Column(DateTime)
     # The barrier whose ``waiting_logic`` the participant is in, set on
     # arrival and handed back to the enclosing barrier, if any, on leaving.
+    # Only the end of the waiting logic clears it, so a participant who jumps
+    # out (for example to a failure page) keeps it.
     waiting_barrier_id = Column(String)
     # Whether the latest timed page answered outside waiting logic since the
     # last barrier ended on its time limit. The next barrier copies it onto the

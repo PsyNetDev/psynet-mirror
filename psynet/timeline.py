@@ -3406,6 +3406,8 @@ def while_loop(
 
     logic:
         An elt (or list of elts) to display while ``condition`` returns ``True``.
+        The loop uses copies of these elts, so a ``GoTo`` outside the loop
+        can't target one of them.
 
     expected_repetitions:
         The number of times the loop is expected to be seen by a given participant.
