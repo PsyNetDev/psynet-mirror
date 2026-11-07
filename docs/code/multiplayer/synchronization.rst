@@ -357,10 +357,16 @@ Timeouts
     :class:`~psynet.sync.GroupBarrier` that sets it. At a grouper, a participant who waits longer is failed. At a
     :class:`~psynet.sync.GroupBarrier`, ``max_wait_action`` decides:
     ``"fail"`` (default) fails the participant, and ``"kick"`` removes them
-    from the group so that they continue alone. With the default wait
-    indicator (no ``waiting_logic``), this also applies to a participant who
-    closed the page while waiting: the server applies the timeout shortly
-    after the deadline.
+    from the group so that they continue alone. This also applies to a
+    participant who closed the page while waiting, including on
+    ``waiting_logic`` pages: the server applies the timeout shortly after
+    the deadline.
+
+    ``max_wait_time`` is a hard limit counted from arrival. With
+    ``waiting_logic``, the server applies it even while the participant is
+    partway through a filler page, not only between filler pages. Make it
+    long enough to cover long filler pages, for example trials used as
+    filler.
 
 ``timeout_between_barriers_time`` (default: ``None``)
     A :class:`~psynet.sync.GroupBarrier` limit on the time since the group
