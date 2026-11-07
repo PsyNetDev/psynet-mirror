@@ -1462,6 +1462,9 @@ class Page(Elt):
     requires_full_page_reload = False
     expect_scrolling = False
     skip_beforeunload = False
+    # Whether answering this page says if the participant ran out of time
+    # (see ``Participant.timed_out_since_barrier``).
+    records_time_out = True
 
     def __init__(
         self,
@@ -1960,7 +1963,7 @@ class Page(Elt):
         else:
             # The flag skips validation, so only the server may set it.
             metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
-        if participant.waiting_barrier_id is None:
+        if participant.waiting_barrier_id is None and self.records_time_out:
             participant.timed_out_since_barrier = timed_out
         if answer == NoArgumentProvided:
             answer = self.format_answer(

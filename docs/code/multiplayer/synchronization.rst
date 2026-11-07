@@ -466,8 +466,9 @@ Timeouts
     accepts top-ups, a newcomer is timed from when they joined, so members
     already waiting can reach ``max_wait_time`` first.
 
-    A member who has started a page with a ``time_limit`` since the last
-    barrier (or since joining) is timed from that limit instead: they are not
+    A member who has started a page with a ``time_limit``, other than a
+    waiting page, since the group last passed a barrier (or since joining)
+    is timed from that limit instead: they are not
     late before it runs out, and are late once the timeout (at least 10
     seconds) has passed after that, because the page would have moved them
     on had they still been there. So the timeout need not be longer than the

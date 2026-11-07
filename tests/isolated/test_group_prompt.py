@@ -10,6 +10,7 @@ from psynet import timeline_hold
 from psynet.experiment import get_experiment
 from psynet.group_prompt import GroupPrompt, redrawn_group_html
 from psynet.modular_page import ModularPage
+from psynet.page import WaitPage
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     GroupBarrier,
@@ -127,6 +128,10 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
         )
 
     time_out(first)
+    # A framework wait, such as for feedback, doesn't answer the timed-out page.
+    WaitPage(wait_time=1).process_response(
+        raw_answer=None, blobs=None, metadata={}, experiment=exp, participant=first
+    )
     _arrive(exp, GroupBarrier("decided", group_type="room"), [first, second])
 
     html = GroupPrompt(group=group, participant=third).group_html
