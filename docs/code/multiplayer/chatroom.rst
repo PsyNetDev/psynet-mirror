@@ -61,8 +61,8 @@ of the animal on a disc of that colour; their own messages are labelled
 A participant keeps the same pseudonym in every room, unless the experiment
 sets a different one. Each deployment shuffles the colours and
 animals differently and then assigns them in order of participant ID, so
-participants who arrive one after another differ in both colour and animal,
-and any 88 participants in a row all have different pseudonyms. Participants
+participants with consecutive IDs differ in both colour and animal, and any
+88 consecutive IDs all have different pseudonyms. Participants
 whose IDs differ by a multiple of 88 share a pseudonym, so in a large
 experiment two members of one room can occasionally have the same name; use
 ``set_pseudonym`` when the group forms if that matters. The dashboard's

@@ -88,9 +88,22 @@ export async function activate({root, vars}) {
         var name = pseudonym ? pseudonym.name : "Participant " + senderId;
         if (String(senderId) === MY_ID) {
             // Own messages say "You", so the list spells out the participant's name.
-            name = inList && pseudonym
+            var fullName = pseudonym
                 ? YOU_IN_LIST_LABEL.replace("{NAME}", function () { return pseudonym.name; })
                 : YOU_LABEL;
+            if (!inList && pseudonym) {
+                // Screen readers hear the name, which the hidden icon can't give them.
+                var shown = document.createElement("span");
+                shown.setAttribute("aria-hidden", "true");
+                shown.textContent = YOU_LABEL;
+                var spoken = document.createElement("span");
+                spoken.className = "visually-hidden";
+                spoken.textContent = fullName;
+                label.appendChild(shown);
+                label.appendChild(spoken);
+                return label;
+            }
+            name = inList ? fullName : YOU_LABEL;
         }
         label.appendChild(document.createTextNode(name));
         return label;

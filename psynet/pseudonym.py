@@ -9,7 +9,7 @@ Design constraints:
 - Page rendering is read-only, so the default pseudonym is a pure function
   of the participant ID and the deployment ID stored in the database, and
   is never written. Each deployment shuffles the colours and animals
-  differently, so participant 10 gets a different pseudonym in each
+  differently, so participant 10 usually gets a different pseudonym in each
   deployment, and a loaded export gives the same pseudonyms that
   participants saw, as long as it is loaded with the same PsyNet version,
   pseudonym scheme and locale, and not launched again. Colour and animal
