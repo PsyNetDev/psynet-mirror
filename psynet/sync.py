@@ -1148,6 +1148,9 @@ def _group_barrier_outcome(group, members, waiting_ids):
     return "wait"
 
 
+_DEFAULT_MAX_WAIT_TIME = object()
+
+
 class GroupBarrier(Barrier):
     """
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
@@ -1190,6 +1193,9 @@ class GroupBarrier(Barrier):
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded, the participant is either failed or kicked (see ``max_wait_action``).
+        Defaults to 20 seconds plus ``timeout_between_barriers_time``, so that a member who arrives
+        promptly can wait out a slower one. Must be longer than ``timeout_between_barriers_time``.
+        ``None`` means no limit.
 
     max_wait_action
         When ``max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end of the
@@ -1197,8 +1203,8 @@ class GroupBarrier(Barrier):
 
     timeout_between_barriers_time
         The maximum amount of time in seconds that a participant is allowed to reach the barrier, measured from when
-        the group collectively passed the previous barrier. If ``None`` (default), no between-barrier timeout is applied.
-        Only applies from the second barrier onward (time since previous barrier pass).
+        the group last passed a ``GroupBarrier`` or the participant joined the group, whichever is later. If
+        ``None`` (default), no between-barrier timeout is applied.
 
     timeout_between_barriers_action
         When a participant exceeds ``timeout_between_barriers_time``: ``"kick"`` removes them from the group (so the
@@ -1258,6 +1264,31 @@ class GroupBarrier(Barrier):
         if group_type in participant.active_sync_groups:
             participant.active_sync_groups[group_type].remove_participant(participant)
 
+    @staticmethod
+    def _check_max_wait_time(max_wait_time, timeout_between_barriers_time):
+        """Return ``max_wait_time``, defaulting it to cover the between-barrier timeout.
+
+        Requiring ``max_wait_time > timeout_between_barriers_time`` guarantees
+        that prompt members outlast slow ones only while membership is fixed.
+        In a group that accepts top-ups, a newcomer who joins while others
+        wait has their between-barrier timeout counted from when they joined,
+        so the waiters can still reach ``max_wait_time`` first.
+        """
+        if max_wait_time is _DEFAULT_MAX_WAIT_TIME:
+            return 20 + (timeout_between_barriers_time or 0)
+        if (
+            max_wait_time is not None
+            and timeout_between_barriers_time is not None
+            and max_wait_time <= timeout_between_barriers_time
+        ):
+            raise ValueError(
+                f"max_wait_time ({max_wait_time} s) must be longer than "
+                f"timeout_between_barriers_time ({timeout_between_barriers_time} s), "
+                "otherwise members who arrive promptly time out while waiting "
+                "for slower ones."
+            )
+        return max_wait_time
+
     def _validate_max_wait_action(self, max_wait_action):
         if max_wait_action not in ("fail", "kick"):
             raise ValueError(
@@ -1270,7 +1301,7 @@ class GroupBarrier(Barrier):
         group_type: str,
         waiting_logic=None,
         waiting_logic_expected_repetitions=3,
-        max_wait_time=20,
+        max_wait_time: Optional[float] = _DEFAULT_MAX_WAIT_TIME,
         max_wait_action: Literal["fail", "kick"] = "fail",
         on_release: Optional[Callable] = None,
         fix_time_credit=False,
@@ -1282,6 +1313,9 @@ class GroupBarrier(Barrier):
         on_arrival_message: Optional[Callable] = None,
     ):
         self._validate_max_wait_action(max_wait_action)
+        max_wait_time = self._check_max_wait_time(
+            max_wait_time, timeout_between_barriers_time
+        )
         super().__init__(
             id_=id_,
             waiting_logic=waiting_logic,
@@ -1530,16 +1564,32 @@ class GroupBarrier(Barrier):
                 participant.fail("timeout between barriers")
 
     def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
-        """Return active members past the between-barrier timeout who are not waiting."""
-        if (
-            self.timeout_between_barriers_time is None
-            or group.last_barrier_pass_time is None
-        ):
+        """Return active members past the between-barrier timeout who are not waiting.
+
+        Each member is timed from the group's last barrier pass or from when
+        they joined the group, whichever is later, so newcomers to an open
+        group are not late as soon as they join.
+        """
+        if self.timeout_between_barriers_time is None:
             return []
-        elapsed_seconds = (timenow() - group.last_barrier_pass_time).total_seconds()
-        if elapsed_seconds <= self.timeout_between_barriers_time:
-            return []
-        return [p for p in group.active_participants if p.id not in waiting_ids]
+        now = timenow()
+        active_ids = {p.id for p in group.active_participants}
+        late = []
+        for link in group.participant_links:
+            participant = link.participant
+            if (
+                not link.active
+                or participant.id not in active_ids
+                or participant.id in waiting_ids
+            ):
+                continue
+            starts = [t for t in (group.last_barrier_pass_time, link.arrival_time) if t]
+            if not starts:
+                continue
+            elapsed = (now - max(starts)).total_seconds()
+            if elapsed > self.timeout_between_barriers_time:
+                late.append(participant)
+        return late
 
 
 class Grouper(Barrier):
@@ -2040,7 +2090,12 @@ class SyncGroup(SQLBase, SQLMixin):
         _forget_active_sync_group(participant)
         # Setting ``sync_group`` also appends to ``participant_links``, and lets
         # ``participant.active_sync_groups`` see the group before a flush.
-        ParticipantLinkSyncGroup(participant=participant, sync_group=self, active=True)
+        ParticipantLinkSyncGroup(
+            participant=participant,
+            sync_group=self,
+            active=True,
+            arrival_time=timenow(),
+        )
 
     @property
     def active_participants(self) -> List[Participant]:
@@ -3044,7 +3099,13 @@ def _remember_poller_check(instance_id, fingerprint):
 
 
 def check_sync_groups():
-    """Recount active membership, skipping groups locked by another request.
+    """Recount active membership and close groups with no active members left.
+
+    Members who finish or return the experiment stay linked to their groups,
+    so this is what closes a group once all of them are gone. It closes any
+    active :class:`SyncGroup` with no active members, including emptied
+    groups that accept top-ups, unless the group is still dissolving.
+    Groups locked by another request are skipped until the next tick.
 
     Dedicated sessions keep these maintenance commits separate from any
     transaction owned by the caller. Each group's recount runs in its own
@@ -3077,6 +3138,8 @@ def check_sync_groups():
                 if group is None:
                     continue
                 group.check_numbers()
+                if group.n_active_participants == 0 and not group.dissolving:
+                    group.close()
                 session.commit()
         except Exception as err:
             if is_transient_transaction_error(err):
