@@ -371,14 +371,15 @@ def test_regrouper_checks_its_settings(kwargs, message):
 
 
 def test_regrouper_max_wait_time_outlasts_a_lone_wait():
-    with pytest.raises(ValueError, match="twice the deadline"):
-        Regrouper(
-            "pair",
-            within="cohort",
-            max_group_size=2,
-            deadline=150,
-            release_left_over=True,
+    def pairs(**kwargs):
+        return Regrouper(
+            "pair", within="cohort", max_group_size=2, release_left_over=True, **kwargs
         )
+
+    assert pairs(deadline=30).max_wait_time == 300
+    assert pairs(every=150).max_wait_time == 360
+    with pytest.raises(ValueError, match="twice the deadline"):
+        pairs(deadline=150, max_wait_time=300)
 
 
 @in_consents_experiment

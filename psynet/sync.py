@@ -2706,9 +2706,11 @@ class Regrouper(Grouper):
 
     max_wait_time
         Longest a participant waits at the regrouper before being failed.
-        Default: 300 seconds. With ``release_left_over`` and ``within``, it
-        must be longer than twice the ``deadline`` (or ``every`` period), so
-        that a player waiting alone sits out instead of being failed.
+        Defaults to 300 seconds, or to twice the ``deadline`` (or ``every``
+        period) plus 60 seconds if that is longer. With ``release_left_over``
+        and ``within``, a value you pass must be longer than twice the
+        period, so that a player waiting alone sits out instead of being
+        failed.
 
     waiting_message
         Message shown while waiting. A ``{SECONDS}`` placeholder becomes a live
@@ -2735,7 +2737,7 @@ class Regrouper(Grouper):
         form_groups: Optional[Callable] = None,
         release_left_over: bool = False,
         on_release: Optional[Callable] = None,
-        max_wait_time: Optional[float] = 300,
+        max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         **kwargs,
     ):
         if roles is not None:
@@ -2776,20 +2778,10 @@ class Regrouper(Grouper):
                 "Regrouper groups are never dissolved when a member leaves, so "
                 "fail_participants_below_min_size doesn't apply."
             )
-        kwargs.setdefault("id_", f"{group_type}_regrouper")
-        super().__init__(group_type=group_type, max_wait_time=max_wait_time, **kwargs)
-        self.within = within
-        self.max_group_size = max_group_size
-        self.min_group_size = min_group_size
-        self.deadline = deadline
-        self.every = every
-        self.roles = None if roles is None else list(roles)
-        self.keep_roles = keep_roles
-        self.form_groups_function = form_groups
-        self.release_left_over = release_left_over
-        self.on_release = on_release
-        longest_lone_wait = self.every or self.deadline
-        if (
+        longest_lone_wait = every or deadline
+        if max_wait_time is NoArgumentProvided:
+            max_wait_time = max(300, 2 * (longest_lone_wait or 0) + 60)
+        elif (
             release_left_over
             and within is not None
             and longest_lone_wait is not None
@@ -2802,6 +2794,18 @@ class Regrouper(Grouper):
                 "waiting alone for cohort members who are still playing waits up to two "
                 "deadlines before sitting out."
             )
+        kwargs.setdefault("id_", f"{group_type}_regrouper")
+        super().__init__(group_type=group_type, max_wait_time=max_wait_time, **kwargs)
+        self.within = within
+        self.max_group_size = max_group_size
+        self.min_group_size = min_group_size
+        self.deadline = deadline
+        self.every = every
+        self.roles = None if roles is None else list(roles)
+        self.keep_roles = keep_roles
+        self.form_groups_function = form_groups
+        self.release_left_over = release_left_over
+        self.on_release = on_release
 
     def receive_participant(self, participant: Participant):
         previous = participant.active_sync_groups.get(self.group_type)
