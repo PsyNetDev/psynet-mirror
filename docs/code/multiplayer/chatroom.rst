@@ -114,10 +114,10 @@ pseudonym, :meth:`~psynet.pseudonym.PseudonymScheme.name` names the pair, and
 them for full control.
 
 Each built-in name, such as "Blue fox", is translated as a whole, so that
-languages can make the colour agree with the animal. A scheme with its own
-colours or animals gets the two words joined instead, which can't agree;
-override :meth:`~psynet.pseudonym.PseudonymScheme.name` to name its pairs in
-full.
+languages can make the colour agree with the animal. A scheme's own colours
+or animals get the two words joined instead, which can't agree; override
+:meth:`~psynet.pseudonym.PseudonymScheme.name` to name such pairs in full.
+Give new words new keys, since a built-in key keeps its built-in name.
 
 Messages, history and occupancy updates carry each sender's pseudonym
 (``sender_pseudonym`` and ``pseudonyms``), so a custom chatroom widget can
