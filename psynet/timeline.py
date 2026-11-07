@@ -1954,12 +1954,16 @@ class Page(Elt):
         trial = participant.current_trial
         resp._background_parent = trial or participant
 
-        if self._time_limit_reached(metadata, participant):
+        timed_out = self._time_limit_reached(metadata, participant)
+        if timed_out:
             answer = self.time_limit_answer
             metadata = {**metadata, "time_limit_reached": True}
         else:
             # The flag skips validation, so only the server may set it.
             metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
+        if self.links.get("barrier") is None:
+            # Waiting pages don't count: the participant is already at a barrier.
+            participant.timed_out_since_barrier = timed_out
         if answer == NoArgumentProvided:
             answer = self.format_answer(
                 raw_answer,

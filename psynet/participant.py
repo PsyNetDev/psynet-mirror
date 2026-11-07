@@ -477,6 +477,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     # started; see ``Page.time_limit``.
     page_deadline = Column(DateTime)
     page_deadline_set_at = Column(DateTime)
+    # Whether the latest page answered since the last barrier, other than a
+    # barrier's waiting page, ended on its time limit; see
+    # ``ParticipantLinkBarrier.ran_out_of_time``.
+    timed_out_since_barrier = Column(Boolean, default=False)
     page_count = Column(Integer)
     early_exited = Column(Boolean)
     exit_plan = Column(PythonDict)

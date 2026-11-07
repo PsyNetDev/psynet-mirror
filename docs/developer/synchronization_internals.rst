@@ -124,7 +124,10 @@ the browser drops any response to an earlier request than one it has shown.
 The response also has the seats of the members waiting in each of the
 participant's groups, for the ticks of :class:`~psynet.group_prompt.GroupPrompt`,
 and of those among them who came from a page whose time limit ran out
-(``ParticipantLinkBarrier.ran_out_of_time``, set on arrival), who get a dash.
+(``ParticipantLinkBarrier.ran_out_of_time``), who get a dash. Pages record
+the time-out as it happens in ``Participant.timed_out_since_barrier``, which
+the next barrier copies onto the visit and clears; waiting pages leave it
+alone.
 Hold overlays for members who are already waiting are still sent with the
 update, so their counts can lag until the next arrival.
 

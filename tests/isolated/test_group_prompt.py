@@ -1,12 +1,15 @@
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from dallinger.models import timenow
 from markupsafe import Markup
 
 from psynet import timeline_hold
 from psynet.experiment import get_experiment
 from psynet.group_prompt import GroupPrompt, redrawn_group_html
+from psynet.modular_page import ModularPage
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     GroupBarrier,
@@ -15,7 +18,6 @@ from psynet.sync import (
     arrival_notice_payload,
     group_seats,
 )
-from psynet.timeline import Response
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_regrouper import _arrive, _commit_barrier_arrivals  # noqa: E402
@@ -111,14 +113,17 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
     _arrive(exp, SimpleGrouper("room", initial_group_size=3), [first, second, third])
     group = third.active_sync_groups["room"]
 
-    def time_out(participant):
-        db_session.add(
-            Response(
-                participant=participant,
-                label="choose",
-                page_type="ModularPage",
-                metadata={"time_limit_reached": True},
-            )
+    def time_out(participant, waiting_at=None):
+        page = ModularPage("choose", "Pick", time_limit=10, time_estimate=5)
+        if waiting_at is not None:
+            page.links["barrier"] = waiting_at
+        participant.page_deadline = timenow() - timedelta(seconds=10)
+        page.process_response(
+            raw_answer=None,
+            blobs=None,
+            metadata={"time_limit_reached": True},
+            experiment=exp,
+            participant=participant,
         )
 
     time_out(first)
@@ -137,8 +142,8 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
     html = GroupPrompt(group=group, participant=third).group_html
     assert "psynet-group-member--ran-out-of-time" not in html
 
-    # Nor does a timed page answered while waiting, such as a filler page.
-    time_out(first)
+    # Nor does a timed waiting page, such as a filler page.
+    time_out(first, waiting_at=GroupBarrier("next", group_type="room"))
     _arrive(exp, GroupBarrier("next", group_type="room"), [second, third])
     _arrive(exp, GroupBarrier("after", group_type="room"), [first])
     html = GroupPrompt(group=group, participant=third).group_html

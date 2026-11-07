@@ -641,8 +641,7 @@ repeat often enough to fill that time, rounded up to whole passes; here,
 When the barrier releases a participant who is on a waiting page, the page
 ends ``release_grace`` seconds (default 3; see
 :class:`~psynet.sync.Barrier`) after the browser notices the release, which
-is usually within about 2 seconds, unless they submit it first. A page
-whose own ``time_limit`` runs out during that time ends the same way. The page's
+is usually within about 2 seconds, unless they submit it first. The page's
 answer is then not saved: its response is stored with ``"interrupted": True``
 in ``metadata``, its ``on_complete`` doesn't run, and ``participant.answer``
 keeps its previous value (``participant.answer_is_fresh`` is ``False``).

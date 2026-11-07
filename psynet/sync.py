@@ -1118,9 +1118,10 @@ class Barrier(EltCollection):
             barrier_id=self.id,
             barrier_instance=barrier_instance,
             arrival_time=now,
+            ran_out_of_time=bool(participant.timed_out_since_barrier),
         )
+        participant.timed_out_since_barrier = False
         participant.active_barriers[self.id] = link
-        link.ran_out_of_time = _came_from_timed_out_page(participant, now)
         if not self._uses_timeline_hold:
             max_wait_time = call_if_callable(
                 self.max_wait_time, participant=participant
@@ -3839,7 +3840,9 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     released = Column(Boolean, default=False)
     # A Regrouper released the participant without a group.
     sat_out = Column(Boolean, default=False)
-    # The participant came here straight from a page whose time limit ran out.
+    # The last page the participant answered before arriving, other than a
+    # waiting page, ended on its time limit
+    # (``Participant.timed_out_since_barrier``).
     ran_out_of_time = Column(Boolean, default=False)
     # A Regrouper with ``keep_roles`` gave a newcomer this role for the
     # coming split; it is kept once they play it.
@@ -4129,35 +4132,6 @@ def ran_out_of_time_in(participant, group):
     straight from a page whose time limit ran out.
     """
     return any(link.ran_out_of_time for _, link in _waiting_links(participant, group))
-
-
-def _came_from_timed_out_page(participant, arrival_time):
-    """Return whether the participant's last page ended on its time limit.
-
-    Only a page answered outside the participant's other barrier visits
-    (those that started before ``arrival_time``) counts: not one answered
-    before a later visit, so the flag doesn't carry over to a later barrier,
-    nor a ``waiting_logic`` page answered while waiting at an earlier one.
-    A timed waiting page that a release can't end (a trial page, or with
-    ``release_grace=None``) and whose time limit runs out after the release
-    still counts.
-    """
-    response = participant.response
-    if response is None or not (response.metadata or {}).get("time_limit_reached"):
-        return False
-    visit_since = (
-        ParticipantLinkBarrier.query.filter(
-            ParticipantLinkBarrier.participant_id == participant.id,
-            ParticipantLinkBarrier.arrival_time < arrival_time,
-            or_(
-                ParticipantLinkBarrier.departure_time.is_(None),
-                ParticipantLinkBarrier.departure_time >= response.creation_time,
-            ),
-        )
-        .with_entities(ParticipantLinkBarrier.id)
-        .first()
-    )
-    return visit_since is None
 
 
 def _interruptible_waiting_barrier(page, participant):

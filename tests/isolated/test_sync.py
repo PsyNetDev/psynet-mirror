@@ -320,7 +320,7 @@ def test_barrier_definition_and_instance_use_request_transaction(
 
     barrier.receive_participant(participant)
     definition_id = barrier.id
-    instance_id = participant.active_barriers[barrier.id].barrier_instance_id
+    instance_id = participant.active_barriers[barrier.id].barrier_instance.id
 
     with db.engine.connect() as connection:
         assert (
