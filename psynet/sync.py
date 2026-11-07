@@ -2797,7 +2797,8 @@ class Regrouper(Grouper):
             random.sample(members, len(members)), key=lambda m: history.rounds[m.id]
         )
         if self.keep_roles:
-            by_role = [[m for m in members if self.role(m) == r] for r in self.roles]
+            roles = {m.id: self.role(m) for m in members}
+            by_role = [[m for m in members if roles[m.id] == r] for r in self.roles]
             n_groups = min(len(players) for players in by_role)
             players = [players[:n_groups] for players in by_role]
             return self._best_groups(
@@ -2823,7 +2824,14 @@ class Regrouper(Grouper):
         A group counts from when it is formed, even if the participant is
         later removed from it, for example for being away too long.
         """
-        return len(self._links([participant.id]))
+        return (
+            ParticipantLinkSyncGroup.query.join(SyncGroup)
+            .filter(
+                SyncGroup.grouper_id == self.id,
+                ParticipantLinkSyncGroup.participant_id == participant.id,
+            )
+            .count()
+        )
 
     def rounds_sat_out(self, participant) -> int:
         """Return how often ``participant`` was released without a group (see ``release_left_over``)."""
@@ -2837,14 +2845,16 @@ class Regrouper(Grouper):
         Without ``keep_roles`` this is their role in the latest group this
         regrouper put them in, even after they were removed from it, so a
         reloaded page still shows it. It is ``None`` before their first
-        group, and from when they come back to the regrouper until their
-        next group, so also after they sat a round out.
+        group, from when they come back to the regrouper until their next
+        group, so also after they sat a round out, and while they are in a
+        group of this type that another grouper formed.
         """
         links = self._links([participant.id])
         if self.keep_roles:
             kept = next((link.role for link in links if link.role), None)
             return kept or self._waiting_role(participant)
-        if not links:
+        current = participant.active_sync_groups.get(self.group_type)
+        if not links or (current is not None and current.grouper_id != self.id):
             return None
         latest_visit = (
             ParticipantLinkBarrier.query.filter_by(
@@ -3318,7 +3328,7 @@ class SyncGroup(SQLBase, SQLMixin):
     # The grouper that formed the group, when, and for a Regrouper with
     # ``within``, the group it regrouped within.
     grouper_id = Column(String, index=True)
-    created_at = Column(DateTime)
+    created_at = Column(DateTime, default=timenow)
     within_group_id = Column(Integer, index=True)
 
     participant_links = relationship(

@@ -187,6 +187,22 @@ def test_regrouper_countdown_and_form_groups_check_use_the_whole_pool(
         pairs.choose_who_to_release([first, later])
 
 
+@in_consents_experiment
+def test_regrouper_teams_have_their_own_deadlines(in_experiment_directory, db_session):
+    exp = get_experiment()
+    team_grouper = SimpleGrouper("team", initial_group_size=3)
+    pairs = Regrouper("pair", within="team", group_size=2, deadline=30)
+    teams = [_working_participants(exp, 3) for _ in range(2)]
+    for team in teams:
+        _arrive(exp, team_grouper, team)
+
+    # A split in one team does not restart the other team's deadline.
+    for team in teams:
+        _arrive(exp, pairs, team[:2])
+        _backdate_arrivals(pairs, team[:2], 31)
+        assert len(pairs.choose_who_to_release(team[:2])) == 2
+
+
 def _lobby_message(seconds_left):
     if seconds_left is None:
         return "Waiting for another player."
@@ -400,6 +416,22 @@ def _team_and_pairs(exp, n, **kwargs):
     team = _working_participants(exp, n)
     _arrive(exp, team_grouper, team)
     return team, pairs
+
+
+def _pair_same_roles(members, regrouper, **_):
+    ordered = sorted(members, key=regrouper.role)
+    return [ordered[:2], ordered[2:]]
+
+
+@in_consents_experiment
+def test_regrouper_keep_roles_needs_one_member_per_role(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    team, pairs = _team_and_pairs(exp, 4, keep_roles=True, form_groups=_pair_same_roles)
+    _arrive(exp, pairs, team[:3])
+    with pytest.raises(ValueError, match="one member per role"):
+        _arrive(exp, pairs, team[3:])
 
 
 def _partner(participant):
