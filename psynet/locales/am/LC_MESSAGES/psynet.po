@@ -7,6 +7,37 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr "በዚህ ገጽ ላይ ከካሜራ ወይም ከስክሪን ቪዲዮ መቅዳት አማራጭ ነው። ሳይቀዱ መቀጠል ይችላሉ።"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"ይህ ሙከራ ከካሜራ ወይም ከስክሪን ቪዲዮ ይፈልጋል። ሳይቀዱ ከቀጠሉ፣ መልስዎ ይቀመጣል፣ ግን ሙከራውን በተሳካ ሁኔታ "
+"ማጠናቀቅ አይቻልም።"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "ካሜራን አንቃ"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "በመቅዳት ላይ"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "ቀረጻው ቆሟል"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -504,18 +535,18 @@ msgstr "ወደ ቀጣይ ገጽ ሲቀጥሉ የፈቃድ ጥያቄ ማሳያ �
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "ይህ ክፍለ ጊዜ ተጠናቋል። እባኮትን ገጹን እንደገና አድሱ።"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 "የመዋቅር ችግር ተገኝቷል። በብዙ አስተያየት በማህደር ውስጥ እንደምታደርጉ ነው? እባኮትን ሁሉንም ሌሎች ማህደሮች ዝጋችሁ"
 " ገጹን እንደገና አድሱ።"
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "ይህ ክፍለ ጊዜ ተጠናቋል። እባኮትን ገጹን እንደገና አድሱ።"
 
 #: psynet/experiment.py
 #, fuzzy
@@ -565,7 +596,50 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "ቁጥር መስጠት አለብህ!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr "ይህን መልስ ለመቅዳት ማያህን አጋራ። ቀረጻ ሳታደርግ ከቀጠልክ ይህ ሙከራ ላይሳካ ይችላል።"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "ይህን መልስ ለመቅዳት ማያህን አጋራ።"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "ማያህን አጋራ"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "ቀረጻ ሳታደርግ ቀጥል"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "ቀረጻህን በመጫን ላይ ነው፤ እባክህ ይህን ገጽ ክፍት አድርገህ ቆይ።"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"ቀረጻህን መቅረጽ አልተቻለም። እባክህ አሳሽህ ካሜራህን ወይም ማያህን መድረስ እንደሚችል አረጋግጥ፣ ከዚያም ገጹን "
+"እንደገና ጫን።"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr "መልስህ መድረሱን ማረጋገጥ አልቻልንም። እባክህ ግንኙነትህን አረጋግጥና ቀጣይን እንደገና ተጫን።"
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -614,6 +688,95 @@ msgstr "የተለየው ድምፅ የትኛው ነው: 1፣ 2፣ ወይም 3?"
 msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr "እርስዎ ያለዎት ተግባር <strong>የተለየውን ድምፅ ለማወቅ ነው</strong>."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr "ይህ ሙከራ ማይክሮፎንዎ እና ካሜራዎ እየሰሩ መሆናቸውን ማረጋገጥ ይፈልጋል።"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr "አሳሽዎ ማይክሮፎንዎን እና ካሜራዎን ለመጠቀም ፈቃድ ይጠይቃል።"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr "ይህ ሙከራ ማይክሮፎንዎ እየሰራ መሆኑን ማረጋገጥ ይፈልጋል።"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "አሳሽዎ ማይክሮፎንዎን ለመጠቀም ፈቃድ ይጠይቃል።"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "ይህ ሙከራ ካሜራዎ እየሰራ መሆኑን ማረጋገጥ ይፈልጋል።"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "አሳሽዎ ካሜራዎን ለመጠቀም ፈቃድ ይጠይቃል።"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "ፈቃድ ሲጠየቁ እባክዎ «ፍቀድ»ን ይጫኑ።"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"ማይክሮፎንዎን መጠቀም አልቻልንም። በሌላ መተግበሪያ እየተጠቀመበት ሊሆን ይችላል፣ በመሣሪያዎ ላይ ላይገኝ ይችላል፣ ወይም"
+" ፈቃድ አልተሰጠም።"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"ካሜራዎን መጠቀም አልቻልንም። በሌላ መተግበሪያ እየተጠቀመበት ሊሆን ይችላል፣ በመሣሪያዎ ላይ ላይገኝ ይችላል፣ ወይም "
+"ፈቃድ አልተሰጠም።"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "አሳሽዎ የማያ ገጽ ቀረጻን አይደግፍም።"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "አሳሽዎ ቪዲዮ መቅረጽን አይደግፍም።"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "አሳሽዎ ድምፅ ማጫወትን አይደግፍም።"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr "አሳሽዎ ለዚህ ሙከራ የሚያስፈልጉትን ቴክኒካዊ መስፈርቶች አያሟላም።"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2475,6 +2638,17 @@ msgstr "ሁሉንም አስፈላጊ ቁልፎች አልተጫኑም።"
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"አሳሽዎ ጊዜው ያለፈበት ሲሆን ይህ ሙከራ የሚያስፈልገውን ባህሪያት አይደግፍም። እባክዎ አሳሽዎን ወደ የቅርብ ጊዜው ስሪት"
+" ያዘምኑ ወይም ጎግል ክሮምን ይጫኑ።"
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr "በሙከራው ላይ ለመሳተፍ ጎግል ክሮምን መጠቀም አለቦት።"
 
@@ -2494,15 +2668,11 @@ msgstr "ለመቀጠል እባክዎ ከታች ያሉትን መመሪያዎች �
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
-msgstr "በሙከራው ውስጥ ለመሳተፍ የቅርብ ጊዜውን የጉግል ክሮም ስሪት መጠቀም ያስፈልግዎታል።"
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "እየተጠቀሙ ያሉት፡-"
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
+msgstr ""
+"ማንነት የማያሳውቅ የአሰሳ መስኮት እየተጠቀሙ መሆንዎን ማረጋገጥ አልቻልንም። እባክዎ ማንነት የማያሳውቅ መስኮት ከፍተው "
+"እንደገና ይሞክሩ።"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

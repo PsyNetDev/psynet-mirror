@@ -7,6 +7,40 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"Þessi síða getur tekið upp myndskeið með myndavél eða skjá, en það er "
+"valfrjálst. Þú getur haldið áfram án upptöku."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"Þessi tilraun krefst myndskeiðs með myndavél eða skjá. Ef þú heldur áfram án"
+" upptöku vistast svarið þitt, en ekki er hægt að ljúka tilrauninni með góðum"
+" árangri."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "Virkja myndavél"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "Upptaka"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "Upptöku hætt"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -516,12 +550,6 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "Þessi lota er þegar lokið. Vinsamlegast endurhlaðið síðuna."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
@@ -529,6 +557,12 @@ msgstr ""
 "Samstillingarvandamál greind. Ertu að keyra sama tilraun í mörgum "
 "vafragluggum? Vinsamlegast lokaðu öllum öðrum gluggum og endurhlaðaðu "
 "síðuna."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Þessi lota er þegar lokið. Vinsamlegast endurhlaðið síðuna."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -578,7 +612,54 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Þú þarft að gefa upp tölu!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"Deildu skjánum þínum til að taka upp þetta svar. Ef þú heldur áfram án "
+"upptöku gæti þessi tilraun mistekist."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "Deildu skjánum þínum til að taka upp þetta svar."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "Deila skjá"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "Halda áfram án upptöku"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "Verið er að hlaða upptökunni upp. Vinsamlegast hafðu þessa síðu opna."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"Ekki tókst að taka upp myndskeiðið þitt. Gakktu úr skugga um að vafrinn hafi"
+" aðgang að myndavélinni eða skjánum þínum og endurhlaðaðu síðan síðuna."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"Ekki tókst að staðfesta að svarið þitt hefði borist. Athugaðu nettenginguna "
+"og ýttu aftur á Næsta."
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -631,6 +712,99 @@ msgid ""
 msgstr ""
 "Verkefnið þitt verður að dæma <strong>hvaða hljóð er öðruvísi en "
 "hin.</strong>"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr "Þessi tilraun þarf að athuga hvort hljóðneminn og myndavélin virki."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr ""
+"Vafrinn þinn mun biðja um leyfi til að fá aðgang að hljóðnemanum og "
+"myndavélinni."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr "Þessi tilraun þarf að athuga hvort hljóðneminn virki."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "Vafrinn þinn mun biðja um leyfi til að fá aðgang að hljóðnemanum."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "Þessi tilraun þarf að athuga hvort myndavélin virki."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "Vafrinn þinn mun biðja um leyfi til að fá aðgang að myndavélinni."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "Vinsamlegast smelltu á Leyfa þegar beðið er um það."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Ekki tókst að fá aðgang að hljóðnemanum. Annað forrit gæti verið að nota "
+"hann, hann gæti verið ótiltækur í tækinu þínu eða aðgangur hefur ekki verið "
+"veittur."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Ekki tókst að fá aðgang að myndavélinni. Annað forrit gæti verið að nota "
+"hana, hún gæti verið ótiltæk í tækinu þínu eða aðgangur hefur ekki verið "
+"veittur."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "Vafrinn þinn styður ekki skjáupptöku."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "Vafrinn þinn styður ekki myndbandsupptöku."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "Vafrinn þinn styður ekki hljóðspilun."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr "Vafrinn þinn uppfyllir ekki tæknilegar kröfur þessarar tilraunar."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2659,6 +2833,18 @@ msgstr "Þú ýttir ekki á alla nauðsynlega lykla."
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"Vafrinn þinn er úreltur og styður ekki eiginleikana sem þessi tilraun "
+"krefst. Vinsamlegast uppfærðu vafrann í nýjustu útgáfu eða settu upp Google "
+"Chrome."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr "Þú þarft að nota Google Chrome til að taka þátt í tilrauninni."
 
@@ -2678,17 +2864,11 @@ msgstr "Vinsamlegast fylgdu leiðbeiningunum hér að neðan til að halda áfra
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"Þú þarft að nota nýjustu útgáfuna af Google Chrome til að taka þátt í "
-"tilrauninni."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "Þú ert að nota:"
+"Okkur tókst ekki að staðfesta hvort þú sért að nota glugga fyrir einkavafra."
+" Vinsamlegast opnaðu leynimótsglugga og reyndu aftur."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

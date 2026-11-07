@@ -7,6 +7,40 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"या पृष्ठावर कॅमेरा किंवा स्क्रीनचा व्हिडिओ ऐच्छिकरीत्या रेकॉर्ड केला जाऊ "
+"शकतो. रेकॉर्डिंग न करताही तुम्ही पुढे जाऊ शकता."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"या चाचणीसाठी कॅमेरा किंवा स्क्रीनचा व्हिडिओ आवश्यक आहे. रेकॉर्डिंग न करता "
+"पुढे गेल्यास, तुमचे उत्तर जतन केले जाईल; मात्र चाचणी यशस्वीरीत्या पूर्ण होऊ "
+"शकणार नाही."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "कॅमेरा सुरू करा"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "रेकॉर्डिंग"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "रेकॉर्डिंग थांबवले"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -516,18 +550,18 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "ही सत्र आधीच संपली आहे. कृपया पृष्ठ पुन्हा लोड करा."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 "समक्रमण समस्या आढळली. तुम्ही एकाच वेळी अनेक ब्राउझर टॅबमध्ये एकाच प्रयोगात "
 "सहभागी आहात का? कृपया इतर सर्व टॅब बंद करा आणि पृष्ठ रीफ्रेश करा."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "ही सत्र आधीच संपली आहे. कृपया पृष्ठ पुन्हा लोड करा."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -577,7 +611,54 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "तुम्हाला एक संख्या प्रदान करणे आवश्यक आहे!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"हे उत्तर रेकॉर्ड करण्यासाठी तुमची स्क्रीन शेअर करा. रेकॉर्डिंगशिवाय पुढे "
+"गेल्यास ही चाचणी अयशस्वी होऊ शकते."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "हे उत्तर रेकॉर्ड करण्यासाठी तुमची स्क्रीन शेअर करा."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "स्क्रीन शेअर करा"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "रेकॉर्डिंगशिवाय पुढे जा"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "तुमचे रेकॉर्डिंग अपलोड होत आहे. कृपया हे पृष्ठ उघडे ठेवा."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"तुमचे रेकॉर्डिंग कॅप्चर करता आले नाही. कृपया तुमच्या ब्राउझरला कॅमेरा किंवा "
+"स्क्रीन वापरण्याची अनुमती आहे याची खात्री करा आणि नंतर पृष्ठ पुन्हा लोड करा."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"तुमचे उत्तर मिळाल्याची पुष्टी आम्ही करू शकलो नाही. कृपया तुमचे कनेक्शन तपासा"
+" आणि पुन्हा पुढे दाबा."
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -628,6 +709,101 @@ msgstr "कोणता आवाज इतर दोन आवाजांप�
 msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr "तुमचे कार्य <strong>जो आवाज वेगळा आहे तो ओळखा</strong>."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr ""
+"या प्रयोगाला तुमचा मायक्रोफोन आणि कॅमेरा कार्यरत आहेत की नाही हे तपासणे "
+"आवश्यक आहे."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr ""
+"तुमचा ब्राउझर तुमच्या मायक्रोफोन आणि कॅमेराचा वापर करण्याची परवानगी मागेल."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr ""
+"या प्रयोगाला तुमचा मायक्रोफोन कार्यरत आहे की नाही हे तपासणे आवश्यक आहे."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "तुमचा ब्राउझर तुमचा मायक्रोफोन वापरण्याची परवानगी मागेल."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "या प्रयोगाला तुमचा कॅमेरा कार्यरत आहे की नाही हे तपासणे आवश्यक आहे."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "तुमचा ब्राउझर तुमचा कॅमेरा वापरण्याची परवानगी मागेल."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "विचारले असता कृपया ‘अनुमती द्या’ वर क्लिक करा."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"आम्हाला तुमचा मायक्रोफोन वापरता आला नाही. कदाचित तो दुसऱ्या ॲपद्वारे वापरात "
+"असेल, तुमच्या डिव्हाइसवर उपलब्ध नसेल किंवा त्याचा वापर करण्याची परवानगी "
+"दिलेली नसेल."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"आम्हाला तुमचा कॅमेरा वापरता आला नाही. कदाचित तो दुसऱ्या ॲपद्वारे वापरात "
+"असेल, तुमच्या डिव्हाइसवर उपलब्ध नसेल किंवा त्याचा वापर करण्याची परवानगी "
+"दिलेली नसेल."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "तुमचा ब्राउझर स्क्रीन कॅप्चरला समर्थन देत नाही."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "तुमचा ब्राउझर व्हिडिओ रेकॉर्डिंगला समर्थन देत नाही."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "तुमचा ब्राउझर ऑडिओ प्लेबॅकला समर्थन देत नाही."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr "तुमचा ब्राउझर या प्रयोगाच्या तांत्रिक आवश्यकतांची पूर्तता करत नाही."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2632,6 +2808,18 @@ msgstr "तुम्ही सर्व आवश्यक कळा दाब�
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"तुमचा ब्राउझर जुना आहे आणि या प्रयोगासाठी आवश्यक वैशिष्ट्यांना समर्थन देत "
+"नाही. कृपया तुमचा ब्राउझर नवीनतम आवृत्तीवर अपडेट करा किंवा Google Chrome "
+"स्थापित करा."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr ""
 "प्रयोगात सहभागी होण्यासाठी तुम्हाला Google Chrome वापरण्याची आवश्यकता आहे."
@@ -2652,17 +2840,11 @@ msgstr "कृपया पुढे जाण्यासाठी खाली
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"प्रयोगात सहभागी होण्यासाठी तुम्हाला Google Chrome ची नवीनतम आवृत्ती "
-"वापरण्याची आवश्यकता आहे."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "तुम्ही वापरत आहात:"
+"तुम्ही खाजगी ब्राउझिंग विंडो वापरत आहात की नाही हे आम्हाला पडताळता आले नाही."
+" कृपया गुप्त विंडो उघडा आणि पुन्हा प्रयत्न करा."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

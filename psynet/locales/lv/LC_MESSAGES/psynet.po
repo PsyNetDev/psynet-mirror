@@ -7,6 +7,40 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"Šajā lapā pēc izvēles var ierakstīt video no kameras vai ekrāna. Varat "
+"turpināt arī bez ierakstīšanas."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"Šim mēģinājumam nepieciešams video no kameras vai ekrāna. Ja turpināsiet bez"
+" ierakstīšanas, jūsu atbilde tiks saglabāta, taču mēģinājumu nevarēs "
+"veiksmīgi pabeigt."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "Iespējot kameru"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "Notiek ierakstīšana"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "Ierakstīšana apturēta"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -515,12 +549,6 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "Šī sesija jau ir beigusies. Lūdzu, pārlādējiet lapu."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
@@ -528,6 +556,12 @@ msgstr ""
 "Sinhronizācijas problēma konstatēta. Vai jūs veicat to pašu eksperimentu "
 "vairākās pārlūkprogrammas cilnēs? Lūdzu, aizveriet visas citas cilnes un "
 "atsvaidziniet lapu."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Šī sesija jau ir beigusies. Lūdzu, pārlādējiet lapu."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -577,7 +611,54 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Jums jānorāda skaitlis!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"Kopīgojiet ekrānu, lai ierakstītu šo atbildi. Turpinot bez ieraksta, šis "
+"mēģinājums var būt neveiksmīgs."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "Kopīgojiet ekrānu, lai ierakstītu šo atbildi."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "Kopīgot ekrānu"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "Turpināt bez ieraksta"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "Notiek jūsu ieraksta augšupielāde. Lūdzu, turiet šo lapu atvērtu."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"Ierakstu neizdevās uzņemt. Pārliecinieties, vai pārlūkprogramma var piekļūt "
+"kamerai vai ekrānam, un pēc tam ielādējiet lapu no jauna."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"Neizdevās apstiprināt, ka jūsu atbilde ir saņemta. Pārbaudiet savienojumu un"
+" vēlreiz nospiediet “Tālāk”."
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -628,6 +709,95 @@ msgid ""
 msgstr ""
 "Jūsu uzdevums būs spriest <strong>kura skaņa ir atšķirīga no "
 "pārējām</strong>."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr "Šim eksperimentam jāpārbauda, vai darbojas jūsu mikrofons un kamera."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr "Jūsu pārlūkprogramma lūgs atļauju piekļūt jūsu mikrofonam un kamerai."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr "Šim eksperimentam jāpārbauda, vai darbojas jūsu mikrofons."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "Jūsu pārlūkprogramma lūgs atļauju piekļūt jūsu mikrofonam."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "Šim eksperimentam jāpārbauda, vai darbojas jūsu kamera."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "Jūsu pārlūkprogramma lūgs atļauju piekļūt jūsu kamerai."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "Lūdzu, noklikšķiniet uz “Atļaut”, kad tas tiks prasīts."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Neizdevās piekļūt jūsu mikrofonam. Iespējams, to izmanto cita lietotne, tas "
+"nav pieejams jūsu ierīcē vai piekļuve tam nav atļauta."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Neizdevās piekļūt jūsu kamerai. Iespējams, to izmanto cita lietotne, tā nav "
+"pieejama jūsu ierīcē vai piekļuve tai nav atļauta."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "Jūsu pārlūkprogramma neatbalsta ekrāna tveršanu."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "Jūsu pārlūkprogramma neatbalsta video ierakstīšanu."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "Jūsu pārlūkprogramma neatbalsta audio atskaņošanu."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr "Jūsu pārlūkprogramma neatbilst šī eksperimenta tehniskajām prasībām."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2633,6 +2803,18 @@ msgstr "Jūs nenospiedāt visas nepieciešamās taustiņus."
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"Jūsu pārlūkprogramma ir novecojusi un neatbalsta šim eksperimentam "
+"nepieciešamās funkcijas. Lūdzu, atjauniniet pārlūkprogrammu uz jaunāko "
+"versiju vai instalējiet Google Chrome."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr "Jums ir jāizmanto Google Chrome, lai piedalītos eksperimentā."
 
@@ -2652,17 +2834,11 @@ msgstr "Lūdzu, sekojiet tālāk sniegtajiem norādījumiem, lai turpinātu."
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"Jums ir jāizmanto jaunākā Google Chrome versija, lai piedalītos "
-"eksperimentā."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "Jūs izmantojat:"
+"Mums neizdevās pārbaudīt, vai izmantojat privātās pārlūkošanas logu. Lūdzu, "
+"atveriet inkognito logu un mēģiniet vēlreiz."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

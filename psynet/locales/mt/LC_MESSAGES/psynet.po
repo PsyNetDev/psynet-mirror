@@ -7,6 +7,40 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"Din il-paġna tista’ tirrekordja vidjo fakultattiv mill-kamera jew mill-"
+"iskrin. Tista’ tkompli mingħajr ma tirrekordja."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"Din il-prova teħtieġ vidjo mill-kamera jew mill-iskrin. Jekk tkompli "
+"mingħajr ma tirrekordja, it-tweġiba tiegħek tiġi ssejvjata, iżda l-prova ma "
+"tistax titlesta b’suċċess."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "Attiva l-kamera"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "Reġistrazzjoni għaddejja"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "Ir-reġistrazzjoni twaqqfet"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -516,12 +550,6 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "Din is-sessjoni diġà ntemmet. Jekk jogħġbok aġġorna l-paġna."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
@@ -529,6 +557,12 @@ msgstr ""
 "Problema ta' sinkronizzazzjoni skoperta. Qed tmexxi l-istess esperiment "
 "f'diversi tabs tal-browser? Jekk jogħġbok agħlaq it-tabs l-oħra kollha u "
 "aġġorna l-paġna."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Din is-sessjoni diġà ntemmet. Jekk jogħġbok aġġorna l-paġna."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -579,7 +613,57 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Għandek bżonn tipprovdi numru!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"Aqsam l-iskrin tiegħek biex tirrekordja din it-tweġiba. Jekk tkompli "
+"mingħajr reġistrazzjoni, din il-prova tista’ ma tirnexxix."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "Aqsam l-iskrin tiegħek biex tirrekordja din it-tweġiba."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "Aqsam l-iskrin"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "Kompli mingħajr reġistrazzjoni"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr ""
+"Qed tittella’ r-reġistrazzjoni tiegħek. Jekk jogħġbok żomm din il-paġna "
+"miftuħa."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"Ir-reġistrazzjoni tiegħek ma setgħetx tinqabad. Jekk jogħġbok kun żgur li "
+"l-browser tiegħek jista’ jaċċessa l-kamera jew l-iskrin tiegħek, imbagħad "
+"erġa’ għabbi l-paġna."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"Ma stajniex nikkonfermaw li rċevejna t-tweġiba tiegħek. Jekk jogħġbok "
+"iċċekkja l-konnessjoni tiegħek u agħfas “Li jmiss” mill-ġdid."
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -632,6 +716,105 @@ msgid ""
 msgstr ""
 "Il-kompitu tiegħek se jkun li tiġġudika <strong>liema ħoss huwa l-odd wieħed"
 " barra</strong>."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr ""
+"Dan l-esperiment jeħtieġ jiċċekkja li l-mikrofonu u l-kamera tiegħek qed "
+"jaħdmu."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr ""
+"Il-brawżer tiegħek se jitlob il-permess biex jaċċessa l-mikrofonu u l-kamera"
+" tiegħek."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr "Dan l-esperiment jeħtieġ jiċċekkja li l-mikrofonu tiegħek qed jaħdem."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr ""
+"Il-brawżer tiegħek se jitlob il-permess biex jaċċessa l-mikrofonu tiegħek."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "Dan l-esperiment jeħtieġ jiċċekkja li l-kamera tiegħek qed taħdem."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr ""
+"Il-brawżer tiegħek se jitlob il-permess biex jaċċessa l-kamera tiegħek."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "Jekk tintalab, ikklikkja “Ħalli”."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Ma stajniex naċċessaw il-mikrofonu tiegħek. Jista’ jkun qed jintuża minn app"
+" oħra, mhux disponibbli fuq it-tagħmir tiegħek, jew ma ngħatax il-permess "
+"biex naċċessawh."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Ma stajniex naċċessaw il-kamera tiegħek. Tista’ tkun qed tintuża minn app "
+"oħra, mhux disponibbli fuq it-tagħmir tiegħek, jew ma ngħatax il-permess "
+"biex naċċessawha."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "Il-brawżer tiegħek ma jappoġġax il-qbid tal-iskrin."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "Il-brawżer tiegħek ma jappoġġax ir-reġistrazzjoni tal-vidjow."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "Il-brawżer tiegħek ma jappoġġax id-daqq tal-awdjo."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr ""
+"Il-brawżer tiegħek ma jissodisfax ir-rekwiżiti tekniċi għal dan "
+"l-esperiment."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2687,6 +2870,18 @@ msgstr "Ma għafastx iċ-ċwievet kollha meħtieġa."
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"Il-browser tiegħek mhuwiex aġġornat u ma jappoġġjax il-karatteristiċi "
+"meħtieġa għal dan l-esperiment. Jekk jogħġbok aġġorna l-browser tiegħek "
+"għall-aħħar verżjoni jew installa Google Chrome."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr "Għandek bżonn tuża Google Chrome biex tieħu sehem fl-esperiment."
 
@@ -2706,17 +2901,11 @@ msgstr "Jekk jogħġbok segwi l-istruzzjonijiet hawn taħt biex tkompli."
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"Għandek bżonn tuża l-aħħar verżjoni ta' Google Chrome biex tieħu sehem fl-"
-"esperiment."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "Int qed tuża:"
+"Ma stajniex nivverifikaw jekk qed tuża tieqa ta’ browsing privat. Jekk "
+"jogħġbok iftaħ tieqa inkognito u erġa’ pprova."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

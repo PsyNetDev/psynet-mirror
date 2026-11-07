@@ -7,6 +7,40 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"Tällä sivulla voidaan tallentaa valinnaisesti videota kameralla tai "
+"näytöltä. Voit jatkaa tallentamatta."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"Tässä kokeessa tarvitaan video kameralla tai näytöltä. Jos jatkat "
+"tallentamatta, vastauksesi tallennetaan, mutta koetta ei voi suorittaa "
+"onnistuneesti loppuun."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "Ota kamera käyttöön"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "Tallennus käynnissä"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "Tallennus pysäytetty"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -515,18 +549,18 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "Tämä istunto on jo päättynyt. Lataa sivu uudelleen."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 "Synkronointiongelma havaittu. Onko sinulla sama kokeilu auki useassa "
 "selainvälilehdessä? Sulje kaikki muut välilehdet ja päivitä sivu."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Tämä istunto on jo päättynyt. Lataa sivu uudelleen."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -577,7 +611,54 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Sinun täytyy antaa numero!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"Jaa näyttösi, jotta tämä vastaus voidaan tallentaa. Jos jatkat "
+"tallentamatta, tämä koekierros ei ehkä onnistu."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "Jaa näyttösi, jotta tämä vastaus voidaan tallentaa."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "Jaa näyttö"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "Jatka tallentamatta"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "Tallennettasi ladataan. Pidä tämä sivu auki."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"Tallennetta ei voitu ottaa. Varmista, että selaimellasi on pääsy kameraan "
+"tai näyttöön, ja lataa sitten sivu uudelleen."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"Emme voineet vahvistaa, että vastauksesi vastaanotettiin. Tarkista yhteytesi"
+" ja paina Seuraava-painiketta uudelleen."
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -627,6 +708,96 @@ msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr ""
 "Tehtäväsi on arvioida <strong>mikä ääni on erilainen kuin muut</strong>."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr "Tämän kokeen on tarkistettava, että mikrofonisi ja kamerasi toimivat."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr "Selaimesi pyytää lupaa käyttää mikrofoniasi ja kameraasi."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr "Tämän kokeen on tarkistettava, että mikrofonisi toimii."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "Selaimesi pyytää lupaa käyttää mikrofoniasi."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "Tämän kokeen on tarkistettava, että kamerasi toimii."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "Selaimesi pyytää lupaa käyttää kameraasi."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "Napsauta kehotettaessa Salli."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Emme voineet käyttää mikrofoniasi. Se saattaa olla toisen sovelluksen "
+"käytössä, se ei ehkä ole saatavilla laitteessasi tai käyttöoikeutta ei "
+"myönnetty."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Emme voineet käyttää kameraasi. Se saattaa olla toisen sovelluksen käytössä,"
+" se ei ehkä ole saatavilla laitteessasi tai käyttöoikeutta ei myönnetty."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "Selaimesi ei tue näytön tallennusta."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "Selaimesi ei tue videotallennusta."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "Selaimesi ei tue äänen toistoa."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr "Selaimesi ei täytä tämän kokeen teknisiä vaatimuksia."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2631,6 +2802,17 @@ msgstr "Et painanut kaikkia vaadittuja näppäimiä."
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"Selaimesi on vanhentunut eikä tue tämän kokeen edellyttämiä ominaisuuksia. "
+"Päivitä selaimesi uusimpaan versioon tai asenna Google Chrome."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr "Sinun on käytettävä Google Chromea osallistuaksesi kokeeseen."
 
@@ -2650,17 +2832,11 @@ msgstr "Noudata alla olevia ohjeita jatkaaksesi."
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"Sinun on käytettävä Google Chromen uusinta versiota osallistuaksesi "
-"kokeeseen."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "Käytät:"
+"Emme pystyneet varmistamaan, käytätkö yksityistä selausikkunaa. Avaa "
+"incognito-ikkuna ja yritä uudelleen."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

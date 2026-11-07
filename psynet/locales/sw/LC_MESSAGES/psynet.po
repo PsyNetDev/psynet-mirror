@@ -7,6 +7,39 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"Ukurasa huu unaweza kurekodi video kwa hiari kupitia kamera au skrini. "
+"Unaweza kuendelea bila kurekodi."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"Jaribio hili linahitaji video ya kamera au skrini. Ukiendelea bila kurekodi,"
+" jibu lako litahifadhiwa lakini jaribio halitakamilika kwa mafanikio."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "Washa kamera"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "Inarekodi"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "Kurekodi kumesimamishwa"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -515,12 +548,6 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "Kipindi hiki kimekwisha. Tafadhali upya ukurasa."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
@@ -528,6 +555,12 @@ msgstr ""
 "Tatizo la usawazishaji limegunduliwa. Je, unaendesha jaribio sawa katika "
 "tabo nyingi za kivinjari? Tafadhali funga tabo zote nyingine na upya "
 "ukurasa."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Kipindi hiki kimekwisha. Tafadhali upya ukurasa."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -577,7 +610,54 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Unahitaji kutoa nambari!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"Shiriki skrini yako ili kurekodi jibu hili. Ukiendelea bila kurekodi, "
+"jaribio hili linaweza kushindikana."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "Shiriki skrini yako ili kurekodi jibu hili."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "Shiriki skrini"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "Endelea bila kurekodi"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "Inapakia rekodi yako, tafadhali acha ukurasa huu wazi."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"Rekodi yako haikuweza kunaswa. Tafadhali hakikisha kivinjari chako kinaweza "
+"kufikia kamera au skrini yako, kisha pakia upya ukurasa."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"Hatukuweza kuthibitisha kuwa jibu lako limepokelewa. Tafadhali angalia "
+"muunganisho wako kisha ubonyeze Inayofuata tena."
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -627,6 +707,97 @@ msgstr "Ni sauti gani ni tofauti na nyingine mbili: 1, 2, au 3?"
 msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr "Kazi yako itakuwa kuhukumu <strong>sauti gani ni tofauti</strong>."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr ""
+"Jaribio hili linahitaji kuangalia kama maikrofoni na kamera yako vinafanya "
+"kazi."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr "Kivinjari chako kitaomba ruhusa ya kufikia maikrofoni na kamera yako."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr "Jaribio hili linahitaji kuangalia kama maikrofoni yako inafanya kazi."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "Kivinjari chako kitaomba ruhusa ya kufikia maikrofoni yako."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "Jaribio hili linahitaji kuangalia kama kamera yako inafanya kazi."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "Kivinjari chako kitaomba ruhusa ya kufikia kamera yako."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "Tafadhali bofya Ruhusu utakapoombwa."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Hatukuweza kufikia maikrofoni yako. Huenda inatumiwa na programu nyingine, "
+"haipatikani kwenye kifaa chako, au ruhusa ya kuifikia haikutolewa."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Hatukuweza kufikia kamera yako. Huenda inatumiwa na programu nyingine, "
+"haipatikani kwenye kifaa chako, au ruhusa ya kuifikia haikutolewa."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "Kivinjari chako hakiwezi kunasa skrini."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "Kivinjari chako hakiauni kurekodi video."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "Kivinjari chako hakiauni kucheza sauti."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr "Kivinjari chako hakikidhi mahitaji ya kiufundi ya jaribio hili."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2632,6 +2803,18 @@ msgstr "Hujabonyeza funguo zote zinazohitajika."
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"Kivinjari chako kimepitwa na wakati na hakitumii vipengele vinavyohitajika "
+"kwa jaribio hili. Tafadhali sasisha kivinjari chako hadi toleo jipya zaidi "
+"au sakinisha Google Chrome."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr "Unahitaji kutumia Google Chrome kushiriki katika jaribio."
 
@@ -2651,16 +2834,11 @@ msgstr "Tafadhali fuata maelekezo hapa chini ili kuendelea."
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"Unahitaji kutumia toleo jipya la Google Chrome kushiriki katika jaribio."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "Unatumia:"
+"Hatukuweza kuthibitisha ikiwa unatumia dirisha la kuvinjari kwa faragha. "
+"Tafadhali fungua dirisha la incognito na ujaribu tena."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

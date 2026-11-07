@@ -7,6 +7,40 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"Leqephe lena le ka rekota video ea khamera kapa ea skrine ka boikhethelo. U "
+"ka tsoela pele ntle le ho rekota."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"Teko ena e hloka video ea khamera kapa ea skrine. Haeba u tsoela pele ntle "
+"le ho rekota, karabo ea hao e tla bolokoa empa teko e ke ke ea phethoa ka "
+"katleho."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "Bulela khamera"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "Ho a rekota"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "Ho rekota ho emisitsoe"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -519,12 +553,6 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "Seboka sena se se se felile. Ka kopo nchafatsa leqephe."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
@@ -532,6 +560,12 @@ msgstr ""
 "Phoso ea ho hokahanya e fumanoe. Na u tsamaisa teko e tšoanang ka "
 "lifensetere tse ngata tsa sebatli? Ka kopo koala lifensetere tse ling tsohle"
 " 'me u nchafatse leqephe."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Seboka sena se se se felile. Ka kopo nchafatsa leqephe."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -581,7 +615,54 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "O hloka ho fana ka nomoro!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"Arolelana skrine ea hao ho rekota karabo ena. Ho tsoela pele ntle le ho "
+"rekota ho ka etsa hore teko ena e se atlehe."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "Arolelana skrine ea hao ho rekota karabo ena."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "Arolelana skrine"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "Tsoela pele ntle le ho rekota"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "Ho kenya rekoto ea hao, ka kopo boloka leqephe lena le butsoe."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"Re sitiloe ho rekota. Ka kopo, etsa bonnete ba hore sebatli sa hao se khona "
+"ho fihlella khamera kapa skrine ea hao, ebe u bula leqephe hape."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"Ha rea khona ho netefatsa hore karabo ea hao e amohetsoe. Ka kopo, hlahloba "
+"khokahano ea hao ebe u tobetsa E latelang hape."
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -634,6 +715,102 @@ msgid ""
 msgstr ""
 "Tšebetso ea hau e tla ba ho ahlola <strong>ke molumo ofe o fapaneng le e "
 "meng.</strong>"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr ""
+"Teko ena e hloka ho hlahloba hore maekerofounu le khamera ea hau lia "
+"sebetsa."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr ""
+"Sebatli sa hau se tla kopa tumello ea ho sebelisa maekerofounu le khamera ea"
+" hau."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr "Teko ena e hloka ho hlahloba hore maekerofounu ea hau ea sebetsa."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr ""
+"Sebatli sa hau se tla kopa tumello ea ho sebelisa maekerofounu ea hau."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "Teko ena e hloka ho hlahloba hore khamera ea hau ea sebetsa."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "Sebatli sa hau se tla kopa tumello ea ho sebelisa khamera ea hau."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "Ka kopo, tobetsa Lumella ha u botsoa."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Ha rea khona ho sebelisa maekerofounu ea hau. E ka ’na eaba e sebelisoa ke "
+"sesebelisoa se seng, ha e fumanehe sesebelisoeng sa hau, kapa ha ho fanoe ka"
+" tumello."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Ha rea khona ho sebelisa khamera ea hau. E ka ’na eaba e sebelisoa ke "
+"sesebelisoa se seng, ha e fumanehe sesebelisoeng sa hau, kapa ha ho fanoe ka"
+" tumello."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "Sebatli sa hau ha se tšehetse ho rekota se skrineng."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "Sebatli sa hau ha se tšehetse ho rekota video."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "Sebatli sa hau ha se tšehetse ho bapala molumo."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr "Sebatli sa hau ha se fihlelle litlhoko tsa tekheniki tsa teko ena."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2680,6 +2857,18 @@ msgstr "Ha o a tobetsa linotlolo tsohle tse hlokahalang."
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"Sebatli sa hau se siiloe ke nako ebile ha se tšehetse likarolo tse hlokoang "
+"ke teko ena. Ka kopo nchafatsa sebatli sa hau ho mofuta oa morao-rao kapa u "
+"kenye Google Chrome."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr "O hloka ho sebelisa Google Chrome ho nka karolo tekong."
 
@@ -2699,17 +2888,11 @@ msgstr "Ka kopo latela litaelo tse ka tlase ho tsoela pele."
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"O hloka ho sebelisa mofuta oa morao-rao oa Google Chrome ho nka karolo "
-"tekong."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "U sebelisa:"
+"Ha rea khona ho netefatsa hore na u sebelisa fensetere ea ho bala ka "
+"lekunutu. Ka kopo bula fensetere ea incognito ’me u leke hape."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

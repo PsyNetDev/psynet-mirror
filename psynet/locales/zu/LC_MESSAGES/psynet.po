@@ -7,6 +7,40 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"Leli khasi lingarekhoda ividiyo yekhamera noma yesikrini ngokuzithandela. "
+"Ungaqhubeka ngaphandle kokurekhoda."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"Lesi sivivinyo sidinga ividiyo yekhamera noma yesikrini. Uma uqhubeka "
+"ngaphandle kokurekhoda, impendulo yakho izogcinwa kodwa isivivinyo ngeke "
+"siqedwe ngempumelelo."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "Yenza ikhamera isebenze"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "Kuyarekhodwa"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "Ukurekhoda kumisiwe"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -516,12 +550,6 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "Lesi sikhathi sesiphelile. Sicela ulayishe ikhasi kabusha."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
@@ -529,6 +557,12 @@ msgstr ""
 "Inkinga yokuhambisana itholakele. Ingabe usebenzisa ukuhlolwa okufanayo "
 "kumathebhu amaningi e-browser? Sicela uvale wonke amanye amathebhu bese "
 "uvuselela ikhasi."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Lesi sikhathi sesiphelile. Sicela ulayishe ikhasi kabusha."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -578,7 +612,55 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Udinga ukuhlinzeka ngenombolo!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"Yabelana ngesikrini sakho ukuze urekhode le mpendulo. Ukuqhubeka ngaphandle "
+"kokurekhoda kungase kwenze lo mzamo ungaphumeleli."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "Yabelana ngesikrini sakho ukuze urekhode le mpendulo."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "Yabelana ngesikrini"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "Qhubeka ngaphandle kokurekhoda"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "Kulayishwa okurekhodiwe kwakho, sicela ugcine leli khasi livuliwe."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"Ukurekhoda kwakho akukwazanga ukuthathwa. Sicela uqinisekise ukuthi "
+"isiphequluli sakho siyakwazi ukufinyelela ikhamera yakho noma isikrini, bese"
+" ulayisha kabusha ikhasi."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"Asikwazanga ukuqinisekisa ukuthi impendulo yakho yamukelwe. Sicela uhlole "
+"ukuxhumeka kwakho bese ucindezela okuthi Okulandelayo futhi."
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -633,6 +715,103 @@ msgid ""
 msgstr ""
 "Umsebenzi wakho kuzoba ukuhlola <strong>isiphi isandi esihlukile "
 "kwezinye</strong>."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr ""
+"Lolu cwaningo ludinga ukuhlola ukuthi imakrofoni nekhamera yakho kuyasebenza"
+" yini."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr ""
+"Isiphequluli sakho sizocela imvume yokufinyelela imakrofoni nekhamera yakho."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr ""
+"Lolu cwaningo ludinga ukuhlola ukuthi imakrofoni yakho iyasebenza yini."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "Isiphequluli sakho sizocela imvume yokufinyelela imakrofoni yakho."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "Lolu cwaningo ludinga ukuhlola ukuthi ikhamera yakho iyasebenza yini."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "Isiphequluli sakho sizocela imvume yokufinyelela ikhamera yakho."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "Sicela uchofoze okuthi Vumela lapho utshelwa."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Asikwazanga ukufinyelela imakrofoni yakho. Kungenzeka ukuthi isetshenziswa "
+"olunye uhlelo lokusebenza, ayitholakali kudivayisi yakho, noma imvume "
+"ayizange inikezwe."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Asikwazanga ukufinyelela ikhamera yakho. Kungenzeka ukuthi isetshenziswa "
+"olunye uhlelo lokusebenza, ayitholakali kudivayisi yakho, noma imvume "
+"ayizange inikezwe."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "Isiphequluli sakho asikusekeli ukuthwebula isikrini."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "Isiphequluli sakho asikusekeli ukuqoshwa kwevidiyo."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "Isiphequluli sakho asikusekeli ukudlalwa komsindo."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr ""
+"Isiphequluli sakho asihlangabezani nezimfuneko zobuchwepheshe zalolu "
+"cwaningo."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2663,6 +2842,18 @@ msgstr "Awucindezelanga zonke izinkinobho ezidingekayo."
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"Isiphequluli sakho siphelelwe yisikhathi futhi asisekeli izici ezidingekayo "
+"kulolu cwaningo. Sicela ubuyekeze isiphequluli sakho sibe yinguqulo yakamuva"
+" noma ufake i-Google Chrome."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr ""
 "Udinga ukusebenzisa i-Google Chrome ukuze ubambe iqhaza kulolu cwaningo."
@@ -2683,17 +2874,11 @@ msgstr "Sicela ulandele imiyalelo engezansi ukuze uqhubeke."
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"Udinga ukusebenzisa inguqulo yakamuva ye-Google Chrome ukuze ubambe iqhaza "
-"kulolu cwaningo."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "Usebenzisa:"
+"Asikwazanga ukuqinisekisa ukuthi usebenzisa iwindi lokuphequlula "
+"okuyimfihlo. Sicela uvule iwindi le-incognito bese uzama futhi."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

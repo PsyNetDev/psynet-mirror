@@ -7,6 +7,39 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"ໜ້ານີ້ສາມາດບັນທຶກວິດີໂອຈາກກ້ອງ ຫຼື ໜ້າຈໍໄດ້ໂດຍສະໝັກໃຈ. "
+"ທ່ານສາມາດດຳເນີນຕໍ່ໂດຍບໍ່ບັນທຶກກໍໄດ້."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"ການທົດລອງນີ້ຕ້ອງການວິດີໂອຈາກກ້ອງ ຫຼື ໜ້າຈໍ. ຫາກທ່ານດຳເນີນຕໍ່ໂດຍບໍ່ບັນທຶກ, "
+"ຄຳຕອບຂອງທ່ານຈະຖືກບັນທຶກ ແຕ່ຈະບໍ່ສາມາດສຳເລັດການທົດລອງໄດ້."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "ເປີດໃຊ້ກ້ອງ"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "ກຳລັງບັນທຶກ"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "ຢຸດການບັນທຶກແລ້ວ"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -509,18 +542,18 @@ msgstr "ເມື່ອດຳເນີນການໄປຫາໜ້າຕໍ່
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "ການປະຊຸມນີ້ໄດ້ສິ້ນສຸດແລ້ວ. ກະລຸນາຟື້ນຟູໜ້າໃໝ່."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 "ພົບປັນຫາການປະສານງານ. ທ່ານກຳລັງເຮັດການທົດສອບດຽວກັນໃນແຖບເບຣາວເຊີຫຼາຍອັນບໍ? "
 "ກະລຸນາປິດແຖບອື່ນໆ ແລະຟື້ນຟູໜ້າໃໝ່."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "ການປະຊຸມນີ້ໄດ້ສິ້ນສຸດແລ້ວ. ກະລຸນາຟື້ນຟູໜ້າໃໝ່."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -570,7 +603,55 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "ທ່ານຈະຕ້ອງໃສ່ຕົວເລກ!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"ແບ່ງປັນໜ້າຈໍຂອງທ່ານເພື່ອບັນທຶກຄຳຕອບນີ້. "
+"ການດຳເນີນຕໍ່ໂດຍບໍ່ບັນທຶກອາດເຮັດໃຫ້ການທົດລອງຮອບນີ້ບໍ່ສຳເລັດ."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "ແບ່ງປັນໜ້າຈໍຂອງທ່ານເພື່ອບັນທຶກຄຳຕອບນີ້."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "ແບ່ງປັນໜ້າຈໍ"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "ດຳເນີນຕໍ່ໂດຍບໍ່ບັນທຶກ"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "ກຳລັງອັບໂຫຼດການບັນທຶກຂອງທ່ານ, ກະລຸນາເປີດໜ້ານີ້ໄວ້."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"ບໍ່ສາມາດບັນທຶກວິດີໂອຂອງທ່ານໄດ້. "
+"ກະລຸນາກວດໃຫ້ແນ່ໃຈວ່າບຣາວເຊີຂອງທ່ານສາມາດເຂົ້າເຖິງກ້ອງ ຫຼື ໜ້າຈໍໄດ້, "
+"ແລ້ວໂຫຼດໜ້ານີ້ຄືນໃໝ່."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"ພວກເຮົາບໍ່ສາມາດຢືນຢັນໄດ້ວ່າໄດ້ຮັບຄຳຕອບຂອງທ່ານແລ້ວ. ກະລຸນາກວດສອບການເຊື່ອມຕໍ່ "
+"ແລະ ກົດ ຖັດໄປ ອີກຄັ້ງ."
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -620,6 +701,97 @@ msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr ""
 "ຫນ້າທີ່ຂອງເຈົ້າຄືການຕັດສິນ <strong>ວ່າສຽງໃດທີ່ແຕກຕ່າງອອກຈາກອື່ນ</strong>."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr "ການທົດລອງນີ້ຈຳເປັນຕ້ອງກວດສອບວ່າໄມໂຄຣໂຟນ ແລະກ້ອງຂອງເຈົ້າໃຊ້ງານໄດ້."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr "ບຣາວເຊີຂອງເຈົ້າຈະຂໍອະນຸຍາດເຂົ້າເຖິງໄມໂຄຣໂຟນ ແລະກ້ອງຂອງເຈົ້າ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr "ການທົດລອງນີ້ຈຳເປັນຕ້ອງກວດສອບວ່າໄມໂຄຣໂຟນຂອງເຈົ້າໃຊ້ງານໄດ້."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "ບຣາວເຊີຂອງເຈົ້າຈະຂໍອະນຸຍາດເຂົ້າເຖິງໄມໂຄຣໂຟນຂອງເຈົ້າ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "ການທົດລອງນີ້ຈຳເປັນຕ້ອງກວດສອບວ່າກ້ອງຂອງເຈົ້າໃຊ້ງານໄດ້."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "ບຣາວເຊີຂອງເຈົ້າຈະຂໍອະນຸຍາດເຂົ້າເຖິງກ້ອງຂອງເຈົ້າ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "ກະລຸນາຄລິກ «ອະນຸຍາດ» ເມື່ອມີຂໍ້ຄວາມຖາມຂຶ້ນມາ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"ພວກເຮົາບໍ່ສາມາດເຂົ້າເຖິງໄມໂຄຣໂຟນຂອງເຈົ້າໄດ້. "
+"ໄມໂຄຣໂຟນອາດກຳລັງຖືກໃຊ້ໂດຍແອັບອື່ນ, ບໍ່ມີໃນອຸປະກອນຂອງເຈົ້າ, "
+"ຫຼືເຈົ້າບໍ່ໄດ້ອະນຸຍາດໃຫ້ເຂົ້າເຖິງ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"ພວກເຮົາບໍ່ສາມາດເຂົ້າເຖິງກ້ອງຂອງເຈົ້າໄດ້. ກ້ອງອາດກຳລັງຖືກໃຊ້ໂດຍແອັບອື່ນ, "
+"ບໍ່ມີໃນອຸປະກອນຂອງເຈົ້າ, ຫຼືເຈົ້າບໍ່ໄດ້ອະນຸຍາດໃຫ້ເຂົ້າເຖິງ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "ບຣາວເຊີຂອງເຈົ້າບໍ່ຮອງຮັບການບັນທຶກພາບໜ້າຈໍ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "ບຣາວເຊີຂອງເຈົ້າບໍ່ຮອງຮັບການບັນທຶກວິດີໂອ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "ບຣາວເຊີຂອງເຈົ້າບໍ່ຮອງຮັບການຫຼິ້ນສຽງ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr ""
+"ບຣາວເຊີຂອງເຈົ້າບໍ່ມີຄຸນສົມບັດດ້ານເຕັກນິກຕາມທີ່ຈຳເປັນສຳລັບການທົດລອງນີ້."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2594,6 +2766,17 @@ msgstr "ທ່ານບໍ່ໄດ້ກົດປຸ່ມທີ່ຕ້ອງ
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"ບຣາວເຊີຂອງທ່ານລ້າສະໄໝແລ້ວ ແລະບໍ່ຮອງຮັບຄຸນສົມບັດທີ່ຈໍາເປັນສໍາລັບການທົດລອງນີ້."
+" ກະລຸນາອັບເດດບຣາວເຊີຂອງທ່ານເປັນສະບັບລ່າສຸດ ຫຼືຕິດຕັ້ງ Google Chrome."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr "ທ່ານຈໍາເປັນຕ້ອງໃຊ້ Google Chrome ເພື່ອເຂົ້າຮ່ວມການທົດລອງ."
 
@@ -2613,16 +2796,11 @@ msgstr "ກະລຸນາປະຕິບັດຕາມຄໍາແນະນໍ
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"ທ່ານຈໍາເປັນຕ້ອງໃຊ້ສະບັບລ່າສຸດຂອງ Google Chrome ເພື່ອເຂົ້າຮ່ວມການທົດລອງ."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "ທ່ານກໍາລັງໃຊ້:"
+"ພວກເຮົາບໍ່ສາມາດຢືນຢັນໄດ້ວ່າທ່ານກໍາລັງໃຊ້ໜ້າຕ່າງທ່ອງເວັບແບບສ່ວນຕົວຫຼືບໍ່. "
+"ກະລຸນາເປີດໜ້າຕ່າງ Incognito ແລະລອງອີກຄັ້ງ."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

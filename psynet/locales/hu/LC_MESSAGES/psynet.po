@@ -7,6 +7,40 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"Ezen az oldalon opcionálisan videófelvétel készülhet a kamerával vagy a "
+"képernyőről. Felvétel nélkül is folytathatja."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"Ehhez a feladathoz kamerával vagy a képernyőről készült videófelvétel "
+"szükséges. Ha felvétel nélkül folytatja, a válasza mentésre kerül, de a "
+"feladatot nem lehet sikeresen teljesíteni."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "Kamera bekapcsolása"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "Felvétel folyamatban"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "A felvétel leállt"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -513,18 +547,18 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "Ez a munkamenet már befejeződött. Kérjük, töltse újra az oldalt."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 "Szinkronizációs probléma észlelve. Több böngészőfülben futtatja ugyanazt a "
 "kísérletet? Kérjük, zárja be az összes többi fület, és frissítse az oldalt."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Ez a munkamenet már befejeződött. Kérjük, töltse újra az oldalt."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -574,7 +608,55 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Számot kell megadnia!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"Ossza meg a képernyőjét a válasz rögzítéséhez. Ha rögzítés nélkül folytatja,"
+" előfordulhat, hogy ez a próba sikertelen lesz."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "Ossza meg a képernyőjét a válasz rögzítéséhez."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "Képernyő megosztása"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "Folytatás rögzítés nélkül"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr ""
+"A felvétel feltöltése folyamatban van. Kérjük, hagyja nyitva ezt az oldalt."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"Nem sikerült rögzíteni a felvételt. Kérjük, ellenőrizze, hogy a böngésző "
+"hozzáfér-e a kamerához vagy a képernyőhöz, majd töltse újra az oldalt."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"Nem sikerült megerősítenünk, hogy megkaptuk a válaszát. Kérjük, ellenőrizze "
+"a kapcsolatát, majd nyomja meg ismét a Következő gombot."
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -623,6 +705,104 @@ msgstr "Melyik hang különbözik a másik kettőtől: 1, 2 vagy 3?"
 msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr "Az Ön feladata eldönteni, <strong>melyik hang a kakukktojás</strong>."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr ""
+"Ennek a kísérletnek ellenőriznie kell, hogy megfelelően működik-e a "
+"mikrofonja és a kamerája."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr ""
+"A böngészője engedélyt fog kérni a mikrofonjához és a kamerájához való "
+"hozzáféréshez."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr ""
+"Ennek a kísérletnek ellenőriznie kell, hogy megfelelően működik-e a "
+"mikrofonja."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "A böngészője engedélyt fog kérni a mikrofonjához való hozzáféréshez."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr ""
+"Ennek a kísérletnek ellenőriznie kell, hogy megfelelően működik-e a "
+"kamerája."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "A böngészője engedélyt fog kérni a kamerájához való hozzáféréshez."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr ""
+"Kérjük, kattintson az Engedélyezés gombra, amikor erre felszólítást kap."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Nem tudtunk hozzáférni a mikrofonjához. Lehet, hogy egy másik alkalmazás "
+"használja, nem érhető el az eszközén, vagy nem adott hozzáférési engedélyt."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Nem tudtunk hozzáférni a kamerájához. Lehet, hogy egy másik alkalmazás "
+"használja, nem érhető el az eszközén, vagy nem adott hozzáférési engedélyt."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "A böngészője nem támogatja a képernyő rögzítését."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "A böngészője nem támogatja a videofelvételt."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "A böngészője nem támogatja a hanglejátszást."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr "A böngészője nem felel meg a kísérlet technikai követelményeinek."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2645,6 +2825,18 @@ msgstr "Nem nyomott meg minden szükséges billentyűt."
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"Böngészője elavult, és nem támogatja a kísérlethez szükséges funkciókat. "
+"Kérjük, frissítse böngészőjét a legújabb verzióra, vagy telepítse a Google "
+"Chrome-ot."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr "A kísérletben való részvételhez a Google Chrome-ot kell használnia."
 
@@ -2664,17 +2856,11 @@ msgstr "Kérjük, kövesse az alábbi utasításokat a folytatáshoz."
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"A kísérletben való részvételhez a Google Chrome legújabb verzióját kell "
-"használnia."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "Ön a következőt használja:"
+"Nem tudtuk ellenőrizni, hogy privát böngészési ablakot használ-e. Kérjük, "
+"nyisson meg egy inkognitó ablakot, és próbálja újra."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

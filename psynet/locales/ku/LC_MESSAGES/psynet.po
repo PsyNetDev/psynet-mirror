@@ -7,6 +7,40 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"ئەم پەڕەیە دەتوانێت بە هەڵبژاردەیی ڤیدیۆی کامێرا یان شاشە تۆمار بکات. "
+"دەتوانیت بەبێ تۆمارکردن بەردەوام بیت."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"ئەم تاقیکردنەوەیە پێویستی بە ڤیدیۆی کامێرا یان شاشە هەیە. ئەگەر بەبێ "
+"تۆمارکردن بەردەوام بیت، وەڵامەکەت پاشەکەوت دەکرێت، بەڵام تاقیکردنەوەکە بە "
+"سەرکەوتوویی تەواو نابێت."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "چالاککردنی کامێرا"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "تۆمارکردن"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "تۆمارکردن وەستا"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -513,18 +547,18 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "ئەم دانیشتنە پەیوەندیدا کۆتایی هات. تکایە پەڕەکە نوێ بکەرەوە."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 "کێشەی هاوکێشە ڕووی دا. ئایا تۆ ئەم تاقیکردنەوەیە لە چەند تابێکی وێبگەڕی "
 "جیاوازدا دەڕۆی؟ تکایە هەموو تابەکانی تر داخە و پەڕەکە نوێ بکەرەوە."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "ئەم دانیشتنە پەیوەندیدا کۆتایی هات. تکایە پەڕەکە نوێ بکەرەوە."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -574,7 +608,54 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "پێویستە ژمارەیەک دیاری بکەیت!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"شاشەکەت هاوبەش بکە بۆ تۆمارکردنی ئەم وەڵامە. بەردەوامبوون بەبێ تۆمارکردن "
+"لەوانەیە ببێتە هۆی سەرنەکەوتنی ئەم تاقیکردنەوەیە."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "شاشەکەت هاوبەش بکە بۆ تۆمارکردنی ئەم وەڵامە."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "هاوبەشکردنی شاشە"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "بەردەوامبوون بەبێ تۆمارکردن"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "تۆمارەکەت بار دەکرێت، تکایە ئەم پەڕەیە بە کراوەیی بهێڵەوە."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"نەتوانرا تۆمارەکەت وەربگیرێت. تکایە دڵنیابەوە کە وێبگەڕەکەت دەتوانێت دەستی "
+"بە کامێرا یان شاشەکەت بگات، پاشان پەڕەکە دووبارە بار بکەرەوە."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"نەتوانرا پشتڕاست بکەینەوە کە وەڵامەکەت وەرگیراوە. تکایە پەیوەندیت بپشکنە و "
+"دووبارە دوگمەی دواتر دابگرە."
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -626,6 +707,98 @@ msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr ""
 "ئەرکەکەت ئەمەیە کە بەرزەی بکەیت <strong>کەموارە جیاوازەکە چێوە.</strong>"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr ""
+"ئەم تاقیکردنەوەیە پێویستی بەوەیە دڵنیابێتەوە مایکرۆفۆن و کامێراکەت کار "
+"دەکەن."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr ""
+"وێبگەڕەکەت داوات لێدەکات ڕێگە بدەیت دەستگەیشتن بە مایکرۆفۆن و کامێراکەت."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr "ئەم تاقیکردنەوەیە پێویستی بەوەیە دڵنیابێتەوە مایکرۆفۆنەکەت کار دەکات."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "وێبگەڕەکەت داوات لێدەکات ڕێگە بدەیت دەستگەیشتن بە مایکرۆفۆنەکەت."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "ئەم تاقیکردنەوەیە پێویستی بەوەیە دڵنیابێتەوە کامێراکەت کار دەکات."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "وێبگەڕەکەت داوات لێدەکات ڕێگە بدەیت دەستگەیشتن بە کامێراکەت."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "کاتێک داوات لێکرا، تکایە کلیک لە «ڕێگە بدە» بکە."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"نەتوانرا دەست بگات بە مایکرۆفۆنەکەت. لەوانەیە لەلایەن ئەپێکی ترەوە "
+"بەکاربهێنرێت، لە ئامێرەکەتدا بەردەست نەبێت، یان ڕێگەپێدان نەدرابێت."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"نەتوانرا دەست بگات بە کامێراکەت. لەوانەیە لەلایەن ئەپێکی ترەوە بەکاربهێنرێت،"
+" لە ئامێرەکەتدا بەردەست نەبێت، یان ڕێگەپێدان نەدرابێت."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "وێبگەڕەکەت پشتگیری لە گرتنی شاشە ناکات."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "وێبگەڕەکەت پشتگیری لە تۆمارکردنی ڤیدیۆ ناکات."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "وێبگەڕەکەت پشتگیری لە پەخشکردنی دەنگ ناکات."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr "وێبگەڕەکەت پێداویستییە تەکنیکییەکانی ئەم تاقیکردنەوەیە پڕ ناکاتەوە."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2624,6 +2797,17 @@ msgstr "تۆ هەموو کلیلی پێویستەکانت نەکەوتن."
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"وێبگەڕەکەت کۆنە و پشتگیری لە تایبەتمەندییە پێویستەکانی ئەم تاقیکردنەوەیە "
+"ناکات. تکایە وێبگەڕەکەت نوێ بکەرەوە بۆ دوا وەشان، یان گووگڵ کرۆم دابنێ."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr "پێویستە گووگڵ کرۆم بەکاربهێنیت بۆ بەشداریکردن لە تاقیکردنەوەکە."
 
@@ -2643,17 +2827,12 @@ msgstr "تکایە ڕێنماییەکان لەخووشەی خوارەوە بەد
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"پێویستە نوێترین وەشانی گووگڵ کرۆم بەکاربهێنیت بۆ بەشداریکردن لە "
-"تاقیکردنەوەکە."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "تۆ بەکارهێنەری:"
+"نەتوانیمان پشتڕاست بکەینەوە کە ئایا پەنجەرەی ڕوونکردنەوەی پەشپۆشت "
+"بەکاردەهێنیت یان نا. تکایە پەنجەرەیەکی ڕوونکردنەوەی پەشپۆش بکەرەوە و دووبارە"
+" هەوڵ بدەرەوە."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

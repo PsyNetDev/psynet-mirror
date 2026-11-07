@@ -7,6 +7,40 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"ဤစာမျက်နှာတွင် ကင်မရာ သို့မဟုတ် မျက်နှာပြင်ဗီဒီယိုကို "
+"ရွေးချယ်မှတ်တမ်းတင်နိုင်သည်။ မှတ်တမ်းမတင်ဘဲလည်း ဆက်လက်လုပ်ဆောင်နိုင်သည်။"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"ဤစမ်းသပ်မှုအတွက် ကင်မရာ သို့မဟုတ် မျက်နှာပြင်ဗီဒီယို လိုအပ်သည်။ "
+"မှတ်တမ်းမတင်ဘဲ ဆက်လုပ်ပါက သင့်အဖြေကို သိမ်းဆည်းမည်ဖြစ်သော်လည်း စမ်းသပ်မှုကို"
+" အောင်မြင်စွာ အပြီးသတ်နိုင်မည်မဟုတ်ပါ။"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "ကင်မရာဖွင့်ရန်"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "မှတ်တမ်းတင်နေသည်"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "မှတ်တမ်းတင်ခြင်း ရပ်သွားသည်"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -516,13 +550,6 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr ""
-"ဤအစည်းအဝေးသည်ပြီးဆုံးပြီးပါပြီ။ ကျေးဇူးပြု၍ စာမျက်နှာကို ပြန်လည်သက်သာပါ။"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
@@ -530,6 +557,13 @@ msgstr ""
 "အရည်အသွေးပြဿနာတွေ့ရှိခဲ့သည်။ သင်တူညီသော စမ်းသပ်မှုကို ဘရောက်ဇာ တစ်ခုထက်ပို၍ "
 "ဖွင့်ထားပါသလား? ကျေးဇူးပြု၍ အခြားသော တဘ်များကို ပိတ်ပြီး စာမျက်နှာကို "
 "ပြန်လည်သက်သာပါ။"
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr ""
+"ဤအစည်းအဝေးသည်ပြီးဆုံးပြီးပါပြီ။ ကျေးဇူးပြု၍ စာမျက်နှာကို ပြန်လည်သက်သာပါ။"
 
 #: psynet/experiment.py
 #, fuzzy
@@ -580,7 +614,54 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "နံပါတ်တစ်ခုကို ဖြည့်ရန် လိုအပ်ပါသည်!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"ဤအဖြေကို မှတ်တမ်းတင်ရန် သင့်မျက်နှာပြင်ကို မျှဝေပါ။ မှတ်တမ်းမတင်ဘဲ "
+"ဆက်လက်လုပ်ဆောင်ပါက ဤစမ်းသပ်မှု မအောင်မြင်နိုင်ပါ။"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "ဤအဖြေကို မှတ်တမ်းတင်ရန် သင့်မျက်နှာပြင်ကို မျှဝေပါ။"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "မျက်နှာပြင်မျှဝေပါ"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "မှတ်တမ်းမတင်ဘဲ ဆက်လက်လုပ်ဆောင်ပါ"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "သင့်မှတ်တမ်းကို အပ်လုဒ်လုပ်နေပါသည်။ ဤစာမျက်နှာကို ဖွင့်ထားပါ။"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"သင့်မှတ်တမ်းကို ရယူ၍မရပါ။ သင့်ဘရောက်ဆာက ကင်မရာ သို့မဟုတ် မျက်နှာပြင်ကို "
+"အသုံးပြုခွင့်ရှိကြောင်း သေချာစစ်ဆေးပြီး စာမျက်နှာကို ပြန်ဖွင့်ပါ။"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"သင့်အဖြေကို လက်ခံရရှိကြောင်း အတည်မပြုနိုင်ပါ။ သင့်အင်တာနက်ချိတ်ဆက်မှုကို "
+"စစ်ဆေးပြီး “နောက်တစ်ခု” ကို ထပ်မံနှိပ်ပါ။"
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -632,6 +713,103 @@ msgstr "အသံသုံးခုအနက် မတူညီသော အသ�
 msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr "သင့်တာဝန်မှာ <strong>မတူညီသော အသံကို စီစဉ်ခြင်းဖြစ်သည်</strong>။"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr ""
+"ဤစမ်းသပ်မှုသည် သင့်မိုက်ခရိုဖုန်းနှင့် ကင်မရာ အလုပ်လုပ်နေကြောင်း စစ်ဆေးရန် "
+"လိုအပ်ပါသည်။"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr ""
+"သင့်ဘရောက်ဇာသည် မိုက်ခရိုဖုန်းနှင့် ကင်မရာကို အသုံးပြုခွင့်တောင်းပါမည်။"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr ""
+"ဤစမ်းသပ်မှုသည် သင့်မိုက်ခရိုဖုန်း အလုပ်လုပ်နေကြောင်း စစ်ဆေးရန် လိုအပ်ပါသည်။"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "သင့်ဘရောက်ဇာသည် မိုက်ခရိုဖုန်းကို အသုံးပြုခွင့်တောင်းပါမည်။"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "ဤစမ်းသပ်မှုသည် သင့်ကင်မရာ အလုပ်လုပ်နေကြောင်း စစ်ဆေးရန် လိုအပ်ပါသည်။"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "သင့်ဘရောက်ဇာသည် ကင်မရာကို အသုံးပြုခွင့်တောင်းပါမည်။"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "တောင်းဆိုလာပါက “ခွင့်ပြုရန်” ကို နှိပ်ပါ။"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"သင့်မိုက်ခရိုဖုန်းကို အသုံးပြု၍ မရပါ။ ၎င်းကို အခြားအက်ပ်တစ်ခုက "
+"အသုံးပြုနေခြင်း၊ သင့်စက်တွင် မရရှိနိုင်ခြင်း သို့မဟုတ် "
+"အသုံးပြုခွင့်မပေးထားခြင်း ဖြစ်နိုင်ပါသည်။"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"သင့်ကင်မရာကို အသုံးပြု၍ မရပါ။ ၎င်းကို အခြားအက်ပ်တစ်ခုက အသုံးပြုနေခြင်း၊ "
+"သင့်စက်တွင် မရရှိနိုင်ခြင်း သို့မဟုတ် အသုံးပြုခွင့်မပေးထားခြင်း "
+"ဖြစ်နိုင်ပါသည်။"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "သင့်ဘရောက်ဇာသည် မျက်နှာပြင်ဖမ်းယူခြင်းကို မပံ့ပိုးပါ။"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "သင့်ဘရောက်ဇာသည် ဗီဒီယိုရိုက်ကူးခြင်းကို မပံ့ပိုးပါ။"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "သင့်ဘရောက်ဇာသည် အသံဖွင့်ခြင်းကို မပံ့ပိုးပါ။"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr ""
+"သင့်ဘရောက်ဇာသည် ဤစမ်းသပ်မှုအတွက် လိုအပ်သော နည်းပညာဆိုင်ရာ "
+"လိုအပ်ချက်များနှင့် မကိုက်ညီပါ။"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2684,6 +2862,18 @@ msgstr "လိုအပ်သော သော့များအားလုံ�
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"သင့်ဘရောက်ဇာသည် ဗားရှင်းဟောင်းဖြစ်နေပြီး ဤလေ့လာမှုအတွက် လိုအပ်သော "
+"လုပ်ဆောင်ချက်များကို မပံ့ပိုးပါ။ သင့်ဘရောက်ဇာကို နောက်ဆုံးဗားရှင်းသို့ "
+"အပ်ဒိတ်လုပ်ပါ သို့မဟုတ် Google Chrome ကို ထည့်သွင်းပါ။"
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr "လေ့လာမှုတွင် ပါဝင်ရန် Google Chrome ကို သုံးရန် လိုအပ်ပါသည်။"
 
@@ -2703,17 +2893,11 @@ msgstr "ဆက်လက်လုပ်ဆောင်ရန် အောက်�
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"လေ့လာမှုတွင် ပါဝင်ရန် Google Chrome ၏ နောက်ဆုံးဗားရှင်းကို သုံးရန် "
-"လိုအပ်ပါသည်။"
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "သင်အသုံးပြုနေသည်မှာ:"
+"သင် incognito window ကို အသုံးပြုနေခြင်း ဟုတ်မဟုတ် အတည်ပြု၍ မရပါ။ Incognito "
+"window ကို ဖွင့်ပြီး ထပ်မံကြိုးစားပါ။"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

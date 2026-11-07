@@ -7,6 +7,40 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"ᱱᱚᱣᱟ ᱯᱮᱡ ᱨᱮ ᱵᱤᱠᱚᱞᱯᱤᱠ ᱠᱮᱢᱮᱨᱟ ᱟᱨ ᱥᱠᱨᱤᱱ ᱵᱷᱤᱰᱤᱭᱳ ᱨᱮᱠᱚᱨᱰ ᱦᱚᱭ ᱫᱟᱲᱮᱭᱟ᱾ ᱟᱢ ᱨᱮᱠᱚᱨᱰ "
+"ᱵᱟᱝ ᱠᱟᱛᱮᱦᱚᱸ ᱞᱮᱛᱟᱲ ᱦᱚᱪᱚ ᱫᱟᱲᱮᱭᱟᱢ᱾"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"ᱱᱚᱣᱟ ᱴᱨᱟᱭᱟᱞ ᱞᱟᱹᱜᱤᱫ ᱠᱮᱢᱮᱨᱟ ᱟᱨ ᱥᱠᱨᱤᱱ ᱵᱷᱤᱰᱤᱭᱳ ᱫᱚ ᱞᱟᱹᱠᱛᱤᱭᱟ᱾ ᱟᱢ ᱨᱮᱠᱚᱨᱰ ᱵᱟᱝ ᱠᱟᱛᱮ "
+"ᱞᱮᱛᱟᱲ ᱦᱚᱪᱚ ᱞᱮᱠᱷᱟᱱ, ᱟᱢᱟᱜ ᱡᱚᱣᱟᱵ ᱥᱟᱧᱪᱟᱣᱟ, ᱢᱮᱱᱠᱷᱟᱱ ᱴᱨᱟᱭᱟᱞ ᱫᱚ ᱥᱟᱹᱨᱤ ᱛᱮ ᱯᱩᱨᱟᱹ ᱵᱟᱝ "
+"ᱦᱚᱭ ᱫᱟᱲᱮᱭᱟ᱾"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "ᱠᱮᱢᱮᱨᱟ ᱪᱟᱹᱞᱩ ᱢᱮ"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "ᱨᱮᱠᱚᱨᱰ ᱦᱚᱭᱮᱫ ᱠᱟᱱᱟ"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "ᱨᱮᱠᱚᱨᱰ ᱵᱚᱸᱫ ᱮᱱᱟ"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -513,18 +547,18 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "ᱱᱚᱣᱟ ᱥᱮᱥᱚᱱ ᱢᱟᱲᱟᱝ ᱜᱮ ᱢᱩᱪᱟᱫ ᱦᱩᱭ ᱮᱱᱟ। ᱫᱚᱭᱟ ᱠᱟᱛᱮ ᱯᱟᱱᱟ ᱫᱚᱦᱚᱲᱟ ᱨᱤᱞᱚᱰ ᱢᱮ।"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 "Synchronization samasya pao geche. Apne ki ekai experiment ko anek browser "
 "tab re chala reya? Kripaya sab tab band korya encha page ko refresh korya."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "ᱱᱚᱣᱟ ᱥᱮᱥᱚᱱ ᱢᱟᱲᱟᱝ ᱜᱮ ᱢᱩᱪᱟᱫ ᱦᱩᱭ ᱮᱱᱟ। ᱫᱚᱭᱟ ᱠᱟᱛᱮ ᱯᱟᱱᱟ ᱫᱚᱦᱚᱲᱟ ᱨᱤᱞᱚᱰ ᱢᱮ।"
 
 #: psynet/experiment.py
 #, fuzzy
@@ -574,7 +608,54 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "ᱵᱟᱨᱮ ᱠᱷᱚᱱ ᱨᱮᱠᱟᱜᱼᱟ ᱟᱢ ᱠᱷᱚᱱ ᱨᱮᱠᱟᱜᱼᱟ!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"ᱱᱚᱣᱟ ᱡᱚᱣᱟᱵ ᱨᱮᱠᱚᱨᱰ ᱞᱟᱹᱜᱤᱫ ᱟᱢᱟᱜ ᱥᱠᱨᱤᱱ ᱥᱮᱞᱮᱫ ᱢᱮ। ᱨᱮᱠᱚᱨᱰ ᱵᱟᱝ ᱠᱟᱛᱮ ᱞᱟᱦᱟᱜ ᱛᱮ ᱱᱚᱣᱟ "
+"ᱴᱨᱟᱭᱟᱞ ᱵᱟᱝ ᱥᱟᱯᱷᱟᱞ ᱦᱚᱭ ᱫᱟᱲᱮᱭᱟ।"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "ᱱᱚᱣᱟ ᱡᱚᱣᱟᱵ ᱨᱮᱠᱚᱨᱰ ᱞᱟᱹᱜᱤᱫ ᱟᱢᱟᱜ ᱥᱠᱨᱤᱱ ᱥᱮᱞᱮᱫ ᱢᱮ।"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "ᱥᱠᱨᱤᱱ ᱥᱮᱞᱮᱫ"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "ᱨᱮᱠᱚᱨᱰ ᱵᱟᱝ ᱠᱟᱛᱮ ᱞᱟᱦᱟᱜ ᱢᱮ"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "ᱟᱢᱟᱜ ᱨᱮᱠᱚᱨᱰ ᱟᱯᱞᱳᱰ ᱦᱚᱪᱚ ᱠᱟᱱᱟ, ᱫᱚᱭᱟ ᱠᱟᱛᱮ ᱱᱚᱣᱟ ᱯᱮᱡ ᱠᱷᱩᱞᱟ ᱛᱟᱦᱮᱱ ᱢᱮ।"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"ᱟᱢᱟᱜ ᱨᱮᱠᱚᱨᱰ ᱠᱮᱯᱪᱟᱨ ᱵᱟᱝ ᱦᱚᱪᱚ ᱞᱮᱫᱟᱭᱟᱹ। ᱫᱚᱭᱟ ᱠᱟᱛᱮ ᱧᱮᱞ ᱢᱮ ᱡᱮ ᱟᱢᱟᱜ ᱵᱨᱟᱣᱡᱟᱨ ᱫᱚ "
+"ᱠᱮᱢᱮᱨᱟ ᱟᱨᱵᱟᱝ ᱥᱠᱨᱤᱱ ᱨᱮ ᱯᱟᱹᱦᱴᱟᱹ ᱧᱟᱢ ᱫᱟᱲᱮᱭᱟ, ᱛᱟᱭᱚᱢ ᱯᱮᱡ ᱫᱚ ᱫᱚᱦᱲᱟ ᱞᱳᱰ ᱢᱮ।"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"ᱟᱢᱟᱜ ᱡᱚᱣᱟᱵ ᱧᱟᱢ ᱮᱱᱟ ᱠᱟᱱᱟ ᱥᱮ ᱵᱟᱝ, ᱞᱮ ᱵᱟᱝ ᱥᱟᱹᱵᱩᱫ ᱧᱟᱢ ᱞᱮᱫᱟ। ᱫᱚᱭᱟ ᱠᱟᱛᱮ ᱟᱢᱟᱜ "
+"ᱠᱚᱱᱮᱠᱥᱚᱱ ᱧᱮᱞ ᱢᱮ ᱟᱨ ᱫᱚᱦᱲᱟ ᱞᱟᱦᱟᱜ ᱛᱤᱯᱟᱹ ᱢᱮ।"
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -623,6 +704,103 @@ msgstr "ᱛᱚᱲ ᱟᱢᱟᱢ ᱵᱚᱱᱚᱭ ᱫᱤᱦᱨᱟᱹ ᱨᱮᱠᱮ �
 msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr "ᱞᱮᱜᱮ ᱟᱢᱛᱮ ᱛᱚᱲ ᱟᱢᱟᱢ ᱵᱚᱱᱚᱭ ᱠᱚᱱ ᱚᱩᱱᱮ ᱵᱮᱨᱮᱱ <strong>ᱟᱹᱨᱮ ᱠᱚᱲᱟᱜ</strong>."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr ""
+"ᱱᱚᱣᱟ ᱮᱠᱥᱯᱮᱨᱤᱢᱮᱱᱴ ᱫᱚ ᱟᱢᱟᱜ ᱢᱟᱭᱠᱨᱚᱯᱷᱚᱱ ᱟᱨ ᱠᱮᱢᱮᱨᱟ ᱴᱷᱤᱠ ᱞᱮᱠᱟ ᱠᱟᱹᱢᱤ ᱮᱫᱟ ᱥᱮ ᱡᱟᱸᱪ "
+"ᱞᱟᱹᱜᱤᱫ ᱞᱟᱹᱠᱛᱤ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr ""
+"ᱟᱢᱟᱜ ᱵᱨᱟᱣᱡᱟᱨ ᱫᱚ ᱟᱢᱟᱜ ᱢᱟᱭᱠᱨᱚᱯᱷᱚᱱ ᱟᱨ ᱠᱮᱢᱮᱨᱟ ᱵᱮᱵᱷᱟᱨ ᱞᱟᱹᱜᱤᱫ ᱢᱚᱱᱡᱩᱨ ᱠᱷᱚᱱ ᱟᱹᱱᱚᱨᱚᱫᱷ"
+" ᱮᱢᱟᱭᱟ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr ""
+"ᱱᱚᱣᱟ ᱮᱠᱥᱯᱮᱨᱤᱢᱮᱱᱴ ᱫᱚ ᱟᱢᱟᱜ ᱢᱟᱭᱠᱨᱚᱯᱷᱚᱱ ᱴᱷᱤᱠ ᱞᱮᱠᱟ ᱠᱟᱹᱢᱤ ᱮᱫᱟ ᱥᱮ ᱡᱟᱸᱪ ᱞᱟᱹᱜᱤᱫ "
+"ᱞᱟᱹᱠᱛᱤ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr ""
+"ᱟᱢᱟᱜ ᱵᱨᱟᱣᱡᱟᱨ ᱫᱚ ᱟᱢᱟᱜ ᱢᱟᱭᱠᱨᱚᱯᱷᱚᱱ ᱵᱮᱵᱷᱟᱨ ᱞᱟᱹᱜᱤᱫ ᱢᱚᱱᱡᱩᱨ ᱠᱷᱚᱱ ᱟᱹᱱᱚᱨᱚᱫᱷ ᱮᱢᱟᱭᱟ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr ""
+"ᱱᱚᱣᱟ ᱮᱠᱥᱯᱮᱨᱤᱢᱮᱱᱴ ᱫᱚ ᱟᱢᱟᱜ ᱠᱮᱢᱮᱨᱟ ᱴᱷᱤᱠ ᱞᱮᱠᱟ ᱠᱟᱹᱢᱤ ᱮᱫᱟ ᱥᱮ ᱡᱟᱸᱪ ᱞᱟᱹᱜᱤᱫ ᱞᱟᱹᱠᱛᱤ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "ᱟᱢᱟᱜ ᱵᱨᱟᱣᱡᱟᱨ ᱫᱚ ᱟᱢᱟᱜ ᱠᱮᱢᱮᱨᱟ ᱵᱮᱵᱷᱟᱨ ᱞᱟᱹᱜᱤᱫ ᱢᱚᱱᱡᱩᱨ ᱠᱷᱚᱱ ᱟᱹᱱᱚᱨᱚᱫᱷ ᱮᱢᱟᱭᱟ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "ᱡᱚᱠᱷᱚᱱ ᱯᱩᱪᱷᱟᱹ ᱞᱮᱠᱷᱟᱱ, ᱫᱚᱭᱟ ᱠᱟᱛᱮ “ᱢᱚᱱᱡᱩᱨ” ᱵᱩᱛᱟᱢ ᱨᱮ ᱞᱤᱠ ᱢᱮ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"ᱟᱞᱮ ᱟᱢᱟᱜ ᱢᱟᱭᱠᱨᱚᱯᱷᱚᱱ ᱵᱮᱵᱷᱟᱨ ᱠᱟᱛᱮ ᱵᱟᱞ ᱠᱷᱚᱢ ᱞᱮᱱᱟ। ᱱᱚᱣᱟ ᱫᱚ ᱮᱴᱟᱜ ᱮᱯ ᱛᱮ ᱵᱮᱵᱷᱟᱨ "
+"ᱦᱚᱭᱚᱜ ᱠᱟᱱᱟ, ᱟᱢᱟᱜ ᱰᱤᱵᱷᱟᱭᱤᱥ ᱨᱮ ᱵᱟᱹᱱᱩᱜ ᱟᱨᱵᱟᱝ ᱵᱮᱵᱷᱟᱨ ᱞᱟᱹᱜᱤᱫ ᱢᱚᱱᱡᱩᱨ ᱵᱟᱭ ᱮᱢ ᱞᱮᱱᱟ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"ᱟᱞᱮ ᱟᱢᱟᱜ ᱠᱮᱢᱮᱨᱟ ᱵᱮᱵᱷᱟᱨ ᱠᱟᱛᱮ ᱵᱟᱞ ᱠᱷᱚᱢ ᱞᱮᱱᱟ। ᱱᱚᱣᱟ ᱫᱚ ᱮᱴᱟᱜ ᱮᱯ ᱛᱮ ᱵᱮᱵᱷᱟᱨ ᱦᱚᱭᱚᱜ "
+"ᱠᱟᱱᱟ, ᱟᱢᱟᱜ ᱰᱤᱵᱷᱟᱭᱤᱥ ᱨᱮ ᱵᱟᱹᱱᱩᱜ ᱟᱨᱵᱟᱝ ᱵᱮᱵᱷᱟᱨ ᱞᱟᱹᱜᱤᱫ ᱢᱚᱱᱡᱩᱨ ᱵᱟᱭ ᱮᱢ ᱞᱮᱱᱟ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "ᱟᱢᱟᱜ ᱵᱨᱟᱣᱡᱟᱨ ᱥᱠᱨᱤᱱ ᱠᱮᱯᱪᱟᱨ ᱥᱟᱯᱚᱨᱴ ᱵᱟᱭ ᱮᱫᱟ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "ᱟᱢᱟᱜ ᱵᱨᱟᱣᱡᱟᱨ ᱵᱷᱤᱰᱤᱭᱚ ᱨᱮᱠᱚᱨᱰᱤᱝ ᱥᱟᱯᱚᱨᱴ ᱵᱟᱭ ᱮᱫᱟ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "ᱟᱢᱟᱜ ᱵᱨᱟᱣᱡᱟᱨ ᱚᱰᱤᱭᱚ ᱯᱞᱮᱵᱮᱠ ᱥᱟᱯᱚᱨᱴ ᱵᱟᱭ ᱮᱫᱟ."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr "ᱟᱢᱟᱜ ᱵᱨᱟᱣᱡᱟᱨ ᱱᱚᱣᱟ ᱮᱠᱥᱯᱮᱨᱤᱢᱮᱱᱴ ᱨᱮᱭᱟᱜ ᱴᱮᱠᱱᱤᱠᱟᱞ ᱫᱟᱨᱠᱟᱨ ᱠᱚ ᱯᱩᱨᱟᱹ ᱵᱟᱭ ᱮᱫᱟ."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2609,6 +2787,18 @@ msgstr "ᱟᱢ ᱥᱟᱱᱟᱢ ᱞᱟᱹᱠᱛᱤᱭᱟᱱ ᱪᱟᱹᱵᱤ ᱠ�
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"ᱟᱢᱟᱜ ᱵᱽᱨᱟᱣᱩᱡᱟᱨ ᱢᱟᱲᱟᱝ ᱵᱷᱟᱨᱥᱚᱱ ᱠᱟᱱᱟ ᱟᱨ ᱱᱚᱶᱟ ᱮᱠᱥᱯᱮᱨᱤᱢᱮᱸᱴ ᱨᱮ ᱞᱟᱹᱠᱛᱤ ᱜᱩᱱ ᱠᱚ "
+"ᱥᱚᱯᱚᱨᱴ ᱵᱟᱭ ᱮᱫᱟᱭ᱾ ᱟᱢᱟᱜ ᱵᱽᱨᱟᱣᱩᱡᱟᱨ ᱱᱟᱶᱟ ᱵᱷᱟᱨᱥᱚᱱ ᱛᱮ ᱟᱯᱰᱮᱴ ᱢᱮ, ᱟᱨ ᱵᱟᱝᱠᱷᱟᱱ ᱜᱩᱜᱚᱞ "
+"ᱠᱨᱚᱢ ᱤᱱᱥᱴᱚᱞ ᱢᱮ᱾"
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr "ᱮᱠᱥᱯᱮᱨᱤᱢᱮᱸᱴ ᱨᱮ ᱦᱤᱸᱥ ᱦᱟᱛᱟᱣ ᱞᱟᱹᱜᱤᱫ ᱟᱢ ᱜᱩᱜᱚᱞ ᱠᱨᱚᱢ ᱵᱮᱵᱷᱟᱨ ᱛᱮ ᱦᱩᱭᱟᱢᱟ ᱾"
 
@@ -2628,17 +2818,11 @@ msgstr "ᱞᱟᱦᱟᱜ ᱞᱟᱹᱜᱤᱫ ᱫᱟᱭᱟ ᱠᱟᱛᱮ ᱞᱟᱛ�
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"ᱮᱠᱥᱯᱮᱨᱤᱢᱮᱱᱴ ᱨᱮ ᱦᱤᱸᱥ ᱦᱟᱛᱟᱣ ᱞᱟᱹᱜᱤᱫ ᱟᱢ ᱫᱚ ᱜᱩᱜᱚᱞ ᱠᱨᱚᱢ ᱨᱮᱭᱟᱜ ᱱᱟᱶᱟ ᱵᱷᱟᱨᱥᱚᱱ ᱵᱮᱵᱷᱟᱨ "
-"ᱞᱟᱹᱠᱛᱤᱭᱟᱢᱟ᱾"
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "ᱟᱢ ᱵᱮᱵᱷᱟᱨ ᱮᱫᱟᱢ:"
+"ᱟᱢ ᱫᱚ ᱤᱱᱠᱚᱜᱽᱱᱤᱴᱚ ᱣᱤᱱᱰᱚ ᱵᱮᱵᱷᱟᱨ ᱮᱫᱟᱢ ᱥᱮ ᱵᱟᱝ, ᱟᱞᱮ ᱵᱟᱝ ᱱᱤᱥᱴᱟᱹ ᱠᱮᱫᱟᱞᱮᱭᱟ᱾ ᱫᱟᱭᱟ "
+"ᱠᱟᱛᱮ ᱢᱤᱫ ᱤᱱᱠᱚᱜᱽᱱᱤᱴᱚ ᱡᱷᱚᱨᱠᱟ ᱡᱷᱤᱡᱽ ᱢᱮ ᱟᱨ ᱫᱚᱦᱲᱟ ᱪᱮᱥᱴᱟ ᱢᱮ᱾"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy

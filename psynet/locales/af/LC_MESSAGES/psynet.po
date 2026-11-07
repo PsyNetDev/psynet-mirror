@@ -7,6 +7,40 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"Hierdie bladsy kan opsionele video van die kamera of skerm opneem. Jy kan "
+"voortgaan sonder om op te neem."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"Hierdie proeflopie vereis video van die kamera of skerm. As jy voortgaan "
+"sonder om op te neem, word jou antwoord gestoor, maar die proeflopie kan nie"
+" suksesvol voltooi word nie."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "Aktiveer kamera"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "Opname"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "Opname gestop"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -517,12 +551,6 @@ msgstr ""
 #: psynet/experiment.py
 #, fuzzy
 msgctxt "timeline_problem"
-msgid "This session has already ended. Please reload the page."
-msgstr "Hierdie sessie het reeds geëindig. Herlaai asseblief die bladsy."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
@@ -530,6 +558,12 @@ msgstr ""
 "Sinchronisasieprobleem opgespoor. Gebruik jy dieselfde eksperiment in "
 "verskeie blaaier-oortjies? Maak asseblief al die ander oortjies toe en "
 "herlaai die bladsy."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Hierdie sessie het reeds geëindig. Herlaai asseblief die bladsy."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -579,7 +613,54 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Jy moet 'n nommer verskaf!"
 
-#: psynet/page.py
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"Deel jou skerm om hierdie antwoord op te neem. As jy voortgaan sonder om op "
+"te neem, kan hierdie proef onsuksesvol wees."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "Deel jou skerm om hierdie antwoord op te neem."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "Deel skerm"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "Gaan voort sonder om op te neem"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "Jou opname word opgelaai. Hou asseblief hierdie bladsy oop."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"Jou opname kon nie vasgelê word nie. Maak asseblief seker dat jou blaaier "
+"toegang tot jou kamera of skerm het, en herlaai dan die bladsy."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"Ons kon nie bevestig dat jou antwoord ontvang is nie. Kontroleer asseblief "
+"jou verbinding en druk weer op Volgende."
+
+#: psynet/page.py psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "status"
 msgid "Working..."
@@ -632,6 +713,101 @@ msgid ""
 msgstr ""
 "Jou taak is om te oordeel <strong>watter klank die eienaardige een "
 "is</strong>."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr "Hierdie eksperiment moet nagaan of jou mikrofoon en kamera werk."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr ""
+"Jou blaaier sal toestemming vra om toegang tot jou mikrofoon en kamera te "
+"kry."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr "Hierdie eksperiment moet nagaan of jou mikrofoon werk."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "Jou blaaier sal toestemming vra om toegang tot jou mikrofoon te kry."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "Hierdie eksperiment moet nagaan of jou kamera werk."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "Jou blaaier sal toestemming vra om toegang tot jou kamera te kry."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "Klik asseblief op Laat toe wanneer jy gevra word."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Ons kon nie toegang tot jou mikrofoon verkry nie. Dit word dalk deur 'n "
+"ander toepassing gebruik, is dalk nie op jou toestel beskikbaar nie, of "
+"toegang is nie toegestaan nie."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Ons kon nie toegang tot jou kamera verkry nie. Dit word dalk deur 'n ander "
+"toepassing gebruik, is dalk nie op jou toestel beskikbaar nie, of toegang is"
+" nie toegestaan nie."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "Jou blaaier ondersteun nie skermopname nie."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "Jou blaaier ondersteun nie video-opname nie."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "Jou blaaier ondersteun nie oudioterugspeel nie."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr ""
+"Jou blaaier voldoen nie aan die tegniese vereistes vir hierdie eksperiment "
+"nie."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -2657,6 +2833,18 @@ msgstr "Jy het nie al die vereiste sleutels gedruk nie."
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"Jou blaaier is verouderd en ondersteun nie die kenmerke wat hierdie "
+"eksperiment vereis nie. Dateer asseblief jou blaaier op na die nuutste "
+"weergawe of installeer Google Chrome."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
 msgstr "Jy moet Google Chrome gebruik om aan die eksperiment deel te neem."
 
@@ -2676,17 +2864,11 @@ msgstr "Volg asseblief die instruksies hieronder om voort te gaan."
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"Jy moet die nuutste weergawe van Google Chrome gebruik om aan die "
-"eksperiment deel te neem."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "Jy gebruik:"
+"Ons kon nie bevestig of jy ’n privaatblaai-venster gebruik nie. Maak "
+"asseblief ’n incognito-venster oop en probeer weer."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
