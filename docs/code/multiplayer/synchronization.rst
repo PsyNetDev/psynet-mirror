@@ -233,8 +233,10 @@ In the ``lowest_unique_number`` demo, rooms of up to eight players form every
 by a :class:`~psynet.sync.GroupBarrier` with
 ``timeout_between_barriers_action="kick"``, so the rest of the room carries
 on, and they join the next round. Because the choice page has a
-``time_limit``, the barrier waits for that limit before removing them, so
-the timeout itself can stay short:
+``time_limit``, the barrier counts the timeout from the end of that limit,
+so the timeout need not cover the page itself; its 30 seconds give a
+player whose tab is in the background time to notice that the round has
+started:
 
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: play_round

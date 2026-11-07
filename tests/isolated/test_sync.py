@@ -6735,6 +6735,11 @@ def test_timeout_between_barriers_follows_a_timed_page(
     assert no_time_limit.sync_group_links[0].removal_reason == "out_of_time"
     assert earlier_round.sync_group_links[0].removal_reason == "out_of_time"
 
+    # After the group's next barrier, a timed page started before it no longer counts.
+    group.last_barrier_pass_time = timenow() - timedelta(seconds=12)
+    barrier.check_waiting_participants([waiting])
+    assert set(group.active_participants) == {waiting, deciding}
+
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True

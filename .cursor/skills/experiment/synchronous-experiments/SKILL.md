@@ -85,8 +85,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   timeout_between_barriers_action="kick")` so late members are removed and
   pass the barrier, as in the `lowest_unique_number` and `ultimatum_pairing`
   demos; give the round's other barriers `skip_if_not_in_group=True`. On a
-  page with a `time_limit`, the kick waits for the limit, so the timeout can
-  stay short. The regrouper avoids repeat partners, sits out whoever has
+  page with a `time_limit`, the timeout counts from the end of the limit, so
+  it need not cover the page; the demos use 30 s so that a background tab
+  can notice the round has started. The regrouper avoids repeat partners, sits out whoever has
   played most, and counts rounds (`rounds_played`, `rounds_sat_out`); pass
   `roles=[...]` (with `keep_roles=True` for fixed roles) and read
   `regrouper.role(participant)` instead of assigning roles yourself. With
