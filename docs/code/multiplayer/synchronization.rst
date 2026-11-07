@@ -136,84 +136,38 @@ should not hold up everyone else, and should not be failed either. A
 :class:`~psynet.sync.Regrouper` placed at the start of each round handles
 this. Each time a participant reaches it, they leave their previous group of
 that type and wait for the next round. The regrouper then splits everyone
-waiting into new groups:
+waiting into new groups, when every member of the participant's ``within``
+group (such as their team) is waiting, or when ``deadline`` passes, without
+whoever isn't ready yet. They join the next round. The groups it forms are
+never dissolved when a member leaves, so the members who are left continue
+the round on their own.
 
-- when every member of the participant's ``within`` group is waiting, or
-- when ``deadline`` passes, without whoever isn't ready yet.
+.. code-block:: python
 
-Whoever missed the round joins the next one. The groups it forms are never
-dissolved when a member leaves, so members who are left continue the round
-on their own.
+    pairing = Regrouper(
+        "pair",
+        within="team",
+        group_size=2,
+        roles=["proposer", "responder"],
+        deadline=50,
+        release_left_over=True,  # an odd player out sits the round out
+    )
 
-``group_size`` and ``min_group_size`` (default 2)
-    The largest and smallest group to form. Everyone waiting is split into
-    balanced groups, for example rooms of 8, 8, 7 and 7 for 30 participants.
-
-``deadline``
-    Seconds since the first waiting participant arrived, or since the previous
-    round started if that is later. ``Clock(45)`` instead starts rounds at fixed
-    45-second ticks, whether or not everyone is ready earlier. Make it longer
-    than a round takes, so that players who finish early are not split again
-    before the rest are back.
-
-``within`` (default: ``None``)
-    The ``group_type`` of a group to regroup within, such as a team formed
-    earlier by a :class:`~psynet.sync.SimpleGrouper`. Participants are only
-    grouped with members of their own team, and each team's rounds run on
-    their own: a slow request from one team never delays another team's
-    round. Without ``within``, everyone waiting is one pool, and a
-    ``deadline`` is required.
-
-``release_left_over`` (default: ``False``)
-    If ``True``, participants who don't fit into a group, such as an odd one
-    out when pairing, continue ungrouped so that they can see a sit-out page.
-    If ``False``, they wait for the next round. With ``True`` and ``within``,
-    someone waiting alone waits for teammates who are still playing for up to
-    one more ``deadline`` (or ``Clock`` tick) before sitting out, so they don't
-    sit out round after round while a slow round finishes. ``max_wait_time``
-    must then be longer than twice the deadline (or ``Clock`` period). Taking participants who stop
-    playing out of the ``within`` group with ``remove_participant`` means
-    nobody waits for them.
-
-``roles`` (default: ``None``)
-    Role names, for example ``["proposer", "responder"]``. Each group then has
-    one member per role, so ``group_size`` must equal the number of roles.
-    By default each member gets the role they have had least often, so roles
-    alternate; with ``keep_roles=True``, participants keep the role they
-    first play, newcomers get the role that lets the most waiting players
-    play (or else the rarer role among participants still in the
-    experiment), and players of a role nobody is free to pair with sit out.
-    Each group records the regrouper that formed it and each member's role
-    in it, so exports show who played which role in every round.
-
-``form_groups``
-    A function of ``members``, ``within_group`` and ``regrouper`` that returns
-    the groups as lists of participants, replacing the default grouping.
-    Members not placed in a group are left over. With ``roles`` but not
-    ``keep_roles``, list each group's members in the order of ``roles``. You can also subclass
-    :class:`~psynet.sync.Regrouper` and override
-    :meth:`~psynet.sync.Regrouper.form_groups`.
-
-``on_release``
-    A function called after each split that forms at least one group, with
-    ``within_group``, ``groups``, ``left_over`` and ``regrouper``.
-
-By default, when not everyone fits into a group, those who have played the
-most rounds sit out, and participants are kept apart from last round's
-partners where possible. The regrouper keeps count for each participant:
-:meth:`~psynet.sync.Regrouper.rounds_played`,
+By default, those who have played the most rounds sit out when not
+everyone fits, players are kept apart from last round's partners where
+possible, and roles alternate. The regrouper counts each participant's
+rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
 :meth:`~psynet.sync.Regrouper.rounds_sat_out`,
 :meth:`~psynet.sync.Regrouper.sat_out` (for the latest round) and, with
-``roles``, :meth:`~psynet.sync.Regrouper.role`. It does this while holding its lock,
-so two rounds starting at once cannot give two players the same seat.
+``roles``, :meth:`~psynet.sync.Regrouper.role`.
 
-``content``
-    The waiting message. A ``{SECONDS}`` placeholder shows a live countdown to
-    the deadline, for example ``"The next round starts in {SECONDS} s."``.
-    See :ref:`countdown messages <sync-countdown-messages>`.
+:doc:`games_in_rounds` builds a complete game this way, including moving
+slow players on and sitting out. :class:`~psynet.sync.Regrouper` lists all
+its settings, for example ``Clock`` deadlines, fixed roles and custom
+grouping.
 
-``max_wait_time`` (default: 300 seconds)
-    The longest a participant waits at the regrouper before being failed.
+``content`` is the waiting message. A ``{SECONDS}`` placeholder shows a live
+countdown to the deadline, for example ``"The next round starts in {SECONDS} s."``.
 
 .. _sync-countdown-messages:
 
@@ -228,46 +182,6 @@ becoming known:
 
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: round_message
-
-In the ``lowest_unique_number`` demo, rooms of up to eight players form every
-10 seconds. A player who closes their choice page is removed from their room
-by a :class:`~psynet.sync.GroupBarrier` with
-``timeout_between_barriers_action="kick"``, so the rest of the room carries
-on, and they join the next round. Because the choice page has a
-``time_limit``, the barrier counts the timeout from the end of that limit,
-so the timeout need not cover the page itself; its 30 seconds give a
-player whose tab is in the background time to notice that the round has
-started:
-
-.. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
-   :pyobject: play_round
-
-The kicked player sees "Your group went on without you. Please continue." on the progress bar
-straight away (pass ``on_arrival_message`` to change it), and is no longer in
-a room when they reach the barrier. A barrier that kicks lets participants
-who are not in a group pass straight through (``skip_if_not_in_group``
-defaults to ``True``), and ``show_result`` then tells them they sat the round
-out. Pass ``skip_if_not_in_group=True`` to the round's other barriers too.
-Without it, a participant who reaches a group barrier outside a group gets an
-error.
-
-In the ``ultimatum_pairing`` demo, teams form in a lobby and are re-paired
-every round. The lobby starts a smaller team after a minute and lets
-latecomers join until the team's second round starts:
-
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :start-at: SimpleGrouper(
-   :end-before: while_loop(
-   :dedent: 8
-
-Each round pairs the team's players, avoiding last round's partners and
-alternating who proposes, and starts as soon as the whole team is ready. The
-game reads the regrouper's counts and roles, for example
-``pairing.role(participant)``:
-
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :start-at: pairing = Regrouper(
-   :end-before: def play_round
 
 Keeping a group in step
 -----------------------
@@ -335,7 +249,7 @@ live don't show the notice, since the ticks say the same.
 
 ``content`` can also be a module-level function of the participant, so that
 members waiting at the same barrier see different messages, for example by
-role (it can also take ``seconds_left``; see :ref:`sync-countdown-messages`):
+role (it can also take ``seconds_left``; see :ref:`countdown messages <sync-countdown-messages>`):
 
 .. code-block:: python
 
@@ -429,7 +343,8 @@ answered once they wait at a barrier of the group, typically the barrier
 after the decision page, and the ticks appear live as members arrive (this
 uses the barrier's arrival updates, so it needs ``notify_arrivals``). A
 member who reached the barrier because their page's time limit ran out gets
-a grey dash instead, and screen readers announce that they ran out of time. Pass
+a grey dash instead, and screen readers announce that they ran out of time
+(see the :ref:`picture <rounds-variations>` in :doc:`games_in_rounds`). Pass
 ``show_progress=False`` to hide the ticks, or ``has_answered`` to decide who has
 answered when the page is drawn (members who ran out of time then get a tick too). Members who join the group appear live
 too, and members who leave are faded (see below), on any page without
@@ -557,7 +472,8 @@ Timeouts
     seconds) has passed after that, because the page would have moved them
     on had they still been there. So the timeout need not be longer than the
     pages' time limits; it covers pages without one, for example a member
-    who closed their tab before the timed page loaded.
+    who closed their tab before the timed page loaded. See
+    :ref:`a worked example <rounds-slow-players>`.
 
     At a group's first barrier the timeout counts from when each member joined
     the group, which for its original members is when it formed.

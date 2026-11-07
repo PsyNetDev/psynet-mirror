@@ -69,6 +69,7 @@ has written, checking it, and changing it yourself.
    :maxdepth: 1
 
    multiplayer/synchronization
+   multiplayer/games_in_rounds
    multiplayer/chatroom
    multiplayer/realtime_interaction
 

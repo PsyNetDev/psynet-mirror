@@ -1,0 +1,1 @@
+Added a "Games played in rounds" page that builds the `ultimatum_pairing` demo step by step, with screenshots: forming teams, pairing players each round with roles, timed decisions, moving slow players on, scoring, sitting out and ending the game. The synchronization guide now summarizes `Regrouper` and links to it.
