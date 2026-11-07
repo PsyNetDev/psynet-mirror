@@ -63,9 +63,10 @@ def score_round(participants: List[Participant]):
     """Record the room's choices and winning number for every player in the room.
 
     Players who ran out of time have no choice and sit out the round.
+    Nobody wins when only one player chose.
     """
     choices = {p.id: p.var.choice for p in participants if p.var.choice is not None}
-    winner = lowest_unique(choices)
+    winner = lowest_unique(choices) if len(choices) > 1 else None
     for participant in participants:
         participant.var.last_round = {
             "choices": sorted(choices.values()),

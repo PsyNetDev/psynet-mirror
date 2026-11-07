@@ -65,7 +65,7 @@
     flex: 1;
 }
 
-/* The sender's animal, a little taller than the text beside it. */
+/* The sender's animal, about twice the height of the name beside it. */
 .chatroom-sender-sticker {
     font-size: 0.6em;
     margin-inline-end: 0.5em;
