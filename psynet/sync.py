@@ -3369,10 +3369,12 @@ class SyncGroup(SQLBase, SQLMixin):
     def add_participant(self, participant: Participant):
         """Add a participant to the group (creates an active link).
 
-        If an active member already has the newcomer's pseudonym and this is
-        the newcomer's first group, the newcomer is given a free one, so
-        members can tell each other apart. Later groups never rename anyone,
-        so a pseudonym stays the same once others have seen it.
+        If an active member already has the newcomer's derived pseudonym and
+        this is the newcomer's first group, the newcomer is given a free one,
+        so members can tell each other apart. Pseudonyms set with
+        :meth:`~psynet.participant.Participant.set_pseudonym` are kept, and
+        later groups never rename anyone, so a pseudonym stays the same once
+        others have seen it.
         """
         self._give_distinct_pseudonym(participant)
         _forget_active_sync_group(participant)
@@ -3407,11 +3409,15 @@ class SyncGroup(SQLBase, SQLMixin):
         pseudonym = participant.pseudonym
         keys = (pseudonym.color, pseudonym.animal)
         first_group = not participant.sync_group_links
-        if keys in taken and first_group:
+        # Before the first group, stored keys can only come from set_pseudonym.
+        derived = (
+            participant.pseudonym_color is None or participant.pseudonym_animal is None
+        )
+        if keys in taken and first_group and derived:
             from .experiment import get_experiment
 
-            replacement = get_experiment().pseudonym_scheme.replacement(
-                taken, participant
+            replacement = get_experiment().pseudonym_scheme.assign_distinct(
+                participant, taken
             )
             if replacement is not None:
                 participant.set_pseudonym(*replacement)

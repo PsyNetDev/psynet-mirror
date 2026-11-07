@@ -397,12 +397,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         The server-owned :class:`~psynet.exit.ExitPlan` snapshot for this
         participant's terminal outcome.
 
-    group_removal_notice : dict or None
-        The progress-bar notice for a participant whom a
-        :class:`~psynet.sync.GroupBarrier` removed from their group, with the
-        ``page_uuid`` of the page it belongs to.
-        Should not be modified directly.
-
     answer : object
         The most recent answer submitted by the participant.
         Can take any form that can be automatically serialized to JSON.
@@ -473,6 +467,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     progress_fixes = Column(PythonList)
 
     page_uuid = Column(String)
+    # Framework bookkeeping, not author API: page_deadline, waiting_barrier_id,
+    # timed_out_since_barrier, group_removal_notice and the pseudonym_* keys.
     # When the latest timed page's ``time_limit`` runs out; see ``Page.time_limit``.
     page_deadline = Column(DateTime)
     # The barrier whose ``waiting_logic`` the participant is in, set on
@@ -489,9 +485,12 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     exit_plan = Column(PythonDict)
     complete = Column(Boolean)
     pending_redirect = Column(String)
+    # The progress-bar notice for a participant whom a GroupBarrier removed
+    # from their group, with the ``page_uuid`` of the page it belongs to.
     group_removal_notice = Column(PythonDict)
     # Keys into Experiment.pseudonym_scheme, set only when a pseudonym is chosen
     # rather than derived from the participant ID; see ``Participant.pseudonym``.
+    # Use ``set_pseudonym`` rather than writing them.
     pseudonym_color = Column(String)
     pseudonym_animal = Column(String)
     answer = Column(PythonObject)
@@ -625,21 +624,20 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         """
         from .experiment import get_experiment
 
-        return get_experiment().pseudonym_scheme.pseudonym(self)
+        return get_experiment().pseudonym_scheme._pseudonym(self)
 
     def set_pseudonym(self, color: str, animal: str):
         """Give this participant a particular pseudonym, by colour and animal key.
 
         The keys must exist in the experiment's
-        :class:`~psynet.pseudonym.PseudonymScheme`. PsyNet does not check
-        that other participants have a different pseudonym here; joining
-        their first :class:`~psynet.sync.SyncGroup` does, renaming a newcomer
-        whose pseudonym an active member already has. Later groups never
-        rename anyone.
+        :class:`~psynet.pseudonym.PseudonymScheme`. A pseudonym set here is
+        kept, even if another member of a group has it too; only derived
+        pseudonyms are made unique, in the participant's first
+        :class:`~psynet.sync.SyncGroup` (see :doc:`/code/multiplayer/pseudonyms`).
         """
         from .experiment import get_experiment
 
-        get_experiment().pseudonym_scheme.make(color, animal)
+        get_experiment().pseudonym_scheme._make(color, animal)
         self.pseudonym_color = color
         self.pseudonym_animal = animal
 
