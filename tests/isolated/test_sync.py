@@ -45,6 +45,7 @@ from psynet.sync import (
     BarrierDefinition,
     BarrierInstance,
     GroupBarrier,
+    ParticipantLinkBarrier,
     SimpleGrouper,
     SimpleSyncGroup,
     SyncGroup,
@@ -3496,24 +3497,39 @@ def test_check_barriers_recovers_inactive_grouped_instance_with_waiters(
     assert _barrier_link_released(first_id, barrier_id) is False
 
 
+@pytest.mark.parametrize("waiting_page", [False, True])
 @pytest.mark.parametrize("action", ["fail", "kick"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_check_barriers_times_out_waiters_past_their_deadline(
-    in_experiment_directory, db_session, action
+    in_experiment_directory, db_session, action, waiting_page
 ):
     """A waiter who left is timed out at their deadline, with the usual knock-on."""
     exp = get_experiment()
     overdue, partner = _pair_sync_group(exp, db_session)[0]
     patient, _ = _pair_sync_group(exp, db_session)[0]
     barrier = GroupBarrier(
-        id_="abandoned", group_type="main", max_wait_time=300, max_wait_action=action
+        id_="abandoned",
+        group_type="main",
+        max_wait_time=300,
+        max_wait_action=action,
+        waiting_logic=InfoPage("Filler", time_estimate=5) if waiting_page else None,
     )
     for participant in (overdue, patient):
         _arrive_at_group_barrier(exp, barrier, participant)
     db.session.commit()
-    TimelineHoldRecord.query.filter_by(participant_id=overdue.id).update(
+    deadline_rows = (
+        ParticipantLinkBarrier.query if waiting_page else TimelineHoldRecord.query
+    )
+    arrival_deadline = deadline_rows.filter_by(participant_id=overdue.id).one()
+    arrived_at = (
+        arrival_deadline.arrival_time if waiting_page else arrival_deadline.started_at
+    )
+    assert (arrival_deadline.deadline_at - arrived_at).total_seconds() == (
+        pytest.approx(300)
+    )
+    deadline_rows.filter_by(participant_id=overdue.id).update(
         {"deadline_at": timenow() - timedelta(seconds=1)}
     )
     db.session.commit()
@@ -3531,6 +3547,96 @@ def test_check_barriers_times_out_waiters_past_their_deadline(
     assert partner.failure_tags == ["sync group below minimum size"]
     assert not patient.failed
     assert _barrier_link_released(patient.id, barrier.id) is False
+
+
+_max_wait_time_calls = []
+
+
+def _shrinking_max_wait_time(participant):
+    _max_wait_time_calls.append(participant.id)
+    return 300 if len(_max_wait_time_calls) == 1 else 1
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_callable_max_wait_time_is_evaluated_once_on_arrival(
+    in_experiment_directory, db_session
+):
+    """A callable ``max_wait_time`` fixes the waiting-page deadline on arrival."""
+    _max_wait_time_calls.clear()
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        GroupBarrier(
+            id_="callable_deadline",
+            group_type="main",
+            max_wait_time=_shrinking_max_wait_time,
+            waiting_logic=InfoPage("Filler", time_estimate=5),
+        ),
+        ModularPage("after", "After", time_estimate=1),
+    )
+    try:
+        (waiter, _), _ = _pair_sync_group(exp, db_session)
+        waiter_id = waiter.id
+        assert _json_timeline(exp, waiter).status_code == 200
+        link = ParticipantLinkBarrier.query.filter_by(participant_id=waiter_id).one()
+        assert (link.deadline_at - link.arrival_time).total_seconds() == (
+            pytest.approx(300)
+        )
+        time.sleep(1.1)
+        check_barriers()
+
+        waiter = Participant.query.get(waiter_id)
+        _process_response(exp, waiter, waiter.page_uuid)
+        waiter = Participant.query.get(waiter_id)
+        assert not waiter.failed
+        assert _max_wait_time_calls == [waiter_id]
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize("action", ["fail", "kick"])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_waiting_page_timeout_applies_on_the_next_request(
+    in_experiment_directory, db_session, action
+):
+    """A waiter timed out mid filler page is failed, or continues alone, on their next Next."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        GroupBarrier(
+            id_="filler_timeout",
+            group_type="main",
+            max_wait_time=300,
+            max_wait_action=action,
+            waiting_logic=InfoPage("Filler", time_estimate=5),
+        ),
+        ModularPage("choose_action", "Choose your action", time_estimate=1),
+    )
+    try:
+        (waiter, _), _ = _pair_sync_group(exp, db_session)
+        waiter_id = waiter.id
+        assert _json_timeline(exp, waiter).status_code == 200
+        ParticipantLinkBarrier.query.filter_by(participant_id=waiter_id).update(
+            {"deadline_at": timenow() - timedelta(seconds=1)}
+        )
+        db_session.commit()
+        check_barriers()
+
+        waiter = Participant.query.get(waiter_id)
+        _process_response(exp, waiter, waiter.page_uuid)
+        waiter = Participant.query.get(waiter_id)
+        if action == "fail":
+            assert waiter.failed
+            assert exp.timeline.get_participant_branch(waiter) == "unsuccessful_end"
+        else:
+            assert not waiter.failed
+            assert exp.timeline.get_current_elt(exp, waiter).label == "choose_action"
+    finally:
+        exp.timeline = original_timeline
 
 
 @pytest.mark.parametrize(
@@ -6440,6 +6546,7 @@ def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
     assert barrier(timeout_between_barriers_time=30).max_wait_time == 50
     with pytest.raises(ValueError, match="must be longer"):
         barrier(timeout_between_barriers_time=30, max_wait_time=30)
+    barrier(timeout_between_barriers_time=30, max_wait_time=_shrinking_max_wait_time)
     assert (
         barrier(timeout_between_barriers_time=30, max_wait_time=None).max_wait_time
         is None

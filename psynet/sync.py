@@ -55,8 +55,9 @@ this module. That loop:
 
 - Finishes dissolving sync groups whose dissolution skipped members who were
   busy in their own request (see ``SyncGroup._dissolve``).
-- Applies ``max_wait_time`` to waiters whose hold deadline has passed. Their
-  own request normally does this, so waiters who left would otherwise stay.
+- Applies ``max_wait_time`` to waiters whose hold or waiting-page deadline has
+  passed. Their own request normally does this, so waiters who left would
+  otherwise stay.
 - Finds waiting barrier instances and checks them least recently checked
   first, new or changed ones with a head start, within a per-sweep time budget.
 - Claims each with a PostgreSQL advisory transaction lock on a dedicated
@@ -99,6 +100,7 @@ import random
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import timedelta
 from math import ceil, floor
 from typing import Callable, List, Literal, Optional, Union
 
@@ -115,6 +117,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    or_,
     select,
     text,
 )
@@ -164,6 +167,7 @@ from psynet.timeline_hold import (
 from psynet.utils import (
     NoArgumentProvided,
     call_function_with_context,
+    call_if_callable,
     get_config,
     get_logger,
 )
@@ -840,6 +844,10 @@ class Barrier(EltCollection):
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded then the participant will be failed and sent to the end of the experiment.
+        May also be a function of ``participant``, evaluated once when the participant arrives.
+        This is a hard limit counted from arrival: with explicit ``waiting_logic``, the server applies it
+        even while the participant is partway through a filler page, so make it long enough to cover long
+        filler pages (for example trials used as filler).
 
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
@@ -951,7 +959,7 @@ class Barrier(EltCollection):
                 ),
                 logic=self.waiting_logic,
                 expected_repetitions=self.waiting_logic_expected_repetitions,
-                max_loop_time=self.max_wait_time,
+                max_loop_time=self._arrival_max_wait_time,
                 fix_time_credit=self.fix_time_credit,
                 fail_on_timeout=(self.max_wait_action == "fail"),
                 on_timeout=self.handle_max_wait_timeout,
@@ -989,16 +997,29 @@ class Barrier(EltCollection):
 
         barrier_instance = BarrierInstance.for_arrival(self, participant)
 
+        now = timenow()
         link = ParticipantLinkBarrier(
             participant=participant,
             barrier_id=self.id,
             barrier_instance=barrier_instance,
-            arrival_time=timenow(),
+            arrival_time=now,
         )
         participant.active_barriers[self.id] = link
         if not self._uses_timeline_hold:
+            max_wait_time = call_if_callable(
+                self.max_wait_time, participant=participant
+            )
+            if max_wait_time is not None:
+                link.deadline_at = now + timedelta(seconds=max_wait_time)
             self._queue_check_on_arrival(barrier_instance)
             self._notify_arrivals(participant)
+
+    def _arrival_max_wait_time(self, participant):
+        """Return the ``max_wait_time`` resolved when the participant arrived, in seconds."""
+        link = participant.active_barriers.get(self.id)
+        if link is None or link.deadline_at is None:
+            return None
+        return (link.deadline_at - link.arrival_time).total_seconds()
 
     def _queue_check_on_arrival(self, barrier_instance):
         """Schedule the fast release check for immediately after commit."""
@@ -1330,8 +1351,11 @@ class GroupBarrier(Barrier):
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded, the participant is either failed or kicked (see ``max_wait_action``).
         Defaults to 20 seconds plus ``timeout_between_barriers_time``, so that a member who arrives
-        promptly can wait out a slower one. Must be longer than ``timeout_between_barriers_time``.
-        ``None`` means no limit.
+        promptly can wait out a slower one. Must be longer than ``timeout_between_barriers_time``;
+        this is not checked when ``max_wait_time`` is a function. ``None`` means no limit.
+        This is a hard limit counted from arrival: with explicit ``waiting_logic``, the server applies it
+        even while the participant is partway through a filler page, so make it long enough to cover long
+        filler pages (for example trials used as filler).
 
     max_wait_action
         When ``max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end of the
@@ -1429,6 +1453,7 @@ class GroupBarrier(Barrier):
         if (
             max_wait_time is not None
             and timeout_between_barriers_time is not None
+            and not callable(max_wait_time)
             and max_wait_time <= timeout_between_barriers_time
         ):
             raise ValueError(
@@ -1847,7 +1872,9 @@ class Grouper(Barrier):
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded and the participant is still not released, then the participant will be failed
-        and sent to the end of the experiment.
+        and sent to the end of the experiment. This is a hard limit counted from arrival: with explicit
+        ``waiting_logic``, the server applies it even while the participant is partway through a filler page,
+        so make it long enough to cover long filler pages (for example trials used as filler).
 
     expected_wait
         Expected duration of a default timeline hold. If omitted, preserves the
@@ -2046,7 +2073,8 @@ class SimpleGrouper(Grouper):
         ``min_group_size`` participants are waiting. If fewer than ``initial_group_size``
         are waiting, they form one smaller group. Requires
         ``min_group_size < initial_group_size`` and a ``max_wait_time`` longer than
-        ``start_short_after``. Default: ``None`` (always wait for ``batch_size``).
+        ``start_short_after`` (not checked when ``max_wait_time`` is a function).
+        Default: ``None`` (always wait for ``batch_size``).
 
     kwargs
         Further arguments to pass to Grouper.
@@ -2108,6 +2136,7 @@ class SimpleGrouper(Grouper):
         if (
             start_short_after is not None
             and self.max_wait_time is not None
+            and not callable(self.max_wait_time)
             and self.max_wait_time <= start_short_after
         ):
             raise ValueError(
@@ -3239,6 +3268,9 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     arrival_time = Column(DateTime)
     departure_time = Column(DateTime)
     released = Column(Boolean, default=False)
+    # With explicit waiting_logic there is no hold record, so the link keeps
+    # the max_wait_time deadline for the poller.
+    deadline_at = Column(DateTime)
     timeline_hold_id = Column(Integer, ForeignKey("timeline_hold.id"), index=True)
     timeline_hold = relationship("TimelineHoldRecord", backref="barrier_links")
 
@@ -3327,13 +3359,17 @@ def _waiting_barrier_instance_ids():
 
 
 def _overdue_waiter_ids():
-    """Return working waiters whose current barrier hold deadline has passed."""
+    """Return working waiters whose current barrier hold, or waiting-page deadline, has passed."""
+    now = timenow()
+    deadline = func.coalesce(
+        TimelineHoldRecord.deadline_at, ParticipantLinkBarrier.deadline_at
+    )
     with Session(bind=db.engine) as session:
         return [
             participant_id
             for (participant_id,) in (
                 session.query(ParticipantLinkBarrier.participant_id)
-                .join(
+                .outerjoin(
                     TimelineHoldRecord,
                     TimelineHoldRecord.id == ParticipantLinkBarrier.timeline_hold_id,
                 )
@@ -3344,15 +3380,16 @@ def _overdue_waiter_ids():
                     ~ParticipantLinkBarrier.released,
                     ~Participant.failed,
                     Participant.status == "working",
-                    TimelineHoldRecord.page_uuid == Participant.page_uuid,
-                    TimelineHoldRecord.released_at.is_(None),
-                    TimelineHoldRecord.deadline_at <= timenow(),
+                    or_(
+                        (TimelineHoldRecord.page_uuid == Participant.page_uuid)
+                        & TimelineHoldRecord.released_at.is_(None)
+                        & (TimelineHoldRecord.deadline_at <= now),
+                        ParticipantLinkBarrier.timeline_hold_id.is_(None)
+                        & (ParticipantLinkBarrier.deadline_at <= now),
+                    ),
                 )
                 .group_by(ParticipantLinkBarrier.participant_id)
-                .order_by(
-                    func.min(TimelineHoldRecord.deadline_at),
-                    ParticipantLinkBarrier.participant_id,
-                )
+                .order_by(func.min(deadline), ParticipantLinkBarrier.participant_id)
             )
         ]
 
@@ -3361,14 +3398,20 @@ def _time_out_overdue_links(participant):
     """Apply the barrier's max-wait timeout to the waiter's current overdue hold.
 
     Like the request path, only the hold on the participant's current page
-    times out.
+    times out. Waiters on explicit ``waiting_logic`` pages have no hold, and
+    time out by their link's deadline, whichever page they are on.
     """
     now = timenow()
     for link in list(participant.active_barriers.values()):
         record = link.timeline_hold
+        if record is None:
+            if link.deadline_at is not None and link.deadline_at <= now:
+                _BarrierHoldPage(link.get_barrier()).apply_timeout(participant)
+                if not link.released:
+                    link.release()
+            continue
         if (
-            record is None
-            or record.page_uuid != participant.page_uuid
+            record.page_uuid != participant.page_uuid
             or record.released_at is not None
             or record.deadline_at is None
             or record.deadline_at > now
@@ -3380,7 +3423,7 @@ def _time_out_overdue_links(participant):
 
 
 def _time_out_overdue_waiters(sweep_ends):
-    """Apply ``max_wait_time`` to waiters whose hold deadline has passed.
+    """Apply ``max_wait_time`` to waiters whose deadline has passed.
 
     A waiter's own request normally applies the timeout, so someone who
     closed the tab would otherwise keep waiting, and keep the poller busy,

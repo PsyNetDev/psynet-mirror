@@ -42,6 +42,7 @@ from psynet.db import _SessionQueue, forbid_commits
 from psynet.timeline import Page, get_template
 from psynet.utils import (
     call_function_with_context,
+    call_if_callable,
     finalize_template_value,
     get_logger,
     get_translator,
@@ -513,12 +514,8 @@ class _TimelineHoldPage(Page):
         super().consume(experiment, participant)
         now = timenow()
         # Resolve a participant-specific budget once; polls use the saved deadline.
-        max_wait_time = (
-            call_function_with_context(
-                self.max_wait_time, participant=participant, experiment=experiment
-            )
-            if callable(self.max_wait_time)
-            else self.max_wait_time
+        max_wait_time = call_if_callable(
+            self.max_wait_time, participant=participant, experiment=experiment
         )
         deadline_at = (
             None if max_wait_time is None else now + timedelta(seconds=max_wait_time)
