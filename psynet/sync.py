@@ -4138,6 +4138,9 @@ def _came_from_timed_out_page(participant, arrival_time):
     (those that started before ``arrival_time``) counts: not one answered
     before a later visit, so the flag doesn't carry over to a later barrier,
     nor a ``waiting_logic`` page answered while waiting at an earlier one.
+    A timed waiting page that a release can't end (a trial page, or with
+    ``release_grace=None``) and whose time limit runs out after the release
+    still counts.
     """
     response = participant.response
     if response is None or not (response.metadata or {}).get("time_limit_reached"):

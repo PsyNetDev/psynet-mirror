@@ -4342,16 +4342,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
             from .sync import released_waiting_barrier
 
-            if (
-                not interrupted
-                and metadata.get("time_limit_reached") is True
-                and released_waiting_barrier(event, participant) is not None
-            ):
+            if interrupted or metadata.get("time_limit_reached") is True:
+                released = released_waiting_barrier(event, participant)
                 # A waiting page whose own time limit ran out after the release
                 # ends like an interrupted one.
-                interrupted = True
+                interrupted = interrupted or released is not None
             if interrupted:
-                if released_waiting_barrier(event, participant) is None:
+                if released is None:
                     return ResponseResult(
                         payload={"submission": "rejected", "message": ""}
                     )
