@@ -4357,7 +4357,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 return ResponseResult(
                     payload=self._approved_payload(participant, page), page=page
                 )
-            seconds_to_wait = event._time_limit_seconds_to_wait(metadata, participant)
+            # Pages that only duck-type ``process_response`` have no time limit.
+            seconds_to_wait = (
+                event._time_limit_seconds_to_wait(metadata, participant)
+                if hasattr(event, "_time_limit_seconds_to_wait")
+                else None
+            )
             if seconds_to_wait is not None:
                 # The browser's countdown ended before the server's; it
                 # resubmits once the server's deadline arrives.
