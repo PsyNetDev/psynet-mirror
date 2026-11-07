@@ -55,8 +55,8 @@ Options
 Pseudonyms
 ----------
 
-Participants see each other by pseudonym, such as "Blue fox", with an icon
-of the animal on a disc of that colour; their own messages are labelled
+Participants see each other by pseudonym, such as "Blue fox", with a small
+picture of the animal in that colour; their own messages are labelled
 "You". A participant keeps the same pseudonym in every room, unless the
 experiment sets a different one. Each deployment shuffles the colours and
 animals differently and then assigns them in order of participant ID, so
