@@ -145,9 +145,10 @@ preceding page:
 ``expected_repetitions`` iterations, however many they actually do.
 ``max_loop_time`` limits the time in the loop in seconds; participants who
 reach it while the condition still holds are sent to the unsuccessful end
-unless ``fail_on_timeout=False``. ``extend_while`` pauses that limit while it
-returns ``True``, for example while a participant's recording is still
-uploading.
+unless ``fail_on_timeout=False``. ``extend_while`` is checked at the start of
+each pass through the loop; whenever it returns ``True``, the
+``max_loop_time`` clock restarts from zero, for example while a
+participant's recording is still uploading.
 :func:`~psynet.timeline.conditional` takes a label, a ``condition``, and
 ``logic_if_true`` and ``logic_if_false``. This loop repeats until the random
 score is above 5, with feedback that depends on the score:
@@ -243,16 +244,19 @@ every participant, including the multiplayer ones. Returning ``""`` shows no
 line at all.
 
 To end without waiting for a click on Finish, for example in a multiplayer
-game, pass ``auto_continue_seconds``. The page then adds "This page continues
-by itself in 3 s." and counts down:
+game, pass ``time_limit``. The page then adds "This page continues by itself
+in 3 s." and counts down:
 
 .. code-block:: python
 
     Timeline(
         ...,
-        successful_end=SuccessfulEndLogic(auto_continue_seconds=3),
-        unsuccessful_end=UnsuccessfulEndLogic(auto_continue_seconds=3),
+        successful_end=SuccessfulEndLogic(time_limit=3),
+        unsuccessful_end=UnsuccessfulEndLogic(time_limit=3),
     )
+
+The rejected-consent page has no Finish button, so
+:class:`~psynet.end.RejectedConsentLogic` does not take ``time_limit``.
 
 Time limits
 -----------
@@ -279,11 +283,46 @@ wait before the participant can answer, such as audio that must finish
 before the Next button is enabled, so allow for it in ``time_limit``. The
 server also records ``time_limit_answer`` for an answer that arrives more
 than 5 seconds after the limit, so a tampered or stalled page cannot take
-longer. A timed page cannot have a ``session_id``. Answers given because of
-the time limit skip validation and have ``time_limit_reached`` in their
-response metadata. To place the countdown yourself, put an element with
-the attribute ``data-psynet-seconds-left`` in the page's content, for example
+longer. A timed page cannot have a ``session_id``. To place the countdown
+yourself, put an element with the attribute ``data-psynet-seconds-left`` in
+the page's content, for example
 ``<p>Answer within <span data-psynet-seconds-left></span> seconds.</p>``.
+
+Answers given because of the time limit skip validation, and their
+:attr:`~psynet.timeline.Response.time_limit_reached` is ``True``. A later page
+maker or code block can check the previous page with
+``participant.response.time_limit_reached``.
+
+To keep what the participant has entered instead of a fixed answer, pass
+:data:`~psynet.timeline.CURRENT_ANSWER`:
+
+.. code-block:: python
+
+    from psynet.timeline import CURRENT_ANSWER
+
+    ModularPage(
+        "story",
+        "Write a short story.",
+        TextControl(),
+        time_limit=120,
+        time_limit_answer=CURRENT_ANSWER,
+        time_estimate=120,
+    )
+
+The page then submits its controls' current answer, for example a half-written
+text, which is formatted as usual but not validated. If the page has no answer
+to submit, ``None`` is recorded. Just before a timed page submits itself, the
+browser dispatches a ``psynet:timeLimitReached`` event on ``document``, so
+custom JavaScript can stage its state first:
+
+.. code-block:: javascript
+
+    document.addEventListener("psynet:timeLimitReached", () => {
+        psynet.response.staged.rawAnswer = currentDrawing();
+    });
+
+With ``CURRENT_ANSWER``, a page with a built-in control submits that
+control's answer; other pages submit ``psynet.response.staged``.
 
 Time estimates
 --------------

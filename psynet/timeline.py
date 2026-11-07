@@ -5,6 +5,7 @@ if TYPE_CHECKING:
     from psynet.trial.main import TrialNode
 
 import copy
+import enum
 import inspect
 import json
 import random
@@ -65,6 +66,14 @@ logger = get_logger()
 TIME_LIMIT_GRACE_SECONDS = 5
 # Seconds before a page's ``time_limit`` that the browser may already report it reached.
 TIME_LIMIT_EARLY_SECONDS = 2
+
+
+class _TimeLimitAnswer(enum.Enum):
+    CURRENT_ANSWER = "current answer"
+
+
+CURRENT_ANSWER = _TimeLimitAnswer.CURRENT_ANSWER
+"""Pass as a page's ``time_limit_answer`` to record what the participant has entered when time runs out."""
 
 
 def _normalize_javascript_urls(urls, argument_name):
@@ -1425,19 +1434,30 @@ class Page(Elt):
         ``lambda answer: "Answer must contain exactly 3 characters!" if len(answer) != 3 else None``.
 
     time_limit
-        Optional seconds the participant has on this page, counted on the
-        server from when they reach it, so reloading the page does not
-        restart the clock. The page shows a countdown and, when it reaches
-        zero, submits ``time_limit_answer``. An element with the attribute
-        ``data-psynet-seconds-left`` in the page's content shows the countdown
-        instead of the default "N s left" line. An answer that reaches the
-        server more than ``TIME_LIMIT_GRACE_SECONDS`` (5) after the limit is
-        replaced by ``time_limit_answer`` too. Answers given because of the
-        time limit skip validation and have ``time_limit_reached`` in their
-        metadata. Cannot be combined with ``session_id``.
+        Optional seconds the participant has on this page. When they run
+        out, the page submits itself and ``time_limit_answer`` is recorded.
+
+        - The server counts from when the participant reached the page, so
+          reloading the page does not restart the clock.
+        - An answer that reaches the server more than 5 seconds after the
+          limit counts as late and is treated the same way.
+        - Answers given because of the time limit skip validation, and their
+          :attr:`Response.time_limit_reached` is ``True``.
+        - The page shows "N s left" at the top. An element with the attribute
+          ``data-psynet-seconds-left`` in the page's content shows the
+          countdown instead.
+        - Just before the page submits itself, the browser dispatches a
+          ``psynet:timeLimitReached`` event on ``document``, so custom
+          JavaScript can stage its state in ``psynet.response.staged``.
+        - Cannot be combined with ``session_id``.
 
     time_limit_answer
         The answer recorded when ``time_limit`` runs out (default ``None``).
+        Pass :data:`CURRENT_ANSWER` to record what the participant has
+        entered so far instead: the page's controls submit their current
+        answer, which is formatted as usual but not validated, so
+        ``format_answer`` should accept an incomplete answer. If the page has
+        no answer to submit, ``None`` is recorded.
 
 
     Attributes
@@ -1887,7 +1907,7 @@ class Page(Elt):
                     if link.active:
                         link.page_deadline = participant.page_deadline
 
-    def time_limit_seconds_left(self, participant) -> Optional[float]:
+    def _time_limit_seconds_left(self, participant) -> Optional[float]:
         """Return the seconds left before this page's ``time_limit``, or ``None`` without one."""
         if self.time_limit is None or participant.page_deadline is None:
             return None
@@ -1901,7 +1921,7 @@ class Page(Elt):
         """
         if metadata.get("time_limit_reached") is not True:
             return None
-        seconds_left = self.time_limit_seconds_left(participant)
+        seconds_left = self._time_limit_seconds_left(participant)
         if seconds_left is None or seconds_left <= TIME_LIMIT_EARLY_SECONDS:
             return None
         return seconds_left
@@ -1955,8 +1975,11 @@ class Page(Elt):
 
         timed_out = self._time_limit_reached(metadata, participant)
         if timed_out:
-            answer = self.time_limit_answer
             metadata = {**metadata, "time_limit_reached": True}
+            if self.time_limit_answer is not CURRENT_ANSWER:
+                answer = self.time_limit_answer
+            elif raw_answer is None:
+                answer = None
         else:
             # The flag skips validation, so only the server may set it.
             metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
@@ -2218,12 +2241,13 @@ class Page(Elt):
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
             "recordingCaptureSources": self._recording_capture_sources(),
         }
-        seconds_left = self.time_limit_seconds_left(participant)
+        seconds_left = self._time_limit_seconds_left(participant)
         if seconds_left is not None:
             _p = get_translator(context=True)
             internal_js_vars["timeLimit"] = {
                 "secondsLeft": seconds_left,
                 "text": _p("time_limit", "{SECONDS} s left"),
+                "currentAnswer": self.time_limit_answer is CURRENT_ANSWER,
             }
         control = getattr(self, "control", None)
         if isinstance(control, RecordControl):
@@ -3270,6 +3294,14 @@ class Response(_Response):
     def metadata(self, metadata):
         self.metadata_ = metadata
 
+    @property
+    def time_limit_reached(self) -> bool:
+        """Whether the page's ``time_limit`` ran out before this answer was given.
+
+        See :class:`~psynet.timeline.Page`.
+        """
+        return bool((self.metadata or {}).get("time_limit_reached"))
+
     async_jobs = relationship("AsyncJob")
     async_processes = _deprecated_async_processes
     # assets = relationship(
@@ -3438,8 +3470,9 @@ def while_loop(
 
     extend_while:
         Optional callable accepting ``participant`` and/or ``experiment``,
-        checked on each iteration. While it returns ``True`` the loop cannot
-        time out, and ``max_loop_time`` restarts once it returns ``False``.
+        checked at the start of each pass through the loop. Whenever it
+        returns ``True``, the loop does not time out on that pass and the
+        ``max_loop_time`` clock restarts from zero.
 
     Returns
     -------

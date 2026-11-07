@@ -42,20 +42,22 @@ class EndLogic(ExitLogic):
 
     Parameters
     ----------
-    auto_continue_seconds
+    time_limit
         If given, the debrief page continues by itself after this many
         seconds, as if the participant had clicked Finish, and says so with
         a countdown. Useful when participants should not wait on the last
-        page, for example in multiplayer games.
+        page, for example in multiplayer games. Only debrief pages with a
+        Finish button can continue by themselves; :meth:`debrief_page`
+        raises ``ValueError`` otherwise.
     """
 
     exit_context: exit_domain.ExitContext
 
-    def __init__(self, auto_continue_seconds: Optional[float] = None):
+    def __init__(self, time_limit: Optional[float] = None):
         super().__init__()
-        if auto_continue_seconds is not None and auto_continue_seconds < 0:
-            raise ValueError("auto_continue_seconds must be non-negative.")
-        self.auto_continue_seconds = auto_continue_seconds
+        if time_limit is not None and time_limit < 0:
+            raise ValueError("time_limit must be non-negative.")
+        self.time_limit = time_limit
 
     def resolve(self) -> Union[Elt, List[Elt]]:
         return join(
@@ -111,12 +113,15 @@ class EndLogic(ExitLogic):
         # Todo - Once automatic translation is updated, revisit the logic in
         # RejectedConsentPage and ask the participant to return their platform
         # submission if appropriate.
-        time_limit = None
         if show_finish_button:
             # The choice key "Finish" stays untranslated so that recorded answers
             # are locale-independent; only the visible label is translated.
             control = PushButtonControl(["Finish"], labels=[_("Finish")])
-            time_limit = self.auto_continue_seconds
+        elif self.time_limit is not None:
+            raise ValueError(
+                f"{type(self).__name__} has a time_limit, but its debrief page "
+                "has no Finish button to continue with."
+            )
         else:
             control = NullControl()
 
@@ -125,7 +130,7 @@ class EndLogic(ExitLogic):
             content,
             control,
             show_next_button=False,
-            time_limit=time_limit,
+            time_limit=self.time_limit,
             time_limit_answer="Finish",
         )
 
@@ -179,14 +184,14 @@ class EndLogic(ExitLogic):
             text = _("Click Finish to return to your panel.")
         else:
             text = _("Click Finish to finalize the session.")
-        if self.auto_continue_seconds is None:
+        if self.time_limit is None:
             return text
         countdown = Markup("<span data-psynet-seconds-left>{}</span>").format(
-            math.ceil(self.auto_continue_seconds)
+            math.ceil(self.time_limit)
         )
-        auto_continue = _("This page continues by itself in {SECONDS} s.")
+        notice = _("This page continues by itself in {SECONDS} s.")
         return dominate.util.raw(
-            escape(text) + " " + escape(auto_continue).replace("{SECONDS}", countdown)
+            escape(text) + " " + escape(notice).replace("{SECONDS}", countdown)
         )
 
 
@@ -311,7 +316,7 @@ class UnsuccessfulEndLogic(EndLogic):
     ----------
     failure_tags
         Tags appended to the participant's ``failure_tags`` on this page.
-    auto_continue_seconds
+    time_limit
         See :class:`EndLogic`.
     failure_message
         Optional line that says why the participant stopped early, or a
@@ -333,10 +338,10 @@ class UnsuccessfulEndLogic(EndLogic):
         failure_tags: Optional[List] = None,
         *,
         failure_message: Optional[Union[str, Callable]] = None,
-        auto_continue_seconds: Optional[float] = None,
+        time_limit: Optional[float] = None,
         **kwargs,
     ):
-        super().__init__(auto_continue_seconds=auto_continue_seconds)
+        super().__init__(time_limit=time_limit)
         self.failure_message = failure_message
 
         if failure_tags is None:
@@ -439,6 +444,10 @@ class RejectedConsentLogic(UnsuccessfulEndLogic):
             raise TypeError(
                 "RejectedConsentLogic does not show a failure_message; "
                 "override debrief_participant to change its page."
+            )
+        if kwargs.get("time_limit") is not None:
+            raise TypeError(
+                "RejectedConsentLogic has no Finish button, so it cannot take a time_limit."
             )
         super().__init__(*args, **kwargs)
 

@@ -13,6 +13,13 @@ CodeBlock
 
 .. autoclass:: psynet.timeline.CodeBlock
 
+==============
+CURRENT_ANSWER
+==============
+
+.. autodata:: psynet.timeline.CURRENT_ANSWER
+    :annotation:
+
 ======================
 Conditional statements
 ======================

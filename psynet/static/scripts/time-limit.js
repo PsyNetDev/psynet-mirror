@@ -5,9 +5,12 @@
 // it; without one, the module adds a "N s left" chip where timeline holds
 // show their status, hidden while the page is being submitted or held and
 // once it reaches zero. At
-// zero the page submits with time_limit_reached in its metadata, and the
-// server records the page's time_limit_answer. If the server's deadline is
-// still some way off, it returns the seconds left and the countdown resumes.
+// zero the module dispatches psynet:timeLimitReached on document, so custom
+// scripts can stage their state, then submits with time_limit_reached in its
+// metadata. The server records the page's time_limit_answer, or with
+// CURRENT_ANSWER (config.currentAnswer) the answer the page's controls hold.
+// If the server's deadline is still some way off, it returns the seconds
+// left and the countdown resumes.
 
 export function activate({root, vars, psynet}) {
     var config = vars["timeLimit"];
@@ -42,6 +45,18 @@ export function activate({root, vars, psynet}) {
         timer = window.setTimeout(submit, 1000);
     }
 
+    function currentAnswer(staged) {
+        // The answer the page's controls would submit, without validating it.
+        var retrieve = psynet.getRetrieveResponseHandler && psynet.getRetrieveResponseHandler();
+        if (!retrieve) return staged;
+        try {
+            return retrieve() || {};
+        } catch (error) {
+            console.warn("Could not read the answer when the time limit ran out:", error);
+            return staged;
+        }
+    }
+
     function submit() {
         if (submitted || stopped) return;
         if (!psynet.pageReady || psynet.nextPagePending || psynet.timelineHold) {
@@ -50,8 +65,14 @@ export function activate({root, vars, psynet}) {
             return;
         }
         submitted = true;
+        document.dispatchEvent(new Event("psynet:timeLimitReached"));
         var staged = (psynet.response && psynet.response.staged) || {};
-        var metadata = Object.assign({}, staged.metadata || {}, {time_limit_reached: true});
+        var answer = config.currentAnswer ? currentAnswer(staged) : {};
+        var rawAnswer = answer.rawAnswer === undefined ? null : answer.rawAnswer;
+        var metadata = Object.assign(
+            {}, staged.metadata || {}, answer.metadata || {}, {time_limit_reached: true}
+        );
+        var blobs = config.currentAnswer ? Object.assign({}, staged.blobs, answer.blobs) : {};
         var early = null;
         var refused = false;
         function onRejection(response) {
@@ -65,7 +86,7 @@ export function activate({root, vars, psynet}) {
         }
         Promise.resolve()
             .then(function () {
-                return psynet.nextPage(null, metadata, {}, onRejection);
+                return psynet.nextPage(rawAnswer, metadata, blobs, onRejection);
             })
             .then(function (accepted) {
                 if (accepted !== false || stopped) return;
