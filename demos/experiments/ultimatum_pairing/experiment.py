@@ -265,7 +265,11 @@ def play_round():
                 PageMaker(show_outcome, time_estimate=5),
             ),
             # Without a team the game is over; the ended-early page explains why.
-            conditional("in_team", team_of, PageMaker(not_playing, time_estimate=5)),
+            conditional(
+                "in_team",
+                lambda participant: team_of(participant) is not None,
+                PageMaker(not_playing, time_estimate=5),
+            ),
         ),
     )
 
