@@ -430,6 +430,10 @@ def test_regrouper_alternates_roles_and_partners_and_counts_rounds(
         assert pairs.role(p) != role
         assert _partner(p) is not partner
         assert pairs.rounds_played(p) == 2
+    # A player removed from their pair, as by a kick, still sees their role.
+    role = pairs.role(team[0])
+    team[0].active_sync_groups["pair"].remove_participant(team[0])
+    assert pairs.role(team[0]) == role
 
     # Three players left: one sits out, and plays first next round.
     team[0].active_sync_groups["team"].remove_participant(team[3])

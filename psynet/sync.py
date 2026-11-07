@@ -1469,11 +1469,11 @@ class GroupBarrier(Barrier):
     timeout_between_barriers_time
         The maximum amount of time in seconds that a participant is allowed to reach the barrier, measured from when
         the group last passed a ``GroupBarrier`` or the participant joined the group, whichever is later. If
-        ``None`` (default), no between-barrier timeout is applied. A participant on a page with a ``time_limit``
-        is judged by that page instead: they are not late before its time limit has run out, and are late once it
-        ran out more than ``2 * TIME_LIMIT_GRACE_SECONDS`` (10 s) ago, because the page would have moved them
-        on had they still been on it. So this timeout need not be longer than the pages' time limits; it only
-        has to cover pages without one, such as a participant who closed their tab before the timed page loaded.
+        ``None`` (default), no between-barrier timeout is applied. If the participant has reached a page with a
+        ``time_limit`` since then, the timeout counts from when that time limit runs out instead, and is at least
+        ``2 * TIME_LIMIT_GRACE_SECONDS`` (10 s), so that an answer sent at the deadline can arrive. So this
+        timeout need not be longer than the pages' time limits; it only has to cover pages without one, such as
+        the time before the timed page loads, or a short page after it.
 
     timeout_between_barriers_action
         When a participant exceeds ``timeout_between_barriers_time``: ``"kick"`` removes them from the group (so the
@@ -1963,15 +1963,15 @@ class GroupBarrier(Barrier):
             if not starts:
                 continue
             start = max(starts)
+            allowed = timedelta(seconds=self.timeout_between_barriers_time)
             deadline = participant.page_deadline
-            # An earlier deadline belongs to a page from before the last barrier,
-            # which the member is just leaving.
+            # A timed page since the last barrier moves the start to its
+            # deadline, leaving time for an answer sent at the deadline to
+            # arrive. An earlier deadline belongs to a page before that barrier.
             if deadline is not None and deadline > start:
-                if now > deadline + left_timed_page:
-                    late.append(participant)
-                continue
-            elapsed = (now - start).total_seconds()
-            if elapsed > self.timeout_between_barriers_time:
+                start = deadline
+                allowed = max(allowed, left_timed_page)
+            if now > start + allowed:
                 late.append(participant)
         return late
 
@@ -2625,8 +2625,9 @@ class Regrouper(Grouper):
         most this size, for example rooms of 8, 8, 7 and 7 for 30 people.
 
     min_group_size
-        Smallest group to form (default 2). A pool is only split once this
-        many of its members are waiting.
+        Smallest group to form: 2 by default, or ``group_size`` with
+        ``roles``. A pool is only split once this many of its members are
+        waiting.
 
     deadline
         When to stop waiting for absent members. A number is seconds since the
@@ -2706,7 +2707,7 @@ class Regrouper(Grouper):
         *,
         group_size: int,
         within: Optional[str] = None,
-        min_group_size: int = 2,
+        min_group_size: Optional[int] = None,
         deadline: Optional[Union[float, Clock]] = None,
         roles: Optional[Sequence[str]] = None,
         keep_roles: bool = False,
@@ -2721,9 +2722,13 @@ class Regrouper(Grouper):
                 raise ValueError(
                     "Pass one distinct role per member: len(roles) must equal group_size."
                 )
+            if min_group_size not in (None, group_size):
+                raise ValueError("With roles, every group has group_size members.")
             min_group_size = group_size
         elif keep_roles:
             raise ValueError("keep_roles needs roles.")
+        if min_group_size is None:
+            min_group_size = 2
         if min_group_size < 1 or group_size < min_group_size:
             raise ValueError("Need 1 <= min_group_size <= group_size.")
         if deadline is None and within is None:
@@ -2808,14 +2813,17 @@ class Regrouper(Grouper):
     def role(self, participant) -> Optional[str]:
         """Return ``participant``'s role (see ``roles``).
 
-        Without ``keep_roles`` this is their role in their current group from
-        this regrouper, or ``None`` while they are not in one.
+        Without ``keep_roles`` this is their role in the latest group this
+        regrouper put them in, even after they were removed from it, so a
+        reloaded page still shows it. It is ``None`` before their first
+        group, after they sat a round out, and while they are in another
+        group of this type.
         """
         history = self._history(participant)
         if self.keep_roles:
             return history.get("role", None)
         group = participant.active_sync_groups.get(self.group_type)
-        if group is None or group.id != history.get("group_id", None):
+        if group is not None and group.id != history.get("group_id", None):
             return None
         return history.get("role", None)
 
@@ -3153,9 +3161,10 @@ class Regrouper(Grouper):
 
     def _record_sit_outs(self, left_over):
         for participant in left_over:
-            self._update_history(
-                participant, rounds_sat_out=self.rounds_sat_out(participant) + 1
-            )
+            changes = dict(rounds_sat_out=self.rounds_sat_out(participant) + 1)
+            if not self.keep_roles:
+                changes["role"] = None
+            self._update_history(participant, **changes)
 
     def _check_plan(self, plan, members):
         """Raise if ``form_groups`` placed someone twice or placed a non-member."""

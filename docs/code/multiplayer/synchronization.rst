@@ -563,8 +563,8 @@ Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_`` prefix: ``sync_group_max_wait_time``,
 ``sync_group_max_wait_action``, ``sync_group_timeout_between_barriers_time``
 and ``sync_group_timeout_between_barriers_action``. ``sync_group_max_wait_time``
-defaults to 45 seconds, or to 20 seconds more than the between-barrier
-timeout if that is longer. As with a barrier, a value you pass must be
+defaults to 45 seconds, or, as at a barrier, to no limit when there is a
+between-barrier timeout. As with a barrier, a value you pass must be
 longer than ``sync_group_timeout_between_barriers_time``.
 
 Choose ``max_wait_time`` at the grouper together with how quickly you
@@ -620,7 +620,7 @@ participant is released. In ``sync_quorum``, waiting participants answer
 trials from another trial maker:
 
 .. literalinclude:: ../../../demos/experiments/sync_quorum/experiment.py
-   :start-at: filler = 
+   :start-at: filler = PageMaker(
    :end-before: class Exp
 
 ``expected_wait`` says how long participants are expected to wait, in

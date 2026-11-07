@@ -515,6 +515,30 @@ def test_barriers_can_share_waiting_logic():
     assert estimate_duration(second) == 6
 
 
+def test_a_barrier_in_a_loop_finds_its_waiting_pages():
+    from types import SimpleNamespace
+
+    from psynet.page import InfoPage, SuccessfulEndPage
+    from psynet.sync import _is_inside_waiting_loop
+    from psynet.timeline import Timeline, while_loop
+
+    barrier = GroupBarrier(
+        "in_loop",
+        group_type="pair",
+        waiting_logic=InfoPage("Filler", time_estimate=2),
+    )
+    timeline = Timeline(
+        while_loop("rounds", lambda participant: True, barrier, expected_repetitions=2),
+        SuccessfulEndPage(),
+    )
+    (filler,) = [
+        elt
+        for elt in timeline.elts["main"]
+        if isinstance(elt, InfoPage) and elt.links.get("barrier") is barrier
+    ]
+    assert _is_inside_waiting_loop(barrier, SimpleNamespace(elt_id=filler.id))
+
+
 def test_barrier_waiting_screen_replaces_the_page_unless_it_returns_none():
     from psynet.modular_page import ModularPage, NullControl, PushButtonControl
 

@@ -222,6 +222,15 @@ def show_outcome(participant):
     )
 
 
+def not_playing(participant):
+    # A player removed before reaching the decision page still has this round's role.
+    if pairing.role(participant) is not None:
+        text = "You were away for too long, so you got no coins this round."
+    else:
+        text = "You sit out this round. It doesn't count towards your rounds."
+    return InfoPage(text, time_estimate=5)
+
+
 pairing = Regrouper(
     "pair",
     within="team",
@@ -255,10 +264,7 @@ def play_round():
                 ),
                 PageMaker(show_outcome, time_estimate=5),
             ),
-            InfoPage(
-                "You sit out this round. It doesn't count towards your rounds.",
-                time_estimate=5,
-            ),
+            PageMaker(not_playing, time_estimate=5),
         ),
     )
 

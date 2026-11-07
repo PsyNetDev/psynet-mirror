@@ -1525,7 +1525,7 @@ class ChainTrialMaker(NetworkTrialMaker):
     sync_group_max_wait_time
         The maximum time that the participant will be allowed to wait for the SyncGroup to be ready.
         If this time is exceeded, the participant is either failed or kicked (see ``sync_group_max_wait_action``).
-        Defaults to 45 seconds, or to 20 seconds more than ``sync_group_timeout_between_barriers_time`` if that is longer; ``None`` waits indefinitely. A value you pass must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
+        Defaults to 45 seconds, or to no limit when ``sync_group_timeout_between_barriers_time`` is set, because that timeout already moves late members on; ``None`` waits indefinitely. A value you pass must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
 
     sync_group_max_wait_action
         When ``sync_group_max_wait_time`` is exceeded: ``"fail"`` fails the participant; ``"kick"`` removes them

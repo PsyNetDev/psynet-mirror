@@ -1880,11 +1880,10 @@ class Page(Elt):
     def consume(self, experiment, participant):
         participant.page_uuid = new_page_uuid()
         participant.page_count += 1
-        participant.page_deadline = (
-            None
-            if self.time_limit is None
-            else timenow() + timedelta(seconds=self.time_limit)
-        )
+        # Kept through later untimed pages, so a GroupBarrier can count its
+        # timeout from the last time limit.
+        if self.time_limit is not None:
+            participant.page_deadline = timenow() + timedelta(seconds=self.time_limit)
 
     def time_limit_seconds_left(self, participant) -> Optional[float]:
         """Return the seconds left before this page's ``time_limit``, or ``None`` without one."""
@@ -2025,7 +2024,6 @@ class Page(Elt):
                 participant.var.set(self.save_answer, resp.answer)
         else:
             participant.answer_is_fresh = False
-        participant.page_deadline = None
 
         self.on_complete(experiment=experiment, participant=participant)
 
@@ -3838,6 +3836,12 @@ def _copy_elts(elts: List[Elt]) -> List[Elt]:
     for elt in copies.values():
         elt.__dict__.update({name: remap(value) for name, value in vars(elt).items()})
         elt.links = dict(getattr(elt, "links", {}))
+        # A barrier locates its waiting pages by its loop's markers, and only
+        # the copies end up in the timeline.
+        barrier = elt.links.get("barrier")
+        markers = getattr(barrier, "_waiting_loop_markers", None)
+        if markers:
+            barrier._waiting_loop_markers = [remap(marker) for marker in markers]
     return list(copies.values())
 
 
