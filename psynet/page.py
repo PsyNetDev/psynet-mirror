@@ -191,8 +191,6 @@ class UnityPage(Page):
 
 
 class WaitPage(Page):
-    # Framework waits, such as for feedback, don't answer the page before.
-    records_time_out = False
     """
     This page makes the user wait for a specified amount of time
     before automatically continuing to the next page.
@@ -214,6 +212,9 @@ class WaitPage(Page):
     """
 
     content = "Please wait, the experiment should continue shortly..."
+
+    # Framework waits, such as for feedback, don't answer the page before.
+    records_time_out = False
 
     def __init__(self, wait_time: float, content=None, **kwargs):
         assert wait_time >= 0
