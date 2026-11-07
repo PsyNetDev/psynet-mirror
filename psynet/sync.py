@@ -2415,6 +2415,9 @@ class SimpleGrouper(Grouper):
             assert participant.active_sync_groups[self.group_type] == group
             group.check_numbers()
             group.check_leader()
+            # Joining skips this barrier, whose arrival would forget a
+            # time-out from before joining.
+            participant.timed_out_since_barrier = False
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
         """Release waiters who can join an open group, then group the rest.

@@ -6713,14 +6713,7 @@ def test_timeout_between_barriers_follows_a_timed_page(
         at_other_barrier,
     ) = participants
 
-    def start_timed_page(participant, time_limit):
-        # These arrivals skip the timeline step that ends a barrier's waiting.
-        participant.waiting_barrier_id = None
-        ModularPage("choose", "Pick", time_limit=time_limit, time_estimate=5).consume(
-            exp, participant
-        )
-
-    start_timed_page(before_joining, 60)
+    _start_timed_page(exp, before_joining, 60)
     for participant in participants:
         _arrive_at_group_barrier(exp, grouper, participant)
     _commit_barrier_arrivals()
@@ -6733,7 +6726,7 @@ def test_timeout_between_barriers_follows_a_timed_page(
         (left_timed_page, 8),
         (at_other_barrier, 25),
     ]:
-        start_timed_page(participant, time_limit)
+        _start_timed_page(exp, participant, time_limit)
     # Another barrier on the way doesn't end this group's round.
     _arrive_at_group_barrier(
         exp, SimpleGrouper("other", initial_group_size=2), at_other_barrier
@@ -6757,6 +6750,76 @@ def test_timeout_between_barriers_follows_a_timed_page(
     }
     for participant in (left_timed_page, no_time_limit, before_joining):
         assert participant.sync_group_links[0].removal_reason == "out_of_time"
+
+
+def _start_timed_page(exp, participant, time_limit):
+    # Test arrivals skip the timeline step that ends a barrier's waiting.
+    participant.waiting_barrier_id = None
+    ModularPage("choose", "Pick", time_limit=time_limit, time_estimate=5).consume(
+        exp, participant
+    )
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_group_barrier_pass_forgets_earlier_timed_pages(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    first, second = _working_participants(exp, 2)
+    for participant in (first, second):
+        _arrive_at_group_barrier(
+            exp, SimpleGrouper("main", initial_group_size=2), participant
+        )
+    _commit_barrier_arrivals()
+    group = first.sync_group
+    _start_timed_page(exp, first, 60)
+    for participant in (first, second):
+        _arrive_at_group_barrier(
+            exp, GroupBarrier("passed", group_type="main"), participant
+        )
+    _commit_barrier_arrivals()
+    group.last_barrier_pass_time -= timedelta(seconds=30)
+    for link in group.participant_links:
+        link.arrival_time -= timedelta(seconds=30)
+    barrier = GroupBarrier(
+        id_="next",
+        group_type="main",
+        timeout_between_barriers_time=10,
+        timeout_between_barriers_action="kick",
+    )
+    barrier.check_waiting_participants([second])
+    assert first not in group.active_participants
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_time_out_before_joining_an_open_group_gives_no_dash(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper = SimpleGrouper(
+        "main", initial_group_size=2, max_group_size=None, join_existing_groups=True
+    )
+    founders = _working_participants(exp, 2)
+    for participant in founders:
+        _arrive_at_group_barrier(exp, grouper, participant)
+    _commit_barrier_arrivals()
+    (newcomer,) = _working_participants(exp, 1)
+    _start_timed_page(exp, newcomer, 10)
+    newcomer.page_deadline = timenow() - timedelta(seconds=10)
+    ModularPage("choose", "Pick", time_limit=10, time_estimate=5).process_response(
+        raw_answer=None,
+        blobs=None,
+        metadata={"time_limit_reached": True},
+        experiment=exp,
+        participant=newcomer,
+    )
+    grouper._join_existing_groups(newcomer)
+    _arrive_at_group_barrier(exp, GroupBarrier("next", group_type="main"), newcomer)
+    assert not newcomer.active_barriers["next"].ran_out_of_time
 
 
 @pytest.mark.parametrize(
