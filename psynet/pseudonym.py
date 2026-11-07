@@ -73,11 +73,10 @@ class Pseudonym:
         CSS colour for the participant's icon.
     emoji
         The animal's emoji.
-    icon_html
-        HTML for the participant's icon: the animal on a coloured disc.
     sticker_html
-        HTML for a larger picture of the animal in the participant's colour,
-        as in :class:`~psynet.group_prompt.GroupPrompt`.
+        HTML for a picture of the animal in the participant's colour, as in
+        :class:`~psynet.group_prompt.GroupPrompt` and chat rooms. Its size
+        follows the font size.
     """
 
     color: str
@@ -85,7 +84,6 @@ class Pseudonym:
     name: str
     css_color: str
     emoji: str
-    icon_html: Markup
     sticker_html: Markup
 
     def to_dict(self) -> dict:
@@ -96,7 +94,6 @@ class Pseudonym:
             "name": self.name,
             "css_color": self.css_color,
             "emoji": self.emoji,
-            "icon_html": str(self.icon_html),
             "sticker_html": str(self.sticker_html),
         }
 
@@ -118,7 +115,7 @@ class PseudonymScheme:
     Override :meth:`colors` and :meth:`animals` to change the vocabulary,
     :meth:`assign` to change who gets which pseudonym, :meth:`name` for the
     word order (for example in languages where the colour must agree with
-    the animal), and :meth:`icon_html`, :meth:`sticker_html` or :meth:`artwork`
+    the animal), and :meth:`sticker_html` or :meth:`artwork`
     for the pictures. Call
     :meth:`~psynet.participant.Participant.set_pseudonym` to give one
     participant a particular pseudonym.
@@ -198,19 +195,6 @@ class PseudonymScheme:
         )
         return name[:1].upper() + name[1:]
 
-    def icon_html(self, css_color: str, emoji: str, name: str) -> Markup:
-        """Return HTML for a participant's icon: the animal on a coloured disc.
-
-        The icon is hidden from screen readers, because pages show the name
-        next to it. Pages insert this HTML as it is, so an override must
-        return :class:`~markupsafe.Markup` and escape its arguments, as
-        :meth:`Markup.format <markupsafe.Markup.format>` does.
-        """
-        return Markup(
-            '<span class="psynet-pseudonym-icon" aria-hidden="true" title="{}"'
-            ' style="--psynet-pseudonym-color: {}">{}</span>'
-        ).format(name, css_color, emoji)
-
     def artwork(self, animal: str, emoji: str) -> Optional[Tuple[str, str]]:
         """Return URLs of an animal's ``(shape, lines)`` SVGs, or ``None`` to use its emoji.
 
@@ -233,9 +217,11 @@ class PseudonymScheme:
         """Return HTML for the animal drawn in the participant's colour.
 
         Uses :meth:`artwork` when there is some, and otherwise tints the
-        emoji. Lines turn light on dark colours. Like :meth:`icon_html`, it
-        is hidden from screen readers and an override must return
-        :class:`~markupsafe.Markup`.
+        emoji. Lines turn light on dark colours. The picture is hidden from
+        screen readers, because pages show the name next to it. Pages insert
+        this HTML as it is, so an override must return
+        :class:`~markupsafe.Markup` and escape its arguments, as
+        :meth:`Markup.format <markupsafe.Markup.format>` does.
         """
         classes = "psynet-pseudonym-sticker"
         if _is_dark(css_color):
@@ -301,7 +287,6 @@ class PseudonymScheme:
             name=name,
             css_color=css_color,
             emoji=emoji,
-            icon_html=self.icon_html(css_color, emoji, name),
             sticker_html=self.sticker_html(css_color, animal, emoji, name),
         )
 

@@ -75,8 +75,8 @@ loading an export with the same PsyNet version, pseudonym scheme and locale,
 to read chat messages that mention them.
 
 Use ``participant.pseudonym`` to show the same names elsewhere, for example
-on a results page. It has a ``name``, a ``css_color``, an ``emoji`` and an
-``icon_html``:
+on a results page. It has a ``name``, a ``css_color``, an ``emoji`` and a
+``sticker_html``, a picture of the animal in the participant's colour:
 
 .. code-block:: python
 
@@ -85,7 +85,7 @@ on a results page. It has a ``name``, a ``css_color``, an ``emoji`` and an
         (partner,) = [p for p in pair.participants if p != participant]
         return InfoPage(
             Markup("Your partner is {} {}.").format(
-                partner.pseudonym.icon_html, partner.pseudonym.name
+                partner.pseudonym.sticker_html, partner.pseudonym.name
             ),
         )
 
@@ -114,10 +114,9 @@ default has 8 colours and 11 animals) give the most different pseudonyms. :meth:
 chooses each participant's pseudonym,
 :meth:`~psynet.pseudonym.PseudonymScheme.name` combines the colour and
 animal (override it for languages where the colour must agree with the
-animal), and :meth:`~psynet.pseudonym.PseudonymScheme.icon_html` draws the
-icon; override them for full control.
-:meth:`~psynet.pseudonym.PseudonymScheme.sticker_html` draws the larger
-animal, in the participant's colour, used by :class:`~psynet.group_prompt.GroupPrompt`: the built-in
+animal), and :meth:`~psynet.pseudonym.PseudonymScheme.sticker_html` draws
+the animal in the participant's colour, as shown in chat rooms and by
+:class:`~psynet.group_prompt.GroupPrompt`; override them for full control. The built-in
 animals use Microsoft Fluent Emoji pictures, and other animals their emoji;
 override :meth:`~psynet.pseudonym.PseudonymScheme.artwork` to supply pictures. Messages, history and occupancy updates carry each
 sender's pseudonym (``sender_pseudonym`` and ``pseudonyms``), so a custom

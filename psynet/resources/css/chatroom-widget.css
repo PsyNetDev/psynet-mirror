@@ -64,3 +64,9 @@
 #chatroom-chat-input {
     flex: 1;
 }
+
+/* The sender's animal, about the height of a line of text. */
+.chatroom-sender-sticker {
+    font-size: 0.6em;
+    margin-inline-end: 0.5em;
+}

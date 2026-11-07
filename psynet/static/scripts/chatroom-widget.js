@@ -75,15 +75,16 @@ export async function activate({root, vars}) {
         leaveChat();
     }
 
-    // The icon HTML comes from the experiment's PseudonymScheme on the
+    // The sticker HTML comes from the experiment's PseudonymScheme on the
     // server, which escapes the name; message text is only ever set as text.
     function senderLabel(senderId, pseudonym, inList) {
         var label = document.createElement("strong");
         label.className = "chatroom-sender";
-        if (pseudonym && pseudonym.icon_html) {
-            var icon = document.createElement("span");
-            icon.innerHTML = pseudonym.icon_html;
-            label.appendChild(icon);
+        if (pseudonym && pseudonym.sticker_html) {
+            var sticker = document.createElement("span");
+            sticker.className = "chatroom-sender-sticker";
+            sticker.innerHTML = pseudonym.sticker_html;
+            label.appendChild(sticker);
         }
         var name = pseudonym ? pseudonym.name : "Participant " + senderId;
         if (String(senderId) === MY_ID) {
