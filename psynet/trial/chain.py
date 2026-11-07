@@ -59,6 +59,7 @@ from ..utils import (
     negate,
 )
 from .main import (
+    _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
     NetworkTrialMaker,
     NetworkTrialMakerState,
     Selection,
@@ -1524,14 +1525,14 @@ class ChainTrialMaker(NetworkTrialMaker):
     sync_group_max_wait_time
         The maximum time that the participant will be allowed to wait for the SyncGroup to be ready.
         If this time is exceeded, the participant is either failed or kicked (see ``sync_group_max_wait_action``).
-        Defaults to 45.0 seconds.
+        Defaults to 45 seconds, or to 20 seconds more than ``sync_group_timeout_between_barriers_time`` if that is longer; ``None`` waits indefinitely. A value you pass must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
 
     sync_group_max_wait_action
         When ``sync_group_max_wait_time`` is exceeded: ``"fail"`` fails the participant; ``"kick"`` removes them
         from the group and lets them continue. Defaults to ``"fail"``.
 
     sync_group_timeout_between_barriers_time
-        Optional timeout in seconds (since the group's last barrier pass) after which a participant
+        Optional timeout in seconds (since the group's last barrier pass, or since the participant joined the group if that is later) after which a participant
         is considered too slow. When ``None`` (default), no between-barrier timeout is applied.
 
     sync_group_timeout_between_barriers_action
@@ -1626,7 +1627,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         assets=None,
         choose_participant_group: Optional[callable] = None,
         sync_group_type: Optional[str] = None,
-        sync_group_max_wait_time: float = 45.0,
+        sync_group_max_wait_time: Optional[float] = _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
@@ -1942,12 +1943,12 @@ class ChainTrialMaker(NetworkTrialMaker):
         super().init_participant(experiment, participant)
         participant.module_state.participated_networks = []
 
-        sync_group = (
-            participant.active_sync_groups[self.sync_group_type]
-            if self.sync_group_type
-            else None
-        )
-        is_follower = sync_group and participant != sync_group.leader
+        sync_group = self._active_sync_group(participant)
+        if self.sync_group_type is not None and sync_group is None:
+            # Removed from their group: they leave before their first trial,
+            # so they need no networks or block order.
+            return
+        is_follower = participant != sync_group.leader if sync_group else False
 
         if not is_follower:
             if self.chain_type == "within":
@@ -1977,12 +1978,9 @@ class ChainTrialMaker(NetworkTrialMaker):
             blocks = list(dict.fromkeys(block for block, _ in rows))
             self.init_block_order(experiment, participant, blocks)
         else:
-            participant.module_state.block_order = (
-                sync_group.leader.module_state.block_order
-            )
-            participant.module_state.set_block_position(
-                sync_group.leader.module_state.block_position
-            )
+            leader_state = self._leader_state(sync_group)
+            participant.module_state.block_order = leader_state.block_order
+            participant.module_state.set_block_position(leader_state.block_position)
 
     def init_block_order(self, experiment, participant, blocks):
         """Choose and store the participant's block order.
@@ -3016,7 +3014,14 @@ class ChainTrialMaker(NetworkTrialMaker):
         """Return the module states that move together: the participant's, or the sync group's."""
         if self.sync_group_type:
             group = participant.active_sync_groups[self.sync_group_type]
-            return [member.module_state for member in group.participants]
+            # Members who have left, or not yet reached this trial maker, are
+            # in another module, so their current state isn't for this one.
+            return [
+                member.module_state
+                for member in group.active_participants
+                if member.module_state is not None
+                and member.module_state.module_id == self.id
+            ]
         return [participant.module_state]
 
     def _update_group_states(self, participant, **values):
