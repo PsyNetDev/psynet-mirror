@@ -40,7 +40,8 @@ pair and wait for the next split:
    :end-before: def play_round
 
 The round starts as soon as the whole team is waiting, or at the
-``deadline`` without whoever isn't back yet; they join the next round.
+``deadline`` without whoever isn't back yet, if enough players are waiting to
+form a pair; latecomers join the next round.
 With ``roles``, each pair has a proposer and a responder, and each player
 alternates between them. Partners from last round are kept apart where
 possible. ``content`` counts down to the deadline:
@@ -110,7 +111,7 @@ For example, with a 30-second decision page and
   the round started.
 
 30 seconds is long enough for a tab in the background to notice that a
-round has started. A player who was taken out sees "Your group went on
+round has started. A player who was taken out sees "Your partner went on
 without you. Please continue." on the progress bar (pass
 ``on_arrival_message`` to the barrier to change it) and joins the next round
 when they come back.

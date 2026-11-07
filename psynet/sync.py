@@ -4090,7 +4090,7 @@ def _ready_seats_for(participant):
     ``seats`` (see :func:`group_seats`) are those of the members waiting at
     a barrier of the group, as :class:`~psynet.group_prompt.GroupPrompt`
     ticks them, ``ran_out_of_time`` those of the waiting members who came
-    from a page whose time limit ran out, and ``members`` those of all
+    after their latest timed page ran out of time, and ``members`` those of all
     active members, so that it can redraw the group when someone joins or
     leaves.
     """
@@ -4144,7 +4144,8 @@ def ran_out_of_time_in(participant, group):
     """Return whether ``participant`` waits in ``group`` after running out of time.
 
     That is, they are waiting at a barrier of ``group`` that they reached
-    straight from a page whose time limit ran out.
+    after their latest timed page ran out of time; untimed pages in between,
+    such as feedback, don't count.
     """
     return any(link.ran_out_of_time for _, link in _waiting_links(participant, group))
 

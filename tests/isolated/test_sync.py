@@ -6834,8 +6834,14 @@ def test_skipping_a_group_barrier_forgets_a_time_out(
     skipped = GroupBarrier(
         "decided", group_type="pair", timeout_between_barriers_action="kick"
     )
-    # The last code block is the branch for participants outside a group.
-    skip = [elt for elt in skipped.resolve() if isinstance(elt, CodeBlock)][-1]
+    elts = skipped.resolve()
+    (switch,) = [
+        elt
+        for elt in elts
+        if hasattr(elt, "branch_start_elts") and elt.label.endswith(":in_group")
+    ]
+    skip = elts[elts.index(switch.branch_start_elts[False]) + 1]
+    assert isinstance(skip, CodeBlock)
     skip.consume(exp, kicked)
     grouper = SimpleGrouper("pair", initial_group_size=2)
     _arrive_at_group_barrier(exp, grouper, kicked)

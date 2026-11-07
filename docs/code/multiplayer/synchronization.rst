@@ -138,7 +138,8 @@ this. Each time a participant reaches it, they leave their previous group of
 that type and wait for the next round. The regrouper then splits everyone
 waiting into new groups, when every member of the participant's ``within``
 group (such as their team) is waiting, or when ``deadline`` passes, without
-whoever isn't ready yet. They join the next round. The groups it forms are
+whoever isn't ready yet, provided enough participants are waiting to form a
+group. Latecomers join the next round. The groups it forms are
 never dissolved when a member leaves, so the members who are left continue
 the round on their own.
 

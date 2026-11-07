@@ -123,7 +123,7 @@ last update counts every arrival. Responses can come back out of order, and
 the browser drops any response to an earlier request than one it has shown.
 The response also has the seats of the members waiting in each of the
 participant's groups, for the ticks of :class:`~psynet.group_prompt.GroupPrompt`,
-and of those among them who came from a page whose time limit ran out
+and of those among them whose latest timed page ran out of time
 (``ParticipantLinkBarrier.ran_out_of_time``), who get a dash. Pages record
 the time-out as it happens in ``Participant.timed_out_since_barrier``, which
 the next barrier copies onto the visit and clears; waiting pages leave it
