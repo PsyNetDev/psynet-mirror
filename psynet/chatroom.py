@@ -16,10 +16,13 @@ Frames that arrive during that wait are appended after the snapshot,
 consuming snapshot matches as a multiset so two identical lines are not
 collapsed to one. An empty snapshot still completes the load.
 
-In an anonymous room (``ChatRoom(anonymous=True)``), members are not sent
+In an anonymous room (``ChatRoom(names="anonymous")``), members are not sent
 each other's pseudonyms, so the page can't reveal them. Each membership
 records whether its page is anonymous, and every frame is sent in two
-versions, with and without pseudonyms.
+versions, with and without pseudonyms. The widget then labels the others
+as :class:`~psynet.group_prompt.GroupPrompt` does with
+``names="anonymous"``: "Your partner" while the viewer has met only one
+other member of the room, and "Another player" once there are more.
 
 Maintainers should treat the JSON ``type`` values (``join_room``,
 ``leave_room``, ``request_state``, ``message``, ``occupancy_update``,
@@ -39,6 +42,8 @@ from .timeline import NullElt, WebSocketElt
 from .utils import get_logger, get_translator
 
 logger = get_logger()
+
+_NAMES = ("shown", "anonymous")
 
 
 @register_table
@@ -138,7 +143,7 @@ class EnableChatrooms(NullElt, WebSocketElt):
                     participant_id=participant.id,
                     room_id=room_id,
                     page_uuid=participant.page_uuid,
-                    anonymous=bool(chatroom.anonymous),
+                    anonymous=chatroom.names == "anonymous",
                     active=True,
                     join_time=receive_time,
                 )
@@ -316,12 +321,18 @@ class ChatRoom(JavaScriptContributor):
         Whether to wait for the persisted room log before enabling the
         chatroom. Live messages that arrive during that wait are shown
         after the snapshot.
-    anonymous
-        If ``True``, label everyone else "Another player" with the same
-        neutral figure, and don't send this page the others' pseudonyms, as
-        for a :class:`~psynet.group_prompt.GroupPrompt` with
-        ``names="anonymous"``. A chat room has no names to hide on hover,
-        so this is a flag rather than GroupPrompt's ``names`` choice.
+    names
+        How the others in the room, besides the viewer ("You"), are named:
+
+        - ``"shown"`` (default): by pseudonym;
+        - ``"anonymous"``: all with the same neutral figure, labelled as by a
+          :class:`~psynet.group_prompt.GroupPrompt` with
+          ``names="anonymous"``: "Your partner" while the viewer has met only
+          one other member of the room, and "Another player" once there are
+          more. The page is then not sent the others' pseudonyms.
+
+        A chat writes a name next to every message, so GroupPrompt's
+        ``"on_hover"`` is not available.
     """
 
     channel = EnableChatrooms.channel
@@ -330,15 +341,25 @@ class ChatRoom(JavaScriptContributor):
 
     show_participants = False
     show_history = False
-    anonymous = False
+    names = "shown"
 
     def __init__(
-        self, room_id, show_participants=False, show_history=False, anonymous=False
+        self, room_id, show_participants=False, show_history=False, names="shown"
     ):
+        if names == "on_hover":
+            raise ValueError(
+                "ChatRoom writes a name next to every message, so it can't show "
+                "names only on hover: use names='shown' or names='anonymous'."
+            )
+        if names not in _NAMES:
+            raise ValueError(
+                f"ChatRoom's names must be one of {', '.join(map(repr, _NAMES))}, "
+                f"not {names!r}."
+            )
         self.room_id = room_id
         self.show_participants = show_participants
         self.show_history = show_history
-        self.anonymous = anonymous
+        self.names = names
 
     def get_css(self):
         """Page-local CSS contributed to the hosting :class:`ModularPage`."""
@@ -359,9 +380,10 @@ class ChatRoom(JavaScriptContributor):
                 "channel": self.channel,
                 "show_participants": bool(self.show_participants),
                 "show_history": bool(self.show_history),
-                "anonymous": bool(self.anonymous),
+                "names": self.names,
                 "you_label": _p("chat sender", "You"),
                 "you_in_list_label": _p("chat participant list", "{NAME} (you)"),
+                "partner_label": _p("group prompt", "Your partner"),
                 "other_label": _p("group prompt", "Another player"),
                 "anonymous_sticker_html": str(anonymous_sticker_html()),
             }

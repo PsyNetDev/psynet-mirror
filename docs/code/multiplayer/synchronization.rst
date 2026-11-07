@@ -334,7 +334,7 @@ the default), also written below the animals (``"shown"``), or not at all
 (``"anonymous"``), every member then being drawn as the same grey figure,
 labelled "Your partner" in a pair and "Another player" in a larger group.
 Use ``"anonymous"`` when partners must not recognise each other across
-rounds, with ``ChatRoom(anonymous=True)`` if the page has a chat room.
+rounds, with ``ChatRoom(names="anonymous")`` if the page has a chat room.
 Members sit in a row for up to four people and in a zigzag across the
 width of the page for more, so the display adapts to any screen.
 

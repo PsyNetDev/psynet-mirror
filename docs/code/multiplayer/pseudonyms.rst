@@ -17,7 +17,8 @@ A participant keeps the same pseudonym for the whole experiment, in every
 group and chat room. Each deployment shuffles the colours and animals
 differently and then assigns them in order of participant ID, so
 participants who arrive one after another differ in both colour and animal,
-and any 88 participants in a row all have different pseudonyms.
+and any 88 (8 colours × 11 animals) participants in a row all have
+different pseudonyms.
 Participants whose IDs differ by a multiple of 88 share a pseudonym.
 
 Derived pseudonyms are made unique in the participant's first
@@ -32,9 +33,10 @@ seen them; in a later group, two members can therefore share a pseudonym.
 When partners must not recognise each other across groups, for example
 because a player could build a reputation in a game, show them anonymously
 instead: pass ``names="anonymous"`` to
-:class:`~psynet.group_prompt.GroupPrompt` and ``anonymous=True`` to
-:class:`~psynet.chatroom.ChatRoom`. Every other member is then drawn as the
-same grey figure and labelled "Your partner" or "Another player".
+:class:`~psynet.group_prompt.GroupPrompt` and to
+:class:`~psynet.chatroom.ChatRoom`. Both then draw every other member as the
+same grey figure, labelled "Your partner" in a pair and "Another player" in
+a larger group, so the two agree on a page that has both.
 
 Showing pseudonyms on other pages
 ---------------------------------
@@ -46,9 +48,18 @@ times the font size high:
 
 .. code-block:: python
 
+    from markupsafe import Markup
+
+    from psynet.page import InfoPage
+
     def show_partner(participant):
-        pair = participant.active_sync_groups["pair"]
-        (partner,) = [p for p in pair.participants if p != participant]
+        pair = participant.active_sync_groups.get("pair")
+        others = [] if pair is None else [
+            p for p in pair.active_participants if p != participant
+        ]
+        if not others:
+            return InfoPage("Your partner has left.")
+        partner = others[0]
         return InfoPage(
             Markup("{}<p>Your partner is {}.</p>").format(
                 partner.pseudonym.sticker_html, partner.pseudonym.name

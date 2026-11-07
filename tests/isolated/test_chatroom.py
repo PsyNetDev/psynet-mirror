@@ -72,13 +72,13 @@ class TestHandleMessage:
 
     @staticmethod
     def _send(
-        handler, exp, participant, payload, node=None, page_room=None, anonymous=False
+        handler, exp, participant, payload, node=None, page_room=None, names="shown"
     ):
         """Send ``payload``; a join comes from a page showing ``page_room``, by default the joined room."""
         if payload.get("type") == "join_room":
             room = page_room if page_room is not None else payload.get("room_id")
             exp.timeline.get_current_elt.return_value = SimpleNamespace(
-                chatroom=ChatRoom(room_id=room, anonymous=anonymous)
+                chatroom=ChatRoom(room_id=room, names=names)
             )
         time = datetime.now(UTC)
         handler.handle_message(
@@ -401,7 +401,7 @@ class TestHandleMessage:
         db.session.flush()
         room = _random_id()
         join = {"type": "join_room", "room_id": room}
-        self._send(handler, exp, hidden, join, anonymous=True)
+        self._send(handler, exp, hidden, join, names="anonymous")
         self._send(handler, exp, named, join)
         exp.publish_to_participants.reset_mock()
 
@@ -415,8 +415,12 @@ class TestHandleMessage:
         assert to_named["sender_pseudonym"] == named.pseudonym.to_dict()
         assert to_hidden["sender_pseudonym"] is None
         assert history["messages"][0]["sender_pseudonym"] is None
-        config = ChatRoom(room_id=room, anonymous=True).get_js_vars()["chatroom_config"]
-        assert config["anonymous"] and config["other_label"] == "Another player"
+        config = ChatRoom(room_id=room, names="anonymous").get_js_vars()
+        assert config["chatroom_config"]["names"] == "anonymous"
+        assert config["chatroom_config"]["partner_label"] == "Your partner"
+        assert config["chatroom_config"]["other_label"] == "Another player"
+        with pytest.raises(ValueError, match="hover"):
+            ChatRoom(room_id=room, names="on_hover")
 
     def test_a_room_the_page_does_not_show_cannot_be_joined(
         self, in_experiment_directory, db_session

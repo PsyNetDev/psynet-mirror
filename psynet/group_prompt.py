@@ -156,7 +156,7 @@ class GroupPrompt(Prompt):
           "Your partner" in the viewer's pair (or two-member subgroup) and
           "Another player" otherwise, so that nobody can recognise a member
           they met in an earlier group. Pair it with
-          ``ChatRoom(anonymous=True)`` on pages with a chat room.
+          ``ChatRoom(names="anonymous")`` on pages with a chat room.
     text_align
         CSS alignment of the text.
     """

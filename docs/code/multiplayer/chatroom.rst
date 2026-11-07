@@ -43,7 +43,7 @@ groups (see :doc:`synchronization`).
 Options
 -------
 
-:class:`~psynet.chatroom.ChatRoom` has three optional flags:
+:class:`~psynet.chatroom.ChatRoom` has three options:
 
 ``show_participants`` (default ``False``)
     Show a sidebar with the participants currently in the room.
@@ -52,12 +52,16 @@ Options
     Show the messages sent in the room before the participant opened the
     page. The chatroom is enabled once the earlier messages have loaded.
 
-``anonymous`` (default ``False``)
-    Label everyone else "Another player", with the same grey figure, instead
-    of by pseudonym; the server then doesn't send this participant the
-    others' pseudonyms. Use it on pages whose
-    :class:`~psynet.group_prompt.GroupPrompt` has ``names="anonymous"``, so
-    the chat doesn't reveal who the partner is.
+``names`` (default ``"shown"``)
+    ``"shown"`` labels everyone else by pseudonym. ``"anonymous"`` draws
+    them all as the same grey figure, labelled as by a
+    :class:`~psynet.group_prompt.GroupPrompt` with ``names="anonymous"``:
+    "Your partner" while the participant has met only one other member of
+    the room, and "Another player" once there are more. The server then
+    doesn't send this participant the others' pseudonyms. Use it on pages
+    whose GroupPrompt is anonymous, so the chat doesn't reveal who the
+    partner is. A chat writes a name next to every message, so
+    GroupPrompt's ``"on_hover"`` isn't available.
 
 Pseudonyms
 ----------

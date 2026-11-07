@@ -15,8 +15,9 @@ export async function activate({root, vars}) {
     var SHOW_HISTORY = CONFIG.show_history;
     var YOU_LABEL    = CONFIG.you_label || "You";
     var YOU_IN_LIST_LABEL = CONFIG.you_in_list_label || "{NAME} (you)";
+    var PARTNER_LABEL = CONFIG.partner_label || "Your partner";
     var OTHER_LABEL  = CONFIG.other_label || "Another player";
-    var ANONYMOUS    = Boolean(CONFIG.anonymous);
+    var ANONYMOUS    = CONFIG.names === "anonymous";
     var ANONYMOUS_STICKER = CONFIG.anonymous_sticker_html || "";
     var MY_ID        = String(dallinger.identity.participantId);
 
@@ -29,6 +30,26 @@ export async function activate({root, vars}) {
     // snapshot are held and appended afterwards by count, not existence.
     var historyReady   = !SHOW_HISTORY;
     var pendingLive    = [];
+    // As in an anonymous GroupPrompt, the others are "Your partner" while
+    // the viewer has met only one of them, and all become "Another player"
+    // once a second one appears.
+    var othersSeen     = new Set();
+
+    function anonymousLabel() {
+        return othersSeen.size <= 1 ? PARTNER_LABEL : OTHER_LABEL;
+    }
+
+    function noteOthers(ids) {
+        var before = othersSeen.size;
+        ids.forEach(function (id) {
+            if (id != null && String(id) !== MY_ID) othersSeen.add(String(id));
+        });
+        if (ANONYMOUS && othersSeen.size !== before) {
+            root.querySelectorAll(".chatroom-anonymous-name").forEach(function (el) {
+                el.textContent = anonymousLabel();
+            });
+        }
+    }
 
     function leaveChat() {
         if (leftChat) return;
@@ -93,18 +114,26 @@ export async function activate({root, vars}) {
             sticker.innerHTML = stickerHtml;
             label.appendChild(sticker);
         }
-        var name = pseudonym ? pseudonym.name : OTHER_LABEL;
         if (String(senderId) === MY_ID) {
             // Own messages say "You", so the list spells out the participant's name.
-            name = inList && pseudonym
-                ? YOU_IN_LIST_LABEL.replace("{NAME}", pseudonym.name)
-                : YOU_LABEL;
+            label.appendChild(document.createTextNode(
+                inList && pseudonym
+                    ? YOU_IN_LIST_LABEL.replace("{NAME}", pseudonym.name)
+                    : YOU_LABEL
+            ));
+        } else if (pseudonym) {
+            label.appendChild(document.createTextNode(pseudonym.name));
+        } else {
+            var name = document.createElement("span");
+            name.className = "chatroom-anonymous-name";
+            name.textContent = anonymousLabel();
+            label.appendChild(name);
         }
-        label.appendChild(document.createTextNode(name));
         return label;
     }
 
     function renderMessage(msg) {
+        noteOthers([msg.sender]);
         var feed    = root.querySelector("#chatroom-messages");
         var p       = document.createElement("p");
         var label   = senderLabel(msg.sender, msg.sender_pseudonym);
@@ -127,6 +156,7 @@ export async function activate({root, vars}) {
 
     function finishHistoryLoad(messages) {
         if (historyReady) return;
+        noteOthers(messages.map(function (m) { return m.sender; }));
         applyHistorySnapshot(messages);
         leftoverLiveAfterHistory(messages, pendingLive).forEach(renderMessage);
         pendingLive = [];
@@ -186,6 +216,7 @@ export async function activate({root, vars}) {
                 }
                 renderMessage(msg);
             } else if (msg.type === "occupancy_update") {
+                noteOthers(msg.participants || []);
                 if (SHOW_PARTS) {
                     rebuildParticipantList(msg.participants || [], msg.pseudonyms || {});
                 }
