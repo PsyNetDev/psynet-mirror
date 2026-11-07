@@ -107,14 +107,21 @@ the colours, animals or how names are formed, subclass
 
 Pseudonyms repeat after a number of participants equal to the least common
 multiple of the two list lengths, so lengths with no common factor (the
-default has 8 colours and 11 animals) give the most different pseudonyms. :meth:`~psynet.pseudonym.PseudonymScheme.assign`
-chooses each participant's pseudonym,
-:meth:`~psynet.pseudonym.PseudonymScheme.name` combines the colour and
-animal (override it for languages where the colour must agree with the
-animal), and :meth:`~psynet.pseudonym.PseudonymScheme.icon_html` draws the
-icon; override them for full control. Messages, history and occupancy updates carry each
-sender's pseudonym (``sender_pseudonym`` and ``pseudonyms``), so a custom
-chatroom widget can show it too.
+default has 8 colours and 11 animals) give the most different pseudonyms.
+:meth:`~psynet.pseudonym.PseudonymScheme.assign` chooses each participant's
+pseudonym, :meth:`~psynet.pseudonym.PseudonymScheme.name` names the pair, and
+:meth:`~psynet.pseudonym.PseudonymScheme.icon_html` draws the icon; override
+them for full control.
+
+Each built-in name, such as "Blue fox", is translated as a whole, so that
+languages can make the colour agree with the animal. A scheme with its own
+colours or animals gets the two words joined instead, which can't agree;
+override :meth:`~psynet.pseudonym.PseudonymScheme.name` to name its pairs in
+full.
+
+Messages, history and occupancy updates carry each sender's pseudonym
+(``sender_pseudonym`` and ``pseudonyms``), so a custom chatroom widget can
+show it too.
 
 Stored data
 -----------
