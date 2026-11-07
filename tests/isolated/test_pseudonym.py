@@ -1,3 +1,4 @@
+import itertools
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -74,6 +75,9 @@ def test_built_in_names_are_translated_whole(monkeypatch):
         def animals(self):
             return {**super().animals(), "lion": ("lion", "🦁")}
 
+    assert set(psynet.pseudonym._BUILTIN_NAMES) == set(
+        itertools.product(PseudonymScheme().colors(), PseudonymScheme().animals())
+    )
     assert Lions().make("blue", "fox").name == "Renard bleu"
     assert Lions().make("blue", "lion").name == "Lion blue"
 
@@ -96,7 +100,11 @@ def test_stored_deployment_id_and_overrides_decide_pseudonyms(
 
     participants[0].set_pseudonym("red", "whale")
     assert participants[0].pseudonym.name == "Red whale"
-    assert participants[0].to_dict()["pseudonym"] == "Red whale"
+    assert "pseudonym_color" not in participants[0].to_dict()
+    rows = exp.table_data(0, 10, table="participant")["data"]
+    assert {row["id"]: row["pseudonym"] for row in rows}[participants[0].id] == (
+        "Red whale"
+    )
     (column,) = [
         c for c in exp.table_columns("participant") if c["data"] == "pseudonym"
     ]

@@ -12,9 +12,10 @@ Design constraints:
   differently, so participant 10 gets a different pseudonym in each
   deployment, and a loaded export gives the same pseudonyms that
   participants saw, as long as it is loaded with the same PsyNet version,
-  pseudonym scheme and locale. Colour and animal indices cycle with coprime periods (8 and 11), so
-  any 88 consecutive participants get different pseudonyms, and neighbours
-  differ in both colour and animal, which helps colour-blind participants.
+  pseudonym scheme and locale, and not launched again. Colour and animal
+  indices cycle with coprime periods (8 and 11), so any 88 consecutive
+  participants get different pseudonyms, and neighbours differ in both
+  colour and animal, which helps colour-blind participants.
   Participants whose IDs differ by a multiple of 88 share a pseudonym.
 - Only keys are stored when an experiment overrides a pseudonym, in the
   participant's ``pseudonym_color`` and ``pseudonym_animal`` columns; labels

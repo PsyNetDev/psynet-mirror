@@ -5427,6 +5427,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
         return columns
 
+    def table_data(self, start, length, table="participant", **kwargs):
+        """Return a page of the Database tab's rows, adding each participant's pseudonym."""
+        data = super().table_data(start, length, table=table, **kwargs)
+        if table == "participant" and data["data"]:
+            from .participant import Participant
+
+            ids = [row["id"] for row in data["data"]]
+            participants = Participant.query.filter(Participant.id.in_(ids))
+            names = {p.id: p.pseudonym.name for p in participants}
+            for row in data["data"]:
+                row["pseudonym"] = names.get(row["id"])
+        return data
+
     @dashboard_tab("Participants")
     @classmethod
     def dashboard_participants(cls):
