@@ -293,6 +293,14 @@ Answers given because of the time limit skip validation, and their
 maker or code block can check the previous page with
 ``participant.response.time_limit_reached``.
 
+In a group experiment, a time limit covers only its page. A following
+:class:`~psynet.sync.GroupBarrier` with ``late_after`` waits for a member
+who is on a timed page until the page's time limit has run out plus 10
+seconds, which is enough for an answer sent at the deadline to arrive. So
+give decision pages a ``time_limit``, and the barrier after them
+``late_after`` rather than a long ``max_wait_time``; see
+:ref:`rounds-slow-players` for a worked example.
+
 To keep what the participant has entered instead of a fixed answer, pass
 :data:`~psynet.timeline.CURRENT_ANSWER`:
 

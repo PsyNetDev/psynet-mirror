@@ -2286,7 +2286,9 @@ class SimpleGrouper(Grouper):
         else:
             if not join_existing_groups:
                 raise ValueError(
-                    "If max_group_size != 'initial_group_size', you probably want to set join_existing_groups=True."
+                    "A max_group_size other than 'initial_group_size' requires "
+                    "join_existing_groups=True: a group only grows past its "
+                    "initial size by taking newcomers."
                 )
 
         if min_group_size == "initial_group_size":

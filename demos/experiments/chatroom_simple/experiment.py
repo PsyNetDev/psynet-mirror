@@ -108,6 +108,7 @@ class Exp(psynet.experiment.Experiment):
             group_type=GROUP_TYPE,
             initial_group_size=2,
             waiting_message="Waiting for your partner",
+            max_wait_time=120,
         ),
         ChatTrialMaker(
             id_="chat",

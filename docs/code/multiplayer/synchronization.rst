@@ -234,7 +234,7 @@ the waiting indicator also has a smaller second line saying how many members
 are not ready yet. Set ``notify_arrivals=False`` to turn both off, or pass
 ``on_arrival_message`` to change the notices. It receives ``kind``
 (``"notice"`` for the progress bar, ``"removed"`` for the notice a member
-sees after being kicked from the group), ``waiting_count`` and
+sees after being removed from the group), ``waiting_count`` and
 ``group_size``, and returns the text or ``None`` to hide it. For a notice it
 is called whenever the browser fetches the current count, which can be
 several times per arrival, so it should depend only on its arguments and
@@ -466,13 +466,15 @@ Waiting and dropouts
 Timeouts
 ~~~~~~~~
 
-A grouper or barrier has two timeouts, which act on different members:
+A grouper or barrier has two limits, the maximum waiting time and the late
+limit, which act on different members:
 
 ``max_wait_time``
     Acts on members **waiting** at this grouper or barrier: the longest each
-    may wait, counted from their arrival. 20 seconds by default, or no limit
+    may wait, counted from their arrival. 20 seconds by default (see the
+    table below for other defaults), or no limit
     at a :class:`~psynet.sync.GroupBarrier` that sets ``late_after``, which
-    then moves slow members on instead; passing ``max_wait_time`` together
+    then handles late members instead; passing ``max_wait_time`` together
     with ``late_after`` raises an error. At a grouper, a participant who
     waits longer is failed. At a :class:`~psynet.sync.GroupBarrier`,
     ``max_wait_action`` decides: ``"fail"`` (default) fails the participant,
@@ -489,27 +491,28 @@ A grouper or barrier has two timeouts, which act on different members:
     filler.
 
 ``late_after`` (default: ``None``)
-    Acts on members who **haven't reached** this
-    :class:`~psynet.sync.GroupBarrier` yet: the longest each may take to
-    reach it, counted from the group's previous barrier pass, or from when
-    the member joined the group if that is later. A member who is later than
-    that is handled by ``late_action``: ``"fail"`` (default) or ``"kick"``.
-    Members who arrive on time wait for the others until they arrive or are
-    late, so they need no ``max_wait_time`` of their own.
+    The late limit. Acts on members who **haven't reached** this
+    :class:`~psynet.sync.GroupBarrier` yet: a member who hasn't reached the
+    barrier within ``late_after`` seconds of the group's previous barrier
+    pass, or of joining the group if that is later, is late, and is handled
+    by ``late_action``: ``"fail"`` (default) fails them, and ``"kick"``
+    removes them from the group. Members who arrive on time wait for the
+    others until they arrive or are late, so they need no ``max_wait_time``
+    of their own.
 
     A member who has started a page with a ``time_limit``, other than a
     waiting page, since the group last passed a barrier (or since joining)
     is not late until that limit has run out plus 10 seconds, so that an
-    answer sent at the deadline can arrive. So the timeout need not be
+    answer sent at the deadline can arrive. So the late limit need not be
     longer than the pages' time limits. See
     :ref:`a worked example <rounds-slow-players>`.
 
-    At a group's first barrier the timeout counts from when each member joined
-    the group, which for its original members is when it formed.
+    At a group's first barrier the late limit counts from when each member
+    joined the group, which for its original members is when it formed.
     Size it to cover everything between the grouper and that barrier, such as
-    instructions or a practice trial, or members who read slowly are timed
-    out before they arrive. Kicking a slow member can also take a group below
-    ``min_group_size``; a group that doesn't accept top-ups is then dissolved,
+    instructions or a practice trial, or members who read slowly are late
+    before they arrive. Removing a late member from the group can also take
+    the group below ``min_group_size``; a group that doesn't accept top-ups is then dissolved,
     which by default fails the members who arrived on time (see
     :ref:`groups below minimum size <groups_below_min_size>`).
 
@@ -518,7 +521,28 @@ Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_max_wait_action``, ``sync_group_late_after`` and
 ``sync_group_late_action``. ``sync_group_max_wait_time`` defaults to 45
 seconds, or, as at a barrier, to no limit with ``sync_group_late_after``,
-and passing both raises an error.
+and passing both raises an error. Passing any of these options, or
+``sync_group_waiting_message``, without ``sync_group_type`` also raises an
+error.
+
+The default ``max_wait_time`` depends on where it is set:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Where
+     - Default ``max_wait_time``
+   * - :class:`~psynet.sync.SimpleGrouper` and other
+       :class:`~psynet.sync.Grouper` subclasses
+     - 20 seconds
+   * - :class:`~psynet.sync.GroupBarrier`
+     - 20 seconds, or no limit with ``late_after``
+   * - Trial makers with ``sync_group_type``
+       (``sync_group_max_wait_time``)
+     - 45 seconds, or no limit with ``sync_group_late_after``
+   * - :class:`~psynet.sync.Regrouper`
+     - 300 seconds, or twice its ``deadline`` or ``every`` plus 60 seconds
+       if that is longer
 
 Choose ``max_wait_time`` at the grouper together with how quickly you
 recruit, because a participant is failed if too few others arrive while

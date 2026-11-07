@@ -45,16 +45,31 @@ Every barrier and grouper has a **maximum waiting time**. A participant who
 waits longer, for example because a partner closed the browser, is released.
 At a grouper they are failed; at a barrier, depending on its settings, they
 are either failed or removed from the group so that they can continue alone.
-A barrier can also set a time limit between barriers, which catches members
-who fall behind: a member who hasn't reached the next barrier in time is
-failed or removed. A member on a page with its own time limit is not caught
-before the page's limit has run out. By default,
-participants are credited for the actual time
-they wait, up to the maximum.
+A barrier can also catch members who fall behind: a member who hasn't
+reached the barrier within a set number of seconds is **late**, and is
+failed or removed from the group. A member on a page with its own time
+limit is not late before the page's time limit has run out. By default,
+participants are credited for the actual time they wait, up to the maximum.
+
+By default, when a member is failed or leaves the experiment, a group that
+falls below its minimum size is dissolved, and its remaining members are
+failed too. Decide this for every grouper (a regrouper's groups are never
+dissolved): let the others continue with
+fewer members (``fail_participants_below_min_size=False``), or have the
+group wait for a newcomer to replace the one who left
+(``join_existing_groups=True``). Failed participants are paid for what they
+completed (see :doc:`/code/participants/payment`).
 
 Plan for dropouts: decide whether a round can continue with fewer members,
 whether the remaining members should go on alone or finish early, and how
 their data will be analyzed.
+
+Groups can go through the experiment in two ways. A **trial maker** with a
+group type gives a group's members trials on the same stimuli, or nodes,
+and keeps them in step from trial to trial; use it when a group works
+through stimuli together. A **loop** with a regrouper and barriers (see
+`New groups for each round`_) suits games without stimuli, and designs
+where partners change from round to round.
 
 Talking to each other
 ---------------------
@@ -170,13 +185,14 @@ forms new pairs.
 Repeating this every round would make each player wait for their whole old
 group before they could be regrouped, and fail the group's members when one of
 them drops out. A **regrouper** is made for this instead. Each time
-participants reach it, it takes them out of their previous group and splits
+participants reach it, it removes them from their previous group and splits
 those waiting into new groups. It keeps last round's partners apart where
 possible and gives out roles such as proposer and responder in turn. If the
 players don't divide evenly into groups, the player who has played the most
 rounds **sits out** the round; they see a page saying so and play again in a
-later round. A player who is late for a split isn't failed; they join the next
-one.
+later round. A player who is late for a split joins the next one; if no
+further split comes within the regrouper's maximum waiting time, for example
+after the last round, they are failed.
 
 A regrouper doesn't split players as soon as two are waiting, because that
 would pair whoever finished at the same moment, often the same people every
@@ -216,7 +232,8 @@ Rounds need a plan for slow players, because a player who stops responding
 holds up their partners. Give decision pages a time limit. A player who runs
 out of time moves on, and their partners see that they ran out of time instead
 of waiting. A player who falls further behind, for example because they closed
-the tab, is taken out of the round and can rejoin in the next one.
+the tab, is late at the barrier after the decision: they are removed from
+the group and can rejoin in the next round.
 
 Decide when the game ends: after a fixed number of rounds, when a player has
 sat out too often, or when too few players remain to form a group.

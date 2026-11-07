@@ -4,10 +4,11 @@ Writing a round-based experiment
 Many group experiments are games played over several rounds: players are
 paired or grouped, decide, see the result, and are grouped again for the
 next round. This page builds one such game step by step, the
-``ultimatum_pairing`` demo, and then shows how other games vary it. See
-:doc:`synchronization` for the concepts used here.
+``ultimatum_pairing`` demo, and then shows how other games vary it. Each
+class and option links to its API reference where it first appears;
+:doc:`synchronization` is the reference for everything else.
 
-In the demo, cohorts of up to four players form in a lobby. Each round, the
+In the demo, cohorts of up to four players form as players arrive. Each round, the
 cohort is split into pairs, and in each pair a proposer offers part of 10
 coins while the responder says the smallest offer they would accept. A
 player who is slow, closes their tab or sits a round out never holds up the
@@ -18,7 +19,9 @@ Forming cohorts
 
 A :class:`~psynet.sync.SimpleGrouper` forms the cohorts. It starts a cohort
 of four as soon as four players are waiting, or a smaller one after a
-minute, and lets latecomers join until the cohort's second round starts:
+minute (``start_short_after``), and lets latecomers join until the cohort's
+second round starts (``join_existing_groups`` and ``join_criterion``; see
+:class:`~psynet.sync.SimpleGrouper`):
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: SimpleGrouper(
@@ -39,13 +42,14 @@ pair and wait for the next split:
    :start-at: pairing = Regrouper(
    :end-before: def play_round
 
-The round starts as soon as the whole cohort is waiting, or at the
-``deadline`` (counted from when the first player is back) without whoever
+The round starts as soon as the whole cohort (``within``) is waiting, or at
+the ``deadline`` (counted from when the first player is back) without whoever
 isn't back yet, if enough players are waiting to
 form a pair; latecomers join the next round.
 With ``roles``, each pair has a proposer and a responder, and each player
 alternates between them. Partners from last round are kept apart where
-possible. ``waiting_message`` counts down to the deadline:
+possible. ``waiting_message`` counts down to the deadline. See
+:class:`~psynet.sync.Regrouper` for these options:
 
 .. figure:: ../../_static/images/rounds/next_round.png
    :width: 700
@@ -94,11 +98,13 @@ Moving slow players on
 ----------------------
 
 The :class:`~psynet.sync.GroupBarrier` after the decision page waits for
-both partners. With ``late_action="kick"``, a player who
-doesn't arrive in time is taken out of the pair, and their partner carries
-on alone. A player on a page with a time limit is not taken out before that
-limit has run out and an answer sent at the deadline has had 10 seconds to
-arrive, so the timeout need not be longer than the page's time limit.
+both partners. A player who hasn't reached it within ``late_after`` seconds
+of the round's start is late, and with ``late_action="kick"`` is removed
+from the pair, so that their partner carries on alone (see
+:class:`~psynet.sync.GroupBarrier` for both options). A player on a page
+with a time limit is not late before that limit has run out and an answer
+sent at the deadline has had 10 seconds to arrive, so the late limit need
+not be longer than the page's time limit.
 For example, with a 30-second decision page and
 ``late_after=30``:
 
@@ -107,18 +113,19 @@ For example, with a 30-second decision page and
 - A partner who leaves the page open without answering moves on at 30
   seconds, when the time limit runs out. The pair continues together, and
   nobody is paid.
-- A partner who closes their tab partway through the page is taken out about
-  40 seconds into the round: 10 seconds after the page's time limit.
-- A partner whose tab never opened the page is taken out 30 seconds after
-  the round started.
+- A partner who closes their tab partway through the page is removed from
+  the pair about 40 seconds into the round: 10 seconds after the page's time
+  limit.
+- A partner whose tab never opened the page is removed from the pair 30
+  seconds after the round started.
 
 30 seconds is long enough for a tab in the background to notice that a
-round has started. A player who was taken out sees "Your partner went on
-without you. Please continue." on the progress bar (pass
+round has started. A player who was removed from the pair sees "Your
+partner went on without you. Please continue." on the progress bar (pass
 ``on_arrival_message`` to the barrier to change it) and joins the next round
 when they come back.
 
-A player who was taken out of their pair passes the round's later group
+A player who was removed from their pair passes the round's later group
 barriers straight through. Only a player who was never in a pair gets an
 error there, which usually means a grouper is missing.
 
@@ -156,8 +163,10 @@ Sitting out
 
 With three players in a cohort, one of them has no partner. The player who has
 played the most rounds sits the round out; with ``release_left_over=True``
-they move on to a page saying so instead of waiting. A player who was paired but taken
-out before reaching the decision page is told that they were away instead:
+they move on to a page saying so instead of waiting (see
+:class:`~psynet.sync.Regrouper`). A player who was paired but removed
+from the pair before reaching the decision page is told that they were away
+instead:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: not_playing

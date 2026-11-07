@@ -408,8 +408,8 @@ Groups
     number. :doc:`/code/multiplayer/synchronization`.
 
 `experiments/ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__
-    An ultimatum game in cohorts formed in a lobby that starts short and takes
-    latecomers. Each round re-pairs the cohort with a ``Regrouper``, and an odd
+    An ultimatum game in cohorts, formed by a grouper that starts cohorts short
+    and lets latecomers join. Each round re-pairs the cohort with a ``Regrouper``, and an odd
     player out sits out. :doc:`/code/multiplayer/writing_a_round_based_experiment`.
 
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
