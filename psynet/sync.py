@@ -4145,6 +4145,8 @@ def _interruptible_waiting_barrier(page, participant):
 
     Pages of a trial that is still waiting for its answer are left to run
     to their end, so that the trial is not finalized without an answer.
+    Waiting logic only times out between passes, so a trial started there
+    is finished before the participant leaves it.
     ``participant.current_trial`` is not cleared after a trial, so an
     earlier, answered trial doesn't count.
     """
