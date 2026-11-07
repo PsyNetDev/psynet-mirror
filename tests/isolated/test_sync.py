@@ -5833,6 +5833,7 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
             {
                 "group_id": first.active_sync_groups["main"].id,
                 "seats": [0],
+                "ran_out_of_time": [],
                 "members": [0, 1],
             }
         ],

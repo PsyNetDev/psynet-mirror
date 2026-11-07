@@ -37,9 +37,9 @@ it("drops arrival snapshots that come back after a newer one", () => {
   psynet.applyArrivalSnapshot(snapshot(4), 2);
   psynet.applyArrivalSnapshot(snapshot(3), 1);
   assert.deepEqual(psynet.notices, ["4/6 ready"]);
-  assert.deepEqual(psynet.readySeatsFor(1), [0, 1, 2, 3]);
+  assert.deepEqual(psynet.readySeatsFor(1).seats, [0, 1, 2, 3]);
   window.pageUuid = "page-2";
-  assert.deepEqual(psynet.readySeatsFor(1), []);
+  assert.deepEqual(psynet.readySeatsFor(1).seats, []);
 });
 
 it("ignores an arrival snapshot that comes back after the page changed", () => {

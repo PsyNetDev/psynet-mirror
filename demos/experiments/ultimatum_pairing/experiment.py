@@ -190,8 +190,7 @@ def waiting_for_partner(participant):
         text = f"You offer {participant.var.decision} coins."
     else:
         text = f"You accept at least {participant.var.decision} coins."
-    # No ticks: the partner arriving releases the pair at once, and one who
-    # ran out of time would get a tick for an answer they never gave.
+    # No ticks: the partner arriving releases the pair at once.
     return GroupPrompt(
         text,
         participant=participant,

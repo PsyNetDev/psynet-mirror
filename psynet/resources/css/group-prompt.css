@@ -140,7 +140,8 @@
     font-weight: bold;
 }
 
-.psynet-group-tick {
+.psynet-group-tick,
+.psynet-group-dash {
     visibility: hidden;
     position: absolute;
     top: -0.1em;
@@ -156,6 +157,15 @@
 }
 
 .psynet-group-member--answered .psynet-group-tick {
+    visibility: visible;
+}
+
+/* A member who reached the barrier because their time limit ran out. */
+.psynet-group-dash {
+    background: #6c757d;
+}
+
+.psynet-group-member--ran-out-of-time .psynet-group-dash {
     visibility: visible;
 }
 

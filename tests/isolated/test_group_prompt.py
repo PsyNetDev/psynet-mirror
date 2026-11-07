@@ -15,6 +15,7 @@ from psynet.sync import (
     arrival_notice_payload,
     group_seats,
 )
+from psynet.timeline import Response
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_regrouper import _arrive, _commit_barrier_arrivals  # noqa: E402
@@ -50,6 +51,7 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
             {
                 "group_id": group.id,
                 "seats": sorted([seats[first.id], seats[second.id]]),
+                "ran_out_of_time": [],
                 "members": [0, 1, 2],
             }
         ],
@@ -98,6 +100,37 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     group.remove_participant(first)
     _commit_barrier_arrivals()
     assert any(t.get("refresh") for t in published if t["participant_id"] == third.id)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_session):
+    exp = get_experiment()
+    first, second, third = _working_participants(exp, 3)
+    _arrive(exp, SimpleGrouper("room", initial_group_size=3), [first, second, third])
+    group = third.active_sync_groups["room"]
+    db_session.add(
+        Response(
+            participant=first,
+            label="choose",
+            page_type="ModularPage",
+            metadata={"time_limit_reached": True},
+        )
+    )
+    _arrive(exp, GroupBarrier("decided", group_type="room"), [first, second])
+
+    html = GroupPrompt(group=group, participant=third).group_html
+    assert html.count("psynet-group-member--ran-out-of-time") == 1
+    assert html.count("psynet-group-member--answered") == 1
+    (ready,) = arrival_notice_payload(third.unique_id)["group_ready"]
+    assert ready["ran_out_of_time"] == [group_seats(group)[first.id]]
+
+    # The timeout only marks the barrier that the page led to.
+    _arrive(exp, GroupBarrier("decided", group_type="room"), [third])
+    _arrive(exp, GroupBarrier("next", group_type="room"), [first])
+    html = GroupPrompt(group=group, participant=third).group_html
+    assert "psynet-group-member--ran-out-of-time" not in html
 
 
 @pytest.mark.parametrize(

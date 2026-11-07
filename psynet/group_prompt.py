@@ -14,7 +14,9 @@ Design constraints:
 - By default a member has answered once they are waiting at a barrier of
   the group, typically the barrier after the decision page. Live ticks come
   from that barrier's arrival updates, so they need ``notify_arrivals``
-  (the default).
+  (the default). A member who reached the barrier because their page's
+  time limit ran out gets a dash instead of a tick
+  (:func:`psynet.sync.ran_out_of_time_in`).
 - Members who drop out of the group stay in their seat, faded and marked
   "(left)" if they failed or left the experiment, "(out of time)" if a
   barrier removed them for being late, and "(dropped out)" otherwise.
@@ -107,7 +109,8 @@ class GroupPrompt(Prompt):
     show_progress
         If ``True`` (default) and ``answers`` is not given, members who have
         answered get a tick, which appears live as they reach the next
-        barrier. While ticks appear live, the page hides the group arrival
+        barrier. Members who reached it because their page's time limit ran
+        out get a dash instead. While ticks appear live, the page hides the group arrival
         notice ("2/3 of your group are ready."), which would repeat them.
     has_answered
         Optional ``has_answered(participant) -> bool`` deciding who has answered
@@ -175,6 +178,11 @@ class GroupPrompt(Prompt):
         self.note = note
         self.show_progress = show_progress and answers is None
         self.has_answered = has_answered or _waiting_in_group(group)
+        self.ran_out_of_time = (
+            _ran_out_of_time_in_group(group)
+            if has_answered is None
+            else lambda participant: False
+        )
         self.live_ticks = self.show_progress and has_answered is None
         # Pages can redraw the group when members join or leave, unless a
         # function decides the subgroups or who has answered, which the
@@ -220,6 +228,10 @@ class GroupPrompt(Prompt):
                 "live_members": self.live_members,
                 "answered_label": _p("group prompt", "has answered"),
                 "answered_announcement": _p("group prompt", "{NAME} has answered."),
+                "ran_out_of_time_label": _p("group prompt", "ran out of time"),
+                "ran_out_of_time_announcement": _p(
+                    "group prompt", "{NAME} ran out of time."
+                ),
                 "redraw_token": self._redraw_token() if self.live_members else None,
             }
         }
@@ -448,7 +460,10 @@ class GroupPrompt(Prompt):
         if style:
             classes.append(f"psynet-group-member--{_css_identifier(style)}")
         answered = self.show_progress and not has_left and self.has_answered(member)
-        if answered:
+        timed_out = answered and self.ran_out_of_time(member)
+        if timed_out:
+            classes.append("psynet-group-member--ran-out-of-time")
+        elif answered:
             classes.append("psynet-group-member--answered")
         bubble = Markup("")
         focusable = Markup("")
@@ -470,10 +485,17 @@ class GroupPrompt(Prompt):
                 )
         status = Markup("")
         if self.show_progress:
+            if timed_out:
+                status_text = _p("group prompt", "ran out of time")
+            elif answered:
+                status_text = _p("group prompt", "has answered")
+            else:
+                status_text = ""
             status = Markup(
                 '<span class="psynet-group-tick" aria-hidden="true">✓</span>'
+                '<span class="psynet-group-dash" aria-hidden="true">–</span>'
                 '<span class="psynet-group-status visually-hidden">{}</span>'
-            ).format(_p("group prompt", "has answered") if answered else "")
+            ).format(status_text)
         name = Markup('<span class="psynet-group-name{}">{}</span>').format(
             " psynet-group-you" if is_me else "", label
         )
@@ -568,6 +590,17 @@ def _waiting_in_group(group):
         return bool(waiting_barrier_ids(participant, group))
 
     return waiting
+
+
+def _ran_out_of_time_in_group(group):
+    """Return a check of whether a member waits in ``group`` after running out of time."""
+
+    from .sync import ran_out_of_time_in
+
+    def ran_out_of_time(participant):
+        return ran_out_of_time_in(participant, group)
+
+    return ran_out_of_time
 
 
 def _css_identifier(style: str) -> str:

@@ -1120,6 +1120,7 @@ class Barrier(EltCollection):
             arrival_time=now,
         )
         participant.active_barriers[self.id] = link
+        link.ran_out_of_time = _came_from_timed_out_page(participant, now)
         if not self._uses_timeline_hold:
             max_wait_time = call_if_callable(
                 self.max_wait_time, participant=participant
@@ -3838,6 +3839,8 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     released = Column(Boolean, default=False)
     # A Regrouper released the participant without a group.
     sat_out = Column(Boolean, default=False)
+    # The participant came here straight from a page whose time limit ran out.
+    ran_out_of_time = Column(Boolean, default=False)
     # A Regrouper with ``keep_roles`` gave a newcomer this role for the
     # coming split; it is kept once they play it.
     role = Column(String)
@@ -4064,22 +4067,26 @@ def arrival_notice_payload(unique_id):
 
 
 def _ready_seats_for(participant):
-    """Return ``{group_id, seats, members}`` for each of the participant's groups.
+    """Return ``{group_id, seats, ran_out_of_time, members}`` for each of the participant's groups.
 
     ``seats`` (see :func:`group_seats`) are those of the members waiting at
     a barrier of the group, as :class:`~psynet.group_prompt.GroupPrompt`
-    ticks them, and ``members`` those of all active members, so that it can
-    redraw the group when someone joins or leaves.
+    ticks them, ``ran_out_of_time`` those of the waiting members who came
+    from a page whose time limit ran out, and ``members`` those of all
+    active members, so that it can redraw the group when someone joins or
+    leaves.
     """
     ready = []
     for group in participant.active_sync_groups.values():
         seats = group_seats(group)
         members = group.active_participants
         waiting = [seats[m.id] for m in members if waiting_barrier_ids(m, group)]
+        timed_out = [seats[m.id] for m in members if ran_out_of_time_in(m, group)]
         ready.append(
             {
                 "group_id": group.id,
                 "seats": sorted(waiting),
+                "ran_out_of_time": sorted(timed_out),
                 "members": sorted(seats[m.id] for m in members),
             }
         )
@@ -4095,15 +4102,50 @@ def _notify_membership_change(group, newcomer=None):
             _queue_arrival_update(member.id, refresh=True)
 
 
-def waiting_barrier_ids(participant, group):
-    """Return the IDs of the barriers of ``group`` that ``participant`` is waiting at."""
+def _waiting_links(participant, group):
     return [
-        barrier_id
+        (barrier_id, link)
         for barrier_id, link in participant.active_barriers.items()
         if not link.released
         and link.barrier_instance is not None
         and link.barrier_instance.group_id == group.id
     ]
+
+
+def waiting_barrier_ids(participant, group):
+    """Return the IDs of the barriers of ``group`` that ``participant`` is waiting at."""
+    return [barrier_id for barrier_id, _ in _waiting_links(participant, group)]
+
+
+def ran_out_of_time_in(participant, group):
+    """Return whether ``participant`` waits in ``group`` after running out of time.
+
+    That is, they are waiting at a barrier of ``group`` that they reached
+    straight from a page whose time limit ran out.
+    """
+    return any(link.ran_out_of_time for _, link in _waiting_links(participant, group))
+
+
+def _came_from_timed_out_page(participant, arrival_time):
+    """Return whether the participant's last page ended on its time limit.
+
+    Only a page answered since the participant's previous barrier visit
+    (one that started before ``arrival_time``) counts, so the flag doesn't
+    carry over to a later barrier.
+    """
+    response = participant.response
+    if response is None or not (response.metadata or {}).get("time_limit_reached"):
+        return False
+    later_visit = (
+        ParticipantLinkBarrier.query.filter(
+            ParticipantLinkBarrier.participant_id == participant.id,
+            ParticipantLinkBarrier.arrival_time >= response.creation_time,
+            ParticipantLinkBarrier.arrival_time < arrival_time,
+        )
+        .with_entities(ParticipantLinkBarrier.id)
+        .first()
+    )
+    return later_visit is None
 
 
 def _interruptible_waiting_barrier(page, participant):

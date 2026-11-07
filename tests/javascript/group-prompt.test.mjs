@@ -9,7 +9,7 @@ function member(seat) {
     dataset: { seat: String(seat) },
     classList: {
       add: (name) => classes.add(name),
-      remove: (name) => classes.delete(name),
+      remove: (...names) => names.forEach((name) => classes.delete(name)),
       contains: (name) => classes.has(name),
     },
     getAttribute: () => `Member ${seat}`,
@@ -28,8 +28,12 @@ function groupRoot(seats, leftSeats = []) {
       return seat ? members.find((m) => m.dataset.seat === seat[1]) : null;
     },
     querySelectorAll(selector) {
-      if (selector === ".psynet-group-member--answered") {
-        return members.filter((m) => m.classList.contains("psynet-group-member--answered"));
+      if (selector.startsWith(".psynet-group-member--answered")) {
+        return members.filter(
+          (m) =>
+            m.classList.contains("psynet-group-member--answered") ||
+            m.classList.contains("psynet-group-member--ran-out-of-time")
+        );
       }
       return selector.endsWith(":not(.psynet-group-member--left)")
         ? members.filter((m) => !m.classList.contains("psynet-group-member--left"))
@@ -39,12 +43,19 @@ function groupRoot(seats, leftSeats = []) {
       members
         .filter((m) => m.classList.contains("psynet-group-member--answered"))
         .map((m) => Number(m.dataset.seat)),
+    dashed: () =>
+      members
+        .filter((m) => m.classList.contains("psynet-group-member--ran-out-of-time"))
+        .map((m) => Number(m.dataset.seat)),
   };
 }
 
-function setUp(readySeats = []) {
+function setUp(readySeats = [], ranOutOfTime = []) {
   const listeners = [];
-  globalThis.psynet = { uniqueId: "p1", readySeatsFor: () => readySeats };
+  globalThis.psynet = {
+    uniqueId: "p1",
+    readySeatsFor: () => ({ seats: readySeats, ranOutOfTime }),
+  };
   globalThis.window = {
     psynet: globalThis.psynet,
     addEventListener: (type, listener) => listeners.push(listener),
@@ -70,6 +81,16 @@ it("ticks the members already waiting, then only those still waiting", async () 
   assert.deepEqual(root.ticked(), [1]);
   send({ groupId: 8, seats: [] });
   assert.deepEqual(root.ticked(), [1]);
+});
+
+it("gives members who ran out of time a dash instead of a tick", async () => {
+  const { send } = setUp([0, 2], [2]);
+  const root = groupRoot([0, 1, 2]);
+  await activate({ root, vars: { group_prompt: { group_id: 7, live_ticks: true } } });
+  assert.deepEqual([root.ticked(), root.dashed()], [[0], [2]]);
+
+  send({ groupId: 7, seats: [1, 2], ranOutOfTime: [1] });
+  assert.deepEqual([root.ticked(), root.dashed()], [[2], [1]]);
 });
 
 function mockAjax() {

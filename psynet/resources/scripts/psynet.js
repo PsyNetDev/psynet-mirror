@@ -1214,12 +1214,16 @@
       psynet.arrivalSnapshot = { request, pageUuid: window.pageUuid, groups: {} };
       psynet.applyArrivalNotice(data.notice, { removed: data.removed });
       (data.group_ready || []).forEach((ready) => {
-        psynet.arrivalSnapshot.groups[ready.group_id] = ready.seats;
+        psynet.arrivalSnapshot.groups[ready.group_id] = {
+          seats: ready.seats,
+          ranOutOfTime: ready.ran_out_of_time || [],
+        };
         window.dispatchEvent(
           new CustomEvent("psynetGroupReady", {
             detail: {
               groupId: ready.group_id,
               seats: ready.seats,
+              ranOutOfTime: ready.ran_out_of_time || [],
               members: ready.members,
             },
           }),
@@ -1227,11 +1231,13 @@
       });
     };
 
-    // The seats of the members waiting in a group, from this page's latest snapshot.
+    // The seats of the members waiting in a group, and of those among them
+    // who ran out of time, from this page's latest snapshot.
     psynet.readySeatsFor = function (groupId) {
+      const empty = { seats: [], ranOutOfTime: [] };
       const snapshot = psynet.arrivalSnapshot;
-      if (snapshot?.pageUuid !== window.pageUuid) return [];
-      return snapshot.groups[groupId] || [];
+      if (snapshot?.pageUuid !== window.pageUuid) return empty;
+      return snapshot.groups[groupId] || empty;
     };
 
     psynet.stopArrivalUpdates = function () {

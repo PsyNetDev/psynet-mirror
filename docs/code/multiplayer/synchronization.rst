@@ -377,8 +377,8 @@ without a waiting screen (or one whose function returns ``None``) that
 follows another barrier's waiting screen shows a plain waiting page, since
 the last page is no longer on screen. In the following example, the
 participant's own choice replaces the buttons they chose it with.
-``show_progress=False`` hides the answer ticks, which would otherwise
-also tick a partner who reached the barrier because their page timed out:
+``show_progress=False`` hides the answer ticks, which are of little use
+in a pair, where the partner's arrival releases the barrier at once:
 
 .. code-block:: python
 
@@ -426,7 +426,9 @@ the viewer's cluster comes first:
 On a decision page, members who have answered get a tick. A member has
 answered once they wait at a barrier of the group, typically the barrier
 after the decision page, and the ticks appear live as members arrive (this
-uses the barrier's arrival updates, so it needs ``notify_arrivals``). Pass
+uses the barrier's arrival updates, so it needs ``notify_arrivals``). A
+member who reached the barrier because their page's time limit ran out gets
+a grey dash instead, and screen readers announce that they ran out of time. Pass
 ``show_progress=False`` to hide the ticks, or ``has_answered`` to decide who has
 answered when the page is drawn. Members who join the group appear live
 too, and members who leave are faded (see below), on any page without
