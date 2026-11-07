@@ -52,6 +52,8 @@ Options
     Show the messages sent in the room before the participant opened the
     page. The chatroom is enabled once the earlier messages have loaded.
 
+.. _chatroom-pseudonyms:
+
 Pseudonyms
 ----------
 

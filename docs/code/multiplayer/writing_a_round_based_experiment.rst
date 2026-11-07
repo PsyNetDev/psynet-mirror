@@ -1,5 +1,5 @@
-Games played in rounds
-======================
+Writing a round-based experiment
+================================
 
 Many group experiments are games played over several rounds: players are
 paired or grouped, decide, see the result, and are grouped again for the
@@ -47,7 +47,7 @@ possible. ``content`` counts down to the deadline:
 
 .. figure:: ../../_static/images/rounds/next_round.png
    :width: 700
-   :alt: A waiting page saying "The next round starts in at most 24 s."
+   :alt: A waiting page saying "The next round starts in at most 25 s."
 
 The regrouper keeps the round's bookkeeping, so the game doesn't need to
 store it in participant variables:
@@ -69,9 +69,10 @@ Making a decision
 
 The decision page reads the player's role, and its
 :class:`~psynet.group_prompt.GroupPrompt` shows the pair. The partner gets
-a tick as soon as they have decided. ``anonymous=True`` draws both players
-as the same grey figure, so that nobody recognises a partner from an
-earlier round:
+a tick as soon as they have decided. Players normally appear as their
+:ref:`pseudonym's <chatroom-pseudonyms>` animal, which stays the same from
+round to round. ``anonymous=True`` draws both players as the same grey figure
+instead, so that nobody recognises a partner from an earlier round:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: decision_page
@@ -125,10 +126,14 @@ Scoring the round
 
 The barrier's ``on_release`` scores the pair once both have arrived, or once
 the one who is left has. It stores each player's outcome, so that a page
-reloaded later still shows it:
+reloaded later still shows it. When a partner left or ran out of time,
+``score_round`` stores a message saying so and pays nobody. Otherwise it
+looks up each player's role and pays out the offer:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :pyobject: score_round
+   :start-at: roles = {pairing.role(p): p for p in participants}
+   :end-before: def decision_page
+   :dedent: 4
 
 The results page passes both answers to the prompt as speech bubbles:
 
@@ -137,7 +142,7 @@ The results page passes both answers to the prompt as speech bubbles:
 
 .. figure:: ../../_static/images/rounds/outcome.png
    :width: 600
-   :alt: The results page, with "I offer 8" and "I accept 10+" speech bubbles
+   :alt: The results page, with "I offer 6" and "I accept 4+" speech bubbles
 
 .. figure:: ../../_static/images/rounds/ran_out.png
    :width: 600

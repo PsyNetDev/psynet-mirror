@@ -68,10 +68,10 @@ has written, checking it, and changing it yourself.
    :caption: Groups
    :maxdepth: 1
 
-   multiplayer/synchronization
-   multiplayer/games_in_rounds
+   multiplayer/writing_a_round_based_experiment
    multiplayer/chatroom
    multiplayer/realtime_interaction
+   multiplayer/synchronization
 
 .. toctree::
    :caption: Database

@@ -161,7 +161,7 @@ rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
 :meth:`~psynet.sync.Regrouper.sat_out` (for the latest round) and, with
 ``roles``, :meth:`~psynet.sync.Regrouper.role`.
 
-:doc:`games_in_rounds` builds a complete game this way, including moving
+:doc:`writing_a_round_based_experiment` builds a complete game this way, including moving
 slow players on and sitting out. :class:`~psynet.sync.Regrouper` lists all
 its settings, for example ``Clock`` deadlines, fixed roles and custom
 grouping.
@@ -344,7 +344,7 @@ after the decision page, and the ticks appear live as members arrive (this
 uses the barrier's arrival updates, so it needs ``notify_arrivals``). A
 member who reached the barrier because their page's time limit ran out gets
 a grey dash instead, and screen readers announce that they ran out of time
-(see the :ref:`picture <rounds-variations>` in :doc:`games_in_rounds`). Pass
+(see the :ref:`picture <rounds-variations>` in :doc:`writing_a_round_based_experiment`). Pass
 ``show_progress=False`` to hide the ticks, or ``has_answered`` to decide who has
 answered when the page is drawn (members who ran out of time then get a tick too). Members who join the group appear live
 too, and members who leave are faded (see below), on any page without

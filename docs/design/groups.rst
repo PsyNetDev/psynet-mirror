@@ -89,6 +89,25 @@ is allowed to see, what happens when a member's connection drops or they
 reload the page, and which parts of the interaction are recorded for
 analysis.
 
+Putting the pieces together
+---------------------------
+
+Most group experiments combine the same few blocks. A grouper forms groups,
+barriers keep each group in step, and a regrouper forms new groups for each
+round. Between them, members answer on their own pages or interact on a
+**group page**, such as a chatroom. The diagram shows four common designs and
+the demo that implements each one.
+
+.. figure:: ../_static/images/design/group_experiments.svg
+   :width: 100%
+   :alt: Four group experiments drawn as sequences of blocks. Rating stimuli
+      together: a grouper, then each trial a page and a barrier. Discussing a
+      topic: a grouper, then each topic a barrier, a chat and a barrier. A
+      game played in rounds: a grouper forms a team, then each round a
+      regrouper forms pairs, players decide with a time limit, wait for their
+      partner at a barrier and see the outcome. Interacting live: a grouper,
+      then one group page that sends messages or moves through the server.
+
 What to check when reviewing group experiments
 ----------------------------------------------
 
@@ -107,15 +126,10 @@ What to check when reviewing group experiments
 
 .. seealso::
 
-   :doc:`/code/multiplayer/synchronization` (forming groups, keeping a group
-   in step, waiting and dropouts), :doc:`/code/multiplayer/games_in_rounds`
-   (games in rounds), :doc:`/code/multiplayer/chatroom`
-   (talking to each other) and :doc:`/code/multiplayer/realtime_interaction`
-   show these ideas in ``experiment.py``, using the ``rock_paper_scissors``,
-   ``ultimatum_pairing``, ``chatroom_simple`` and ``websocket_chatroom``
-   demos.
+   :doc:`/code/multiplayer/writing_a_round_based_experiment` shows how these
+   ideas appear in ``experiment.py``, using the
+   ``demos/experiments/ultimatum_pairing`` demo.
 
-   The :doc:`/skills/synchronous-experiments` and :doc:`/skills/realtime-synchronous-experiments` skills describe how to design and test group
-   experiments, and :doc:`/skills/basic-data-dyadic-experiment` how to turn
-   their data into an analysis table.
+   The :doc:`/skills/synchronous-experiments` skill describes how to design
+   and test group experiments.
 
