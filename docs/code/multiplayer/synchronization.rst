@@ -56,6 +56,18 @@ current page, under a waiting indicator, until their group is formed.
     participant may join that group. Only used with
     ``join_existing_groups=True``.
 
+``start_short_after`` (default: ``None``)
+    Seconds after which a smaller group may start. Once the longest-waiting
+    participant has waited this long and at least ``min_group_size`` are
+    waiting, those waiting form a group even if there are fewer than
+    ``batch_size``. Needs ``min_group_size`` below ``initial_group_size``, and
+    a ``max_wait_time`` (default 20 seconds) longer than ``start_short_after``.
+    Combine it with ``join_existing_groups=True`` so that later arrivals can
+    still fill the group up. A ``{SECONDS}`` placeholder in ``content`` counts
+    down to that short start once ``min_group_size`` are waiting, and shows
+    "…" until then; :ref:`a content function <sync-countdown-messages>` can
+    show other text instead.
+
 ``content``
     The message on the waiting indicator. If omitted, participants see
     "Waiting for other participants…". For translated experiments, mark it as
@@ -115,6 +127,122 @@ then groups of two, and assigns roles at a barrier each time:
 Two groupers of the same type and size share a default ID, and so a waiting
 pool. Give them different ``id_`` values if they should not.
 
+Rounds with changing groups
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In games played over many rounds, a participant who is slow in one round
+should not hold up everyone else, and should not be failed either. A
+:class:`~psynet.sync.Regrouper` placed at the start of each round handles
+this. Each time a participant reaches it, they leave their previous group of
+that type and wait for the next round. The regrouper then splits everyone
+waiting into new groups:
+
+- when every member of the participant's ``within`` group is waiting, or
+- when ``deadline`` passes, without whoever isn't ready yet.
+
+Whoever missed the round joins the next one. The groups it forms are never
+dissolved when a member leaves, so members who are left continue the round
+on their own.
+
+``group_size`` and ``min_group_size`` (default 2)
+    The largest and smallest group to form. Everyone waiting is split into
+    balanced groups, for example rooms of 8, 8, 7 and 7 for 30 participants.
+
+``deadline``
+    Seconds since the first waiting participant arrived, or since the previous
+    round started if that is later. ``Clock(45)`` instead starts rounds at fixed
+    45-second ticks, whether or not everyone is ready earlier. Make it longer
+    than a round takes, so that players who finish early are not split again
+    before the rest are back.
+
+``within`` (default: ``None``)
+    The ``group_type`` of a group to regroup within, such as a team formed
+    earlier by a :class:`~psynet.sync.SimpleGrouper`. Participants are only
+    grouped with members of their own team, and each team's rounds run on
+    their own: a slow request from one team never delays another team's
+    round. Without ``within``, everyone waiting is one pool, and a
+    ``deadline`` is required.
+
+``release_left_over`` (default: ``False``)
+    If ``True``, participants who don't fit into a group, such as an odd one
+    out when pairing, continue ungrouped so that they can see a sit-out page.
+    If ``False``, they wait for the next round. With ``True`` and ``within``,
+    someone waiting alone waits for teammates who are still playing for up to
+    one more ``deadline`` (or ``Clock`` tick) before sitting out, so they don't
+    sit out round after round while a slow round finishes. ``max_wait_time``
+    must then be longer than twice the deadline (or ``Clock`` period). Taking participants who stop
+    playing out of the ``within`` group with ``remove_participant`` means
+    nobody waits for them.
+
+``form_groups``
+    A function of ``members``, ``within_group`` and ``regrouper`` that returns
+    the groups as lists of participants, for example to avoid repeat partners.
+    Members not placed in a group are left over. You can also subclass
+    :class:`~psynet.sync.Regrouper` and override
+    :meth:`~psynet.sync.Regrouper.form_groups`.
+
+``on_release``
+    A function called after each split that forms at least one group, with
+    ``within_group``, ``groups``, ``left_over`` and ``regrouper``, for example
+    to assign roles. A late participant can be split on their own in the same
+    round, so count rounds per participant, as the ``ultimatum_pairing`` demo
+    does.
+
+``content``
+    The waiting message. A ``{SECONDS}`` placeholder shows a live countdown to
+    the deadline, for example ``"The next round starts in {SECONDS} s."``.
+    See :ref:`countdown messages <sync-countdown-messages>`.
+
+``max_wait_time`` (default: 300 seconds)
+    The longest a participant waits at the regrouper before being failed.
+
+.. _sync-countdown-messages:
+
+**Countdown messages.** Sometimes the barrier doesn't know yet when the
+wait will end, for example while a participant waits alone for a partner,
+and ``{SECONDS}`` shows "…". To show different text then, pass a
+module-level function as ``content``. It receives ``seconds_left``, which
+is ``None`` while the time is unknown and otherwise the whole seconds left
+(0 once the time has passed), and can also take ``participant`` and
+``barrier``. The message switches within a few seconds of the time
+becoming known:
+
+.. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
+   :pyobject: round_message
+
+In the ``lowest_unique_number`` demo, rooms of up to eight players form every
+20 seconds. A player who doesn't choose in time is removed from their room by
+a :class:`~psynet.sync.GroupBarrier` with
+``timeout_between_barriers_action="kick"``, so the rest of the room carries
+on, and they join the next round:
+
+.. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
+   :pyobject: play_round
+
+The kicked player sees "Your group went on without you. Please continue." on the progress bar
+straight away (pass ``on_arrival_message`` to change it), and is no longer in
+a room when they reach the barrier. ``skip_if_not_in_group=True`` lets them
+pass straight through, and ``show_result`` then tells them they sat the round
+out. Without it, a
+participant who reaches a group barrier outside a group gets an error.
+
+In the ``ultimatum_pairing`` demo, teams form in a lobby and are re-paired
+every round. The lobby starts a smaller team after a minute and lets
+latecomers join until one of the team's players has finished a round:
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+   :start-at: SimpleGrouper(
+   :end-before: while_loop(
+   :dedent: 8
+
+Each round pairs the team's players, avoiding last round's partners, and
+starts as soon as the whole team is ready:
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+   :start-at: Regrouper(
+   :end-before: conditional(
+   :dedent: 8
+
 Keeping a group in step
 -----------------------
 
@@ -152,20 +280,19 @@ Arrival notices
 While a member waits at a barrier, members who have not reached it yet see a
 notice on the progress bar ("Your partner is ready.", or
 "{ARRIVED}/{TOTAL} of your group are ready."). In groups of three or more,
-the waiting indicator also says how many members are not ready yet. Set
-``notify_arrivals=False`` to turn both off, or pass ``on_arrival_message`` to
-change the text. It receives ``kind`` (``"hold"`` for the waiting indicator,
-``"notice"`` for the progress bar), ``waiting_count`` and ``group_size``, and
-returns the text or ``None`` to hide it. Notices must fit on one line:
+the waiting indicator also has a smaller second line saying how many members
+are not ready yet. Set ``notify_arrivals=False`` to turn both off, or pass
+``on_arrival_message`` to change the notices. It receives ``kind``
+(``"notice"`` for the progress bar, ``"removed"`` for the notice a member
+sees after being kicked from the group), ``waiting_count`` and
+``group_size``, and returns the text or ``None`` to hide it. Notices must fit
+on one line:
 
 .. code-block:: python
 
     def arrival_message(*, kind, waiting_count, group_size, **kwargs):
-        remaining = group_size - waiting_count
-        if kind == "hold":
-            if group_size <= 2 or remaining <= 0:
-                return None
-            return f"{remaining} of {group_size} not ready yet"
+        if kind == "removed":
+            return "Your partner went on without you. Please continue."
         return "Your partner is ready."
 
     GroupBarrier(
@@ -174,6 +301,24 @@ returns the text or ``None`` to hide it. Notices must fit on one line:
         content="Waiting for your partner",
         on_arrival_message=arrival_message,
     )
+
+The waiting indicator's own text comes from ``content``. A ``content``
+function on a group barrier can also take ``waiting_count`` and
+``group_size`` (both ``None`` if the participant has no group); return
+:func:`~psynet.sync.hold_message` from it to write the second line yourself,
+or to leave it out:
+
+.. code-block:: python
+
+    from psynet.sync import GroupBarrier, hold_message
+
+    def waiting_text(waiting_count, group_size):
+        return hold_message(
+            "Waiting for the rest of the room…",
+            f"{waiting_count} of {group_size} have chosen",
+        )
+
+    GroupBarrier(id_="chosen", group_type="room", content=waiting_text)
 
 Trial makers
 ~~~~~~~~~~~~
@@ -212,10 +357,16 @@ Timeouts
     :class:`~psynet.sync.GroupBarrier` that sets it. At a grouper, a participant who waits longer is failed. At a
     :class:`~psynet.sync.GroupBarrier`, ``max_wait_action`` decides:
     ``"fail"`` (default) fails the participant, and ``"kick"`` removes them
-    from the group so that they continue alone. With the default wait
-    indicator (no ``waiting_logic``), this also applies to a participant who
-    closed the page while waiting: the server applies the timeout shortly
-    after the deadline.
+    from the group so that they continue alone. This also applies to a
+    participant who closed the page while waiting, including on
+    ``waiting_logic`` pages: the server applies the timeout shortly after
+    the deadline.
+
+    ``max_wait_time`` is a hard limit counted from arrival. With
+    ``waiting_logic``, the server applies it even while the participant is
+    partway through a filler page, not only between filler pages. Make it
+    long enough to cover long filler pages, for example trials used as
+    filler.
 
 ``timeout_between_barriers_time`` (default: ``None``)
     A :class:`~psynet.sync.GroupBarrier` limit on the time since the group

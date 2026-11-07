@@ -60,7 +60,7 @@ _ANIMALS = {
 
 # One message per name, so that translators can make the colour agree with
 # the animal. The lambdas keep the literals extractable while translating
-# only the name that is shown.
+# only the name that is shown, not all 88.
 _BUILTIN_NAMES = {
     ("orange", "fox"): lambda _p: _p("pseudonym", "Orange fox"),
     ("orange", "owl"): lambda _p: _p("pseudonym", "Orange owl"),

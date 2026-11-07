@@ -100,7 +100,7 @@ def test_stored_deployment_id_and_overrides_decide_pseudonyms(
 
     participants[0].set_pseudonym("red", "whale")
     assert participants[0].pseudonym.name == "Red whale"
-    assert "pseudonym_color" not in participants[0].to_dict()
+    assert {"pseudonym", "pseudonym_color"}.isdisjoint(participants[0].to_dict())
     rows = exp.table_data(0, 10, table="participant")["data"]
     assert {row["id"]: row["pseudonym"] for row in rows}[participants[0].id] == (
         "Red whale"

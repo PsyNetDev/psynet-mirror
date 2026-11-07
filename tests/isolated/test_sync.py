@@ -45,6 +45,7 @@ from psynet.sync import (
     BarrierDefinition,
     BarrierInstance,
     GroupBarrier,
+    ParticipantLinkBarrier,
     SimpleGrouper,
     SimpleSyncGroup,
     SyncGroup,
@@ -67,6 +68,7 @@ from psynet.sync import (
     arrival_notice_payload,
     check_barriers,
     check_sync_groups,
+    hold_message,
     pending_arrival_notice_for,
 )
 from psynet.timeline import Page, PageMaker, Response, Timeline
@@ -78,6 +80,7 @@ from psynet.timeline_hold import (
     _timeline_hold_channel,
     _TimelineHoldPage,
     default_group_barrier_arrival_message,
+    default_hold_progress,
 )
 from psynet.utils import get_config
 
@@ -3494,24 +3497,39 @@ def test_check_barriers_recovers_inactive_grouped_instance_with_waiters(
     assert _barrier_link_released(first_id, barrier_id) is False
 
 
+@pytest.mark.parametrize("waiting_page", [False, True])
 @pytest.mark.parametrize("action", ["fail", "kick"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_check_barriers_times_out_waiters_past_their_deadline(
-    in_experiment_directory, db_session, action
+    in_experiment_directory, db_session, action, waiting_page
 ):
     """A waiter who left is timed out at their deadline, with the usual knock-on."""
     exp = get_experiment()
     overdue, partner = _pair_sync_group(exp, db_session)[0]
     patient, _ = _pair_sync_group(exp, db_session)[0]
     barrier = GroupBarrier(
-        id_="abandoned", group_type="main", max_wait_time=300, max_wait_action=action
+        id_="abandoned",
+        group_type="main",
+        max_wait_time=300,
+        max_wait_action=action,
+        waiting_logic=InfoPage("Filler", time_estimate=5) if waiting_page else None,
     )
     for participant in (overdue, patient):
         _arrive_at_group_barrier(exp, barrier, participant)
     db.session.commit()
-    TimelineHoldRecord.query.filter_by(participant_id=overdue.id).update(
+    deadline_rows = (
+        ParticipantLinkBarrier.query if waiting_page else TimelineHoldRecord.query
+    )
+    arrival_deadline = deadline_rows.filter_by(participant_id=overdue.id).one()
+    arrived_at = (
+        arrival_deadline.arrival_time if waiting_page else arrival_deadline.started_at
+    )
+    assert (arrival_deadline.deadline_at - arrived_at).total_seconds() == (
+        pytest.approx(300)
+    )
+    deadline_rows.filter_by(participant_id=overdue.id).update(
         {"deadline_at": timenow() - timedelta(seconds=1)}
     )
     db.session.commit()
@@ -3529,6 +3547,96 @@ def test_check_barriers_times_out_waiters_past_their_deadline(
     assert partner.failure_tags == ["sync group below minimum size"]
     assert not patient.failed
     assert _barrier_link_released(patient.id, barrier.id) is False
+
+
+_max_wait_time_calls = []
+
+
+def _shrinking_max_wait_time(participant):
+    _max_wait_time_calls.append(participant.id)
+    return 300 if len(_max_wait_time_calls) == 1 else 1
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_callable_max_wait_time_is_evaluated_once_on_arrival(
+    in_experiment_directory, db_session
+):
+    """A callable ``max_wait_time`` fixes the waiting-page deadline on arrival."""
+    _max_wait_time_calls.clear()
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        GroupBarrier(
+            id_="callable_deadline",
+            group_type="main",
+            max_wait_time=_shrinking_max_wait_time,
+            waiting_logic=InfoPage("Filler", time_estimate=5),
+        ),
+        ModularPage("after", "After", time_estimate=1),
+    )
+    try:
+        (waiter, _), _ = _pair_sync_group(exp, db_session)
+        waiter_id = waiter.id
+        assert _json_timeline(exp, waiter).status_code == 200
+        link = ParticipantLinkBarrier.query.filter_by(participant_id=waiter_id).one()
+        assert (link.deadline_at - link.arrival_time).total_seconds() == (
+            pytest.approx(300)
+        )
+        time.sleep(1.1)
+        check_barriers()
+
+        waiter = Participant.query.get(waiter_id)
+        _process_response(exp, waiter, waiter.page_uuid)
+        waiter = Participant.query.get(waiter_id)
+        assert not waiter.failed
+        assert _max_wait_time_calls == [waiter_id]
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize("action", ["fail", "kick"])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_waiting_page_timeout_applies_on_the_next_request(
+    in_experiment_directory, db_session, action
+):
+    """A waiter timed out mid filler page is failed, or continues alone, on their next Next."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        GroupBarrier(
+            id_="filler_timeout",
+            group_type="main",
+            max_wait_time=300,
+            max_wait_action=action,
+            waiting_logic=InfoPage("Filler", time_estimate=5),
+        ),
+        ModularPage("choose_action", "Choose your action", time_estimate=1),
+    )
+    try:
+        (waiter, _), _ = _pair_sync_group(exp, db_session)
+        waiter_id = waiter.id
+        assert _json_timeline(exp, waiter).status_code == 200
+        ParticipantLinkBarrier.query.filter_by(participant_id=waiter_id).update(
+            {"deadline_at": timenow() - timedelta(seconds=1)}
+        )
+        db_session.commit()
+        check_barriers()
+
+        waiter = Participant.query.get(waiter_id)
+        _process_response(exp, waiter, waiter.page_uuid)
+        waiter = Participant.query.get(waiter_id)
+        if action == "fail":
+            assert waiter.failed
+            assert exp.timeline.get_participant_branch(waiter) == "unsuccessful_end"
+        else:
+            assert not waiter.failed
+            assert exp.timeline.get_current_elt(exp, waiter).label == "choose_action"
+    finally:
+        exp.timeline = original_timeline
 
 
 @pytest.mark.parametrize(
@@ -5611,30 +5719,11 @@ def test_last_group_arrival_defers_when_a_partner_is_locked(
 
 
 def test_default_group_barrier_arrival_message_copy():
+    assert default_hold_progress(waiting_count=1, group_size=2) is None
     assert (
-        default_group_barrier_arrival_message(
-            kind="hold", waiting_count=1, group_size=2
-        )
-        is None
+        default_hold_progress(waiting_count=1, group_size=3) == "2 of 3 not ready yet"
     )
-    assert (
-        default_group_barrier_arrival_message(
-            kind="hold", waiting_count=1, group_size=3
-        )
-        == "2 of 3 not ready yet"
-    )
-    assert (
-        default_group_barrier_arrival_message(
-            kind="hold", waiting_count=2, group_size=3
-        )
-        == "1 of 3 not ready yet"
-    )
-    assert (
-        default_group_barrier_arrival_message(
-            kind="hold", waiting_count=3, group_size=3
-        )
-        is None
-    )
+    assert default_hold_progress(waiting_count=3, group_size=3) is None
     assert (
         default_group_barrier_arrival_message(
             kind="notice", waiting_count=1, group_size=2
@@ -5771,6 +5860,38 @@ def test_group_hold_reports_how_many_are_not_ready_yet(
     overlay = barrier.waiting_logic.overlay_html(first)
     assert "1 of 3 not ready yet" in overlay
     assert pending_arrival_notice_for(third) == "2/3 of your group are ready."
+
+
+def _chosen_waiting_text(waiting_count, group_size):
+    return hold_message(
+        "Waiting for the room", f"{waiting_count} of {group_size} have chosen"
+    )
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_group_hold_content_function_writes_its_own_progress_line(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    first, second, _ = _sync_group_of(exp, db_session, 3)[0]
+    barrier = GroupBarrier(
+        id_="group_hold_custom_progress",
+        group_type="main",
+        content=_chosen_waiting_text,
+    )
+
+    _arrive_at_group_barrier(exp, barrier, first)
+    db_session.commit()
+    overlay = barrier.waiting_logic.overlay_html(first)
+    assert "Waiting for the room" in overlay
+    assert "1 of 3 have chosen" in overlay
+    assert "not ready yet" not in overlay
+
+    _arrive_at_group_barrier(exp, barrier, second)
+    db_session.commit()
+    assert "2 of 3 have chosen" in barrier.waiting_logic.overlay_html(first)
 
 
 def _group_n_active(group_id):
@@ -6425,6 +6546,7 @@ def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
     assert barrier(timeout_between_barriers_time=30).max_wait_time == 50
     with pytest.raises(ValueError, match="must be longer"):
         barrier(timeout_between_barriers_time=30, max_wait_time=30)
+    barrier(timeout_between_barriers_time=30, max_wait_time=_shrinking_max_wait_time)
     assert (
         barrier(timeout_between_barriers_time=30, max_wait_time=None).max_wait_time
         is None
@@ -6434,8 +6556,9 @@ def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+@pytest.mark.parametrize("min_group_size", [2, 3])
 def test_group_barrier_timeout_between_barriers_kick_missing_participants(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, min_group_size
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
@@ -6445,19 +6568,19 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
         timeout_between_barriers_action="kick",
     )
 
-    # Create 3 participants in the same sync group, but only 2 "reach" this barrier.
-    participants = [new_participant(exp) for _ in range(3)]
+    # Create 4 participants in the same sync group, but only 2 "reach" this barrier.
+    participants = [new_participant(exp) for _ in range(4)]
     for p in participants:
         p.status = "working"
     waiting_participants = participants[:2]
-    missing_participant = participants[2]
+    missing_participants = participants[2:]
 
     group = SimpleSyncGroup(
         group_type="main",
-        initial_group_size=3,
-        max_group_size=3,
-        min_group_size=2,
-        n_active_participants=3,
+        initial_group_size=4,
+        max_group_size=4,
+        min_group_size=min_group_size,
+        n_active_participants=4,
         accepts_top_ups=False,
         fail_participants_below_min_size=True,
     )
@@ -6468,11 +6591,22 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
     db_session.commit()
 
     barrier.check_waiting_participants(waiting_participants)
+    if min_group_size == 3:
+        # The second kick dissolves the group, so nobody went on without either.
+        assert all(p.failed for p in waiting_participants)
+        assert all(pending_arrival_notice_for(p) is None for p in missing_participants)
+        return
     released = barrier.choose_who_to_release(waiting_participants)
 
-    assert missing_participant not in group.active_participants
-    assert missing_participant not in released
     assert set(released) == set(waiting_participants)
+    for missing_participant in missing_participants:
+        assert missing_participant not in group.active_participants
+        assert (
+            pending_arrival_notice_for(missing_participant)
+            == "Your group went on without you. Please continue."
+        )
+    missing_participants[0].page_uuid = "next-page"
+    assert pending_arrival_notice_for(missing_participants[0]) is None
 
 
 @pytest.mark.parametrize(
