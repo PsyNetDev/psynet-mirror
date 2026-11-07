@@ -72,8 +72,8 @@ Making a decision
 The decision page reads the player's role, and its
 :class:`~psynet.group_prompt.GroupPrompt` shows the pair. The partner gets
 a tick as soon as they have decided. Players normally appear as their
-:ref:`pseudonym's <chatroom-pseudonyms>` animal, which stays the same from
-round to round. ``anonymous=True`` draws both players as the same grey figure
+:doc:`pseudonym's <pseudonyms>` animal, which stays the same from
+round to round. ``names="anonymous"`` draws both players as the same grey figure
 instead, so that nobody recognises a partner from an earlier round:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py

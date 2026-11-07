@@ -81,7 +81,7 @@ class ChatTrial(StaticTrial):
                 prompt,
                 group=self.sync_group,
                 participant=participant,
-                show_names=True,
+                names="shown",
                 note="Press Next when you have finished; the chat also ends "
                 "by itself when the time runs out. "
                 "A tick shows when your partner has finished, "

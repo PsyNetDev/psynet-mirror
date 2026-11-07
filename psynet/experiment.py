@@ -971,9 +971,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     css_links = []
 
     pseudonym_scheme = PseudonymScheme()
-    """How participants are named to each other, for example in chat rooms.
+    """How participants are named to each other in groups and chat rooms.
 
-    See :class:`~psynet.pseudonym.PseudonymScheme`.
+    See :class:`~psynet.pseudonym.PseudonymScheme` and
+    :doc:`/code/multiplayer/pseudonyms`.
     """
 
     variables = {}

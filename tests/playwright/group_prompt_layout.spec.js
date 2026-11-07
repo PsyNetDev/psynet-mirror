@@ -28,15 +28,15 @@ const VIEWPORTS = [
 const SHAPES = [
   { size: 2 },
   { size: 2, answer: "I accept 4 or more" },
-  { size: 3, show_names: true },
+  { size: 3, names: "shown" },
   { size: 4 },
   { size: 5 },
   { size: 8 },
   { size: 12 },
   { size: 8, subgroup_size: 2 },
   { size: 12, subgroup_size: 6 },
-  { size: 6, show_names: true },
-  { size: 2, anonymous: true, show_names: true },
+  { size: 6, names: "shown" },
+  { size: 2, names: "anonymous" },
 ];
 const CASES = SHAPES.flatMap((shape) => [
   ...(shape.answer ? [] : [{ ...shape, answers: false }]),
@@ -46,8 +46,8 @@ const describeCase = (c) =>
   [
     `${c.size} members`,
     c.subgroup_size && `in subgroups of ${c.subgroup_size}`,
-    c.anonymous && "anonymous",
-    c.show_names && "with names",
+    c.names === "anonymous" && "anonymous",
+    c.names === "shown" && "with names",
     c.answer && "with a wrapping answer",
     c.answers && "with answers",
   ]

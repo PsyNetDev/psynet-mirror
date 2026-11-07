@@ -49,7 +49,7 @@ def show_quorum(participant):
             # No count here: the group display updates as people join and leave.
             "We are now quorate. These participants are present:",
             participant=participant,
-            show_names=True,
+            names="shown",
             show_progress=False,
         ),
         time_estimate=5,
