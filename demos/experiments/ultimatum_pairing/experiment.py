@@ -201,12 +201,12 @@ def waiting_for_partner(participant):
     )
 
 
+AWAY_TEXT = "You were away for too long, so you got no coins this round."
+
+
 def show_outcome(participant):
     if not in_pair(participant):
-        return InfoPage(
-            "You were away for too long, so you got no coins this round.",
-            time_estimate=5,
-        )
+        return InfoPage(AWAY_TEXT, time_estimate=5)
     if participant.var.decisions is None:
         return InfoPage(participant.var.outcome, time_estimate=5)
     return ModularPage(
@@ -225,7 +225,7 @@ def show_outcome(participant):
 def not_playing(participant):
     # A player removed before reaching the decision page still has this round's role.
     if pairing.role(participant) is not None:
-        text = "You were away for too long, so you got no coins this round."
+        text = AWAY_TEXT
     else:
         text = "You sit out this round. It doesn't count towards your rounds."
     return InfoPage(text, time_estimate=5)

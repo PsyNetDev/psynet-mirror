@@ -111,7 +111,11 @@ def your_pick(participant):
 
 
 def show_result(participant):
-    if "room" not in participant.active_sync_groups or participant.var.choice is None:
+    if "room" not in participant.active_sync_groups:
+        return InfoPage(
+            "You were away for too long, so you sat out this round.", time_estimate=5
+        )
+    if participant.var.choice is None:
         return InfoPage(
             "You ran out of time, so you sat out this round.", time_estimate=5
         )

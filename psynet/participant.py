@@ -473,8 +473,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     progress_fixes = Column(PythonList)
 
     page_uuid = Column(String)
-    # When the current page's ``time_limit`` runs out; see ``Page.time_limit``.
+    # When the latest timed page's ``time_limit`` runs out, and when that page
+    # started; see ``Page.time_limit``.
     page_deadline = Column(DateTime)
+    page_deadline_set_at = Column(DateTime)
     page_count = Column(Integer)
     early_exited = Column(Boolean)
     exit_plan = Column(PythonDict)

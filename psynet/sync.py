@@ -1942,8 +1942,8 @@ class GroupBarrier(Barrier):
 
         Each member is timed from the group's last barrier pass or from when
         they joined the group, whichever is later, so newcomers to an open
-        group are not late as soon as they join. A member on a page with a
-        time limit is timed by that page's deadline instead.
+        group are not late as soon as they join. A member who has started a
+        page with a time limit since then is timed from that page's deadline.
         """
         if self.timeout_between_barriers_time is None:
             return []
@@ -1964,12 +1964,12 @@ class GroupBarrier(Barrier):
                 continue
             start = max(starts)
             allowed = timedelta(seconds=self.timeout_between_barriers_time)
-            deadline = participant.page_deadline
-            # A timed page since the last barrier moves the start to its
-            # deadline, leaving time for an answer sent at the deadline to
-            # arrive. An earlier deadline belongs to a page before that barrier.
-            if deadline is not None and deadline > start:
-                start = deadline
+            set_at = participant.page_deadline_set_at
+            # A timed page since the last barrier or joining moves the start
+            # to its deadline, leaving time for an answer sent at the deadline
+            # to arrive. An earlier timed page belongs to an earlier round.
+            if set_at is not None and set_at >= start:
+                start = participant.page_deadline
                 allowed = max(allowed, left_timed_page)
             if now > start + allowed:
                 late.append(participant)

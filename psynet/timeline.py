@@ -1883,7 +1883,10 @@ class Page(Elt):
         # Kept through later untimed pages, so a GroupBarrier can count its
         # timeout from the last time limit.
         if self.time_limit is not None:
-            participant.page_deadline = timenow() + timedelta(seconds=self.time_limit)
+            participant.page_deadline_set_at = timenow()
+            participant.page_deadline = participant.page_deadline_set_at + timedelta(
+                seconds=self.time_limit
+            )
 
     def time_limit_seconds_left(self, participant) -> Optional[float]:
         """Return the seconds left before this page's ``time_limit``, or ``None`` without one."""
