@@ -61,11 +61,15 @@ in_consents_experiment = pytest.mark.parametrize(
 
 
 @pytest.mark.parametrize("n_pages", [1, 2])
+@pytest.mark.parametrize("by_time_limit", [False, True])
 @in_consents_experiment
 def test_release_interrupts_a_waiting_page(
-    in_experiment_directory, db_session, n_pages
+    in_experiment_directory, db_session, n_pages, by_time_limit
 ):
-    """An interrupt only ends the page after release, and skips the pass's other pages."""
+    """An interrupt only ends the page after release, and skips the pass's other pages.
+
+    So does the page's own time limit running out after the release.
+    """
     exp = get_experiment()
     original = exp.timeline
     _use_timeline(exp, join(*[_filler(f"filler_{i}") for i in range(n_pages)]))
@@ -93,12 +97,18 @@ def test_release_interrupts_a_waiting_page(
             "released"
         ]
 
-        _post_response(first, interrupted=True)
+        metadata = {"time_taken": 1, "time_limit_reached": True}
+        if by_time_limit:
+            _post_response(first, metadata=metadata)
+        else:
+            _post_response(first, interrupted=True, metadata=metadata)
         db.session.expire_all()
         first = Participant.query.get(first_id)
         assert exp.timeline.get_current_elt(exp, first).label == "after"
         (filler,) = Response.query.filter_by(participant_id=first_id).all()
         assert (filler.question, filler.metadata["interrupted"]) == ("filler_0", True)
+        # Only the server may say that a time limit ran out.
+        assert "time_limit_reached" not in filler.metadata
     finally:
         exp.timeline = original
 
