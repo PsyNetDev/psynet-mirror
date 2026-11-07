@@ -15,6 +15,9 @@ export async function activate({root, vars}) {
     var SHOW_HISTORY = CONFIG.show_history;
     var YOU_LABEL    = CONFIG.you_label || "You";
     var YOU_IN_LIST_LABEL = CONFIG.you_in_list_label || "{NAME} (you)";
+    var OTHER_LABEL  = CONFIG.other_label || "Another player";
+    var ANONYMOUS    = Boolean(CONFIG.anonymous);
+    var ANONYMOUS_STICKER = CONFIG.anonymous_sticker_html || "";
     var MY_ID        = String(dallinger.identity.participantId);
 
     var chatConnection = null;
@@ -75,18 +78,22 @@ export async function activate({root, vars}) {
         leaveChat();
     }
 
-    // The sticker HTML comes from the experiment's PseudonymScheme on the
-    // server, which escapes the name; message text is only ever set as text.
+    // The sticker HTML comes from the server (the experiment's PseudonymScheme,
+    // which escapes the name); message text is only ever set as text.
+    // Anonymous rooms get no pseudonyms, and a sender without one never
+    // falls back to their participant ID.
     function senderLabel(senderId, pseudonym, inList) {
+        if (ANONYMOUS) pseudonym = null;
         var label = document.createElement("strong");
         label.className = "chatroom-sender";
-        if (pseudonym && pseudonym.sticker_html) {
+        var stickerHtml = pseudonym ? pseudonym.sticker_html : ANONYMOUS_STICKER;
+        if (stickerHtml) {
             var sticker = document.createElement("span");
             sticker.className = "chatroom-sender-sticker";
-            sticker.innerHTML = pseudonym.sticker_html;
+            sticker.innerHTML = stickerHtml;
             label.appendChild(sticker);
         }
-        var name = pseudonym ? pseudonym.name : "Participant " + senderId;
+        var name = pseudonym ? pseudonym.name : OTHER_LABEL;
         if (String(senderId) === MY_ID) {
             // Own messages say "You", so the list spells out the participant's name.
             name = inList && pseudonym

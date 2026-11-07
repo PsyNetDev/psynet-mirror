@@ -71,12 +71,14 @@ class TestHandleMessage:
         return EnableChatrooms(), _mock_experiment()
 
     @staticmethod
-    def _send(handler, exp, participant, payload, node=None, page_room=None):
+    def _send(
+        handler, exp, participant, payload, node=None, page_room=None, anonymous=False
+    ):
         """Send ``payload``; a join comes from a page showing ``page_room``, by default the joined room."""
         if payload.get("type") == "join_room":
             room = page_room if page_room is not None else payload.get("room_id")
             exp.timeline.get_current_elt.return_value = SimpleNamespace(
-                chatroom=ChatRoom(room_id=room)
+                chatroom=ChatRoom(room_id=room, anonymous=anonymous)
             )
         time = datetime.now(UTC)
         handler.handle_message(
@@ -389,6 +391,32 @@ class TestHandleMessage:
             }
         ]
         assert _recipients(exp) == [{str(sender.id), str(member.id)}]
+
+    def test_anonymous_pages_are_not_sent_pseudonyms(
+        self, in_experiment_directory, db_session
+    ):
+        handler, exp = self._handler_and_exp()
+        experiment = get_experiment()
+        hidden, named = _new_participant(experiment), _new_participant(experiment)
+        db.session.flush()
+        room = _random_id()
+        join = {"type": "join_room", "room_id": room}
+        self._send(handler, exp, hidden, join, anonymous=True)
+        self._send(handler, exp, named, join)
+        exp.publish_to_participants.reset_mock()
+
+        self._send(
+            handler, exp, named, {"type": "message", "room_id": room, "content": "hi"}
+        )
+        self._send(handler, exp, hidden, {"type": "request_state", "room_id": room})
+
+        to_named, to_hidden, history = _published_payloads(exp)
+        assert _recipients(exp) == [{str(named.id)}, {str(hidden.id)}, {str(hidden.id)}]
+        assert to_named["sender_pseudonym"] == named.pseudonym.to_dict()
+        assert to_hidden["sender_pseudonym"] is None
+        assert history["messages"][0]["sender_pseudonym"] is None
+        config = ChatRoom(room_id=room, anonymous=True).get_js_vars()["chatroom_config"]
+        assert config["anonymous"] and config["other_label"] == "Another player"
 
     def test_a_room_the_page_does_not_show_cannot_be_joined(
         self, in_experiment_directory, db_session
