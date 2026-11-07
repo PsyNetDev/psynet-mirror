@@ -7,7 +7,8 @@ number, and the lowest number that nobody else in the room picked wins.
 The choice page has a ``time_limit`` of ``CHOICE_SECONDS``. A player who
 doesn't choose in time sits out the round and joins the next one, so the rest
 of the room isn't held up. A player who leaves the page, for example by
-closing the tab, is removed from their room 30 s after the time limit.
+closing the tab, is removed from their room 30 s after the time limit, or
+30 s after the room forms if the page never loaded.
 Missing a round doesn't fail anyone. A player who comes back after the
 others' last round has started waits alone, though, and is failed once they
 reach the regrouper's ``max_wait_time`` (300 s by default), as at any barrier.

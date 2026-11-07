@@ -19,9 +19,10 @@ Grouper and sync group
     A ``SimpleGrouper`` (or other grouper) is a timeline element that forms
     ``SyncGroup`` rows once enough participants are available. Group barriers
     rely on these groups to decide who to release together. A ``Regrouper``
-    forms new groups every round, optionally within an existing group, and
-    keeps when each pool was last split in ``var`` (on the ``within`` group,
-    or on the ``BarrierDefinition``).
+    forms new groups every round, optionally within an existing group. Each
+    group records the grouper that formed it and its ``within`` group, and
+    each member's link records their role, so round counts, roles and when
+    each pool was last split are read from these rows.
 
 Barrier definition and instance
     A ``BarrierDefinition`` identifies the public waiting area. A
