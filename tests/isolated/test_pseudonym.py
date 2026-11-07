@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import psynet.pseudonym
 from psynet.experiment import get_experiment
 from psynet.pseudonym import PseudonymScheme
 from psynet.pytest_psynet import path_to_test_experiment
@@ -73,6 +74,23 @@ def test_schemes_and_stored_pseudonyms_can_be_customized():
     assert scheme.pseudonym(_participant(2)).animal in {"lion", "bear"}
     with pytest.raises(ValueError, match="Unknown pseudonym animal 'fox'"):
         scheme.make("red", "fox")
+
+
+def test_built_in_names_are_translated_whole(monkeypatch):
+    """Translators see "Blue fox" as one message, so the colour can agree with the animal."""
+    french = {"Blue fox": "Renard bleu", "{COLOR} {ANIMAL}": "{ANIMAL} {COLOR}"}
+    monkeypatch.setattr(
+        psynet.pseudonym,
+        "get_translator",
+        lambda context=True: lambda _context, message: french.get(message, message),
+    )
+
+    class Lions(PseudonymScheme):
+        def animals(self):
+            return {**super().animals(), "lion": ("lion", "🦁")}
+
+    assert Lions().make("blue", "fox").name == "Renard bleu"
+    assert Lions().make("blue", "lion").name == "Lion blue"
 
 
 @pytest.mark.parametrize(
