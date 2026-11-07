@@ -1104,6 +1104,14 @@ class Barrier(EltCollection):
 
         barrier_instance = BarrierInstance.for_arrival(self, participant)
 
+        previous = participant.active_barriers.get(self.id)
+        if previous is not None and previous.released:
+            # A visit released earlier in this request is still in the
+            # collection; replacing it there would delete its row (and its
+            # ``sat_out``), so reload the collection without it first.
+            db.session.flush()
+            db.session.expire(participant, ["active_barriers"])
+
         now = timenow()
         link = ParticipantLinkBarrier(
             participant=participant,
@@ -2947,6 +2955,7 @@ class Regrouper(Grouper):
         return best
 
     def _repeats(self, group, history) -> int:
+        """Return how many partnerships and role imbalances ``group`` repeats."""
         repeats = sum(
             other.id in history.last_mates[member.id]
             for member in group
@@ -3237,6 +3246,7 @@ class Regrouper(Grouper):
         return released
 
     def _record_sit_outs(self, left_over):
+        """Mark these members' current visits as sat out."""
         for visit in self._visits(left_over).values():
             visit.sat_out = True
 

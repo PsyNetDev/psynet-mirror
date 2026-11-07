@@ -418,6 +418,23 @@ def _team_and_pairs(exp, n, **kwargs):
     return team, pairs
 
 
+@in_consents_experiment
+def test_regrouper_keeps_a_sit_out_when_the_sitter_returns_in_the_same_request(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    team, pairs = _team_and_pairs(exp, 3)
+    _arrive(exp, pairs, team)
+    (sitter,) = [p for p in team if "pair" not in p.active_sync_groups]
+    _arrive_at_group_barrier(exp, pairs, sitter)
+    # Sitting out again, then coming straight back, all before the next commit.
+    visit = sitter.active_barriers[pairs.id]
+    visit.sat_out = True
+    visit.release()
+    _arrive(exp, pairs, [sitter])
+    assert pairs.rounds_sat_out(sitter) == 2
+
+
 def _pair_same_roles(members, regrouper, **_):
     ordered = sorted(members, key=regrouper.role)
     return [ordered[:2], ordered[2:]]

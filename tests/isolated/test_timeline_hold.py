@@ -510,6 +510,7 @@ def test_barriers_can_share_waiting_logic():
     first = GroupBarrier("first", group_type="pair", waiting_logic=filler)
     second = GroupBarrier("second", group_type="pair", waiting_logic=filler)
 
+    # Estimating again doesn't scale the shared filler a second time.
     assert estimate_duration(first) == estimate_duration(first) == 6
     Timeline(first, second, SuccessfulEndPage())
     assert estimate_duration(second) == 6
