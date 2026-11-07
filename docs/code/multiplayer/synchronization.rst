@@ -463,21 +463,18 @@ Timeouts
     ``timeout_between_barriers_action``, ``"fail"`` (default) or ``"kick"``.
     Members who arrive promptly may wait this long for the others, or longer
     while the others are on a page with a ``time_limit`` (see below). An
-    explicit ``max_wait_time`` must therefore be longer than the timeout plus
-    the longest such page; PsyNet only checks that it is longer than the
-    timeout. By default there is none, which is usually simplest. This
+    explicit ``max_wait_time`` must therefore be longer than the timeout and
+    than the longest such page plus 10 seconds; PsyNet only checks that it is
+    longer than the timeout. By default there is none, which is usually simplest. This
     guarantee assumes fixed membership: in a group that
     accepts top-ups, a newcomer is timed from when they joined, so members
     already waiting can reach ``max_wait_time`` first.
 
     A member who has started a page with a ``time_limit``, other than a
     waiting page, since the group last passed a barrier (or since joining)
-    is timed from that limit instead: they are not
-    late before it runs out, and are late once the timeout (at least 10
-    seconds) has passed after that, because the page would have moved them
-    on had they still been there. So the timeout need not be longer than the
-    pages' time limits; it covers pages without one, for example a member
-    who closed their tab before the timed page loaded. See
+    is not late until that limit has run out plus 10 seconds, so that an
+    answer sent at the deadline can arrive. So the timeout need not be
+    longer than the pages' time limits. See
     :ref:`a worked example <rounds-slow-players>`.
 
     At a group's first barrier the timeout counts from when each member joined

@@ -6699,7 +6699,7 @@ def test_timeout_between_barriers_counts_from_joining_the_group(
 def test_timeout_between_barriers_follows_a_timed_page(
     in_experiment_directory, db_session, monkeypatch
 ):
-    """A timed page moves the between-barrier timeout to the end of its time limit."""
+    """A between-barrier timeout waits for a timed page's answer, but no longer."""
     exp = get_experiment()
     grouper = SimpleGrouper("main", initial_group_size=7, min_group_size=2)
     participants = _working_participants(exp, 7)
@@ -6736,7 +6736,7 @@ def test_timeout_between_barriers_follows_a_timed_page(
     barrier = GroupBarrier(
         id_="after_timed_page",
         group_type="main",
-        timeout_between_barriers_time=10,
+        timeout_between_barriers_time=20,
         timeout_between_barriers_action="kick",
     )
 

@@ -255,9 +255,9 @@ def play_round():
                     group_type="pair",
                     content="Waiting for your partner…",
                     waiting_screen=waiting_for_partner,
-                    # A player is taken out 30 s after the round starts if they
-                    # never open the decision page (long enough for a background
-                    # tab to notice), or 30 s after its time limit if they leave it.
+                    # A player is taken out 30 s after the round starts (long
+                    # enough for a background tab to notice), but not while their
+                    # answer to the timed decision page may still be on its way.
                     timeout_between_barriers_time=30,
                     timeout_between_barriers_action="kick",
                     on_release=score_round,

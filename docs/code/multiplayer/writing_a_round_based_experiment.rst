@@ -96,8 +96,9 @@ Moving slow players on
 The :class:`~psynet.sync.GroupBarrier` after the decision page waits for
 both partners. With ``timeout_between_barriers_action="kick"``, a player who
 doesn't arrive in time is taken out of the pair, and their partner carries
-on alone. For a player on a page with a time limit, the timeout counts from
-the end of that limit, so it only needs to cover players who left the page.
+on alone. A player on a page with a time limit is not taken out before that
+limit has run out and an answer sent at the deadline has had 10 seconds to
+arrive, so the timeout need not be longer than the page's time limit.
 For example, with a 30-second decision page and
 ``timeout_between_barriers_time=30``:
 
@@ -106,8 +107,8 @@ For example, with a 30-second decision page and
 - A partner who leaves the page open without answering moves on at 30
   seconds, when the time limit runs out. The pair continues together, and
   nobody is paid.
-- A partner who closes their tab partway through the page is taken out at
-  60 seconds: 30 seconds after the time limit.
+- A partner who closes their tab partway through the page is taken out about
+  40 seconds into the round: 10 seconds after the page's time limit.
 - A partner whose tab never opened the page is taken out 30 seconds after
   the round started.
 

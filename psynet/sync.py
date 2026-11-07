@@ -1477,11 +1477,9 @@ class GroupBarrier(Barrier):
     timeout_between_barriers_time
         The maximum amount of time in seconds that a participant is allowed to reach the barrier, measured from when
         the group last passed a ``GroupBarrier`` or the participant joined the group, whichever is later. If
-        ``None`` (default), no between-barrier timeout is applied. If the participant has reached a page with a
-        ``time_limit`` since then, the timeout counts from when that time limit runs out instead, and is at least
-        ``2 * TIME_LIMIT_GRACE_SECONDS`` (10 s), so that an answer sent at the deadline can arrive. So this
-        timeout need not be longer than the pages' time limits; it only has to cover pages without one, such as
-        the time before the timed page loads, or a short page after it.
+        ``None`` (default), no between-barrier timeout is applied. A participant on a page with a ``time_limit``
+        is never timed out before that limit has run out plus ``2 * TIME_LIMIT_GRACE_SECONDS`` (10 s), so that an
+        answer sent at the deadline can arrive. So this timeout need not be longer than the pages' time limits.
 
     timeout_between_barriers_action
         When a participant exceeds ``timeout_between_barriers_time``: ``"kick"`` removes them from the group (so the
@@ -1953,14 +1951,14 @@ class GroupBarrier(Barrier):
 
         Each member is timed from the group's last barrier pass or from when
         they joined the group, whichever is later, so newcomers to an open
-        group are not late as soon as they join. A member who has started a
-        page with a time limit since then, outside waiting logic, is timed
-        from that page's deadline.
+        group are not late as soon as they join. A member on a page with a
+        time limit, outside waiting logic, is not late until that limit has
+        run out and an answer sent at the deadline has had time to arrive.
         """
         if self.timeout_between_barriers_time is None:
             return []
         now = timenow()
-        left_timed_page = timedelta(seconds=2 * TIME_LIMIT_GRACE_SECONDS)
+        answer_arrival = timedelta(seconds=2 * TIME_LIMIT_GRACE_SECONDS)
         active_ids = {p.id for p in group.active_participants}
         late = []
         for link in group.participant_links:
@@ -1974,15 +1972,12 @@ class GroupBarrier(Barrier):
             starts = [t for t in (group.last_barrier_pass_time, link.arrival_time) if t]
             if not starts:
                 continue
-            start = max(starts)
-            allowed = timedelta(seconds=self.timeout_between_barriers_time)
-            deadline = link.page_deadline
-            # A timed page moves the start to its deadline, leaving time for
-            # an answer sent at the deadline to arrive.
-            if deadline is not None:
-                start = max(start, deadline)
-                allowed = max(allowed, left_timed_page)
-            if now > start + allowed:
+            late_at = max(starts) + timedelta(
+                seconds=self.timeout_between_barriers_time
+            )
+            if link.page_deadline is not None:
+                late_at = max(late_at, link.page_deadline + answer_arrival)
+            if now > late_at:
                 late.append(participant)
         return late
 

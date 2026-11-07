@@ -7,8 +7,8 @@ number, and the lowest number that nobody else in the room picked wins.
 The choice page has a ``time_limit`` of ``CHOICE_SECONDS``. A player who
 doesn't choose in time misses the round and joins the next one, so the rest
 of the room isn't held up. A player who leaves the page, for example by
-closing the tab, is removed from their room 30 s after the time limit, or
-30 s after the room forms if the page never loaded.
+closing the tab, is removed from their room 30 s after the room forms, or
+10 s after the time limit if that is later.
 Missing a round doesn't fail anyone. A player who comes back after the
 others' last round has started waits alone, though, and is failed once they
 reach the regrouper's ``max_wait_time`` (300 s by default), as at any barrier.
@@ -170,9 +170,9 @@ def play_round():
             group_type="room",
             content="Waiting for the rest of the room…",
             waiting_screen=your_pick,
-            # A player is taken out 30 s after the round starts if they never
-            # open the choice page (long enough for a background tab to
-            # notice), or 30 s after its time limit if they leave it.
+            # A player is taken out 30 s after the round starts (long enough
+            # for a background tab to notice), but not while their answer to
+            # the timed choice page may still be on its way.
             timeout_between_barriers_time=30,
             timeout_between_barriers_action="kick",
             on_release=score_round,
