@@ -894,11 +894,10 @@ class Barrier(EltCollection):
         holds credit actual visible waiting time up to ``max_wait_time``.
 
     expected_wait
-        How long participants are expected to wait here, in seconds, for
-        progress estimates and fixed time credit. With ``waiting_logic``, the
-        waiting logic is expected to repeat often enough to fill this time,
-        rounded up to whole passes (at least one). If omitted, a default hold expects 1.5 seconds and
-        ``waiting_logic`` three repetitions.
+        Seconds participants are expected to wait here, used for progress
+        estimates and fixed time credit. Default: 1.5 seconds. With
+        ``waiting_logic``, the estimate is instead as many whole passes of the
+        waiting logic as fill this time (at least one), or three passes if omitted.
 
     waiting_message
         Message displayed by the default timeline hold overlay. Only used when
@@ -943,7 +942,8 @@ class Barrier(EltCollection):
         once they are released; the page then ends without an answer,
         recorded with ``"interrupted": True`` in its response metadata.
         ``None`` lets each waiting page run to its end. Pages inside trials
-        always run to their end. Default: 3 seconds.
+        always run to their end. Default: 3 seconds. Only used with
+        ``waiting_logic``; passing it without raises an error.
     """
 
     # Reconstructed barriers skip ``__init__`` and never render a hold page.
@@ -958,7 +958,7 @@ class Barrier(EltCollection):
         fix_time_credit=False,
         expected_wait=None,
         waiting_message=None,
-        release_grace: Optional[float] = 3,
+        release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
     ):
         self.id = id_
@@ -996,6 +996,13 @@ class Barrier(EltCollection):
         )
         if self.expected_wait < 0:
             raise ValueError("expected_wait must be non-negative.")
+        if waiting_logic is None and release_grace is not NoArgumentProvided:
+            raise ValueError(
+                "release_grace only applies with waiting_logic: a participant on "
+                "the default waiting indicator leaves as soon as they are released."
+            )
+        if release_grace is NoArgumentProvided:
+            release_grace = 3
         if release_grace is not None and release_grace < 0:
             raise ValueError("release_grace must be non-negative or None.")
         self.release_grace = None if waiting_logic is None else release_grace
@@ -1624,7 +1631,7 @@ class GroupBarrier(Barrier):
         waiting_message=None,
         notify_arrivals: bool = True,
         on_arrival_message: Optional[Callable] = None,
-        release_grace: Optional[float] = 3,
+        release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
     ):
         self._validate_max_wait_action(max_wait_action)
@@ -2053,7 +2060,7 @@ class Grouper(Barrier):
         expected_wait=None,
         fix_time_credit=False,
         waiting_message=None,
-        release_grace: Optional[float] = 3,
+        release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
     ):
         if not id_:

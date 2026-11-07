@@ -271,11 +271,13 @@ def test_hold_pages_get_no_waiting_config(in_experiment_directory, db_session):
         exp.timeline = original
 
 
-def test_negative_release_grace_is_rejected():
-    with pytest.raises(ValueError, match="release_grace"):
-        SimpleGrouper(
-            "pair",
-            initial_group_size=2,
-            waiting_logic=_filler("filler"),
-            release_grace=-1,
-        )
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"waiting_logic": _filler("filler"), "release_grace": -1}, "non-negative"),
+        ({"release_grace": 5}, "only applies with waiting_logic"),
+    ],
+)
+def test_release_grace_is_checked(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        SimpleGrouper("pair", initial_group_size=2, **kwargs)
