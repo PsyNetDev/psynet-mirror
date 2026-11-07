@@ -491,9 +491,10 @@ def test_regrouper_alternates_roles_and_partners_and_counts_rounds(
     _arrive(exp, pairs, team[:3])
     (sitter,) = [p for p in team[:3] if "pair" not in p.active_sync_groups]
     assert pairs.role(sitter) is None
-    assert pairs.rounds_sat_out(sitter) == 1
+    assert (pairs.rounds_sat_out(sitter), pairs.sat_out(sitter)) == (1, True)
     _arrive(exp, pairs, team[:3])
     assert "pair" in sitter.active_sync_groups
+    assert not pairs.sat_out(sitter)
 
 
 @in_consents_experiment

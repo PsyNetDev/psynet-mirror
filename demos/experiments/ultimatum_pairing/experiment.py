@@ -222,11 +222,11 @@ def show_outcome(participant):
 
 
 def not_playing(participant):
-    # A player removed before reaching the decision page still has this round's role.
-    if pairing.role(participant) is not None:
-        text = AWAY_TEXT
-    else:
+    if pairing.sat_out(participant):
         text = "You sit out this round. It doesn't count towards your rounds."
+    else:
+        # Removed from this round's pair before reaching the decision page.
+        text = AWAY_TEXT
     return InfoPage(text, time_estimate=5)
 
 
@@ -264,7 +264,8 @@ def play_round():
                 ),
                 PageMaker(show_outcome, time_estimate=5),
             ),
-            PageMaker(not_playing, time_estimate=5),
+            # Without a team the game is over; the ended-early page explains why.
+            conditional("in_team", team_of, PageMaker(not_playing, time_estimate=5)),
         ),
     )
 

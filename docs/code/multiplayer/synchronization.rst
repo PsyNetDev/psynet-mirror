@@ -202,8 +202,9 @@ By default, when not everyone fits into a group, those who have played the
 most rounds sit out, and participants are kept apart from last round's
 partners where possible. The regrouper keeps count for each participant:
 :meth:`~psynet.sync.Regrouper.rounds_played`,
-:meth:`~psynet.sync.Regrouper.rounds_sat_out` and, with ``roles``,
-:meth:`~psynet.sync.Regrouper.role`. It does this while holding its lock,
+:meth:`~psynet.sync.Regrouper.rounds_sat_out`,
+:meth:`~psynet.sync.Regrouper.sat_out` (for the latest round) and, with
+``roles``, :meth:`~psynet.sync.Regrouper.role`. It does this while holding its lock,
 so two rounds starting at once cannot give two players the same seat.
 
 ``content``

@@ -2613,7 +2613,7 @@ class Regrouper(Grouper):
     played the most rounds sit out, and members are kept apart from the
     people they were grouped with last time where possible. The regrouper
     counts each participant's rounds (:meth:`rounds_played`,
-    :meth:`rounds_sat_out`) and, with ``roles``, gives out roles
+    :meth:`rounds_sat_out`, :meth:`sat_out`) and, with ``roles``, gives out roles
     (:meth:`role`), all while it holds its lock, so two splits cannot give
     out the same seat twice. Each group records the regrouper that formed
     it, and each member's link to it records their role, so these counts
@@ -2841,6 +2841,17 @@ class Regrouper(Grouper):
             barrier_id=self.id, participant_id=participant.id, sat_out=True
         ).count()
 
+    def sat_out(self, participant) -> bool:
+        """Return whether ``participant``'s latest visit here ended without a group (see ``release_left_over``)."""
+        latest_visit = (
+            ParticipantLinkBarrier.query.filter_by(
+                barrier_id=self.id, participant_id=participant.id
+            )
+            .order_by(ParticipantLinkBarrier.id.desc())
+            .first()
+        )
+        return latest_visit is not None and bool(latest_visit.sat_out)
+
     def role(self, participant) -> Optional[str]:
         """Return ``participant``'s role (see ``roles``).
 
@@ -3007,20 +3018,20 @@ class Regrouper(Grouper):
         )
         return dict(rows.all())
 
-    def _record_roles(self, group, members):
-        """Store each member's role on their link to the new group."""
+    def _planned_roles(self, plan, members) -> Dict[int, Optional[str]]:
+        """Return each planned member's role by ID, decided from the history before the split."""
         if not self.roles:
-            return
+            return {}
         if self.keep_roles:
-            roles = {member: self.role(member) for member in members}
-        elif self._custom_grouping:
-            roles = dict(zip(members, self.roles))
-        else:
-            roles = self._least_held_roles(members, self._history(members))
-        db.session.flush()
-        links = {link.participant_id: link for link in group.participant_links}
-        for member, role in roles.items():
-            links[member.id].role = role
+            return {m.id: self.role(m) for group in plan for m in group}
+        if self._custom_grouping:
+            return {m.id: r for group in plan for m, r in zip(group, self.roles)}
+        history = self._history(members)
+        return {
+            m.id: role
+            for group in plan
+            for m, role in self._least_held_roles(group, history).items()
+        }
 
     def _least_held_roles(self, members, history) -> dict:
         """Return ``{member: role}``, giving each role to whoever has had it least.
@@ -3206,11 +3217,12 @@ class Regrouper(Grouper):
             if group_members
         ]
         self._check_plan(plan, members)
+        roles = self._planned_roles(plan, members)
         groups = [
             self._make_group(group_members, within_group) for group_members in plan
         ]
-        for group, group_members in zip(groups, plan):
-            self._record_roles(group, group_members)
+        for link in (link for group in groups for link in group.participant_links):
+            link.role = roles.get(link.participant.id)
         placed = {p.id for group in groups for p in group.participants}
         left_over = [p for p in members if p.id not in placed]
         if not groups:
@@ -3273,6 +3285,8 @@ class Regrouper(Grouper):
         return self._create_group(
             participants,
             within_group_id=None if within_group is None else within_group.id,
+            # The split's time, not the insert's, decides which clock tick it used.
+            creation_time=timenow(),
             initial_group_size=len(participants),
             max_group_size=len(participants),
             min_group_size=1,
