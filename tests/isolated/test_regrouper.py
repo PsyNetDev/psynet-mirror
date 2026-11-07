@@ -55,7 +55,7 @@ def _backdate_arrivals(barrier, participants, seconds):
 
 def _backdate_splits(regrouper, seconds):
     for group in SyncGroup.query.filter_by(grouper_id=regrouper.id):
-        group.created_at -= timedelta(seconds=seconds)
+        group.creation_time -= timedelta(seconds=seconds)
 
 
 @in_consents_experiment

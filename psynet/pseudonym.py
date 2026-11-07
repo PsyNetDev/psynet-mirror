@@ -2,7 +2,7 @@
 
 Multiplayer pages (chat rooms, group displays) need to tell participants
 apart without revealing recruitment IDs. This module gives every participant
-a pseudonym made of a colour and an animal, with an icon combining the two.
+a pseudonym made of a colour and an animal, shown as the animal in that colour.
 
 Design constraints:
 
@@ -70,7 +70,7 @@ class Pseudonym:
     name
         Translated name, for example ``"Blue fox"``.
     css_color
-        CSS colour for the participant's icon.
+        CSS colour for the participant's animal.
     emoji
         The animal's emoji.
     sticker_html

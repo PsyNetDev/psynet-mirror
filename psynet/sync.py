@@ -2157,7 +2157,6 @@ class Grouper(Barrier):
             n_active_participants=len(participants),
             active=True,
             grouper_id=self.id,
-            created_at=timenow(),
             **settings,
         )
         db.session.add(group)
@@ -3182,7 +3181,7 @@ class Regrouper(Grouper):
         """Return when this regrouper last formed groups in this pool, in epoch seconds."""
         within_id = None if within_group is None else within_group.id
         latest = (
-            db.session.query(func.max(SyncGroup.created_at))
+            db.session.query(func.max(SyncGroup.creation_time))
             .filter(
                 SyncGroup.grouper_id == self.id,
                 SyncGroup.within_group_id.is_(None)
@@ -3325,10 +3324,9 @@ class SyncGroup(SQLBase, SQLMixin):
     # Dissolution started but skipped members whose rows were busy; the
     # barrier poller finishes it.
     dissolving = Column(Boolean, default=False)
-    # The grouper that formed the group, when, and for a Regrouper with
-    # ``within``, the group it regrouped within.
+    # The grouper that formed the group, and for a Regrouper with ``within``,
+    # the group it regrouped within.
     grouper_id = Column(String, index=True)
-    created_at = Column(DateTime, default=timenow)
     within_group_id = Column(Integer, index=True)
 
     participant_links = relationship(
