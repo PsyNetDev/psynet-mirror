@@ -72,7 +72,7 @@ from psynet.sync import (
     hold_message,
     pending_arrival_notice_for,
 )
-from psynet.timeline import Page, PageMaker, Response, Timeline
+from psynet.timeline import CodeBlock, Page, PageMaker, Response, Timeline
 from psynet.timeline_hold import (
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
@@ -6820,6 +6820,26 @@ def test_a_time_out_before_joining_an_open_group_gives_no_dash(
     grouper._join_existing_groups(newcomer)
     _arrive_at_group_barrier(exp, GroupBarrier("next", group_type="main"), newcomer)
     assert not newcomer.active_barriers["next"].ran_out_of_time
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_skipping_a_group_barrier_forgets_a_time_out(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    (kicked,) = _working_participants(exp, 1)
+    kicked.timed_out_since_barrier = True
+    skipped = GroupBarrier(
+        "decided", group_type="pair", timeout_between_barriers_action="kick"
+    )
+    # The last code block is the branch for participants outside a group.
+    skip = [elt for elt in skipped.resolve() if isinstance(elt, CodeBlock)][-1]
+    skip.consume(exp, kicked)
+    grouper = SimpleGrouper("pair", initial_group_size=2)
+    _arrive_at_group_barrier(exp, grouper, kicked)
+    assert not kicked.active_barriers[grouper.id].ran_out_of_time
 
 
 @pytest.mark.parametrize(

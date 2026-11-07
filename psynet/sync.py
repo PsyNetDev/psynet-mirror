@@ -1669,6 +1669,7 @@ class GroupBarrier(Barrier):
                 self.group_type in participant.active_sync_groups
             ),
             logic_if_true=elts,
+            logic_if_false=CodeBlock(_forget_time_out),
             log_chosen_branch=False,
         )
 
@@ -4169,6 +4170,11 @@ def _interruptible_waiting_barrier(page, participant):
     if trial is not None and not trial.complete:
         return None
     return barrier
+
+
+def _forget_time_out(participant):
+    """Skipping a barrier passes it, so a time-out before it doesn't reach the next one."""
+    participant.timed_out_since_barrier = False
 
 
 def _leave_waiting_logic(code_block, participant):
