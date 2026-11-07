@@ -38,3 +38,19 @@ class TestCheckConsents:
             match="missing a consent page.*--no-consent",
         ):
             run_pre_checks(mode="sandbox", **pre_check_args)
+
+    def test_pre_checks_check_background_recording_pages(self, monkeypatch):
+        """Static background pages are checked before launch, not on first visit."""
+        from psynet.experiment import Experiment
+
+        calls = []
+        monkeypatch.setattr(
+            Experiment,
+            "_check_background_recording_pages",
+            lambda self: calls.append(self),
+        )
+        deployment_info.write(mode="debug", is_local_deployment=True)
+        run_pre_checks(
+            mode="debug", local_=True, heroku=False, docker=False, app="test_app"
+        )
+        assert len(calls) == 1

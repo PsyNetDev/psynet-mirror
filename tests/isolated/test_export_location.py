@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 import click
 import pytest
 from flask import Flask
+from werkzeug.http import parse_options_header
 
 from psynet.command_line import export_
 from psynet.experiment import Experiment
@@ -408,7 +409,7 @@ def test_download_export_sends_zip_bytes_after_tempdir_would_have_closed(
         zip_path.write_bytes(payload)
         return str(zip_path)
 
-    experiment = Mock()
+    experiment = Mock(deployment_id="demo__mode=debug__launch=2026-11-04--18-00-00")
     experiment.build_export_archive.side_effect = fake_build
     monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
     monkeypatch.setattr(
@@ -425,6 +426,14 @@ def test_download_export_sends_zip_bytes_after_tempdir_would_have_closed(
         response = client.get("/download")
         assert response.status_code == 200
         assert response.data == payload
+        assert response.mimetype == "application/zip"
+        disposition, options = parse_options_header(
+            response.headers["Content-Disposition"]
+        )
+        assert disposition == "attachment"
+        assert options["filename"] == (
+            "demo__mode=debug__launch=2026-11-04--18-00-00__export.zip"
+        )
         response.close()
 
 

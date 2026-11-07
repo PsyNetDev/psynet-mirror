@@ -3,7 +3,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import click
 import jsonpickle
 import pytest
 
@@ -110,33 +109,46 @@ def test_deploy_warns_about_uncommitted_files(tmp_path, capsys):
         Path("deploy.toml").write_text('version = 1\n[exclude]\nnames = [".env"]\n')
         _git("add", ".")
         _git("commit", "--quiet", "-m", "Initial commit")
-        deployment_info.warn_about_uncommitted_deployment_changes(confirm=None)
-        assert "uncommitted" not in capsys.readouterr().err
+        deployment_info.warn_about_uncommitted_deployment_changes(
+            confirm_or_cancel=None
+        )
+        assert capsys.readouterr().err == ""
 
         Path(".env").write_text("excluded")
         for i in range(12):
             Path(f"stimulus_{i:02}.txt").write_text("new")
-        deployment_info.warn_about_uncommitted_deployment_changes(confirm=None)
+        deployment_info.warn_about_uncommitted_deployment_changes(
+            confirm_or_cancel=None
+        )
         err = capsys.readouterr().err
         assert "  stimulus_00.txt" in err and "... and 2 more" in err
         assert ".env" not in err
 
-        with pytest.raises(click.Abort):
-            deployment_info.warn_about_uncommitted_deployment_changes(
-                confirm=lambda question: False
-            )
+        questions = []
+        deployment_info.warn_about_uncommitted_deployment_changes(
+            confirm_or_cancel=questions.append
+        )
+        assert questions == ["Deploy anyway?"]
 
 
-def test_git_ignored_scaffold_files_are_not_uncommitted_changes(tmp_path):
+def test_git_ignored_generated_files_are_not_uncommitted_changes(tmp_path):
     with working_directory(tmp_path):
         _git("init", "--quiet")
         _git("config", "user.email", "test@example.com")
         _git("config", "user.name", "Test User")
-        Path(".gitignore").write_text("Dockerfile\nAGENTS.md\nREADME.md\nstimuli.csv\n")
+        Path(".gitignore").write_bytes(_template_contents(".gitignore"))
+        with Path(".gitignore").open("a") as f:
+            f.write("Dockerfile\nAGENTS.md\nREADME.md\nstimuli.csv\n")
         Path("deploy.toml").write_text("version = 1\n[exclude]\nnames = []\n")
         _git("add", ".")
         _git("commit", "--quiet", "-m", "Initial commit")
-        for name in ("Dockerfile", "AGENTS.md", "stimuli.csv"):
+        Path("static/fonts").mkdir(parents=True)
+        for name in (
+            "Dockerfile",
+            "AGENTS.md",
+            "stimuli.csv",
+            "static/fonts/GoNotoKurrent-Bold.ttf",
+        ):
             Path(name).write_text("generated")
         Path("README.md").write_bytes(_template_contents("README.md"))
         assert deployment_info.uncommitted_deployment_paths() == ["stimuli.csv"]

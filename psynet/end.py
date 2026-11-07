@@ -2,6 +2,7 @@ from typing import List, Optional, Union
 
 import dominate
 from dominate import tags
+from jinja2.utils import htmlsafe_json_dumps
 
 from psynet import exit as exit_domain
 from psynet.modular_page import NullControl
@@ -381,7 +382,7 @@ class RejectedConsentLogic(UnsuccessfulEndLogic):
                 )
                 tags.script(
                     dominate.util.raw(
-                        f'setTimeout(() => {{ window.location = "{external_submit_url}"; }}, 2000)'
+                        f"setTimeout(() => {{ window.location = {htmlsafe_json_dumps(external_submit_url)}; }}, 2000)"
                     )
                 )
 

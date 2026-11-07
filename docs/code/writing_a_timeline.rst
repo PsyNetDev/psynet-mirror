@@ -144,7 +144,10 @@ preceding page:
 (``fix_time_credit=True``), every participant gets time credit for
 ``expected_repetitions`` iterations, however many they actually do.
 ``max_loop_time`` limits the time in the loop in seconds; participants who
-reach it are sent to the unsuccessful end unless ``fail_on_timeout=False``.
+reach it while the condition still holds are sent to the unsuccessful end
+unless ``fail_on_timeout=False``. ``extend_while`` pauses that limit while it
+returns ``True``, for example while a participant's recording is still
+uploading.
 :func:`~psynet.timeline.conditional` takes a label, a ``condition``, and
 ``logic_if_true`` and ``logic_if_false``. This loop repeats until the random
 score is above 5, with feedback that depends on the score:

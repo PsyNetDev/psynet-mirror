@@ -19,14 +19,18 @@ login fails. Never print the values, put them in `analysis.md`, or commit them
 - **Dashboard** (HTTP basic auth on `<experiment-url>/dashboard/`):
   `dashboard_user` / `dashboard_password` from `~/.dallingerconfig`
   (section `[Dashboard]`), falling back to `dallinger.config.get_config()`
-  after `config.load()`, or to the `psynet deploy ssh` output line
-  `You can now log in to the console at ... (user = ..., password = ...)`.
+  after `config.load()`, or to `dashboard_user` / `dashboard_password` in
+  the deployment's
+  `~/psynet-data/launch-data/<deployment-id>/launch-info.json` (`psynet
+  deploy ssh` doesn't print passwords; its Ready summary names this file).
 - **Dozzle** (host-level at `https://logs.experiments1.cococo-lab.cornell.edu/`,
-  not in `~/.dallingerconfig`): read the deploy output line
-  `To view the logs for this experiment go to https://logs.... (user = ..., password = ...)`;
-  extract the pair in a script for `/api/token` or the login form without
-  echoing it. If no deploy terminal is available, SSH to the server and
-  inspect the Dozzle setup (compose or reverse-proxy auth).
+  not in `~/.dallingerconfig`): the user is `dallinger`, and the password is
+  `logs_password` in the same `launch-info.json`. It is set per server,
+  usually not the dashboard password (on servers set up by older Dallinger it
+  may be the first deployment's dashboard password). Without that file, read
+  `DOZZLE_PASSWORD` from `~/dallinger/.env.json` on the server over SSH.
+  Extract the pair in a script for `/api/token` or the login form without
+  echoing it.
 - **Recruiter tokens**: `prolific_api_token`, `lucid_api_key`, and
   `lucid_sha1_hashing_key` in `~/.dallingerconfig`; presence-check as in
   `references/deploy-from-test-branch.md`.
@@ -40,8 +44,8 @@ When using browser automation, launch a dedicated browser subagent for dashboard
    `~/.dallingerconfig` (see Credentials above).
 3. Verify the dashboard loads. Check the database pages, monitoring page, lifecycle/status pages, and any page the user reported as failing.
 4. Open Dozzle at `https://logs.experiments1.cococo-lab.cornell.edu/`.
-5. Log into Dozzle with the host credentials from the deploy output
-   (see Credentials above).
+5. Log into Dozzle with the host credentials from `launch-info.json` or the
+   server (see Credentials above).
 6. Search/filter containers by the inferred app name.
 7. Inspect all matching containers, especially:
    - `<app>-web-1`

@@ -100,11 +100,12 @@ export async function activate({root, vars, psynet}) {
     }
 
     const wsScheme = location.protocol === "https:" ? "wss://" : "ws://";
-    chatSocket = new ReconnectingWebSocket(
+    chatSocket = dallinger.stopReconnectingIfRefused(new ReconnectingWebSocket(
         wsScheme + location.host + "/chat?channel=" + globalChannel
-        + "&worker_id=" + dallinger.identity.workerId
         + "&participant_id=" + participantId
-    );
+        // PsyNet refuses a socket that names a participant without their token.
+        + "&scope=" + encodeURIComponent(psynetTemplateData.websocketScope)
+    ));
 
     let firstOpen = true;
     chatSocket.onopen = function () {

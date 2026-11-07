@@ -33,10 +33,15 @@ from .paths import DATABASE_DIRNAME, EXPORT_FORMAT_VERSION
 logger = get_logger()
 
 
+#: Caches of recruiter API payloads. They hold raw recruiter identifiers that
+#: identifier separation does not cover, and the data can be fetched again.
+_UNEXPORTED_TABLES = {"lucid_submissions"}
+
+
 def _export_table_order(inspector=None) -> list[str]:
-    """Return physical table names in a stable export order."""
+    """Return the exported physical table names in a stable order."""
     inspector = inspector if inspector is not None else sa_inspect(db.engine)
-    names = sorted(inspector.get_table_names())
+    names = sorted(set(inspector.get_table_names()) - _UNEXPORTED_TABLES)
     preferred = [
         "network",
         "participant",

@@ -35,8 +35,12 @@ rows that are easy to tap. If your CSS targeted bare ``label`` or ``input``
 elements, check how those controls look.
 
 **Phones and tablets.** Experiments now accept phones and tablets by default;
-set ``allow_mobile_devices = false`` to keep a study desktop-only. The oldest
-supported browser is now Chrome 105.
+set ``allow_mobile_devices = false`` to keep a study desktop-only.
+
+**Browsers.** Participants can use any modern browser (Chrome 105+,
+Firefox 121+, Safari 15.4+), not only Chrome. Declare the browser features
+your experiment needs, such as ``browser_capabilities = {"microphone"}``, and
+PsyNet screens participants for them at the start of the timeline.
 
 **jQuery 4.** Timeline pages now load jQuery 4.0.0, and PsyNet serves jQuery UI
 1.14.1. Custom JavaScript that uses utilities jQuery 4 removed, such as

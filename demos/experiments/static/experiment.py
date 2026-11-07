@@ -35,32 +35,34 @@ class AnimalTrial(StaticTrial):
         animal = self.definition["animal"]
         block = self.block
 
-        header = f"<h4 id='trial-position'>Trial {self.position + 1}</h3>"
+        header = Markup("<h4 id='trial-position'>Trial {}</h4>").format(
+            self.position + 1
+        )
 
         if self.is_repeat_trial:
-            header = (
-                header
-                + f"<h4>Repeat trial {self.repeat_trial_index + 1} out of {self.n_repeat_trials}</h3>"
+            header += Markup("<h4>Repeat trial {} out of {}</h4>").format(
+                self.repeat_trial_index + 1, self.n_repeat_trials
             )
         else:
-            header = header + f"<h4>Block {block}</h3>"
+            header += Markup("<h4>Block {}</h4>").format(block)
 
         page = ModularPage(
             "animal_trial",
             Markup(
-                f"""
+                """
                 {header}
                 <p id='question' style='color: {text_color}'>How much do you like {animal}?</p>
                 <small class="text-muted">
                 You can also use the keys <kbd>A</kbd>, <kbd>S</kbd>, and <kbd>D</kbd> on your keyboard.
                 </small>
                 """
-            ),
+            ).format(header=header, text_color=text_color, animal=animal),
             KeyboardPushButtonControl(
-                choices=[
-                    "Not at all <kbd>A</kbd>",
-                    "A little <kbd>S</kbd>",
-                    "Very much <kbd>D</kbd>",
+                choices=["Not at all", "A little", "Very much"],
+                labels=[
+                    Markup("Not at all <kbd>A</kbd>"),
+                    Markup("A little <kbd>S</kbd>"),
+                    Markup("Very much <kbd>D</kbd>"),
                 ],
                 keys=["KeyA", "KeyS", "KeyD"],
                 bot_response="Very much",
@@ -104,7 +106,9 @@ class AnimalTrialMaker(StaticTrialMaker):
 
     def get_end_feedback_passed_page(self, score):
         return InfoPage(
-            Markup(f"You finished the animal questions! Your score was {score}."),
+            Markup("You finished the animal questions! Your score was {}.").format(
+                score
+            ),
             time_estimate=5,
         )
 

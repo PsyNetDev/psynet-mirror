@@ -35,7 +35,7 @@
     </div>
     <script>
       let randomKey = Math.random().toString(36).substring(7);  // random key to prevent caching
-      let buildUrl = "{{ resources }}/scripts/Build";
+      let buildUrl = {{ resources | tojson }} + "/scripts/Build";
       let loaderUrl = buildUrl + "/WebGL.loader.js?random=" + randomKey;
       let config = {
         dataUrl: buildUrl + "/WebGL.data?random=" + randomKey,
@@ -53,8 +53,8 @@
         container.className = "unity-mobile";
         config.devicePixelRatio = 1;
       } else {
-        canvas.style.width = "{{ game_container_width }}";
-        canvas.style.height = "{{ game_container_height }}";
+        canvas.style.width = {{ game_container_width | tojson }};
+        canvas.style.height = {{ game_container_height | tojson }};
       }
       loadingBar.style.display = "block";
 
@@ -74,7 +74,18 @@
           alert(message);
         });
       };
-      document.body.appendChild(script);
+      if (psynetTemplateData.jsVars?.backgroundRecording) {
+        // Start the engine only after the participant has answered the capture
+        // permission dialog, so the task does not start behind it.
+        let unityStarted = false;
+        psynet.trial.onEvent("trialStart", () => {
+          if (unityStarted) return;
+          unityStarted = true;
+          document.body.appendChild(script);
+        });
+      } else {
+        document.body.appendChild(script);
+      }
     </script>
 {% endblock %}
 

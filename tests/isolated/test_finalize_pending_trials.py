@@ -11,6 +11,30 @@ from psynet.trial.chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMa
 from psynet.trial.main import Trial
 
 
+def _reserve_trial_recording(trial, directory, *, background=False, required=True):
+    """Reserve a camera clip for an accepted trial response."""
+    from psynet.asset import LocalStorage
+    from psynet.media_upload import _reserve_recording
+    from psynet.timeline import Response
+
+    label = "choice" if background else "video"
+    response = Response(
+        participant=trial.participant, label=label, page_type="ModularPage"
+    )
+    response.successful_validation = True
+    return _reserve_recording(
+        response=response,
+        parent=trial,
+        page_uuid=label,
+        source="camera",
+        local_key="background_choice_camera" if background else "video",
+        storage=LocalStorage(str(directory)),
+        role="background" if background else "answer",
+        required_for_trial=required,
+        idle_timeout=60,
+    )
+
+
 class FinalizeBackstopTrial(ChainTrial):
     time_estimate = 1
 
@@ -31,6 +55,375 @@ class FinalizeBackstopNode(ChainNode):
 
     def create_definition_from_seed(self, seed, experiment, participant):
         return seed
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("still_waiting", [False, True])
+def test_while_loop_budget_is_fixed_and_a_cleared_condition_exits_normally(
+    db_session, participant, monkeypatch, still_waiting
+):
+    """A callable ``max_loop_time`` is evaluated once, on entering the loop.
+
+    Past that budget, ``while_loop`` times out only if its condition still
+    holds; a condition that cleared after the deadline exits normally.
+    """
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    import psynet.timeline as timeline_module
+    from psynet.page import InfoPage, WaitPage
+    from psynet.timeline import Timeline, while_loop
+
+    now = datetime.now()
+    monkeypatch.setattr(timeline_module, "datetime", SimpleNamespace(now=lambda: now))
+    calls = []
+    pending = True
+
+    def budget(participant):
+        calls.append(participant.id)
+        return 60 if len(calls) == 1 else 1
+
+    timeline = Timeline(
+        while_loop(
+            "bounded_wait",
+            lambda: pending,
+            WaitPage(wait_time=1),
+            expected_repetitions=0,
+            max_loop_time=budget,
+            fail_on_timeout=False,
+            on_timeout=lambda participant: participant.var.set("timed_out", True),
+        ),
+        InfoPage("Continue", time_estimate=0),
+    )
+    exp = get_experiment()
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+    timeline.advance_page(exp, participant)
+    now += timedelta(seconds=30)
+    timeline.advance_page(exp, participant)
+    assert isinstance(timeline.get_current_elt(exp, participant), WaitPage)
+    assert calls == [participant.id]
+    now += timedelta(seconds=35)
+    pending = still_waiting
+    timeline.advance_page(exp, participant)
+    assert timeline.get_current_elt(exp, participant).content == "Continue"
+    assert bool(participant.var.get("timed_out", False)) is still_waiting
+    assert calls == [participant.id]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_while_loop_timer_restarts_after_extend_while_clears(
+    db_session, participant, monkeypatch
+):
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    import psynet.timeline as timeline_module
+    from psynet.page import InfoPage, WaitPage
+    from psynet.timeline import Timeline, while_loop
+
+    now = datetime.now()
+    monkeypatch.setattr(timeline_module, "datetime", SimpleNamespace(now=lambda: now))
+    extending = True
+    timeline = Timeline(
+        while_loop(
+            "extended_wait",
+            lambda: True,
+            WaitPage(wait_time=1),
+            expected_repetitions=0,
+            max_loop_time=10,
+            fail_on_timeout=False,
+            extend_while=lambda: extending,
+        ),
+        InfoPage("Continue", time_estimate=0),
+    )
+    exp = get_experiment()
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+
+    def advance(seconds):
+        nonlocal now
+        now += timedelta(seconds=seconds)
+        timeline.advance_page(exp, participant)
+        return isinstance(timeline.get_current_elt(exp, participant), WaitPage)
+
+    assert advance(0)
+    assert advance(30)
+    extending = False
+    assert advance(5)
+    assert not advance(6)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("expiry_source", ["clock", "poll", "late_poll"])
+@pytest.mark.parametrize("upload_state", ["pending", "processing"])
+def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
+    db_session, participant, monkeypatch, tmp_path, expiry_source, upload_state
+):
+    from datetime import datetime, timedelta
+
+    from timeline_hold_helpers import _process_response
+
+    import psynet.media_upload as uploads
+    from psynet.page import InfoPage
+    from psynet.timeline import Timeline
+    from psynet.timeline_hold import _ConditionHoldPage
+
+    now = datetime.now()
+    monkeypatch.setattr(uploads, "_utcnow", lambda: now)
+    monkeypatch.setattr("psynet.timeline_hold.timenow", lambda: now)
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    participant.current_trial = trial
+    asset, _ = _reserve_trial_recording(trial, tmp_path)
+    # The ordinary 20 s, the lifetime cap a renewed lease could reach, then the
+    # processing bound; the wait itself ends as soon as the lease lapses.
+    assert uploads._recording_wait_timeout(participant.id, trial_id=trial.id) == (
+        20 + uploads._MAX_UPLOAD_LIFETIME + uploads._PROCESSING_BOUND
+    )
+    assert uploads._recording_wait_timeout(participant.id + 100) == 20
+    assert (
+        uploads._recording_wait_timeout(participant.id, trial_id=trial.id + 100) == 20
+    )
+    assert uploads._recording_wait_timeout(participant.id, None) is None
+    # Once bytes arrive, the processing deadline replaces the upload allowance.
+    asset.upload_status = "received"
+    asset.upload_processing_deadline = now + timedelta(seconds=10)
+    assert uploads._recording_wait_timeout(participant.id, trial_id=trial.id) == 30
+    asset.upload_status = upload_state
+    asset.upload_processing_deadline = (
+        now + timedelta(seconds=60) if upload_state == "processing" else None
+    )
+
+    def show_feedback(self, experiment, participant):
+        raise AssertionError("Missing media must not reach feedback")
+
+    monkeypatch.setattr(FinalizeBackstopTrial, "show_feedback", show_feedback)
+    timeline = Timeline(
+        FinalizeBackstopTrial._construct_feedback_logic(None),
+        InfoPage("Continue", time_estimate=0),
+    )
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+    timeline.advance_page(exp, participant)
+    now += timedelta(seconds=30)
+    _process_response(
+        exp, participant, participant.page_uuid, timeline_hold_resume=True
+    )
+    assert isinstance(timeline.get_current_elt(exp, participant), _ConditionHoldPage)
+    assert not participant.failed
+    participant_id, trial_id = participant.id, trial.id
+    deadline = asset.upload_deadline
+    db.session.commit()
+    now += timedelta(seconds=40)
+    if expiry_source == "clock":
+        uploads._expire_recordings()
+        participant = db.session.get(Participant, participant_id)
+        now += timedelta(seconds=1000)
+    elif expiry_source == "late_poll":
+        now += timedelta(seconds=1000)
+    else:
+        # Read-only readiness detects the elapsed deadline but must not fail
+        # anything before the request acquires its participant lock.
+        hold = timeline.get_current_elt(exp, participant)
+        assert hold.is_ready_to_resume(exp, participant)
+        assert not trial.failed
+        assert asset.upload_status == upload_state
+    _process_response(
+        exp, participant, participant.page_uuid, timeline_hold_resume=True
+    )
+    assert participant.current_trial.failed_reason == (
+        "recording_upload_timeout"
+        if upload_state == "pending"
+        else "recording_processing_timeout"
+    )
+    assert uploads._recording_wait_timeout(participant_id, trial_id=trial_id) == 20
+    assert timeline.get_current_elt(exp, participant).content == "Continue"
+    assert not participant.failed
+    assert participant.current_trial.assets["video"].upload_deadline == deadline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_trial_selection_refreshes_before_timing_out_a_resumed_tab(
+    db_session, participant, monkeypatch
+):
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    import psynet.timeline as timeline_module
+    from psynet.page import InfoPage, WaitPage
+    from psynet.timeline import Timeline
+
+    now = datetime.now()
+    monkeypatch.setattr(timeline_module, "datetime", SimpleNamespace(now=lambda: now))
+    maker = _chain_trial_maker()
+    pending = True
+
+    def prepare(experiment, participant):
+        participant.trial_status = "wait" if pending else "exit"
+
+    monkeypatch.setattr(maker, "_try_to_prepare_trial_solo", prepare)
+    timeline = Timeline(maker._wait_for_trial(), InfoPage("Continue", time_estimate=0))
+    exp = get_experiment()
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+    timeline.advance_page(exp, participant)
+    assert isinstance(timeline.get_current_elt(exp, participant), WaitPage)
+    pending = False
+    now += timedelta(seconds=1000)
+    timeline.advance_page(exp, participant)
+    assert timeline.get_current_elt(exp, participant).content == "Continue"
+    assert not participant.failed
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_failed_trial_does_not_run_late_analysis(db_session, participant, monkeypatch):
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    calls = []
+    monkeypatch.setattr(
+        FinalizeBackstopTrial, "async_post_trial", lambda self: calls.append(self.id)
+    )
+    trial.fail(reason="recording_upload_timeout")
+    trial.check_if_can_run_async_post_trial()
+    assert not trial.async_post_trial_requested
+    trial.call_async_post_trial()
+    assert calls == []
+    assert not trial.async_post_trial_complete
+    assert not trial.finalized
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("reason", ["recording_upload_timeout", "analysis"])
+def test_recording_failure_exits_feedback_wait(
+    db_session, participant, monkeypatch, reason
+):
+    from timeline_hold_helpers import _process_response
+
+    from psynet.asset import FileAsset
+    from psynet.page import InfoPage
+    from psynet.timeline import Timeline
+    from psynet.timeline_hold import _ConditionHoldPage
+
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    asset = FileAsset(
+        local_key="pending",
+        input_path=None,
+        is_folder=False,
+        extension=".webm",
+        parent=trial,
+    )
+    db.session.add(asset)
+    trial.assets["pending"] = asset
+    participant.current_trial = trial
+    feedback = []
+
+    def show_feedback(self, experiment, participant):
+        feedback.append(self.id)
+        return InfoPage("Feedback", time_estimate=0)
+
+    monkeypatch.setattr(FinalizeBackstopTrial, "show_feedback", show_feedback)
+    timeline = Timeline(
+        FinalizeBackstopTrial._construct_feedback_logic(None),
+        InfoPage("Continue", time_estimate=0),
+    )
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+    timeline.advance_page(exp, participant)
+    assert isinstance(timeline.get_current_elt(exp, participant), _ConditionHoldPage)
+    trial.fail(reason=reason)
+    if reason == "analysis":
+        asset.deposited = True
+    _process_response(
+        exp, participant, participant.page_uuid, timeline_hold_resume=True
+    )
+    if reason == "analysis":
+        assert timeline.get_current_elt(exp, participant).content == "Feedback"
+        assert feedback
+        assert trial.ready_for_feedback
+    else:
+        assert timeline.get_current_elt(exp, participant).content == "Continue"
+        assert feedback == []
+        assert not trial.ready_for_feedback
+        assert not asset.deposited
+    assert not participant.failed
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("threshold, passed", [(0, True), (1, False)])
+def test_failed_recording_releases_end_wait_without_bypassing_performance_check(
+    db_session, participant, monkeypatch, threshold, passed
+):
+    from timeline_hold_helpers import _process_response
+
+    from psynet.asset import FileAsset
+    from psynet.page import InfoPage
+    from psynet.timeline import Timeline
+    from psynet.timeline_hold import _ConditionHoldPage
+
+    exp = get_experiment()
+    maker = _chain_trial_maker()
+    maker.performance_check_type = "performance"
+    maker.performance_threshold = threshold
+    maker.give_end_feedback_passed = False
+    maker.end_performance_check_waits = True
+    participant.module_state = maker.state_class(maker, participant)
+    network = _create_network(maker, exp)
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    asset = FileAsset(
+        local_key="pending",
+        input_path=None,
+        is_folder=False,
+        extension=".webm",
+        parent=trial,
+    )
+    db.session.add(asset)
+    trial.assets["pending"] = asset
+    # Use an author-supplied failure page to observe the normal configured branch.
+    monkeypatch.setattr(
+        maker, "check_fail_logic", lambda: InfoPage("Failed check", time_estimate=0)
+    )
+    timeline = Timeline(
+        maker._check_performance_logic("end"), InfoPage("Continue", time_estimate=0)
+    )
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+    timeline.advance_page(exp, participant)
+    assert isinstance(timeline.get_current_elt(exp, participant), _ConditionHoldPage)
+    trial.fail(reason="recording_upload_timeout")
+    _process_response(
+        exp, participant, participant.page_uuid, timeline_hold_resume=True
+    )
+    assert participant.module_state.performance_check["passed"] is passed
+    assert timeline.get_current_elt(exp, participant).content == (
+        "Continue" if passed else "Failed check"
+    )
+    assert not asset.deposited
 
 
 @pytest.fixture
@@ -168,6 +561,55 @@ def test_finalize_pending_trials_skips_asset_deposit_pending(
     assert Trial.get_trials_ready_to_finalize() == []
     assert Trial.finalize_pending_trials() == 0
     assert trial.finalized is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("stage", ["upload", "processing"])
+def test_optional_recording_can_expire_after_trial_finalization(
+    db_session, participant, tmp_path, monkeypatch, stage
+):
+    """Optional clips never hold feedback, and expiring later never fails the trial.
+
+    The processing stage covers a worker job that never finishes: the clip
+    expires at its processing bound, and only the recording records that.
+    """
+    from datetime import timedelta
+
+    from psynet import media_upload
+    from psynet.trial.record import Recording
+
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    asset, _ = _reserve_trial_recording(
+        trial, tmp_path, background=True, required=False
+    )
+    deadline = asset.upload_deadline
+    if stage == "processing":
+        asset.upload_status = "queued"
+        asset.upload_received_at = media_upload._utcnow()
+        deadline = asset.upload_processing_deadline = asset.upload_received_at + (
+            timedelta(seconds=media_upload._PROCESSING_BOUND)
+        )
+    trial_id, asset_id, answer = trial.id, asset.id, trial.answer
+    db.session.commit()
+    assert media_upload._recording_wait_timeout(participant.id, trial_id=trial_id) == 20
+    assert Trial.finalize_pending_trials() == 1
+    trial = db.session.get(Trial, trial_id)
+    assert trial.finalized and trial.ready_for_feedback
+    monkeypatch.setattr(
+        media_upload, "_utcnow", lambda: deadline + timedelta(seconds=1)
+    )
+    media_upload._expire_recordings()
+    trial = db.session.get(Trial, trial_id)
+    assert trial.finalized and not trial.failed
+    assert trial.answer == answer
+    assert db.session.get(Recording, asset_id).upload_failed_reason == (
+        "upload_timeout" if stage == "upload" else "processing_timeout"
+    )
 
 
 @pytest.mark.parametrize(
@@ -473,6 +915,80 @@ def test_finalize_pending_trials_fails_every_bad_trial(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+def test_required_background_deposit_releases_finalization(
+    db_session, participant, tmp_path, monkeypatch
+):
+    import io
+    from pathlib import Path
+
+    from psynet import media_upload
+    from psynet.asset import LocalStorage
+    from psynet.trial.record import Recording, RecordTrial
+
+    exp = get_experiment()
+    deployment = {
+        "deployment_id": "test-deployment",
+        "is_local_deployment": True,
+        "is_ssh_deployment": False,
+    }
+    monkeypatch.setattr("psynet.deployment_info.read", deployment.__getitem__)
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = _add_complete_unfinalized_trial(network.head, participant)
+    asset, receipt = _reserve_trial_recording(trial, tmp_path, background=True)
+    trial_id, asset_id, answer = trial.id, asset.id, trial.answer
+    db.session.commit()
+    assert Trial.finalize_pending_trials() == 0
+    assert not trial.finalized
+    # Feedback waits for finalization, so the pending required clip holds it.
+    assert not trial.ready_for_feedback
+    assert RecordTrial.recording.fget(trial) is None
+
+    # Background evidence does not gate analysis of the independent button answer.
+    queued = []
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            FinalizeBackstopTrial, "async_post_trial", lambda self, **kwargs: None
+        )
+        patch.setattr(
+            FinalizeBackstopTrial,
+            "queue_async_post_trial",
+            lambda self: queued.append(self.id),
+        )
+        trial.run_async_post_trial = True
+        trial.check_if_can_run_async_post_trial()
+    assert queued == [trial_id]
+
+    def unexpected_analysis(self):
+        raise AssertionError("Background deposit must not invoke answer analysis")
+
+    monkeypatch.setattr(Recording, "after_deposit", unexpected_analysis)
+    monkeypatch.setattr(LocalStorage, "on_deployed_server", lambda self: True)
+    wakes = []
+    monkeypatch.setattr(
+        "psynet.timeline_hold._queue_timeline_hold_wake",
+        lambda participant_id, reason=None, **kwargs: wakes.append(reason),
+    )
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "demos/experiments/imitation_chain_video/assets/example_recording.webm"
+    )
+    media_upload._receive_recording(
+        asset_id, receipt["token"], io.BytesIO(path.read_bytes()), directory=tmp_path
+    )
+    media_upload._process_recording(asset_id)
+    trial = db.session.get(Trial, trial_id)
+    assert db.session.get(Recording, asset_id).deposited
+    # Waits on the clip itself still wake without the analysis callbacks.
+    assert "asset_deposited" in wakes
+    assert trial.finalized and not trial.failed
+    assert trial.ready_for_feedback
+    assert trial.answer == answer
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
 def test_recheck_finalization_leaves_failing_trial_to_backstop(
     db_session, participant, monkeypatch
 ):
@@ -586,3 +1102,170 @@ def test_finalize_skips_or_waits_for_a_locked_participant(db_session, participan
             text("SELECT id FROM participant WHERE id = :id FOR KEY SHARE NOWAIT"),
             {"id": participant_id},
         )
+
+
+class AnalyzedRecordingTrial(FinalizeBackstopTrial):
+    run_async_post_trial = True
+
+    def async_post_trial(self):
+        pass
+
+    def queue_async_post_trial(self):
+        # The test trial maker is not on the timeline; record the request only.
+        self.async_post_trial_requested = True
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("failure", ["exception", "database_error"])
+@pytest.mark.parametrize("failing_attempts", [0, 1, 2])
+def test_deposit_callbacks_in_a_worker_never_expose_a_finalizable_trial(
+    db_session, participant, monkeypatch, tmp_path, failure, failing_attempts
+):
+    """The finalization poller never sees a deposit before its callbacks have
+    queued analysis. A failing hook's changes are discarded and the hook is
+    retried; only a persistent failure fails the trial."""
+    import io
+    from pathlib import Path
+
+    from sqlalchemy import text
+    from sqlalchemy.orm import Session
+
+    from psynet.asset import LocalStorage
+    from psynet.async_job import AsyncJob, WorkerAsyncJob
+    from psynet.media_upload import (
+        _DEPOSIT_CALLBACK_ATTEMPTS,
+        _process_recording,
+        _receive_recording,
+    )
+    from psynet.trial.record import Recording
+
+    deployment = {
+        "deployment_id": "test-deployment",
+        "is_local_deployment": True,
+        "is_ssh_deployment": False,
+    }
+    monkeypatch.setattr("psynet.deployment_info.read", deployment.__getitem__)
+    monkeypatch.setattr(LocalStorage, "on_deployed_server", lambda self: True)
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = AnalyzedRecordingTrial(
+        experiment=exp,
+        node=network.head,
+        participant=participant,
+        propagate_failure=False,
+        is_repeat_trial=False,
+    )
+    trial.answer = 1
+    trial.complete = True
+    db.session.add(trial)
+    db.session.flush()
+    asset, receipt = _reserve_trial_recording(trial, tmp_path / "assets")
+    payload = (
+        Path(__file__).resolve().parents[2]
+        / "demos/experiments/imitation_chain_video/assets/example_recording.webm"
+    ).read_bytes()
+    asset.upload_max_bytes = len(payload)
+    recording_id, trial_id = asset.id, trial.id
+    db.session.commit()
+    _receive_recording(
+        recording_id, receipt["token"], io.BytesIO(payload), directory=tmp_path
+    )
+
+    after_deposit = Recording.after_deposit
+    calls = []
+
+    finalizable_during_callbacks = []
+
+    def flaky_after_deposit(self):
+        calls.append(self.id)
+        # What the finalization poller sees from its own session meanwhile.
+        with Session(db.engine) as poller:
+            finalizable_during_callbacks.extend(
+                poller.scalars(Trial.ready_to_finalize_id_select()).all()
+            )
+        if len(calls) > failing_attempts:
+            return after_deposit(self)
+        self.trial.answer = "changed by a failing hook"
+        db.session.flush()
+        if failure == "database_error":
+            db.session.execute(text("SELECT * FROM missing_table"))
+        raise RuntimeError("intentional deposit callback failure")
+
+    monkeypatch.setattr(Recording, "after_deposit", flaky_after_deposit)
+    job = WorkerAsyncJob(_process_recording, arguments={"recording_id": recording_id})
+    db.session.add(job)
+    db.session.flush()
+    job_id = job.id
+    db.session.commit()
+
+    WorkerAsyncJob.call_function(job_id)
+
+    job = db.session.get(AsyncJob, job_id, populate_existing=True)
+    assert (job.finished, job.failed) == (True, False)
+    recording = db.session.get(Recording, recording_id, populate_existing=True)
+    assert (recording.upload_status, recording.deposited) == ("deposited", True)
+    assert len(calls) == min(failing_attempts + 1, _DEPOSIT_CALLBACK_ATTEMPTS)
+    assert trial_id not in finalizable_during_callbacks
+    trial = db.session.get(Trial, trial_id, populate_existing=True)
+    assert trial.answer == 1
+    assert not trial.finalized
+    if failing_attempts < _DEPOSIT_CALLBACK_ATTEMPTS:
+        assert not trial.failed
+        assert trial.async_post_trial_requested
+    else:
+        assert trial.failed_reason == "after_deposit_error"
+        assert not trial.async_post_trial_requested
+
+
+class CountingAnalysisTrial(FinalizeBackstopTrial):
+    run_async_post_trial = True
+    queued = []
+
+    def async_post_trial(self):
+        pass
+
+    def queue_async_post_trial(self):
+        type(self).queued.append(self.id)
+        self.async_post_trial_requested = True
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_async_post_trial_is_not_queued_twice_from_a_stale_trial(
+    db_session, participant
+):
+    """The participant's request may hold a trial loaded before a recording
+    worker's deposit queued analysis; it must not queue it again."""
+    from sqlalchemy import update
+    from sqlalchemy.orm import Session
+
+    network = _create_network(_chain_trial_maker(), get_experiment())
+    trial = CountingAnalysisTrial(
+        experiment=get_experiment(),
+        node=network.head,
+        participant=participant,
+        propagate_failure=False,
+        is_repeat_trial=False,
+    )
+    trial.answer = 1
+    trial.complete = True
+    db.session.add(trial)
+    db.session.commit()
+    CountingAnalysisTrial.queued = []
+    assert trial.async_post_trial_requested is False  # loaded in this session
+
+    # Meanwhile the worker's deposit queues analysis and commits.
+    with Session(db.engine) as worker, worker.begin():
+        worker.execute(
+            update(Trial)
+            .where(Trial.id == trial.id)
+            .values(async_post_trial_requested=True)
+        )
+
+    trial.check_if_can_run_async_post_trial()
+    assert CountingAnalysisTrial.queued == []

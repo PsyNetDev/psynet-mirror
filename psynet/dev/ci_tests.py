@@ -64,6 +64,13 @@ _COMMON_PYTEST_ARGS = [
     "-Werror",
     "-W",
     "ignore:color, on_color and attrs are not supported when output stream is not a TTY:UserWarning:yaspin.core",
+    # Importing Dallinger raises these while pytest loads PsyNet's plugin,
+    # where pytest 9.2 applies -Werror. Dallinger still uses SQLAlchemy 1.4
+    # APIs, and imports the deprecated pythonjsonlogger.jsonlogger module.
+    "-W",
+    "ignore::sqlalchemy.exc.MovedIn20Warning",
+    "-W",
+    "ignore:pythonjsonlogger.jsonlogger has been moved:DeprecationWarning",
     "-q",
     "-o",
     "log_cli=False",

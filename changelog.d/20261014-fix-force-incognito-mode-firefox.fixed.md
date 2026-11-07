@@ -1,0 +1,1 @@
+Fixed the browser entry check letting participants through when incognito detection fails, as it does in Firefox: with `force_incognito_mode = true` an unknown incognito status now fails the check, and `force_google_chrome = true` now rejects Firefox.

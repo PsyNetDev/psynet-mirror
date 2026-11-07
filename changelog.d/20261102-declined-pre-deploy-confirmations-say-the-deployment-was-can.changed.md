@@ -1,0 +1,1 @@
+Answering no to a confirmation before a deployment, such as the question about installing a development version of PsyNet or about Docker settings in `config.txt`, now prints "Deployment cancelled." instead of a bare "Aborted!".

@@ -246,10 +246,23 @@ Dashboard credentials and contact email
 
 Each experiment's dashboard is protected by ``dashboard_user`` and
 ``dashboard_password``. If you leave the password out, a new random one is
-generated for each deployment and printed at the end; ``dallinger ec2
-provision`` requires both to be set. ``contact_email_on_error`` must be a
-valid address: the server uses it to obtain HTTPS certificates from Let's
-Encrypt, and participants see it on error pages.
+generated for each deployment and saved in its ``launch-info.json`` (see
+:ref:`ssh_server_launch_info`); ``dallinger ec2
+provision`` requires ``dashboard_password`` to be set (``dashboard_user``
+defaults to ``admin``).
+
+Set ``contact_email_on_error`` to a real address in ``~/.dallingerconfig``:
+participants see it on error pages, and the server uses it to obtain HTTPS
+certificates from Let's Encrypt. Server commands (``dallinger docker-ssh
+servers add``, ``servers upgrade`` and ``dallinger ec2 provision``) read it
+only from ``~/.dallingerconfig`` or the environment, never from an
+experiment's ``config.txt``, because a server isn't tied to one experiment.
+They reject placeholders such as ``XXX@gmail.com``, the value in PsyNet's
+experiment template, and ``dallinger ec2 provision`` refuses to start
+without a real address. ``servers add`` and ``servers upgrade`` save an
+address with the server and print it with where it came from: the one you
+pass with ``--contact-email``, else one already saved, else
+``contact_email_on_error``.
 
 .. code-block:: ini
 
@@ -293,12 +306,16 @@ Registering the server
 
       This takes a few minutes. If Docker is not installed, Dallinger installs
       it, including the Docker Compose plugin, and adds your user to the
-      ``docker`` group. The ``--host`` value is the name you pass as
-      ``--server`` in later commands, and experiments are served at
+      ``docker`` group. With classic ingress (the default), on a server that
+      Dallinger hasn't set up yet, it then starts the shared services that
+      experiments use (see :ref:`ssh_server_shared_services`) and prints the
+      log viewer's password once; note it. The ``--host`` value is the name
+      you pass as ``--server`` in later commands, and experiments are served at
       ``https://<app>.my-server.example.org``.
 
-      You can register a server by IP address instead of a name. Deployments
-      then need ``--dns-host`` as well; see :ref:`ssh_server_addresses`.
+      You can register a server by IP address instead of a name. Then also
+      pass its public DNS name, for example ``--dns-host
+      my-server.example.org``; see :ref:`ssh_server_addresses`.
 
    .. tab-item:: AWS (automatic)
       :sync: aws
@@ -329,15 +346,18 @@ Registering the server
       **Domain.** Register a domain in Route 53, or host an existing domain's
       DNS there, and wait until the registration is complete. Each server
       gets a subdomain of it, such as ``memory-lab.cool-psychology.org``.
-      Dallinger looks up the hosted zone from the last two parts of the name,
-      so the domain must have the form ``cool-psychology.org``.
+      Dallinger uses the hosted zone that the name ends with, choosing the
+      longest match.
 
       **Key pair.** In the EC2 console, create a key pair and download its PEM
       file to ``~/.ssh`` (for example ``~/.ssh/cool-psychology.pem``). Set
       ``ec2_default_pem`` to the key pair's name, without path or extension,
       and ``server_pem`` to the file. Dallinger finds the file by this name,
       as ``~/.ssh/<ec2_default_pem>.pem``, so the file name must match the
-      key pair name. Keep only one ``server_pem`` line in
+      key pair name. A new instance accepts only this key pair, so
+      ``server_pem`` must hold the same private key as that file, without a
+      passphrase; ``dallinger ec2 provision`` checks this before it
+      boots an instance. Keep only one ``server_pem`` line in
       ``~/.dallingerconfig``.
 
       .. code-block:: ini
@@ -369,12 +389,20 @@ Registering the server
       experiment keeps many participant uploads on the server with
       ``LocalStorage``.
 
-      Provisioning takes a few minutes. The server is registered twice, under
-      its AWS hostname and under the ``--dns-host`` name, so always pass the
-      ``--dns-host`` name as ``--server`` (here
-      ``memory-lab.cool-psychology.org``). Experiments are served at
-      ``https://<app>.memory-lab.cool-psychology.org``. For the other ``ec2``
-      commands and what provisioning does, see
+      Provisioning takes a few minutes. It also starts the shared services
+      that experiments use (see :ref:`ssh_server_shared_services`) and prints
+      the log viewer's password once; note it. The server is registered
+      twice, under its AWS hostname and under the ``--dns-host`` name (here
+      ``memory-lab.cool-psychology.org``); pass the ``--dns-host`` name as
+      ``--server``. You can deploy once your computer resolves the new DNS
+      records, which can take up to about five minutes (15 if you looked a
+      name up before it existed). Experiments are
+      served at ``https://<app>.memory-lab.cool-psychology.org``. If
+      anything fails after the instance is launched, it keeps running and
+      costs money: provisioning prints the ``dallinger ec2 teardown`` command
+      that removes it and, if the setup had started, the commands that finish
+      it instead.
+      For the other ``ec2`` commands and what provisioning does, see
       :doc:`/deploy/reference/aws_automatic_provisioning`.
 
       .. lab-note::
@@ -397,14 +425,57 @@ List the registered servers, then connect to yours:
     psynet apps ssh --server my-server.example.org
 
 A new server reports ``No apps found.`` To check the whole path, deploy a
-pilot of any experiment and open ``https://<app>.<server>`` as described in
-:doc:`/deploy/running_a_study`. On a server with classic ingress, the first
-deployment also starts the log viewer at ``https://logs.<server>``. Its
-username is ``dallinger`` and its password is the dashboard password of that
-first deployment. Each deployment saves it as ``logs_password`` in its
-``launch-info.json``. To change it, run
+pilot of any experiment and open ``https://<app>.<server DNS name>`` as
+described in :doc:`/deploy/running_a_study`. On a server with classic ingress,
+the log viewer is at ``https://logs.<server DNS name>``. Its username is
+``dallinger``, and its password is the random one printed when the shared
+services were set up. On a server set up by an older Dallinger, it is the
+dashboard password of the server's first deployment, and ``servers upgrade``
+keeps it. The server keeps it as ``DOZZLE_PASSWORD`` in
+``~/dallinger/.env.json``, and each deployment also saves it as
+``logs_password`` in its ``launch-info.json``. To change it, run
 ``dallinger docker-ssh set-dozzle-password --server <server>``. Servers with
 Cloudflare ingress have no log viewer (see :ref:`ssh_server_cloudflare`).
+
+.. _upgrading_an_existing_server:
+
+Upgrading an existing server
+----------------------------
+
+On a server set up by a Dallinger version without ``dallinger docker-ssh
+servers upgrade``, run that command once, after you update Dallinger (for an
+experiment, by updating its PsyNet pin; see :ref:`dependencies_updating_psynet`).
+Deployments usually keep working without it (see
+:ref:`deploy_troubleshooting_not_set_up` for when they don't), but the upgrade
+makes the server's HTTPS certificates persist and applies current database
+settings. It also protects the server from older Dallinger versions. Run it
+when no classic experiment on the server is live, because it briefly restarts
+the shared services:
+
+.. code-block:: bash
+
+    dallinger docker-ssh servers upgrade --host my-server.example.org
+
+The upgrade writes the Let's Encrypt contact email into the server's
+``Caddyfile``: the one you pass with ``--contact-email``, else the one saved
+with the server, else ``contact_email_on_error`` from ``~/.dallingerconfig``
+or the environment.
+A server registered by an older Dallinger has no saved email, so a deployment
+there stops if the only ``contact_email_on_error`` it finds is a placeholder
+such as ``XXX@gmail.com``. To save an email without restarting anything,
+run ``servers add`` again; it keeps the server's other saved settings:
+
+.. code-block:: bash
+
+    dallinger docker-ssh servers add --host my-server.example.org --contact-email you@example.org
+
+Make sure that everyone who deploys to that server updates Dallinger too.
+Older versions can no longer deploy there: unless the SSH user is ``root``,
+their deployments fail with ``PermissionError: [Errno 13] Permission
+denied`` before they change the shared files. An older deployment without
+``--app`` may first offer to destroy the server's other experiments. Decline:
+accepting destroys them, and the deployment still fails. See
+:ref:`ssh_server_shared_services` for what the upgrade changes.
 
 Stopping and removing the server
 --------------------------------
@@ -433,25 +504,27 @@ Stopping and removing the server
 
       .. code-block:: bash
 
-          dallinger ec2 stop --name memory-lab --region us-east-1 \
-              --dns-host memory-lab.cool-psychology.org
-          dallinger ec2 start --name memory-lab --region us-east-1 \
-              --dns-host memory-lab.cool-psychology.org
+          dallinger ec2 stop --name memory-lab --region us-east-1
+          dallinger ec2 start --name memory-lab --region us-east-1
 
-      Stopping removes the DNS records and starting recreates them. The AWS
-      hostname changes when the instance restarts, so keep using the
-      ``--dns-host`` name as ``--server``. The experiments restart with the
+      Stopping removes the DNS records and starting recreates them, for the
+      ``--dns-host`` name saved at provisioning. The AWS hostname changes
+      when the instance restarts, so keep using the ``--dns-host`` name as
+      ``--server``. The experiments restart with the
       instance; check that they work before recruiting again.
 
       When the study is over, export all data, then terminate the instance:
 
       .. code-block:: bash
 
-          dallinger ec2 teardown --name memory-lab --region us-east-1 \
-              --dns-host memory-lab.cool-psychology.org
+          dallinger ec2 teardown --name memory-lab --region us-east-1
 
       Teardown deletes the instance with every database on it, removes the
-      DNS records and removes both server registrations. Data you have not
-      exported is lost. Teardown only finds a running instance, so start a
+      DNS records and removes both server registrations. On another
+      computer, after a provision you finished with the printed ``servers
+      add`` commands, or for an instance provisioned by an older Dallinger, add
+      ``--dns-host`` with its name to ``stop``, ``start`` and ``teardown``
+      (see :ref:`aws_automatic_provisioning`). Data you have not exported is
+      lost. Teardown only finds a running instance, so start a
       stopped server first with ``dallinger ec2 start``. ``dallinger ec2 list
       instances --running`` shows the instances that are still running.

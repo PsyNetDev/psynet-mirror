@@ -66,7 +66,7 @@ def test_a_browser_tab_of_an_unknown_session_gets_a_short_page(client):
         ),
         ("POST", "/log/info/gone:gone", {"message": "hello"}),
         ("POST", "/participant_opened_devtools/gone:gone", None),
-        ("GET", "/timeline/progress_and_reward?participantId=999999", None),
+        ("GET", "/timeline/progress_and_reward?uniqueId=gone:gone", None),
     ],
 )
 def test_requests_of_an_unknown_session_get_a_404_and_one_warning(

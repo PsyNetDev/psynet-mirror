@@ -1121,6 +1121,10 @@ def test_process_response_ready_hold_resume_locks_with_nowait(monkeypatch):
     """A hold that can resume must still take ``FOR UPDATE NOWAIT`` and settle."""
     from flask import Flask
 
+    monkeypatch.setattr(
+        "psynet.media_upload._expire_participant_recordings", lambda _id: None
+    )
+
     hold = MagicMock()
     hold.is_timeline_hold = True
     hold.is_ready_to_resume.return_value = True

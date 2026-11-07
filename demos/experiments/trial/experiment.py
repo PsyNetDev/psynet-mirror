@@ -26,7 +26,7 @@ class RateTrial(Trial):
 
         return ModularPage(
             "rate_trial",
-            Markup(f"How happy is the following word: <strong>{word}</strong>"),
+            Markup("How happy is the following word: <strong>{}</strong>").format(word),
             PushButtonControl(
                 ["Not at all", "A little", "Very much"],
             ),

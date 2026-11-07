@@ -56,35 +56,68 @@ Options:
    configuration value, or ``dallinger``.
 ``--dns-host``
    Name to create in Route 53, for example ``memory-lab.cool-psychology.org``.
+   Without it, the server's DNS name is ``<public ip>.nip.io``, a name that
+   resolves to the instance's public IP. The public IP
+   changes when the instance is stopped and started, and nothing updates
+   that name, so use ``--dns-host`` for a server you might stop.
 
 Provisioning runs these steps and prints each one to the terminal:
 
-1. If ``--dns-host`` is given, checks that Route 53 has a hosted zone for its
-   last two parts (for example ``cool-psychology.org``). If records for the
+1. Before booting anything, checks your local settings and stops if one is
+   wrong:
+
+   - ``server_pem`` must hold the same unencrypted private key as
+     ``~/.ssh/<ec2_default_pem>.pem``, because a new instance
+     accepts only that key pair;
+   - ``dashboard_password`` must be set (``dashboard_user`` defaults to
+     ``admin``);
+   - ``contact_email_on_error``, which Caddy gives Let's Encrypt, must be a
+     real email address in ``~/.dallingerconfig`` or the environment, not a
+     placeholder such as ``XXX@gmail.com``.
+
+2. If ``--dns-host`` is given, checks that Route 53 has a hosted zone that
+   the name ends with (for example ``cool-psychology.org``), using the
+   longest match. If records for the
    name already exist, Dallinger asks before overwriting them, because they
    may belong to another running server. It also removes the name's entries
    from ``~/.ssh/known_hosts``.
-2. Creates the security group if it does not exist in the region, allowing
+3. Creates the security group if it does not exist in the region, allowing
    incoming traffic from anywhere on ports 22, 80, 443 and 5000.
-3. Imports the key pair named by ``ec2_default_pem`` from
+4. Imports the key pair named by ``ec2_default_pem`` from
    ``~/.ssh/<ec2_default_pem>.pem`` if it does not exist in the region.
-4. Boots the instance, attaches the security group and grows the disk to
+5. Boots the instance, attaches the security group and grows the disk to
    ``--storage``.
-5. Checks that ``dashboard_user`` and ``dashboard_password`` are set, then
-   installs Docker on the instance. If this check fails, the instance is
-   already running; set the credentials, tear the instance down and
-   provision again.
-6. Creates CNAME records for the ``--dns-host`` name and its wildcard
-   (``*.<dns-host>``), pointing at the instance's AWS hostname.
-7. Registers the server with Dallinger under both its AWS hostname and the
-   ``--dns-host`` name.
+6. With ``--dns-host``, creates CNAME records for that name and its wildcard
+   (``*.<dns-host>``), pointing at the instance's AWS hostname. If Route 53
+   can't create them, it warns, says which records to create by hand, and
+   carries on.
+7. Over the AWS hostname, installs Docker on the instance and registers the
+   server with Dallinger under that hostname, saving the ``--dns-host`` name
+   (or ``<public ip>.nip.io``) as its DNS name. It sets up the shared
+   services that classic-ingress experiments use, as ``dallinger docker-ssh
+   servers add`` does (see :ref:`ssh_server_shared_services`), and prints the
+   log viewer's password once. With ``--dns-host``, it also registers the
+   server under that name.
+
+A classic deployment checks that the experiment's address resolves to the
+server, whichever ``--server`` you use. With ``--dns-host``, you can deploy
+once your computer resolves the new DNS records (up to about five minutes, or
+15 if you looked a name up before it existed); without it, straight away.
+
+If anything fails once the instance is launched, including Ctrl-C, the
+instance keeps running and costs money. Provisioning then prints the
+``dallinger ec2 teardown`` command that removes it (or says to terminate it
+in the EC2 console while it may still be starting). If the setup had started,
+it also prints the ``dallinger docker-ssh servers add`` commands that finish
+the setup instead, plus ``servers upgrade`` in case ``servers add`` says it
+left the shared files unchanged. Fix the problem, then run one or the other.
 
 At the end, you should see something like this:
 
 .. code:: text
 
-   Provisioning complete! Time taken: 192.402161359787. memory-lab is
-   ready at ec2-52-91-24-127.compute-1.amazonaws.com
+   Provisioning complete in 192 seconds. memory-lab is ready at
+   ec2-52-91-24-127.compute-1.amazonaws.com
 
 Increasing storage
 ==================
@@ -105,15 +138,29 @@ Stopping, starting and restarting an instance
 
 .. code:: bash
 
-   dallinger ec2 stop --name <server_name> --region <region> --dns-host <subdomain>.<your-domain>
-   dallinger ec2 start --name <server_name> --region <region> --dns-host <subdomain>.<your-domain>
+   dallinger ec2 stop --name <server_name> --region <region>
+   dallinger ec2 start --name <server_name> --region <region>
 
-``stop`` removes the DNS records for ``--dns-host`` and stops the instance,
-keeping the server registrations. AWS continues to charge for the instance's
-storage while it is stopped. ``start`` waits until the instance has stopped,
-starts it and recreates the DNS records, pointing them at the instance's new
-AWS hostname. Pass ``--name`` to ``start``; it cannot find the instance by
-``--dns``. Docker restarts the experiments with the instance.
+``stop`` removes the instance's DNS records and stops the instance, keeping
+the server registrations. AWS continues to charge for the instance's storage
+while it is stopped. ``start`` waits until the instance has stopped, starts it
+and points the DNS records at the instance's new AWS hostname. Pass
+``--name`` to ``start``: a stopped instance usually loses its AWS hostname,
+so ``--dns`` rarely finds it. Docker restarts the experiments with the
+instance.
+
+Both commands use the DNS name that ``dallinger ec2 provision --dns-host``
+saved on your computer. Pass ``--dns-host <subdomain>.<your-domain>`` instead
+on another computer, after a provision you finished by hand with the printed
+``servers add`` commands, for an instance provisioned by an older Dallinger,
+or for Route 53 records you made by hand. An
+instance provisioned without ``--dns-host`` has no records to update, and
+its ``<public ip>.nip.io`` name and its registration under the AWS hostname
+stop working once the instance restarts with a new IP; register it again
+with ``dallinger docker-ssh servers add``.
+``stop`` deletes only records that point at the instance. If Route 53 can't
+update the records, both commands warn and carry on; ``start`` then says
+which records to point at the instance by hand.
 
 ``restart`` reboots a running instance without changing its hostname or DNS
 records:
@@ -143,11 +190,13 @@ Terminating an instance
 
 .. code:: bash
 
-   dallinger ec2 teardown --name <server_name> --region <region> --dns-host <subdomain>.<your-domain>
+   dallinger ec2 teardown --name <server_name> --region <region>
 
-``teardown`` terminates the instance, which deletes its disk with every
-experiment database on it. It then removes the DNS records for ``--dns-host``
-and both server registrations. Without ``--dns-host``, the DNS records and the
-``--dns-host`` registration stay behind. Export all data first. Teardown only
-finds a running instance: start a stopped one first, or terminate it in the
-AWS console and remove its DNS records by hand.
+``teardown`` removes the instance's DNS records, terminates the instance,
+which deletes its disk with every experiment database on it, and removes its
+server registrations. Like ``stop``, it uses the saved DNS name; in the same
+cases as for ``stop``, pass ``--dns-host <subdomain>.<your-domain>``, or the
+DNS records and the ``--dns-host`` registration stay behind. If Route 53 fails, it warns and still terminates
+the instance. Export all data first. Teardown only finds a running instance:
+start a stopped one first, or terminate it in the AWS console and remove its
+DNS records by hand.

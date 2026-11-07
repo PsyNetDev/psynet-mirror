@@ -36,7 +36,7 @@ $(document).ready(function() {
       postData = {}
       postData['hard_max_experiment_payment'] = hardMaxExperimentPayment;
       postData['soft_max_experiment_payment'] = softMaxExperimentPayment;
-      $.post('/module/update_spending_limits', postData);
+      $.post('/dashboard/module/update_spending_limits', postData);
     }
   });
 
@@ -45,7 +45,7 @@ $(document).ready(function() {
   getData['module_ids'] = moduleIds;
 
   setInterval(function() {
-    $.get('/module/progress_info', getData)
+    $.get('/dashboard/module/progress_info', getData)
       .done(function(data) {
         // update spending
         let currency = data['spending']['currency'];
@@ -117,11 +117,11 @@ function hideOptionsTooltip(param) {
 }
 
 function updateDetails(moduleId) {
-  $("#element-details").load('/module', { 'moduleId': moduleId });
+  $("#element-details").load('/dashboard/module', { 'moduleId': moduleId });
 }
 
 function updateTooltip(moduleId) {
-  $.post('/module/tooltip', { 'moduleId': moduleId }, function(data) {
+  $.post('/dashboard/module/tooltip', { 'moduleId': moduleId }, function(data) {
     let selector = 'div[id="' + moduleId + '"].progress';
     if ($(selector + ':hover').length != 0) {
       $(selector).tooltip('dispose').tooltip({title: data}).tooltip('show');

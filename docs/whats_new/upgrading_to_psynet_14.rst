@@ -367,8 +367,15 @@ migration instructions in the error.
 
 * Phones and tablets are allowed by default. Set
   ``allow_mobile_devices = false`` to keep a study desktop-only.
-* Default ``min_browser_version`` is Chrome 105. Lower it in
-  ``config.txt`` only if you must admit older browsers.
+* ``force_google_chrome`` now defaults to ``false`` and is deprecated, so
+  Chrome, Edge, Firefox and Safari are admitted. Every experiment rejects
+  browsers without CSS ``:has()`` support (Chrome < 105, Firefox < 121,
+  Safari < 15.4), and ``min_browser_version`` has been removed: delete it
+  from ``config.txt`` and ``~/.dallingerconfig``, because PsyNet refuses to
+  start with unknown config keys. Declare
+  required features such as ``{"microphone"}`` in
+  ``Experiment.browser_capabilities`` instead; see
+  :doc:`/reference/configuration`.
 * Leaving ``show_reward`` unset means the recruiter decides: Prolific and
   lab show it, generic/local do not, Lucid hides it. Set
   ``show_reward = true`` to show it anyway where the recruiter allows.
@@ -386,6 +393,26 @@ migration instructions in the error.
   ``openai_default_temperature`` is no longer set. ``gpt-6-luna`` ignores
   ``openai_default_temperature``; set it only together with a model that
   accepts it, for example ``openai_default_model = gpt-4o``.
+* Participant pages escape HTML in plain strings. Search for ``labels=``,
+  ``choices=``, ``Button(``, ``WaitPage(``, ``KeyboardPage(`` and
+  ``template_arg=`` with HTML tags in the text, and wrap HTML that you wrote
+  in ``markupsafe.Markup``, for example
+  ``labels=[Markup("Yes <kbd>Y</kbd>")]``. Never wrap participant-provided
+  text in ``Markup``; to mix it into HTML, write
+  ``Markup("<b>{}</b>").format(answer)``, which escapes ``answer``. In custom
+  templates, write values inside ``<script>`` with ``{{ value | tojson }}``.
+  See :doc:`/code/writing_pages`.
+* ``AudioPrompt`` ``controls`` labels are escaped too, so wrap HTML labels in
+  ``Markup``.
+* Custom dashboard tabs that render ``dashboard_custom.html`` or the card
+  macros in ``macros/dashboard.html``, and pages that render
+  ``custom_html.html``, escape plain strings. Pass ``html``, card bodies and
+  list items as ``Markup``; for a ``dominate`` tag, ``Markup(tag.render())``.
+* ``KeyboardPage`` now requires ``prompt``.
+* A ``REPPVolumeCalibration`` subclass whose ``what_are_we_playing`` returns
+  HTML must return ``Markup``.
+* Custom templates that call ``AudioMeterControl.to_json`` must write
+  ``{{ params.to_json() | tojson }}``.
 
 13. Set up the experiment environment
 -------------------------------------
@@ -496,6 +523,12 @@ templates that changes the database.
   Fixed bot answers, from ``bot_response`` or a ``get_bot_response`` method
   that returns a plain value, are saved as given, so give them as numbers
   too: ``bot_response=3``, not ``bot_response="3"``.
+* ``LanguageVocabularyTrial`` answers are now screen positions (``"1"`` to
+  ``"4"``) rather than ``"correct"``. A custom subclass that compares an
+  answer with ``"correct"`` should compare it with
+  ``definition["correct_answer"]`` instead. A subclass that overrides
+  ``finalize_definition`` must call ``super()`` or set
+  ``definition["correct_answer"]`` (the 1-based position) itself.
 
 17. Groups and barriers
 -----------------------
@@ -522,7 +555,8 @@ See :doc:`/code/multiplayer/synchronization`.
 ----------------------
 
 Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
-``personal=``, ``cache=`` and ``compile_nodes_from_directory``.
+``personal=``, ``cache=``, ``compile_nodes_from_directory`` and
+``on-demand-asset``.
 
 * Rename ``ExperimentAsset`` and ``CachedAsset`` to ``FileAsset``, and
   ``CachedFunctionAsset`` to ``GeneratedAsset``. The old names still work
@@ -534,6 +568,8 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
   pass ``self.definition["url"]`` to prompts.
 * Ready-made stimuli can live in ``static/`` and be referenced with
   ``psynet.media.static_url_for``; see :doc:`/code/using_stimuli`.
+* ``/on-demand-asset?id=…`` URLs no longer work. Use the asset's ``url``
+  attribute instead, which has the form ``/asset/<access_token>``.
 
 19. Async jobs
 --------------
@@ -594,6 +630,10 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
   ``COPY``. In a web request or background job, PostgreSQL ``COPY`` must run
   inside :func:`psynet.db.blocking_psycopg`, or psycopg2 raises
   ``ProgrammingError``.
+* ``LanguageVocabularyTest`` answers are now screen positions (``"1"`` to
+  ``"4"``) rather than image names. Find the asset key of the chosen image
+  with ``LanguageVocabularyTrial.image_keys[definition["order"][int(answer) - 1]]``;
+  the correct image is ``"image_correct"``.
 
 See :doc:`/data/what_an_export_contains`.
 

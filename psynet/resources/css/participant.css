@@ -548,6 +548,25 @@ code {
     max-width: 460px;
 }
 
+/* A clicked button waiting for its submission keeps its size; the spinner
+   covers the label, which may be text or an image. */
+.psynet-button-pending {
+    position: relative;
+    color: transparent !important;
+    transition: none;
+}
+
+.psynet-button-pending > :not(.psynet-button-spinner) {
+    visibility: hidden;
+}
+
+.psynet-button-pending > .psynet-button-spinner {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    color: var(--bs-btn-disabled-color, var(--bs-btn-color));
+}
+
 /* Agree / decline actions. Side by side when there is room, stacked otherwise. */
 .psynet-consent-actions {
     display: flex;

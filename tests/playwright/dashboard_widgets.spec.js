@@ -34,16 +34,14 @@ test("dashboard widgets", { tag: "@both" }, async ({ page }) => {
       await expect.soft(page.locator(".tooltip-inner b")).toHaveText("word_ratings");
     });
 
-    // jQuery UI releases before 1.13 throw on jQuery 4, so the range slider
-    // never initializes. Kept last because a throwing jQuery UI fails evaluate().
-    await test.step("resources dashboard slider", async () => {
+    // The page script fills in the window's start and end times once it has
+    // set up the range inputs and drawn the plot.
+    await test.step("resources dashboard range", async () => {
       await page.goto(`${origin}/dashboard/resources`);
-      await expect.soft(page.locator("#slider-range")).toBeVisible();
-      const slider = await page.evaluate(() => ({
-        jquery: window.jQuery.fn.jquery,
-        initialized: !!window.jQuery("#slider-range").slider("instance")
-      }));
-      expect.soft(slider).toEqual({ jquery: "4.0.0", initialized: true });
+      await expect.soft(page.locator("#range-from")).toBeVisible();
+      await expect.soft(page.locator("#range-to")).toBeVisible();
+      await expect.soft(page.locator("#min")).not.toBeEmpty();
+      await expect.soft(page.locator("#max")).not.toBeEmpty();
     });
   } finally {
     await stopExperiment(proc);

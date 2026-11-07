@@ -10,7 +10,6 @@ import pytest
 from psynet.asset import (
     FileAsset,
     GeneratedAsset,
-    OnDemandAsset,
     _reject_obfuscate_arg,
 )
 from psynet.pytest_psynet import path_to_test_experiment
@@ -38,15 +37,6 @@ def test_file_asset_rejects_obfuscate_kwarg(tmp_path):
     path.write_text("hello")
     with pytest.raises(TypeError, match="obfuscate"):
         FileAsset(input_path=str(path), obfuscate=0)
-
-
-def test_on_demand_asset_rejects_secret_kwarg():
-    with pytest.raises(TypeError, match="secret"):
-        OnDemandAsset(
-            function=lambda path: None,
-            extension=".txt",
-            secret="nope",
-        )
 
 
 def test_content_object_path_helper():

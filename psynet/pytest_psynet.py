@@ -269,7 +269,10 @@ def bot_class(headless=None):
             response = requests.request(
                 method,
                 url,
-                params={"participant_id": self.participant_id},
+                params={
+                    "participant_id": self.participant_id,
+                    "unique_id": self.unique_id,
+                },
                 timeout=WORKER_STATUS_TIMEOUT_SEC,
             )
             if not response.ok:

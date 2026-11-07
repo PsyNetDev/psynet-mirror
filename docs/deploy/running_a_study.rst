@@ -55,9 +55,9 @@ Check the code and dependencies
   uncommitted changes, and the names of up to 20 such files.
   ``psynet export`` compares them with your checkout later, so commit
   everything before you deploy and push to your remote.
-  ``psynet deploy ssh`` lists any deployed files
-  with uncommitted changes and, in a terminal, ask whether to continue (the
-  default is no). Without a terminal they only warn.
+  ``psynet deploy ssh`` lists any deployed files with uncommitted changes
+  and, in a terminal, asks whether to deploy them anyway (the default is no,
+  which cancels the deployment). Without a terminal it only warns.
 - The PsyNet and Dallinger versions you tested locally must match their
   pins. Each package's exact pin in ``requirements.txt`` (``==`` or a Git
   commit or release tag) takes precedence; otherwise its pin in
@@ -204,8 +204,7 @@ through it yourself and send it to a few colleagues. Check:
 - that your analysis scripts work on the pilot data (export it as
   described in `Export`_).
 
-``psynet debug`` deployments do not register with the deployment monitor
-or send Slack notifications. Remove the pilot when you are done:
+``psynet debug`` deployments do not send Slack notifications. Remove the pilot when you are done:
 
 .. code:: bash
 
@@ -382,12 +381,11 @@ Check the experiment regularly while participants are taking part.
 **Dashboard.** The dashboard link printed at launch opens the same
 dashboard for every recruiter. It shows progress through the timeline,
 spending, errors, server resources and individual participants; see
-:ref:`experiment_dashboard` for each tab. When you run several studies,
-the Deployments tab (the deployment monitor) shows all of them at once.
+:ref:`experiment_dashboard` for each tab.
 
 **Logs.** On servers with classic ingress, Dozzle shows the live logs of
 every container on the server. Its URL is printed at launch
-(``https://logs.your-server.example.org`` for servers that use subdomains);
+(``https://logs.your-server.example.org``);
 the login is described in :doc:`/deploy/setting_up_a_server`. Servers with
 Cloudflare ingress, such as lab computers, have no Dozzle (see
 :ref:`ssh_server_cloudflare`); run the log command printed at launch instead.
@@ -452,7 +450,7 @@ and once more after the last participant has finished:
 
 Run the command in the experiment directory the deployment came from. The
 export lands in ``exports/latest/``. The dashboard's Export tab downloads
-the same data as ``export.zip``. See :doc:`/data/exporting_data` for export
+the same data as ``<deployment ID>__export.zip``. See :doc:`/data/exporting_data` for export
 options.
 
 Once you destroy the app or the server, ``psynet export`` no longer works,
@@ -516,13 +514,17 @@ When the target number of participants is reached:
 
 If the server was provisioned only for this study, tear it down as well;
 see :doc:`/deploy/setting_up_a_server`. For an EC2 server created with
-``dallinger ec2 provision``, pass the same ``--dns-host`` so that the DNS
-records and the server registration are removed:
+``dallinger ec2 provision``, teardown also removes its DNS records and server
+registrations:
 
 .. code:: bash
 
-   dallinger ec2 teardown --name my-server --region us-east-1 \
-       --dns-host my-server.your-domain.org
+   dallinger ec2 teardown --name my-server --region us-east-1
+
+On a computer other than the one that provisioned the server, after a
+provision you finished with the printed ``servers add`` commands, or for a
+server provisioned by an older Dallinger, add the ``--dns-host`` it was
+provisioned with.
 
 Once an EC2 server is terminated, anything on it that was not exported is
 lost.

@@ -399,9 +399,17 @@ class WebSocketElt(Elt):
     channel : str
         The Redis channel name this Elt subscribes to. If ``None``, no
         subscribers will be registered.
+    requires_checked_connection : bool
+        If ``True``, ``handle_message`` is called only for messages sent
+        through ``dallinger.openExperimentSocket({scope: psynetTemplateData.websocketScope})``,
+        whose connection PsyNet has checked belongs to ``participant``, and runs
+        on the web process holding that socket. Messages on the channel from
+        ``/chat`` sockets are ignored, because they can name any participant.
+        Defaults to ``False``.
     """
 
     channel = None
+    requires_checked_connection = False
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -1213,6 +1221,13 @@ class Page(Elt):
     time_estimate:
         Time estimated for the page.
 
+    background_recording:
+        Optional background video alongside the ordinary answer: ``"camera"``,
+        ``"screen"``, ``"both"``, or a
+        :class:`~psynet.background_recording.VideoRecordConfig`. Clips are optional
+        by default; ``required=True`` holds finalization and fails the parent trial
+        if its recording is missing. See :doc:`/code/pages/recording`.
+
     template_path:
         Path to the jinja2 template to use for the page.
 
@@ -1255,6 +1270,9 @@ class Page(Elt):
 
     template_arg:
         Dictionary of arguments to pass to the jinja2 template.
+        ``{{ ... }}`` escapes plain strings; pass HTML as ``markupsafe.Markup``
+        or a ``dominate`` tag, and write values inside ``<script>`` with
+        ``| tojson``.
 
     label:
         Internal label to give the page, used for example in results saving.
@@ -1456,9 +1474,17 @@ class Page(Elt):
         requires_full_page_reload: bool = False,
         expect_scrolling: Optional[bool] = None,
         delegated_render: bool = False,
+        background_recording=None,
     ):
         super().__init__()
 
+        from .background_recording import _normalize_config
+
+        self.background_recording = _normalize_config(
+            background_recording,
+            self,
+            delegated=delegated_render,
+        )
         legacy_js_links = _normalize_javascript_urls(js_links, "js_links")
         legacy_scripts = _normalize_js_page_code(scripts, "scripts")
         if legacy_js_links:
@@ -1772,6 +1798,9 @@ class Page(Elt):
         """
         from psynet.page import UnityPage
 
+        from .background_recording import _browser_config
+        from .experiment import get_experiment
+
         attributes = {
             "session_id": self.session_id,
             "type": type(self).__name__,
@@ -1780,6 +1809,11 @@ class Page(Elt):
             "is_unity_page": isinstance(self, UnityPage),
             "requires_full_page_reload": self.requires_full_page_reload,
             "expect_scrolling": self.expect_scrolling,
+            "background_recording": (
+                _browser_config(self, get_experiment(), participant)
+                if self.background_recording is not None
+                else None
+            ),
         }
         arrival_updates = _arrival_updates_for(self, participant)
         if arrival_updates is not None:
@@ -1831,6 +1865,11 @@ class Page(Elt):
         if metadata is None:
             metadata = {}
 
+        if self.background_recording is not None:
+            from .background_recording import _browser_config
+
+            _browser_config(self, experiment, participant)
+
         resp = Response(
             participant=participant,
             label=self.label,
@@ -1839,6 +1878,7 @@ class Page(Elt):
         db.session.add(resp)
 
         trial = participant.current_trial
+        resp._background_parent = trial or participant
 
         if answer == NoArgumentProvided:
             answer = self.format_answer(
@@ -1876,6 +1916,22 @@ class Page(Elt):
         )
 
         return resp
+
+    def _recording_capture_sources(self):
+        """List the camera/screen sources this page captures, whatever the upload path.
+
+        The browser releases shared capture streams that the next page does not
+        list, so the camera light and screen-sharing banner turn off after the
+        last recording page while consecutive recording pages reuse them.
+        """
+        from .modular_page import VideoRecordControl
+
+        control = getattr(self, "control", None)
+        if isinstance(control, VideoRecordControl):
+            return list(control.recording_sources)
+        if self.background_recording is not None:
+            return list(self.background_recording.sources)
+        return []
 
     def _accept_response(self, resp, experiment, participant):
         """Save an answer that passed validation and run ``on_complete``."""
@@ -2069,11 +2125,23 @@ class Page(Elt):
         # `partial_mode` is an internal render shape used for inplace
         # transitions. The public timeline route now serves full pages (plus
         # mode=json), while /response embeds this fragment payload directly.
+        from .background_recording import _browser_config
+        from .modular_page import RecordControl
+
         internal_js_vars = {
+            "backgroundRecording": _browser_config(self, experiment, participant),
             "uniqueId": participant.unique_id,
             "pageUuid": participant.page_uuid,
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
+            "recordingCaptureSources": self._recording_capture_sources(),
         }
+        control = getattr(self, "control", None)
+        if isinstance(control, RecordControl):
+            internal_js_vars["asynchronousUploadSources"] = (
+                control.recording_sources
+                if control._uses_async_upload(experiment)
+                else None
+            )
         locale = get_locale()
         config = get_config()
         # The SPA template contract applies to author-provided template source,
@@ -2115,7 +2183,7 @@ class Page(Elt):
             "js_dependencies": js_dependencies,
             "js_page_code": self.js_page_code,
             "js_page_modules": js_page_modules,
-            "css": self.css + experiment.css,
+            "css": [Markup(x) for x in self.css + experiment.css],
             "css_links": css_links,
             "events": self.events,
             "trial_progress_display_config": self.progress_display,
@@ -2684,16 +2752,29 @@ class Timeline:
         )
         default_branches.update(branch_kwargs)
         self.terminal_branch_names = frozenset(default_branches)
+        self.experiment_class = None
+        """The experiment class that this timeline belongs to, set when that class is defined."""
 
         self.elts = OrderedDict()
         self.elts["main"] = join(*args, SuccessfulEndPage())
         for name, content in default_branches.items():
             self.elts[name] = join(content)
 
+        self._compile()
+
+    def _compile(self):
         self.modules, self.module_list = self.compile_modules()
         self.check_elts()
         self.add_elt_ids()
         self.estimated_time_credit = CreditEstimate(list(self.all_elts))
+
+    def insert_at_start(self, *elts):
+        """Insert elements at the start of the main branch and recompile the timeline."""
+        for elt in self.all_elts:
+            elt.id = None
+        self.elts["main"] = join(*elts, self.elts["main"])
+        self.__dict__.pop("trial_makers", None)
+        self._compile()
 
     @property
     def all_elts(self):
@@ -3074,6 +3155,8 @@ class Response(_Response):
     answer = Column(PythonObject)
     page_type = Column(String)
     successful_validation = Column(Boolean)
+    recording_receipt_hash = Column(String, index=True)
+    recording_receipt = Column(PythonObject)
 
     # metadata is a protected attribute in SQLAlchemy, hence the underscore
     # and the functional setter/getter.
@@ -3204,10 +3287,11 @@ def while_loop(
     condition: Callable,
     logic,
     expected_repetitions: int,
-    max_loop_time: float = None,
+    max_loop_time: Optional[Union[float, Callable]] = None,
     fix_time_credit=True,
     fail_on_timeout=True,
     on_timeout: Optional[Callable] = None,
+    extend_while: Optional[Callable] = None,
 ):
     """
     Loops a series of elts while a given criterion is satisfied.
@@ -3233,8 +3317,12 @@ def while_loop(
         of the total experiment.
 
     max_loop_time:
-        The maximum time in seconds for staying in the loop. Once exceeded, the participant is
-        is presented the ``UnsuccessfulEndPage``. Default: None.
+        The maximum time in seconds for staying in an active loop. Once exceeded,
+        the participant is presented the ``UnsuccessfulEndPage`` unless
+        ``fail_on_timeout`` is False. Default: None (unlimited).
+        May also be a callable accepting ``participant`` and/or ``experiment``
+        and returning seconds or None. It is evaluated once on entering the loop;
+        polling does not restart or recalculate the budget.
 
     fix_time_credit:
         Whether participants should receive the same time credit irrespective of whether
@@ -3249,6 +3337,11 @@ def while_loop(
     on_timeout:
         Optional callable invoked when ``max_loop_time`` is exceeded.
         Called with ``participant=...``.
+
+    extend_while:
+        Optional callable accepting ``participant`` and/or ``experiment``,
+        checked on each iteration. While it returns ``True`` the loop cannot
+        time out, and ``max_loop_time`` restarts once it returns ``False``.
 
     Returns
     -------
@@ -3269,17 +3362,35 @@ def while_loop(
         logger.debug(f"Evaluating while_loop ({label}) condition: result = {result}")
         return result
 
-    conditional_logic = join(logic, GoTo(start_while))
+    def start_loop(participant, experiment):
+        """Snapshot the loop's start and runtime budget once per entry."""
+        participant.var.set(
+            _while_loop_state_key(label, "loop_start_time"), serialise(datetime.now())
+        )
+        if callable(max_loop_time):
+            participant.var.set(
+                _while_loop_state_key(label, "loop_max_time"),
+                call_function_with_context(
+                    max_loop_time, participant=participant, experiment=experiment
+                ),
+            )
 
-    if max_loop_time is not None:
-
-        def max_loop_time_condition(participant, experiment):
-            return _while_loop_timed_out(participant, label, max_loop_time)
-
-    else:
-
-        def max_loop_time_condition(participant, experiment):
+    def max_loop_time_condition(participant, experiment):
+        """Check elapsed time against the budget saved on entry."""
+        if extend_while is not None and call_function_with_context(
+            extend_while, participant=participant, experiment=experiment
+        ):
+            participant.var.set(
+                _while_loop_state_key(label, "loop_start_time"),
+                serialise(datetime.now()),
+            )
             return False
+        limit = (
+            participant.var.get(_while_loop_state_key(label, "loop_max_time"))
+            if callable(max_loop_time)
+            else max_loop_time
+        )
+        return _while_loop_timed_out(participant, label, limit)
 
     from .page import UnsuccessfulEndPage
 
@@ -3305,14 +3416,9 @@ def while_loop(
 
     time_estimate = CreditEstimate(logic).get_max("time")
 
-    elts = join(
-        CodeBlock(
-            lambda participant: participant.var.set(
-                _while_loop_state_key(label, "loop_start_time"),
-                serialise(datetime.now()),
-            )
-        ),
-        start_while,
+    # A resolved condition exits before checking timeouts. For example, returning
+    # to an inactive browser tab must not time out work that has already finished.
+    conditional_logic = join(
         conditional(
             "max_loop_time_condition",
             lambda participant, experiment: call_function_with_context(
@@ -3327,6 +3433,13 @@ def while_loop(
             log_chosen_branch=False,
             time_estimate=0.0,
         ),
+        logic,
+        GoTo(start_while),
+    )
+
+    elts = join(
+        CodeBlock(start_loop),
+        start_while,
         conditional(
             label,
             condition_wrapped,

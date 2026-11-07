@@ -288,7 +288,7 @@ async function probeTimelineHoldClientBehavior(page) {
     psynet.nextPagePending = false;
     window.__holdClientNext = { done: false };
     // Do not await nextPage in this evaluate. submitGenericResponse waits
-    // 250ms between the busy 503 and the retry; Playwright's awaitPromise
+    // up to 250ms between the busy 503 and the retry; Playwright's awaitPromise
     // does not flush that timer while the evaluate is still open.
     Promise.resolve()
       .then(() =>
@@ -469,7 +469,7 @@ test("wait_while preserves the submitted page and wakes after async work", { tag
     );
     await experimentPage.evaluate(installTimelineHoldWakeCounter);
     // check_interval is 1s. An in-place safety-poll POST can return the next
-    // page and stop the hold controller before websocket onMessage dispatches
+    // page and stop the hold controller before websocket onDirect dispatches
     // timelineHoldWakeReceived, so the wake counter stays 0.
     expect(await silenceTimelineHoldSafetyPoll(experimentPage)).toBe(true);
 
@@ -918,11 +918,15 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
 
     // A resume POST can consume the next stacked hold, and that hold's
     // release can arrive on the socket before the response carries its token.
+    // Wakes are directed sends: any page can publish on the hold channel, so
+    // the hold socket must not listen to it.
     const earlyWakeRequests = await experimentPage.evaluate(() => {
       const originalConnect = PsyNetWebSocketChannel.connect;
-      let onMessage = null;
+      let onDirect = null;
+      let listensToChannel = null;
       PsyNetWebSocketChannel.connect = (options) => {
-        onMessage = options.onMessage;
+        onDirect = options.onDirect;
+        listensToChannel = options.onMessage !== undefined;
         return { close() {} };
       };
       const stub = {
@@ -940,13 +944,21 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         type: "timeline_hold_wake",
         targets: [{ wake_token: "next-hold-token", reason: "barrier_released" }]
       };
-      onMessage(wake);
+      onDirect(wake);
       const whileIdle = stub.resumeRequested;
       stub.resumeInFlight = true;
-      onMessage(wake);
-      return { whileIdle, whileInFlight: stub.resumeRequested };
+      onDirect(wake);
+      return {
+        listensToChannel,
+        whileIdle,
+        whileInFlight: stub.resumeRequested
+      };
     });
-    expect(earlyWakeRequests).toEqual({ whileIdle: false, whileInFlight: true });
+    expect(earlyWakeRequests).toEqual({
+      listensToChannel: false,
+      whileIdle: false,
+      whileInFlight: true
+    });
     await experimentPage.evaluate(() => {
       if (psynet.timelineHold) {
         psynet.resumeTimelineHold("test after pending probe");
@@ -1124,15 +1136,12 @@ test("timeline hold preserves same-session page identity", { tag: "@both" }, asy
     await expect(
       experimentPage.locator("#intentionally-disabled-response")
     ).toBeDisabled();
-    await expect(experimentPage.locator("#next-button-spinner")).toBeHidden();
-    await expect(experimentPage.locator("#next-button-text")).toBeVisible();
-    const nextButtonInlineSize = await experimentPage
-      .locator("#next-button")
-      .evaluate((button) => ({
-        height: button.style.height,
-        width: button.style.width
-      }));
-    expect(nextButtonInlineSize).toEqual({ height: "", width: "" });
+    await expect(experimentPage.locator("#next-button")).not.toHaveClass(
+      /psynet-button-pending/
+    );
+    await expect(
+      experimentPage.locator("#next-button .psynet-button-spinner")
+    ).toHaveCount(0);
     await assertNoBackendError(experimentPage);
   });
 });

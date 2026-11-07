@@ -26,7 +26,7 @@ from platform import python_version
 from smtplib import SMTPAuthenticationError
 from statistics import median
 from typing import Any, List, Optional, Type, Union
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import dallinger.config
 import dallinger.experiment
@@ -71,8 +71,9 @@ from flask import (
 )
 from flask import g as flask_app_globals
 from flask_login import login_required
+from jinja2.utils import htmlsafe_json_dumps
 from markupsafe import escape
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select, text
+from sqlalchemy import Column, Float, Integer, String, func, select, text
 from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import lazyload, load_only
 from sqlalchemy.orm.exc import DetachedInstanceError
@@ -88,7 +89,7 @@ from psynet.utils import (
 
 from . import deployment_info
 from . import exit as exit_domain
-from .asset import Asset, AssetRegistry, LocalStorage, OnDemandAsset, S3Storage
+from .asset import Asset, AssetRegistry, LocalStorage, S3Storage
 from .async_job import AsyncJob
 from .bot import Bot, BotDriver, BotResponse
 from .capacity import (
@@ -139,6 +140,7 @@ from .recruiters import (  # noqa: F401
     CapRecruiter,  # noqa: F401  # Backward compatibility alias
     DevLucidRecruiter,
     LabRecruiter,
+    LucidIdentifierMismatch,
     LucidRecruiter,
     PsyNetProlificRecruiterMixin,
     StagingCapRecruiter,  # noqa: F401  # Backward compatibility alias
@@ -207,12 +209,11 @@ else:
     # participants take in the development server's console.
     hide_requests(
         "/asset/",
-        "/on-demand-asset",
         "/log/",
         "/timeline/arrival_notice",
         "/timeline/progress_and_reward",
-        "/module/progress_info",
-        "/module/tooltip",
+        "/dashboard/module/progress_info",
+        "/dashboard/module/tooltip",
         "/participant_status/",
         "/get_participant_info_for_debug_mode",
         "/request_statistics",
@@ -234,6 +235,40 @@ database_template_path = ".deploy/database_template.zip"
 DEFAULT_LOCALE = "en"
 INITIAL_RECRUITMENT_SIZE = 1
 
+BROWSER_CAPABILITY_TOKENS = frozenset(
+    {
+        "microphone",
+        "camera",
+        "screen_capture",
+        "video_recording",
+        "audio_playback",
+    }
+)
+
+PERMISSION_CAPABILITY_TOKENS = frozenset({"microphone", "camera"})
+
+
+def validate_browser_capabilities(capabilities):
+    """Return ``capabilities`` as a frozenset, raising ValueError for invalid tokens."""
+    if capabilities is None:
+        raise ValueError(
+            "browser_capabilities must be a set of tokens, not None. "
+            "Use an empty set if the experiment has no requirements."
+        )
+    if isinstance(capabilities, str):
+        raise ValueError(
+            "browser_capabilities must be a set of tokens, not a string. "
+            f"Did you mean: {{{capabilities!r}}}"
+        )
+    capabilities = frozenset(capabilities)
+    unknown = capabilities - BROWSER_CAPABILITY_TOKENS
+    if unknown:
+        raise ValueError(
+            f"Unknown browser_capabilities token(s): {sorted(unknown)}. "
+            f"Valid tokens: {sorted(BROWSER_CAPABILITY_TOKENS)}"
+        )
+    return capabilities
+
 
 @dataclass
 class ResponseResult:
@@ -243,6 +278,7 @@ class ResponseResult:
     page: Optional[Any] = None
     flask_response: Optional[Any] = None
     skip_write: bool = False
+    recording_response_id: Optional[int] = None
 
 
 @dataclass
@@ -269,6 +305,43 @@ def error_response(*args, **kwargs):
 
     with disable_logger():
         return dallinger_error_response(*args, **kwargs)
+
+
+def _recording_receipts(payload):
+    """Return the upload receipts an approved recording submission must deliver."""
+    return {
+        key: payload[key]
+        for key in ("recording_uploads", "recording_upload_server_time")
+        if key in payload
+    }
+
+
+_FORWARDING_HEADERS = ("X-Forwarded-For", "Forwarded", "X-Real-IP", "CF-Connecting-IP")
+
+
+def _is_direct_local_request():
+    """Return whether the request comes from this machine rather than through a proxy.
+
+    Tunnels such as cloudflared also connect from a loopback address, but
+    they add forwarding headers.
+    """
+    return request.remote_addr in ("127.0.0.1", "::1") and not any(
+        header in request.headers for header in _FORWARDING_HEADERS
+    )
+
+
+def _request_carries_unique_id(participant):
+    """Return whether the request's ``unique_id`` parameter is ``participant``'s, warning if not."""
+    supplied = request.values.get("unique_id", "")
+    if hmac.compare_digest(supplied.encode(), participant.unique_id.encode()):
+        return True
+    logger.warning(
+        "Refused %s for participant_id=%s: its unique_id is missing or "
+        "belongs to another participant.",
+        request.path,
+        participant.id,
+    )
+    return False
 
 
 def is_experiment_launched():
@@ -359,6 +432,91 @@ def __init__(self, session=None):
 
         _reject_overridden_fail_participant(cls)
 
+        capabilities = validate_browser_capabilities(cls.browser_capabilities)
+        # Assigning inherited values here would hide capabilities that a later
+        # base class contributes to subclasses with multiple inheritance.
+        if "browser_capabilities" in dct:
+            cls.browser_capabilities = capabilities
+        _process_browser_capability_check(cls)
+
+
+def _browser_check_spec(cls):
+    """Return what determines the browser check that ``cls`` would insert."""
+    return (
+        validate_browser_capabilities(cls.browser_capabilities),
+        getattr(
+            cls.get_browser_capability_check,
+            "__func__",
+            cls.get_browser_capability_check,
+        ),
+    )
+
+
+def _process_browser_capability_check(cls):
+    """Give ``cls.timeline`` its browser check, once per Timeline object.
+
+    The first class to see a Timeline claims it and inserts its check, whether
+    the timeline was defined on the class, a mixin or a base class. Any later
+    class using the same Timeline must have the same effective
+    ``browser_capabilities`` and ``get_browser_capability_check``. The
+    placeholder timeline is never claimed, so that base classes can declare
+    capabilities for subclasses that define ``timeline``.
+    """
+    timeline = cls.timeline
+    if not isinstance(timeline, Timeline) or timeline is _PLACEHOLDER_TIMELINE:
+        return
+
+    owner = timeline.experiment_class
+    if owner is None:
+        _insert_browser_capability_check(cls)
+        timeline.experiment_class = cls
+    elif _browser_check_spec(cls) != _browser_check_spec(owner):
+        if issubclass(cls, owner):
+            raise ValueError(
+                f"{cls.__name__} inherits its timeline from {owner.__name__} but "
+                "has different browser_capabilities or "
+                "get_browser_capability_check, and the browser check is already "
+                f"inserted. Define timeline on {cls.__name__} as well."
+            )
+        raise ValueError(
+            f"{cls.__name__} uses the same Timeline object as {owner.__name__} "
+            "but has a different browser check. Give each experiment class its "
+            "own Timeline."
+        )
+
+
+def _insert_browser_capability_check(cls):
+    """Insert ``cls.get_browser_capability_check()`` at the start of ``cls.timeline``."""
+    check = cls.get_browser_capability_check()
+    if check is None and not cls.browser_capabilities:
+        return
+
+    from .prescreen import BrowserCapabilityCheck
+
+    has_manual_check = any(
+        isinstance(m, BrowserCapabilityCheck) for m in cls.timeline.module_list
+    )
+    if check is None:
+        if not has_manual_check:
+            logger.warning(
+                f"{cls.__name__} declares browser_capabilities, but "
+                "get_browser_capability_check returns None and the timeline "
+                "contains no BrowserCapabilityCheck, so participants are not "
+                "screened for them."
+            )
+        return
+    if has_manual_check:
+        raise ValueError(
+            f"{cls.__name__}'s timeline already contains a BrowserCapabilityCheck. "
+            "PsyNet inserts the module returned by get_browser_capability_check "
+            "(by default, a BrowserCapabilityCheck whenever browser_capabilities "
+            "is set) at the start of the timeline, so please remove "
+            "BrowserCapabilityCheck from your timeline. To customize the check, override "
+            "Experiment.get_browser_capability_check; to place it yourself, make "
+            "that method return None."
+        )
+    cls.timeline.insert_at_start(check)
+
 
 @register_table
 class Request(SQLBase, SQLMixin):
@@ -371,7 +529,9 @@ class Request(SQLBase, SQLMixin):
     vars = None
 
     id = Column(Integer, primary_key=True)
-    unique_id = Column(String, ForeignKey("participant.unique_id"))
+    # Not a foreign key: the value comes from the request's query string,
+    # which may name no participant.
+    unique_id = Column(String)
     duration = Column(Float)
     method = Column(String)
     endpoint = Column(String)
@@ -400,13 +560,29 @@ def _redacted_asset_request_path(path: str) -> str:
     return path
 
 
-def _send_file_then_delete_dir(path: str, cleanup_dir: str, mimetype: str):
-    """Return a Flask file response and delete ``cleanup_dir`` after it is sent.
+def _send_file_then_delete_dir(
+    path: str, cleanup_dir: str, mimetype: str, download_name: Optional[str] = None
+):
+    """Return a Flask download response and delete ``cleanup_dir`` after it is sent.
 
-    Cleanup is registered on the response with ``call_on_close`` so the file
-    remains on disk until Flask finishes streaming it.
+    The file is sent as an attachment, so browsers save it rather than display
+    it. Cleanup is registered on the response with ``call_on_close`` so the
+    file remains on disk until Flask finishes streaming it.
+
+    Parameters
+    ----------
+    path : str
+        File to send.
+    cleanup_dir : str
+        Directory to delete once the response is closed.
+    mimetype : str
+        Content type of the file.
+    download_name : str, optional
+        File name the browser saves; defaults to the base name of ``path``.
     """
-    response = send_file(path, mimetype=mimetype)
+    response = send_file(
+        path, mimetype=mimetype, as_attachment=True, download_name=download_name
+    )
     response.call_on_close(lambda: shutil.rmtree(cleanup_dir, ignore_errors=True))
     return response
 
@@ -466,6 +642,61 @@ def _deployment_label_slug(label):
     return re.sub(r"[\W_]+", "-", label.lower()).strip("-") or "experiment"
 
 
+_UNSAFE_HTTP_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _is_cross_site_request(req):
+    """Return whether the browser says ``req`` was sent by another site.
+
+    ``Sec-Fetch-Site`` is set by the browser and survives reverse proxies, so
+    it is checked first. Older browsers fall back to ``Origin`` or ``Referer``,
+    whose scheme and host are compared with the request's scheme and ``Host``
+    header. A header that is present but empty counts as cross-site.
+    Browsers send ``Origin`` with every cross-site POST, so requests with none
+    of these headers come from scripts such as the PsyNet CLI and bots, which
+    are allowed.
+    """
+    fetch_site = req.headers.get("Sec-Fetch-Site")
+    if fetch_site is not None:
+        return fetch_site not in ("same-origin", "none")
+    source = req.headers.get("Origin")
+    if source is None:
+        source = req.headers.get("Referer")
+    if source is None:
+        return False
+    source = urlsplit(source)
+    return (source.scheme, source.netloc) != (req.scheme, req.host)
+
+
+def _refuse_cross_site_dashboard_request():
+    """Refuse state-changing dashboard requests sent from another site.
+
+    This protects against cross-site request forgery (CSRF): another site
+    cannot make a logged-in researcher's browser fail nodes, pay bonuses or
+    archive deployments. It applies to dashboard routes and to every request
+    authenticated as the dashboard user, including Dallinger's routes.
+    """
+    from flask_login import current_user
+
+    if request.method not in _UNSAFE_HTTP_METHODS:
+        return None
+    if not _is_cross_site_request(request):
+        return None
+    if not (request.path.startswith("/dashboard") or current_user.is_authenticated):
+        return None
+    logger.warning(
+        "Refused cross-site %s request to %s (Origin: %s).",
+        request.method,
+        request.path,
+        request.headers.get("Origin"),
+    )
+    return error_response(
+        error_text="Cross-site requests to the dashboard are not allowed.",
+        status=403,
+        simple=True,
+    )
+
+
 def _is_replacement_gunicorn_worker(worker):
     """Return whether gunicorn spawned this worker after the initial boot.
 
@@ -473,6 +704,9 @@ def _is_replacement_gunicorn_worker(worker):
     ``cfg.workers`` spawns are the initial boot.
     """
     return worker.age > worker.cfg.workers
+
+
+_PLACEHOLDER_TIMELINE = Timeline(InfoPage("Placeholder timeline", time_estimate=5))
 
 
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
@@ -580,10 +814,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     In addition to the config variables in Dallinger, PsyNet adds the following:
 
-    min_browser_version : `str`
-        The minimum version of Chrome a participant needs to take a study.
-        Default: `105.0`.
-
     wage_per_hour : `float`
         The payment in currency the participant gets per hour. Default: `9.0`.
 
@@ -660,9 +890,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Default: ``'[]'``.
 
     force_google_chrome : ``bool``
-        Forces the user to use the Google Chrome browser. If another browser is used, it will give detailed instructions
-        on how to install Google Chrome.
-        Default: ``True``.
+        *Deprecated.* Forces the user to use a Chromium-based browser (Chrome, Edge, Brave,
+        Opera). If another browser is used, participants see instructions to install Chrome.
+        Default: ``False``.
+
+        Note: when used with Lucid recruitment, the Lucid qualification (QuestionID 1035)
+        gates on the Chrome brand only, so Edge/Brave/Opera participants are excluded at
+        the recruitment stage even though PsyNet would admit them. This mismatch cannot be
+        resolved until Lucid exposes Chromium-based precodes. Prefer ``browser_capabilities``
+        for feature requirements; leave this unset to admit all modern browsers.
 
     leave_comments_on_every_page : ``bool``
         Allows the user to leave comments on every page.
@@ -717,8 +953,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     initial_recruitment_size = INITIAL_RECRUITMENT_SIZE
     logos = []
     max_allowed_base_payment = 30
+    browser_capabilities: frozenset = frozenset()
+    """Browser features the experiment requires, such as ``{"microphone"}``.
 
-    timeline = Timeline(InfoPage("Placeholder timeline", time_estimate=5))
+    PsyNet screens participants for these at the start of the timeline; see
+    :meth:`get_browser_capability_check` and :doc:`/reference/configuration`.
+    """
+
+    timeline = _PLACEHOLDER_TIMELINE
 
     asset_storage = LocalStorage()
     artifact_storage = LocalArtifactStorage()
@@ -861,6 +1103,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "dashboard.dashboard_mturk",
             "dashboard.dashboard_lucid",
             "dashboard.dashboard_lifecycle",
+            # The deployment monitor finds no deployments on docker-ssh servers;
+            # its page is still served at /dashboard/deployments.
+            "dashboard.dashboard_deployments",
         ]
         if not (is_local_deployment or is_ssh_deployment):
             optional_tabs.remove(
@@ -910,6 +1155,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "dashboard.dashboard_monitoring",
             "dashboard.dashboard_timeline",
             "dashboard.dashboard_resources",
+            "dashboard.dashboard_recordings",
             "dashboard.dashboard_sync_groups",
             "dashboard.dashboard_participants",
             "dashboard.dashboard_logger",
@@ -932,7 +1178,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return tab_list + [group]
 
         new_tab_list = [route2tab["dashboard.dashboard_index"]]
-        new_tab_list += [route2tab["dashboard.dashboard_deployments"]]
         new_tab_list = insert_group(new_tab_list, "Server", server_children)
         new_tab_list = insert_group(new_tab_list, "Recruiter", recruiter_children)
         new_tab_list = insert_group(new_tab_list, "Monitor", monitor_children)
@@ -1141,16 +1386,24 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     def before_request():
         flask_app_globals.request_start_time = time.monotonic()
-        return refuse_new_participant_if_full()
+        return (
+            _refuse_cross_site_dashboard_request() or refuse_new_participant_if_full()
+        )
 
     @staticmethod
     def after_request(request, response):
-        diff = time.monotonic() - flask_app_globals.request_start_time
+        # Participant URLs carry ?unique_id=, which must not reach other origins
+        # through Referer. Embeds such as YouTube still need the bare origin.
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        start_time = getattr(flask_app_globals, "request_start_time", None)
         response = apply_versioned_static_cache_headers(response)
         relevant_endpoints = [
             "/ad",
             "/consent",
-            "/on-demand-asset",
             "/response",
             "/start",
             "/timeline",
@@ -1174,12 +1427,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return response
 
         params = dict(request.args)
-        unique_id = params.get("unique_id", None)
-        if getattr(flask_app_globals, "unknown_participant", False):
-            unique_id = None
         request_obj = Request(
-            unique_id=unique_id,
-            duration=diff,
+            unique_id=params.get("unique_id"),
+            duration=None if start_time is None else time.monotonic() - start_time,
             method=request.method,
             endpoint=endpoint,
             params=params,
@@ -1313,11 +1563,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         for resource_type, pct in resources.items():
             if pct > resource_danger_pct:
                 cls.notifier.resource_usage_notification(
-                    resource_type, mute_same_warning_for_n_hours, level="danger"
+                    resource_type,
+                    mute_same_warning_for_n_hours,
+                    level="danger",
+                    usage_pct=pct,
                 )
             elif pct > resource_warning_pct:
                 cls.notifier.resource_usage_notification(
-                    resource_type, mute_same_warning_for_n_hours, level="warning"
+                    resource_type,
+                    mute_same_warning_for_n_hours,
+                    level="warning",
+                    usage_pct=pct,
                 )
 
         minimal_disk_space_warning_gb = config.get("minimal_disk_space_warning_gb")
@@ -1601,14 +1857,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @staticmethod
     def request_contains_valid_dashboard_credentials(request):
-        params = dict(request.args)
-        username = params.get("dashboard_user", None)
-        password = params.get("dashboard_password", None)
         config = get_config()
-        return (
-            config.get("dashboard_user") == username
-            and config.get("dashboard_password") == password
-        )
+
+        def matches(key):
+            expected = config.get(key, None)
+            supplied = request.args.get(key)
+            return bool(expected) and hmac.compare_digest(
+                (supplied or "").encode(), str(expected).encode()
+            )
+
+        return matches("dashboard_user") and matches("dashboard_password")
 
     @experiment_route("/health", methods=["GET"])
     @nocache
@@ -1766,10 +2024,25 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         config = get_config()
         inplace = config.get("inplace_timeline_transitions")
-        for elt in self.timeline.all_elts:
-            if not isinstance(elt, Page):
-                continue
-            elt._check_spa_template_contract(inplace_timeline_transitions=inplace)
+        pages = [elt for elt in self.timeline.all_elts if isinstance(elt, Page)]
+        for page in pages:
+            page._check_spa_template_contract(inplace_timeline_transitions=inplace)
+        self._check_background_recording_pages()
+
+    def _check_background_recording_pages(self):
+        """Check static background-recording pages before launch.
+
+        Runs in the pre-launch checks of ``psynet debug`` and deployments, and
+        in bot tests. Pages generated by a ``PageMaker`` are checked when
+        rendered.
+        """
+        from .background_recording import _check_consent_order, _check_environment
+        from .timeline import Page
+
+        pages = [elt for elt in self.timeline.all_elts if isinstance(elt, Page)]
+        for page in pages:
+            _check_environment(page, self)
+        _check_consent_order(pages, self)
 
     # This is how many seconds to wait between invoking parallel bots
     test_parallel_stagger_interval_s = 0.1
@@ -2126,6 +2399,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
             logger.info("Finished growing networks.")
 
+    @scheduled_task("interval", seconds=2, max_instances=1)
+    @staticmethod
+    def _check_recording_uploads():
+        """Resolve received and missing recordings without relying on the browser."""
+        if not is_experiment_launched():
+            return
+        from .media_upload import _expire_recordings, _queue_received_recordings
+
+        _expire_recordings()
+        _queue_received_recordings()
+
     @scheduled_task("interval", seconds=0.5, max_instances=1)
     @log_time_taken
     @staticmethod
@@ -2317,7 +2601,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "docker_volumes": "${HOME}/psynet-data/assets:/psynet-data/assets",
             "duration": 100000000.0,
             "experimenter_name": cls.get_username(),
-            "force_google_chrome": True,
+            "force_google_chrome": False,
             "notifier": "logger",
             "leave_comments_on_every_page": False,
             "force_incognito_mode": False,
@@ -2328,9 +2612,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "loglevel": 1,
             "loglevel_worker": 1,
             "min_reward_for_paid_early_exit": 0.20,
-            # Chrome 105 is the first release with CSS :has(), which the default
-            # participant theme uses for selected-option styling.
-            "min_browser_version": "105.0",
             "prolific_is_custom_screening": False,
             "prolific_enable_return_for_bonus": True,
             "prolific_pay_unsuccessful": True,
@@ -2438,8 +2719,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response(
                 error_text=f"Unsupported request method {request.method}", simple=True
             )
-        function = EXPOSED_FUNCTIONS[endpoint]
-        return function(**data)
+        result = EXPOSED_FUNCTIONS[endpoint](**data)
+        if isinstance(result, str):
+            # As text/html, a string that echoes its arguments would be reflected XSS.
+            return make_response(result, {"Content-Type": "text/plain; charset=utf-8"})
+        return result
 
     @property
     def psynet_logo(self):
@@ -2531,11 +2815,106 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         name, so each Elt only receives messages from its own channel.
         """
         for handler in self._websocket_message_handlers.get(channel_name, []):
+            if handler.__self__.requires_checked_connection:
+                logger.warning(
+                    "Ignored a message on WebSocket channel %s that did not come "
+                    "through /experiment-socket.",
+                    channel_name,
+                )
+                continue
             handler(
                 message,
                 channel_name=channel_name,
                 participant=participant,
                 node=node,
+                receive_time=receive_time,
+                experiment=self,
+            )
+
+    def publish_to_participants(self, payload, participant_ids, scope=None):
+        """Send a payload to specific participants' WebSocket connections.
+
+        Behaves like Dallinger's
+        :meth:`~dallinger.experiment.Experiment.publish_to_participants`, but
+        refuses payloads whose ``type`` is one that PsyNet's own pages trust,
+        such as ``"timeline_hold_wake"``. Wrap forwarded participant content
+        in a message with your own fixed ``type`` instead of forwarding a
+        participant's payload unchanged.
+
+        Parameters
+        ----------
+        payload : object
+            The JSON-serializable message to deliver.
+        participant_ids : list of int or str, or int or str
+            The participants to deliver to.
+        scope : str or None
+            Deliver only to connections that supplied this scope.
+
+        Raises
+        ------
+        ValueError
+            If ``payload`` is a dict whose ``type`` is reserved by PsyNet.
+        """
+        from .timeline_hold import RESERVED_DIRECT_MESSAGE_TYPES
+
+        message_type = payload.get("type") if isinstance(payload, dict) else None
+        if isinstance(message_type, str) and (
+            message_type in RESERVED_DIRECT_MESSAGE_TYPES
+        ):
+            raise ValueError(
+                f"Message type {message_type!r} is reserved for PsyNet's own "
+                "directed messages."
+            )
+        super().publish_to_participants(payload, participant_ids, scope=scope)
+
+    def accept_websocket_connection(self, participant_id, scope):
+        """Accept a websocket connection only from one of the participant's own pages.
+
+        PsyNet's pages send :attr:`~psynet.participant.Participant.websocket_scope`
+        as the connection's scope.
+        """
+        participant = Participant.query.get(int(participant_id))
+        return participant is not None and hmac.compare_digest(
+            (scope or "").encode(), participant.websocket_scope.encode()
+        )
+
+    def handle_websocket_message(
+        self,
+        message,
+        *,
+        channel_name,
+        participant_id=None,
+        scope=None,
+        receive_time=None,
+    ):
+        """Pass ``/experiment-socket`` messages to the channel's ``WebSocketElt`` handlers.
+
+        Handlers with ``requires_checked_connection`` run here, on the web
+        process holding the socket, with the participant the connection was
+        checked for. If a channel has any such handler, its other handlers
+        don't receive ``/experiment-socket`` messages. Messages on other
+        channels go to ``receive_message`` as Dallinger's default does.
+        """
+        handlers = [
+            handler
+            for handler in self._websocket_message_handlers.get(channel_name, [])
+            if handler.__self__.requires_checked_connection
+        ]
+        if not handlers:
+            return super().handle_websocket_message(
+                message,
+                channel_name=channel_name,
+                participant_id=participant_id,
+                scope=scope,
+                receive_time=receive_time,
+            )
+        participant = Participant.query.get(int(participant_id))
+        for handler in handlers:
+            handler(
+                message,
+                channel_name=channel_name,
+                participant=participant,
+                node=None,
                 receive_time=receive_time,
                 experiment=self,
             )
@@ -2696,6 +3075,43 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
 
         cls._warn_about_overridden_experiment_config(config)
+
+        if config.get("force_google_chrome"):
+            logger.warning(
+                "force_google_chrome is deprecated and will be removed in a future release. "
+                "It still works, but consider migrating: use browser_capabilities for "
+                "feature-specific requirements (e.g. microphone, screen_capture), or leave "
+                "force_google_chrome unset to admit all modern browsers that support CSS :has()."
+            )
+
+    @classmethod
+    def get_browser_capability_check(cls):
+        """Return the module that screens participants' browsers.
+
+        PsyNet inserts the returned module at the very start of the timeline,
+        before any consent pages, when the experiment class is defined. The
+        default checks
+        :attr:`browser_capabilities` and returns ``None`` (no check) if that set
+        is empty. Override this method to customize the check, or return
+        ``None`` to place :class:`~psynet.prescreen.BrowserCapabilityCheck`
+        in the timeline yourself.
+
+        The insertion happens once per timeline, on the first experiment class
+        that uses it, even if the timeline comes from a mixin. A subclass whose
+        effective :attr:`browser_capabilities` or method differs from its
+        parent's, for example through a second base class, must therefore
+        define its own ``timeline``.
+
+        Returns
+        -------
+        Module or None
+            The browser-check module, or ``None`` to skip automatic insertion.
+        """
+        if not cls.browser_capabilities:
+            return None
+        from .prescreen import BrowserCapabilityCheck
+
+        return BrowserCapabilityCheck(capabilities=cls.browser_capabilities)
 
     @classmethod
     def check_max_concurrent_participants_support(cls, config):
@@ -3595,17 +4011,28 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         ``super().check_recruiter_exit(participant)`` whenever it would
         otherwise return ``None``.
         """
-        supplied = request.args.get("unique_id", "")
-        if hmac.compare_digest(supplied.encode(), participant.unique_id.encode()):
+        if _request_carries_unique_id(participant):
             return None
-        logger.warning(
-            "Refused /recruiter-exit for participant_id=%s: its unique_id is "
-            "missing or belongs to another participant.",
-            participant.id,
-        )
         response = make_response(self.error_page())
         response.status_code = 403
         return response
+
+    def check_worker_status(self, participant):
+        """Refuse ``/worker_complete`` and ``/worker_failed`` unless their ``unique_id`` is the participant's.
+
+        Dallinger also calls this from ``/handle-error``, which then still
+        records the error report but doesn't complete the participant.
+
+        An experiment that overrides this method must return the result of
+        ``super().check_worker_status(participant)`` whenever it would
+        otherwise return ``None``.
+        """
+        if _request_carries_unique_id(participant):
+            return None
+        return error_response(
+            error_type=f"{request.path}: unique_id is missing or wrong",
+            status=403,
+        )
 
     def on_recruiter_submission_complete(self, participant, event):
         """Record payment fields, complete or approve on the platform, pay the bonus, and recruit.
@@ -3794,6 +4221,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
         try:
+            metadata = dict(metadata or {})
+            recovery_secret = metadata.pop("recording_recovery_secret", None)
             # Use Experiment. so mocked experiment instances still run this
             # guard. Skip-page recovery leaves the trial cursor in place, so
             # a second tab must not keep advancing after the plan is committed.
@@ -3819,8 +4248,37 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     .populate_existing()
                     .get(participant_id)
                 )
+            from .media_upload import _expire_participant_recordings
+
+            _expire_participant_recordings(participant.id)
             if not isinstance(participant, Bot) and page_uuid == participant.page_uuid:
                 participant.client_ip_address = client_ip_address
+            if recovery_secret is not None and not timeline_hold_resume:
+                from .media_upload import _recover_recording_receipt
+
+                recovered = _recover_recording_receipt(
+                    participant, page_uuid, recovery_secret
+                )
+                if recovered is False:
+                    return ResponseResult(
+                        payload={
+                            "submission": "rejected",
+                            "message": "This recording submission has already been accepted. Please reload the page.",
+                        }
+                    )
+                if recovered is not None:
+                    from .media_upload import _utcnow
+
+                    # Lifetime caps stay as originally issued; the current
+                    # server time lets the browser compute what remains of them.
+                    recovered["recording_upload_server_time"] = (
+                        _utcnow().isoformat() + "Z"
+                    )
+                    page = self.timeline.get_current_elt(self, participant)
+                    # Render the current successor through the normal read-only
+                    # phase, without processing or advancing the answer again.
+                    recovered["page"] = page.__json__(participant)
+                    return ResponseResult(payload=recovered, page=page)
             if Experiment._pending_redirect_replaces_open_page(participant):
                 if page_uuid != participant.page_uuid and not (
                     Experiment._settle_stale_hold(participant, page_uuid)
@@ -3898,6 +4356,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         }
                     )
 
+                recording_uploads = []
+                if getattr(response, "_deferred_recording_answer", False) is True:
+                    recording_uploads = event.control._accept_recordings(
+                        response, participant, page_uuid
+                    )
+                if event.background_recording is not None:
+                    from .background_recording import _accept_background_recordings
+
+                    recording_uploads = _accept_background_recordings(
+                        event, response, participant, self, page_uuid
+                    )
                 event._accept_response(response, self, participant)
             participant.inc_time_credit(event.time_estimate)
             participant.inc_progress(event.time_estimate)
@@ -3906,9 +4375,27 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             page = self._advance_past_ready_holds(
                 participant, self.timeline.get_current_elt(self, participant)
             )
+            payload = self._approved_payload(participant, page)
+            recording_response_id = None
+            if (
+                getattr(response, "_deferred_recording_answer", False) is True
+                or event.background_recording is not None
+            ):
+                from .media_upload import _utcnow
+
+                payload["recording_uploads"] = recording_uploads
+                payload["recording_upload_server_time"] = _utcnow().isoformat() + "Z"
+                if recovery_secret is not None:
+                    from .media_upload import _save_recording_receipt
+
+                    _save_recording_receipt(
+                        response, participant, page_uuid, recovery_secret, payload
+                    )
+                    recording_response_id = response.id
             return ResponseResult(
-                payload=self._approved_payload(participant, page),
+                payload=payload,
                 page=page,
+                recording_response_id=recording_response_id,
             )
         except Exception as err:
             if os.getenv("PASSTHROUGH_ERRORS"):
@@ -4113,7 +4600,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         HTTP status is 404. The log line leaves out the request's IDs, which
         can be recruiter worker IDs.
         """
-        flask_app_globals.unknown_participant = True
         logger.warning(
             "%s %s: unknown participant, answered 'session no longer available' "
             "(a browser tab from an earlier session?).",
@@ -4234,6 +4720,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         (``psynet_exit_recruiter.html``), with the assignment ID as a reference.
         Otherwise, one can return a custom message in various ways.
         If you return a string, this will be escaped appropriately and presented as text.
+        To show HTML that you wrote yourself, return a ``markupsafe.Markup`` string.
         Alternatively, more complex HTML structures can be constructed using the
         Python package ``dominate``, see Examples for details.
 
@@ -4319,6 +4806,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
                 (
                     resources.files("psynet")
+                    / "resources/scripts/background-recording.js",
+                    "/static/scripts/background-recording.js",
+                ),
+                (
+                    resources.files("psynet")
+                    / "resources/scripts/recording-capture.js",
+                    "/static/scripts/recording-capture.js",
+                ),
+                (
+                    resources.files("psynet") / "resources/scripts/media-upload.js",
+                    "/static/scripts/media-upload.js",
+                ),
+                (
+                    resources.files("psynet")
                     / "resources/scripts/websocket-channel.js",
                     "/static/scripts/websocket-channel.js",
                 ),
@@ -4344,6 +4845,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     resources.files("psynet")
                     / "resources/scripts/execute-front-end-js.js",
                     "/static/scripts/execute-front-end-js.js",
+                ),
+                (
+                    resources.files("psynet")
+                    / "resources/scripts/browser-capability-check.js",
+                    "/static/scripts/browser-capability-check.js",
                 ),
                 (
                     resources.files("psynet") / "resources/scripts/jspsych-page.js",
@@ -4459,16 +4965,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
                 (
                     resources.files("psynet")
-                    / "resources/libraries/jqueryui/jquery-ui.css",
-                    "/static/css/jquery-ui.css",
-                ),
-                (
-                    resources.files("psynet")
-                    / "resources/libraries/jqueryui/jquery-ui.min.js",
-                    "/static/scripts/jquery-ui.min.js",
-                ),
-                (
-                    resources.files("psynet")
                     / "resources/libraries/international-keyboards",
                     "/static/international-keyboards",
                 ),
@@ -4491,15 +4987,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
             ]
         )
-        # We don't think this is needed any more but just keeping a note in case we're proved wrong (25 Sep 2023)
-        # if isinstance(cls.assets.storage, DebugStorage):
-        #     _path = f"static/{cls.assets.storage.label}"
-        #     files.append(
-        #         (
-        #             _path,
-        #             _path,
-        #         )
-        #     )
         return files
 
     @classmethod
@@ -4543,7 +5030,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config.register("lucid_recruitment_config", str)
         config.register("lucid_sha1_hashing_key", str, sensitive=True)
         config.register("min_reward_for_paid_early_exit", float)
-        config.register("min_browser_version", str)
         config.register("show_early_exit_button", bool)
         config.register("show_footer", bool)
         config.register("show_progress_bar", bool)
@@ -4678,6 +5164,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         except json.JSONDecodeError:
             logger.exception(f"Failed to decode JSON file: {deployment_id}")
             return error_response("Failed to decode JSON file.")
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
 
     @dashboard.route("/status/get")
     @login_required
@@ -4686,41 +5174,47 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         exp = get_experiment()
         return exp._parse_status(request.args)
 
-    @dashboard.route("/archive/deployment")
+    @dashboard.route("/archive/deployment", methods=["POST"])
     @login_required
     def archive_deployment():  # noqa F811
         try:
             exp = get_experiment()
-            if "id" not in request.args:
+            if "id" not in request.values:
                 return error_response("No id specified.")
-            exp.artifact_storage.archive(deployment_id=request.args["id"])
+            exp.artifact_storage.archive(deployment_id=request.values["id"])
 
             return success_response()
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
         except Exception as e:
             return error_response(f"Failed to archive deployment: {str(e)}")
 
-    @dashboard.route("/restore/deployment")
+    @dashboard.route("/restore/deployment", methods=["POST"])
     @login_required
     def restore_deployment():  # noqa F811
         try:
             exp = get_experiment()
-            if "id" not in request.args:
+            if "id" not in request.values:
                 return error_response("No id specified.")
-            exp.artifact_storage.restore(deployment_id=request.args["id"])
+            exp.artifact_storage.restore(deployment_id=request.values["id"])
 
             return success_response()
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
         except Exception as e:
             return error_response(f"Failed to restore deployment: {str(e)}")
 
-    @dashboard.route("/update/recruitment")
+    @dashboard.route("/update/recruitment", methods=["POST"])
     @login_required
     def update_recruitment():  # noqa F811
         try:
             exp = get_experiment()
-            params = dict(request.args)
+            params = request.values.to_dict()
             deployment_id = params["deployment_id"]
             params["type"] = "recruitment"
             status = exp._parse_status(params)
+            if isinstance(status, flask.Response):
+                return status
             recruiter_name = status.get("recruiter_name", None)
             if recruiter_name is None:
                 recruiter_name = status.get("recruiter", None)
@@ -4770,16 +5264,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response("No comment specified.")
 
         txt = params["txt"]
-        get_experiment().artifact_storage.write_comment(
-            text=txt, deployment_id=deployment_id
-        )
+        try:
+            get_experiment().artifact_storage.write_comment(
+                text=txt, deployment_id=deployment_id
+            )
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
 
         return success_response()
 
     @dashboard.route("/comment/get/<deployment_id>", methods=["GET"])
     @login_required
     def get_comment(deployment_id):  # noqa F811
-        return get_experiment().artifact_storage.read_comment(deployment_id)
+        try:
+            return get_experiment().artifact_storage.read_comment(deployment_id)
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
 
     @dashboard_tab("Deployments")
     @classmethod
@@ -4840,9 +5340,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "dashboard_timeline.html",
             title="Timeline modules",
             panes=panes,
-            timeline_modules=json.dumps(module_info, default=serialise),
+            timeline_modules=htmlsafe_json_dumps(module_info, default=serialise),
             currency=get_config().currency,
         )
+
+    @dashboard_tab("Recordings")
+    @classmethod
+    def dashboard_recordings(cls):
+        """Show deposited, pending, and unavailable answer/background recordings."""
+        from .dashboard.recordings import report_recordings
+
+        return report_recordings()
 
     @dashboard_tab("Resources")
     @classmethod
@@ -5312,7 +5820,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             # must not replace the deployment's stored artifact.
             if asset_bytes != "manifest":
                 store_latest_archive(zip_filepath)
-            return _send_file_then_delete_dir(zip_filepath, tempdir, mimetype="zip")
+            download_name = (
+                f"{exp.deployment_id}__export.zip" if exp.deployment_id else None
+            )
+            return _send_file_then_delete_dir(
+                zip_filepath,
+                tempdir,
+                mimetype="application/zip",
+                download_name=download_name,
+            )
         except Exception as exc:
             shutil.rmtree(tempdir, ignore_errors=True)
             # Without this the experimenter only sees a bare 500 and has to go
@@ -5329,17 +5845,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @dashboard.route("/artifact/<deployment_id>/<filename>", methods=["GET"])
     @staticmethod
+    @login_required
     @with_transaction
     def download_artifact(deployment_id, filename):
-        from flask_login import current_user
-
-        if not current_user.is_authenticated and request.remote_addr != "127.0.0.1":
-            return error_response(error_text="Invalid credentials", simple=True)
         exp = get_experiment()
+        storage = exp.artifact_storage
+        try:
+            path = storage.prepare_path(deployment_id, filename)
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
         tempdir = tempfile.mkdtemp(prefix="psynet-artifact-")
         try:
-            storage = exp.artifact_storage
-            path = storage.prepare_path(deployment_id, filename)
             destination = os.path.join(tempdir, os.path.basename(path))
             storage.download(path, destination)
             if not os.path.exists(destination):
@@ -5356,27 +5872,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @dashboard.route("/export/preflight", methods=["GET"])
     @staticmethod
+    @login_required
     @with_transaction
     def export_preflight():
         """Describe this deployment so a client can validate it before downloading."""
-        from flask_login import current_user
-
-        if not current_user.is_authenticated and request.remote_addr != "127.0.0.1":
-            return error_response(error_text="Invalid credentials", simple=True)
-
         from .export.identity import server_project_identity
 
         return jsonify(server_project_identity())
 
     @dashboard.route("/export/download", methods=["GET"])
     @staticmethod
+    @login_required
     @with_transaction
     def download_export():
-        from flask_login import current_user
-
-        if not current_user.is_authenticated and request.remote_addr != "127.0.0.1":
-            return error_response(error_text="Invalid credentials", simple=True)
-
         from .export.service import validate_asset_mode
 
         try:
@@ -5390,18 +5898,34 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             asset_bytes=request.args.get("asset_bytes", "include"),
         )
 
-    @dashboard.route("/export/trigger", methods=["GET"])
+    @dashboard.route("/export/trigger", methods=["GET", "POST"])
     @staticmethod
     @login_required
     @with_transaction
     def trigger_export():
-        """Build a complete export and store it, without sending it anywhere."""
+        """Build a complete export and store it, without sending it anywhere.
+
+        A GET (such as the Slack "Trigger export" link) only shows a button
+        that POSTs here, so that links on other sites cannot start an export.
+        """
         from .export.service import store_latest_archive, validate_asset_mode
 
         try:
-            assets = validate_asset_mode(request.args.get("assets", "none"))
+            assets = validate_asset_mode(request.values.get("assets", "none"))
         except ValueError as exc:
             return error_response(error_text=str(exc), status=400, simple=True)
+
+        if request.method == "GET":
+            return render_template(
+                "dashboard_custom.html",
+                title="Trigger export",
+                html=(
+                    f'<form method="post"><input type="hidden" name="assets" '
+                    f'value="{escape(assets)}"><input type="hidden" name="html" '
+                    f'value="1"><button type="submit" class="btn btn-primary">'
+                    f"Build export (assets: {escape(assets)})</button></form>"
+                ),
+            )
 
         exp = get_experiment()
         with tempfile.TemporaryDirectory() as tempdir:
@@ -5409,13 +5933,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             os.makedirs(export_dir)
             store_latest_archive(exp.build_export_archive(export_dir, assets=assets))
 
+        if request.form.get("html"):
+            return render_template(
+                "dashboard_custom.html",
+                title="Trigger export",
+                html=f"<p>Export built and stored (assets: {escape(assets)}).</p>",
+            )
         return success_response(assets=assets)
 
     @experiment_route("/get_participant_info_for_debug_mode", methods=["GET"])
     @staticmethod
     @with_transaction
     def get_participant_info_for_debug_mode():
-        if not get_config().get("mode") == "debug":
+        if not get_config().get("mode") == "debug" or not _is_direct_local_request():
             return error_response()
 
         participant = Participant.query.first()
@@ -5430,6 +5960,45 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         )
         return json.dumps(json_data, default=serialise)
 
+    @experiment_route("/media-upload/<int:recording_id>", methods=["POST"])
+    @staticmethod
+    def receive_media_upload(recording_id):
+        """Receive reserved media independently of the participant transaction."""
+        from .media_upload import _receive_recording
+
+        authorization = flask.request.headers.get("Authorization", "")
+        if not authorization.startswith("Bearer "):
+            flask.abort(403)
+        connection = flask.request.environ.get(
+            "gunicorn.socket"
+        ) or flask.request.environ.get("werkzeug.socket")
+        if connection is None:
+            flask.abort(503, "This server does not support bounded recording uploads.")
+        _receive_recording(
+            recording_id,
+            authorization.removeprefix("Bearer "),
+            flask.request.stream,
+            content_length=flask.request.content_length,
+            connection=connection,
+        )
+        return "", 204
+
+    @experiment_route("/media-upload/heartbeat", methods=["POST"])
+    @staticmethod
+    def renew_media_uploads():
+        """Renew the leases of recordings the browser is still holding."""
+        from .media_upload import _renew_uploads
+
+        if flask.request.content_length is None:
+            flask.abort(411)
+        if flask.request.content_length > 16384:
+            flask.abort(413)
+        body = flask.request.get_json(silent=True)
+        uploads = body.get("uploads") if isinstance(body, dict) else None
+        if not isinstance(uploads, list):
+            flask.abort(400)
+        return flask.jsonify({"unavailable": _renew_uploads(uploads)})
+
     @experiment_route("/asset/<access_token>", methods=["GET"])
     @experiment_route("/asset/<access_token>/<path:subpath>", methods=["GET"])
     @staticmethod
@@ -5439,34 +6008,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if asset is None:
             flask.abort(404)
         return asset.serve(subpath)
-
-    @experiment_route("/on-demand-asset", methods=["GET"])
-    @staticmethod
-    def get_on_demand_asset():
-        """
-        Legacy on-demand route.
-
-        Prefer ``/asset/<access_token>``. This endpoint remains as a temporary
-        compatibility shim that redirects when the asset has an access token.
-        """
-        id = request.args.get("id")
-        secret = request.args.get("secret")
-
-        assert id
-        assert secret
-
-        id = int(id)
-
-        asset = OnDemandAsset.query.filter_by(id=id).one()
-        if getattr(asset, "access_token", None):
-            target = asset.access_url()
-            return redirect(target)
-
-        # Fallback for rows that somehow lack a token.
-        suffix = asset.extension if asset.extension else ""
-        with tempfile.NamedTemporaryFile(suffix=suffix) as temp_file:
-            asset.export(temp_file.name)
-            return send_file(temp_file.name, max_age=0)
 
     @experiment_route("/error-page", methods=["POST", "GET"])
     @classmethod
@@ -5492,27 +6033,29 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             recruiter=get_experiment().recruiter,
         )
 
-    @experiment_route("/module", methods=["POST"])
-    @classmethod
+    @dashboard.route("/module", methods=["POST"])
+    @staticmethod
+    @login_required
     @with_transaction
-    def get_module_details_as_rendered_html(cls):
+    def get_module_details_as_rendered_html():
         exp = get_experiment()
         module = exp.timeline.get_module(request.values["moduleId"])
         return module.visualize()
 
-    @experiment_route("/module/tooltip", methods=["POST"])
-    @classmethod
+    @dashboard.route("/module/tooltip", methods=["POST"])
+    @staticmethod
+    @login_required
     @with_transaction
-    def get_module_tooltip_as_rendered_html(cls):
+    def get_module_tooltip_as_rendered_html():
         exp = get_experiment()
         module = exp.timeline.get_module(request.values["moduleId"])
         return module.visualize_tooltip()
 
-    @experiment_route("/module/progress_info", methods=["GET"])
-    @classmethod
+    @dashboard.route("/module/progress_info", methods=["GET"])
+    @staticmethod
     @login_required
     @with_transaction
-    def get_progress_info(cls):
+    def get_progress_info():
         exp = get_experiment()
         module_ids = request.args.getlist("module_ids[]")
         return exp._get_progress_info(module_ids)
@@ -5559,11 +6102,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         return counts
 
-    @experiment_route("/module/update_spending_limits", methods=["POST"])
-    @classmethod
+    @dashboard.route("/module/update_spending_limits", methods=["POST"])
+    @staticmethod
     @login_required
     @with_transaction
-    def update_spending_limits(cls):
+    def update_spending_limits():
         hard_max_experiment_payment = request.values["hard_max_experiment_payment"]
         soft_max_experiment_payment = request.values["soft_max_experiment_payment"]
         exp = get_experiment()
@@ -5653,8 +6196,54 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     @with_transaction
     def terminate_participant(cls):
+        """Terminate a Lucid respondent and send them back to their panel.
+
+        An existing participant is only terminated by a request that carries
+        their ``unique_id``. A bare ``RID`` or ``assignmentId`` is accepted only
+        when no participant has that RID yet (for example the mobile-phone
+        check on the ad page), so it can end only a session that has not
+        started. A request whose ``assignmentId``, ``RID`` and ``unique_id``
+        name different RIDs is refused, as is any request when several
+        participants share the RID. Experiments that don't recruit through
+        Lucid return 404.
+        """
         recruiter = get_experiment().recruiter
-        participant = recruiter.get_participant(request)
+        if not isinstance(recruiter, BaseLucidRecruiter):
+            flask.abort(404)
+        try:
+            assignment_id = recruiter.requested_assignment_id(request)
+        except ValueError as err:
+            logger.warning("Refused /terminate_participant: %s", err)
+            return error_response(error_text=str(err), status=400, simple=True)
+        except LucidIdentifierMismatch as err:
+            logger.warning("Refused /terminate_participant: %s", err)
+            return error_response(
+                error_text="This session could not be verified.",
+                status=403,
+                simple=True,
+            )
+        try:
+            participant = recruiter.get_participant(assignment_id)
+        except sqlalchemy.orm.exc.MultipleResultsFound:
+            logger.error(
+                "Refused /terminate_participant: several participants have "
+                "Lucid RID '%s'.",
+                assignment_id,
+            )
+            return error_response(
+                error_text="This session could not be verified.",
+                status=500,
+                simple=True,
+            )
+
+        if participant is not None and not _request_carries_unique_id(participant):
+            return error_response(
+                error_text="This session could not be verified.",
+                status=403,
+                simple=True,
+            )
+        if participant is not None:
+            recruiter.link_lucid_rid_to_participant(participant)
 
         # Don't terminate participants who have already completed the experiment.
         # This can happen due to race conditions when the page redirects to Lucid
@@ -5669,16 +6258,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 external_submit_url=external_submit_url,
             )
 
-        # If participant lookup failed, we still need to terminate on Lucid's side
-        # using the assignment_id from the request
         if participant is None:
-            assignment_id = request.values.get("assignmentId") or request.values.get(
-                "RID"
-            )
-            unique_id = request.values.get("unique_id")
-            if assignment_id is None and unique_id is not None:
-                assignment_id = unique_id.split(":")[1]
-
             external_submit_url = recruiter.terminate_participant(
                 assignment_id=assignment_id, reason=request.values.get("reason")
             )
@@ -5692,10 +6272,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             external_submit_url=external_submit_url,
         )
 
-    @experiment_route("/change_lucid_status", methods=["GET"])
-    @classmethod
+    @dashboard.route("/change_lucid_status", methods=["POST"])
     @login_required
-    def change_lucid_status(cls):
+    def change_lucid_status():  # noqa F811
+        """Set the Lucid survey status chosen on the dashboard's Lucid tab."""
         get_experiment().recruiter.change_lucid_status(request.values.get("status", ""))
         return success_response()
 
@@ -5851,19 +6431,21 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 status=404,
                 simple=True,
             )
-        release_url = f"/timeline?unique_id={participant.unique_id}"
-        if participant.early_exited:
-            return success_response(release_url=release_url)
-
         try:
             plan = exit_domain.ExitPlan.from_dict(participant.exit_plan)
         except (AttributeError, KeyError, TypeError, ValueError):
             return cls._stale_early_exit_response()
 
+        # The release URL carries the participant's unique_id, so only a
+        # request that knows the plan's random id may receive it.
         payload = request.get_json(silent=True) or {}
         if not isinstance(payload, dict) or payload.get("plan_id") != plan.plan_id:
             return cls._stale_early_exit_response()
-        if plan.status is exit_domain.ExitPlanStatus.COMMITTED:
+        release_url = f"/timeline?unique_id={participant.unique_id}"
+        if (
+            participant.early_exited
+            or plan.status is exit_domain.ExitPlanStatus.COMMITTED
+        ):
             return success_response(release_url=release_url)
 
         experiment = get_experiment()
@@ -6554,37 +7136,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         text += "\n```" + formatted_traceback + "```"
         cls.notifier.notify(text)
 
-    class UniqueIdError(PermissionError):
-        def __init__(self, expected, provided, participant):
-            self.participant = participant
-
-            message = "".join(
-                [
-                    f"Mismatch between expected unique_id ({expected}) "
-                    f"and provided unique_id ({provided}) "
-                    f"for participant {participant.id}."
-                ]
-            )
-            super().__init__(message)
-
-        def http_response(self):
-            last_exception = sys.exc_info()
-            if last_exception[0]:
-                logger.error(
-                    "Failure for request: {!r}".format(dict(request.args)),
-                    exc_info=last_exception,
-                )
-
-            msg = (
-                "There was a problem authenticating your session, "
-                + "did you switch browsers? Unfortunately this is not currently "
-                + "supported by our system."
-            )
-            return Experiment.error_page(
-                participant=self.participant,
-                error_text=msg,
-            )
-
     @classmethod
     @log_time_taken
     def get_current_page(cls, experiment, participant):
@@ -6963,18 +7514,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "page_uuid": participant.page_uuid,
         }
 
-    @classmethod
-    def check_unique_id(cls, participant, unique_id):
-        valid = participant.unique_id == unique_id
-        if not valid:
-            raise cls.UniqueIdError(
-                expected=unique_id,
-                provided=participant.unique_id,
-                participant=participant,
-            )
-        else:
-            return True
-
     @experiment_route("/timeline/arrival_notice", methods=["GET"])
     @classmethod
     @with_transaction
@@ -6986,14 +7525,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         from .sync import arrival_notice_payload
 
-        return arrival_notice_payload(request.args.get("participantId"))
+        return arrival_notice_payload(request.args.get("uniqueId"))
 
     @experiment_route("/timeline/progress_and_reward", methods=["GET"])
     @classmethod
     @with_transaction
     def get_progress_and_reward(cls):
-        participant_id = request.args.get("participantId")
-        participant = Participant.query.get(participant_id)
+        participant = Participant.query.filter_by(
+            unique_id=request.args.get("uniqueId")
+        ).one_or_none()
         if participant is None:
             return cls._unknown_participant_response()
         progress_percentage = round(participant.progress * 100)
@@ -7154,6 +7694,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         # a transaction (and a pooled server connection) open.
         json_data = json.loads(request.values["json"])
         blobs = request.files.to_dict()
+        if not isinstance(json_data.get("page_uuid"), str):
+            return error_response(
+                error_text="page_uuid must be a string.", status=400, simple=True
+            )
 
         exp = get_experiment()
         _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
@@ -7262,13 +7806,23 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         page_uuid_after_response = cls._prepare_approved_inplace_page(
                             exp, participant, page, payload
                         )
+            if result.recording_response_id is not None:
+                from .media_upload import _refresh_recording_receipt
+
+                if participant is None:
+                    participant = cls._participant_request_query().get(participant_id)
+                _refresh_recording_receipt(
+                    result.recording_response_id, participant, payload
+                )
             db.session.commit()
             write_committed = True
         except Exception as err:
             clock.close_open("barriers", "render")
             if write_committed:
                 return finish(
-                    cls._handle_response_render_error(exp, participant_id, err)
+                    cls._handle_response_render_error(
+                        exp, participant_id, err, _recording_receipts(result.payload)
+                    )
                 )
             return finish(cls._handle_response_prepare_error(exp, participant_id, err))
 
@@ -7286,7 +7840,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 if os.getenv("PASSTHROUGH_ERRORS"):
                     raise
                 return finish(
-                    cls._handle_response_render_error(exp, participant_id, err)
+                    cls._handle_response_render_error(
+                        exp, participant_id, err, _recording_receipts(payload)
+                    )
                 )
             clock.close("render")
             if fragment is None:
@@ -7330,11 +7886,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return cls._handle_response_fatal_error(experiment, participant_id, error)
 
     @classmethod
-    def _approved_timeline_reload_response(cls, experiment, participant_id):
+    def _approved_timeline_reload_response(
+        cls, experiment, participant_id, recording_receipts=None
+    ):
         """Return an approved payload that forces GET /timeline.
 
         Used after the response write committed but a later relock or render
-        failed. The client must not retry the same POST (page_uuid advanced).
+        failed. The client must not retry the same POST (page_uuid advanced),
+        so the reply keeps any committed recording receipts for upload.
         """
         try:
             participant = cls._participant_request_query().get(participant_id)
@@ -7346,7 +7905,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             payload = experiment._approved_payload(participant, page)
             attributes = payload["page"].setdefault("attributes", {})
             attributes["requires_full_page_reload"] = True
-            return success_response(**payload)
+            return success_response(**payload, **(recording_receipts or {}))
         except Exception:
             logger.warning(
                 "Could not build a reload payload after post-commit contention "
@@ -7357,7 +7916,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return None
 
     @classmethod
-    def _handle_response_render_error(cls, experiment, participant_id, error):
+    def _handle_response_render_error(
+        cls, experiment, participant_id, error, recording_receipts=None
+    ):
         """Handle errors after the response write is committed.
 
         Never returns busy/503 here: the page_uuid has already advanced, so a
@@ -7383,7 +7944,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         db.session.rollback()
         if transient:
             reload_response = cls._approved_timeline_reload_response(
-                experiment, participant_id
+                experiment, participant_id, recording_receipts
             )
             if reload_response is not None:
                 return reload_response
@@ -7425,10 +7986,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             participant = cls.get_participant_from_unique_id(unique_id)
         except sqlalchemy.orm.exc.NoResultFound:
             return cls._unknown_participant_response()
-        try:
-            cls.check_unique_id(participant, unique_id)
-        except cls.UniqueIdError as e:
-            return e.http_response()
 
         message = request.values["message"]
 
@@ -7468,8 +8025,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             participant = cls.get_participant_from_unique_id(unique_id)
         except sqlalchemy.orm.exc.NoResultFound:
             return cls._unknown_participant_response()
-
-        cls.check_unique_id(participant, unique_id)
 
         participant.var.opened_devtools = True
 

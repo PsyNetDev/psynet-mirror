@@ -50,6 +50,7 @@ Key design constraints for maintainers:
 """
 
 import hashlib
+import hmac
 import json
 import re
 from collections import Counter
@@ -74,6 +75,7 @@ from dallinger.recruiters import (
     handle_recruitment_error,
 )
 from dallinger.utils import get_base_url
+from markupsafe import Markup
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
@@ -178,9 +180,8 @@ def _without_matching_bonus_entry(bonus_payments, amount):
 def _fetch_prolific_submission(prolificservice, assignment_id: str) -> dict | None:
     """Quiet raw submission GET via Dallinger.
 
-    Requires ``ProlificService.get_participant_submission(..., translate=False)``
-    (Dallinger PR #9779, or the first release that includes it). That
-    path goes through ``_req``, so ``DevProlificService`` can mock it,
+    Uses ``ProlificService.get_participant_submission(..., translate=False)``.
+    That path goes through ``_req``, so ``DevProlificService`` can mock it,
     keeps ``bonus_payments``, and returns ``None`` on a miss.
     """
     return prolificservice.get_participant_submission(assignment_id, translate=False)
@@ -244,16 +245,10 @@ def _prolific_error_status(error: ProlificServiceException):
 def _prolific_lookup_error_is_retriable(error: Exception) -> bool:
     """Return whether a failed Prolific lookup is worth retrying.
 
-    Connection errors and timeouts reach PsyNet as ``requests`` exceptions
-    from Dallinger releases without Dallinger PR #10008
-    (https://github.com/Dallinger/Dallinger/pull/10008), and as a
+    Connection errors and timeouts reach PsyNet as a
     ``ProlificServiceException`` whose payload has an ``error`` but no
-    ``response`` from releases with it. Once PsyNet's minimum Dallinger
-    version includes that PR, drop the ``requests.RequestException``
-    handling here and at the call sites that mention this function.
+    ``response``.
     """
-    if isinstance(error, requests.RequestException):
-        return True
     try:
         payload = json.loads(str(error))
     except json.JSONDecodeError:
@@ -1140,6 +1135,24 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             currency=get_config().get("currency", "$"),
         )
 
+    @staticmethod
+    def _unique_id_from_request(participant) -> dict[str, str]:
+        """Return ``{"unique_id": ...}`` if the current request carried it.
+
+        The page repeats only a credential its visitor already sent, so a
+        render path that never checked the visitor can't reveal it.
+        """
+        from flask import has_request_context, request
+
+        if not has_request_context():
+            return {}
+        unique_id = request.values.get("unique_id")
+        if unique_id and hmac.compare_digest(
+            unique_id.encode(), participant.unique_id.encode()
+        ):
+            return {"unique_id": unique_id}
+        return {}
+
     def error_page_presentation(
         self,
         *,
@@ -1231,6 +1244,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                 action_post_data={
                     "assignmentId": participant.assignment_id,
                     "participantId": str(participant.id),
+                    **self._unique_id_from_request(participant),
                 },
             )
 
@@ -1554,6 +1568,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             "exit_recruiter_prolific_submitted.html",
             assignment_id=participant.assignment_id,
             participant_id=participant.id,
+            unique_id=participant.unique_id,
             submission_recorded=recorded,
             confirmation_heading=heading,
             confirmation_body=body,
@@ -1727,8 +1742,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                 endpoint=f"/submissions/{assignment_id}/transition/",
                 json={"action": "COMPLETE", "completion_code": code},
             )
-        # requests.RequestException: see _prolific_lookup_error_is_retriable.
-        except (ProlificServiceException, requests.RequestException) as ex:
+        except ProlificServiceException as ex:
             handle_recruitment_error(ex)
             return False
         logger.info(
@@ -2060,8 +2074,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             submission = recruiter.prolificservice.get_participant_submission(
                 participant.assignment_id
             )
-        # requests.RequestException: see _prolific_lookup_error_is_retriable.
-        except (ProlificServiceException, requests.RequestException) as error:
+        except ProlificServiceException as error:
             if not _prolific_lookup_error_is_retriable(error):
                 logger.error(
                     "Could not check Prolific submission status for assignment %s "
@@ -2587,6 +2600,10 @@ class LucidStatus(SQLBase, SQLMixin):
 
 class LucidRecruiterException(Exception):
     """Custom exception for LucidRecruiter"""
+
+
+class LucidIdentifierMismatch(Exception):
+    """A request's Lucid identifiers name different respondents."""
 
 
 @dataclass
@@ -3573,39 +3590,79 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
 
         return lucid_recruitment_config.get(key)
 
-    def get_participant(self, request):
-        # Not by participant_id: it is sequential, and the page this request
-        # renders shows the participant's RID.
-        assignment_id = request.values.get("assignmentId")
+    @staticmethod
+    def requested_assignment_id(request):
+        """Return the Lucid RID that a request names.
+
+        The RID may come from ``assignmentId``, ``RID`` or the part of
+        ``unique_id`` after the colon. Not from ``participant_id``: it is
+        sequential, and the page this request renders shows the participant's
+        RID.
+
+        Parameters
+        ----------
+        request : flask.Request
+            The incoming request.
+
+        Returns
+        -------
+        str
+            The RID.
+
+        Raises
+        ------
+        ValueError
+            If the request names no RID or ``unique_id`` is malformed.
+        LucidIdentifierMismatch
+            If the supplied identifiers name different RIDs.
+        """
+        candidates = {
+            "assignmentId": request.values.get("assignmentId"),
+            "RID": request.values.get("RID"),
+        }
         unique_id = request.values.get("unique_id")
-        rid = request.values.get("RID")
+        if unique_id is not None:
+            worker_id, colon, unique_id_rid = unique_id.partition(":")
+            if not (worker_id and colon and unique_id_rid):
+                raise ValueError("unique_id must have the form 'worker_id:RID'.")
+            candidates["unique_id"] = unique_id_rid
 
-        if assignment_id is None:
-            if unique_id is not None:
-                assignment_id = unique_id.split(":")[1]
-            elif rid is not None:
-                assignment_id = rid
+        supplied = {key: value for key, value in candidates.items() if value}
+        if not supplied:
+            raise ValueError("The request names no Lucid RID.")
+        if len(set(supplied.values())) > 1:
+            raise LucidIdentifierMismatch(
+                f"The request names different Lucid RIDs: {sorted(supplied)}."
+            )
+        return next(iter(supplied.values()))
 
-        assert assignment_id is not None, "Could not determine assignment_id."
+    def get_participant(self, assignment_id):
+        """Return the participant with this Lucid RID, or ``None``.
 
-        participant = None
+        Parameters
+        ----------
+        assignment_id : str
+            The Lucid RID, as returned by :meth:`requested_assignment_id`.
+
+        Returns
+        -------
+        Participant or None
+            The participant, or ``None`` if no participant has this RID.
+
+        Raises
+        ------
+        MultipleResultsFound
+            If several participants have this RID.
+        """
         try:
-            participant = Participant.query.filter_by(assignment_id=assignment_id).one()
+            return Participant.query.filter_by(assignment_id=assignment_id).one()
         except NoResultFound:
             logger.warning(
                 f"No Participant for Lucid RID '{assignment_id}' found. "
                 "This can happen when users are terminated before completing recruitment "
                 "(e.g., mobile detection, wrong browser, or other early termination)."
             )
-        except MultipleResultsFound:
-            logger.error(
-                f"Multiple participants for Lucid RID '{assignment_id}' found. This should never happen."
-            )
-
-        if participant is not None:
-            self.link_lucid_rid_to_participant(participant)
-
-        return participant
+            return None
 
     @property
     def termination_time_in_s(self):
@@ -3856,16 +3913,19 @@ class GenericRecruiter(
         elif message == "default_exit_message":
             return super().exit_response(experiment, participant)
 
+        elif isinstance(message, Markup):
+            html = message
+
         elif isinstance(message, str):
-            html = dominate.tags.p(message).render()
+            html = Markup(dominate.tags.p(message).render())
 
         elif isinstance(message, dominate.dom_tag.dom_tag):
-            html = message.render()
+            html = Markup(message.render())
 
         else:
             raise ValueError(
                 f"Invalid value of experiment.render_exit_message: {message}. "
-                "You should return either a string or an HTML specification created using dominate tags "
+                "You should return a string, a markupsafe.Markup string, or an HTML specification created using dominate tags "
                 "(see https://pypi.org/project/dominate/)."
             )
 

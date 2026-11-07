@@ -74,6 +74,9 @@ class PythonObject(TypeDecorator):
 
 
 class _PythonList(PythonObject):
+    # SQLAlchemy checks this declaration on each concrete decorator class.
+    cache_ok = True
+
     @classmethod
     def serialize(cls, value):
         return super().serialize(list(value))
@@ -83,6 +86,9 @@ PythonList = MutableList.as_mutable(_PythonList)
 
 
 class PythonClass(PythonObject):
+    # SQLAlchemy checks this declaration on each concrete decorator class.
+    cache_ok = True
+
     @property
     def python_type(self):
         return type
@@ -474,6 +480,9 @@ def json_format_vars(x):
 
 
 class _PythonDict(PythonObject):
+    # SQLAlchemy checks this declaration on each concrete decorator class.
+    cache_ok = True
+
     @classmethod
     def serialize(cls, value):
         return super().serialize(dict(value))

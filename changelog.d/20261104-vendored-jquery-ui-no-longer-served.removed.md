@@ -1,0 +1,1 @@
+Removed PsyNet's bundled copy of jQuery UI 1.12. Experiments no longer serve `/static/scripts/jquery-ui.min.js` or `/static/css/jquery-ui.css`; a custom template that loaded them should ship its own copy in the experiment's `static/` directory.
