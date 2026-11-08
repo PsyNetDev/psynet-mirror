@@ -1511,6 +1511,8 @@ RemovalReason = Literal[
     "finished",
 ]
 REMOVAL_REASONS = (None, *get_args(RemovalReason))
+# Reasons for leaving that don't dissolve a group below its quorum.
+_KEEPS_GROUP_REASONS = ("finished", "moved_on")
 
 _OLD_BELOW_QUORUM_NAMES = (
     "fail_participants_below_min_size",
@@ -3871,8 +3873,9 @@ def warn_if_late_removal_fails_group(barriers):
                 or grouper.top_up_wait is not None
                 or grouper.group_type in frozen_types
             )
+            # The quorum is the smallest size a group can start at.
             and grouper.quorum
-            > (grouper.start_short_with or grouper.initial_group_size) - 1
+            >= (grouper.start_short_with or grouper.initial_group_size)
         ):
             fragile_groupers.setdefault(grouper.group_type, grouper)
     for barrier in barriers:
@@ -3892,6 +3895,7 @@ def warn_if_late_removal_fails_group(barriers):
             + (
                 " (after top_up_wait, if no newcomer joins)"
                 if grouper.top_up_wait is not None
+                and grouper.group_type not in frozen_types
                 else ""
             )
             + ". So a single late member fails everyone who "
@@ -4099,7 +4103,9 @@ class SyncGroup(SQLBase, SQLMixin):
               group or to sit the round out. Like ``"finished"``, it doesn't
               dissolve a group below its quorum, so a pair a
               :class:`SimpleGrouper` formed isn't dissolved, failing the
-              partner, when the first member reaches a :class:`Regrouper`.
+              partner, when the first member reaches a :class:`Regrouper`. A
+              later :class:`GroupBarrier` of the group's type still dissolves
+              it if fewer than its quorum are left.
             - ``"finished"``: "(finished)", for a member who has played their
               part, such as a player leaving a cohort after their last round.
               Their leaving doesn't dissolve a group below its quorum, so the
@@ -4237,7 +4243,7 @@ class SimpleSyncGroup(SyncGroup):
         reason: Optional[RemovalReason] = None,
     ):
         super().remove_participant(participant, reason=reason)
-        if reason not in ("finished", "moved_on"):
+        if reason not in _KEEPS_GROUP_REASONS:
             self.dissolve_if_below_quorum()
 
     def check_numbers(self):
