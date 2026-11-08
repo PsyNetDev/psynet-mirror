@@ -90,9 +90,9 @@ def get_timeline():
                     pairing,
                     only_in_group(
                         "pair",
-                        # Every pair is new and plays a single round, so each
-                        # pair's round is its first.
-                        OfferTrial.cue({"endowment": ENDOWMENT}, round=0),
+                        # Every pair is new and plays a single round, so the
+                        # cue needs no round number.
+                        OfferTrial.cue({"endowment": ENDOWMENT}),
                         # Without a cohort the game is over; the ended-early
                         # page explains why.
                         otherwise=conditional(
