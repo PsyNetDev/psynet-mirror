@@ -21,7 +21,7 @@ the cohorts first and regroup within them::
         start_short_after=60, start_short_with=2, max_wait_time=300,
     ),
     ...
-    Regrouper("room", within="cohort", max_group_size=4, every=30),
+    Regrouper("room", within="cohort", max_group_size=4, deadline=30),
 
 See the ``ultimatum_pairing`` demo for a full example.
 """

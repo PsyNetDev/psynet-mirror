@@ -36,8 +36,9 @@ instead: pass ``names="anonymous"`` to
 :class:`~psynet.group_prompt.GroupPrompt` and to
 :class:`~psynet.chatroom.ChatRoom`. Both then draw every other member as the
 same grey figure, labelled "Your partner" in a pair and "Another player" in
-a larger group, so the two agree on a page that has both (the chat counts
-the members who have appeared in the room so far).
+a larger group. On a page whose group is a pair they agree; the chat
+counts the members who have appeared in the room, so with ``subgroups`` the
+two can differ.
 
 Showing pseudonyms on other pages
 ---------------------------------
@@ -112,7 +113,8 @@ Pseudonyms in the dashboard and exports
 
 The dashboard's Participants page and the participant table on its Database
 page show each participant's pseudonym. That column can't be searched or
-sorted, because pseudonyms are worked out when shown rather than stored.
+sorted, because most pseudonyms are worked out when shown rather than
+stored.
 Exports keep the deployment ID, so after loading an export with the same
 PsyNet version, pseudonym scheme and locale, ``participant.pseudonym`` gives
 the names that participants saw, for example to read chat messages that

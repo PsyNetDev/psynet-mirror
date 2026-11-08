@@ -65,9 +65,11 @@ the grouper has a ``waiting_screen`` (see below).
     there are fewer than ``batch_size``. Needs a ``max_wait_time`` (default
     20 seconds) longer than ``start_short_after``. A group started short uses
     the lower of ``min_group_size`` and ``start_short_with`` as its minimum
-    size, so that it isn't dissolved at its first barrier. Combine it with
-    ``join_existing_groups=True`` so that later arrivals can still fill the
-    group up. A ``{SECONDS}`` placeholder in ``waiting_message`` counts down
+    size, so that it isn't dissolved at its first barrier. With
+    ``join_existing_groups=True``, later arrivals can fill the group up, but
+    a group that drops below its minimum then waits for a replacement;
+    leave it out to keep playing with fewer members (see
+    :ref:`groups below minimum size <groups_below_min_size>`). A ``{SECONDS}`` placeholder in ``waiting_message`` counts down
     to that short start once ``start_short_with`` are waiting, and shows
     "…" until then; :ref:`a message function <sync-countdown-messages>` can
     show other text instead.

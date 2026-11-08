@@ -1662,6 +1662,13 @@ class GroupBarrier(Barrier):
         self.on_release = on_release
         self.on_arrival_message = on_arrival_message
         self.notify_arrivals = bool(notify_arrivals)
+        if late_after is not None and late_after <= 0:
+            raise ValueError("late_after must be positive.")
+        if late_after is not None and max_wait_action != "fail":
+            raise ValueError(
+                "max_wait_action has no effect with late_after, which leaves no "
+                "wait limit; use late_action instead."
+            )
         self.late_after = late_after
         if late_action not in ("fail", "kick"):
             raise ValueError(
@@ -2788,7 +2795,7 @@ class Regrouper(Grouper):
             )
         if every is not None and every <= 0:
             raise ValueError("every must be positive.")
-        if isinstance(deadline, (int, float)) and deadline <= 0:
+        if deadline is not None and deadline <= 0:
             raise ValueError("deadline must be positive.")
         if deadline is None and every is None and within is None:
             raise ValueError(
@@ -4227,11 +4234,6 @@ def _waiting_links(participant, group):
         and link.barrier_instance is not None
         and link.barrier_instance.group_id == group.id
     ]
-
-
-def waiting_barrier_ids(participant, group):
-    """Return the IDs of the barriers of ``group`` that ``participant`` is waiting at."""
-    return [barrier_id for barrier_id, _ in _waiting_links(participant, group)]
 
 
 def is_waiting_at_barrier(participant, group) -> bool:

@@ -6600,6 +6600,10 @@ def test_group_barrier_max_wait_time_with_late_after():
     for max_wait_time in (300, _shrinking_max_wait_time):
         with pytest.raises(ValueError, match="Leave max_wait_time unset"):
             barrier(late_after=30, max_wait_time=max_wait_time)
+    with pytest.raises(ValueError, match="late_after must be positive"):
+        barrier(late_after=0)
+    with pytest.raises(ValueError, match="use late_action instead"):
+        barrier(late_after=30, max_wait_action="kick")
 
 
 @pytest.mark.parametrize(

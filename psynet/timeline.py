@@ -1458,7 +1458,8 @@ class Page(Elt):
         entered so far instead: the page's controls submit their current
         answer, which is formatted as usual but not validated, so
         ``format_answer`` should accept an incomplete answer. If the page has
-        no answer to submit, ``None`` is recorded.
+        no answer to submit, ``None`` is recorded. An answer that arrives
+        more than 5 seconds after the limit is kept the same way.
 
 
     Attributes

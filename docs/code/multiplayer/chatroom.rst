@@ -58,8 +58,8 @@ Options
     :class:`~psynet.group_prompt.GroupPrompt` with ``names="anonymous"``:
     "Your partner" while only one other member has appeared in the room,
     and "Another player" once more have, even if some have left since. For
-    a pair, or a larger group once everyone has joined the chat, this
-    matches the GroupPrompt. The server then
+    a pair, or a larger group without ``subgroups`` once everyone has joined
+    the chat, this matches the GroupPrompt. The server then
     doesn't send this participant the others' pseudonyms. Use it on pages
     whose GroupPrompt is anonymous, so the chat doesn't reveal who the
     partner is. A chat writes a name next to every message, so

@@ -281,9 +281,10 @@ The server counts the time from when the participant reached the page, so
 reloading the page does not restart the countdown. The time includes any
 wait before the participant can answer, such as audio that must finish
 before the Next button is enabled, so allow for it in ``time_limit``. The
-server also records ``time_limit_answer`` for an answer that arrives more
-than 5 seconds after the limit, so a tampered or stalled page cannot take
-longer. A timed page cannot have a ``session_id``. To place the countdown
+server also treats an answer that arrives more than 5 seconds after the
+limit as timed out, so a tampered or stalled page cannot take longer: it
+records ``time_limit_answer``, or with ``CURRENT_ANSWER`` the late answer
+itself, unvalidated and with ``time_limit_reached`` set. A timed page cannot have a ``session_id``. To place the countdown
 yourself, put an element with the attribute ``data-psynet-seconds-left`` in
 the page's content, for example
 ``<p>Answer within <span data-psynet-seconds-left></span> seconds.</p>``.

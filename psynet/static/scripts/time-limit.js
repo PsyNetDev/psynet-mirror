@@ -50,11 +50,15 @@ export function activate({root, vars, psynet}) {
         // As on Next, a stage handler (e.g. MonitorControl's) runs first.
         var retrieve = psynet.getRetrieveResponseHandler && psynet.getRetrieveResponseHandler();
         var stage = psynet.getStageResponseHandler && psynet.getStageResponseHandler();
+        // Lets a stage handler (e.g. SurveyJS's) skip its validation for this submission only.
+        psynet.timeLimitSubmitting = true;
         try {
             if (retrieve) return retrieve() || {};
             if (stage && (await stage()) === psynet.SUBMISSION_HANDLED) return null;
         } catch (error) {
             console.warn("Could not read the answer when the time limit ran out:", error);
+        } finally {
+            psynet.timeLimitSubmitting = false;
         }
         return (psynet.response && psynet.response.staged) || {};
     }

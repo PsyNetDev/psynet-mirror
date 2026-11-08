@@ -98,8 +98,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   allows for this; an explicit one must then exceed twice the `deadline` or
   `every` period.
 - For a lobby that should not wait forever for a full group, use
-  `SimpleGrouper(start_short_after=..., start_short_with=...)`, with
-  `join_existing_groups=True` to let latecomers fill it up.
+  `SimpleGrouper(start_short_after=..., start_short_with=...)`. Add
+  `join_existing_groups=True` to let latecomers fill it up, at the cost that a
+  group below its minimum then waits for a replacement instead of playing on.
 - Use `join_existing_groups=True` only with a task-specific `join_criterion`
   that rejects stale, completed, or unsuitable groups.
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with

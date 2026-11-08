@@ -363,6 +363,8 @@ def test_every_regrouper_left_over_waits_one_more_tick(
         ({"roles": ["a", "b"], "max_group_size": 3}, "len\\(roles\\)"),
         ({"max_group_size": 2, "deadline": 30, "every": 30}, "not both"),
         ({"max_group_size": 2, "fail_participants_below_min_size": False}, "never"),
+        ({"max_group_size": 2, "deadline": 0}, "deadline must be positive"),
+        ({"max_group_size": 2, "every": 0}, "every must be positive"),
     ],
 )
 def test_regrouper_checks_its_settings(kwargs, message):
