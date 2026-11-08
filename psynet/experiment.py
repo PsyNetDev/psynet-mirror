@@ -119,7 +119,7 @@ from .error import ErrorRecord
 from .field import ImmutableVarStore, PythonDict
 from .graphics import PsyNetLogo
 from .notifier import Notifier
-from .page import InfoPage
+from .page import InfoPage, WaitPage
 from .participant import (
     BONUS_PAY_IN_PROGRESS,
     BONUS_STATUS_CAPPED,
@@ -6731,6 +6731,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "time_estimate": current_page.time_estimate,
                 "min_duration": current_page.min_duration,
                 "is_timeline_hold": _is_timeline_hold(current_page),
+                "is_wait_page": isinstance(current_page, WaitPage),
+                "barrier_id": getattr(current_page, "barrier_id", None),
                 "bot_response": bot_response.__json__(),
             }
             if _is_timeline_hold(current_page):

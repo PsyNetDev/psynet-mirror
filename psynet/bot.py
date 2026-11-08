@@ -238,8 +238,6 @@ def advance_past_wait_pages(
         If some bots are still waiting after ``timeout`` seconds (or
         ``max_iterations`` passes).
     """
-    from .page import WaitPage
-
     if max_iterations is not None:
         warnings.warn(
             "advance_past_wait_pages(max_iterations=...) is deprecated; "
@@ -257,14 +255,14 @@ def advance_past_wait_pages(
         waiting = []
         for bot in bots:
             # Last-arrival may have skipped this waiter while another bot was
-            # submitting. Refresh before reading the cached page.
+            # submitting. Refresh before reading the cached page, and decide
+            # from that status rather than the database: a release between the
+            # two would leave take_page submitting the stale waiting page.
             bot.refresh_status()
-            current_page = bot.get_current_page()
-            if getattr(current_page, "barrier_id", None) in stop_at:
+            page = bot.status.get("page") or {}
+            if page.get("barrier_id") in stop_at:
                 continue
-            if isinstance(current_page, WaitPage) or getattr(
-                current_page, "is_timeline_hold", False
-            ):
+            if page.get("is_wait_page") or page.get("is_timeline_hold"):
                 waiting.append(bot)
                 bot.take_page()
         if not waiting:

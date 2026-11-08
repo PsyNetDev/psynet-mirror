@@ -10,7 +10,6 @@ from psynet.asset import Asset
 from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.experiment import Request
 from psynet.modular_page import ModularPage
-from psynet.page import WaitPage
 from psynet.participant import DriverStopped, ParticipantDriver
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import Response
@@ -122,15 +121,20 @@ class TestRunBot:
         assert page.label == "favourite_colour"
 
 
-def test_advance_past_wait_pages_refreshes_status_when_server_already_advanced():
-    """Last-arrival skip must refresh bot drivers, not leave cached hold copy."""
+def test_advance_past_wait_pages_takes_the_page_the_status_shows():
+    """A release after the status refresh must not leave a stale hold cached."""
     from psynet.bot import advance_past_wait_pages
 
     bot = MagicMock()
+    bot.status = {"page": {"is_timeline_hold": True}}
+
+    def take_page():
+        bot.status = {"page": {"is_timeline_hold": False}}
+
+    bot.take_page.side_effect = take_page
     bot.get_current_page.return_value = SimpleNamespace(is_timeline_hold=False)
     advance_past_wait_pages([bot])
-    bot.take_page.assert_not_called()
-    bot.refresh_status.assert_called_once()
+    bot.take_page.assert_called_once()
 
 
 def test_advance_past_wait_pages_refreshes_before_each_wait_iteration():
@@ -139,12 +143,10 @@ def test_advance_past_wait_pages_refreshes_before_each_wait_iteration():
 
     bot = MagicMock()
 
-    def current_page():
-        if bot.take_page.call_count:
-            return SimpleNamespace(is_timeline_hold=False)
-        return SimpleNamespace(is_timeline_hold=True)
+    def refresh_status():
+        bot.status = {"page": {"is_timeline_hold": not bot.take_page.call_count}}
 
-    bot.get_current_page.side_effect = current_page
+    bot.refresh_status.side_effect = refresh_status
     advance_past_wait_pages([bot])
     assert bot.take_page.call_count == 1
     assert bot.refresh_status.call_count == 2
@@ -154,10 +156,8 @@ def test_advance_past_wait_pages_leaves_bots_at_stop_at_barriers():
     from psynet.bot import advance_past_wait_pages
 
     bot, other = MagicMock(), MagicMock()
-    bot.get_current_page.return_value = SimpleNamespace(
-        is_timeline_hold=True, barrier_id="offer_made"
-    )
-    other.get_current_page.return_value = SimpleNamespace()
+    bot.status = {"page": {"is_timeline_hold": True, "barrier_id": "offer_made"}}
+    other.status = {"page": {}}
     advance_past_wait_pages([bot, other], stop_at="offer_made")
     bot.take_page.assert_not_called()
 
@@ -451,7 +451,7 @@ def test_advance_past_wait_pages_names_bots_still_waiting():
     stuck = SimpleNamespace(
         id=7,
         refresh_status=lambda: None,
-        get_current_page=lambda: WaitPage(wait_time=1),
+        status={"page": {"is_wait_page": True}},
         take_page=lambda: None,
     )
     with pytest.raises(RuntimeError, match=r"Bots \[7\] .* after 0 s"):
