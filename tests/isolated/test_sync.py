@@ -1205,7 +1205,7 @@ def test_manual_sync_group_participant_kick_dissolves_group_below_min_size(
         min_group_size=3,
         n_active_participants=3,
         accepts_top_ups=False,
-        fail_participants_below_min_size=fail_below_min_size,
+        fail_participants_below_quorum=fail_below_min_size,
     )
     db_session.add(group)
     for participant in participants:
@@ -6637,7 +6637,7 @@ def test_group_barrier_late_after_kick_missing_participants(
         min_group_size=min_group_size,
         n_active_participants=4,
         accepts_top_ups=False,
-        fail_participants_below_min_size=True,
+        fail_participants_below_quorum=True,
     )
     db_session.add(group)
     for p in participants:
@@ -6683,7 +6683,7 @@ def test_late_after_counts_from_joining_the_group(
 ):
     """A GroupBarrier kicks members late since grouping or the last barrier, but not a newcomer."""
     exp = get_experiment()
-    grouper = SimpleGrouper("main", initial_group_size=3, min_group_size=2)
+    grouper = SimpleGrouper("main", initial_group_size=3, quorum=2)
     participants = _working_participants(exp, 3)
     for participant in participants:
         _arrive_at_group_barrier(exp, grouper, participant)
@@ -6720,7 +6720,7 @@ def test_late_after_follows_a_timed_page(
 ):
     """A between-barrier timeout waits for a timed page's answer, but no longer."""
     exp = get_experiment()
-    grouper = SimpleGrouper("main", initial_group_size=7, min_group_size=2)
+    grouper = SimpleGrouper("main", initial_group_size=7, quorum=2)
     participants = _working_participants(exp, 7)
     (
         waiting,
@@ -6893,7 +6893,7 @@ def test_group_barrier_late_after_kick_releases_waiters_after_dissolution(
         min_group_size=3,
         n_active_participants=3,
         accepts_top_ups=False,
-        fail_participants_below_min_size=False,
+        fail_participants_below_quorum=False,
     )
     db_session.add(group)
     for p in participants:
@@ -6937,7 +6937,7 @@ def test_group_barrier_would_release_predicts_late_after(
         min_group_size=min_group_size,
         n_active_participants=3,
         accepts_top_ups=accepts_top_ups,
-        fail_participants_below_min_size=False,
+        fail_participants_below_quorum=False,
     )
     db_session.add(group)
     for p in participants:
@@ -6984,7 +6984,7 @@ def test_group_barrier_late_after_fail_missing_participants(
         min_group_size=2,
         n_active_participants=3,
         accepts_top_ups=False,
-        fail_participants_below_min_size=True,
+        fail_participants_below_quorum=True,
     )
     db_session.add(group)
     for p in participants:
@@ -7004,12 +7004,12 @@ def test_group_barrier_late_after_fail_missing_participants(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 @pytest.mark.parametrize("fail_below_min_size", [True, False])
-def test_group_barrier_fail_participants_below_min_size(
+def test_group_barrier_fail_participants_below_quorum(
     in_experiment_directory, db_session, fail_below_min_size
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
-        id_="fail_participants_below_min_size",
+        id_="fail_participants_below_quorum",
         group_type="main",
     )
 
@@ -7025,7 +7025,7 @@ def test_group_barrier_fail_participants_below_min_size(
         min_group_size=3,
         n_active_participants=2,
         accepts_top_ups=False,
-        fail_participants_below_min_size=fail_below_min_size,
+        fail_participants_below_quorum=fail_below_min_size,
     )
     group.last_barrier_pass_time = timenow()
     db_session.add(group)
@@ -7065,7 +7065,7 @@ def test_group_barrier_below_min_size_only_releases_waiting_participants(
         min_group_size=3,
         n_active_participants=2,
         accepts_top_ups=False,
-        fail_participants_below_min_size=True,
+        fail_participants_below_quorum=True,
     )
     db_session.add(group)
     group.add_participant(waiting_participant)
@@ -7102,7 +7102,7 @@ def test_group_barrier_participant_kick(in_experiment_directory, db_session):
         min_group_size=1,
         n_active_participants=1,
         accepts_top_ups=False,
-        fail_participants_below_min_size=True,
+        fail_participants_below_quorum=True,
     )
     db_session.add(group)
     group.add_participant(participant)
@@ -7134,7 +7134,7 @@ def test_group_barrier_max_wait_kick_releases_barrier_link(
         min_group_size=1,
         n_active_participants=1,
         accepts_top_ups=False,
-        fail_participants_below_min_size=True,
+        fail_participants_below_quorum=True,
     )
     db_session.add(group)
     group.add_participant(participant)

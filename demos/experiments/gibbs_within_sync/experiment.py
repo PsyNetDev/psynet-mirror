@@ -184,6 +184,7 @@ class Exp(psynet.experiment.Experiment):
         SimpleGrouper(
             group_type="gibbs",
             initial_group_size=3,
+            quorum=3,
             join_existing_groups=True,
             join_criterion=is_group_joinable,
             waiting_message="Waiting for more people to join your group",
@@ -222,7 +223,7 @@ class Exp(psynet.experiment.Experiment):
         # Now we make one of the bots fail during a trial
         bots[0].fail(reason="simulated_failure")
         group = SyncGroup.query.one()
-        assert group.n_active_participants < group.min_group_size
+        assert group.n_active_participants < group.quorum
 
         # Bring in a new bot to replace the failed one
         new_bot = bots[3]

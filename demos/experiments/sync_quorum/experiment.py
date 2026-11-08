@@ -79,7 +79,7 @@ class Exp(psynet.experiment.Experiment):
                 "quorum",
                 initial_group_size=3,
                 max_group_size=None,
-                min_group_size=3,
+                quorum=3,
                 join_existing_groups=True,
                 waiting_logic=filler,
                 expected_wait=10 * AnimalTrial.time_estimate,
@@ -95,7 +95,7 @@ class Exp(psynet.experiment.Experiment):
                         "check_quorate",
                         condition=lambda participant: (
                             participant.sync_group.n_active_participants
-                            >= participant.sync_group.min_group_size
+                            >= participant.sync_group.quorum
                         ),
                         logic_if_true=PageMaker(show_quorum, time_estimate=5),
                         logic_if_false=filler,

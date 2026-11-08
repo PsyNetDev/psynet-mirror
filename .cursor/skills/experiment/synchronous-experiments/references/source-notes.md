@@ -19,7 +19,7 @@ and platform docs when a study is near deployment.
   `on_arrival_message` notice copy to a short sentence. Set
   `notify_arrivals=False` to disable them, or customize copy with
   `on_arrival_message`.
-  It checks `min_group_size`, can wait for top-ups, can fail under-quota groups,
+  It checks the group's `quorum`, can wait for top-ups, can fail under-quota groups,
   and accepts `on_release(group, participants, leader, barrier)` for atomic shared updates.
   The `barrier` argument is reconstructed; see
   `docs/code/multiplayer/synchronization.rst` (published at https://psynetdev.gitlab.io/PsyNet/code/multiplayer/synchronization.html) ("Release callbacks").
@@ -28,8 +28,8 @@ and platform docs when a study is near deployment.
   The last arrival runs the same framework-owned evaluation in that request so
   pairing does not wait for the 0.5 s poller; lock contention falls back to the
   poller.
-  `min_group_size`, `max_group_size`, `join_existing_groups`, and
-  `join_criterion` control top-up behavior.
+  `quorum` (how many members a group needs to keep going), `max_group_size`,
+  `join_existing_groups`, and `join_criterion` control top-up behavior.
 - `psynet.sync.GroupCloser` closes a group before participants are regrouped
   with the same `group_type`.
 - `participant.sync_group` is convenient when the participant has one active

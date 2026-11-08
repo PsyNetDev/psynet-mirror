@@ -159,6 +159,8 @@ class Exp(psynet.experiment.Experiment):
         SimpleGrouper(
             group_type="create_rate",
             initial_group_size=3,
+            # Every member creates and rates, so the group can't lose anyone.
+            quorum=3,
             waiting_message="Waiting for the rest of your group",
         ),
         CreateRateTrialMaker(

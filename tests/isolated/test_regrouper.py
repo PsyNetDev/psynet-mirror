@@ -66,7 +66,7 @@ def test_regrouper_pairs_within_cohorts_and_does_not_wait_for_absent_members(
     pairs = Regrouper(
         "pair",
         within="cohort",
-        max_group_size=2,
+        group_size=2,
         deadline=30,
         waiting_message="Next round (<1 min) in {SECONDS} s",
     )
@@ -109,7 +109,7 @@ def test_every_regrouper_splits_everyone_waiting_into_balanced_rooms(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    rooms = Regrouper("room", max_group_size=3, every=45)
+    rooms = Regrouper("room", group_size=3, every=45)
     participants = _working_participants(exp, 6)
     _arrive(exp, rooms, participants)
     assert not rooms.would_release(participants)
@@ -138,7 +138,7 @@ def test_regrouper_countdown_after_a_concurrent_release(
 ):
     """Another request can put a waiter into a group while their countdown is drawn."""
     exp = get_experiment()
-    rooms = Regrouper("room", max_group_size=3, deadline=30, release_left_over=True)
+    rooms = Regrouper("room", group_size=3, deadline=30, release_left_over=True)
     participants = _working_participants(exp, 2)
     _arrive(exp, rooms, participants)
     populate = sync._populate_active_barriers
@@ -168,7 +168,7 @@ def test_regrouper_countdown_and_form_groups_check_use_the_whole_pool(
     exp = get_experiment()
     pairs = Regrouper(
         "pair",
-        max_group_size=2,
+        group_size=2,
         deadline=30,
         form_groups=_put_first_member_in_two_groups,
     )
@@ -192,7 +192,7 @@ def test_regrouper_cohorts_have_their_own_deadlines(
 ):
     exp = get_experiment()
     cohort_grouper = SimpleGrouper("cohort", initial_group_size=3)
-    pairs = Regrouper("pair", within="cohort", max_group_size=2, deadline=30)
+    pairs = Regrouper("pair", within="cohort", group_size=2, deadline=30)
     cohorts = [_working_participants(exp, 3) for _ in range(2)]
     for cohort in cohorts:
         _arrive(exp, cohort_grouper, cohort)
@@ -264,6 +264,21 @@ def test_simple_grouper_checks_start_short_after(kwargs, message):
         SimpleGrouper("lobby", initial_group_size=4, **kwargs)
 
 
+def test_simple_grouper_quorum():
+    def lobby(**kwargs):
+        return SimpleGrouper("lobby", initial_group_size=4, max_wait_time=120, **kwargs)
+
+    short = {"start_short_after": 60, "start_short_with": 2}
+    assert lobby(quorum=3).quorum == 3
+    assert lobby(**short).quorum == 2
+    with pytest.raises(ValueError, match="at most start_short_with"):
+        lobby(quorum=3, **short)
+    with pytest.warns(UserWarning, match="Pass quorum"):
+        assert lobby().quorum == 4
+    with pytest.warns(FutureWarning, match="deprecated"):
+        assert lobby(min_group_size=3).quorum == 3
+
+
 def _five_minutes(participant):
     return 300
 
@@ -291,7 +306,7 @@ def test_regrouper_left_over_waits_for_cohort_still_in_the_round(
     pairs = Regrouper(
         "pair",
         within="cohort",
-        max_group_size=2,
+        group_size=2,
         deadline=15,
         release_left_over=True,
         on_release=_count_releases,
@@ -335,7 +350,7 @@ def test_every_regrouper_left_over_waits_one_more_tick(
     pairs = Regrouper(
         "pair",
         within="cohort",
-        max_group_size=2,
+        group_size=2,
         every=15,
         release_left_over=True,
     )
@@ -359,12 +374,12 @@ def test_every_regrouper_left_over_waits_one_more_tick(
 @pytest.mark.parametrize(
     "kwargs, message",
     [
-        ({}, "needs max_group_size"),
-        ({"roles": ["a", "b"], "max_group_size": 3}, "len\\(roles\\)"),
-        ({"max_group_size": 2, "deadline": 30, "every": 30}, "not both"),
-        ({"max_group_size": 2, "fail_participants_below_min_size": False}, "never"),
-        ({"max_group_size": 2, "deadline": 0}, "deadline must be positive"),
-        ({"max_group_size": 2, "every": 0}, "every must be positive"),
+        ({}, "needs group_size"),
+        ({"roles": ["a", "b"], "group_size": 3}, "len\\(roles\\)"),
+        ({"group_size": 2, "deadline": 30, "every": 30}, "not both"),
+        ({"group_size": 2, "fail_participants_below_quorum": False}, "never"),
+        ({"group_size": 2, "deadline": 0}, "deadline must be positive"),
+        ({"group_size": 2, "every": 0}, "every must be positive"),
     ],
 )
 def test_regrouper_checks_its_settings(kwargs, message):
@@ -375,7 +390,7 @@ def test_regrouper_checks_its_settings(kwargs, message):
 def test_regrouper_max_wait_time_outlasts_a_lone_wait():
     def pairs(**kwargs):
         return Regrouper(
-            "pair", within="cohort", max_group_size=2, release_left_over=True, **kwargs
+            "pair", within="cohort", group_size=2, release_left_over=True, **kwargs
         )
 
     assert pairs(deadline=30).max_wait_time == 300
@@ -414,7 +429,7 @@ def test_a_busy_player_does_not_hold_up_other_cohorts(
     cohort_a, cohort_b = _working_participants(exp, 2), _working_participants(exp, 2)
     _arrive(exp, cohort_grouper, cohort_a)
     _arrive(exp, cohort_grouper, cohort_b)
-    pairs = Regrouper("pair", within="cohort", max_group_size=2, deadline=30)
+    pairs = Regrouper("pair", within="cohort", group_size=2, deadline=30)
     _arrive(exp, pairs, cohort_a[:1])
 
     with Session(bind=db.engine) as busy_request:
@@ -428,7 +443,7 @@ def test_a_busy_player_does_not_hold_up_other_cohorts(
 
 
 def _cohort_and_pairs(exp, n, **kwargs):
-    cohort_grouper = SimpleGrouper("cohort", initial_group_size=n, min_group_size=2)
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=n, quorum=2)
     pairs = Regrouper(
         "pair",
         within="cohort",

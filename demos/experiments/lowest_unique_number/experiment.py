@@ -17,11 +17,11 @@ To keep the same people together across rounds, for example in cohorts, form
 the cohorts first and regroup within them::
 
     SimpleGrouper(
-        "cohort", initial_group_size=8, min_group_size=2,
+        "cohort", initial_group_size=8, quorum=2,
         start_short_after=60, start_short_with=2, max_wait_time=300,
     ),
     ...
-    Regrouper("room", within="cohort", max_group_size=4, deadline=30),
+    Regrouper("room", within="cohort", group_size=4, deadline=30),
 
 See the ``ultimatum_pairing`` demo for a full example.
 """
@@ -158,8 +158,8 @@ def play_round():
     return join(
         Regrouper(
             "room",
-            max_group_size=ROOM_SIZE,
-            min_group_size=2,
+            group_size=ROOM_SIZE,
+            smallest_group=2,
             every=ROUND_SECONDS,
             waiting_message=round_message,
             waiting_screen="Getting the next round ready.",

@@ -143,6 +143,7 @@ from sqlalchemy.orm import (
     object_session,
     relationship,
     selectinload,
+    synonym,
 )
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -1813,7 +1814,7 @@ class GroupBarrier(Barrier):
             if outcome == "dissolve":
                 # The group can never reach its minimum size, so remove everyone
                 # and release whoever is waiting here, failing them first when
-                # fail_participants_below_min_size is True.
+                # fail_participants_below_quorum is True.
                 participants_to_release.extend(
                     participant
                     for participant in group._dissolve()
@@ -2051,14 +2052,6 @@ class Grouper(Barrier):
         If ``True``, award fixed ``expected_wait`` credit instead of actual
         visible waiting time.
 
-    fail_participants_below_min_size
-        Applies to groups that have a minimum size and don't accept top-ups, such as those created
-        by :class:`~psynet.sync.SimpleGrouper`. When a member leaves and the group falls below its
-        minimum size, the group is dissolved at once. If ``True`` (default), the remaining members
-        are failed. If ``False``, they are removed from the group without being failed and continue
-        alone. A member whose own request is in progress is handled within about a second by the
-        barrier poller instead.
-
     release_grace
         See :class:`Barrier`. Default: 3 seconds.
 
@@ -2074,7 +2067,6 @@ class Grouper(Barrier):
         waiting_logic=None,
         waiting_logic_expected_repetitions=None,
         max_wait_time=20,
-        fail_participants_below_min_size: bool = True,
         expected_wait=None,
         fix_time_credit=False,
         waiting_message=None,
@@ -2095,7 +2087,6 @@ class Grouper(Barrier):
             waiting_screen=waiting_screen,
         )
         self.group_type = group_type
-        self.fail_participants_below_min_size = fail_participants_below_min_size
 
     def ready_to_group(self, participants: List[Participant]) -> bool:
         """
@@ -2221,11 +2212,18 @@ class SimpleGrouper(Grouper):
         they reach this maximum size. If set to ``"initial_group_size"`` (default),
         then the maximum size will be set to the initial group size.
 
+    quorum
+        How many active members a group needs to keep going. A group whose
+        members fail or leave until it has fewer than this is below quorum:
+        with ``join_existing_groups=True`` its barriers wait for newcomers,
+        and otherwise it is dissolved (see ``fail_participants_below_quorum``).
+        Defaults to ``start_short_with`` if given, and otherwise to
+        ``initial_group_size``, so that a group needs all its members; for
+        groups of three or more, leaving it out warns. Must be at most
+        ``start_short_with``.
+
     min_group_size
-        If the current group size is below this value (taking into account failed participants
-        and participants who have left the experiment), then the group will be considered under-quota.
-        The group will not be allowed to pass through barriers until it is at or above this size.
-        If set to ``"initial_group_size"`` (default), then the minimum size will be set to the initial group size.
+        Deprecated name for ``quorum``.
 
     batch_size
         Number of participants that should be waiting until the groups are created.
@@ -2244,7 +2242,7 @@ class SimpleGrouper(Grouper):
         if the participant should be allowed to join the group, and ``False`` otherwise.
         To be used in conjunction with ``join_existing_groups=True``.
 
-    fail_participants_below_min_size
+    fail_participants_below_quorum
         When a member leaves a group that doesn't accept top-ups and the group falls below
         ``min_group_size``, the group is dissolved at once. If ``True`` (default), the remaining
         members are failed. If ``False``, they are removed from the group without being failed and
@@ -2263,9 +2261,8 @@ class SimpleGrouper(Grouper):
     start_short_with
         The smallest group that ``start_short_after`` may start, between 1 and
         ``initial_group_size``. Required with ``start_short_after``, and only used with it.
-        A smaller group started this way uses the lower of ``min_group_size`` and
-        ``start_short_with`` as its minimum size, so that it isn't dissolved, or held for
-        top-ups, at its first barrier.
+        ``quorum`` defaults to it and may not exceed it, so that a group started this way
+        is not below quorum at its first barrier.
 
     kwargs
         Further arguments to pass to Grouper.
@@ -2277,13 +2274,14 @@ class SimpleGrouper(Grouper):
         *,
         initial_group_size: Optional[int] = None,
         max_group_size: Optional[Union[int, str]] = "initial_group_size",
-        min_group_size: Union[int, str] = "initial_group_size",
+        min_group_size: Union[int, str] = NoArgumentProvided,
         batch_size: Union[int, str] = "initial_group_size",
         join_existing_groups: bool = False,
         join_criterion: Optional[Callable] = None,
-        fail_participants_below_min_size: bool = True,
+        fail_participants_below_quorum: bool = True,
         start_short_after: Optional[float] = None,
         start_short_with: Optional[int] = None,
+        quorum: Optional[int] = None,
         **kwargs,
     ):
         if "group_size" in kwargs:
@@ -2309,19 +2307,25 @@ class SimpleGrouper(Grouper):
                     "initial size by taking newcomers."
                 )
 
-        if min_group_size == "initial_group_size":
-            min_group_size = initial_group_size
-
+        if min_group_size is not NoArgumentProvided:
+            if quorum is not None:
+                raise ValueError("Pass quorum, not also its old name min_group_size.")
+            warn_from_caller(
+                "SimpleGrouper(min_group_size=...) is deprecated; pass quorum=... "
+                "instead (how many active members a group needs to keep going).",
+                FutureWarning,
+            )
+            if min_group_size != "initial_group_size":
+                quorum = min_group_size
         if batch_size == "initial_group_size":
             batch_size = initial_group_size
 
         self.initial_group_size = initial_group_size
         self.max_group_size = max_group_size
-        self.min_group_size = min_group_size
         self.batch_size = batch_size
         self.join_existing_groups = join_existing_groups
         self.join_criterion = join_criterion
-        self.fail_participants_below_min_size = fail_participants_below_min_size
+        self.fail_participants_below_quorum = fail_participants_below_quorum
         if (start_short_after is None) != (start_short_with is None):
             raise ValueError(
                 "Pass start_short_after and start_short_with together: how long to "
@@ -2335,6 +2339,35 @@ class SimpleGrouper(Grouper):
                 f"got {start_short_with}."
             )
         if (
+            quorum is None
+            and start_short_with is None
+            and min_group_size is NoArgumentProvided
+            and initial_group_size > 2
+        ):
+            warn_from_caller(
+                f"SimpleGrouper('{group_type}') makes groups of "
+                f"{initial_group_size} that need all {initial_group_size} members "
+                "to keep going. Pass quorum=... to choose how many members a "
+                f"group needs (quorum={initial_group_size} keeps this behavior).",
+                UserWarning,
+            )
+        if quorum is None:
+            quorum = (
+                start_short_with if start_short_with is not None else initial_group_size
+            )
+        if quorum < 1 or (quorum > initial_group_size and not join_existing_groups):
+            raise ValueError(
+                f"Need 1 <= quorum <= initial_group_size, got quorum={quorum} "
+                "(a larger quorum needs join_existing_groups=True)."
+            )
+        if start_short_with is not None and quorum > start_short_with:
+            raise ValueError(
+                f"quorum ({quorum}) must be at most start_short_with "
+                f"({start_short_with}): a group started short would already be "
+                "below quorum."
+            )
+        self.quorum = quorum
+        if (
             start_short_after is not None
             and self.max_wait_time is not None
             and not callable(self.max_wait_time)
@@ -2347,6 +2380,11 @@ class SimpleGrouper(Grouper):
             )
         self.start_short_after = start_short_after
         self.start_short_with = start_short_with
+
+    @property
+    def min_group_size(self):
+        """Deprecated name for :attr:`quorum`."""
+        return self.quorum
 
     def resolve(self):
         from .timeline import conditional, join
@@ -2547,15 +2585,8 @@ class SimpleGrouper(Grouper):
 
     def group(self, participants: List[Participant]) -> List["SyncGroup"]:
         if len(participants) < self.initial_group_size:
-            min_group_size = self.min_group_size
-            if self.start_short_with is not None:
-                min_group_size = min(min_group_size, self.start_short_with)
             return [
-                self._make_group(
-                    participants,
-                    initial_group_size=len(participants),
-                    min_group_size=min_group_size,
-                )
+                self._make_group(participants, initial_group_size=len(participants))
             ]
         n_groups = floor(len(participants) / self.initial_group_size)
         n_participants_to_group = n_groups * self.initial_group_size
@@ -2565,23 +2596,19 @@ class SimpleGrouper(Grouper):
             participants_to_group, group_size=self.initial_group_size
         )
         return [
-            self._make_group(
-                _participants,
-                initial_group_size=self.initial_group_size,
-                min_group_size=self.min_group_size,
-            )
+            self._make_group(_participants, initial_group_size=self.initial_group_size)
             for _participants in grouped_participants
         ]
 
-    def _make_group(self, participants, *, initial_group_size, min_group_size):
+    def _make_group(self, participants, *, initial_group_size):
         """Create one group of these participants with this grouper's settings."""
         return self._create_group(
             participants,
             initial_group_size=initial_group_size,
             max_group_size=self.max_group_size,
-            min_group_size=min_group_size,
+            min_group_size=self.quorum,
             accepts_top_ups=self.join_existing_groups,
-            fail_participants_below_min_size=self.fail_participants_below_min_size,
+            fail_participants_below_quorum=self.fail_participants_below_quorum,
         )
 
     @staticmethod
@@ -2661,15 +2688,18 @@ class Regrouper(Grouper):
         is released ungrouped. If ``None`` (default), everyone waiting is one pool,
         which is only split at the ``deadline`` or ``every`` tick.
 
-    max_group_size
-        Largest group to form. The pool is split into balanced groups of at
-        most this size, for example rooms of 8, 8, 7 and 7 for 30 people.
-        Required unless ``roles`` is given, which sets the group size.
+    group_size
+        Size of the groups to form. The pool is split into balanced groups of
+        at most this size, for example rooms of 8, 8, 7 and 7 for 30 people
+        with ``group_size=8``. Required unless ``roles`` is given, which sets
+        it.
 
-    min_group_size
-        Smallest group to form: 2 by default (or ``max_group_size`` if that
-        is smaller). A pool is only split once this many of its members are
-        waiting. With ``roles`` every group has one member per role.
+    smallest_group
+        Smallest group to form when the pool doesn't divide evenly or members
+        are missing: 2 by default (or ``group_size`` if that is smaller). A
+        pool is only split once this many of its members are waiting. Groups
+        are never dissolved later, so a group can carry on below this size.
+        With ``roles`` every group has one member per role.
 
     deadline
         Seconds to wait for absent members, counted from when the first of
@@ -2683,13 +2713,13 @@ class Regrouper(Grouper):
     every
         Seconds between fixed wall-clock ticks. The pool is split only at a
         tick, even when everyone is already waiting, if at least
-        ``min_group_size`` members were waiting at the tick. Pass either
+        ``smallest_group`` members were waiting at the tick. Pass either
         ``deadline`` or ``every``, not both.
 
     roles
         Optional role names, for example ``["proposer", "responder"]``. Each
         group then has one member per role, so groups have ``len(roles)``
-        members; ``max_group_size``, if given, must equal it. Read a member's role
+        members; ``group_size``, if given, must equal it. Read a member's role
         with :meth:`role`. By default each member gets the role they have had
         least often, so roles alternate from round to round.
 
@@ -2755,8 +2785,8 @@ class Regrouper(Grouper):
         group_type: str,
         *,
         within: Optional[str] = None,
-        max_group_size: Optional[int] = None,
-        min_group_size: Optional[int] = None,
+        group_size: Optional[int] = None,
+        smallest_group: Optional[int] = None,
         deadline: Optional[float] = None,
         every: Optional[float] = None,
         roles: Optional[Sequence[str]] = None,
@@ -2770,25 +2800,24 @@ class Regrouper(Grouper):
         if roles is not None:
             if len(set(roles)) != len(roles):
                 raise ValueError("Pass distinct role names.")
-            if max_group_size not in (None, len(roles)):
-                raise ValueError(
-                    "With roles, each group has one member per role, so "
-                    "max_group_size must equal len(roles) or be left out."
-                )
-            if min_group_size not in (None, len(roles)):
-                raise ValueError(
-                    "With roles, each group has one member per role, so "
-                    "min_group_size must equal len(roles) or be left out."
-                )
-            max_group_size = min_group_size = len(roles)
+            for name, value in (
+                ("group_size", group_size),
+                ("smallest_group", smallest_group),
+            ):
+                if value not in (None, len(roles)):
+                    raise ValueError(
+                        "With roles, each group has one member per role, so "
+                        f"{name} must equal len(roles) or be left out."
+                    )
+            group_size = smallest_group = len(roles)
         elif keep_roles:
             raise ValueError("keep_roles needs roles.")
-        elif max_group_size is None:
-            raise ValueError("Regrouper needs max_group_size, or roles.")
-        if min_group_size is None:
-            min_group_size = min(2, max_group_size)
-        if min_group_size < 1 or max_group_size < min_group_size:
-            raise ValueError("Need 1 <= min_group_size <= max_group_size.")
+        elif group_size is None:
+            raise ValueError("Regrouper needs group_size, or roles.")
+        if smallest_group is None:
+            smallest_group = min(2, group_size)
+        if smallest_group < 1 or group_size < smallest_group:
+            raise ValueError("Need 1 <= smallest_group <= group_size.")
         if deadline is not None and every is not None:
             raise ValueError(
                 "Pass deadline (a timeout) or every (fixed ticks), not both."
@@ -2802,10 +2831,10 @@ class Regrouper(Grouper):
                 "A Regrouper without `within` needs a deadline or every, because "
                 "it cannot tell when everyone is present."
             )
-        if "fail_participants_below_min_size" in kwargs:
+        if "fail_participants_below_quorum" in kwargs:
             raise TypeError(
                 "Regrouper groups are never dissolved when a member leaves, so "
-                "fail_participants_below_min_size doesn't apply."
+                "fail_participants_below_quorum doesn't apply."
             )
         longest_lone_wait = every or deadline
         if max_wait_time is NoArgumentProvided:
@@ -2826,8 +2855,8 @@ class Regrouper(Grouper):
         kwargs.setdefault("id_", f"{group_type}_regrouper")
         super().__init__(group_type=group_type, max_wait_time=max_wait_time, **kwargs)
         self.within = within
-        self.max_group_size = max_group_size
-        self.min_group_size = min_group_size
+        self.group_size = group_size
+        self.smallest_group = smallest_group
         self.deadline = deadline
         self.every = every
         self.roles = None if roles is None else list(roles)
@@ -2846,7 +2875,7 @@ class Regrouper(Grouper):
         """Return the groups to form from one pool's waiting members.
 
         By default members are put into balanced groups of at most
-        ``max_group_size`` and at least ``min_group_size``, or into one group per
+        ``group_size`` and at least ``smallest_group``, or into one group per
         set of ``roles``. Those who have played the most rounds sit out, and
         members are kept apart from last time's group where possible.
         """
@@ -2873,13 +2902,11 @@ class Regrouper(Grouper):
             )
         n_placed = sum(
             len(group)
-            for group in _balanced_groups(
-                members, self.max_group_size, self.min_group_size
-            )
+            for group in _balanced_groups(members, self.group_size, self.smallest_group)
         )
         players = members[:n_placed]
         return self._best_groups(
-            lambda: _balanced_groups(players, self.max_group_size, self.min_group_size),
+            lambda: _balanced_groups(players, self.group_size, self.smallest_group),
             history,
         )
 
@@ -3229,7 +3256,7 @@ class Regrouper(Grouper):
     def _smallest_pool_to_split(self, within_group, members) -> int:
         if self._may_release_only_left_over(within_group, members):
             return 1
-        return self.min_group_size
+        return self.smallest_group
 
     def _deadline_passed(self, within_group, members) -> bool:
         now = time.time()
@@ -3377,7 +3404,7 @@ class Regrouper(Grouper):
             max_group_size=len(participants),
             min_group_size=1,
             accepts_top_ups=False,
-            fail_participants_below_min_size=False,
+            fail_participants_below_quorum=False,
         )
 
 
@@ -3613,12 +3640,12 @@ class SyncGroup(SQLBase, SQLMixin):
         list of Participant
             The members removed now.
         """
-        self._dissolving_below_min_size = True
+        self._dissolving_below_quorum = True
         try:
             remaining = list(self.active_participants)
             removed = _lock_free_participants(remaining)
             for participant in removed:
-                if getattr(self, "fail_participants_below_min_size", True):
+                if getattr(self, "fail_participants_below_quorum", True):
                     participant.fail("sync group below minimum size")
                 SyncGroup.remove_participant(self, participant)
             self.check_numbers()
@@ -3626,7 +3653,7 @@ class SyncGroup(SQLBase, SQLMixin):
             if self.n_active_participants == 0:
                 self.close()
         finally:
-            self._dissolving_below_min_size = False
+            self._dissolving_below_quorum = False
         return removed
 
 
@@ -3638,8 +3665,10 @@ class SimpleSyncGroup(SyncGroup):
     initial_group_size = Column(Integer)
     max_group_size = Column(Integer)
     min_group_size = Column(Integer)
+    #: How many active members the group needs to keep going.
+    quorum = synonym("min_group_size")
     accepts_top_ups = Column(Boolean)
-    fail_participants_below_min_size = Column(Boolean, default=True)
+    fail_participants_below_quorum = Column(Boolean, default=True)
 
     def remove_participant(
         self,
@@ -3647,16 +3676,16 @@ class SimpleSyncGroup(SyncGroup):
         reason: Optional[Literal["moved_on", "late"]] = None,
     ):
         super().remove_participant(participant, reason=reason)
-        self.dissolve_if_below_min_size()
+        self.dissolve_if_below_quorum()
 
-    def dissolve_if_below_min_size(self):
+    def dissolve_if_below_quorum(self):
         """Dissolve a group without top-ups that fell below its minimum size.
 
         Members who are busy in another request are handled shortly after
         by the barrier poller; see :meth:`SyncGroup._dissolve`.
         """
         if (
-            getattr(self, "_dissolving_below_min_size", False)
+            getattr(self, "_dissolving_below_quorum", False)
             or self.accepts_top_ups
             or self.n_active_participants >= self.min_group_size
         ):
@@ -4219,7 +4248,7 @@ def _ready_seats_for(participant):
 
 def _notify_membership_change(group, newcomer=None):
     """Have the other members of ``group`` fetch their notice and group again."""
-    if getattr(group, "_dissolving_below_min_size", False):
+    if getattr(group, "_dissolving_below_quorum", False):
         return
     for member in group.active_participants:
         if member is not newcomer:

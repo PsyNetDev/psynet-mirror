@@ -85,6 +85,7 @@ class Exp(psynet.experiment.Experiment):
             group_type="main",
             id_="main_grouper_of_3",
             initial_group_size=3,
+            quorum=3,
             waiting_logic=PageMaker(waiting_page, time_estimate=5),
             max_wait_time=20,
         ),

@@ -31,9 +31,13 @@ the grouper has a ``waiting_screen`` (see below).
     How many participants must be waiting before groups are formed. A larger
     batch lets you form several groups at once from the same pool.
 
-``min_group_size`` (default: ``initial_group_size``)
-    A group with fewer active members is below quota and cannot pass a
-    barrier; see `Waiting and dropouts`_.
+``quorum`` (default: ``start_short_with``, or else ``initial_group_size``)
+    How many active members a group needs to keep going. A group whose
+    members fail or leave until it has fewer is below quorum: it cannot pass
+    a barrier, and is dissolved unless it accepts top-ups; see
+    `Waiting and dropouts`_. For groups of three or more, leaving it out
+    warns, so that you decide how many may drop out. ``min_group_size`` is
+    a deprecated name for it.
 
 ``join_existing_groups`` (default: ``False``)
     If ``True``, an arriving participant first joins an existing group that
@@ -63,11 +67,11 @@ the grouper has a ``waiting_screen`` (see below).
     participant has waited ``start_short_after`` seconds and at least
     ``start_short_with`` are waiting, those waiting form a group even if
     there are fewer than ``batch_size``. Needs a ``max_wait_time`` (default
-    20 seconds) longer than ``start_short_after``. A group started short uses
-    the lower of ``min_group_size`` and ``start_short_with`` as its minimum
-    size, so that it isn't dissolved at its first barrier. With
+    20 seconds) longer than ``start_short_after``. ``quorum`` defaults to
+    ``start_short_with`` and may not be larger, so that a group started short
+    is not below quorum at its first barrier. With
     ``join_existing_groups=True``, later arrivals can fill the group up, but
-    a group that drops below its minimum then waits for a replacement;
+    a group that drops below quorum then waits for a replacement;
     leave it out to keep playing with fewer members (see
     :ref:`groups below minimum size <groups_below_min_size>`). A ``{SECONDS}`` placeholder in ``waiting_message`` counts down
     to that short start once ``start_short_with`` are waiting, and shows
@@ -522,7 +526,7 @@ limit, which act on different members:
     Size it to cover everything between the grouper and that barrier, such as
     instructions or a practice trial, or members who read slowly are late
     before they arrive. Removing a late member from the group can also take
-    the group below ``min_group_size``; a group that doesn't accept top-ups is then dissolved,
+    the group below its ``quorum``; a group that doesn't accept top-ups is then dissolved,
     which by default fails the members who arrived on time (see
     :ref:`groups below minimum size <groups_below_min_size>`).
 
@@ -566,7 +570,7 @@ the group size are left without a group and are failed.
 
 At later barriers, ``max_wait_time`` needs to cover how much longer some
 members take over the previous page than others. A member who times out
-there can take the group below ``min_group_size``, with the consequences
+there can take the group below its ``quorum``, with the consequences
 described under *Groups below minimum size* below.
 
 .. _groups_below_min_size:
@@ -574,7 +578,7 @@ described under *Groups below minimum size* below.
 Groups below minimum size
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-When failed or departed members take a group below ``min_group_size``, what
+When failed or departed members take a group below its ``quorum``, what
 happens depends on whether the group accepts top-ups:
 
 - With ``join_existing_groups=True``, the group's next barrier waits for new
@@ -582,7 +586,7 @@ happens depends on whether the group accepts top-ups:
   periodic sync-group check (every few seconds), and later arrivals form a
   new one.
 - Otherwise the group is dissolved as soon as the member leaves, and its
-  remaining members are failed. Set ``fail_participants_below_min_size=False``
+  remaining members are failed. Set ``fail_participants_below_quorum=False``
   on the grouper to remove them from the group without failing them, so that
   they continue alone. A member who is in the middle of a request at that
   moment (for example submitting a page) is handled by the background
@@ -597,12 +601,12 @@ options:
     SimpleGrouper(
         group_type="team",
         initial_group_size=4,
-        min_group_size=2,
+        quorum=2,
         start_short_after=60,
         start_short_with=2,
         max_wait_time=120,
         # The last member left continues alone instead of being failed.
-        fail_participants_below_min_size=False,
+        fail_participants_below_quorum=False,
     )
 
     # In each round, after the timed decision page:
@@ -614,7 +618,7 @@ options:
     )
 
 The grouper leaves out ``join_existing_groups``: a group that accepts
-top-ups waits for replacements when it drops below ``min_group_size``
+top-ups waits for replacements when it drops below its ``quorum``
 instead of carrying on. ``late_after`` counts from the previous barrier
 pass, so make it cover any untimed pages between the two barriers as well.
 

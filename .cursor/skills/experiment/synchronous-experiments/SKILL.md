@@ -79,7 +79,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Use `GroupCloser(group_type=...)` before regrouping participants with the same
   `group_type`.
 - For games played in rounds with changing partners or rooms, put a
-  `Regrouper(group_type, max_group_size=..., within=...)` at the start of each
+  `Regrouper(group_type, group_size=..., within=...)` at the start of each
   round instead of a grouper and closer. Pass `deadline=` to split once
   everyone is back or the timeout passes (`ultimatum_pairing`), or `every=`
   for rounds on fixed ticks (`lowest_unique_number`). Slow participants miss
