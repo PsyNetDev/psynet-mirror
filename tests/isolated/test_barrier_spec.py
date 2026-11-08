@@ -95,6 +95,17 @@ def test_barriers_sharing_an_id_must_share_partial_arguments():
     assert behavior_hash(barrier(1)) != behavior_hash(barrier(2))
 
 
+def waiting_text(seconds_left, team):
+    return f"{team}: {seconds_left}"
+
+
+def test_a_partial_waiting_message_is_saved_as_a_callback():
+    barrier = GroupBarrier(
+        "callback", group_type="pair", waiting_message=partial(waiting_text, team="A")
+    )
+    assert barrier.waiting_message(seconds_left=3) == "A: 3"
+
+
 def test_reconstructed_barrier_runs_release_hooks():
     original = ThresholdBarrier("threshold", threshold=2)
     restored = barrier_from_spec_json(barrier_spec_json(original))

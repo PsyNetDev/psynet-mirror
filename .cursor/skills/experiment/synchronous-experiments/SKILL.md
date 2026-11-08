@@ -68,8 +68,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `waiting_message` and timeouts from it. Wait pages stay on the live timeline
   barrier (see "Release callbacks" in `code/multiplayer/synchronization`).
   To share one callback between barriers, give each its own keyword
-  arguments, `on_release=partial(score_question, question=1)`, instead of
-  parsing `barrier.id`. `on_release` doesn't run
+  arguments with `functools.partial` instead of parsing `barrier.id`
+  (see "Release callbacks"). `on_release` doesn't run
   for members who left before the release or whose group dissolved, so read
   what it stores with `participant.var.get("score")`, which returns `None`
   when it isn't set. Pass the same function as `on_dissolve` too when members
@@ -126,9 +126,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   once entered, so pass a list of the rounds' steps,
   `only_in_group("pair", [round_steps(n) for n in range(N_ROUNDS)])`, or put
   `only_in_group` inside the loop. Put the grouper or `Regrouper` before
-  `only_in_group`, never among its steps, where anyone not in a group at
-  that moment, such as a player who sat out, would skip it and never be
-  grouped again. Pass `otherwise=` for what they, and anyone who never had a
+  `only_in_group`, never among its steps (see the `only_in_group`
+  docstring). Pass `otherwise=` for what they, and anyone who never had a
   group, do instead, such as answering the rest of the question alone.
   In a `Regrouper` game the player whose partner left stays in the pair, so
   they play the round out and see its outcome, as in `ultimatum_pairing`;

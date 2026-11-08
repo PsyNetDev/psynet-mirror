@@ -53,7 +53,10 @@ class SerializedCallable:
             kwargs["participant"] = participant
         if experiment is not NoArgumentProvided:
             kwargs["experiment"] = experiment
-        merged = {**(self.arguments or {}), **kwargs}
+        # Saved arguments, such as functools.partial keywords, win.
+        merged = {**kwargs, **(self.arguments or {})}
+        if self.function is _call_trial_maker_method:
+            return _call_trial_maker_method(**merged)
         return call_function_with_context(self.function, **merged)
 
 
@@ -76,8 +79,8 @@ def serialize_callable(callable_obj, context: str):
     if inspect.ismethod(callable_obj) and callable_obj.__self__ is not None:
         method_self = callable_obj.__self__
         if isinstance(method_self, type):
-            function, arguments = prepare_function_for_serialization(callable_obj, {})
-            return SerializedCallable(function=function, arguments=arguments)
+            check_that_function_can_be_serialized(callable_obj.__func__)
+            return SerializedCallable(function=callable_obj, arguments={})
         if _is_trial_maker(method_self):
             return SerializedCallable(
                 function=_call_trial_maker_method,
@@ -107,23 +110,6 @@ def serialize_callable(callable_obj, context: str):
     return SerializedCallable(function=function, arguments=arguments)
 
 
-_CONTEXT_ARGUMENTS = frozenset(
-    {
-        "assets",
-        "barrier",
-        "experiment",
-        "group",
-        "leader",
-        "left",
-        "nodes",
-        "participant",
-        "participants",
-        "trial",
-        "trial_maker",
-    }
-)
-
-
 def _serialize_partial(callable_obj: partial, context: str) -> SerializedCallable:
     """Serialize ``functools.partial(function, **keywords)``, keeping the keywords."""
     keywords = dict(callable_obj.keywords)
@@ -132,11 +118,6 @@ def _serialize_partial(callable_obj: partial, context: str) -> SerializedCallabl
         problem = "Pass the arguments of functools.partial by keyword."
     elif getattr(callable_obj.func, "__name__", None) == "<lambda>":
         problem = "A lambda can't be saved, even inside functools.partial."
-    elif _CONTEXT_ARGUMENTS & keywords.keys():
-        problem = (
-            "functools.partial can't set arguments that PsyNet passes itself: "
-            f"{sorted(_CONTEXT_ARGUMENTS & keywords.keys())}."
-        )
     else:
         unknown = sorted(set(keywords) - set(get_args(callable_obj.func)))
         if unknown:
@@ -174,15 +155,9 @@ def _is_trial_maker(instance) -> bool:
 
 
 def _call_trial_maker_method(
-    trial_maker_id: str,
-    method_name: str,
-    group=None,
-    participants=None,
-    participant=None,
-    barrier=None,
-    experiment=None,
-    method_kwargs=None,
+    trial_maker_id: str, method_name: str, method_kwargs=None, **context
 ):
+    """Call a trial maker's method with the call's arguments and its saved keywords."""
     from psynet.experiment import get_trial_maker
 
     if not trial_maker_id:
@@ -192,17 +167,8 @@ def _call_trial_maker_method(
                 "TrialMaker is missing an id. Ensure the TrialMaker is initialized.",
             )
         )
-    trial_maker = get_trial_maker(trial_maker_id)
-    method = getattr(trial_maker, method_name)
-    return call_function_with_context(
-        method,
-        group=group,
-        participants=participants,
-        participant=participant,
-        barrier=barrier,
-        experiment=experiment,
-        **(method_kwargs or {}),
-    )
+    method = getattr(get_trial_maker(trial_maker_id), method_name)
+    return call_function_with_context(method, **{**context, **(method_kwargs or {})})
 
 
 def _ensure_sql_primary_key(instance, context: str) -> None:
