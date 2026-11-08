@@ -86,6 +86,7 @@ from psynet.timeline import (
     ReactiveGoTo,
     Response,
     Timeline,
+    _EndConstruct,
     _split_into_steps,
     for_loop,
     join,
@@ -7733,6 +7734,11 @@ def _do_nothing(participant):
 def test_split_into_steps_keeps_each_construct_whole(make_construct):
     page = InfoPage("Hello", time_estimate=1)
     assert len(_split_into_steps(join(page, make_construct(), page))) == 3
+
+
+def test_split_into_steps_rejects_an_unmatched_end():
+    with pytest.raises(ValueError, match="Unmatched end"):
+        _split_into_steps(_EndConstruct())
 
 
 def test_only_in_group_skips_the_rounds_after_the_participant_leaves():

@@ -17,7 +17,12 @@ from jsonpickle.util import importable_name
 from markupsafe import Markup
 
 from .data import SQLBase, get_primary_key_values
-from .utils import NoArgumentProvided, call_function_with_context, get_logger
+from .utils import (
+    NoArgumentProvided,
+    call_function_with_context,
+    get_args,
+    get_logger,
+)
 
 logger = get_logger()
 
@@ -48,7 +53,10 @@ class SerializedCallable:
             kwargs["participant"] = participant
         if experiment is not NoArgumentProvided:
             kwargs["experiment"] = experiment
-        merged = {**(self.arguments or {}), **kwargs}
+        # Saved arguments, such as functools.partial keywords, win.
+        merged = {**kwargs, **(self.arguments or {})}
+        if self.function is _call_trial_maker_method:
+            return _call_trial_maker_method(**merged)
         return call_function_with_context(self.function, **merged)
 
 
@@ -59,18 +67,7 @@ def serialize_callable(callable_obj, context: str):
     if callable_obj is None or isinstance(callable_obj, SerializedCallable):
         return callable_obj
     if isinstance(callable_obj, partial):
-        if callable_obj.args:
-            raise CallableSerializationError(
-                _format_callable_error(
-                    context,
-                    "Pass the arguments of functools.partial by keyword.",
-                )
-            )
-        inner = serialize_callable(callable_obj.func, context)
-        return SerializedCallable(
-            function=inner.function,
-            arguments={**(inner.arguments or {}), **callable_obj.keywords},
-        )
+        return _serialize_partial(callable_obj, context)
     if not callable(callable_obj):
         raise CallableSerializationError(
             _format_callable_error(
@@ -82,8 +79,13 @@ def serialize_callable(callable_obj, context: str):
     if inspect.ismethod(callable_obj) and callable_obj.__self__ is not None:
         method_self = callable_obj.__self__
         if isinstance(method_self, type):
-            function, arguments = prepare_function_for_serialization(callable_obj, {})
-            return SerializedCallable(function=function, arguments=arguments)
+            try:
+                check_that_function_can_be_serialized(callable_obj.__func__)
+            except (TypeError, ValueError) as err:
+                raise CallableSerializationError(
+                    _format_callable_error(context, str(err))
+                ) from err
+            return SerializedCallable(function=callable_obj, arguments={})
         if _is_trial_maker(method_self):
             return SerializedCallable(
                 function=_call_trial_maker_method,
@@ -113,6 +115,35 @@ def serialize_callable(callable_obj, context: str):
     return SerializedCallable(function=function, arguments=arguments)
 
 
+def _serialize_partial(callable_obj: partial, context: str) -> SerializedCallable:
+    """Serialize ``functools.partial(function, **keywords)``, keeping the keywords."""
+    keywords = dict(callable_obj.keywords)
+    problem = None
+    if callable_obj.args:
+        problem = "Pass the arguments of functools.partial by keyword."
+    elif getattr(callable_obj.func, "__name__", None) == "<lambda>":
+        problem = "A lambda can't be saved, even inside functools.partial."
+    else:
+        unknown = sorted(set(keywords) - set(get_args(callable_obj.func)))
+        if unknown:
+            problem = (
+                f"The function doesn't take the keyword arguments {unknown} "
+                "given to functools.partial."
+            )
+    if problem:
+        raise CallableSerializationError(_format_callable_error(context, problem))
+    inner = serialize_callable(callable_obj.func, context)
+    arguments = dict(inner.arguments or {})
+    if inner.function is _call_trial_maker_method:
+        arguments["method_kwargs"] = {
+            **arguments.get("method_kwargs", {}),
+            **keywords,
+        }
+    else:
+        arguments.update(keywords)
+    return SerializedCallable(function=inner.function, arguments=arguments)
+
+
 def _format_callable_error(context: str, detail: str) -> str:
     return (
         f"{context} must be a module-level function, a @staticmethod/@classmethod, "
@@ -129,14 +160,9 @@ def _is_trial_maker(instance) -> bool:
 
 
 def _call_trial_maker_method(
-    trial_maker_id: str,
-    method_name: str,
-    group=None,
-    participants=None,
-    participant=None,
-    barrier=None,
-    experiment=None,
+    trial_maker_id: str, method_name: str, method_kwargs=None, **context
 ):
+    """Call a trial maker's method with the call's arguments and its saved keywords."""
     from psynet.experiment import get_trial_maker
 
     if not trial_maker_id:
@@ -146,16 +172,8 @@ def _call_trial_maker_method(
                 "TrialMaker is missing an id. Ensure the TrialMaker is initialized.",
             )
         )
-    trial_maker = get_trial_maker(trial_maker_id)
-    method = getattr(trial_maker, method_name)
-    return call_function_with_context(
-        method,
-        group=group,
-        participants=participants,
-        participant=participant,
-        barrier=barrier,
-        experiment=experiment,
-    )
+    method = getattr(get_trial_maker(trial_maker_id), method_name)
+    return call_function_with_context(method, **{**context, **(method_kwargs or {})})
 
 
 def _ensure_sql_primary_key(instance, context: str) -> None:
@@ -438,6 +456,24 @@ class CallableHandler(jsonpickle.handlers.BaseHandler):
 
 jsonpickle.register(types.FunctionType, CallableHandler, base=True)
 jsonpickle.register(types.MethodType, CallableHandler, base=True)
+
+
+class SerializedCallableHandler(jsonpickle.handlers.BaseHandler):
+    """Store a saved callback's function by import path, keeping class methods bound."""
+
+    def flatten(self, obj, state):
+        state["function"] = callable_to_path(obj.function)
+        state["arguments"] = self.context.flatten(obj.arguments, reset=False)
+        return state
+
+    def restore(self, state):
+        return SerializedCallable(
+            function=callable_from_path(state["function"]),
+            arguments=self.context.restore(state["arguments"], reset=False),
+        )
+
+
+jsonpickle.register(SerializedCallable, SerializedCallableHandler)
 
 
 def prepare_function_for_serialization(function, arguments):

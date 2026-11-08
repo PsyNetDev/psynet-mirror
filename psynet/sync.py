@@ -103,6 +103,7 @@ import uuid
 from collections import Counter
 from contextlib import contextmanager
 from datetime import timedelta
+from functools import partial
 from math import ceil, floor
 from typing import (
     Callable,
@@ -1043,7 +1044,8 @@ class Barrier(EltCollection):
 
     def __setattr__(self, name, value):
         if name.startswith("on_") or (
-            name == "waiting_message" and inspect.isroutine(value)
+            name == "waiting_message"
+            and (inspect.isroutine(value) or isinstance(value, partial))
         ):
             value = serialize_callable(value, f"{self.__class__.__name__}.{name}")
         super().__setattr__(name, value)
@@ -2631,16 +2633,16 @@ class SimpleGrouper(Grouper):
         If set, a group may start with fewer than ``batch_size`` participants once the
         longest-waiting participant has waited this many seconds and at least
         ``start_short_with`` participants are waiting. If fewer than ``initial_group_size``
-        are waiting, they form one smaller group. Requires ``start_short_with`` and a
-        ``max_wait_time`` longer than ``start_short_after`` (not checked when
-        ``max_wait_time`` is a function).
+        are waiting, they form one smaller group. Requires ``quorum`` or
+        ``start_short_with``, and a ``max_wait_time`` longer than
+        ``start_short_after`` (not checked when ``max_wait_time`` is a function).
         Default: ``None`` (always wait for ``batch_size``).
 
     start_short_with
         The smallest group that ``start_short_after`` may start, between 1 and
-        ``initial_group_size``. Required with ``start_short_after``, and only used with it.
-        ``quorum`` defaults to it and may not exceed it, so that a group started this way
-        is not below quorum at its first barrier.
+        ``initial_group_size``. Only used with ``start_short_after``, and defaults
+        to ``quorum``. ``quorum`` defaults to it and may not exceed it, so that a
+        group started this way is not below quorum at its first barrier.
 
     max_wait_time, max_wait_action
         How long a participant may wait for a group (default 20 seconds), and
@@ -2741,11 +2743,18 @@ class SimpleGrouper(Grouper):
         if top_up_wait is not None and top_up_wait <= 0:
             raise ValueError(f"top_up_wait must be positive, got {top_up_wait}.")
         self.top_up_wait = top_up_wait
-        if (start_short_after is None) != (start_short_with is None):
+        if start_short_after is None and start_short_with is not None:
             raise ValueError(
-                "Pass start_short_after and start_short_with together: how long to "
-                "wait before a short start, and the smallest group it may start."
+                "start_short_with is only used with start_short_after: pass how "
+                "long to wait before a short start too."
             )
+        if start_short_after is not None and start_short_with is None:
+            if quorum is None:
+                raise ValueError(
+                    "With start_short_after, pass quorum=...: a short start forms "
+                    "a group of at least that many (or pass start_short_with)."
+                )
+            start_short_with = quorum
         if start_short_with is not None and not (
             1 <= start_short_with <= initial_group_size
         ):
@@ -3901,11 +3910,13 @@ def only_in_group(group_type: str, *steps, otherwise=None):
     or put ``only_in_group`` inside the loop, as in
     ``for_loop(..., logic=only_in_group("pair", round_steps()))``. The steps
     are for participants already in the group, so put the grouper or
-    :class:`Regrouper` that forms it before the block: inside, it would be
-    skipped because the participant is not in a group yet. For the same
-    reason, put a :class:`GroupCloser` after the block: it takes everyone out
-    of the group, so the steps after it and ``otherwise`` would treat them
-    all as having left. When pairs change every round, regroup inside the
+    :class:`Regrouper` that forms it before the block. Inside the block, the
+    grouper would be skipped by everyone not yet in a group: at the start that
+    is everyone, and later it is anyone who sat out a round, who would then
+    never be grouped again.
+    Put a :class:`GroupCloser` after the block: it takes everyone out of the
+    group, so the steps after it and ``otherwise`` would treat them all as
+    having left. When pairs change every round, regroup inside the
     loop, as in ``for_loop(..., logic=join(Regrouper(...),
     only_in_group("pair", round_steps())))``.
 
