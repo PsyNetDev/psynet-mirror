@@ -203,7 +203,7 @@ def test_random_partition():
     assert sorted(contents) == list(range(10))
 
 
-def test_max_wait_action_kick_requires_group_barrier():
+def test_max_wait_action_leave_group_requires_group_barrier():
     with pytest.raises(TypeError, match="max_wait_action"):
         Barrier(id_="plain_barrier", max_wait_action="leave_group")
 
@@ -216,6 +216,9 @@ def test_max_wait_action_kick_requires_group_barrier():
         max_wait_action="leave_group",
     )
     assert barrier.max_wait_action == "leave_group"
+    for option in ["max_wait_action", "late_action"]:
+        with pytest.raises(ValueError, match="'fail' or 'leave_group'"):
+            GroupBarrier(id_="group_barrier", group_type="main", **{option: "kick"})
 
 
 def _noop_on_release(group, participants, participant, barrier):
@@ -3020,7 +3023,7 @@ def test_group_barrier_arrival_requires_active_sync_group(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_closed_group_needs_a_new_grouper(in_experiment_directory, db_session):
-    """After a GroupCloser, a barrier of that type needs a new group, even after an earlier kick."""
+    """After a GroupCloser, a barrier of that type needs a new group, even after an earlier removal."""
     (first, *_), group = _sync_group_of(get_experiment(), db_session, 3)
     group.remove_participant(first, reason="late")
     db_session.commit()
@@ -6611,12 +6614,12 @@ def test_group_barrier_max_wait_time_with_late_after():
 )
 @pytest.mark.parametrize("notify_arrivals", [True, False])
 @pytest.mark.parametrize("min_group_size", [2, 3])
-def test_group_barrier_late_after_kick_missing_participants(
+def test_group_barrier_late_after_removes_missing_participants(
     in_experiment_directory, db_session, notify_arrivals, monkeypatch, min_group_size
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
-        id_="late_after_kick",
+        id_="late_after_leave_group",
         group_type="main",
         late_after=5,
         late_action="leave_group",
@@ -6648,7 +6651,7 @@ def test_group_barrier_late_after_kick_missing_participants(
 
     barrier.check_waiting_participants(waiting_participants)
     if min_group_size == 3:
-        # The second kick dissolves the group, so nobody went on without either.
+        # The second removal dissolves the group, so nobody went on without either.
         assert all(p.failed for p in waiting_participants)
         assert all(pending_arrival_notice_for(p) is None for p in missing_participants)
         return
@@ -6681,7 +6684,7 @@ def test_group_barrier_late_after_kick_missing_participants(
 def test_late_after_counts_from_joining_the_group(
     in_experiment_directory, db_session, passed_a_barrier
 ):
-    """A GroupBarrier kicks members late since grouping or the last barrier, but not a newcomer."""
+    """A GroupBarrier removes members late since grouping or the last barrier, but not a newcomer."""
     exp = get_experiment()
     grouper = SimpleGrouper("main", initial_group_size=3, quorum=2)
     participants = _working_participants(exp, 3)
@@ -6869,12 +6872,12 @@ def test_skipping_a_group_barrier_forgets_a_time_out(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_group_barrier_late_after_kick_releases_waiters_after_dissolution(
+def test_group_barrier_late_after_removal_releases_waiters_after_dissolution(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
-        id_="late_after_kick_below_min",
+        id_="late_after_leave_group_below_quorum",
         group_type="main",
         late_after=5,
         late_action="leave_group",
@@ -7083,44 +7086,7 @@ def test_group_barrier_below_min_size_only_releases_waiting_participants(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_group_barrier_participant_kick(in_experiment_directory, db_session):
-    participant = Participant(
-        experiment=get_experiment(),
-        recruiter_id="hotair",
-        worker_id=str(uuid.uuid4()),
-        hit_id="XYZ",
-        assignment_id=str(uuid.uuid4()),
-        mode="debug",
-    )
-    participant.status = "working"
-    db_session.add(participant)
-
-    group = SimpleSyncGroup(
-        group_type="main",
-        initial_group_size=1,
-        max_group_size=1,
-        min_group_size=1,
-        n_active_participants=1,
-        accepts_top_ups=False,
-        fail_participants_below_quorum=True,
-    )
-    db_session.add(group)
-    group.add_participant(participant)
-    db_session.commit()
-
-    assert "main" in participant.active_sync_groups
-    GroupBarrier._kick_participant_after_max_wait(
-        participant=participant, group_type="main"
-    )
-    db_session.commit()
-
-    assert participant.active_sync_groups.get("main") is None
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
-)
-def test_group_barrier_max_wait_kick_releases_barrier_link(
+def test_group_barrier_max_wait_leave_group_releases_barrier_link(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
@@ -7140,7 +7106,7 @@ def test_group_barrier_max_wait_kick_releases_barrier_link(
     group.add_participant(participant)
 
     barrier = GroupBarrier(
-        id_="max_wait_kick",
+        id_="max_wait_leave_group",
         group_type="main",
         max_wait_action="leave_group",
     )
@@ -7148,11 +7114,11 @@ def test_group_barrier_max_wait_kick_releases_barrier_link(
     db_session.commit()
 
     assert "main" in participant.active_sync_groups
-    assert "max_wait_kick" in participant.active_barriers
+    assert "max_wait_leave_group" in participant.active_barriers
 
     barrier.handle_max_wait_timeout(participant)
     db_session.commit()
 
     assert participant.active_sync_groups.get("main") is None
-    assert "max_wait_kick" not in participant.active_barriers
+    assert "max_wait_leave_group" not in participant.active_barriers
     assert not participant.failed

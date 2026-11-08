@@ -52,7 +52,7 @@ limit is not late before the page's time limit has run out. By default,
 participants are credited for the actual time they wait, up to the maximum.
 
 By default, when a member is failed or leaves the experiment, a group that
-falls below its minimum size is dissolved, and its remaining members are
+falls below its quorum is dissolved, and its remaining members are
 failed too. Decide this for every grouper (a regrouper's groups are never
 dissolved): let the others continue with
 fewer members (``fail_participants_below_quorum=False``), or have the

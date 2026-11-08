@@ -235,7 +235,9 @@ The barrier ``id_`` identifies one waiting point. Barriers with the same ID
 share a waiting pool, so give barriers with different ``on_release``
 callbacks different IDs. Using one ID for barriers with different behavior
 (class, ``on_release`` or release settings) raises an error when the
-experiment is built.
+experiment is built. Waiting settings such as ``max_wait_time``,
+``max_wait_action`` and ``waiting_message`` may differ, because each applies
+to the participant who waits.
 
 Arrival notices
 ~~~~~~~~~~~~~~~
@@ -638,14 +640,21 @@ After leaving a group
 
 A member removed from their group without being failed, through
 ``"leave_group"`` or ``fail_participants_below_quorum=False``, stays in the
-experiment but doesn't play on by themselves. For the rest of the timeline:
+experiment but doesn't play on by themselves. They leave only the group of
+that type: a player removed from a ``"pair"`` stays in their ``"cohort"``.
+For the rest of the timeline:
 
 - :class:`~psynet.sync.GroupBarrier`\ s of that group type let them straight
   through.
 - Trial makers synchronized on that group type give them no more trials.
-- ``participant.sync_group`` and ``trial.sync_group`` are ``None``, and
-  ``participant.active_sync_groups`` no longer has that group type. A
-  :class:`~psynet.group_prompt.GroupPrompt` shows only its text.
+- ``participant.active_sync_groups`` no longer has that group type, and
+  ``trial.sync_group`` is ``None``. ``participant.sync_group`` is ``None``
+  only if they are in no other group; otherwise it is that other group, so
+  look groups up by type, as in
+  ``participant.active_sync_groups.get("pair")``.
+- A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only
+  its text from their next page on. A participant who has been in groups of
+  several types needs ``group_type`` (or ``group``) on every ``GroupPrompt``.
 - A later grouper of that type can put them in a new group.
 
 Your own code blocks, pages and callbacks must handle this: check for

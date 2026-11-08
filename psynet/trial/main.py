@@ -656,7 +656,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         """
         The :class:`~psynet.sync.SyncGroup` that this trial's participant belongs
         to for this trial maker, or ``None`` if the trial maker is not
-        synchronised (i.e. its ``sync_group_type`` is ``None``).
+        synchronised (its ``sync_group_type`` is ``None``) or the participant is no
+        longer in a group of that type.
         """
         sync_group_type = self.trial_maker.sync_group_type
         if sync_group_type is None:

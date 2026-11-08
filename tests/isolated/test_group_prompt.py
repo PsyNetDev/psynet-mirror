@@ -231,6 +231,16 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     group.remove_participant(late, reason="late")
     db_session.flush()
 
+    # They stay in groups of other types, so groups are looked up by type.
+    cohort = SimpleSyncGroup(group_type="cohort", initial_group_size=2)
+    db_session.add(cohort)
+    cohort.add_participant(late)
+    db_session.flush()
+    assert late.sync_group == cohort
+    assert GroupPrompt(participant=late, group_type="room").group is None
+    with pytest.raises(ValueError, match="several types"):
+        GroupPrompt(participant=late)
+
     def html():
         return GroupPrompt(group=group, participant=early, names="anonymous").group_html
 

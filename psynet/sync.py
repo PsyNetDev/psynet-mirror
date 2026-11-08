@@ -1477,11 +1477,10 @@ def _removed_from_group(participant, group_type) -> bool:
 class GroupBarrier(Barrier):
     """
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
-    have reached the Barrier. It also checks the current group size against the group's minimum size parameter;
-    the group won't be allowed to proceed if it's below this size.
-    If ``accepts_top_ups=True`` for that group, it'll wait just in case new participants join the group.
-    If ``accepts_top_ups=False``, then there's no hope for new participants, so the group will be released
-    and failed.
+    have reached the Barrier. It also checks the group against its ``quorum``: a group below it
+    can't proceed. If the group accepts top-ups, the barrier waits for new participants to join; otherwise
+    the group is dissolved, and its members are failed unless the grouper set
+    ``fail_participants_below_quorum=False``.
 
     After the arrival write commits, the same request evaluates the barrier in
     a short transaction so partners are released without waiting for the 0.5 s
@@ -1611,14 +1610,6 @@ class GroupBarrier(Barrier):
         ``group_size`` counts the group before anyone was removed.
 
     """
-
-    @staticmethod
-    def _kick_participant_after_max_wait(
-        participant: Participant, group_type: str
-    ) -> None:
-        """Remove the participant from their sync group when max wait uses action ``'leave_group'``."""
-        if group_type in participant.active_sync_groups:
-            participant.active_sync_groups[group_type].remove_participant(participant)
 
     def _validate_max_wait_action(self, max_wait_action):
         if max_wait_action not in ("fail", "leave_group"):
@@ -1794,11 +1785,10 @@ class GroupBarrier(Barrier):
             _queue_arrival_update(member.id, refresh=True)
 
     def handle_max_wait_timeout(self, participant: Participant):
-        """Kick from the sync group when requested, then release the barrier link."""
-        if self.max_wait_action == "leave_group":
-            self._kick_participant_after_max_wait(
-                participant=participant, group_type=self.group_type
-            )
+        """Remove from the sync group with ``"leave_group"``, then release the barrier link."""
+        group = participant.active_sync_groups.get(self.group_type)
+        if self.max_wait_action == "leave_group" and group is not None:
+            group.remove_participant(participant)
         super().handle_max_wait_timeout(participant)
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
@@ -1813,7 +1803,7 @@ class GroupBarrier(Barrier):
             )
 
             if outcome == "dissolve":
-                # The group can never reach its minimum size, so remove everyone
+                # The group can never reach its quorum, so remove everyone
                 # and release whoever is waiting here, failing them first when
                 # fail_participants_below_quorum is True.
                 participants_to_release.extend(
@@ -1849,7 +1839,7 @@ class GroupBarrier(Barrier):
         participants_to_release_ids = {p.id for p in participants_to_release}
         for participant in waiting_participants:
             # Release participants who reached this barrier but no longer belong
-            # to the sync group (e.g., max-wait kicks or below-min-size dissolution).
+            # to the sync group (e.g., max-wait removals or dissolution below quorum).
             if (
                 self.group_type not in participant.active_sync_groups
                 and participant.id not in participants_to_release_ids
@@ -1864,7 +1854,7 @@ class GroupBarrier(Barrier):
 
         Mirrors :meth:`check_waiting_participants` followed by
         :meth:`choose_who_to_release`: late members that the between-barrier
-        timeout would kick or fail count as already gone, and group size is
+        timeout would remove or fail count as already gone, and group size is
         recounted rather than read from ``n_active_participants``.
         """
         waiting_ids = {participant.id for participant in waiting_participants}
@@ -1903,7 +1893,7 @@ class GroupBarrier(Barrier):
     def _timeout_participants_between_barriers(
         self, group: "SyncGroup", waiting_participants: List[Participant]
     ):
-        """Kick or fail group members who are late reaching this barrier.
+        """Remove or fail group members who are late reaching this barrier.
 
         A late member whose own request holds their row is not failed now;
         they are still late on the next check.
@@ -1916,7 +1906,7 @@ class GroupBarrier(Barrier):
         if self.late_action == "leave_group":
             for participant in late:
                 logger.info(
-                    "GroupBarrier '%s': kicking participant %s from group %s (timeout between barriers)",
+                    "GroupBarrier '%s': removing participant %s from group %s (timeout between barriers)",
                     self.id,
                     participant.id,
                     group.id,
@@ -1935,11 +1925,11 @@ class GroupBarrier(Barrier):
             participant.fail("timeout between barriers")
 
     def _tell_removed_participant(self, participant, group, group_size):
-        """Show a kicked participant a notice that their group went on without them.
+        """Show a removed participant a notice that their group went on without them.
 
         The notice lasts until they leave their current page. It is skipped if
         their own request holds their row, since they are leaving the page. A
-        failing message callback is logged rather than stopping the kick.
+        failing message callback is logged rather than stopping the removal.
         """
         try:
             text = self._call_arrival_message(
@@ -3680,7 +3670,7 @@ class SimpleSyncGroup(SyncGroup):
         self.dissolve_if_below_quorum()
 
     def dissolve_if_below_quorum(self):
-        """Dissolve a group without top-ups that fell below its minimum size.
+        """Dissolve a group without top-ups that fell below its quorum.
 
         Members who are busy in another request are handled shortly after
         by the barrier poller; see :meth:`SyncGroup._dissolve`.

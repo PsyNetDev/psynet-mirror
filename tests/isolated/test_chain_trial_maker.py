@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 from dallinger import db
 
-from psynet.sync import GroupBarrier
 from psynet.timeline import ModuleState
 from psynet.trial.chain import ChainNode, ChainTrial, ChainTrialMaker
 from psynet.trial.dense import DenseTrialMaker
@@ -426,7 +425,7 @@ def test_participant_whose_group_was_closed_still_needs_a_new_group():
         trial_maker._requires_sync_group_initialization_barrier(closed)
 
 
-def test_trial_sync_group_returns_none_after_kick():
+def test_trial_sync_group_returns_none_after_leaving_group():
     trial = SimpleNamespace(
         trial_maker=SimpleNamespace(sync_group_type="main"),
         participant=DummyParticipant(),
@@ -1138,7 +1137,7 @@ def test_sync_trial_maker_waiting_message_is_used_by_internal_barriers():
     )
 
 
-def test_sync_trial_maker_prepare_barrier_kick_exits_cleanly(monkeypatch):
+def test_sync_trial_maker_exits_after_leaving_group(monkeypatch):
     trial_maker = make_trial_maker(
         sync_group_type="main",
         sync_group_max_wait_action="leave_group",
@@ -1147,14 +1146,16 @@ def test_sync_trial_maker_prepare_barrier_kick_exits_cleanly(monkeypatch):
     participant.module_state = DummyModuleState()
     participant.active_sync_groups["main"] = DummySyncGroup()
 
-    GroupBarrier._kick_participant_after_max_wait(participant, group_type="main")
+    del participant.active_sync_groups["main"]
     assert "main" not in participant.active_sync_groups
 
     prepare_trial_calls = []
 
     def fail_if_prepare_trial_called(experiment, participant):
         prepare_trial_calls.append(participant.id)
-        raise AssertionError("kicked participants should exit before preparing a trial")
+        raise AssertionError(
+            "removed participants should exit before preparing a trial"
+        )
 
     monkeypatch.setattr(trial_maker, "prepare_trial", fail_if_prepare_trial_called)
 
