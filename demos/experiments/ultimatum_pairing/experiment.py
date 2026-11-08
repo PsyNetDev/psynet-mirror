@@ -281,10 +281,15 @@ def play_round():
                 ),
                 PageMaker(show_outcome, time_estimate=5),
             ),
-            # Without a cohort the game is over; the ended-early page explains why.
+            # Without a cohort the game is over and the ended-early page
+            # explains why, but a player removed for being away, who left the
+            # cohort too, is told about the round.
             conditional(
-                "in_cohort",
-                lambda participant: cohort_of(participant) is not None,
+                "explain_round",
+                lambda participant: (
+                    cohort_of(participant) is not None
+                    or participant.sync_group_removal_reason("pair") == "late"
+                ),
                 PageMaker(not_playing, time_estimate=5),
             ),
         ),
@@ -309,6 +314,9 @@ class Exp(psynet.experiment.Experiment):
             waiting_message=lobby_message,
             waiting_screen=forming_cohort,
             max_wait_time=300,
+            # Once a cohort stops taking newcomers, removing a late player can
+            # leave it below its quorum; the rest then end early, not failed.
+            below_quorum="continue_without_group",
         ),
         while_loop(
             "rounds",
