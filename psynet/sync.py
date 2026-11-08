@@ -1721,8 +1721,8 @@ class GroupBarrier(Barrier):
         pairs and ``"{ARRIVED}/{TOTAL} of your group are ready."`` in larger
         groups. It is called whenever the participant's browser fetches its
         notice, which can be several times per arrival, so it should depend
-        only on its arguments and have no side effects. Notices stay on one
-        line (overflow ellipsizes), so keep them to a short sentence.
+        only on its arguments and have no side effects. Notices wrap onto at
+        most two lines (overflow ellipsizes), so keep them to a short sentence.
 
         ``"removed"`` is the progress-bar notice for someone removed by
         ``late_action="leave_group"``, shown until they leave
