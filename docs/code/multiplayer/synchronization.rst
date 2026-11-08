@@ -499,7 +499,9 @@ the maximum waiting time:
     waits longer is failed. At a :class:`~psynet.sync.GroupBarrier`,
     ``max_wait_action`` decides: ``"fail"`` (default) fails the participant,
     and ``"leave_group"`` removes them from the group (see
-    :ref:`sync-leaving-a-group` for what they see next).
+    :ref:`sync-leaving-a-group` for what they see next). Either way it is
+    the member who waited who leaves; to go on without slow members, use
+    ``late_after`` instead.
     This also applies to a participant who closed the page while waiting,
     including on ``waiting_logic`` pages: the server applies the timeout
     shortly after the deadline.

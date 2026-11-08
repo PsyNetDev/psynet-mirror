@@ -1917,20 +1917,28 @@ class TrialMaker(Module):
         )
 
     def _init_participant(self):
-        return conditional(
-            "init_participant",
-            # If the participant is in a sync group and the leader has not been initialized,
-            # then we put a GroupBarrier to ensure that the leader can be initialized first.
-            # Otherwise we go ahead and initialize the participant.
-            self._requires_sync_group_initialization_barrier,
-            logic_if_true=GroupBarrier(
-                self.with_namespace("init_participant"),
-                on_release=self._init_participants_in_sync_group,
-                **self._sync_group_barrier_kwargs(),
+        return join(
+            conditional(
+                "init_participant",
+                # If the participant is in a sync group and the leader has not been initialized,
+                # then we put a GroupBarrier to ensure that the leader can be initialized first.
+                self._requires_sync_group_initialization_barrier,
+                logic_if_true=GroupBarrier(
+                    self.with_namespace("init_participant"),
+                    on_release=self._init_participants_in_sync_group,
+                    **self._sync_group_barrier_kwargs(),
+                ),
+                time_estimate=0.0 if self.sync_group_type is None else 3.0,
             ),
-            logic_if_false=CodeBlock(self.init_participant),
-            time_estimate=0.0 if self.sync_group_type is None else 3.0,
+            # Everyone else initializes alone, including members released
+            # from the barrier by a max-wait time-out, which skips on_release.
+            CodeBlock(self._init_if_not_initialized),
         )
+
+    def _init_if_not_initialized(self, experiment, participant):
+        """Initialize the participant unless their group's release already did."""
+        if not self._is_initialized(participant):
+            self.init_participant(experiment, participant)
 
     def _requires_sync_group_initialization_barrier(self, participant):
         """Return whether the participant should wait for sync-group initialization."""
@@ -2671,20 +2679,14 @@ class TrialMaker(Module):
             if not self.sync_group_type:
                 return CodeBlock(self._try_to_prepare_trial_solo)
             return join(
-                conditional(
-                    "prepare_trial",
-                    lambda participant: (
-                        not _removed_from_group(participant, self.sync_group_type)
-                    ),
-                    GroupBarrier(
-                        id_=self.with_namespace("prepare_trial"),
-                        on_release=self._try_to_prepare_trial_group,
-                        fix_time_credit=False,  # we're already within a while loop with fixed time credit
-                        **self._sync_group_barrier_kwargs(),
-                    ),
+                GroupBarrier(
+                    id_=self.with_namespace("prepare_trial"),
+                    on_release=self._try_to_prepare_trial_group,
+                    fix_time_credit=False,  # we're already within a while loop with fixed time credit
+                    **self._sync_group_barrier_kwargs(),
                 ),
-                # Also reached by a member released from the barrier by
-                # sync_group_max_wait_action="leave_group", without on_release.
+                # For members who left the group, including those released
+                # by a max-wait time-out, which skips on_release.
                 CodeBlock(self._exit_if_left_group),
             )
 
@@ -2714,7 +2716,8 @@ class TrialMaker(Module):
     def _exit_if_left_group(self, experiment, participant):
         """End the trial loop for a participant who is no longer in the group."""
         if self.sync_group_type not in participant.active_sync_groups:
-            self._try_to_prepare_trial_solo(experiment, participant)
+            participant.current_trial = None
+            participant.trial_status = "exit"
 
     def _try_to_prepare_trial_solo(self, experiment, participant):
         trial, trial_status = self._prepare_trial(experiment, participant)

@@ -9,6 +9,7 @@ from dallinger import db
 
 from psynet.chatroom import ChatMessage, ChatRoom, ChatRoomMember, EnableChatrooms
 from psynet.experiment import get_experiment
+from psynet.modular_page import ModularPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -432,7 +433,9 @@ class TestHandleMessage:
         )
         assert [p["sender"] for p in _published_payloads(exp)] == [str(hidden.id)] * 2
         with pytest.raises(RuntimeError, match="EnableChatrooms"):
-            ChatRoom(room_id=room).check_enabled(experiment)
+            ModularPage("chat", "Hi", chatroom=ChatRoom(room_id=room)).render(
+                experiment, hidden
+            )
         config = ChatRoom(room_id=room, names="anonymous").get_js_vars()
         assert config["chatroom_config"]["names"] == "anonymous"
         assert config["chatroom_config"]["partner_label"] == "Your partner"

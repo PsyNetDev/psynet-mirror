@@ -1552,7 +1552,10 @@ class GroupBarrier(Barrier):
         experiment without it (see :ref:`sync-leaving-a-group`).
         Their next page says "Your partner didn't arrive in time. Please continue." (see
         ``on_arrival_message``), and a :class:`~psynet.group_prompt.GroupPrompt` marks them
-        "(dropped out)".
+        "(dropped out)". It is the waiting member who leaves, not the absent ones; to move on
+        without slow members, use ``late_after`` and ``late_action`` instead. If that takes
+        the group below its quorum, as in a pair, the group dissolves, failing the others
+        unless its grouper sets ``fail_participants_below_quorum=False``.
 
     late_after
         Acts on members who haven't reached this barrier yet: the longest each may take to reach it, in seconds,
@@ -1633,7 +1636,7 @@ class GroupBarrier(Barrier):
         ``"waited_too_long"`` is the notice for someone removed by
         ``max_wait_action="leave_group"``, shown on the page they move on to. It
         defaults to "Your partner didn't arrive in time. Please continue." or
-        "Your group didn't arrive in time. Please continue.".
+        "Not everyone in your group arrived in time. Please continue.".
 
         Check ``kind`` for each of these rather than treating everything
         that isn't ``"removed"`` as a progress notice, or a removed member
@@ -1701,7 +1704,8 @@ class GroupBarrier(Barrier):
             raise RuntimeError(
                 f"Participant {participant.id} is not in a sync group of type "
                 f"'{self.group_type}' at barrier '{self.id}'. Check that a grouper "
-                "of that type comes before the barrier."
+                "of that type comes before the barrier, and after any GroupCloser "
+                "that closed their group."
             )
         return group
 

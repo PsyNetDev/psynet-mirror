@@ -8,7 +8,7 @@ from markupsafe import Markup
 
 from psynet import timeline_hold
 from psynet.experiment import get_experiment
-from psynet.group_prompt import GroupPrompt, redrawn_group_html
+from psynet.group_prompt import GroupPrompt, _token_serializer, redrawn_group_html
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.pseudonym import PseudonymScheme
@@ -339,7 +339,6 @@ def test_live_pages_redraw_the_group_when_someone_joins(
         return prompt.get_js_vars()["group_prompt"]["redraw_token"]
 
     named, anonymous = token(names="shown"), token(names="anonymous")
-    highlighted = token(highlight={first.id: "winner"}, note="Round 2")
 
     # Members already in the group are told to fetch it again.
     published.clear()
@@ -355,6 +354,9 @@ def test_live_pages_redraw_the_group_when_someone_joins(
     assert late.pseudonym.name in html
     html = redrawn_group_html(first.unique_id, anonymous)["html"]
     assert ">Your partner<" in html and late.pseudonym.name not in html
+    highlighted = token(highlight={late.id: "winner"}, note="Round 2")
+    # The page can read its token, so it names other members by seat.
+    assert _token_serializer().loads(highlighted)["highlight"] == {"1": "winner"}
     html = redrawn_group_html(first.unique_id, highlighted)["html"]
     assert "psynet-group-member--winner" in html and "Round 2" in html
     # Tokens only work for the participant they were made for, unchanged.

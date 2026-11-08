@@ -1137,44 +1137,57 @@ def test_sync_trial_maker_waiting_message_is_used_by_internal_barriers():
     )
 
 
-def test_sync_trial_maker_exits_after_leaving_group(monkeypatch):
-    trial_maker = make_trial_maker(
-        sync_group_type="main",
-        sync_group_max_wait_action="leave_group",
-    )
-    participant = DummyParticipant()
-    participant.module_state = DummyModuleState()
-    participant.active_sync_groups["main"] = DummySyncGroup()
-
-    del participant.active_sync_groups["main"]
-    assert "main" not in participant.active_sync_groups
-
-    prepare_trial_calls = []
-
-    def fail_if_prepare_trial_called(experiment, participant):
-        prepare_trial_calls.append(participant.id)
-        raise AssertionError(
-            "removed participants should exit before preparing a trial"
-        )
-
-    monkeypatch.setattr(trial_maker, "prepare_trial", fail_if_prepare_trial_called)
-
-    # Members released by a max-wait time-out skip on_release, so the exit
-    # check must come after the prepare barrier, not only before it.
-    elts = trial_maker._wait_for_trial()
+def _run_step_after_barrier(elts, step, participant):
+    """Run ``step`` where the timeline reaches it after a GroupBarrier's hold page."""
     hold_page = next(
         i for i, elt in enumerate(elts) if type(elt).__name__ == "_BarrierHoldPage"
     )
-    exit_check = next(
-        elt
-        for elt in elts[hold_page:]
-        if getattr(elt, "function", None) == trial_maker._exit_if_left_group
+    code_block = next(
+        elt for elt in elts[hold_page:] if getattr(elt, "function", None) == step
     )
-    exit_check.function(experiment=None, participant=participant)
+    code_block.function(experiment=None, participant=participant)
+
+
+# Members released by a max-wait time-out skip on_release, so the trial maker
+# must catch up after its barriers.
+def test_sync_trial_maker_exits_after_leaving_group():
+    trial_maker = make_trial_maker(
+        sync_group_type="main", sync_group_max_wait_action="leave_group"
+    )
+    participant = DummyParticipant()
+    participant.module_state = DummyModuleState()
+
+    _run_step_after_barrier(
+        trial_maker._wait_for_trial(), trial_maker._exit_if_left_group, participant
+    )
 
     assert participant.current_trial is None
     assert participant.trial_status == "exit"
-    assert prepare_trial_calls == []
+
+
+def test_sync_trial_maker_initializes_members_released_alone(monkeypatch):
+    trial_maker = make_trial_maker(
+        sync_group_type="main", sync_group_max_wait_action="leave_group"
+    )
+    participant = DummyParticipant()
+    initialized = []
+    monkeypatch.setattr(trial_maker, "_is_initialized", lambda p: p in initialized)
+    monkeypatch.setattr(
+        trial_maker, "init_participant", lambda e, p: initialized.append(p)
+    )
+
+    _run_step_after_barrier(
+        trial_maker._init_participant(),
+        trial_maker._init_if_not_initialized,
+        participant,
+    )
+    _run_step_after_barrier(
+        trial_maker._init_participant(),
+        trial_maker._init_if_not_initialized,
+        participant,
+    )
+
+    assert initialized == [participant]
 
 
 def _check_consistency(repeat_answers, parent_answers):

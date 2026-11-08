@@ -242,7 +242,10 @@ def default_group_barrier_arrival_message(
             return _p(
                 "timeline_hold", "Your partner didn't arrive in time. Please continue."
             )
-        return _p("timeline_hold", "Your group didn't arrive in time. Please continue.")
+        return _p(
+            "timeline_hold",
+            "Not everyone in your group arrived in time. Please continue.",
+        )
     if kind == "removed":
         if group_size <= 2:
             return _p(

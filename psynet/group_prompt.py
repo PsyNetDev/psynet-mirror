@@ -269,6 +269,8 @@ class GroupPrompt(Prompt):
         serializer = _token_serializer()
         if serializer is None:
             return None
+        # Readable by the page, so refer to other members by seat, not ID.
+        seats = _group_seats(self.group)
         return serializer.dumps(
             {
                 "group": self.group.id,
@@ -276,7 +278,11 @@ class GroupPrompt(Prompt):
                 "names": self.names,
                 "subgroups": self.subgroups,
                 "show_progress": self.show_progress,
-                "highlight": self.highlight,
+                "highlight": {
+                    seats[pid]: style
+                    for pid, style in self.highlight.items()
+                    if pid in seats
+                },
                 "note": None if self.note is None else str(Markup.escape(self.note)),
             }
         )
@@ -597,7 +603,11 @@ def redrawn_group_html(unique_id, token):
         names=options["names"],
         subgroups=options["subgroups"],
         show_progress=options["show_progress"],
-        highlight=options["highlight"],
+        highlight={
+            pid: options["highlight"][str(seat)]
+            for pid, seat in _group_seats(group).items()
+            if str(seat) in options["highlight"]
+        },
         note=None if options["note"] is None else Markup(options["note"]),
     )
     return {"html": str(prompt.group_html)}
