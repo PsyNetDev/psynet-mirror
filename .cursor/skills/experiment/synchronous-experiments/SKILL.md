@@ -58,8 +58,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   task. Arrival
   notices are on by default. The partner-ready pill sits on the progress
   bar. Pair holds keep the title only; groups of three or more show
-  remaining-not-ready copy (`2 of 3 not ready yet`). Keep
-  `on_arrival_message` notice copy to one short sentence. Groupers form
+  remaining-not-ready copy (`2 of 3 not ready yet`). For notice length,
+  see "Arrival notices" in `code/multiplayer/synchronization`. Groupers form
   groups when the last needed member arrives, without waiting for the
   barrier poller.
 - Use `GroupBarrier(on_release=...)` for atomic shared updates such as role
@@ -90,10 +90,12 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `Regrouper(group_type, group_size=..., within=...)` at the start of each
   round instead of a grouper and closer. Pass `deadline=` to split once
   everyone is back or the timeout passes (`ultimatum_pairing`), or `every=`
-  for rounds on fixed ticks (`lowest_unique_number`). Slow participants miss
-  a round and join the next one rather than being failed. Pair it with
-  `GroupBarrier(late_after=..., late_action="leave_group")` so late members are
-  removed; they then pass the round's later group barriers alone.
+  for rounds on fixed ticks (`lowest_unique_number`). Participants who miss
+  a split join the next one rather than being failed. For players who stop
+  responding mid-round, follow "Moving slow players on" in
+  `code/multiplayer/writing_a_round_based_experiment`: a late barrier
+  removes them from the round's group, and the experiment also removes them
+  from the `within` group.
 - On a page
   with a `time_limit`, nobody is late before the limit has run out plus 10 s,
   so the timeout need not cover the page; the demos use 30 s so that a

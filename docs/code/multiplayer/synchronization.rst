@@ -581,9 +581,13 @@ decisions each one needs. These settings carry them out:
   ``join_existing_groups`` to fill a gap in an existing one. Its
   ``max_wait_action`` fails those left over, or with
   ``"continue_without_group"`` lets them carry on (see `Timeouts`_).
-- **Falling behind in rounds with a** :class:`~psynet.sync.Regrouper`:
-  ``late_action="leave_group"`` makes them miss the round and join the next
-  (see `Rounds with changing groups`_).
+- **Falling behind in rounds with a** :class:`~psynet.sync.Regrouper`: a
+  player who isn't back by the split's deadline misses the round and joins
+  the next (see `Rounds with changing groups`_). One who stops responding
+  partway through a round is removed from their group by
+  ``late_action="leave_group"``, but stays in the ``within`` group, so the
+  next split waits for them until its deadline; :ref:`rounds-slow-players`
+  shows how to take them out of it too.
 
 Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
 
@@ -823,7 +827,8 @@ A member removed from their group without being failed, through a
 barrier's ``"leave_group"`` or ``below_quorum="continue_without_group"``,
 stays in the experiment and continues the timeline without that group. They
 leave only the group of that type: a player removed from a ``"pair"`` stays
-in their ``"cohort"``. A participant whose grouper let them continue without
+in their ``"cohort"`` unless the experiment also removes them from it with
+``remove_participant`` (see :ref:`rounds-slow-players`). A participant whose grouper let them continue without
 a group (``max_wait_action="continue_without_group"``) is treated the same
 way for that group type, as if they had left a group. A notice on their
 progress bar tells them why. A member removed for being late sees "Your
