@@ -283,7 +283,7 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
         ({"start_short_with": 2}, "only used with start_short_after"),
         ({"start_short_after": 10, "start_short_with": 5}, "start_short_with <="),
         ({"start_short_after": 60, "start_short_with": 2}, "less than max_wait_time"),
-        ({"start_short_after": 10, "quorum": 5}, "can't be larger than"),
+        ({"start_short_after": 10, "quorum": 5}, "Lower quorum"),
         (
             {
                 "start_short_after": 10,
@@ -291,7 +291,7 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
                 "join_existing_groups": True,
                 "max_group_size": 6,
             },
-            "pass start_short_with between",
+            "Lower quorum",
         ),
     ],
 )
@@ -308,6 +308,7 @@ def test_simple_grouper_quorum():
     assert lobby(quorum=3).quorum == 3
     assert lobby(**short).quorum == 2
     assert lobby(quorum=2, start_short_after=60).start_short_with == 2
+    assert lobby(quorum=4, start_short_after=60).start_short_with == 4
     with pytest.raises(ValueError, match="at most start_short_with"):
         lobby(quorum=3, **short)
     with pytest.warns(UserWarning, match="Pass quorum"):

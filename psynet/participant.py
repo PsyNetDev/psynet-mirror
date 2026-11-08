@@ -751,8 +751,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         when the group fell below its quorum, with
         ``below_quorum="continue_without_group"``), ``"moved_on"`` (a
         :class:`~psynet.sync.Regrouper` took them out of their previous group:
-        seen while they wait there, and after they sit a round out; once they
-        are in the next group this returns ``None``), ``"finished"`` (left after playing
+        seen while they wait at the regrouper, and after they sit a round out,
+        even if they then fail there; once they are in the next group this
+        returns ``None``), ``"finished"`` (left after playing
         their part), ``"left_experiment"`` (failed,
         including returning the study), or ``None`` if no
         reason was recorded, for example after removal from the dashboard.

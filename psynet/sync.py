@@ -2721,13 +2721,10 @@ class SimpleGrouper(Grouper):
                 )
             if quorum > initial_group_size:
                 raise ValueError(
-                    f"A short start forms a group of at least quorum ({quorum}), "
-                    f"which is more than initial_group_size ({initial_group_size}); "
-                    + (
-                        "pass start_short_with between 1 and initial_group_size."
-                        if join_existing_groups
-                        else "the quorum can't be larger than initial_group_size."
-                    )
+                    f"start_short_after needs quorum ({quorum}) to be at most "
+                    f"initial_group_size ({initial_group_size}): a short start forms "
+                    "a group of at least the quorum. Lower quorum, or drop "
+                    "start_short_after."
                 )
             start_short_with = quorum
         if start_short_with is not None and not (
@@ -4016,7 +4013,13 @@ def warn_if_late_removal_fails_group(barriers):
         warn_from_caller(
             f"GroupBarrier '{barrier.id}' removes late members, but grouper "
             f"'{grouper.id}' fails the members left behind when that leaves the "
-            "group below its quorum. So a single late member fails everyone who "
+            "group below its quorum"
+            + (
+                " (after top_up_wait, if no newcomer joins)"
+                if grouper.top_up_wait is not None
+                else ""
+            )
+            + ". So a single late member fails everyone who "
             "was on time, while the late one carries on. Pass "
             "below_quorum='continue_without_group' to the grouper to let everyone carry on, "
             "or late_action='fail' to end the session for the whole group.",
@@ -4218,7 +4221,10 @@ class SyncGroup(SQLBase, SQLMixin):
               being late (``late_action="leave_group"``).
             - ``"moved_on"``: not shown, unless the page shows their answer,
               for a member who left at a :class:`Regrouper`, for their next
-              group or to sit the round out.
+              group or to sit the round out. Like ``"finished"``, it doesn't
+              dissolve a group below its quorum, so a pair a
+              :class:`SimpleGrouper` formed isn't dissolved, failing the
+              partner, when the first member reaches a :class:`Regrouper`.
             - ``"finished"``: "(finished)", for a member who has played their
               part, such as a player leaving a cohort after their last round.
               Their leaving doesn't dissolve a group below its quorum, so the
@@ -4387,7 +4393,7 @@ class SimpleSyncGroup(SyncGroup):
         reason: Optional[RemovalReason] = None,
     ):
         super().remove_participant(participant, reason=reason)
-        if reason != "finished":
+        if reason not in ("finished", "moved_on"):
             self.dissolve_if_below_quorum()
 
     def check_numbers(self):
