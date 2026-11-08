@@ -896,8 +896,9 @@ For the rest of the timeline:
   needs another room, or none, then.
 - ``participant.sync_group_removal_reason("pair")`` says why they left:
   ``"late"``, ``"waited_too_long"``, ``"no_group_formed"`` (a grouper found
-  them no group in time), ``"group_dissolved"``, ``"moved_on"`` (left at a
-  :class:`~psynet.sync.Regrouper`, for a new group or to sit out the round),
+  them no group in time), ``"group_dissolved"``, ``"moved_on"`` (a
+  :class:`~psynet.sync.Regrouper` took them out of their previous group, and
+  they are waiting there or sitting the round out),
   ``"finished"`` or ``"left_experiment"`` (they failed or returned the study).
 - An answer submitted on the page where a member was removed for being late
   has ``response.too_late_for_group`` set, so analysis can leave it out.

@@ -749,11 +749,16 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         with ``max_wait_action="continue_without_group"`` found them no group
         in time), ``"group_dissolved"`` (released
         when the group fell below its quorum, with
-        ``below_quorum="continue_without_group"``), ``"moved_on"`` (left at a
-        :class:`~psynet.sync.Regrouper`, for a new group or to sit out the round), ``"finished"`` (left after playing
+        ``below_quorum="continue_without_group"``), ``"moved_on"`` (a
+        :class:`~psynet.sync.Regrouper` took them out of their previous group:
+        seen while they wait there, and after they sit a round out; once they
+        are in the next group this returns ``None``), ``"finished"`` (left after playing
         their part), ``"left_experiment"`` (failed,
         including returning the study), or ``None`` if no
         reason was recorded, for example after removal from the dashboard.
+        A player sat out of their first round was never in a group, so this
+        returns ``None`` for them; check :meth:`~psynet.sync.Regrouper.sat_out`
+        or ``in_sync_group`` instead.
 
         For example, a page after the game can say why it ended early::
 
