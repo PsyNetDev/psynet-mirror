@@ -121,7 +121,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `conditional("paired", in_pair, paired_trials, solo_trials)`. Wrap the
   steps of a round in `only_in_group(group_type, step, ...)` so a participant
   who loses their group partway skips the rest, instead of a `conditional`
-  per page; pass `otherwise=` for what they, and anyone who never had a
+  per page. Each step is checked once, so pass the rounds' steps one by one,
+  `only_in_group("pair", *[s for n in range(N_ROUNDS) for s in round_steps(n)])`,
+  not a loop as one step. Pass `otherwise=` for what they, and anyone who never had a
   group, do instead, such as answering the rest of the question alone.
   In a `Regrouper` game the player whose partner left stays in the pair, so
   they play the round out and see its outcome, as in `ultimatum_pairing`;

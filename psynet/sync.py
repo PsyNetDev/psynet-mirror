@@ -3710,8 +3710,14 @@ def only_in_group(group_type: str, *steps, otherwise=None):
 
     Each step is checked once, when the participant reaches it, so a loop
     passed as one step runs to its end. For rounds, pass each round's steps
-    as separate steps, as ``tests/experiments/pair_dropout`` does, or stop
-    the loop on ``participant.in_sync_group(group_type)``. Put a
+    as separate steps::
+
+        only_in_group(
+            "pair",
+            *[step for number in range(N_ROUNDS) for step in round_steps(number)],
+        )
+
+    or stop the loop on ``participant.in_sync_group(group_type)``. Put a
     :class:`GroupCloser` after the block, not among its steps: it takes
     everyone out of the group, so the steps after it and ``otherwise`` would
     treat them all as having left.
