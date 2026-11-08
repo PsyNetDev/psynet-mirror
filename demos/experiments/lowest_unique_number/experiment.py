@@ -35,7 +35,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, Regrouper, participant_rounds
+from psynet.sync import GroupBarrier, Regrouper, group_rounds, participant_rounds
 from psynet.timeline import (
     PageMaker,
     Timeline,
@@ -60,20 +60,23 @@ def lowest_unique(choices: dict):
 
 
 def score_round(participants: List[Participant], barrier):
-    """Record every player's choice and pay the winner a bonus.
+    """Record the room's choices and winning number, and pay the winner a bonus.
 
     Players who ran out of time have no choice and miss the round.
     Nobody wins when only one player chose.
     """
-    choices = {p.id: p.var.choice for p in participants if p.var.choice is not None}
+    # String keys, as the record stores them.
+    choices = {
+        str(p.id): p.var.choice for p in participants if p.var.choice is not None
+    }
     winner = lowest_unique(choices) if len(choices) > 1 else None
+    barrier.record_group(choices=choices, winning_number=winner)
     for participant in participants:
-        won = winner is not None and choices.get(participant.id) == winner
+        won = winner is not None and participant.var.choice == winner
         barrier.record(
             participant,
             bonus=WIN_BONUS if won else 0.0,
             choice=participant.var.choice,
-            winning_number=winner,
         )
 
 
@@ -118,20 +121,15 @@ def show_result(participant):
         return InfoPage(
             "You were away for too long, so you missed this round.", time_estimate=5
         )
-    # The player's own row for the round they just played: the next round
-    # can't start for them until they leave this page.
-    result = participant_rounds("round_finished", participant)[-1]
-    if result["choice"] is None:
+    if participant.var.choice is None:
         return InfoPage(
             "You ran out of time, so you missed this round.", time_estimate=5
         )
-    choices = {
-        row["participant_id"]: row["choice"]
-        for row in participant_rounds("round_finished", round=result["round"])
-        if row["group_id"] == result["group_id"] and row.get("choice") is not None
-    }
+    # The round the player just played: the next one can't start for them
+    # until they leave this page.
+    room = group_rounds("round_finished", participant)[-1]
+    choices, winner = room["choices"], room["winning_number"]
     picks = sorted(choices.values())
-    winner = result["winning_number"]
     if len(picks) == 1:
         return InfoPage(
             "Nobody else in your room picked a number in time, so nobody won this round.",
@@ -139,7 +137,7 @@ def show_result(participant):
         )
     if winner is None:
         outcome = "Nobody picked a unique number, so nobody won."
-    elif result["choice"] == winner:
+    elif participant.var.choice == winner:
         outcome = f"You won with {winner}! You earn ${WIN_BONUS:.2f}."
     else:
         outcome = f"The winning number was {winner}."
@@ -221,8 +219,11 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per round, with the bonus it paid."""
-        return {"player_round": participant_rounds("round_finished")}
+        """Return one row per player per round, with the bonus it paid, and one per room per round."""
+        return {
+            "player_round": participant_rounds("round_finished"),
+            "group_round": group_rounds("round_finished"),
+        }
 
     test_n_bots = 3
     test_mode = "serial"
@@ -256,7 +257,16 @@ class Exp(psynet.experiment.Experiment):
         assert "You won with 4!" in bots[2].current_page_text
         assert "The room picked 3, 3, 4." in bots[0].current_page_text
 
-        rows = self.get_basic_data()["player_round"]
+        data = self.get_basic_data()
+        rooms = data["group_round"]
+        assert [
+            (r["round"], sorted(r["choices"].values()), r["winning_number"])
+            for r in rooms
+        ] == [
+            (1, [1, 2], 1),
+            (2, [3, 3, 4], 4),
+        ], rooms
+        rows = data["player_round"]
         assert [(r["round"], r["choice"], r["bonus"]) for r in rows] == [
             (1, 1, WIN_BONUS),
             (1, 2, 0.0),

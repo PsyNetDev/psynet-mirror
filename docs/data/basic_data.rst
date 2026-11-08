@@ -205,35 +205,48 @@ Games without trials, such as those that re-pair players with a
 :class:`~psynet.sync.GroupBarrier` that ends it. With ``record_rounds=True``,
 PsyNet writes a :class:`~psynet.sync.ParticipantRound` row for every member each
 time the barrier releases the group, including members who left the group
-during the round, and the barrier's ``on_release`` adds the results with
-``barrier.record(participant, ...)``. Pass ``bonus=`` there to pay the
-participant, so that the record and the payment can't disagree. The
-``ultimatum_pairing`` demo records each player's decision and coins:
+during the round, and a :class:`~psynet.sync.SyncGroupRound` row for the
+group. The barrier's ``on_release`` adds the results:
+``barrier.record(participant, ...)`` for each player's, and
+``barrier.record_group(...)`` for those of the whole group, such as an offer
+and whether it was accepted, or the winning number. Pass ``bonus=`` to
+``record`` to pay the participant, so that the record and the payment can't
+disagree. The ``ultimatum_pairing`` demo records the pair's offer and result,
+and each player's decision and coins:
 
 .. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: score_round
 
-and returns the rows as its basic data with :func:`~psynet.sync.participant_rounds`:
+and returns both tables as its basic data with
+:func:`~psynet.sync.participant_rounds` and :func:`~psynet.sync.group_rounds`:
 
 .. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: Exp.get_basic_data
 
-Pass a participant to read only their rows, for example to show them their
-latest result, as the results page of the ``lowest_unique_number`` demo
-does with ``participant_rounds("round_finished", participant)[-1]``.
+Each player row has the ``round_id`` of its group's round, so join the two
+tables on ``round_id`` to put the group's results next to each player's;
+group results aren't copied into the player rows. Pass a participant to read
+only the rounds they took part in, for example to show them how their
+latest round went, as the results pages of both demos do with
+``group_rounds("round_finished", participant)[-1]``; pass ``round=`` for
+one round.
 
-Each row has the ``round``, the ``group_id``, the member's ``participant_id``
+Each player row has the ``round``, the ``group_id``, the member's ``participant_id``
 and ``role``, ``other_member_ids`` (who else played the round), ``outcome``
 (``"played"``, ``"sat_out"``, ``"dissolved"`` or why the member left, such
-as ``"late"``), ``bonus`` and the recorded fields. In groups a regrouper
+as ``"late"``), ``bonus`` and the recorded fields. Each group row has the
+``round``, the ``group_id``, ``member_ids`` (who played the round),
+``outcome`` (``"played"`` or ``"dissolved"``), ``time`` and the recorded
+fields. In groups a regrouper
 forms, ``round`` counts the regrouper's splits, so it is the same for the
-whole cohort, and a player the regrouper sat out gets a ``"sat_out"`` row for
-that round, with the cohort as its ``group_id``. Other groups count their own
+whole cohort, though each group has its own group row. A player the
+regrouper sat out gets a ``"sat_out"`` row for that round, with the cohort
+as its ``group_id`` and no ``round_id``. Other groups count their own
 rounds at the barrier.
 
-When a group dissolves during a round, every member gets a ``"dissolved"``
-row for it. If some members wait at the barrier, ``on_dissolve`` can record
-their results too. If nobody has reached it yet, the round is recorded only
+When a group dissolves during a round, the group and every member get a
+``"dissolved"`` row for it. If some members wait at the barrier,
+``on_dissolve`` can record their results too. If nobody has reached it yet, the round is recorded only
 when it is the timeline's one recording barrier for that group type and a
 member is still on their way to it; a group that dissolves between rounds,
 or after its last round, has no round to record.

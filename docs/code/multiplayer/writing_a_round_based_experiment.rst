@@ -137,26 +137,20 @@ Scoring the round
 -----------------
 
 The barrier's ``on_release`` scores the pair once both have arrived, or once
-the one who is left has. It stores each player's outcome, so that a page
-reloaded later still shows it. When a partner left or ran out of time,
-``score_round`` stores a message saying so and pays nobody. Its ``left``
-argument lists the members who left the pair this round, and
-``sync_group_removal_reason`` tells a partner who was too slow apart from
-one who returned the study:
+the one who is left has, and records the round (see
+:ref:`basic_data_regrouper`): ``barrier.record_group`` stores the pair's
+offer and its result once, and ``barrier.record`` each player's decision
+and coins. A page reloaded later still shows them. When a partner left or
+ran out of time, nobody is paid. The ``left`` argument lists the members
+who left the pair this round, and ``sync_group_removal_reason`` tells a
+partner who was too slow apart from one who returned the study:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :start-at: def score_round
-   :end-at: return
+   :pyobject: score_round
 
-Otherwise it looks up each player's role and pays out the offer: Otherwise it
-looks up each player's role and pays out the offer:
-
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :start-at: roles = {pairing.role(p): p for p in participants}
-   :end-before: def decision_page
-   :dedent: 4
-
-The results page passes both answers to the prompt as speech bubbles:
+The results page reads the pair's round with
+:func:`~psynet.sync.group_rounds` and passes both answers to the prompt as
+speech bubbles:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: show_outcome

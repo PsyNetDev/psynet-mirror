@@ -1917,6 +1917,11 @@ def _record_who_left(left):
 def _record_score(participants, barrier):
     for participant in participants:
         barrier.record(participant, score=participant.id * 10, bonus=0.5)
+    barrier.record_group(total=sum(p.id * 10 for p in participants))
+
+
+def _record_who_waited(participants, barrier):
+    barrier.record_group(**{f"waited_{p.id}": True for p in participants})
 
 
 def _custom_arrival_message(*, kind, waiting_count=None, group_size=None, **kwargs):
@@ -7536,7 +7541,7 @@ def test_on_release_is_told_who_left_since_the_last_barrier(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_session):
-    from psynet.sync import participant_rounds
+    from psynet.sync import group_rounds, participant_rounds
 
     exp = get_experiment()
     participants, group = _sync_group_of(exp, db_session, 3)
@@ -7579,6 +7584,17 @@ def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_s
     ]
     assert [p.performance_reward for p in stayers] == [1.0, 1.0]
 
+    total = (first + second) * 10
+    assert [
+        (r["round"], r["outcome"], r["member_ids"], r["total"])
+        for r in group_rounds("round_finished")
+    ] == [(1, "played", [first, second], total), (2, "played", [first, second], total)]
+    round_ids = {r["round"]: r["round_id"] for r in group_rounds()}
+    assert all(r["round_id"] == round_ids[r["round"]] for r in participant_rounds())
+    # The late member's rounds are those they have a record in.
+    assert [r["round"] for r in group_rounds(participant=late)] == [1]
+    assert [r["round"] for r in group_rounds("round_finished", stayers[0], 2)] == [2]
+
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
@@ -7586,21 +7602,28 @@ def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_s
 def test_a_dissolving_group_records_the_round_for_every_member(
     in_experiment_directory, db_session
 ):
-    from psynet.sync import participant_rounds
+    from psynet.sync import group_rounds, participant_rounds
 
     exp = get_experiment()
     participants, group = _sync_group_of(exp, db_session, 3)
     group.below_quorum = "continue_without_group"
-    waiter, deciding, quitter = participants
-    barrier = GroupBarrier(id_="round_finished", group_type="main", record_rounds=True)
-    _arrive_at_group_barrier(exp, barrier, waiter)
+    waiter, busy, quitter = participants
+    barrier = GroupBarrier(
+        id_="round_finished",
+        group_type="main",
+        record_rounds=True,
+        on_dissolve=_record_who_waited,
+    )
+    for participant in (waiter, busy):
+        _arrive_at_group_barrier(exp, barrier, participant)
     _commit_barrier_arrivals()
 
-    # The deciding member's own request is busy, so the poller removes them later.
+    # The busy member's own request holds their row, so the poller removes
+    # them, and calls on_dissolve for them, later.
     with db.engine.connect() as busy_request, busy_request.begin():
         busy_request.execute(
             text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
-            {"id": deciding.id},
+            {"id": busy.id},
         )
         quitter.fail("returned")
         db_session.commit()
@@ -7611,9 +7634,15 @@ def test_a_dissolving_group_records_the_round_for_every_member(
     )
     assert rounds == [
         (waiter.id, 1, "dissolved"),
-        (deciding.id, 1, "dissolved"),
+        (busy.id, 1, "dissolved"),
         (quitter.id, 1, "left_experiment"),
     ]
+    # Both calls of on_dissolve record on the group's one round.
+    (group_round,) = group_rounds()
+    assert group_round["outcome"] == "dissolved"
+    assert group_round["member_ids"] == [waiter.id, busy.id]
+    assert group_round[f"waited_{waiter.id}"] and group_round[f"waited_{busy.id}"]
+    assert {r["round_id"] for r in participant_rounds()} == {group_round["round_id"]}
 
 
 def _labels_reached(elts, participant):

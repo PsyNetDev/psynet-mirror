@@ -33,7 +33,13 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper, participant_rounds
+from psynet.sync import (
+    GroupBarrier,
+    Regrouper,
+    SimpleGrouper,
+    group_rounds,
+    participant_rounds,
+)
 from psynet.timeline import (
     CodeBlock,
     PageMaker,
@@ -117,49 +123,37 @@ def keep_playing(participant):
 
 
 def score_round(participants: List[Participant], left: List[Participant], barrier):
-    """Pay out the round, or note who ran out of time or left, and record it."""
-    for participant in participants:
-        barrier.record(participant, decision=participant.var.decision)
+    """Record the pair's offer and its result, and each player's decision and coins."""
+    decisions = {pairing.role(p): (p.id, p.var.decision) for p in participants}
+    proposer_id, offer = decisions.get("proposer", (None, None))
+    responder_id, minimum = decisions.get("responder", (None, None))
     if len(participants) < 2:
-        partner_was_away = any(
-            p.sync_group_removal_reason("pair") == "late" for p in left
-        )
-        participants[0].var.outcome = (
-            "Your partner was away for too long, so nobody was paid."
-            if partner_was_away
-            else "Your partner left, so nobody was paid."
-        )
-        participants[0].var.decisions = None
-        return
-    if any(p.var.decision is None for p in participants):
-        for participant in participants:
-            participant.var.decisions = None
-            participant.var.outcome = (
-                "You ran out of time, so nobody was paid."
-                if participant.var.decision is None
-                else "Your partner ran out of time, so nobody was paid."
-            )
-        return
-    roles = {pairing.role(p): p for p in participants}
-    offer = roles["proposer"].var.decision
-    minimum = roles["responder"].var.decision
-    accepted = offer >= minimum
-    decisions = {
-        roles["proposer"].id: f"I offer {offer}",
-        roles["responder"].id: f"I accept {minimum}+",
-    }
+        away = any(p.sync_group_removal_reason("pair") == "late" for p in left)
+        result = "partner_away" if away else "partner_left"
+    elif offer is None or minimum is None:
+        result = "timed_out"
+    else:
+        result = "accepted" if offer >= minimum else "rejected"
+    barrier.record_group(
+        proposer_id=proposer_id,
+        responder_id=responder_id,
+        offer=offer,
+        minimum=minimum,
+        result=result,
+    )
     for participant in participants:
-        participant.var.decisions = decisions
-        coins = 0
-        if not accepted:
-            outcome = f"The offer of {offer} coins was rejected, so nobody was paid."
-        else:
-            coins = (
-                ENDOWMENT - offer if pairing.role(participant) == "proposer" else offer
-            )
-            outcome = f"The offer of {offer} coins was accepted. You earned {coins}."
-        participant.var.outcome = outcome
-        barrier.record(participant, coins=coins)
+        barrier.record(
+            participant,
+            decision=participant.var.decision,
+            coins=earnings(pairing.role(participant), offer, result),
+        )
+
+
+def earnings(role, offer, result):
+    """Return the coins a player in ``role`` earns from the pair's ``result``."""
+    if result != "accepted":
+        return 0
+    return ENDOWMENT - offer if role == "proposer" else offer
 
 
 def decision_page(participant):
@@ -216,18 +210,39 @@ def waiting_for_partner(participant):
 AWAY_TEXT = "You were away for too long, so you got no coins this round."
 
 
+UNPAID_TEXTS = {
+    "partner_away": "Your partner was away for too long, so nobody was paid.",
+    "partner_left": "Your partner left, so nobody was paid.",
+    "timed_out": "Your partner ran out of time, so nobody was paid.",
+}
+
+
 def show_outcome(participant):
     if not in_pair(participant):
         return InfoPage(AWAY_TEXT, time_estimate=5)
-    if participant.var.decisions is None:
-        return InfoPage(participant.var.outcome, time_estimate=5)
+    # The round the player just played: the next one can't start for them
+    # until they leave this page.
+    pair = group_rounds("round_finished", participant)[-1]
+    offer, result = pair["offer"], pair["result"]
+    if result == "timed_out" and participant.var.decision is None:
+        return InfoPage("You ran out of time, so nobody was paid.", time_estimate=5)
+    if result in UNPAID_TEXTS:
+        return InfoPage(UNPAID_TEXTS[result], time_estimate=5)
+    if result == "rejected":
+        text = f"The offer of {offer} coins was rejected, so nobody was paid."
+    else:
+        coins = earnings(pairing.role(participant), offer, result)
+        text = f"The offer of {offer} coins was accepted. You earned {coins}."
     return ModularPage(
         "outcome",
         GroupPrompt(
-            participant.var.outcome,
+            text,
             participant=participant,
             group_type="pair",
-            answers=participant.var.decisions,
+            answers={
+                pair["proposer_id"]: f"I offer {offer}",
+                pair["responder_id"]: f"I accept {pair['minimum']}+",
+            },
             names="anonymous",
         ),
         time_estimate=5,
@@ -323,8 +338,11 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per round, as recorded at the end of each round."""
-        return {"player_round": participant_rounds("round_finished")}
+        """Return one row per player per round and one per pair per round, as recorded at the end of each round."""
+        return {
+            "player_round": participant_rounds("round_finished"),
+            "group_round": group_rounds("round_finished"),
+        }
 
     test_n_bots = 4
     test_mode = "serial"
@@ -371,7 +389,12 @@ class Exp(psynet.experiment.Experiment):
         # Two pairs in round 1, then one pair in each of rounds 2 and 3, each
         # with one proposer (5) and one responder (3). Round 2 also has a row
         # for the player who sat it out; the lingerer missed it.
-        rows = self.get_basic_data()["player_round"]
+        data = self.get_basic_data()
+        pairs = data["group_round"]
+        assert [(p["round"], p["offer"], p["minimum"], p["result"]) for p in pairs] == [
+            (round_, 5, 3, "accepted") for round_ in [1, 1, 2, 3]
+        ], pairs
+        rows = data["player_round"]
         assert [row["round"] for row in rows] == [1] * 4 + [2] * 3 + [3] * 2, rows
         played = [row for row in rows if row["outcome"] == "played"]
         assert [row["participant_id"] for row in rows if row not in played] == [
@@ -381,6 +404,13 @@ class Exp(psynet.experiment.Experiment):
             row["decision"] == {"proposer": 5, "responder": 3}[row["role"]]
             for row in played
         )
+        # Each player's row links to their pair's round; the sit-out's to none.
+        pair_of = {p["round_id"]: p for p in pairs}
+        assert all(
+            row["participant_id"] in pair_of[row["round_id"]]["member_ids"]
+            for row in played
+        )
+        assert [row["round_id"] for row in rows if row not in played] == [None]
 
 
 def _play(bots):
