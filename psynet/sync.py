@@ -3723,6 +3723,11 @@ def only_in_group(group_type: str, *steps, otherwise=None):
     with a partner. A :class:`GroupBarrier` already lets such a participant
     straight through; this covers the pages between barriers.
 
+    Each step is checked once, when the participant reaches it, so a loop
+    passed as one step runs to its end. For rounds, pass each round's steps
+    as separate steps, as the ``public_goods`` demo does, or stop the loop
+    on ``participant.in_sync_group(group_type)``.
+
     Parameters
     ----------
     group_type
