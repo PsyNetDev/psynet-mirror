@@ -54,6 +54,11 @@ test session in the same directory. `psynet test local` and
 so they leave a running experiment alone, unless it serves the same directory,
 where they refuse to run.
 
+In `experiment.py`, put the constants first, then a `get_timeline()`
+function that returns the `Timeline`, then the helpers it uses, and the
+`Experiment` class last with `timeline = get_timeline()`, so that readers see
+the structure before the details (see `code/writing_a_timeline`).
+
 From `experiment.py`, import sibling modules with `from . import my_module`.
 Validate code with `psynet test local`, not `python experiment.py`. For
 running, debugging and inspecting the database, read

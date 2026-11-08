@@ -9,6 +9,25 @@ experiments build it in a ``get_timeline`` function:
     class Exp(psynet.experiment.Experiment):
         timeline = get_timeline()
 
+Put ``get_timeline`` near the top of ``experiment.py``, after the constants,
+and the functions it uses below it, so that a reader sees the experiment's
+structure before its details. This works because Python looks up the names
+in a function when the function runs, which here is when the class at the
+end of the file is created:
+
+.. code-block:: python
+
+    N_ROUNDS = 3
+
+    def get_timeline():
+        return Timeline(instructions(), play_game(), debrief())
+
+    def play_game():
+        ...
+
+    class Exp(psynet.experiment.Experiment):
+        timeline = get_timeline()
+
 Most examples on this page come from the ``demos/features/timeline`` demo.
 Run it with ``psynet debug local`` from the demo directory to click through
 them.
