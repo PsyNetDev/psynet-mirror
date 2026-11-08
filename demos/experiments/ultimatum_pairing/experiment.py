@@ -80,9 +80,6 @@ def get_timeline():
             waiting_message=lobby_message,
             waiting_screen=forming_cohort,
             max_wait_time=300,
-            # Once a cohort stops taking newcomers, removing a late player can
-            # leave it below its quorum; the rest then end early, not failed.
-            below_quorum="continue_without_group",
         ),
         Module(
             "game",
@@ -439,13 +436,13 @@ class Exp(psynet.experiment.Experiment):
         _play([stayer])
         assert "Your partner was away" in stayer.current_page_text
         assert leaver.with_participant(lambda p: cohort_of(p) is None)
-        # The leaver comes back later. This was their second round, so the game
-        # didn't end early for them.
+        # The leaver comes back later. Rounds count the pairs a player joined,
+        # so this pair was their second round and the game didn't end early.
         for text in [AWAY_TEXT, "That's the end"]:
             leaver.take_page()
             assert text in leaver.current_page_text
 
-        # The stayer has played their two rounds. The lingerer wasn't failed, and
+        # The stayer has been in two pairs. The lingerer wasn't failed, and
         # the sit-out didn't count, so those two play a final round together.
         # The cohort stays closed to latecomers after the stayer has left it.
         for bot in [stayer, *sitting_out, bots[3]]:
