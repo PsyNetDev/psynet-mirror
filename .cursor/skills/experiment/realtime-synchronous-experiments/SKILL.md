@@ -48,7 +48,8 @@ Write these decisions into the experiment plan before coding:
    actions (enough to replay and analyze the session), the current or
    checkpointed state, and, where it matters what each participant was
    shown, a record of each delivery. Store the outcome needed for analysis or
-   `summarize_trials` on the trial.
+   `summarize_trials` on the trial, and an outcome the whole group shares on
+   the node its cued trials share (`trial.node.var`).
 6. **Recovery.** What the page does on reconnect or reload (request the full
    state in `onOpen`), and what happens when a member stops responding
    (barrier `max_wait_action`, turn deadlines).

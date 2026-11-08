@@ -204,6 +204,14 @@ rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
 :meth:`~psynet.sync.Regrouper.sat_out` (for the latest round) and, with
 ``roles``, :meth:`~psynet.sync.Regrouper.role`.
 
+Play each round as one trial per player, added after the regrouper with
+:meth:`Trial.cue() <psynet.trial.main.Trial.cue>` on a trial class that sets
+``sync_group_type``. The trials of a group's members in one round share a
+:class:`~psynet.trial.main.SyncGroupNode` for the group's results, and each
+trial records the group, the player's role and the round, so the game needs
+no bookkeeping of its own and its data can be exported from trials and
+nodes (see :ref:`rounds-cued-trials`).
+
 :doc:`writing_a_round_based_experiment` builds a complete game this way, including moving
 slow players on and sitting out. :class:`~psynet.sync.Regrouper` lists all
 its settings, for example rounds on fixed ticks (``every``), fixed roles and
@@ -252,8 +260,13 @@ barrier after each choice scores the round:
    :pyobject: RockPaperScissorsTrial.score_trial
 
 ``on_release`` can take any of the arguments ``group``, ``participants``,
+``trials`` (each member's current trial, in the same order as
+``participants``), ``node`` (the node those trials share, or ``None``),
 ``leader`` and ``barrier`` (``participant`` is the leader too, kept for
-compatibility). It must be a module-level
+compatibility). With cued trials that share a group's node, a
+``@classmethod`` on the trial class can save the group's results in
+``node.var`` and each member's in ``trial.var`` (see
+:ref:`rounds-cued-trials`). It must be a module-level
 function, a static or class method, or a method bound to a trial maker or a
 saved database object such as a trial. The ``barrier`` it receives is rebuilt
 from saved settings, so read only scalar settings such as ``waiting_message`` and
@@ -481,24 +494,25 @@ overlap a neighbour; hovering over or tapping a member brings their bubble to
 the front. Answers are shown as text; pass :class:`~markupsafe.Markup` for
 HTML such as an image. ``highlight`` marks members, with built-in styles for
 ``"winner"`` and ``"duplicate"``, and ``note`` adds a line of text below
-the group (hidden, like the group, when there is no group to show):
+the group (hidden, like the group, when there is no group to show). In the
+``show_feedback`` of a cued trial:
 
 .. code-block:: python
 
-    result = participant.var.last_round
-    choices = result["choice_by_player"]
+    choices = self.node.var.choices
     GroupPrompt(
         "The winning number was 2.",
         participant=participant,
-        group_type="room",
+        group=self.sync_group,
         answers=choices,
         highlight={pid: "winner" for pid, n in choices.items() if n == 2},
     )
 
 Store the answers when the barrier releases, as the ``lowest_unique_number``
-demo does in ``on_release``, rather than reading them from the group's
-current members: a member who has already moved on to the next round is no
-longer in the group, and would disappear if the page is reloaded.
+demo does on the round's node in ``on_release``, rather than reading them
+from the group's current members: a member who has already moved on to the
+next round is no longer in the group, and would disappear if the page is
+reloaded.
 
 Without ``group``, the prompt shows the participant's group of type
 ``group_type``. ``group_type`` can be left out only while a participant has
@@ -535,7 +549,10 @@ Each group has a randomly chosen leader. PsyNet assigns the leader's next node
 as if the leader were taking the trial maker alone, and the other members get
 trials on the same node. The start of every trial is synchronized; add
 :class:`~psynet.sync.GroupBarrier` elements inside the trial, as in
-``show_trial`` above, to synchronize other points.
+``show_trial`` above, to synchronize other points. Each trial records the
+group, the member's role and the group's round, counted from 0, in
+``sync_group_id``, ``sync_group_role`` and ``sync_group_round`` (see
+:ref:`basic_data_groups`).
 
 ``sync_group_waiting_message`` sets the waiting message for the trial maker's own
 waits. Grouper and barrier waits use their own ``waiting_message``, so pass the
@@ -887,8 +904,9 @@ For the rest of the timeline:
   member who leaves after finishing some trials gets no more, then the trial
   maker finishes as usual: ``on_complete`` runs, and so does a performance
   check, over the trials they did.
-- ``participant.in_sync_group("pair")`` is ``False``, and
-  ``trial.sync_group`` is ``None``. ``participant.sync_group`` is ``None``
+- ``participant.in_sync_group("pair")`` is ``False``, while
+  ``trial.sync_group`` still returns the group the trial was played in.
+  ``participant.sync_group`` is ``None``
   if they are in no other group, is that group if they are in exactly one
   other, and raises if they are in several, so look groups up by type, as in
   ``participant.active_sync_groups.get("pair")``. A

@@ -28,4 +28,6 @@ Read these pages before acting. The "Documentation" section of the experiment's 
    counts match the expected numbers of participants and trials, and no
    column is unexpectedly empty.
 6. If participants interact in groups, also follow
-   `basic-data-dyadic-experiment/SKILL.md`.
+   `basic-data-dyadic-experiment/SKILL.md`. Group results usually live on
+   the node that a group's trials share, so plan a table per group and round
+   read from the nodes as well as one per player and round.

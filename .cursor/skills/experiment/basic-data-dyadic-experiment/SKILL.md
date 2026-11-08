@@ -28,11 +28,13 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 
 1. Locate each identifier the analysis needs (batch, group, round, participant,
    role or player index, partner) using "Group experiments" in
-   `data/basic_data`. If a per-round value exists only in participant
-   variables or browser state, change the experiment to save it on the trial
-   before any data are collected. Games that re-pair players with a
-   `Regrouper` and have no trials can rebuild rounds from the groups and
-   responses instead; see "Games with a regrouper" in `data/basic_data`.
+   `data/basic_data`. Synchronized trials record their group, role and round
+   in `trial.sync_group_id`, `sync_group_role` and `sync_group_round`. If a
+   per-round value exists only in participant variables or browser state,
+   change the experiment to save it on the trial, or the group's value on
+   the node its trials share, before any data are collected. A game written
+   as pages without trials should become one cued trial per player per
+   round; see "Games with a regrouper" in `data/basic_data`.
 2. Define the round state before flattening. List the variables that
    determine it, such as shared and private resources, visible signals,
    hidden attributes, current turn, previous actions, timers, and cumulative
