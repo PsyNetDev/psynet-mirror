@@ -46,7 +46,8 @@ def show_quorum(participant):
         "quorate",
         # Nobody waits at a barrier here, so there is nothing to tick.
         GroupPrompt(
-            # No count here: the group display updates as people join and leave.
+            # No count here: the group display updates as people join and leave
+            # the group (closing the tab doesn't count as leaving).
             "We are now quorate. These participants are present:",
             participant=participant,
             names="shown",
