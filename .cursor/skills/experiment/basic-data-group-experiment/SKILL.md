@@ -49,11 +49,11 @@ across tables.
   `SyncGroupNode.query.filter_by(module_id=...)`.
 
 Start from `get_basic_data` in the `lowest_unique_number` demo for cued
-trials, or in the `rock_paper_scissors` demo for a trial maker. If a
-per-round value exists only in participant variables or browser state,
-change the experiment to save it on the trial or node before any data are
-collected. Games without trials can rebuild rounds from the groups and
-responses instead; see "Games with a regrouper" in `data/basic_data`.
+trials, in the `ultimatum_pairing` demo for pairs that change every round
+(see "Games with a regrouper" in `data/basic_data`), or in the
+`rock_paper_scissors` demo for a trial maker. If a per-round value exists
+only in participant variables or browser state, change the experiment to
+save it on the trial or node before any data are collected.
 
 ## Workflow
 
