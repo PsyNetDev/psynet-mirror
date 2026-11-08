@@ -76,6 +76,13 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   result; members still on an earlier page then get neither callback, so
   check `participant.sync_group_removal_reason(...)` in a step after the
   barrier if they need a result too.
+- For one row per member per round in the export, pass the barrier that ends
+  each round `record_rounds=True` and call
+  `barrier.record(participant, answer=..., bonus=...)` in `on_release` (and
+  `on_dissolve`); return `group_rounds("barrier_id")` from `get_basic_data`.
+  Rows include members who left during the round, and every member when the
+  group dissolves while someone waits there, so pay through `bonus=` to keep
+  the payment and the record in step.
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Use `sync_group_type` on trial makers when all group members should follow the

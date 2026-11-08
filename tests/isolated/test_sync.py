@@ -1901,6 +1901,11 @@ def _record_who_left(left):
     _left_at_release.append([(p.id, p.sync_group_removal_reason("main")) for p in left])
 
 
+def _record_score(participants, barrier):
+    for participant in participants:
+        barrier.record(participant, score=participant.id * 10, bonus=0.5)
+
+
 def _custom_arrival_message(*, kind, waiting_count=None, group_size=None, **kwargs):
     return "custom"
 
@@ -7485,3 +7490,71 @@ def test_on_release_is_told_who_left_since_the_last_barrier(
         [(late.id, "late"), (quitter.id, "left_experiment")],
         [],
     ]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_session):
+    from psynet.sync import group_rounds
+
+    exp = get_experiment()
+    participants, group = _sync_group_of(exp, db_session, 3)
+    group.min_group_size = 2
+    late, *stayers = participants
+    group.remove_participant(late, reason="late")
+    db_session.commit()
+
+    for _ in range(2):
+        barrier = GroupBarrier(
+            id_="round_done",
+            group_type="main",
+            on_release=_record_score,
+            on_release_data={"game": "test"},
+            record_rounds=True,
+        )
+        for stayer in stayers:
+            _arrive_at_group_barrier(exp, barrier, stayer)
+        _commit_barrier_arrivals()
+
+    rows = [
+        (r["round"], r["participant_id"], r["outcome"], r.get("score"), r["bonus"])
+        for r in group_rounds("round_done")
+    ]
+    first, second = (p.id for p in stayers)
+    assert rows == [
+        (1, late.id, "late", None, None),
+        (1, first, "played", first * 10, 0.5),
+        (1, second, "played", second * 10, 0.5),
+        (2, first, "played", first * 10, 0.5),
+        (2, second, "played", second * 10, 0.5),
+    ]
+    assert all(r["game"] == "test" for r in group_rounds())
+    assert [p.performance_reward for p in stayers] == [1.0, 1.0]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_dissolving_group_records_the_round_for_every_member(
+    in_experiment_directory, db_session
+):
+    from psynet.sync import group_rounds
+
+    exp = get_experiment()
+    participants, group = _sync_group_of(exp, db_session, 3)
+    group.below_quorum = "continue_without_group"
+    waiter, deciding, quitter = participants
+    barrier = GroupBarrier(id_="round_done", group_type="main", record_rounds=True)
+    _arrive_at_group_barrier(exp, barrier, waiter)
+    _commit_barrier_arrivals()
+
+    quitter.fail("returned")
+    db_session.commit()
+
+    outcomes = {r["participant_id"]: r["outcome"] for r in group_rounds()}
+    assert outcomes == {
+        waiter.id: "dissolved",
+        deciding.id: "dissolved",
+        quitter.id: "left_experiment",
+    }

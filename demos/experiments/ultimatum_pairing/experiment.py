@@ -33,7 +33,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper
+from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper, group_rounds
 from psynet.timeline import (
     CodeBlock,
     PageMaker,
@@ -116,8 +116,10 @@ def keep_playing(participant):
     )
 
 
-def score_round(participants: List[Participant], left: List[Participant]):
-    """Pay out the round, or note who ran out of time or left."""
+def score_round(participants: List[Participant], left: List[Participant], barrier):
+    """Pay out the round, or note who ran out of time or left, and record it."""
+    for participant in participants:
+        barrier.record(participant, decision=participant.var.decision)
     if len(participants) < 2:
         partner_was_away = any(
             p.sync_group_removal_reason("pair") == "late" for p in left
@@ -148,6 +150,7 @@ def score_round(participants: List[Participant], left: List[Participant]):
     }
     for participant in participants:
         participant.var.decisions = decisions
+        coins = 0
         if not accepted:
             outcome = f"The offer of {offer} coins was rejected, so nobody was paid."
         else:
@@ -156,6 +159,7 @@ def score_round(participants: List[Participant], left: List[Participant]):
             )
             outcome = f"The offer of {offer} coins was accepted. You earned {coins}."
         participant.var.outcome = outcome
+        barrier.record(participant, coins=coins)
 
 
 def decision_page(participant):
@@ -269,6 +273,7 @@ def play_round():
                     late_after=30,
                     late_action="leave_group",
                     on_release=score_round,
+                    record_rounds=True,
                 ),
                 PageMaker(show_outcome, time_estimate=5),
             ),
@@ -318,60 +323,8 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per round in a pair, with both decisions."""
-        from psynet.sync import ParticipantLinkSyncGroup, SyncGroup
-        from psynet.timeline import Response
-
-        # Each group the regrouper formed is one round of one pair.
-        links = (
-            ParticipantLinkSyncGroup.query.join(SyncGroup)
-            .filter(SyncGroup.grouper_id == pairing.id)
-            .order_by(ParticipantLinkSyncGroup.id)
-            .all()
-        )
-        decisions = Response.query.filter(
-            Response.question.in_(["proposer", "responder"])
-        ).all()
-
-        def decision(link, next_link):
-            # The player's decision between joining this pair and the next one.
-            for response in decisions:
-                if (
-                    response.participant_id == link.participant_id
-                    and response.creation_time >= link.creation_time
-                    and (
-                        next_link is None
-                        or response.creation_time < next_link.creation_time
-                    )
-                ):
-                    return response.answer
-            return None
-
-        by_player = {}
-        for link in links:
-            by_player.setdefault(link.participant_id, []).append(link)
-        rows = {}
-        for player_links in by_player.values():
-            for i, link in enumerate(player_links):
-                next_link = player_links[i + 1] if i + 1 < len(player_links) else None
-                rows[link.id] = {
-                    "pair_id": link.sync_group_id,
-                    "round": i + 1,
-                    "participant_id": link.participant_id,
-                    "role": link.role,
-                    "decision": decision(link, next_link),
-                    "removed_for_being_late": link.removal_reason == "late",
-                }
-        for link in links:
-            partners = [
-                other
-                for other in links
-                if other.sync_group_id == link.sync_group_id and other.id != link.id
-            ]
-            partner = rows[partners[0].id] if partners else None
-            rows[link.id]["partner_id"] = partner and partner["participant_id"]
-            rows[link.id]["partner_decision"] = partner and partner["decision"]
-        return {"player_round": list(rows.values())}
+        """Return one row per player per round, as recorded at the end of each round."""
+        return {"player_round": group_rounds("round_finished")}
 
     test_n_bots = 4
     test_mode = "serial"
@@ -416,10 +369,15 @@ class Exp(psynet.experiment.Experiment):
             assert bot.current_notice is None
 
         # Two pairs in round 1, then one pair in each of rounds 2 and 3, each
-        # with one proposer (5) and one responder (3).
+        # with one proposer (5) and one responder (3). The cohort numbers the
+        # rounds, so the player who sat out round 2 has no row for it.
         rows = self.get_basic_data()["player_round"]
-        assert len(rows) == 8
-        assert all({row["decision"], row["partner_decision"]} == {3, 5} for row in rows)
+        assert [row["round"] for row in rows] == [1] * 4 + [2] * 2 + [3] * 2, rows
+        assert all(row["outcome"] == "played" for row in rows)
+        assert all(
+            row["decision"] == {"proposer": 5, "responder": 3}[row["role"]]
+            for row in rows
+        )
 
 
 def _play(bots):

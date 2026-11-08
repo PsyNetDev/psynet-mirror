@@ -161,7 +161,7 @@ from psynet.db import (
     _set_transaction_lock_timeout,
     is_transient_transaction_error,
 )
-from psynet.field import PythonClass, PythonObject
+from psynet.field import PythonClass, PythonDict, PythonList, PythonObject
 from psynet.page import UnsuccessfulEndPage
 from psynet.participant import Participant
 from psynet.serialize import SerializedCallable, serialize_callable
@@ -1663,6 +1663,16 @@ class GroupBarrier(Barrier):
         the members waiting here, and ``barrier`` can read ``on_release_data``.
         The same serialization rules apply.
 
+    record_rounds
+        If ``True``, PsyNet records each round at this barrier, one
+        :class:`GroupRound` row per member, each time the barrier releases the
+        group or the group dissolves while someone waits here: members still
+        in the group, those who left it since its previous barrier, and, when
+        it dissolves, those who hadn't reached the barrier yet. ``on_release``
+        and ``on_dissolve`` add the round's results, and a bonus, with
+        :meth:`record`; :func:`group_rounds` returns the rows for
+        ``get_basic_data``.
+
     stop_top_ups
         If ``True``, the group stops accepting newcomers once it passes this
         barrier, as :meth:`SimpleSyncGroup.stop_top_ups` does, for example at
@@ -1757,6 +1767,7 @@ class GroupBarrier(Barrier):
         on_release_data: Optional[dict] = None,
         on_dissolve: Optional[Callable] = None,
         stop_top_ups: bool = False,
+        record_rounds: bool = False,
     ):
         _validate_group_timeouts(max_wait_action, late_after, late_action)
         max_wait_time = _group_max_wait_time(max_wait_time, late_after, default=20)
@@ -1781,6 +1792,80 @@ class GroupBarrier(Barrier):
         self.on_release_data = {} if on_release_data is None else dict(on_release_data)
         self.on_dissolve = on_dissolve
         self.stop_top_ups = bool(stop_top_ups)
+        self.record_rounds = bool(record_rounds)
+
+    def record(self, participant, *, bonus: Optional[float] = None, **data):
+        """Add results to ``participant``'s record of this round.
+
+        Only works in the ``on_release`` or ``on_dissolve`` of a barrier with
+        ``record_rounds=True``, for any member of the round, including those
+        in ``left``. Calling it again for the same member adds more fields.
+
+        Parameters
+        ----------
+        participant
+            The member.
+        bonus
+            Optional amount to add to the participant's performance reward,
+            once per round, so that the record and the payment agree.
+        **data
+            Fields to store, such as the member's answer and payoff. They
+            become columns of :func:`group_rounds`.
+        """
+        rows = _rounds_being_recorded.get(id(self))
+        if rows is None:
+            raise RuntimeError(
+                "barrier.record() works only in on_release or on_dissolve of a "
+                "GroupBarrier with record_rounds=True."
+            )
+        row = rows.get(participant.id)
+        if row is None:
+            raise ValueError(
+                f"Participant {participant.id} has no record in this round of "
+                f"barrier '{self.id}'."
+            )
+        clashes = set(data) & set(_GROUP_ROUND_COLUMNS)
+        if clashes:
+            raise ValueError(
+                f"These names are reserved for group round columns: {sorted(clashes)}."
+            )
+        row.data = {**(row.data or {}), **data}
+        if bonus is not None:
+            if row.bonus is not None:
+                raise ValueError(
+                    f"Participant {participant.id} already has a bonus for this round."
+                )
+            row.bonus = bonus
+            participant.inc_performance_reward(bonus)
+
+    def _start_round_records(self, group, members, left, outcome):
+        """Write this round's rows for ``members`` and ``left``, for :meth:`record`."""
+        number = _round_number(group, self.id)
+        roles = {link.participant_id: link.role for link in group.participant_links}
+        member_ids = [participant.id for participant in members]
+        rows = {}
+        for participant in [*members, *left]:
+            if participant in members:
+                participant_outcome = outcome
+                others = [id_ for id_ in member_ids if id_ != participant.id]
+            else:
+                participant_outcome = (
+                    participant.sync_group_removal_reason(group.group_type) or "left"
+                )
+                others = member_ids
+            rows[participant.id] = GroupRound(
+                sync_group_id=group.id,
+                group_type=group.group_type,
+                barrier_id=self.id,
+                round=number,
+                participant_id=participant.id,
+                role=roles.get(participant.id),
+                outcome=participant_outcome,
+                other_member_ids=others,
+                data=dict(self.on_release_data),
+            )
+        db.session.add_all(rows.values())
+        _rounds_being_recorded[id(self)] = rows
 
     def resolve(self):
         group_type = self.group_type
@@ -1944,8 +2029,12 @@ class GroupBarrier(Barrier):
                 if self.stop_top_ups and hasattr(group, "stop_top_ups"):
                     group.stop_top_ups()
 
-                if self.on_release:
-                    try:
+                if self.record_rounds:
+                    self._start_round_records(
+                        group, group.active_participants, left, "played"
+                    )
+                try:
+                    if self.on_release:
                         self.on_release(
                             group=group,
                             participants=group.active_participants,
@@ -1954,12 +2043,14 @@ class GroupBarrier(Barrier):
                             left=left,
                             barrier=self,
                         )
-                    except Exception as err:
-                        if is_transient_transaction_error(err):
-                            raise
-                        raise _BarrierAuthorHookError(
-                            f"Barrier '{self.id}' on_release failed."
-                        ) from err
+                except Exception as err:
+                    if is_transient_transaction_error(err):
+                        raise
+                    raise _BarrierAuthorHookError(
+                        f"Barrier '{self.id}' on_release failed."
+                    ) from err
+                finally:
+                    _rounds_being_recorded.pop(id(self), None)
 
         participants_to_release_ids = {p.id for p in participants_to_release}
         for participant in waiting_participants:
@@ -4207,7 +4298,7 @@ class SimpleSyncGroup(SyncGroup):
 
 
 def _run_on_dissolve(group, members):
-    """Call ``on_dissolve`` of each barrier of ``group`` where some of ``members`` are waiting."""
+    """Record the round and call ``on_dissolve`` at each barrier of ``group`` where some of ``members`` are waiting."""
     reconstructed = {}
     waiting = {}
     for participant in members:
@@ -4216,14 +4307,24 @@ def _run_on_dissolve(group, members):
             if instance is None or instance.group_id != group.id:
                 continue
             barrier = _reconstructed_arrival_barrier(link, reconstructed)
-            if getattr(barrier, "on_dissolve", None) is None:
+            if getattr(barrier, "on_dissolve", None) is None and not getattr(
+                barrier, "record_rounds", False
+            ):
                 continue
             waiting.setdefault(link.barrier_instance_id, (barrier, []))[1].append(
                 participant
             )
     for barrier, participants in waiting.values():
+        if barrier.record_rounds:
+            left = group.members_who_left_since(
+                group.last_barrier_pass_time or group.creation_time
+            )
+            barrier._start_round_records(group, members, left, "dissolved")
         try:
-            barrier.on_dissolve(group=group, participants=participants, barrier=barrier)
+            if barrier.on_dissolve is not None:
+                barrier.on_dissolve(
+                    group=group, participants=participants, barrier=barrier
+                )
         except Exception as err:
             # Dissolving runs in other participants' requests, such as one
             # returning the study, which must not fail because of this hook.
@@ -4232,6 +4333,8 @@ def _run_on_dissolve(group, members):
             logger.exception(
                 "Barrier '%s' on_dissolve failed for group %s.", barrier.id, group.id
             )
+        finally:
+            _rounds_being_recorded.pop(id(barrier), None)
 
 
 def _top_up_wait_over(group) -> bool:
@@ -4518,6 +4621,134 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
 
     sync_group_id = Column(Integer, ForeignKey("sync_group.id"), index=True)
     sync_group = relationship("SyncGroup", back_populates="participant_links")
+
+
+# The rows of the rounds whose callbacks are running, by ``id()`` of the
+# barrier, for ``GroupBarrier.record``.
+_rounds_being_recorded: Dict[int, dict] = {}
+
+_GROUP_ROUND_COLUMNS = (
+    "barrier_id",
+    "round",
+    "group_id",
+    "group_type",
+    "participant_id",
+    "role",
+    "outcome",
+    "other_member_ids",
+    "bonus",
+)
+
+
+@register_table
+class GroupRound(SQLBase, SQLMixin):
+    """One member's part in one round at a ``GroupBarrier(record_rounds=True)``.
+
+    PsyNet writes a row for every member each time such a barrier releases
+    the group or the group dissolves while someone waits there, including
+    the members who left the group since its previous barrier. The barrier's
+    callbacks add the round's results with :meth:`GroupBarrier.record`, and
+    :func:`group_rounds` returns the rows for ``get_basic_data``.
+    """
+
+    __tablename__ = "group_round"
+
+    sync_group_id = Column(Integer, ForeignKey("sync_group.id"), index=True)
+    group_type = Column(String)
+    barrier_id = Column(String, index=True)
+    round = Column(Integer)
+    participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
+    role = Column(String)
+    # "played", "dissolved", or why the member left, as in
+    # ``Participant.sync_group_removal_reason``.
+    outcome = Column(String)
+    other_member_ids = Column(PythonList)
+    data = Column(PythonDict)
+    bonus = Column(Float)
+
+
+def group_rounds(barrier_id: Optional[str] = None) -> List[dict]:
+    """Return the recorded rounds, one dictionary per member per round.
+
+    Each dictionary has ``barrier_id``, ``round``, ``group_id``,
+    ``group_type``, ``participant_id``, ``role``, ``outcome``
+    (``"played"``, ``"dissolved"`` or why the member left, such as ``"late"``),
+    ``other_member_ids`` (the members who played the round, other than this
+    one), ``bonus``, the barrier's ``on_release_data`` and the fields its
+    callbacks passed to :meth:`GroupBarrier.record`.
+
+    Parameters
+    ----------
+    barrier_id
+        Only return the rounds of this barrier. By default, return those of
+        every ``GroupBarrier(record_rounds=True)``.
+
+    Examples
+    --------
+    ::
+
+        @classmethod
+        def get_basic_data(cls, context=None, **kwargs):
+            return {"player_round": group_rounds("round_finished")}
+    """
+    query = GroupRound.query
+    if barrier_id is not None:
+        query = query.filter(GroupRound.barrier_id == barrier_id)
+    rows = query.order_by(
+        GroupRound.barrier_id,
+        GroupRound.round,
+        GroupRound.sync_group_id,
+        GroupRound.participant_id,
+    ).all()
+    return [
+        {
+            "barrier_id": row.barrier_id,
+            "round": row.round,
+            "group_id": row.sync_group_id,
+            "group_type": row.group_type,
+            "participant_id": row.participant_id,
+            "role": row.role,
+            "outcome": row.outcome,
+            "other_member_ids": list(row.other_member_ids or []),
+            "bonus": row.bonus,
+            **(row.data or {}),
+        }
+        for row in rows
+    ]
+
+
+def _round_number(group, barrier_id):
+    """Number the round that ``group`` is finishing at ``barrier_id``, from 1.
+
+    Groups a :class:`Regrouper` forms in one split share a creation time, so
+    their rounds are numbered by split, the same for the whole cohort.
+    Other groups count their own rounds at the barrier.
+    """
+    definition = (
+        None
+        if group.grouper_id is None
+        else BarrierDefinition.query.get(group.grouper_id)
+    )
+    if definition is not None and issubclass(definition.barrier_class, Regrouper):
+        query = db.session.query(
+            func.count(func.distinct(SyncGroup.creation_time))
+        ).filter(
+            SyncGroup.grouper_id == group.grouper_id,
+            SyncGroup.creation_time <= group.creation_time,
+            SyncGroup.within_group_id.is_(None)
+            if group.within_group_id is None
+            else SyncGroup.within_group_id == group.within_group_id,
+        )
+        return query.scalar()
+    previous = (
+        db.session.query(func.max(GroupRound.round))
+        .filter(
+            GroupRound.sync_group_id == group.id,
+            GroupRound.barrier_id == barrier_id,
+        )
+        .scalar()
+    )
+    return (previous or 0) + 1
 
 
 @register_table

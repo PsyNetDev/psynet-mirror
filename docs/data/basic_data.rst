@@ -119,7 +119,7 @@ form one round.
 A participant variable (``participant.var``) holds only its latest value. To
 keep a result from every round in the export, save it on the trial, for
 example in ``trial.score`` or ``trial.var``, or, in games without trials,
-rebuild it from the groups and responses as in
+record it at the barrier that ends each round, as in
 :ref:`basic_data_regrouper`.
 
 A convenient layout for dyads and small groups is one row per participant per
@@ -200,19 +200,33 @@ follows it.
 Games with a regrouper
 ~~~~~~~~~~~~~~~~~~~~~~
 
-Games that re-pair players with a :class:`~psynet.sync.Regrouper` often have
-no trials, but each group the regrouper forms is one round of one group, and
-each member's ``participant_link_sync_group`` row records their ``role`` and,
-in ``removal_reason``, whether they were removed for being late. Their answers
-are in the ``response`` table, which has one row per page answered. The
-``ultimatum_pairing`` demo matches each player's decision to the pair they
-were in when they gave it:
+Games without trials, such as those that re-pair players with a
+:class:`~psynet.sync.Regrouper`, can record each round at the
+:class:`~psynet.sync.GroupBarrier` that ends it. With ``record_rounds=True``,
+PsyNet writes a :class:`~psynet.sync.GroupRound` row for every member each
+time the barrier releases the group, including members who left the group
+during the round, and the barrier's ``on_release`` adds the results with
+``barrier.record(participant, ...)``. Pass ``bonus=`` there to pay the
+participant, so that the record and the payment can't disagree. The
+``ultimatum_pairing`` demo records each player's decision and coins:
+
+.. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
+   :pyobject: score_round
+
+and returns the rows as its basic data with :func:`~psynet.sync.group_rounds`:
 
 .. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: Exp.get_basic_data
 
-Rounds a player sat out have no row here; their visits to the regrouper with
-``sat_out`` set are in the ``participant_link_barrier`` table.
+Each row has the ``round``, the ``group_id``, the member's ``participant_id``
+and ``role``, ``other_member_ids`` (who else played the round), ``outcome``
+(``"played"``, ``"dissolved"`` or why the member left, such as ``"late"``),
+``bonus`` and the recorded fields. In groups a regrouper forms, ``round``
+counts the regrouper's splits, so it is the same for the whole cohort, and a
+player who sat out a round has no row for it. Other groups count their own
+rounds at the barrier. When a group dissolves while some members wait at the
+barrier, every member gets a ``"dissolved"`` row, and ``on_dissolve`` can
+record their results too.
 
 .. seealso::
 
