@@ -2571,6 +2571,12 @@ class SimpleGrouper(Grouper):
                     "With start_short_after, pass quorum=...: a short start forms "
                     "a group of at least that many (or pass start_short_with)."
                 )
+            if quorum > initial_group_size:
+                raise ValueError(
+                    f"A short start forms a group of at least quorum ({quorum}), "
+                    f"which is more than initial_group_size ({initial_group_size}); "
+                    "pass start_short_with."
+                )
             start_short_with = quorum
         if start_short_with is not None and not (
             1 <= start_short_with <= initial_group_size

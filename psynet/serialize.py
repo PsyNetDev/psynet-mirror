@@ -80,8 +80,8 @@ def serialize_callable(callable_obj, context: str):
         method_self = callable_obj.__self__
         if isinstance(method_self, type):
             try:
-                check_that_function_can_be_serialized(callable_obj.__func__)
-            except ValueError as err:
+                callable_to_path(callable_obj)
+            except TypeError as err:
                 raise CallableSerializationError(
                     _format_callable_error(context, str(err))
                 ) from err
