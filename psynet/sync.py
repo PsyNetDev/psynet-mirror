@@ -3165,8 +3165,9 @@ class Regrouper(Grouper):
         :meth:`rounds_played`) rather than here.
 
     max_wait_time
-        Longest a participant waits at the regrouper before being failed.
-        Defaults to 300 seconds, or to twice the ``deadline`` (or ``every``
+        Longest a participant waits at the regrouper before ``max_wait_action``
+        applies: being failed by default, or carrying on without a group with
+        ``max_wait_action="continue_without_group"``. Defaults to 300 seconds, or to twice the ``deadline`` (or ``every``
         period) plus 60 seconds if that is longer. With ``left_over="sit_out"``
         and ``within``, a value you pass must be longer than twice the
         period, so that a player waiting alone sits out instead of being
@@ -3870,9 +3871,10 @@ def only_in_group(group_type: str, *steps, otherwise=None):
     group, so the steps after it and ``otherwise`` would treat them all as
     having left. When pairs change every round, regroup inside the
     loop, as in ``for_loop(..., logic=join(Regrouper(...),
-    only_in_group("pair", round_steps(), otherwise=sitting_out)))``. Without
-    ``otherwise``, a participant the regrouper sat out skips the round with
-    no page.
+    only_in_group("pair", round_steps(), otherwise=sitting_out)))``. The
+    ``otherwise`` page is for anyone not in a pair by the end of the round:
+    sat out by the regrouper, or removed partway for being late. Without it,
+    they skip the round with no page.
 
     Parameters
     ----------
@@ -3948,8 +3950,9 @@ def warn_if_late_removal_fails_group(barriers):
     and a :class:`SimpleGrouper` of its group type has ``below_quorum="fail"``
     and a ``quorum`` that the loss of one member can break, as in a pair or a
     group that started short. A grouper with ``join_existing_groups=True``
-    only counts once a barrier with ``stop_top_ups=True`` freezes its groups,
-    because until then the group can top up instead.
+    only counts once its groups can stop taking newcomers, through a barrier
+    with ``stop_top_ups=True`` or a ``top_up_wait``, because until then the
+    group can top up instead.
 
     Parameters
     ----------
@@ -3968,7 +3971,11 @@ def warn_if_late_removal_fails_group(barriers):
         if (
             isinstance(grouper, SimpleGrouper)
             and grouper.below_quorum == "fail"
-            and (not grouper.join_existing_groups or grouper.group_type in frozen_types)
+            and (
+                not grouper.join_existing_groups
+                or grouper.top_up_wait is not None
+                or grouper.group_type in frozen_types
+            )
             and grouper.quorum
             > (grouper.start_short_with or grouper.initial_group_size) - 1
         ):

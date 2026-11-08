@@ -749,8 +749,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         with ``max_wait_action="continue_without_group"`` found them no group
         in time), ``"group_dissolved"`` (released
         when the group fell below its quorum, with
-        ``below_quorum="continue_without_group"``), ``"moved_on"`` (went on to a new group
-        at a :class:`~psynet.sync.Regrouper`), ``"finished"`` (left after playing
+        ``below_quorum="continue_without_group"``), ``"moved_on"`` (left at a
+        :class:`~psynet.sync.Regrouper`, for a new group or to sit out the round), ``"finished"`` (left after playing
         their part), ``"left_experiment"`` (failed,
         including returning the study), or ``None`` if no
         reason was recorded, for example after removal from the dashboard.
