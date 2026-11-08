@@ -79,7 +79,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - For one row per member per round in the export, pass the barrier that ends
   each round `record_rounds=True` and call
   `barrier.record(participant, answer=..., bonus=...)` in `on_release` (and
-  `on_dissolve`); return `group_rounds("barrier_id")` from `get_basic_data`.
+  `on_dissolve`); return `participant_rounds("barrier_id")` from `get_basic_data`.
   Rows include members who left during the round, players a `Regrouper`
   sat out, and every member when the group dissolves mid-round, so pay
   through `bonus=` to keep the payment and the record in step.

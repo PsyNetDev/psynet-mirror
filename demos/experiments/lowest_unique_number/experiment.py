@@ -26,6 +26,7 @@ the cohorts first and regroup within them::
 See the ``ultimatum_pairing`` demo for a full example.
 """
 
+import time
 from typing import List
 
 import psynet.experiment
@@ -34,7 +35,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, Regrouper, group_rounds
+from psynet.sync import GroupBarrier, Regrouper, participant_rounds
 from psynet.timeline import (
     PageMaker,
     Timeline,
@@ -119,14 +120,14 @@ def show_result(participant):
         )
     # The player's own row for the round they just played: the next round
     # can't start for them until they leave this page.
-    result = group_rounds("round_finished", participant)[-1]
+    result = participant_rounds("round_finished", participant)[-1]
     if result["choice"] is None:
         return InfoPage(
             "You ran out of time, so you missed this round.", time_estimate=5
         )
     choices = {
         row["participant_id"]: row["choice"]
-        for row in group_rounds("round_finished")
+        for row in participant_rounds("round_finished")
         if row["round"] == result["round"]
         and row["group_id"] == result["group_id"]
         and row.get("choice") is not None
@@ -190,6 +191,19 @@ def play_round():
     )
 
 
+def _arrive_together(bots):
+    """Take each bot's page to the regrouper between the same two ticks.
+
+    A tick between two arrivals would form a room without the later bots, and
+    a bot left alone never gets a room.
+    """
+    seconds_to_tick = ROUND_SECONDS - time.time() % ROUND_SECONDS
+    if seconds_to_tick < 3:
+        time.sleep(seconds_to_tick + 0.1)
+    for bot in bots:
+        bot.take_page()
+
+
 class Exp(psynet.experiment.Experiment):
     label = "Lowest unique number demo"
 
@@ -210,14 +224,13 @@ class Exp(psynet.experiment.Experiment):
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
         """Return one row per player per round, with the bonus it paid."""
-        return {"player_round": group_rounds("round_finished")}
+        return {"player_round": participant_rounds("round_finished")}
 
     test_n_bots = 3
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        for bot in bots:
-            bot.take_page()
+        _arrive_together(bots)
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         assert [bot.current_page_label for bot in bots] == ["choose"] * 3
 
@@ -231,8 +244,7 @@ class Exp(psynet.experiment.Experiment):
         assert "missed this round" in bots[2].current_page_text
 
         # Next round, the third player is back in the room.
-        for bot in bots:
-            bot.take_page()
+        _arrive_together(bots)
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         bots[0].take_page(response=3)
         # While the others choose, the waiting screen shows the player's pick.

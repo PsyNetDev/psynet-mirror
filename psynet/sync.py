@@ -1668,7 +1668,7 @@ class GroupBarrier(Barrier):
 
     record_rounds
         If ``True``, PsyNet records each round at this barrier, one
-        :class:`GroupRound` row per member, each time the barrier releases the
+        :class:`ParticipantRound` row per member, each time the barrier releases the
         group or the group dissolves during the round: members still in the
         group, those who left it since its previous barrier, players a
         :class:`Regrouper` sat out of the round, and, when it dissolves, those
@@ -1676,7 +1676,7 @@ class GroupBarrier(Barrier):
         here is recorded only if this is the timeline's one recording barrier
         for the group type and a member is still on their way to it. ``on_release``
         and ``on_dissolve`` add the round's results, and a bonus, with
-        :meth:`record`; :func:`group_rounds` returns the rows for
+        :meth:`record`; :func:`participant_rounds` returns the rows for
         ``get_basic_data``.
 
     stop_top_ups
@@ -1816,7 +1816,7 @@ class GroupBarrier(Barrier):
             once per round, so that the record and the payment agree.
         **data
             Fields to store, such as the member's answer and payoff. They
-            become columns of :func:`group_rounds`.
+            become columns of :func:`participant_rounds`.
         """
         rows = _rounds_being_recorded.get(id(self))
         if rows is None:
@@ -1830,7 +1830,7 @@ class GroupBarrier(Barrier):
                 f"Participant {participant.id} has no record in this round of "
                 f"barrier '{self.id}'."
             )
-        clashes = set(data) & set(_GROUP_ROUND_COLUMNS)
+        clashes = set(data) & set(_PARTICIPANT_ROUND_COLUMNS)
         if clashes:
             raise ValueError(
                 f"These names are reserved for group round columns: {sorted(clashes)}."
@@ -1851,7 +1851,7 @@ class GroupBarrier(Barrier):
         member_ids = [participant.id for participant in members]
         rows = {
             row.participant_id: row
-            for row in GroupRound.query.filter_by(
+            for row in ParticipantRound.query.filter_by(
                 sync_group_id=group.id, barrier_id=self.id, round=number
             )
         }
@@ -1866,7 +1866,7 @@ class GroupBarrier(Barrier):
                     participant.sync_group_removal_reason(group.group_type) or "left"
                 )
                 others = member_ids
-            rows[participant.id] = GroupRound(
+            rows[participant.id] = ParticipantRound(
                 sync_group_id=group.id,
                 group_type=group.group_type,
                 barrier_id=self.id,
@@ -1897,11 +1897,11 @@ class GroupBarrier(Barrier):
         recorded = {
             participant_id
             for (participant_id,) in db.session.query(
-                GroupRound.participant_id
+                ParticipantRound.participant_id
             ).filter_by(barrier_id=self.id, round=number, outcome="sat_out")
         }
         return [
-            GroupRound(
+            ParticipantRound(
                 sync_group_id=group.within_group_id,
                 group_type=group.group_type,
                 barrier_id=self.id,
@@ -4723,7 +4723,7 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
 # barrier, for ``GroupBarrier.record``.
 _rounds_being_recorded: Dict[int, dict] = {}
 
-_GROUP_ROUND_COLUMNS = (
+_PARTICIPANT_ROUND_COLUMNS = (
     "barrier_id",
     "round",
     "group_id",
@@ -4737,17 +4737,17 @@ _GROUP_ROUND_COLUMNS = (
 
 
 @register_table
-class GroupRound(SQLBase, SQLMixin):
-    """One member's part in one round at a ``GroupBarrier(record_rounds=True)``.
+class ParticipantRound(SQLBase, SQLMixin):
+    """One participant's part in one round at a ``GroupBarrier(record_rounds=True)``.
 
     PsyNet writes a row for every member each time such a barrier releases
     the group or the group dissolves while someone waits there, including
     the members who left the group since its previous barrier. The barrier's
     callbacks add the round's results with :meth:`GroupBarrier.record`, and
-    :func:`group_rounds` returns the rows for ``get_basic_data``.
+    :func:`participant_rounds` returns the rows for ``get_basic_data``.
     """
 
-    __tablename__ = "group_round"
+    __tablename__ = "participant_round"
 
     sync_group_id = Column(Integer, ForeignKey("sync_group.id"), index=True)
     group_type = Column(String)
@@ -4764,7 +4764,7 @@ class GroupRound(SQLBase, SQLMixin):
     bonus = Column(Float)
 
 
-def group_rounds(
+def participant_rounds(
     barrier_id: Optional[str] = None, participant: Optional[Participant] = None
 ) -> List[dict]:
     """Return the recorded rounds, one dictionary per member per round.
@@ -4784,7 +4784,7 @@ def group_rounds(
         every ``GroupBarrier(record_rounds=True)``.
     participant
         Only return this participant's rounds, for example to show them their
-        latest result: ``group_rounds("round_done", participant)[-1]``.
+        latest result: ``participant_rounds("round_finished", participant)[-1]``.
 
     Examples
     --------
@@ -4792,18 +4792,18 @@ def group_rounds(
 
         @classmethod
         def get_basic_data(cls, context=None, **kwargs):
-            return {"player_round": group_rounds("round_finished")}
+            return {"player_round": participant_rounds("round_finished")}
     """
-    query = GroupRound.query
+    query = ParticipantRound.query
     if barrier_id is not None:
-        query = query.filter(GroupRound.barrier_id == barrier_id)
+        query = query.filter(ParticipantRound.barrier_id == barrier_id)
     if participant is not None:
-        query = query.filter(GroupRound.participant_id == participant.id)
+        query = query.filter(ParticipantRound.participant_id == participant.id)
     rows = query.order_by(
-        GroupRound.barrier_id,
-        GroupRound.round,
-        GroupRound.sync_group_id,
-        GroupRound.participant_id,
+        ParticipantRound.barrier_id,
+        ParticipantRound.round,
+        ParticipantRound.sync_group_id,
+        ParticipantRound.participant_id,
     ).all()
     return [
         {
@@ -4851,11 +4851,11 @@ def _round_number(group, barrier_id):
             else SyncGroup.within_group_id == group.within_group_id,
         )
         return query.scalar()
-    rounds = db.session.query(func.max(GroupRound.round)).filter(
-        GroupRound.sync_group_id == group.id,
-        GroupRound.barrier_id == barrier_id,
+    rounds = db.session.query(func.max(ParticipantRound.round)).filter(
+        ParticipantRound.sync_group_id == group.id,
+        ParticipantRound.barrier_id == barrier_id,
     )
-    dissolved = rounds.filter(GroupRound.outcome == "dissolved").scalar()
+    dissolved = rounds.filter(ParticipantRound.outcome == "dissolved").scalar()
     if dissolved is not None:
         return dissolved
     return (rounds.scalar() or 0) + 1

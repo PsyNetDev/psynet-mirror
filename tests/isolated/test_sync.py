@@ -7532,7 +7532,7 @@ def test_on_release_is_told_who_left_since_the_last_barrier(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_session):
-    from psynet.sync import group_rounds
+    from psynet.sync import participant_rounds
 
     exp = get_experiment()
     participants, group = _sync_group_of(exp, db_session, 3)
@@ -7543,7 +7543,7 @@ def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_s
 
     for _ in range(2):
         barrier = GroupBarrier(
-            id_="round_done",
+            id_="round_finished",
             group_type="main",
             on_release=_record_score,
             on_release_data={"game": "test"},
@@ -7555,7 +7555,7 @@ def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_s
 
     rows = [
         (r["round"], r["participant_id"], r["outcome"], r.get("score"), r["bonus"])
-        for r in group_rounds("round_done")
+        for r in participant_rounds("round_finished")
     ]
     first, second = (p.id for p in stayers)
     assert rows == [
@@ -7565,8 +7565,11 @@ def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_s
         (2, first, "played", first * 10, 0.5),
         (2, second, "played", second * 10, 0.5),
     ]
-    assert all(r["game"] == "test" for r in group_rounds())
-    assert [r["round"] for r in group_rounds("round_done", stayers[0])] == [1, 2]
+    assert all(r["game"] == "test" for r in participant_rounds())
+    assert [r["round"] for r in participant_rounds("round_finished", stayers[0])] == [
+        1,
+        2,
+    ]
     assert [p.performance_reward for p in stayers] == [1.0, 1.0]
 
 
@@ -7576,13 +7579,13 @@ def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_s
 def test_a_dissolving_group_records_the_round_for_every_member(
     in_experiment_directory, db_session
 ):
-    from psynet.sync import group_rounds
+    from psynet.sync import participant_rounds
 
     exp = get_experiment()
     participants, group = _sync_group_of(exp, db_session, 3)
     group.below_quorum = "continue_without_group"
     waiter, deciding, quitter = participants
-    barrier = GroupBarrier(id_="round_done", group_type="main", record_rounds=True)
+    barrier = GroupBarrier(id_="round_finished", group_type="main", record_rounds=True)
     _arrive_at_group_barrier(exp, barrier, waiter)
     _commit_barrier_arrivals()
 
@@ -7597,7 +7600,7 @@ def test_a_dissolving_group_records_the_round_for_every_member(
     check_barriers()
 
     rounds = sorted(
-        (r["participant_id"], r["round"], r["outcome"]) for r in group_rounds()
+        (r["participant_id"], r["round"], r["outcome"]) for r in participant_rounds()
     )
     assert rounds == [
         (waiter.id, 1, "dissolved"),
@@ -7647,7 +7650,7 @@ def test_a_group_dissolving_mid_round_records_the_round_nobody_reached(
     in_experiment_directory, db_session, monkeypatch, before_the_barrier, recorded
 ):
     """With nobody waiting, the round counts only while members are on their way to its barrier."""
-    from psynet.sync import group_rounds
+    from psynet.sync import participant_rounds
 
     exp = get_experiment()
     monkeypatch.setattr(
@@ -7655,7 +7658,7 @@ def test_a_group_dissolving_mid_round_records_the_round_nobody_reached(
         "timeline",
         Timeline(
             InfoPage("Decide", time_estimate=1),
-            GroupBarrier(id_="round_done", group_type="main", record_rounds=True),
+            GroupBarrier(id_="round_finished", group_type="main", record_rounds=True),
             InfoPage("Done", time_estimate=1),
         ),
     )
@@ -7666,7 +7669,7 @@ def test_a_group_dissolving_mid_round_records_the_round_nobody_reached(
     participants[2].fail("returned")
     db_session.commit()
 
-    outcomes = [row["outcome"] for row in group_rounds("round_done")]
+    outcomes = [row["outcome"] for row in participant_rounds("round_finished")]
     assert outcomes == (
         ["dissolved", "dissolved", "left_experiment"] if recorded else []
     )

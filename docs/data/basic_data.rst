@@ -203,7 +203,7 @@ Games with a regrouper
 Games without trials, such as those that re-pair players with a
 :class:`~psynet.sync.Regrouper`, can record each round at the
 :class:`~psynet.sync.GroupBarrier` that ends it. With ``record_rounds=True``,
-PsyNet writes a :class:`~psynet.sync.GroupRound` row for every member each
+PsyNet writes a :class:`~psynet.sync.ParticipantRound` row for every member each
 time the barrier releases the group, including members who left the group
 during the round, and the barrier's ``on_release`` adds the results with
 ``barrier.record(participant, ...)``. Pass ``bonus=`` there to pay the
@@ -213,14 +213,14 @@ participant, so that the record and the payment can't disagree. The
 .. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: score_round
 
-and returns the rows as its basic data with :func:`~psynet.sync.group_rounds`:
+and returns the rows as its basic data with :func:`~psynet.sync.participant_rounds`:
 
 .. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: Exp.get_basic_data
 
 Pass a participant to read only their rows, for example to show them their
 latest result, as the results page of the ``lowest_unique_number`` demo
-does with ``group_rounds("round_finished", participant)[-1]``.
+does with ``participant_rounds("round_finished", participant)[-1]``.
 
 Each row has the ``round``, the ``group_id``, the member's ``participant_id``
 and ``role``, ``other_member_ids`` (who else played the round), ``outcome``

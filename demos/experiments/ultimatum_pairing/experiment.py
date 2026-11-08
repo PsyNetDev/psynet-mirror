@@ -33,7 +33,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper, group_rounds
+from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper, participant_rounds
 from psynet.timeline import (
     CodeBlock,
     PageMaker,
@@ -324,7 +324,7 @@ class Exp(psynet.experiment.Experiment):
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
         """Return one row per player per round, as recorded at the end of each round."""
-        return {"player_round": group_rounds("round_finished")}
+        return {"player_round": participant_rounds("round_finished")}
 
     test_n_bots = 4
     test_mode = "serial"
