@@ -855,11 +855,12 @@ For the rest of the timeline:
               ),
           )
 
-  Each step is checked when the participant reaches it, so a loop passed as
-  one step runs to its end. Pass each round's steps as separate steps
-  instead, as in ``only_in_group("pair", *[step for n in range(N_ROUNDS)
-  for step in round_steps(n)])``, or stop the loop on
-  ``participant.in_sync_group(group_type)``.
+  Lists and ``join(...)`` are split into their steps, but a barrier,
+  ``conditional`` or loop is one step, checked when the participant reaches
+  it, so a loop passed to ``only_in_group`` runs to its end. For rounds,
+  pass a list of the rounds' steps, as in
+  ``only_in_group("pair", [round_steps(n) for n in range(N_ROUNDS)])``, or
+  put ``only_in_group`` inside the loop's ``logic``.
 - Trial makers synchronized on that group type give them no more trials.
   A member who leaves before finishing any trial of such a trial maker,
   including one who is out of the group when it starts, skips the rest of

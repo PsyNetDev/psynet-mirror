@@ -79,10 +79,12 @@ from psynet.sync import (
 )
 from psynet.timeline import (
     CodeBlock,
+    CreditEstimate,
     Page,
     PageMaker,
     ReactiveGoTo,
     Response,
+    StartSwitch,
     Timeline,
     join,
 )
@@ -7554,6 +7556,23 @@ def test_only_in_group_runs_otherwise_for_participants_out_of_the_group(
         module_state=None, in_sync_group=lambda group_type: in_group
     )
     assert _labels_reached(elts, participant) == expected
+
+
+def test_only_in_group_checks_each_step_of_joined_rounds():
+    def round_steps(number):
+        return join(
+            InfoPage(f"Round {number}", time_estimate=1),
+            GroupBarrier(id_=f"round_{number}", group_type="pair"),
+        )
+
+    elts = only_in_group("pair", [round_steps(number) for number in range(2)])
+    checks = [
+        elt
+        for elt in elts
+        if isinstance(elt, StartSwitch) and elt.label == "only_in_group:pair"
+    ]
+    assert len(checks) == 4
+    assert CreditEstimate(elts).get_max("time") > 0
 
 
 def test_only_in_group_skips_the_steps_after_the_participant_leaves():

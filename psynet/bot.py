@@ -315,8 +315,17 @@ def run_bots_to_completion(bots: List["BotDriver"], timeout: Optional[float] = 6
         if deadline is not None and time.monotonic() > deadline:
             ids = [bot.id for bot in working]
             raise RuntimeError(f"Bots {ids} are still working after {timeout} s.")
+        if all(_is_waiting(bot) for bot in working):
+            # Everyone waits, for example for a clock tick, so poll as a browser would.
+            time.sleep(0.5)
         for bot in working:
             bot.take_page()
+
+
+def _is_waiting(bot) -> bool:
+    """Return whether the bot's current page, as last refreshed, is a waiting page."""
+    page = bot.status.get("page") or {}
+    return bool(page.get("is_wait_page") or page.get("is_timeline_hold"))
 
 
 def bots_by_sync_group(bots: List["BotDriver"], group_type: str):
