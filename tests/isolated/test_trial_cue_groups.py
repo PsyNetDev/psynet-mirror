@@ -4,7 +4,6 @@ import sys
 import threading
 import time
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from dallinger import db
@@ -20,6 +19,7 @@ _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
 from test_regrouper import _arrive, _cohort_and_pairs  # noqa: E402
+from test_sync import _sync_group_of  # noqa: E402
 from timeline_hold_helpers import _working_participants  # noqa: E402
 
 in_consents_experiment = pytest.mark.parametrize(
@@ -37,6 +37,9 @@ def _make_definition(group, round):
 class PairTrial(Trial):
     time_estimate = 1
     sync_group_type = "pair"
+
+    def make_definition(self, experiment, participant):
+        return {}
 
     def show_trial(self, experiment, participant):
         raise NotImplementedError
@@ -191,21 +194,26 @@ class RespondTrial(PairTrial):
     pass
 
 
+class VoteTrial(Trial):
+    time_estimate = 1
+    sync_group_type = "pair"
+
+
 @in_consents_experiment
-def test_two_trial_classes_in_one_round_share_its_node_and_definition(
+def test_trial_classes_in_one_round_share_its_node_and_definition(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
-    for participant in cohort:
-        PairTrial.cue({"target": 1})[0].consume(exp, participant)
-    RespondTrial.cue({"target": 1})[0].consume(exp, cohort[0])
+    # A subclass, then its parent, then an unrelated class: all in round 0.
+    for trial_class in (RespondTrial, PairTrial, VoteTrial):
+        trial_class.cue({"target": 1})[0].consume(exp, cohort[0])
     db.session.commit()
 
     assert SyncGroupNode.query.count() == 1
     assert {t.sync_group_round for t in Trial.query} == {0}
     with pytest.raises(ValueError, match="already has the definition"):
-        RespondTrial.cue({"target": 2})[0].consume(exp, cohort[1])
+        PairTrial.cue({"target": 2})[0].consume(exp, cohort[1])
 
 
 @in_consents_experiment
@@ -247,14 +255,23 @@ def test_on_release_gets_no_node_for_trials_off_the_group_s_node(
     assert _released_nodes == [None]
 
 
+class CustomStaticTrialMaker(StaticTrialMaker):
+    """Prepares the leader's trials itself, as trial makers that override prepare_trial do."""
+
+    def prepare_trial(self, experiment, participant):
+        node = Trial.get_default_parent_node(participant, experiment)
+        trial = PairTrial(experiment, node, participant, False, False, definition={})
+        return trial, "available"
+
+
 @in_consents_experiment
 def test_a_synchronized_trial_maker_records_group_role_and_round(
-    in_experiment_directory, db_session, monkeypatch
+    in_experiment_directory, db_session
 ):
     exp = get_experiment()
     cohort, pairs = _paired(exp)
     pair = cohort[0].active_sync_groups["pair"]
-    trial_maker = StaticTrialMaker(
+    trial_maker = CustomStaticTrialMaker(
         id_="paired_static",
         trial_class=PairTrial,
         nodes=[StaticNode(definition={})],
@@ -262,19 +279,55 @@ def test_a_synchronized_trial_maker_records_group_role_and_round(
         max_trials_per_participant=1,
         sync_group_type="pair",
     )
-
-    def custom_trial(**kwargs):
-        return SimpleNamespace(sync_group_id=None, sync_group_round=None), "available"
-
-    monkeypatch.setattr(trial_maker, "prepare_trial", custom_trial)
     for participant in cohort:
         participant.start_module(trial_maker)
 
+    members = [pair.leader, *pair.active_followers]
     for round in (0, 1):
-        trials = [trial_maker._prepare_trial(exp, p)[0] for p in cohort]
-        trial_maker._number_group_round(
-            pair, [SimpleNamespace(current_trial=t) for t in trials]
-        )
+        trial_maker._try_to_prepare_trial_group(pair)
+        db.session.flush()
         assert [
-            (t.sync_group_id, t.sync_group_role, t.sync_group_round) for t in trials
-        ] == [(pair.id, pairs.role(p), round) for p in cohort]
+            (
+                p.current_trial.sync_group_id,
+                p.current_trial.sync_group_role,
+                p.current_trial.sync_group_round,
+            )
+            for p in members
+        ] == [(pair.id, pairs.role(p), round) for p in members]
+
+
+class TeamTrial(Trial):
+    time_estimate = 1
+    sync_group_type = "main"
+
+    @classmethod
+    def record_dissolve(cls, trials, node):
+        _dissolved.append((trials, node))
+
+
+_dissolved = []
+
+
+@in_consents_experiment
+def test_on_dissolve_gets_the_waiting_members_trials_and_node(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    (waiter, quitter), group = _sync_group_of(exp, db_session, 2)
+    group.below_quorum = "continue_without_group"
+    logic = TeamTrial.cue({})
+    for participant in (waiter, quitter):
+        logic[0].consume(exp, participant)
+    db.session.commit()
+    _dissolved.clear()
+    barrier = GroupBarrier(
+        "team_done", group_type="main", on_dissolve=TeamTrial.record_dissolve
+    )
+    _arrive(exp, barrier, [waiter])
+
+    quitter.fail("returned")
+    db.session.commit()
+
+    ((trials, node),) = _dissolved
+    assert [t.participant_id for t in trials] == [waiter.id]
+    assert node is trials[0].node and isinstance(node, SyncGroupNode)

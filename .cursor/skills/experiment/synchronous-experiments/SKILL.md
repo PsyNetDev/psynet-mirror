@@ -208,8 +208,11 @@ class PickTrial(Trial):
         for trial in trials:  # each player's result
             trial.var.won = winner is not None and choices[trial.participant_id] == winner
 
-for_loop(label="rounds", iterate_over=range(N_ROUNDS), time_estimate_per_iteration=20,
-         logic=join(Regrouper("room", ...), PickTrial.cue({"numbers": NUMBERS})))
+# The Module gives the nodes a module_id to find them by when exporting.
+Module("game", for_loop(
+    label="rounds", iterate_over=range(N_ROUNDS), time_estimate_per_iteration=20,
+    logic=join(Regrouper("room", ...), PickTrial.cue({"numbers": NUMBERS})),
+))
 ```
 
 - Leave out `round`: `cue` numbers each group's rounds from 0, joining the
@@ -219,6 +222,9 @@ for_loop(label="rounds", iterate_over=range(N_ROUNDS), time_estimate_per_iterati
   step.
 - All trials of one group and round share the node and its definition,
   whatever their class. A later cue with a different `dict` raises an error.
+  With several classes in a round, put the barrier after the round's last
+  class (or in every class): with a barrier only in the first, a fast
+  player can open the next round early.
 - `trial.answer` is only set when the trial ends, after the barrier, so
   `on_release` reads what `save_answer` stored, while `score_answer`,
   `show_feedback` and `get_basic_data` read the trial and `self.node.var`.

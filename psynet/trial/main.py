@@ -291,9 +291,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     sync_group_type : str or None
         Set this class attribute to a group type to make :meth:`cue` play the
         trial with the participant's group of that type: the trials that the
-        group's members cue for the same ``round`` share one
-        :class:`SyncGroupNode`, and each trial records the group, the
-        participant's role and the round. Only used by :meth:`cue`; trial
+        group's members cue in one round share one :class:`SyncGroupNode`,
+        and each trial records the group, the participant's role and the
+        round. Only used by :meth:`cue`; trial
         makers take ``sync_group_type`` as an argument instead.
 
     time_credit_before_trial: float
@@ -1229,9 +1229,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
         definition :
             This can be a ``dict`` object, which will then be saved to the trial's ``definition`` slot.
-            Alternatively, it can be a ``Node`` object, in which case the ``Node`` object
-            will be saved to ``trial.node``, and ``node.definition`` will be saved
-            to ``trial.definition``.
+            Alternatively, it can be a :class:`~psynet.trial.chain.ChainNode`,
+            which will be saved to ``trial.node``, and whose ``definition`` will
+            be saved to ``trial.definition``.
             It can also be a function returning the ``dict``, taking any of
             ``group``, ``round``, ``participant`` and ``experiment``. With
             :attr:`sync_group_type`, the round's first cue sets the node's
@@ -1271,15 +1271,27 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             class PickTrial(Trial):
                 sync_group_type = "room"
 
+                def show_trial(self, experiment, participant):
+                    return join(
+                        PickPage(),
+                        GroupBarrier(id_="round_finished", group_type="room"),
+                    )
+
             # A fixed room plays rounds 0, 1 and 2, and a room re-formed by a
-            # Regrouper every round plays round 0.
+            # Regrouper every round plays round 0. The Module gives the nodes a
+            # module_id, for example to find them by when exporting.
             join(
                 SimpleGrouper("room", initial_group_size=4),
-                for_loop(
-                    label="rounds",
-                    iterate_over=range(3),
-                    logic=PickTrial.cue(lambda group: {"target": random.randint(1, 5)}),
-                    time_estimate_per_iteration=20,
+                Module(
+                    "game",
+                    for_loop(
+                        label="rounds",
+                        iterate_over=range(3),
+                        logic=PickTrial.cue(
+                            lambda group: {"target": random.randint(1, 5)}
+                        ),
+                        time_estimate_per_iteration=20,
+                    ),
                 ),
             )
         """
@@ -4147,8 +4159,8 @@ def _record_sync_group(trial, participant, group):
     """Save ``group`` and the participant's role in it on ``trial``."""
     trial.sync_group_id = group.id
     link = ParticipantLinkSyncGroup.query.filter_by(
-        participant_id=participant.id, sync_group_id=group.id
-    ).first()
+        participant_id=participant.id, sync_group_id=group.id, active=True
+    ).one_or_none()
     trial.sync_group_role = None if link is None else link.role
 
 
@@ -4247,8 +4259,10 @@ class SyncGroupNode(GenericTrialNode):
             if newest is None:
                 round = 0
             elif (
-                trial_class.query.filter_by(
-                    node_id=newest.id, participant_id=participant.id
+                Trial.query.filter_by(
+                    node_id=newest.id,
+                    participant_id=participant.id,
+                    type=trial_class.__mapper__.polymorphic_identity,
                 ).first()
                 is None
             ):
@@ -4263,6 +4277,8 @@ class SyncGroupNode(GenericTrialNode):
         return node
 
 
+# SyncGroupNode shares the node table, and SQLAlchemy doesn't accept
+# __table_args__ on a single-table subclass, so the constraint is added here.
 UniqueConstraint(
     SyncGroupNode.module_id, SyncGroupNode.sync_group_id, SyncGroupNode.sync_group_round
 )

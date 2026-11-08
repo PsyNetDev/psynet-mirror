@@ -96,7 +96,10 @@ member who joins it late joins its current round. This needs a barrier in
 each round, such as the one in ``show_trial`` below, so that no member
 starts the next round before the others have cued this one. Trials of
 different classes that a group cues in one round, such as the two phases of
-a round, share its node.
+a round, share its node. Then put the barrier after the round's last class,
+or in every class: with a barrier only in the first class, a fast player
+could cue the first class again, and so open the next round, while the
+others are still in this one.
 
 :func:`~psynet.sync.only_in_group` runs the trial only for players in a
 pair. Those who sat out, or were removed from their pair partway, see the
