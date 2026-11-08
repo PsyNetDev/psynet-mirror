@@ -251,7 +251,8 @@ Barriers
 A :class:`~psynet.sync.GroupBarrier` holds each member until every active
 member of the group has reached it. When the last member arrives, the barrier
 calls ``on_release`` for the whole group. In ``rock_paper_scissors`` the
-barrier after each choice scores the round:
+barrier after each choice scores the round and saves each player's result
+on their trial, where ``show_feedback`` reads it:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors/experiment.py
    :pyobject: RockPaperScissorsTrial.show_trial
@@ -263,10 +264,12 @@ barrier after each choice scores the round:
 ``trials`` (each member's current trial, in the same order as
 ``participants``), ``node`` (the node those trials share, or ``None``),
 ``leader`` and ``barrier`` (``participant`` is the leader too, kept for
-compatibility). With cued trials that share a group's node, a
-``@classmethod`` on the trial class can save the group's results in
-``node.var`` and each member's in ``trial.var`` (see
-:ref:`rounds-cued-trials`). It must be a module-level
+compatibility). In ``rock_paper_scissors`` every pair plays on the same
+node, so the results go on the trials. Cued trials share a node per group
+and round, so there a ``@classmethod`` on the trial class can also save the
+group's results in ``node.var`` (see :ref:`rounds-cued-trials`). Results on
+the trial or node stay in the export for every round, while a participant
+variable keeps only the latest. It must be a module-level
 function, a static or class method, or a method bound to a trial maker or a
 saved database object such as a trial. The ``barrier`` it receives is rebuilt
 from saved settings, so read only scalar settings such as ``waiting_message`` and
