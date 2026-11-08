@@ -121,7 +121,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   allows for this; an explicit one must then exceed twice the `deadline` or
   `every` period.
 - For a lobby that should not wait forever for a full group, use
-  `SimpleGrouper(start_short_after=..., start_short_with=...)`. Add
+  `SimpleGrouper(start_short_after=..., quorum=...)`; a short start forms a
+  group of at least the quorum (`start_short_with` overrides that). Add
   `join_existing_groups=True` to let latecomers fill it up, at the cost that a
   group below its `quorum` then waits for a replacement instead of playing on.
   Pass `stop_top_ups=True` to the `GroupBarrier` after which newcomers can
