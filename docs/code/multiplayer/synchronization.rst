@@ -718,8 +718,12 @@ Two separate settings decide what happens when someone leaves a group:
     by member. A member who is in the middle of a request at that moment
     (for example submitting a page) is handled by the background barrier
     check within about a second instead, once that request finishes.
+  - Members who leave with ``reason="finished"``, or who move on at a
+    :class:`~psynet.sync.Regrouper`, don't dissolve the group; the group's
+    next :class:`~psynet.sync.GroupBarrier` dissolves it if it is still
+    below quorum.
 
-So in a :class:`~psynet.sync.SimpleGrouper` pair, where any departure
+So in a :class:`~psynet.sync.SimpleGrouper` pair, where any dropout
 dissolves the group, the two settings together decide both fates:
 
 .. list-table::
