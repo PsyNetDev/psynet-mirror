@@ -28,4 +28,4 @@ Read these pages before acting. The "Documentation" section of the experiment's 
    counts match the expected numbers of participants and trials, and no
    column is unexpectedly empty.
 6. If participants interact in groups, also follow
-   `basic-data-dyadic-experiment/SKILL.md`.
+   `basic-data-group-experiment/SKILL.md`.

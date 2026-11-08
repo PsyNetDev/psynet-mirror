@@ -8,9 +8,7 @@ other. The ``rock_paper_scissors`` demo pairs participants and plays three
 synchronized rounds:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors/experiment.py
-   :start-at: timeline = Timeline(
-   :end-before: test_n_bots
-   :dedent: 4
+   :pyobject: get_timeline
 
 Forming groups
 --------------
@@ -249,9 +247,10 @@ barrier after each choice scores the round:
    :pyobject: RockPaperScissorsTrial.show_trial
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors/experiment.py
-   :pyobject: RockPaperScissorsTrial.score_trial
+   :pyobject: RockPaperScissorsTrial.score_round
 
 ``on_release`` can take any of the arguments ``group``, ``participants``,
+``trials`` (the members' current trials, in the same order),
 ``leader`` and ``barrier`` (``participant`` is the leader too, kept for
 compatibility). It must be a module-level
 function, a static or class method, or a method bound to a trial maker or a

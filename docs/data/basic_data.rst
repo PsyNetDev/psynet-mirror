@@ -137,74 +137,35 @@ A convenient layout for dyads and small groups is one row per participant per
 round, with columns for the group, the round, the participant, their partner,
 the trial ID (to trace each row back to the database) and both players'
 responses. Group-level measures can be computed from this table.
-For the ``rock_paper_scissors`` demo, where each trial's answer is a
-dictionary such as ``{"choose_action": "rock"}``:
+The ``rock_paper_scissors`` demo builds it from its trials. The barrier that
+ends each round saves each player's action, their partner's and the score on
+their trial, including the random action played for someone who ran out of
+time, because that action is in no answer:
 
-.. code:: python
+.. literalinclude:: ../../demos/experiments/rock_paper_scissors/experiment.py
+   :pyobject: RockPaperScissorsTrial.score_round
 
-    @classmethod
-    def get_basic_data(cls, context=None, **kwargs):
-        from psynet.sync import ParticipantLinkSyncGroup, SyncGroup
+``get_basic_data`` then reads one row from each scored trial:
 
-        links = (
-            ParticipantLinkSyncGroup.query.join(SyncGroup)
-            .filter(SyncGroup.group_type == "rock_paper_scissors")
-            .all()
-        )
-        group_ids = {link.participant_id: link.sync_group_id for link in links}
-        members = {}
-        for link in links:
-            members.setdefault(link.sync_group_id, []).append(link.participant_id)
-
-        trials = RockPaperScissorsTrial.query.filter_by(
-            failed=False, complete=True
-        ).all()
-        actions = {
-            (trial.participant_id, trial.position): trial.answer["choose_action"]
-            for trial in trials
-        }
-
-        rows = []
-        for trial in sorted(trials, key=lambda t: (t.position, t.participant_id)):
-            group_id = group_ids.get(trial.participant_id)
-            partners = [
-                p for p in members.get(group_id, []) if p != trial.participant_id
-            ]
-            partner_id = partners[0] if len(partners) == 1 else None
-            rows.append(
-                {
-                    "group_id": group_id,
-                    "round": trial.position,
-                    "participant_id": trial.participant_id,
-                    "partner_id": partner_id,
-                    "trial_id": trial.id,
-                    "action": actions[(trial.participant_id, trial.position)],
-                    "partner_action": actions.get((partner_id, trial.position)),
-                }
-            )
-        return {"player_round": rows}
+.. literalinclude:: ../../demos/experiments/rock_paper_scissors/experiment.py
+   :pyobject: Exp.get_basic_data
 
 For one pair playing three rounds, this returns:
 
 .. code-block:: text
 
-    group_id  round  participant_id  partner_id  trial_id  action    partner_action
-    1         0      1               2           1         rock      paper
-    1         0      2               1           2         paper     rock
-    1         1      1               2           3         scissors  paper
-    1         1      2               1           4         paper     scissors
-    1         2      1               2           5         scissors  scissors
-    1         2      2               1           6         scissors  scissors
+    group_id  round  participant_id  trial_id  action    timed_out  partner_id  partner_action  partner_timed_out  score
+    1         0      1               1         rock      False      2           paper           False              -1
+    1         0      2               2         paper     False      1           rock            False              1
+    1         1      1               3         scissors  False      2           paper           False              1
+    1         1      2               4         paper     False      1           scissors        False              -1
+    1         2      1               5         scissors  False      2           scissors        False              0
+    1         2      2               6         scissors  False      1           scissors        False              0
 
-Each complete round has one row per member, and ``partner_id`` points in
-both directions. A missing ``partner_action`` means the partner has no
-completed trial for that round, for example because they dropped out.
-
-The example assumes each participant is in one group of this type. If
-participants are regrouped, a participant has one ``participant_link_sync_group``
-row per group; assign each trial to the group whose link ``creation_time``
-precedes the trial's ``creation_time`` and whose ``end_time`` is empty or
-follows it.
+Each scored round has one row per member, and ``partner_id`` points in both
+directions. A round that was never scored, for example because a partner
+dropped out before choosing, has no rows. Participants who are regrouped have
+one ``sync_group_id`` per group, so their rounds with each partner stay apart.
 
 .. _basic_data_regrouper:
 
@@ -228,4 +189,4 @@ player's own pairs, not the game's rounds; their visits to the regrouper with
 
 .. seealso::
 
-   The :doc:`/skills/basic-data` and :doc:`/skills/basic-data-dyadic-experiment` skills.
+   The :doc:`/skills/basic-data` and :doc:`/skills/basic-data-group-experiment` skills.
