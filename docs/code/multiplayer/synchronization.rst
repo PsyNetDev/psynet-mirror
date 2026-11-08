@@ -296,6 +296,14 @@ still score the last question for those who answered it:
                  on_release=partial(score_question, question=3),
                  on_dissolve=partial(score_question, question=3))
 
+``on_dissolve`` can also do something other than ``on_release``. In the
+``public_goods`` demo, a group of three plays on with two, so the group
+dissolves when one player is left; the round that player was waiting for is
+cancelled, and they keep their tokens:
+
+.. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
+   :pyobject: ContributionTrial.cancel_round
+
 Members who are still on an earlier page, such as the question itself, when
 the group dissolves get neither callback: they pass the barrier without
 waiting. If they need a result too, give them one in a step after the
@@ -796,6 +804,21 @@ waiting for a newcomer who may never come:
 ``late_after`` counts from the previous barrier pass, so make it cover any
 untimed pages between the two barriers as well.
 
+The ``public_goods`` demo is a complete game built this way: groups of three
+play on with two, and the last player left, like a participant for whom no
+group forms, carries on without the group:
+
+.. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
+   :start-at: SimpleGrouper(
+   :end-before: only_in_group(
+   :dedent: 8
+
+Each round is one trial per player, which ends at a barrier that removes late
+players and scores the round for those who played it:
+
+.. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
+   :pyobject: ContributionTrial.show_trial
+
 The ``sync_quorum`` demo lets participants into part of the timeline only
 while at least three are present. Its grouper has no maximum size and accepts
 top-ups:
@@ -880,6 +903,30 @@ For the rest of the timeline:
   for anyone not in a pair by the end of the round: sat out by the
   regrouper, or removed partway for being late. Without ``otherwise`` they
   skip the round with no page.
+
+  In the ``public_goods`` demo, a player who leaves skips the rest of the
+  game, and ``otherwise=`` tells them, and a participant who never had a
+  group, why the game ended:
+
+  .. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
+     :start-at: only_in_group(
+     :end-at: otherwise=
+     :dedent: 8
+     :append: )
+
+  .. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
+     :pyobject: game_ended_early
+
+  A trial added with :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` is
+  several steps, so ``only_in_group`` would check the group partway through
+  it and skip the end of the trial, where it is scored and paid. Keep it whole
+  by putting the rounds in a loop or :class:`~psynet.timeline.Module`, which
+  is one step, and checking the group once per round, as ``public_goods``
+  does:
+
+  .. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
+     :pyobject: play_round
+
 - Trial makers synchronized on that group type give them no more trials.
   A member who leaves before finishing any trial of such a trial maker,
   including one who is out of the group when it starts, skips the rest of

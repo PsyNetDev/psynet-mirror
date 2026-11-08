@@ -168,6 +168,9 @@ has a demo to start from.
   cohort that stays together:
   `lowest_unique_number <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/lowest_unique_number>`__
   and `ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__.
+- **A team game carries on when members leave**, with fewer players, until
+  too few remain:
+  `public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__.
 - **Members interact live**, with messages sent to everyone as they are
   written:
   `websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__.
@@ -291,6 +294,23 @@ the group and can rejoin in the next round.
 
 Decide when the game ends: after a fixed number of rounds, when a player has
 sat out too often, or when too few players remain to form a group.
+
+In ``demos/experiments/public_goods``, a group of three plays three rounds.
+Each round, every player privately puts some of their tokens in a shared pot,
+within a time limit; the pot grows by half and is shared between the players
+of that round, who then see everyone's contributions and what they earned,
+paid as a bonus. A player who runs out of time puts nothing in. A player who
+returns the study or stops responding leaves the group, and the other two
+carry on and share the pot between them. When only one player is left, the
+game ends: if they were waiting for the round's results, that round is
+cancelled and they keep their tokens. Nobody is failed because others left;
+the last player, a player who comes back after being removed, and a
+participant for whom no group formed each see why the game ended for them.
+Each round is one trial per player that pays that round's bonus, so the data
+and the payments agree.
+
+.. figure:: ../_static/images/design/groups/public_goods.svg
+   :alt: A grouper forms groups of three that carry on with two. Then, for three rounds, players give tokens with a time limit, a barrier shares the pot, and everyone sees the results. Finally each player sees their bonus, or why the game ended early.
 
 What to check when reviewing group experiments
 ----------------------------------------------

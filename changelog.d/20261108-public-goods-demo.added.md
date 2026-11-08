@@ -1,0 +1,1 @@
+Added the `public_goods` demo, a repeated public goods game in groups of three that carries on when members return the study or stop responding and ends for the last player with `on_dissolve`. Each round is one cued trial per player, which pays that round's bonus, with the group's pot saved once on the node the group's trials share.

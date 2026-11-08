@@ -102,6 +102,18 @@ the group ends. Cued trials of one group and round also share a
 the ``lowest_unique_number`` demo builds a table per player and round and
 one per room and round from them (see :ref:`rounds-cued-trials`).
 
+Groups that stay together save their rounds the same way. The
+``public_goods`` demo saves the group's ``contributions``, ``pot`` and
+``share`` once per round on the node, and each player's ``contribution``
+(``None`` for a player who ran out of time) and ``payoff`` on their trial:
+
+.. literalinclude:: ../../demos/experiments/public_goods/experiment.py
+   :pyobject: ContributionTrial.score_round
+
+The trial pays its round's payoff as a bonus through ``score_answer`` and
+``compute_performance_reward``, so each participant's bonus is the sum of
+their trials' ``performance_reward``, and the export and the payments agree.
+
 Group membership, for groups formed by a grouper (see
 :doc:`/code/multiplayer/synchronization`), is stored in two tables:
 

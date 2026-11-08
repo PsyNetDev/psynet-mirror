@@ -414,6 +414,13 @@ Groups
     and lets latecomers join. Each round re-pairs the cohort with a ``Regrouper``, and an odd
     player out sits out. :doc:`/code/multiplayer/writing_a_round_based_experiment`.
 
+`experiments/public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__
+    A repeated public goods game in groups of three that carries on with two
+    when a member returns the study or stops responding, and tells the last
+    player, and anyone without a group, why the game ended. Each round is one
+    cued trial per player that pays its bonus, with the group's pot on the
+    node they share. :doc:`/code/multiplayer/synchronization`.
+
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
     A multi-room chat written directly on WebSockets rather than
     ``psynet.chatroom``. Clients exchange messages on one shared channel and
