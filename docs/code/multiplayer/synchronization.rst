@@ -854,6 +854,12 @@ For the rest of the timeline:
                   time_estimate=10,
               ),
           )
+
+  Each step is checked when the participant reaches it, so a loop passed as
+  one step runs to its end. Pass each round's steps as separate steps
+  instead, as in ``only_in_group("pair", *[step for n in range(N_ROUNDS)
+  for step in round_steps(n)])``, or stop the loop on
+  ``participant.in_sync_group(group_type)``.
 - Trial makers synchronized on that group type give them no more trials.
   A member who leaves before finishing any trial of such a trial maker,
   including one who is out of the group when it starts, skips the rest of

@@ -318,7 +318,7 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per round in a pair, with both decisions."""
+        """Return one row per player per pair they played in, with both decisions."""
         from psynet.sync import ParticipantLinkSyncGroup, SyncGroup
         from psynet.timeline import Response
 
@@ -372,7 +372,7 @@ class Exp(psynet.experiment.Experiment):
             partner = rows[partners[0].id] if partners else None
             rows[link.id]["partner_id"] = partner and partner["participant_id"]
             rows[link.id]["partner_decision"] = partner and partner["decision"]
-        return {"player_round": list(rows.values())}
+        return {"player_pair": list(rows.values())}
 
     test_n_bots = 4
     test_mode = "serial"
@@ -418,7 +418,7 @@ class Exp(psynet.experiment.Experiment):
 
         # Two pairs in round 1, then one pair in each of rounds 2 and 3, each
         # with one proposer (5) and one responder (3).
-        rows = self.get_basic_data()["player_round"]
+        rows = self.get_basic_data()["player_pair"]
         assert len(rows) == 8
         assert all({row["decision"], row["partner_decision"]} == {3, 5} for row in rows)
 
