@@ -126,10 +126,12 @@ class PickTrial(Trial):
 
     @classmethod
     def score_room(cls, trials: List["PickTrial"], node: SyncGroupNode):
-        """Save the room's choices and winning number on the node, and each player's on their trial.
+        """Save the room's choices and winning number on the node, and whether each player won on their trial.
 
-        Players who ran out of time have no choice and miss the round.
-        Nobody wins when only one player chose.
+        The trials' answers are only saved once the trials end, after this
+        barrier, so the choices are read from ``participant.var``. Players who
+        ran out of time have no choice and miss the round. Nobody wins when
+        only one player chose.
         """
         picks = {str(t.participant_id): t.participant.var.choice for t in trials}
         choices = {pid: n for pid, n in picks.items() if n is not None}
@@ -137,8 +139,9 @@ class PickTrial(Trial):
         node.var.choices = choices
         node.var.winning_number = winner
         for trial in trials:
-            trial.var.choice = picks[str(trial.participant_id)]
-            trial.var.won = winner is not None and trial.var.choice == winner
+            trial.var.won = (
+                winner is not None and picks[str(trial.participant_id)] == winner
+            )
 
     def score_answer(self, answer, definition):
         return 1 if self.var.get("won") else 0
@@ -147,11 +150,11 @@ class PickTrial(Trial):
         return WIN_BONUS * score
 
     def show_feedback(self, experiment, participant):
-        if not self.var.has("choice"):
+        if not self.var.has("won"):
             return InfoPage(
                 "You were away for too long, so you missed this round.", time_estimate=5
             )
-        if self.var.choice is None:
+        if self.answer is None:
             return InfoPage(
                 "You ran out of time, so you missed this round.", time_estimate=5
             )
@@ -225,7 +228,9 @@ class Exp(psynet.experiment.Experiment):
                     "room_id": t.sync_group_id,
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
-                    "choice": t.var.get("choice"),
+                    "choice": t.answer,
+                    # None if the player was away too long to play the round.
+                    "won": t.var.get("won"),
                     "bonus": t.performance_reward,
                 }
                 for t in trials.order_by(PickTrial.sync_group_round, PickTrial.id)
