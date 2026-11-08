@@ -119,3 +119,5 @@ def test_saved_class_methods_and_partial_keywords_keep_their_arguments():
         partial(_ScoringTrialMaker.describe, question=1), "on_release"
     )
     assert callback(group="g", question=2) == ("_ScoringTrialMaker", "g", 1)
+    restored = unserialize(serialize(callback))
+    assert restored(group="g") == ("_ScoringTrialMaker", "g", 1)

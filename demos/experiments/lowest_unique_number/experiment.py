@@ -18,7 +18,7 @@ the cohorts first and regroup within them::
 
     SimpleGrouper(
         "cohort", initial_group_size=8, quorum=2,
-        start_short_after=60, start_short_with=2, max_wait_time=300,
+        start_short_after=60, max_wait_time=300,
     ),
     ...
     Regrouper("room", within="cohort", group_size=4, deadline=30),

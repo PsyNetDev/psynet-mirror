@@ -277,8 +277,8 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
 @pytest.mark.parametrize(
     "kwargs, message",
     [
-        ({"start_short_after": 10}, "together"),
-        ({"start_short_with": 2}, "together"),
+        ({"start_short_after": 10}, "pass quorum"),
+        ({"start_short_with": 2}, "only used with start_short_after"),
         ({"start_short_after": 10, "start_short_with": 5}, "start_short_with <="),
         ({"start_short_after": 60, "start_short_with": 2}, "less than max_wait_time"),
     ],
@@ -295,6 +295,7 @@ def test_simple_grouper_quorum():
     short = {"start_short_after": 60, "start_short_with": 2}
     assert lobby(quorum=3).quorum == 3
     assert lobby(**short).quorum == 2
+    assert lobby(quorum=2, start_short_after=60).start_short_with == 2
     with pytest.raises(ValueError, match="at most start_short_with"):
         lobby(quorum=3, **short)
     with pytest.warns(UserWarning, match="Pass quorum"):
