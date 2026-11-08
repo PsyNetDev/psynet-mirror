@@ -110,6 +110,8 @@ Each group is a :class:`~psynet.sync.SyncGroup`. Inside a trial,
 group matching the trial maker's ``sync_group_type``. Elsewhere, use
 ``participant.sync_group`` if the participant is in one active group, or
 ``participant.active_sync_groups[group_type]`` if they are in several.
+``participant.in_sync_group(group_type)`` tells whether they are still in a
+group of that type.
 
 ``sync_group.participants`` is a read-only list of the group's members; change
 membership with ``sync_group.add_participant(participant)`` and
@@ -482,6 +484,49 @@ with side effects.
 Waiting and dropouts
 --------------------
 
+.. _sync-kinds-of-dropout:
+
+Kinds of dropout
+~~~~~~~~~~~~~~~~
+
+Participants leave a group in several ways, and PsyNet learns of each in a
+different way. Decide what should happen in each case your design can meet,
+and test each one (see :ref:`bots_that_drop_out`).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - The participant…
+     - What happens
+   * - returns the study on the recruitment platform
+     - The recruiter tells PsyNet, which fails them at once and removes them
+       from their groups.
+   * - is failed by the experiment, for example by a failed check
+     - The same as returning the study.
+   * - closes the tab or stops responding
+     - PsyNet isn't told, so nothing happens until a time limit runs out. If
+       the next barrier sets ``late_after``, they are late there, and its
+       ``late_action`` fails them or removes them from the group. Otherwise
+       the others wait at the barrier until their ``max_wait_time`` runs
+       out, and its ``max_wait_action`` acts on *those waiting*: they are
+       failed, or leave the group and carry on without it.
+   * - comes back after being removed from the group
+     - They carry on with the experiment without the group, and their next
+       page says why (see `After leaving a group`_). A participant who was
+       failed sees the end of the experiment instead.
+   * - arrives when no group can form
+     - The grouper's ``max_wait_time`` fails them, unless
+       ``start_short_after`` lets a smaller group start or
+       ``join_existing_groups`` lets them fill a gap in an existing group.
+   * - falls behind in rounds with a :class:`~psynet.sync.Regrouper`
+     - With ``late_action="leave_group"`` they miss the round and join the
+       next one (see `Rounds with changing groups`_).
+
+When someone leaves, the members who stay carry on as before while the group
+still has its quorum. Below it, the grouper's ``below_quorum`` decides what
+happens to them (see `Groups below quorum`_).
+
 Timeouts
 ~~~~~~~~
 
@@ -591,8 +636,8 @@ Two separate settings decide what happens when someone leaves a group:
 - **The member who leaves** is handled by why they left: a barrier's
   ``max_wait_action`` (they waited too long for the others) or
   ``late_action`` (the others waited too long for them), each ``"fail"``
-  or ``"leave_group"``, or their own failure, for example when they close
-  the page.
+  or ``"leave_group"``, or their own failure, for example when they return
+  the study.
 - **The members left behind** carry on as before while the group still has
   its ``quorum``. Below it, what happens depends on whether the group
   accepts top-ups:
@@ -634,8 +679,8 @@ dissolves the group, the two settings together decide both fates:
      - late member carries on alone, partner who was on time failed
      - both carry on alone
 
-The last row is rarely what a pair wants, so PsyNet logs a warning when it
-happens. To let the partner who was on time carry on, set
+The last row is rarely what a pair wants, so PsyNet warns about it when the
+experiment loads, and logs a warning when it happens. To let the partner who was on time carry on, set
 ``below_quorum="leave_group"``; ``late_action="fail"`` instead ends the
 session for both.
 

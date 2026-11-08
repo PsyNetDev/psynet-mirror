@@ -100,7 +100,6 @@ import inspect
 import random
 import time
 import uuid
-import warnings
 from contextlib import contextmanager
 from datetime import timedelta
 from math import ceil, floor
@@ -1480,9 +1479,15 @@ def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
     return None
 
 
+_OLD_BELOW_QUORUM_NAMES = (
+    "fail_participants_below_min_size",
+    "fail_participants_below_quorum",
+)
+
+
 def _reject_old_below_quorum_names(kwargs):
     """Point a grouper given a 14.0 release-candidate name to ``below_quorum``."""
-    for old in ("fail_participants_below_min_size", "fail_participants_below_quorum"):
+    for old in _OLD_BELOW_QUORUM_NAMES:
         if old in kwargs:
             raise TypeError(
                 f"{old} was replaced by below_quorum: pass "
@@ -1951,9 +1956,10 @@ class GroupBarrier(Barrier):
             if late and getattr(group, "below_quorum", None) != "leave_group":
                 logger.warning(
                     "GroupBarrier '%s': removing late members %s dissolved group %s, "
-                    "so its members who were on time were failed while the late ones "
-                    "carry on. Set below_quorum='leave_group' on the grouper to let "
-                    "them carry on too.",
+                    "so its below_quorum may have failed the members who were on "
+                    "time while the late ones carry on. Set "
+                    "below_quorum='leave_group' on the grouper to let them carry on "
+                    "too.",
                     self.id,
                     [p.id for p in late],
                     group.id,
@@ -2917,11 +2923,9 @@ class Regrouper(Grouper):
                 "A Regrouper without `within` needs a deadline or every, because "
                 "it cannot tell when everyone is present."
             )
-        old_names = (
-            "fail_participants_below_min_size",
-            "fail_participants_below_quorum",
-        )
-        if "below_quorum" in kwargs or any(name in kwargs for name in old_names):
+        if "below_quorum" in kwargs or any(
+            name in kwargs for name in _OLD_BELOW_QUORUM_NAMES
+        ):
             raise TypeError(
                 "Regrouper groups are never dissolved when a member leaves, so "
                 "below_quorum doesn't apply; it is an option of "
@@ -3511,8 +3515,9 @@ def warn_if_late_removal_fails_group(barriers):
     """Warn if removing one late member would fail the members who were on time.
 
     That happens when a :class:`GroupBarrier` has ``late_action="leave_group"``
-    and the :class:`SimpleGrouper` of its group type has ``below_quorum="fail"``
-    and a ``quorum`` that the loss of one member breaks, as in a pair.
+    and a :class:`SimpleGrouper` of its group type has ``below_quorum="fail"``
+    and a ``quorum`` that the loss of one member can break, as in a pair or a
+    group that started short.
 
     Parameters
     ----------
@@ -3521,14 +3526,16 @@ def warn_if_late_removal_fails_group(barriers):
         in ``Trial.show_trial``, are not visible here.
     """
     barriers = list(barriers)
-    fragile_groupers = {
-        grouper.group_type: grouper
-        for grouper in barriers
-        if isinstance(grouper, SimpleGrouper)
-        and grouper.below_quorum == "fail"
-        and not grouper.join_existing_groups
-        and grouper.quorum > grouper.initial_group_size - 1
-    }
+    fragile_groupers = {}
+    for grouper in barriers:
+        if (
+            isinstance(grouper, SimpleGrouper)
+            and grouper.below_quorum == "fail"
+            and not grouper.join_existing_groups
+            and grouper.quorum
+            > (grouper.start_short_with or grouper.initial_group_size) - 1
+        ):
+            fragile_groupers.setdefault(grouper.group_type, grouper)
     for barrier in barriers:
         if not (
             isinstance(barrier, GroupBarrier)
@@ -3539,7 +3546,7 @@ def warn_if_late_removal_fails_group(barriers):
         grouper = fragile_groupers.get(barrier.group_type)
         if grouper is None:
             continue
-        warnings.warn(
+        warn_from_caller(
             f"GroupBarrier '{barrier.id}' removes late members, but grouper "
             f"'{grouper.id}' fails the members left behind when that leaves the "
             "group below its quorum. So a single late member fails everyone who "
@@ -3547,7 +3554,6 @@ def warn_if_late_removal_fails_group(barriers):
             "below_quorum='leave_group' to the grouper to let everyone carry on, "
             "or late_action='fail' to end the session for the whole group.",
             UserWarning,
-            stacklevel=2,
         )
 
 

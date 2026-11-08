@@ -159,21 +159,21 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 
 ## Test dropouts
 
-Real groups lose members in several ways, and PsyNet handles each through a
-different setting. Write a serial bot test for every kind your design can
-meet, and check that the experiment behaves sensibly for everyone involved:
-members who did nothing wrong are not failed unless the design says so, their
-next page tells them what happened, nobody waits for a partner who has gone,
-and nobody is shown a page that only makes sense with a group.
+Real groups lose members in several ways, each handled by a different
+setting; "Kinds of dropout" in `code/multiplayer/synchronization` lists them.
+Write a serial bot test for every kind your design can meet, and check that
+the experiment behaves sensibly for everyone involved: members who did
+nothing wrong are not failed unless the design says so, their next page tells
+them what happened, nobody waits for a partner who has gone, and nobody is
+shown a page that only makes sense with a group.
 
-| Dropout | Simulate it in the bot test | Setting that reacts |
-|---|---|---|
-| Returns the study or quits | `bot.drop_out()` | The member is failed at once; the grouper's `below_quorum` decides for the rest |
-| Closes the tab or stops responding | Stop taking pages for that bot and keep advancing the others | The next barrier's `late_after` and `late_action` |
-| Is gone when the others reach a barrier without `late_after` | As above | That barrier's `max_wait_time` and `max_wait_action` act on the members waiting |
-| Comes back after being removed | Take pages for the silent bot again | Their next page should show the removal notice and a solo branch |
-| Is failed by your own code, such as a failed check | `bot.fail("reason")` | As for a member who quits |
-| Arrives when no group can form | Send one bot more than fills the groups to the grouper | The grouper's `max_wait_time` |
+| Dropout | Simulate it in the bot test |
+|---|---|
+| Returns the study | `bot.drop_out()` |
+| Is failed by the experiment | `bot.fail("reason")` |
+| Closes the tab or stops responding | Stop taking pages for that bot and keep advancing the others |
+| Comes back after being removed | Take pages for the silent bot again |
+| Arrives when no group can form | Send one bot more than fills the groups to the grouper |
 
 After each dropout, assert who failed (`bot.failed`), what each remaining bot
 sees (`bot.current_page_text` and `bot.current_notice`), and that branches on
@@ -232,8 +232,9 @@ class Exp(psynet.experiment.Experiment):
 Bot tests wait out the real timeouts, so pass `advance_past_wait_pages` a
 `timeout` longer than the `late_after` or `max_wait_time` being tested. The
 default `test_check_bot` accepts bots that called `drop_out()`; override it
-when the design fails other members on purpose, such as a partner left behind
-under `below_quorum="fail"`. If PsyNet warns at load time that a late member
+for any other bot the design fails on purpose, such as one failed with
+`bot.fail()`, one left without a group, or a partner left behind under
+`below_quorum="fail"`. If PsyNet warns at load time that a late member
 would fail the partners who were on time, fix the settings rather than the
 test.
 

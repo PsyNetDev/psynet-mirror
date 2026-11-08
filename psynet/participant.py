@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Dict, Optional
 import dallinger.models
 import requests
 from dallinger import db
+from dallinger.models import timenow
 from dallinger.notifications import admin_notifier
 from sqlalchemy import (
     Boolean,
@@ -1810,8 +1811,10 @@ class ParticipantDriver:
         with transaction(commit=True):
             participant = Participant.query.get(self.id)
             if participant.status == "working":
+                participant.end_time = timenow()
                 participant.status = "returned"
                 self.experiment.assignment_returned(participant)
+        self._fetch_status()
 
     @property
     def failed(self) -> bool:

@@ -6929,10 +6929,24 @@ def test_group_barrier_late_after_removal_releases_waiters_after_dissolution(
 
 
 @pytest.mark.parametrize("below_quorum", ["fail", "leave_group"])
-def test_timeline_warns_when_a_late_member_would_fail_their_partner(below_quorum):
+@pytest.mark.parametrize(
+    "group_size",
+    [
+        {"initial_group_size": 2},
+        {
+            "initial_group_size": 4,
+            "start_short_after": 30,
+            "start_short_with": 2,
+            "max_wait_time": 60,
+        },
+    ],
+)
+def test_timeline_warns_when_a_late_member_would_fail_their_partner(
+    below_quorum, group_size
+):
     def make_timeline():
         return Timeline(
-            SimpleGrouper("pair", initial_group_size=2, below_quorum=below_quorum),
+            SimpleGrouper("pair", below_quorum=below_quorum, **group_size),
             GroupBarrier(
                 id_="round", group_type="pair", late_after=30, late_action="leave_group"
             ),
