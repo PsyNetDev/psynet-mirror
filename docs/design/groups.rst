@@ -152,7 +152,8 @@ Kinds of group experiment
 -------------------------
 
 Most group experiments are one of these kinds, or combine several. Each kind
-has a demo to start from; the sections below describe them in more detail.
+has a demo to start from; the other sections on this page describe them in
+more detail.
 
 - **One group does a task together**, such as a discussion, repeated rounds
   of a game with the same partner, or creating and rating answers:

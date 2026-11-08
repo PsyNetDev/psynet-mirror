@@ -833,25 +833,27 @@ For the rest of the timeline:
   a round in :func:`~psynet.sync.only_in_group`, which skips each step once
   the participant is out of the group. Its ``otherwise=`` runs for them
   afterwards instead, for example to answer a question alone if they never
-  answered it with the group:
+  answered it with the group. Build each question's steps in a function, so
+  that the lambda sees that question rather than the last one of a loop:
 
   .. code-block:: python
 
-      only_in_group(
-          "team",
-          estimate_page(question),
-          GroupBarrier(id_=f"estimates_{question}", group_type="team",
-                       on_release=share_median),
-          revised_estimate_page(question),
-          otherwise=PageMaker(
-              lambda participant: (
-                  estimate_page(question)
-                  if participant.var.get(f"estimate_{question}") is None
-                  else InfoPage("Your group has ended. Let's move on.")
+      def question_steps(question):
+          return only_in_group(
+              "team",
+              estimate_page(question),
+              GroupBarrier(id_=f"estimates_{question}", group_type="team",
+                           on_release=share_median),
+              revised_estimate_page(question),
+              otherwise=PageMaker(
+                  lambda participant: (
+                      estimate_page(question)
+                      if participant.var.get(f"estimate_{question}") is None
+                      else InfoPage("Your group has ended. Let's move on.")
+                  ),
+                  time_estimate=10,
               ),
-              time_estimate=10,
-          ),
-      )
+          )
 - Trial makers synchronized on that group type give them no more trials.
   A member who leaves before finishing any trial of such a trial maker,
   including one who is out of the group when it starts, skips the rest of
