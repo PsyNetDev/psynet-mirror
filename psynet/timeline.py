@@ -1909,6 +1909,13 @@ class Page(Elt):
     def consume(self, experiment, participant):
         participant.page_uuid = new_page_uuid()
         participant.page_count += 1
+        notice = participant.group_removal_notice
+        if notice is not None and notice.get("next_page"):
+            # A notice for the next page, such as after timing out at a barrier.
+            participant.group_removal_notice = {
+                "page_uuid": participant.page_uuid,
+                "text": notice["text"],
+            }
         if self.time_limit is not None:
             participant.page_deadline = timenow() + timedelta(seconds=self.time_limit)
             if participant.waiting_barrier_id is None:

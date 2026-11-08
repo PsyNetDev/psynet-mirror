@@ -1439,12 +1439,24 @@ def _group_barrier_outcome(group, members, waiting_ids):
     return "wait"
 
 
-def _validate_group_action(name, value):
-    """Raise unless a GroupBarrier action is ``"fail"`` or ``"leave_group"``."""
-    if value == "kick":
-        raise ValueError(f"{name}='kick' was renamed {name}='leave_group'.")
-    if value not in ("fail", "leave_group"):
-        raise ValueError(f"{name} must be 'fail' or 'leave_group', got {value!r}.")
+def _validate_group_timeouts(max_wait_action, late_after, late_action, prefix=""):
+    """Check a GroupBarrier's time-out options, naming them with ``prefix`` (e.g. ``"sync_group_"``)."""
+    for name, value in [
+        ("max_wait_action", max_wait_action),
+        ("late_action", late_action),
+    ]:
+        name = prefix + name
+        if value == "kick":
+            raise ValueError(f"{name}='kick' was renamed {name}='leave_group'.")
+        if value not in ("fail", "leave_group"):
+            raise ValueError(f"{name} must be 'fail' or 'leave_group', got {value!r}.")
+    if late_after is not None and late_after <= 0:
+        raise ValueError(f"{prefix}late_after must be positive.")
+    if late_after is not None and max_wait_action != "fail":
+        raise ValueError(
+            f"{prefix}max_wait_action has no effect with {prefix}late_after, which "
+            f"leaves no wait limit; use {prefix}late_action instead."
+        )
 
 
 def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
@@ -1538,8 +1550,9 @@ class GroupBarrier(Barrier):
         What happens to a member who waits longer than ``max_wait_time``: ``"fail"`` (default) fails them and
         sends them to the end of the experiment; ``"leave_group"`` removes them from the group, and they carry on with the
         experiment without it (see :ref:`sync-leaving-a-group`).
-        Unlike ``late_action="leave_group"``, this shows them no notice, and a
-        :class:`~psynet.group_prompt.GroupPrompt` marks them "(dropped out)".
+        Their next page says "Your partner didn't arrive in time. Please continue." (see
+        ``on_arrival_message``), and a :class:`~psynet.group_prompt.GroupPrompt` marks them
+        "(dropped out)".
 
     late_after
         Acts on members who haven't reached this barrier yet: the longest each may take to reach it, in seconds,
@@ -1584,9 +1597,9 @@ class GroupBarrier(Barrier):
         yet see a pill on the progress bar, and waiting participants in groups
         of three or more see remaining-not-ready copy on the hold overlay.
         Pairs show only the message. Set ``False`` to disable both. A
-        member removed by ``late_action="leave_group"`` is told
-        either way; return ``None`` from ``on_arrival_message`` for
-        ``kind="removed"`` to hide it. To change the waiting indicator's
+        member removed by ``"leave_group"`` is told either way; return ``None``
+        from ``on_arrival_message`` for ``kind="removed"`` or
+        ``kind="waited_too_long"`` to hide it. To change the waiting indicator's
         progress line, return :func:`hold_message` from a
         ``waiting_message`` function.
 
@@ -1598,7 +1611,7 @@ class GroupBarrier(Barrier):
 
     on_arrival_message
         Optional callable that returns copy for one participant. It receives
-        ``kind`` (``"notice"`` or ``"removed"``), ``waiting_count``,
+        ``kind`` (``"notice"``, ``"removed"`` or ``"waited_too_long"``), ``waiting_count``,
         ``group_size``, and the usual context arguments (``participant``, the
         one who sees the copy, ``group``, ``barrier``, ``experiment``). Return ``None`` to hide that
         surface. Same serialization rules as ``on_release``.
@@ -1616,6 +1629,11 @@ class GroupBarrier(Barrier):
         their page. It defaults to "Your partner went on without you. Please
         continue." or "Your group went on without you. Please continue.", and
         ``group_size`` counts the group before anyone was removed.
+
+        ``"waited_too_long"`` is the notice for someone removed by
+        ``max_wait_action="leave_group"``, shown on the page they move on to. It
+        defaults to "Your partner didn't arrive in time. Please continue." or
+        "Your group didn't arrive in time. Please continue.".
 
     """
 
@@ -1639,7 +1657,7 @@ class GroupBarrier(Barrier):
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
     ):
-        _validate_group_action("max_wait_action", max_wait_action)
+        _validate_group_timeouts(max_wait_action, late_after, late_action)
         max_wait_time = _group_max_wait_time(max_wait_time, late_after, default=20)
         super().__init__(
             id_=id_,
@@ -1657,15 +1675,7 @@ class GroupBarrier(Barrier):
         self.on_release = on_release
         self.on_arrival_message = on_arrival_message
         self.notify_arrivals = bool(notify_arrivals)
-        if late_after is not None and late_after <= 0:
-            raise ValueError("late_after must be positive.")
-        if late_after is not None and max_wait_action != "fail":
-            raise ValueError(
-                "max_wait_action has no effect with late_after, which leaves no "
-                "wait limit; use late_action instead."
-            )
         self.late_after = late_after
-        _validate_group_action("late_action", late_action)
         self.late_action = late_action
 
     def resolve(self):
@@ -1787,7 +1797,11 @@ class GroupBarrier(Barrier):
         """Remove from the sync group with ``"leave_group"``, then release the barrier link."""
         group = participant.active_sync_groups.get(self.group_type)
         if self.max_wait_action == "leave_group" and group is not None:
+            group_size = len(group.active_participants)
             group.remove_participant(participant)
+            self._tell_removed_participant(
+                participant, group, group_size, kind="waited_too_long"
+            )
         super().handle_max_wait_timeout(participant)
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
@@ -1923,16 +1937,18 @@ class GroupBarrier(Barrier):
             )
             participant.fail("timeout between barriers")
 
-    def _tell_removed_participant(self, participant, group, group_size):
-        """Show a removed participant a notice that their group went on without them.
+    def _tell_removed_participant(self, participant, group, group_size, kind="removed"):
+        """Show a removed participant a notice that they left their group.
 
-        The notice lasts until they leave their current page. It is skipped if
-        their own request holds their row, since they are leaving the page. A
-        failing message callback is logged rather than stopping the removal.
+        A ``"removed"`` notice (late) lasts until they leave their current page,
+        and is skipped if their own request holds their row, since they are
+        leaving the page. A ``"waited_too_long"`` notice is shown on the page
+        they move on to (see :meth:`psynet.timeline.Page.consume`). A failing
+        message callback is logged rather than stopping the removal.
         """
         try:
             text = self._call_arrival_message(
-                kind="removed",
+                kind=kind,
                 waiting_count=0,
                 group_size=group_size,
                 participant=participant,
@@ -1947,7 +1963,12 @@ class GroupBarrier(Barrier):
                 participant.id,
             )
             return
-        if not text or not _lock_free_participants([participant]):
+        if not text:
+            return
+        if kind == "waited_too_long":
+            participant.group_removal_notice = {"next_page": True, "text": str(text)}
+            return
+        if not _lock_free_participants([participant]):
             return
         text = str(text)
         participant.group_removal_notice = {
@@ -2388,6 +2409,14 @@ class SimpleGrouper(Grouper):
     def min_group_size(self):
         """Deprecated name for :attr:`quorum`."""
         return self.quorum
+
+    @min_group_size.setter
+    def min_group_size(self, value):
+        warn_from_caller(
+            "SimpleGrouper.min_group_size is deprecated; set quorum instead.",
+            FutureWarning,
+        )
+        self.quorum = value
 
     def resolve(self):
         from .timeline import conditional, join
@@ -4439,7 +4468,11 @@ def _reconstructed_arrival_barrier(link, reconstructed):
 def _removed_from_group_notice(participant) -> Optional[str]:
     """Return the notice for a participant removed from a group on their current page."""
     stored = getattr(participant, "group_removal_notice", None)
-    if stored is None or stored["page_uuid"] != participant.page_uuid:
+    if (
+        stored is None
+        or stored.get("next_page")
+        or stored["page_uuid"] != participant.page_uuid
+    ):
         return None
     return stored["text"]
 

@@ -63,6 +63,7 @@ from psynet.sync import (
     _queue_barrier_check,
     _queue_released_hold_waiters,
     _removed_from_group,
+    _removed_from_group_notice,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
     _take_released_hold_waiter_ids,
@@ -7122,3 +7123,11 @@ def test_group_barrier_max_wait_leave_group_releases_barrier_link(
     assert participant.active_sync_groups.get("main") is None
     assert "max_wait_leave_group" not in participant.active_barriers
     assert not participant.failed
+    # The page they move on to says why they are on their own.
+    assert _removed_from_group_notice(participant) is None
+    InfoPage("Next").consume(exp, participant)
+    assert _removed_from_group_notice(participant) == (
+        "Your partner didn't arrive in time. Please continue."
+    )
+    InfoPage("After").consume(exp, participant)
+    assert _removed_from_group_notice(participant) is None

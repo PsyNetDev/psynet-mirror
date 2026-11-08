@@ -17,10 +17,11 @@ consuming snapshot matches as a multiset so two identical lines are not
 collapsed to one. An empty snapshot still completes the load.
 
 In an anonymous room (``ChatRoom(names="anonymous")``), members are not sent
-each other's pseudonyms, so the page doesn't show them. This hides names, not
-identities: frames still carry participant IDs. Each membership
-records whether its page is anonymous, and every frame is sent in two
-versions, with and without pseudonyms. The widget then labels the others
+each other's pseudonyms or participant IDs: each anonymous member gets their
+own copy of every frame, in which the others appear under per-room aliases
+(``member-1``, ``member-2``, ... by order of first joining the room). Aliases
+differ between rooms, so a member can't be recognised across rounds from the
+page. Each membership records whether its page is anonymous. The widget then labels the others
 as :class:`~psynet.group_prompt.GroupPrompt` does with
 ``names="anonymous"``: "Your partner" while the viewer has met only one
 other member of the room, and "Another player" once there are more.
@@ -190,6 +191,7 @@ class EnableChatrooms(NullElt, WebSocketElt):
             }
             _publish(
                 experiment,
+                room_id,
                 self._occupants(room_id),
                 {**message, "sender_pseudonym": participant.pseudonym.to_dict()},
                 {**message, "sender_pseudonym": None},
@@ -242,10 +244,6 @@ class EnableChatrooms(NullElt, WebSocketElt):
             occupants[str(pid)] = occupants.get(str(pid), False) or bool(anonymous)
         return occupants
 
-    def _occupant_ids(self, room_id):
-        """Return the IDs of participants in this room who are still on the page they joined from."""
-        return list(self._occupants(room_id))
-
     def _send_occupancy(self, experiment, room_id):
         occupants = self._occupants(room_id)
         update = {
@@ -255,6 +253,7 @@ class EnableChatrooms(NullElt, WebSocketElt):
         }
         _publish(
             experiment,
+            room_id,
             occupants,
             {**update, "pseudonyms": _pseudonyms(occupants)},
             {**update, "pseudonyms": {}},
@@ -274,20 +273,58 @@ class EnableChatrooms(NullElt, WebSocketElt):
             }
             for m in log
         ]
-        experiment.publish_to_participants(
-            {"type": "history", "room_id": room_id, "messages": messages},
-            [participant.id],
-        )
+        history = {"type": "history", "room_id": room_id, "messages": messages}
+        if anonymous:
+            history = _with_aliases(history, _room_aliases(room_id), participant.id)
+        experiment.publish_to_participants(history, [participant.id])
 
 
-def _publish(experiment, occupants, named, anonymous):
+def _publish(experiment, room_id, occupants, named, anonymous):
     """Send ``named`` to occupants of named pages and ``anonymous`` to those of anonymous ones."""
     experiment.publish_to_participants(
         named, [pid for pid, anon in occupants.items() if not anon]
     )
     anonymous_ids = [pid for pid, anon in occupants.items() if anon]
     if anonymous_ids:
-        experiment.publish_to_participants(anonymous, anonymous_ids)
+        aliases = _room_aliases(room_id)
+        for pid in anonymous_ids:
+            experiment.publish_to_participants(
+                _with_aliases(anonymous, aliases, pid), [pid]
+            )
+
+
+def _room_aliases(room_id):
+    """Return ``{participant_id: "member-<n>"}``, numbered by order of first joining the room."""
+    from dallinger import db
+    from sqlalchemy import func
+
+    first_joins = (
+        db.session.query(ChatRoomMember.participant_id)
+        .filter(ChatRoomMember.room_id == room_id)
+        .group_by(ChatRoomMember.participant_id)
+        .order_by(func.min(ChatRoomMember.id))
+        .all()
+    )
+    return {str(pid): f"member-{n}" for n, (pid,) in enumerate(first_joins, start=1)}
+
+
+def _with_aliases(frame, aliases, recipient_id):
+    """Return ``frame`` with participant IDs other than the recipient's replaced by aliases."""
+    me = str(recipient_id)
+
+    def alias(pid):
+        return pid if pid is None or str(pid) == me else aliases.get(str(pid), "member")
+
+    frame = dict(frame)
+    if "sender" in frame:
+        frame["sender"] = alias(frame["sender"])
+    if "participants" in frame:
+        frame["participants"] = [alias(pid) for pid in frame["participants"]]
+    if "messages" in frame:
+        frame["messages"] = [
+            {**m, "sender": alias(m["sender"])} for m in frame["messages"]
+        ]
+    return frame
 
 
 def _pseudonyms(participant_ids):
@@ -331,8 +368,8 @@ class ChatRoom(JavaScriptContributor):
           ``names="anonymous"``: "Your partner" while the viewer has met only
           one other member of the room, and "Another player" once they have
           met more, even if some have left since. The page is then not sent
-          the others' pseudonyms, though it still receives their
-          participant IDs.
+          the others' pseudonyms or participant IDs, which appear under
+          aliases that differ between rooms.
 
         A chat writes a name next to every message, so GroupPrompt's
         ``"on_hover"`` is not available.
@@ -363,6 +400,15 @@ class ChatRoom(JavaScriptContributor):
         self.show_participants = show_participants
         self.show_history = show_history
         self.names = names
+
+    def check_enabled(self, experiment):
+        """Raise unless the timeline has the :class:`EnableChatrooms` element this room needs."""
+        if self.channel not in experiment._websocket_message_handlers:
+            raise RuntimeError(
+                "A page shows a ChatRoom, but the timeline has no EnableChatrooms() "
+                "element, so its messages would go nowhere. Add EnableChatrooms() "
+                "to the experiment's timeline."
+            )
 
     def get_css(self):
         """Page-local CSS contributed to the hosting :class:`ModularPage`."""

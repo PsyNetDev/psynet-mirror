@@ -249,7 +249,8 @@ the waiting indicator also has a smaller second line saying how many members
 are not ready yet. Set ``notify_arrivals=False`` to turn both off, or pass
 ``on_arrival_message`` to change the notices. It receives ``kind``
 (``"notice"`` for the progress bar, ``"removed"`` for the notice a member
-sees after being removed from the group), ``waiting_count`` and
+sees after being removed for being late, ``"waited_too_long"`` for the one
+on the next page of a member removed after waiting too long), ``waiting_count`` and
 ``group_size``, and returns the text or ``None`` to hide it. For a notice it
 is called whenever the browser fetches the current count, which can be
 several times per arrival, so it should depend only on its arguments and
@@ -260,6 +261,8 @@ have no side effects. Notices must fit on one line:
     def arrival_message(*, kind, waiting_count, group_size, **kwargs):
         if kind == "removed":
             return "Your partner went on without you. Please continue."
+        if kind == "waited_too_long":
+            return "Your partner didn't arrive in time. Please continue."
         return "Your partner is ready."
 
     GroupBarrier(
@@ -482,8 +485,9 @@ Waiting and dropouts
 Timeouts
 ~~~~~~~~
 
-A grouper or barrier has two limits, the maximum waiting time and the late
-limit, which act on different members:
+A :class:`~psynet.sync.GroupBarrier` has two limits, the maximum waiting
+time and the late limit, which act on different members; groupers have only
+the maximum waiting time:
 
 ``max_wait_time``
     Acts on members **waiting** at this grouper or barrier: the longest each

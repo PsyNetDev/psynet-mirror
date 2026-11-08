@@ -232,10 +232,17 @@ def default_group_barrier_arrival_message(
     """Return default GroupBarrier arrival copy for one participant.
 
     Notices tell people still on an earlier page that partners are already
-    waiting, and ``"removed"`` tells someone who was too slow that their group
-    went on without them.
+    waiting, ``"removed"`` tells someone who was too slow that their group
+    went on without them, and ``"waited_too_long"`` tells someone who waited
+    too long that the others didn't arrive.
     """
     _p = get_translator(context=True)
+    if kind == "waited_too_long":
+        if group_size <= 2:
+            return _p(
+                "timeline_hold", "Your partner didn't arrive in time. Please continue."
+            )
+        return _p("timeline_hold", "Your group didn't arrive in time. Please continue.")
     if kind == "removed":
         if group_size <= 2:
             return _p(
@@ -255,13 +262,13 @@ def _is_message_function(message):
     return callable(message) and not isinstance(message, dom_tag)
 
 
-def _reject_countdown(waiting_message, owner):
+def _reject_countdown(waiting_message, owner, argument="waiting_message"):
     """Raise if a plain ``waiting_message`` has a ``{SECONDS}`` countdown that ``owner`` can't fill in."""
     if not _is_message_function(waiting_message) and "{SECONDS}" in str(
         waiting_message or ""
     ):
         raise ValueError(
-            f"{owner} has no release time to count down to, so its waiting_message "
+            f"{owner} has no release time to count down to, so its {argument} "
             "would only ever show '…' for {SECONDS}. Remove the placeholder."
         )
 

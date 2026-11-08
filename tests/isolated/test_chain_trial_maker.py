@@ -1354,6 +1354,24 @@ def test_repeats_without_a_trial_limit_name_the_missing_argument():
         )
 
 
-def test_sync_group_actions_name_the_trial_maker_option():
-    with pytest.raises(ValueError, match="sync_group_late_action='kick' was renamed"):
-        make_trial_maker(sync_group_type="main", sync_group_late_action="kick")
+@pytest.mark.parametrize(
+    "options, message",
+    [
+        (
+            {"sync_group_late_action": "kick"},
+            "sync_group_late_action='kick' was renamed",
+        ),
+        ({"sync_group_late_after": 0}, "sync_group_late_after must be positive"),
+        (
+            {"sync_group_late_after": 10, "sync_group_max_wait_action": "leave_group"},
+            "use sync_group_late_action",
+        ),
+        (
+            {"sync_group_waiting_message": "{SECONDS} s"},
+            "its sync_group_waiting_message",
+        ),
+    ],
+)
+def test_sync_group_errors_name_the_trial_maker_options(options, message):
+    with pytest.raises(ValueError, match=message):
+        make_trial_maker(sync_group_type="main", **options)

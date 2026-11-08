@@ -54,7 +54,7 @@ from ..sync import (
     SyncGroup,
     _group_max_wait_time,
     _removed_from_group,
-    _validate_group_action,
+    _validate_group_timeouts,
 )
 from ..timeline import (
     CodeBlock,
@@ -71,6 +71,7 @@ from ..timeline import (
     switch,
     while_loop,
 )
+from ..timeline_hold import _reject_countdown
 from ..utils import (
     NoArgumentProvided,
     call_function,
@@ -1824,8 +1825,18 @@ class TrialMaker(Module):
                 sync_group_late_action=(sync_group_late_action, "fail"),
                 sync_group_waiting_message=(sync_group_waiting_message, None),
             )
-        _validate_group_action("sync_group_max_wait_action", sync_group_max_wait_action)
-        _validate_group_action("sync_group_late_action", sync_group_late_action)
+        _validate_group_timeouts(
+            sync_group_max_wait_action,
+            sync_group_late_after,
+            sync_group_late_action,
+            prefix="sync_group_",
+        )
+        if sync_group_type is not None:
+            _reject_countdown(
+                sync_group_waiting_message,
+                f"Trial maker '{id_}'",
+                argument="sync_group_waiting_message",
+            )
         self.sync_group_type = sync_group_type
         self.sync_group_max_wait_time = _group_max_wait_time(
             sync_group_max_wait_time,

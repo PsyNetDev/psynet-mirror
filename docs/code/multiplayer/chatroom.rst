@@ -50,7 +50,9 @@ Options
 
 ``show_history`` (default ``False``)
     Show the messages sent in the room before the participant opened the
-    page. The chatroom is enabled once the earlier messages have loaded.
+    page: every message sent with this ``room_id``, so a ``room_id`` reused
+    across rounds shows the earlier rounds too. The chatroom is enabled once
+    the earlier messages have loaded.
 
 ``names`` (default ``"shown"``)
     ``"shown"`` labels everyone else by pseudonym. ``"anonymous"`` draws
@@ -60,11 +62,11 @@ Options
     and "Another player" once more have, even if some have left since. For
     a pair, or a larger group without ``subgroups`` once everyone has joined
     the chat, this matches the GroupPrompt. The server then
-    doesn't send this participant the others' pseudonyms. Use it on pages
-    whose GroupPrompt is anonymous, so the chat doesn't show who the
-    partner is. It hides names, not identities: the browser still receives
-    participant IDs, so a participant inspecting the page could tell
-    partners apart across rounds. A chat writes a name next to every message, so
+    doesn't send this participant the others' pseudonyms or participant
+    IDs: the others appear under aliases that differ from room to room, so
+    nobody can recognise a partner from an earlier round, even by
+    inspecting the page. Use it on pages whose GroupPrompt is anonymous. A
+    chat writes a name next to every message, so
     GroupPrompt's ``"on_hover"`` isn't available.
 
 Pseudonyms

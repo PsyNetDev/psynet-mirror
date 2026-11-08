@@ -13,8 +13,8 @@ messages and seat are labelled "You".
 How pseudonyms are chosen
 -------------------------
 
-A participant keeps the same pseudonym for the whole experiment, in every
-group and chat room. Each deployment shuffles the colours and animals
+A participant keeps the same pseudonym, in every group and chat room, from
+their first group on (see below). Each deployment shuffles the colours and animals
 differently and then assigns them in order of participant ID, so
 participants who arrive one after another differ in both colour and animal,
 and any 88 (8 colours × 11 animals) participants in a row all have
