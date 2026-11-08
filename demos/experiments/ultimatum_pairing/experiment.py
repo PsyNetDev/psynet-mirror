@@ -17,6 +17,11 @@ In each pair, the proposer offers part of
 ``ENDOWMENT`` coins and, at the same time, the responder says the smallest
 offer they would accept.
 
+Each player's round is one cued ``OfferTrial``. Because the trial class has
+``sync_group_type = "pair"``, the two trials of a pair share a node: the
+pair's offer and result go in ``trial.node.var`` and each player's coins in
+``trial.var``, and ``get_basic_data`` reads both back.
+
 A player who doesn't answer within ``DECISION_SECONDS`` gets nothing that
 round, and nor does their partner. A player who closes their page is taken
 out of their pair so their partner isn't held up. A player who misses a
@@ -33,15 +38,17 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper
+from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper, only_in_group
 from psynet.timeline import (
     CodeBlock,
+    Module,
     PageMaker,
     Timeline,
     conditional,
     join,
     while_loop,
 )
+from psynet.trial.main import SyncGroupNode, Trial
 
 COHORT_SIZE = 4
 MIN_COHORT_SIZE = 2
@@ -57,12 +64,58 @@ ENDOWMENT = 10
 WAIT_TIMEOUT = ROUND_DEADLINE_SECONDS + DECISION_SECONDS + 20
 
 
+def get_timeline():
+    return Timeline(
+        InfoPage(
+            "You will play several rounds of a game with other players in your group.",
+            time_estimate=5,
+        ),
+        SimpleGrouper(
+            "cohort",
+            initial_group_size=COHORT_SIZE,
+            quorum=MIN_COHORT_SIZE,
+            start_short_after=SHORT_START_SECONDS,
+            join_existing_groups=True,
+            join_criterion=cohort_accepts_newcomers,
+            waiting_message=lobby_message,
+            waiting_screen=forming_cohort,
+            max_wait_time=300,
+        ),
+        Module(
+            "game",
+            while_loop(
+                "rounds",
+                keep_playing,
+                join(
+                    pairing,
+                    only_in_group(
+                        "pair",
+                        # Every pair is new and plays a single round, so each
+                        # pair's round is its first.
+                        OfferTrial.cue({"endowment": ENDOWMENT}, round=0),
+                        # Without a cohort the game is over; the ended-early
+                        # page explains why.
+                        otherwise=conditional(
+                            "in_cohort",
+                            lambda participant: cohort_of(participant) is not None,
+                            PageMaker(not_playing, time_estimate=5),
+                        ),
+                    ),
+                ),
+                expected_repetitions=N_ROUNDS,
+            ),
+        ),
+        CodeBlock(leave_cohort),
+        conditional(
+            "ended_early",
+            ended_early,
+            PageMaker(ended_early_page, time_estimate=5),
+        ),
+    )
+
+
 def cohort_of(participant):
     return participant.active_sync_groups.get("cohort")
-
-
-def in_pair(participant):
-    return participant.in_sync_group("pair")
 
 
 def lobby_message(seconds_left):
@@ -116,71 +169,6 @@ def keep_playing(participant):
     )
 
 
-def score_round(participants: List[Participant], left: List[Participant]):
-    """Pay out the round, or note who ran out of time or left."""
-    if len(participants) < 2:
-        partner_was_away = any(
-            p.sync_group_removal_reason("pair") == "late" for p in left
-        )
-        participants[0].var.outcome = (
-            "Your partner was away for too long, so nobody was paid."
-            if partner_was_away
-            else "Your partner left, so nobody was paid."
-        )
-        participants[0].var.decisions = None
-        return
-    if any(p.var.decision is None for p in participants):
-        for participant in participants:
-            participant.var.decisions = None
-            participant.var.outcome = (
-                "You ran out of time, so nobody was paid."
-                if participant.var.decision is None
-                else "Your partner ran out of time, so nobody was paid."
-            )
-        return
-    roles = {pairing.role(p): p for p in participants}
-    offer = roles["proposer"].var.decision
-    minimum = roles["responder"].var.decision
-    accepted = offer >= minimum
-    decisions = {
-        roles["proposer"].id: f"I offer {offer}",
-        roles["responder"].id: f"I accept {minimum}+",
-    }
-    for participant in participants:
-        participant.var.decisions = decisions
-        if not accepted:
-            outcome = f"The offer of {offer} coins was rejected, so nobody was paid."
-        else:
-            coins = (
-                ENDOWMENT - offer if pairing.role(participant) == "proposer" else offer
-            )
-            outcome = f"The offer of {offer} coins was accepted. You earned {coins}."
-        participant.var.outcome = outcome
-
-
-def decision_page(participant):
-    role = pairing.role(participant)
-    if role == "proposer":
-        prompt = f"You are the proposer. How many of {ENDOWMENT} coins do you offer?"
-    else:
-        prompt = (
-            f"You are the responder. Your partner is splitting {ENDOWMENT} coins. "
-            "What is the smallest offer you would accept?"
-        )
-    return ModularPage(
-        role,
-        # A tick appears once the partner has decided. Partners are anonymous,
-        # so that nobody recognises a partner from an earlier round.
-        GroupPrompt(
-            prompt, participant=participant, group_type="pair", names="anonymous"
-        ),
-        PushButtonControl(choices=list(range(ENDOWMENT + 1))),
-        save_answer="decision",
-        time_limit=DECISION_SECONDS,
-        time_estimate=10,
-    )
-
-
 def forming_cohort(participant):
     """Replace the welcome page while the player waits for a cohort."""
     return "We're putting together a group of players for you. Each round, you play with one other player from it."
@@ -195,7 +183,7 @@ def waiting_for_partner(participant):
     """Replace the decision buttons with the player's choice while their partner decides."""
     if participant.var.decision is None:
         text = "You ran out of time, so nobody will be paid this round."
-    elif pairing.role(participant) == "proposer":
+    elif participant.current_trial.sync_group_role == "proposer":
         text = f"You offer {participant.var.decision} coins."
     else:
         text = f"You accept at least {participant.var.decision} coins."
@@ -212,29 +200,11 @@ def waiting_for_partner(participant):
 AWAY_TEXT = "You were away for too long, so you got no coins this round."
 
 
-def show_outcome(participant):
-    if not in_pair(participant):
-        return InfoPage(AWAY_TEXT, time_estimate=5)
-    if participant.var.decisions is None:
-        return InfoPage(participant.var.outcome, time_estimate=5)
-    return ModularPage(
-        "outcome",
-        GroupPrompt(
-            participant.var.outcome,
-            participant=participant,
-            group_type="pair",
-            answers=participant.var.decisions,
-            names="anonymous",
-        ),
-        time_estimate=5,
-    )
-
-
 def not_playing(participant):
     if pairing.sat_out(participant):
         text = "You sit out this round. It doesn't count towards your rounds."
     else:
-        # Removed from this round's pair before reaching the decision page.
+        # Removed from this round's pair for being away too long.
         text = AWAY_TEXT
     return InfoPage(text, time_estimate=5)
 
@@ -249,129 +219,177 @@ pairing = Regrouper(
     waiting_screen=pairing_up,
 )
 
+UNPAID_TEXTS = {
+    "partner_away": "Your partner was away for too long, so nobody was paid.",
+    "partner_left": "Your partner left, so nobody was paid.",
+    "timed_out": "Your partner ran out of time, so nobody was paid.",
+}
 
-def play_round():
-    return join(
-        pairing,
-        conditional(
-            "paired",
-            in_pair,
-            join(
-                PageMaker(decision_page, time_estimate=10),
-                GroupBarrier(
-                    id_="round_finished",
-                    group_type="pair",
-                    waiting_message="Waiting for your partner…",
-                    waiting_screen=waiting_for_partner,
-                    # A player is taken out 30 s after the round starts (long
-                    # enough for a background tab to notice), but not while their
-                    # answer to the timed decision page may still be on its way.
-                    late_after=30,
-                    late_action="leave_group",
-                    on_release=score_round,
-                ),
-                PageMaker(show_outcome, time_estimate=5),
+
+class OfferTrial(Trial):
+    sync_group_type = "pair"
+    time_estimate = 15
+
+    def show_trial(self, experiment, participant):
+        return join(
+            self.decision_page(participant),
+            GroupBarrier(
+                id_="round_finished",
+                group_type="pair",
+                waiting_message="Waiting for your partner…",
+                waiting_screen=waiting_for_partner,
+                # A player is taken out 30 s after the round starts (long
+                # enough for a background tab to notice), but not while their
+                # answer to the timed decision page may still be on its way.
+                late_after=30,
+                late_action="leave_group",
+                on_release=self.score_pair,
             ),
-            # Without a cohort the game is over; the ended-early page explains why.
-            conditional(
-                "in_cohort",
-                lambda participant: cohort_of(participant) is not None,
-                PageMaker(not_playing, time_estimate=5),
+        )
+
+    def decision_page(self, participant):
+        role = self.sync_group_role
+        endowment = self.definition["endowment"]
+        if role == "proposer":
+            prompt = (
+                f"You are the proposer. How many of {endowment} coins do you offer?"
+            )
+        else:
+            prompt = (
+                f"You are the responder. Your partner is splitting {endowment} coins. "
+                "What is the smallest offer you would accept?"
+            )
+        return ModularPage(
+            role,
+            # A tick appears once the partner has decided. Partners are anonymous,
+            # so that nobody recognises a partner from an earlier round.
+            GroupPrompt(
+                prompt, participant=participant, group_type="pair", names="anonymous"
             ),
-        ),
-    )
+            PushButtonControl(choices=list(range(endowment + 1))),
+            save_answer="decision",
+            time_limit=DECISION_SECONDS,
+            time_estimate=10,
+        )
+
+    @classmethod
+    def score_pair(
+        cls, trials: List["OfferTrial"], node: SyncGroupNode, left: List[Participant]
+    ):
+        """Save the pair's offer and result on the node, and each player's coins on their trial.
+
+        The trials' answers are only saved once the trials end, after this
+        barrier, so the decisions are read from ``participant.var``.
+        """
+        by_role = {trial.sync_group_role: trial for trial in trials}
+        decisions = {role: t.participant.var.decision for role, t in by_role.items()}
+        offer, minimum = decisions.get("proposer"), decisions.get("responder")
+        if len(trials) < 2:
+            away = any(p.sync_group_removal_reason("pair") == "late" for p in left)
+            result = "partner_away" if away else "partner_left"
+        elif offer is None or minimum is None:
+            result = "timed_out"
+        else:
+            result = "accepted" if offer >= minimum else "rejected"
+        node.var.players = {role: t.participant_id for role, t in by_role.items()}
+        node.var.offer = offer
+        node.var.minimum = minimum
+        node.var.result = result
+        coins = (
+            {"proposer": ENDOWMENT - offer, "responder": offer}
+            if result == "accepted"
+            else {}
+        )
+        for role, trial in by_role.items():
+            trial.var.coins = coins.get(role, 0)
+
+    def show_feedback(self, experiment, participant):
+        result, offer = self.node.var.result, self.node.var.offer
+        if result == "timed_out" and self.answer is None:
+            return InfoPage("You ran out of time, so nobody was paid.", time_estimate=5)
+        if result in UNPAID_TEXTS:
+            return InfoPage(UNPAID_TEXTS[result], time_estimate=5)
+        if result == "rejected":
+            text = f"The offer of {offer} coins was rejected, so nobody was paid."
+        else:
+            text = (
+                f"The offer of {offer} coins was accepted. You earned {self.var.coins}."
+            )
+        players = self.node.var.players
+        return ModularPage(
+            "outcome",
+            GroupPrompt(
+                text,
+                participant=participant,
+                group_type="pair",
+                answers={
+                    players["proposer"]: f"I offer {offer}",
+                    players["responder"]: f"I accept {self.node.var.minimum}+",
+                },
+                names="anonymous",
+            ),
+            time_estimate=5,
+        )
+
+
+def _play(bots):
+    for bot in bots:
+        response = 5 if bot.current_page_label == "proposer" else 3
+        bot.take_page(response=response)
+    advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
+
+
+def _cohort_accepts_newcomers(bot):
+    return cohort_accepts_newcomers(cohort_of(Participant.query.get(bot.id)), None)
 
 
 class Exp(psynet.experiment.Experiment):
     label = "Ultimatum game with re-pairing demo"
 
-    timeline = Timeline(
-        InfoPage(
-            "You will play several rounds of a game with other players in your group.",
-            time_estimate=5,
-        ),
-        SimpleGrouper(
-            "cohort",
-            initial_group_size=COHORT_SIZE,
-            quorum=MIN_COHORT_SIZE,
-            start_short_after=SHORT_START_SECONDS,
-            join_existing_groups=True,
-            join_criterion=cohort_accepts_newcomers,
-            waiting_message=lobby_message,
-            waiting_screen=forming_cohort,
-            max_wait_time=300,
-        ),
-        while_loop(
-            "rounds",
-            keep_playing,
-            play_round(),
-            expected_repetitions=N_ROUNDS,
-        ),
-        CodeBlock(leave_cohort),
-        conditional(
-            "ended_early",
-            ended_early,
-            PageMaker(ended_early_page, time_estimate=5),
-        ),
-    )
+    timeline = get_timeline()
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per pair they played in, with both decisions."""
-        from psynet.sync import ParticipantLinkSyncGroup, SyncGroup
-        from psynet.timeline import Response
-
-        # Each group the regrouper formed is one round of one pair.
-        links = (
-            ParticipantLinkSyncGroup.query.join(SyncGroup)
-            .filter(SyncGroup.grouper_id == pairing.id)
-            .order_by(ParticipantLinkSyncGroup.id)
-            .all()
+        """Return one row per player per pair, from the trials, one per pair, from the nodes, and one per player."""
+        trials = OfferTrial.query.order_by(OfferTrial.id).all()
+        pairs = SyncGroupNode.query.filter_by(module_id="game").order_by(
+            SyncGroupNode.id
         )
-        decisions = Response.query.filter(
-            Response.question.in_(["proposer", "responder"])
-        ).all()
-
-        def decision(link, next_link):
-            # The player's decision between joining this pair and the next one.
-            for response in decisions:
-                if (
-                    response.participant_id == link.participant_id
-                    and response.creation_time >= link.creation_time
-                    and (
-                        next_link is None
-                        or response.creation_time < next_link.creation_time
-                    )
-                ):
-                    return response.answer
-            return None
-
-        by_player = {}
-        for link in links:
-            by_player.setdefault(link.participant_id, []).append(link)
-        rows = {}
-        for player_links in by_player.values():
-            for i, link in enumerate(player_links):
-                next_link = player_links[i + 1] if i + 1 < len(player_links) else None
-                rows[link.id] = {
-                    "pair_id": link.sync_group_id,
-                    # The player's own count of pairs: it skips rounds they sat out.
-                    "pair_number": i + 1,
-                    "participant_id": link.participant_id,
-                    "role": link.role,
-                    "decision": decision(link, next_link),
-                    "removed_for_being_late": link.removal_reason == "late",
+        players = Participant.query.order_by(Participant.id).all()
+        return {
+            "player_pair": [
+                {
+                    "pair_id": t.sync_group_id,
+                    "participant_id": t.participant_id,
+                    "trial_id": t.id,
+                    "role": t.sync_group_role,
+                    # None if the player was away and never sent a decision.
+                    "decision": t.answer,
+                    "coins": t.var.get("coins"),
                 }
-        for link in links:
-            partners = [
-                other
-                for other in links
-                if other.sync_group_id == link.sync_group_id and other.id != link.id
-            ]
-            partner = rows[partners[0].id] if partners else None
-            rows[link.id]["partner_id"] = partner and partner["participant_id"]
-            rows[link.id]["partner_decision"] = partner and partner["decision"]
-        return {"player_pair": list(rows.values())}
+                for t in trials
+            ],
+            "pair": [
+                {
+                    "pair_id": n.sync_group_id,
+                    "node_id": n.id,
+                    "proposer_id": n.var.get("players", {}).get("proposer"),
+                    "responder_id": n.var.get("players", {}).get("responder"),
+                    "offer": n.var.get("offer"),
+                    "minimum": n.var.get("minimum"),
+                    "result": n.var.get("result"),
+                }
+                for n in pairs
+            ],
+            "player": [
+                {
+                    "participant_id": p.id,
+                    "rounds_played": pairing.rounds_played(p),
+                    "rounds_sat_out": pairing.rounds_sat_out(p),
+                }
+                for p in players
+            ],
+        }
 
     test_n_bots = 4
     test_mode = "serial"
@@ -417,17 +435,17 @@ class Exp(psynet.experiment.Experiment):
 
         # Two pairs in round 1, then one pair in each of rounds 2 and 3, each
         # with one proposer (5) and one responder (3).
-        rows = self.get_basic_data()["player_pair"]
+        data = self.get_basic_data()
+        pairs = data["pair"]
+        assert [(p["offer"], p["minimum"], p["result"]) for p in pairs] == [
+            (5, 3, "accepted")
+        ] * 4, pairs
+        rows = data["player_pair"]
         assert len(rows) == 8
-        assert all({row["decision"], row["partner_decision"]} == {3, 5} for row in rows)
-
-
-def _play(bots):
-    for bot in bots:
-        response = 5 if bot.current_page_label == "proposer" else 3
-        bot.take_page(response=response)
-    advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
-
-
-def _cohort_accepts_newcomers(bot):
-    return cohort_accepts_newcomers(cohort_of(Participant.query.get(bot.id)), None)
+        assert all(
+            (row["decision"], row["coins"])
+            == {"proposer": (5, 5), "responder": (3, 5)}[row["role"]]
+            for row in rows
+        ), rows
+        sat_out = {p["participant_id"]: p["rounds_sat_out"] for p in data["player"]}
+        assert sat_out == {bot.id: int(bot in sitting_out) for bot in bots}
