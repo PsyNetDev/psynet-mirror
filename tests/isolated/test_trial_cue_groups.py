@@ -9,9 +9,12 @@ import pytest
 from dallinger import db
 
 from psynet.experiment import get_experiment
+from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import GroupBarrier
+from psynet.timeline import Module
+from psynet.trial.chain import ChainNode
 from psynet.trial.main import GenericTrialNetwork, SyncGroupNode, Trial
 from psynet.trial.static import StaticNode, StaticTrialMaker
 
@@ -190,6 +193,29 @@ def test_cue_takes_round_only_when_the_trial_has_a_sync_group_type():
         SoloTrial.cue({}, round=0)
 
 
+def test_a_grouped_cue_takes_no_node():
+    with pytest.raises(TypeError, match="makes the group's node itself"):
+        PairTrial.cue(ChainNode.__new__(ChainNode))
+
+
+@in_consents_experiment
+def test_each_module_numbers_a_group_s_rounds_from_0(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    for module_id in ("practice", "main"):
+        for participant in cohort:
+            participant.start_module(Module(module_id, InfoPage("Hi", time_estimate=1)))
+            PairTrial.cue({"target": 1})[0].consume(exp, participant)
+    db.session.commit()
+
+    assert sorted((n.module_id, n.sync_group_round) for n in SyncGroupNode.query) == [
+        ("main", 0),
+        ("practice", 0),
+    ]
+
+
 class VoteTrial(Trial):
     time_estimate = 1
     sync_group_type = "pair"
@@ -220,8 +246,8 @@ def test_an_explicit_round_lets_two_classes_share_a_node(
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
-    for trial_class in (PairTrial, VoteTrial):
-        trial_class.cue({"target": 1}, round=4)[0].consume(exp, cohort[0])
+    PairTrial.cue(lambda: {"target": 1}, round=4)[0].consume(exp, cohort[0])
+    VoteTrial.cue({"target": 1}, round=4)[0].consume(exp, cohort[0])
     with pytest.raises(ValueError, match="already has the definition"):
         VoteTrial.cue({"target": 2}, round=4)[0].consume(exp, cohort[1])
     PairTrial.cue({"target": 1})[0].consume(exp, cohort[0])
@@ -275,7 +301,6 @@ class CustomStaticTrialMaker(StaticTrialMaker):
 
     def prepare_trial(self, experiment, participant):
         node = Trial.get_default_parent_node(participant, experiment)
-        node.trial_maker_id = self.id  # as the trial maker's own nodes have
         trial = PairTrial(experiment, node, participant, False, False, definition={})
         self._finalize_created_trial(trial)
         return trial, "available"

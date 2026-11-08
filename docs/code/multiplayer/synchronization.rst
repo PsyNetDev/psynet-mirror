@@ -301,8 +301,9 @@ slow.
 
 ``on_release`` runs only when the barrier releases the group. A member who
 leaves the group before then, or whose group is dissolved, doesn't get
-the results it would have stored, so read them with
-``participant.var.get("score")``, which returns ``None`` when it isn't set.
+the results it would have stored, so read them with ``.get``, which returns
+``None`` when they aren't set: ``trial.var.get("score")`` for results saved on
+the trial, or ``participant.var.get("score")`` when there is no trial.
 If the group dissolves while some members are waiting at the barrier,
 ``on_dissolve`` runs for them instead, before they leave the group, with the
 same arguments except ``leader`` and ``left``.

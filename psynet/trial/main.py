@@ -1221,7 +1221,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         - Otherwise it starts the group's next round, counted from 0.
         - Put a :class:`~psynet.sync.GroupBarrier` in each round, for example
           in :meth:`show_trial`, so that no member starts the next round
-          before the others have cued this one.
+          before the others have cued this one. ``trial.answer`` is only set
+          when the trial ends, after that barrier, so its ``on_release`` reads
+          what the pages stored (``save_answer`` puts it in
+          ``participant.var``); :meth:`show_feedback`, :meth:`score_answer`
+          and exports can read ``trial.answer``.
 
         Each trial records ``sync_group_id``, ``sync_group_role`` and
         ``sync_group_round``. A participant who is in no group of that type
@@ -1279,9 +1283,17 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
                 def show_trial(self, experiment, participant):
                     return join(
-                        PickPage(),
-                        GroupBarrier(id_="round_finished", group_type="room"),
+                        PickPage(),  # save_answer="pick"
+                        GroupBarrier(
+                            id_="round_finished",
+                            group_type="room",
+                            on_release=self.score_room,
+                        ),
                     )
+
+                @classmethod
+                def score_room(cls, trials, node):
+                    node.var.picks = [t.participant.var.pick for t in trials]
 
             # A fixed room plays rounds 0, 1 and 2, and a room re-formed by a
             # Regrouper every round plays round 0. The Module gives the nodes a
@@ -1360,7 +1372,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         )
 
     @classmethod
-    def _cued_trial_node(cls, definition, round, participant, experiment):
+    def _cued_trial_node(cls, definition, round_number, participant, experiment):
         """Return the node, sync group and definition for a trial made by :meth:`cue`."""
         from psynet.trial.chain import ChainNode
 
@@ -1378,22 +1390,22 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                     cls.__name__,
                 )
 
-        def make_definition(round):
+        def make_definition(round_number):
             if not callable(definition):
                 return definition
             return call_function_with_context(
                 definition,
                 group=group,
-                round=round,
+                round=round_number,
                 participant=participant,
                 experiment=experiment,
             )
 
         if group is None:
             node = cls.get_default_parent_node(participant, experiment)
-            return node, None, make_definition(round)
+            return node, None, make_definition(round_number)
         node = SyncGroupNode.for_cue(
-            group, round, participant, experiment, make_definition
+            group, round_number, participant, experiment, make_definition
         )
         if not callable(definition) and definition != node.definition:
             raise ValueError(
@@ -2808,6 +2820,10 @@ class TrialMaker(Module):
         ):
             group = participant.active_sync_groups[self.sync_group_type]
             _record_sync_group(trial, participant, group)
+            if trial.trial_maker_id is None:
+                # A custom prepare_trial may put the trial on a node of no
+                # trial maker; the group's round numbers need the trial maker.
+                trial.trial_maker_id = self.id
         return trial, trial_status
 
     def _prepare_repeat_trial(self, experiment, participant):
@@ -4245,10 +4261,10 @@ class SyncGroupNode(GenericTrialNode):
     sync_group_id = Column(Integer, index=True)
     sync_group_round = Column(Integer)
 
-    def __init__(self, module_id, experiment, group, round, definition):
+    def __init__(self, module_id, experiment, group, round_number, definition):
         super().__init__(module_id, experiment)
         self.sync_group_id = group.id
-        self.sync_group_round = round
+        self.sync_group_round = round_number
         self.definition = definition
 
     @property
@@ -4257,14 +4273,14 @@ class SyncGroupNode(GenericTrialNode):
         return db.session.get(SyncGroup, self.sync_group_id)
 
     @classmethod
-    def for_cue(cls, group, round, participant, experiment, make_definition):
+    def for_cue(cls, group, round_number, participant, experiment, make_definition):
         """Return the node that ``participant``'s cued trial joins, creating it if needed.
 
-        Without ``round``, this is the group's newest node in the module,
+        Without ``round_number``, this is the group's newest node in the module,
         unless the participant already has a trial on it; then the group moves
         on to a new node for the next round, counted from 0.
-        With ``round``, it is the group's node for that round. A new node's
-        definition is ``make_definition(round)``.
+        With ``round_number``, it is the group's node for that round. A new node's
+        definition is ``make_definition(round_number)``.
 
         The group's members cue their trials in parallel requests, so this
         holds an advisory lock on the module and group until the request
@@ -4273,10 +4289,10 @@ class SyncGroupNode(GenericTrialNode):
         module_id = participant.module_id
         _lock_until_commit(f"sync_group_node:{module_id}:{group.id}")
         nodes = cls.query.filter_by(module_id=module_id, sync_group_id=group.id)
-        if round is None:
+        if round_number is None:
             newest = nodes.order_by(cls.sync_group_round.desc()).first()
             if newest is None:
-                round = 0
+                round_number = 0
             elif (
                 Trial.query.filter_by(
                     node_id=newest.id, participant_id=participant.id
@@ -4285,10 +4301,16 @@ class SyncGroupNode(GenericTrialNode):
             ):
                 return newest
             else:
-                round = newest.sync_group_round + 1
-        node = nodes.filter_by(sync_group_round=round).one_or_none()
+                round_number = newest.sync_group_round + 1
+        node = nodes.filter_by(sync_group_round=round_number).one_or_none()
         if node is None:
-            node = cls(module_id, experiment, group, round, make_definition(round))
+            node = cls(
+                module_id,
+                experiment,
+                group,
+                round_number,
+                make_definition(round_number),
+            )
             db.session.add(node)
             node.check_on_deploy()
         return node

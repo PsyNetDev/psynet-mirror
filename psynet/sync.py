@@ -1956,11 +1956,12 @@ class GroupBarrier(Barrier):
 
                 if self.on_release:
                     try:
+                        trials = _current_trials(group.active_participants)
                         self.on_release(
                             group=group,
                             participants=group.active_participants,
-                            trials=_current_trials(group.active_participants),
-                            node=_shared_node(group, group.active_participants),
+                            trials=trials,
+                            node=_shared_node(group, trials),
                             leader=group.leader,
                             participant=group.leader,
                             left=left,
@@ -4291,15 +4292,11 @@ def _current_trials(participants):
     return [participant.current_trial for participant in participants]
 
 
-def _shared_node(group, participants):
-    """Return ``group``'s node that all ``participants``' current trials share, or ``None``."""
+def _shared_node(group, trials):
+    """Return ``group``'s node that all ``trials`` share, or ``None``."""
     from .trial.main import SyncGroupNode
 
-    nodes = {
-        trial.node_id: trial.node
-        for trial in _current_trials(participants)
-        if trial is not None
-    }
+    nodes = {trial.node_id: trial.node for trial in trials if trial is not None}
     if len(nodes) != 1:
         return None
     node = next(iter(nodes.values()))
@@ -4324,12 +4321,13 @@ def _run_on_dissolve(group, members):
                 participant
             )
     for barrier, participants in waiting.values():
+        trials = _current_trials(participants)
         try:
             barrier.on_dissolve(
                 group=group,
                 participants=participants,
-                trials=_current_trials(participants),
-                node=_shared_node(group, participants),
+                trials=trials,
+                node=_shared_node(group, trials),
                 barrier=barrier,
             )
         except Exception as err:

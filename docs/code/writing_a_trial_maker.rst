@@ -374,8 +374,9 @@ Trials without a trial maker
 
 :meth:`~psynet.trial.main.Trial.cue` puts a single trial into the timeline,
 with no trial maker. You then choose the trials yourself with timeline
-constructs such as :func:`~psynet.timeline.for_loop`. The argument is either
-the trial's definition or a node. In ``demos/experiments/trial``, each
+constructs such as :func:`~psynet.timeline.for_loop`. The argument is the
+trial's definition as a ``dict``, a function returning one, or a
+:class:`~psynet.trial.chain.ChainNode`. In ``demos/experiments/trial``, each
 participant rates three randomly sampled words:
 
 .. literalinclude:: ../../demos/experiments/trial/experiment.py
