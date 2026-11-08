@@ -148,6 +148,32 @@ The dashboard shows each participant's pseudonym, and the names that
 participants saw can be recovered from an export, for example to read chat
 messages that mention them (see :doc:`/code/multiplayer/pseudonyms`).
 
+Kinds of group experiment
+-------------------------
+
+Most group experiments are one of these kinds, or combine several. Each kind
+has a demo to start from; the sections below describe them in more detail.
+
+- **One group does a task together**, such as a discussion, repeated rounds
+  of a game with the same partner, or creating and rating answers:
+  `chatroom_simple <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/chatroom_simple>`__,
+  `rock_paper_scissors <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/rock_paper_scissors>`__
+  and `create_rate_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/create_rate_sync>`__.
+- **A group shares a chain of stimuli**, each member rating the same one:
+  `gibbs_within_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/gibbs_within_sync>`__.
+- **Part of the experiment needs enough people present**, with other work
+  until then:
+  `sync_quorum <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/sync_quorum>`__.
+- **Players get new partners every round**, from everyone waiting or from a
+  cohort that stays together:
+  `lowest_unique_number <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/lowest_unique_number>`__
+  and `ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__.
+- **Members interact live**, with messages sent to everyone as they are
+  written:
+  `websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__.
+
+:doc:`/demos/index` lists every demo.
+
 From one group to many rounds
 -----------------------------
 
