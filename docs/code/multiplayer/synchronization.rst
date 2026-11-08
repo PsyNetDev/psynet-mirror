@@ -586,19 +586,56 @@ described under :ref:`groups_below_min_size` below.
 Groups below quorum
 ~~~~~~~~~~~~~~~~~~~
 
-When failed or departed members take a group below its ``quorum``, what
-happens depends on whether the group accepts top-ups:
+Two separate settings decide what happens when someone leaves a group:
 
-- With ``join_existing_groups=True``, the group's next barrier waits for new
-  members to join. If every member leaves, the group closes at the next
-  periodic sync-group check (every few seconds), and later arrivals form a
-  new one.
-- Otherwise the group is dissolved as soon as the member leaves, and its
-  remaining members are failed. Set ``fail_participants_below_quorum=False``
-  on the grouper to remove them from the group without failing them instead
-  (see :ref:`sync-leaving-a-group`). A member who is in the middle of a request at that
-  moment (for example submitting a page) is handled by the background
-  barrier check within about a second instead, once that request finishes.
+- **The member who leaves** is handled by why they left: a barrier's
+  ``max_wait_action`` (they waited too long for the others) or
+  ``late_action`` (the others waited too long for them), each ``"fail"``
+  or ``"leave_group"``, or their own failure, for example when they close
+  the page.
+- **The members left behind** carry on as before while the group still has
+  its ``quorum``. Below it, what happens depends on whether the group
+  accepts top-ups:
+
+  - With ``join_existing_groups=True``, the group's next barrier waits for
+    new members to join. If every member leaves, the group closes at the
+    next periodic sync-group check (every few seconds), and later arrivals
+    form a new one.
+  - Otherwise the group is dissolved at once, and the grouper's
+    ``below_quorum`` decides for each remaining member: ``"fail"`` (default)
+    fails them, telling them "Too few members of your group remained to
+    continue, so we ended your session."; ``"leave_group"`` removes them
+    from the group without failing them, and their next page says "Your
+    partner can't continue with you, so you'll carry on by yourself." (or
+    "Too few members of your group remained, …" in larger groups; see
+    :ref:`sync-leaving-a-group`). A module-level function of
+    ``participant`` and ``group`` that returns one of these decides member
+    by member. A member who is in the middle of a request at that moment
+    (for example submitting a page) is handled by the background barrier
+    check within about a second instead, once that request finishes.
+
+So in a pair, where any departure dissolves the group, the two settings
+together decide both fates:
+
+.. list-table::
+   :header-rows: 1
+
+   * - The departing member
+     - ``below_quorum="fail"`` (default)
+     - ``below_quorum="leave_group"``
+   * - quits or is failed
+     - partner failed
+     - partner carries on alone
+   * - waited too long, ``max_wait_action="leave_group"``
+     - leaver carries on alone, absent partner failed
+     - both carry on alone
+   * - was late, ``late_action="leave_group"``
+     - late member carries on alone, partner who was on time failed
+     - both carry on alone
+
+The last row is rarely what a pair wants, so PsyNet logs a warning when it
+happens: in pairs, use ``late_action="fail"`` or
+``below_quorum="leave_group"``.
 
 For example, a group of four that may start with two after a minute, and
 whose members carry on when others are slow or leave, combines these
@@ -614,7 +651,7 @@ options:
         start_short_with=2,
         max_wait_time=120,
         # The last member left continues alone instead of being failed.
-        fail_participants_below_quorum=False,
+        below_quorum="leave_group",
     )
 
     # In each round, after the timed decision page:
@@ -645,7 +682,7 @@ After leaving a group
 ~~~~~~~~~~~~~~~~~~~~~
 
 A member removed from their group without being failed, through
-``"leave_group"`` or ``fail_participants_below_quorum=False``, stays in the
+``"leave_group"`` or ``below_quorum="leave_group"``, stays in the
 experiment and continues the timeline without that group; nothing makes
 them play alone. They leave only the group of that type: a player removed from a ``"pair"`` stays in their ``"cohort"``.
 For the rest of the timeline:

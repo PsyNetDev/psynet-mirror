@@ -1144,10 +1144,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         If they are still on the main timeline, they are redirected to
         ``unsuccessful_end``. They are also removed from active sync groups.
-        If that drops a ``SimpleSyncGroup`` below its ``quorum``, remaining
-        members are failed immediately when
-        ``fail_participants_below_quorum`` is True, except that a member
-        whose own request is in progress is failed by the barrier poller
+        If that drops a ``SimpleSyncGroup`` below its ``quorum``, the
+        grouper's ``below_quorum`` fails or releases the remaining members
+        immediately, except that a member
+        whose own request is in progress is handled by the barrier poller
         within about a second. See
         :doc:`/code/trials/participant_and_trial_failure`.
 

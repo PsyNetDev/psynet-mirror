@@ -55,7 +55,7 @@ By default, when a member is failed or leaves the experiment, a group that
 falls below its quorum is dissolved, and its remaining members are
 failed too. Decide this for every grouper (a regrouper's groups are never
 dissolved): let the others continue with
-fewer members (``fail_participants_below_quorum=False``), or have the
+fewer members (``below_quorum="leave_group"``), or have the
 group wait for a newcomer to replace the one who left
 (``join_existing_groups=True``). Failed participants are paid for what they
 completed (see :doc:`/code/participants/payment`).

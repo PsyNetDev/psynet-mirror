@@ -282,7 +282,7 @@ def test_simple_grouper_quorum():
     with pytest.raises(ValueError, match="never reach"):
         lobby(quorum=6, join_existing_groups=True, max_group_size=5)
     with pytest.raises(ValueError, match="no effect"):
-        lobby(quorum=4, join_existing_groups=True, fail_participants_below_quorum=False)
+        lobby(quorum=4, join_existing_groups=True, below_quorum="leave_group")
 
 
 def _five_minutes(participant):
@@ -383,7 +383,7 @@ def test_every_regrouper_left_over_waits_one_more_tick(
         ({}, "needs group_size"),
         ({"roles": ["a", "b"], "group_size": 3}, "len\\(roles\\)"),
         ({"group_size": 2, "deadline": 30, "every": 30}, "not both"),
-        ({"group_size": 2, "fail_participants_below_quorum": False}, "never"),
+        ({"group_size": 2, "below_quorum": "leave_group"}, "never"),
         ({"group_size": 2, "deadline": 0}, "deadline must be positive"),
         ({"group_size": 2, "every": 0}, "every must be positive"),
     ],

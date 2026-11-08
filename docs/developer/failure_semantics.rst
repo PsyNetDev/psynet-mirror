@@ -75,7 +75,7 @@ Sync groups
 Removing a failed participant can drop a
 :class:`~psynet.sync.SimpleSyncGroup` below its ``quorum`` (stored as ``min_group_size``). If the group
 does not accept top-ups, it is dissolved at once: the remaining members are
-removed, and failed when ``fail_participants_below_quorum`` is ``True``. A
+removed, and failed when the grouper's ``below_quorum`` says so. A
 barrier applies the same rule if it finds a group below its quorum. A group
 that accepts top-ups waits for newcomers instead, but closes once it has no
 active members left, whether they failed, were removed or finished.

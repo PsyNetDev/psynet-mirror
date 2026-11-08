@@ -71,6 +71,7 @@ from psynet.sync import (
     arrival_notice_payload,
     check_barriers,
     check_sync_groups,
+    group_seats,
     hold_message,
     pending_arrival_notice_for,
 )
@@ -1209,7 +1210,7 @@ def test_manual_sync_group_participant_kick_dissolves_group_below_min_size(
         min_group_size=3,
         n_active_participants=3,
         accepts_top_ups=False,
-        fail_participants_below_quorum=fail_below_min_size,
+        below_quorum="fail" if fail_below_min_size else "leave_group",
     )
     db_session.add(group)
     for participant in participants:
@@ -6650,7 +6651,7 @@ def test_group_barrier_late_after_removes_missing_participants(
         min_group_size=min_group_size,
         n_active_participants=4,
         accepts_top_ups=False,
-        fail_participants_below_quorum=True,
+        below_quorum="fail",
     )
     db_session.add(group)
     for p in participants:
@@ -6906,7 +6907,7 @@ def test_group_barrier_late_after_removal_releases_waiters_after_dissolution(
         min_group_size=3,
         n_active_participants=3,
         accepts_top_ups=False,
-        fail_participants_below_quorum=False,
+        below_quorum="leave_group",
     )
     db_session.add(group)
     for p in participants:
@@ -6920,6 +6921,10 @@ def test_group_barrier_late_after_removal_releases_waiters_after_dissolution(
     assert group.active_participants == []
     assert missing_participant not in released
     assert set(released) == set(waiting_participants)
+    # Everyone carries on alone, the late member included, and is told why.
+    for p in participants:
+        InfoPage("Next").consume(exp, p)
+        assert _removed_from_group_notice(p).startswith("Too few members")
 
 
 @pytest.mark.parametrize("action", ["leave_group", "fail"])
@@ -6950,7 +6955,7 @@ def test_group_barrier_would_release_predicts_late_after(
         min_group_size=min_group_size,
         n_active_participants=3,
         accepts_top_ups=accepts_top_ups,
-        fail_participants_below_quorum=False,
+        below_quorum="leave_group",
     )
     db_session.add(group)
     for p in participants:
@@ -6997,7 +7002,7 @@ def test_group_barrier_late_after_fail_missing_participants(
         min_group_size=2,
         n_active_participants=3,
         accepts_top_ups=False,
-        fail_participants_below_quorum=True,
+        below_quorum="fail",
     )
     db_session.add(group)
     for p in participants:
@@ -7013,24 +7018,33 @@ def test_group_barrier_late_after_fail_missing_participants(
     assert set(released) == set(waiting_participants)
 
 
+def _fail_the_first_member(participant, group):
+    return "fail" if group_seats(group)[participant.id] == 0 else "leave_group"
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-@pytest.mark.parametrize("fail_below_min_size", [True, False])
-def test_group_barrier_fail_participants_below_quorum(
-    in_experiment_directory, db_session, fail_below_min_size
+@pytest.mark.parametrize(
+    "below_quorum, failed",
+    [
+        ("fail", [True, True]),
+        ("leave_group", [False, False]),
+        (_fail_the_first_member, [True, False]),
+    ],
+)
+def test_group_barrier_below_quorum(
+    in_experiment_directory, db_session, below_quorum, failed
 ):
     exp = get_experiment()
-    barrier = GroupBarrier(
-        id_="fail_participants_below_quorum",
-        group_type="main",
-    )
+    barrier = GroupBarrier(id_="below_quorum", group_type="main")
+    grouper = SimpleGrouper("main", initial_group_size=3, below_quorum=below_quorum)
 
     participants = [new_participant(exp) for _ in range(2)]
     for p in participants:
         p.status = "working"
 
-    # Configure group so it's below min size and doesn't accept top-ups.
+    # Configure group so it's below quorum and doesn't accept top-ups.
     group = SimpleSyncGroup(
         group_type="main",
         initial_group_size=3,
@@ -7038,20 +7052,27 @@ def test_group_barrier_fail_participants_below_quorum(
         min_group_size=3,
         n_active_participants=2,
         accepts_top_ups=False,
-        fail_participants_below_quorum=fail_below_min_size,
+        below_quorum=grouper.below_quorum,
     )
     group.last_barrier_pass_time = timenow()
     db_session.add(group)
     for p in participants:
         group.add_participant(p)
     db_session.commit()
+    db_session.expire(group)
 
     released = barrier.choose_who_to_release(waiting_participants=participants)
 
     assert set(released) == set(participants)
     assert group.active_participants == []
     assert all(p.active_sync_groups.get("main") is None for p in participants)
-    assert all(p.failed == fail_below_min_size for p in participants)
+    assert [p.failed for p in participants] == failed
+    # Members who carry on alone are told why on their next page.
+    for p, was_failed in zip(participants, failed):
+        InfoPage("Next").consume(exp, p)
+        notice = _removed_from_group_notice(p)
+        assert (notice is None) == was_failed
+        assert was_failed or notice.startswith("Your partner can't continue")
 
 
 @pytest.mark.parametrize(
@@ -7078,7 +7099,7 @@ def test_group_barrier_below_min_size_only_releases_waiting_participants(
         min_group_size=3,
         n_active_participants=2,
         accepts_top_ups=False,
-        fail_participants_below_quorum=True,
+        below_quorum="fail",
     )
     db_session.add(group)
     group.add_participant(waiting_participant)
@@ -7110,7 +7131,7 @@ def test_group_barrier_max_wait_leave_group_releases_barrier_link(
         min_group_size=1,
         n_active_participants=1,
         accepts_top_ups=False,
-        fail_participants_below_quorum=True,
+        below_quorum="fail",
     )
     db_session.add(group)
     group.add_participant(participant)

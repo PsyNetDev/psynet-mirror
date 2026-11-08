@@ -159,7 +159,7 @@ from psynet.db import (
     _set_transaction_lock_timeout,
     is_transient_transaction_error,
 )
-from psynet.field import PythonClass
+from psynet.field import PythonClass, PythonObject
 from psynet.page import UnsuccessfulEndPage
 from psynet.participant import Participant
 from psynet.serialize import SerializedCallable, serialize_callable
@@ -1499,8 +1499,7 @@ class GroupBarrier(Barrier):
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
     have reached the Barrier. It also checks the group against its ``quorum``: a group below it
     can't proceed. If the group accepts top-ups, the barrier waits for new participants to join; otherwise
-    the group is dissolved, and its members are failed unless the grouper set
-    ``fail_participants_below_quorum=False``.
+    the group is dissolved, and the grouper's ``below_quorum`` decides what happens to its members.
 
     After the arrival write commits, the same request evaluates the barrier in
     a short transaction so partners are released without waiting for the 0.5 s
@@ -1554,8 +1553,8 @@ class GroupBarrier(Barrier):
         ``on_arrival_message`` for larger groups), and a :class:`~psynet.group_prompt.GroupPrompt` marks them
         "(dropped out)". It is the waiting member who leaves, not the absent ones; to move on
         without slow members, use ``late_after`` and ``late_action`` instead. If that takes
-        the group below its quorum, as in a pair, the group dissolves, failing the others
-        unless its grouper sets ``fail_participants_below_quorum=False``.
+        the group below its quorum, as in a pair, the group dissolves, and the grouper's
+        ``below_quorum`` decides what happens to the others.
 
     late_after
         Acts on members who haven't reached this barrier yet: the longest each may take to reach it, in seconds,
@@ -1825,8 +1824,8 @@ class GroupBarrier(Barrier):
 
             if outcome == "dissolve":
                 # The group can never reach its quorum, so remove everyone
-                # and release whoever is waiting here, failing them first when
-                # fail_participants_below_quorum is True.
+                # and release whoever is waiting here, after the grouper's
+                # below_quorum has failed or released each of them.
                 participants_to_release.extend(
                     participant
                     for participant in group._dissolve()
@@ -1936,6 +1935,19 @@ class GroupBarrier(Barrier):
             if group.n_active_participants > 0 and not group.dissolving:
                 for participant in late:
                     self._tell_removed_participant(participant, group, group_size)
+                return
+            if late and getattr(group, "below_quorum", None) == "fail":
+                logger.warning(
+                    "GroupBarrier '%s': removing late members %s dissolved group %s, "
+                    "so its members who were on time were failed while the late ones "
+                    "carry on. In pairs, use late_action='fail', or below_quorum="
+                    "'leave_group' on the grouper.",
+                    self.id,
+                    [p.id for p in late],
+                    group.id,
+                )
+            for participant in late:
+                _tell_group_ended(participant, group_size)
             return
         for participant in late:
             logger.info(
@@ -2235,7 +2247,7 @@ class SimpleGrouper(Grouper):
         How many active members a group needs to keep going. A group whose
         members fail or leave until it has fewer than this is below quorum:
         with ``join_existing_groups=True`` its barriers wait for newcomers,
-        and otherwise it is dissolved (see ``fail_participants_below_quorum``).
+        and otherwise it is dissolved (see ``below_quorum``).
         Defaults to ``start_short_with`` if given, and otherwise to
         ``initial_group_size``, so that a group needs all its members; for
         groups of three or more, leaving it out warns. Must be at most
@@ -2261,13 +2273,17 @@ class SimpleGrouper(Grouper):
         if the participant should be allowed to join the group, and ``False`` otherwise.
         To be used in conjunction with ``join_existing_groups=True``.
 
-    fail_participants_below_quorum
-        When a member leaves a group that doesn't accept top-ups and the group falls below
-        ``quorum``, the group is dissolved at once. If ``True`` (default), the remaining
-        members are failed. If ``False``, they are removed from the group without being failed and
-        continue the experiment without it. Only for groups without top-ups; passing ``False`` with
-        ``join_existing_groups=True`` raises. A member whose own request is in progress is handled within about a second
-        by the barrier poller instead.
+    below_quorum
+        What happens to the members left in a group that falls below ``quorum``, which is then
+        dissolved at once. The member whose departure caused it is handled by their own cause
+        instead (a barrier's ``max_wait_action`` or ``late_action``, or their failure).
+        ``"fail"`` (default) fails them, telling them "Too few members of your group remained to
+        continue". ``"leave_group"`` removes them from the group without failing them, and their next
+        page says why they carry on alone (see :ref:`sync-leaving-a-group`). A module-level function
+        ``f(participant, group)`` returning ``"fail"`` or ``"leave_group"`` decides member by member,
+        for example from how many rounds they played. Only for groups without top-ups; passing
+        anything but ``"fail"`` with ``join_existing_groups=True`` raises. A member whose own request
+        is in progress is handled within about a second by the barrier poller instead.
 
     start_short_after
         If set, a group may start with fewer than ``batch_size`` participants once the
@@ -2298,7 +2314,7 @@ class SimpleGrouper(Grouper):
         batch_size: Union[int, str] = "initial_group_size",
         join_existing_groups: bool = False,
         join_criterion: Optional[Callable] = None,
-        fail_participants_below_quorum: bool = True,
+        below_quorum: Union[str, Callable] = "fail",
         start_short_after: Optional[float] = None,
         start_short_with: Optional[int] = None,
         quorum: Optional[int] = None,
@@ -2346,12 +2362,20 @@ class SimpleGrouper(Grouper):
         self.batch_size = batch_size
         self.join_existing_groups = join_existing_groups
         self.join_criterion = join_criterion
-        self.fail_participants_below_quorum = fail_participants_below_quorum
-        if join_existing_groups and not fail_participants_below_quorum:
+        if callable(below_quorum):
+            below_quorum = serialize_callable(
+                below_quorum, "SimpleGrouper.below_quorum"
+            )
+        elif below_quorum not in ("fail", "leave_group"):
             raise ValueError(
-                "fail_participants_below_quorum=False has no effect with "
-                "join_existing_groups=True: a group that accepts top-ups waits for "
-                "newcomers instead of dissolving."
+                "below_quorum must be 'fail', 'leave_group' or a function returning "
+                f"one of these, got {below_quorum!r}."
+            )
+        self.below_quorum = below_quorum
+        if join_existing_groups and below_quorum != "fail":
+            raise ValueError(
+                "below_quorum has no effect with join_existing_groups=True: a group "
+                "that accepts top-ups waits for newcomers instead of dissolving."
             )
         if (start_short_after is None) != (start_short_with is None):
             raise ValueError(
@@ -2648,7 +2672,7 @@ class SimpleGrouper(Grouper):
             max_group_size=self.max_group_size,
             min_group_size=self.quorum,
             accepts_top_ups=self.join_existing_groups,
-            fail_participants_below_quorum=self.fail_participants_below_quorum,
+            below_quorum=self.below_quorum,
         )
 
     @staticmethod
@@ -2871,10 +2895,10 @@ class Regrouper(Grouper):
                 "A Regrouper without `within` needs a deadline or every, because "
                 "it cannot tell when everyone is present."
             )
-        if "fail_participants_below_quorum" in kwargs:
+        if "below_quorum" in kwargs:
             raise TypeError(
                 "Regrouper groups are never dissolved when a member leaves, so "
-                "fail_participants_below_quorum doesn't apply; it is an option of "
+                "below_quorum doesn't apply; it is an option of "
                 "the SimpleGrouper that forms the groups being regrouped."
             )
         longest_lone_wait = every or deadline
@@ -3445,7 +3469,7 @@ class Regrouper(Grouper):
             max_group_size=len(participants),
             min_group_size=1,
             accepts_top_ups=False,
-            fail_participants_below_quorum=False,
+            below_quorum="leave_group",
         )
 
 
@@ -3685,10 +3709,14 @@ class SyncGroup(SQLBase, SQLMixin):
         try:
             remaining = list(self.active_participants)
             removed = _lock_free_participants(remaining)
+            group_size = len(group_seats(self))
             for participant in removed:
-                if getattr(self, "fail_participants_below_quorum", True):
+                action = self._below_quorum_action(participant)
+                if action == "fail":
                     participant.fail("sync group below minimum size")
                 SyncGroup.remove_participant(self, participant)
+                if action == "leave_group":
+                    _tell_group_ended(participant, group_size)
             self.check_numbers()
             self.dissolving = len(removed) < len(remaining)
             if self.n_active_participants == 0:
@@ -3696,6 +3724,18 @@ class SyncGroup(SQLBase, SQLMixin):
         finally:
             self._dissolving_below_quorum = False
         return removed
+
+    def _below_quorum_action(self, participant):
+        """Return ``"fail"`` or ``"leave_group"`` for a member of this group as it dissolves."""
+        policy = getattr(self, "below_quorum", None) or "fail"
+        if callable(policy):
+            action = policy(participant=participant, group=self)
+            if action not in ("fail", "leave_group"):
+                raise ValueError(
+                    f"below_quorum must return 'fail' or 'leave_group', got {action!r}."
+                )
+            return action
+        return policy
 
 
 class SimpleSyncGroup(SyncGroup):
@@ -3709,7 +3749,9 @@ class SimpleSyncGroup(SyncGroup):
     #: How many active members the group needs to keep going.
     quorum = synonym("min_group_size")
     accepts_top_ups = Column(Boolean)
-    fail_participants_below_quorum = Column(Boolean, default=True)
+    #: What happens to members when the group dissolves below quorum: ``"fail"``,
+    #: ``"leave_group"``, or a serialized function returning one of these.
+    below_quorum = Column(PythonObject, default="fail")
 
     def remove_participant(
         self,
@@ -4472,6 +4514,22 @@ def _reconstructed_arrival_barrier(link, reconstructed):
         barrier = None
     reconstructed[instance_id] = barrier
     return barrier
+
+
+def _tell_group_ended(participant, group_size):
+    """Tell a member who carries on alone after their group dissolved, on their next page."""
+    _p = get_translator(context=True)
+    if group_size <= 2:
+        text = _p(
+            "timeline_hold",
+            "Your partner can't continue with you, so you'll carry on by yourself.",
+        )
+    else:
+        text = _p(
+            "timeline_hold",
+            "Too few members of your group remained, so you'll carry on by yourself.",
+        )
+    participant.group_removal_notice = {"next_page": True, "text": str(text)}
 
 
 def _removed_from_group_notice(participant) -> Optional[str]:
