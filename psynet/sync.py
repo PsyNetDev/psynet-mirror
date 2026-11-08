@@ -3889,7 +3889,9 @@ def only_in_group(group_type: str, *steps, otherwise=None):
     group, so the steps after it and ``otherwise`` would treat them all as
     having left. When pairs change every round, regroup inside the
     loop, as in ``for_loop(..., logic=join(Regrouper(...),
-    only_in_group("pair", round_steps())))``.
+    only_in_group("pair", round_steps(), otherwise=sitting_out)))``. Without
+    ``otherwise``, a participant the regrouper sat out skips the round with
+    no page.
 
     Parameters
     ----------
@@ -3964,7 +3966,9 @@ def warn_if_late_removal_fails_group(barriers):
     That happens when a :class:`GroupBarrier` has ``late_action="leave_group"``
     and a :class:`SimpleGrouper` of its group type has ``below_quorum="fail"``
     and a ``quorum`` that the loss of one member can break, as in a pair or a
-    group that started short.
+    group that started short. A grouper with ``join_existing_groups=True``
+    only counts once a barrier with ``stop_top_ups=True`` freezes its groups,
+    because until then the group can top up instead.
 
     Parameters
     ----------
@@ -3973,12 +3977,17 @@ def warn_if_late_removal_fails_group(barriers):
         in ``Trial.show_trial``, are not visible here.
     """
     barriers = list(barriers)
+    frozen_types = {
+        barrier.group_type
+        for barrier in barriers
+        if isinstance(barrier, GroupBarrier) and barrier.stop_top_ups
+    }
     fragile_groupers = {}
     for grouper in barriers:
         if (
             isinstance(grouper, SimpleGrouper)
             and grouper.below_quorum == "fail"
-            and not grouper.join_existing_groups
+            and (not grouper.join_existing_groups or grouper.group_type in frozen_types)
             and grouper.quorum
             > (grouper.start_short_with or grouper.initial_group_size) - 1
         ):
