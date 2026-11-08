@@ -61,7 +61,7 @@ store it in participant variables:
 
 - ``pairing.role(participant)`` is ``"proposer"`` or ``"responder"``;
 - ``pairing.rounds_played(participant)`` counts the pairs the player has
-  been in;
+  joined, including one whose partner left or that they were removed from;
 - ``pairing.rounds_sat_out(participant)`` counts the rounds they sat out,
   and ``pairing.sat_out(participant)`` says whether they sat out the
   latest one.
@@ -70,6 +70,9 @@ Each round of the timeline then looks like this:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: play_round
+
+:func:`~psynet.sync.only_in_group` skips the rest of the round's steps for a
+player who is no longer in a pair, and shows its ``otherwise`` steps instead.
 
 Making a decision
 -----------------
@@ -139,12 +142,17 @@ scores their partner's round:
    :end-before: participants[0].var.outcome
    :dedent: 4
 
-If they come back, they are told that they were away, and their game ends.
-Leaving for being late counts as dropping out, so a cohort that no longer
-takes newcomers would be dissolved if it fell below its quorum, failing the
-players who were on time; the cohort's grouper sets
-``below_quorum="continue_without_group"`` so that they end the game early
-instead (see :ref:`groups_below_min_size`).
+This runs only when the partner reaches the barrier, so if neither partner
+comes back, the next split waits for its deadline. A late player who comes
+back is told that they were away, and their game ends.
+
+The demo's cohort accepts newcomers all game, so it is never dissolved below
+its quorum, and ``keep_playing`` (below) ends the game once fewer than two
+players are left. If your cohort stops taking newcomers (with
+``stop_top_ups`` or ``top_up_wait``), removing a late player counts as a
+dropout and can dissolve it below its quorum, failing the players who were
+on time under the default ``below_quorum="fail"``; set ``below_quorum`` on
+its grouper accordingly (see :ref:`groups_below_min_size`).
 
 A player who was removed from their pair passes the round's later group
 barriers straight through. A player who was never in a pair, or whose pair
@@ -203,7 +211,7 @@ Ending the game
 ---------------
 
 The rounds loop runs until a player has played their rounds, has sat out
-too often, or their cohort is down to one player:
+too often, has left the cohort, or their cohort is down to one player:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: keep_playing

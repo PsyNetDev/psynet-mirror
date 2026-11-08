@@ -1,0 +1,70 @@
+# Testing dropouts: worked example
+
+A worked example for "Test dropouts" in `synchronous-experiments/SKILL.md`.
+
+After each dropout, assert who failed (`bot.failed`), what each remaining bot
+sees (`bot.current_page_text` and `bot.current_notice`), and that branches on
+`participant.in_sync_group(group_type)` lead somewhere sensible. This pair
+test drops one member of each pair, one by quitting
+and one by going silent:
+
+```python
+LATE_AFTER = 5
+
+class Exp(psynet.experiment.Experiment):
+    test_n_bots = 4
+    timeline = Timeline(
+        MainConsent(),
+        SimpleGrouper("pair", initial_group_size=2, below_quorum="continue_without_group"),
+        InfoPage("Round 1.", time_estimate=5),
+        GroupBarrier(id_="round_1", group_type="pair",
+                     late_after=LATE_AFTER, late_action="leave_group"),
+        only_in_group(
+            "pair",
+            InfoPage("Round 2 with your partner.", time_estimate=5),
+            GroupBarrier(id_="round_2", group_type="pair"),
+            otherwise=InfoPage("Round 2 on your own.", time_estimate=5),
+        ),
+        InfoPage("Done.", time_estimate=5),
+    )
+
+    def test_serial_run_bots(self, bots):
+        quitter, stayer, on_time, silent = bots
+        for pair in [(quitter, stayer), (on_time, silent)]:
+            for bot in pair:
+                bot.take_page()
+            advance_past_wait_pages(list(pair))
+
+        quitter.drop_out()
+        stayer.take_page()
+        advance_past_wait_pages([stayer])
+        assert stayer.current_page_text == "Round 2 on your own.", stayer.current_page_text
+        assert stayer.current_notice == (
+            "Your partner is no longer in your group. Please continue."
+        ), stayer.current_notice
+
+        on_time.take_page()  # silent never answers round 1
+        advance_past_wait_pages([on_time], timeout=LATE_AFTER + 10)
+        assert on_time.current_page_text == "Round 2 on your own.", on_time.current_page_text
+
+        # silent comes back after being removed, and is told on the page they are on
+        assert silent.current_notice == (
+            "Your partner went on without you. Please continue."
+        ), silent.current_notice
+        silent.take_page()
+        assert silent.current_page_text == "Round 2 on your own.", silent.current_page_text
+
+        run_bots_to_completion([stayer, on_time, silent])
+        assert not any(bot.failed for bot in [stayer, on_time, silent])
+```
+
+`tests/experiments/pair_dropout` in the PsyNet repository extends this with
+a third pair whose member is failed.
+
+Bot tests wait out the real timeouts, so pass `advance_past_wait_pages` a
+`timeout` longer than the `late_after` or `max_wait_time` being tested. The
+default `test_check_bot` accepts bots that called `drop_out()` or
+`allow_failure()`; call `allow_failure()` for every bot the design fails on
+purpose, such as a partner left behind under `below_quorum="fail"`. If
+PsyNet warns at load time that a late member would fail the partners who
+were on time, fix the settings rather than the test.

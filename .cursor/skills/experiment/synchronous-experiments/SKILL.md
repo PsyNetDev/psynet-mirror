@@ -55,10 +55,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   and `GroupBarrier(id_=..., group_type=..., waiting_message=...)` to release
   group members together. Pass `waiting_message` to customize the hold
   overlay; omit `waiting_logic` unless you need a full wait page or filler
-  task. Arrival
-  notices are on by default. The partner-ready pill sits on the progress
-  bar. Pair holds keep the title only; groups of three or more show
-  remaining-not-ready copy (`2 of 3 not ready yet`). For notice length,
+  task. Arrival notices are on by default. The partner-ready pill sits on
+  the progress bar. Pair holds keep the title only; groups of three or more
+  show remaining-not-ready copy (`2 of 3 not ready yet`). For notice length,
   see "Arrival notices" in `code/multiplayer/synchronization`. Groupers form
   groups when the last needed member arrives, without waiting for the
   barrier poller.
@@ -96,14 +95,12 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `code/multiplayer/writing_a_round_based_experiment`: a late barrier
   removes them from the round's group, and the experiment also removes them
   from the `within` group.
-- On a page
-  with a `time_limit`, nobody is late before the limit has run out plus 10 s,
-  so the timeout need not cover the page; the demos use 30 s so that a
-  background tab can notice the round has started.
-- The regrouper avoids
-  last round's partners (`avoid_repeats="all_rounds"` avoids everyone met
-  before), sits out whoever has played most, and counts rounds
-  (`rounds_played`, `rounds_sat_out`); pass `roles=[...]` (with
+- A `GroupBarrier`'s `late_after` doesn't count a timed page until its limit
+  plus 10 s (see "Timeouts" in `code/multiplayer/synchronization`); the
+  demos use 30 s so that a background tab can notice the round has started.
+- The regrouper avoids last round's partners (`avoid_repeats="all_rounds"`
+  avoids everyone met before), sits out whoever has played most, and counts
+  rounds (`rounds_played`, `rounds_sat_out`); pass `roles=[...]` (with
   `keep_roles=True` for fixed roles) and read `regrouper.role(participant)`
   instead of assigning roles yourself. With `left_over="sit_out"`, odd
   players out sit out the round; with `within`, a player waiting alone first
@@ -232,72 +229,8 @@ shown a page that only makes sense with a group.
 | Comes back after being removed | Take pages for the silent bot again |
 | Arrives when no group can form | Send one bot more than fills the groups to the grouper, and wait out its `max_wait_time` |
 
-After each dropout, assert who failed (`bot.failed`), what each remaining bot
-sees (`bot.current_page_text` and `bot.current_notice`), and that branches on
-`participant.in_sync_group(group_type)` lead somewhere sensible. This pair
-test drops one member of each pair, one by quitting
-and one by going silent:
-
-```python
-LATE_AFTER = 5
-
-class Exp(psynet.experiment.Experiment):
-    test_n_bots = 4
-    timeline = Timeline(
-        MainConsent(),
-        SimpleGrouper("pair", initial_group_size=2, below_quorum="continue_without_group"),
-        InfoPage("Round 1.", time_estimate=5),
-        GroupBarrier(id_="round_1", group_type="pair",
-                     late_after=LATE_AFTER, late_action="leave_group"),
-        only_in_group(
-            "pair",
-            InfoPage("Round 2 with your partner.", time_estimate=5),
-            GroupBarrier(id_="round_2", group_type="pair"),
-            otherwise=InfoPage("Round 2 on your own.", time_estimate=5),
-        ),
-        InfoPage("Done.", time_estimate=5),
-    )
-
-    def test_serial_run_bots(self, bots):
-        quitter, stayer, on_time, silent = bots
-        for pair in [(quitter, stayer), (on_time, silent)]:
-            for bot in pair:
-                bot.take_page()
-            advance_past_wait_pages(list(pair))
-
-        quitter.drop_out()
-        stayer.take_page()
-        advance_past_wait_pages([stayer])
-        assert stayer.current_page_text == "Round 2 on your own.", stayer.current_page_text
-        assert stayer.current_notice == (
-            "Your partner is no longer in your group. Please continue."
-        ), stayer.current_notice
-
-        on_time.take_page()  # silent never answers round 1
-        advance_past_wait_pages([on_time], timeout=LATE_AFTER + 10)
-        assert on_time.current_page_text == "Round 2 on your own.", on_time.current_page_text
-
-        # silent comes back after being removed, and is told on the page they are on
-        assert silent.current_notice == (
-            "Your partner went on without you. Please continue."
-        ), silent.current_notice
-        silent.take_page()
-        assert silent.current_page_text == "Round 2 on your own.", silent.current_page_text
-
-        run_bots_to_completion([stayer, on_time, silent])
-        assert not any(bot.failed for bot in [stayer, on_time, silent])
-```
-
-`tests/experiments/pair_dropout` in the PsyNet repository extends this with
-a third pair whose member is failed.
-
-Bot tests wait out the real timeouts, so pass `advance_past_wait_pages` a
-`timeout` longer than the `late_after` or `max_wait_time` being tested. The
-default `test_check_bot` accepts bots that called `drop_out()` or
-`allow_failure()`; call `allow_failure()` for every bot the design fails on
-purpose, such as a partner left behind under `below_quorum="fail"`. If
-PsyNet warns at load time that a late member would fail the partners who
-were on time, fix the settings rather than the test.
+Read `references/test-dropouts.md` for a worked pair test with a quitter and a
+silent member, and for how long to wait out timeouts in bot tests.
 
 - Check why a bot left with
   `bot.with_participant(lambda p: p.sync_group_removal_reason("pair"))`, and
