@@ -858,9 +858,9 @@ For the rest of the timeline:
   put ``only_in_group`` inside the loop's ``logic``. The steps are for
   participants already in the group, so the grouper or
   :class:`~psynet.sync.Regrouper` that forms it goes before
-  ``only_in_group``, never among its steps: there it would be skipped by
-  anyone not in a group yet, which at the first grouper is everyone, and
-  later a player who sat out; when pairs change every round,
+  ``only_in_group``, never among its steps. There it would be skipped by
+  everyone not yet in a group: at the start that is everyone, and later it is
+  anyone who sat out a round, who would then never be grouped again; when pairs change every round,
   use ``for_loop(..., logic=join(Regrouper(...), only_in_group("pair",
   round_steps())))``.
 - Trial makers synchronized on that group type give them no more trials.

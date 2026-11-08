@@ -79,7 +79,12 @@ def serialize_callable(callable_obj, context: str):
     if inspect.ismethod(callable_obj) and callable_obj.__self__ is not None:
         method_self = callable_obj.__self__
         if isinstance(method_self, type):
-            check_that_function_can_be_serialized(callable_obj.__func__)
+            try:
+                check_that_function_can_be_serialized(callable_obj.__func__)
+            except (TypeError, ValueError) as err:
+                raise CallableSerializationError(
+                    _format_callable_error(context, str(err))
+                ) from err
             return SerializedCallable(function=callable_obj, arguments={})
         if _is_trial_maker(method_self):
             return SerializedCallable(
@@ -451,6 +456,24 @@ class CallableHandler(jsonpickle.handlers.BaseHandler):
 
 jsonpickle.register(types.FunctionType, CallableHandler, base=True)
 jsonpickle.register(types.MethodType, CallableHandler, base=True)
+
+
+class SerializedCallableHandler(jsonpickle.handlers.BaseHandler):
+    """Store a saved callback's function by import path, keeping class methods bound."""
+
+    def flatten(self, obj, state):
+        state["function"] = callable_to_path(obj.function)
+        state["arguments"] = self.context.flatten(obj.arguments, reset=False)
+        return state
+
+    def restore(self, state):
+        return SerializedCallable(
+            function=callable_from_path(state["function"]),
+            arguments=self.context.restore(state["arguments"], reset=False),
+        )
+
+
+jsonpickle.register(SerializedCallable, SerializedCallableHandler)
 
 
 def prepare_function_for_serialization(function, arguments):

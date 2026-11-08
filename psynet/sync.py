@@ -3719,10 +3719,10 @@ def only_in_group(group_type: str, *steps, otherwise=None):
     or put ``only_in_group`` inside the loop, as in
     ``for_loop(..., logic=only_in_group("pair", round_steps()))``. The steps
     are for participants already in the group, so put the grouper or
-    :class:`Regrouper` that forms it before the block: inside, it would be
-    skipped by anyone not in a group yet, which at the first grouper is
-    everyone, and later a player who sat out, who would never be grouped
-    again.
+    :class:`Regrouper` that forms it before the block. Inside the block, the
+    grouper would be skipped by everyone not yet in a group: at the start that
+    is everyone, and later it is anyone who sat out a round, who would then
+    never be grouped again.
     Put a :class:`GroupCloser` after the block: it takes everyone out of the
     group, so the steps after it and ``otherwise`` would treat them all as
     having left. When pairs change every round, regroup inside the
