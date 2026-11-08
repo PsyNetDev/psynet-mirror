@@ -127,7 +127,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   who loses their group partway skips the rest, instead of a `conditional`
   per page. Pass a list of the rounds' steps,
   `only_in_group("pair", [round_steps(n) for n in range(N_ROUNDS)])`, not a
-  loop, and put the grouper or `Regrouper` before it (see the
+  loop passed into `only_in_group`, or put `only_in_group` inside the loop's
+  `logic`. Put the grouper or `Regrouper` before it (see the
   `only_in_group` docstring for why). Pass `otherwise=` for what they, and anyone who never had a
   group, do instead, such as answering the rest of the question alone. With
   a `Regrouper` in the loop, `otherwise=` is also the page for a player it
