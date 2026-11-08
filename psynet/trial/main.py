@@ -600,6 +600,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
         self.complete = False
         self.finalized = False
+        self.participant = participant
         self.participant_id = participant.id
         self.propagate_failure = propagate_failure
         self.is_repeat_trial = is_repeat_trial
