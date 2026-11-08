@@ -83,8 +83,9 @@ def get_timeline():
 def play_round(number):
     """Play one round, unless the player has left the group.
 
-    ``only_in_group`` checks the group before each step, and a trial is
-    several steps, so the check happens here, once per round.
+    ``only_in_group`` would check the group before each step of the trial and
+    skip its end, where it is paid, for the last player of a cancelled round,
+    so the check happens here, once per round.
     """
     return conditional(
         "in_team",

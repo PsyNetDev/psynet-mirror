@@ -935,11 +935,12 @@ For the rest of the timeline:
      :pyobject: game_ended_early
 
   A trial added with :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` is
-  several steps, so ``only_in_group`` would check the group partway through
-  it and skip the end of the trial, where it is scored and paid. Keep it whole
-  by putting the rounds in a loop or :class:`~psynet.timeline.Module`, which
-  is one step, and checking the group once per round, as ``public_goods``
-  does:
+  several steps, so for a player who leaves partway, ``only_in_group`` also
+  skips the end of the trial, where it is scored and paid. In
+  ``public_goods`` the last player must still be paid for the round that
+  ``on_dissolve`` cancels, so the rounds are in a
+  :class:`~psynet.timeline.Module`, which is one step, and the group is
+  checked once per round:
 
   .. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
      :pyobject: play_round
