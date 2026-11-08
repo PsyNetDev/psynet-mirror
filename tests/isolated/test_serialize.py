@@ -92,6 +92,10 @@ class _ScoringTrialMaker(TrialMaker):
         return cls.__name__, group, question
 
 
+class _TeamScoringTrialMaker(_ScoringTrialMaker):
+    pass
+
+
 @pytest.mark.parametrize(
     "callback",
     [
@@ -112,6 +116,7 @@ def test_partial_of_a_trial_maker_method_keeps_its_arguments(monkeypatch):
     monkeypatch.setattr(psynet.experiment, "get_experiment", lambda: None)
     callback = serialize_callable(partial(trial_maker.score, question=1), "on_release")
     assert callback(group="g", leader="l") == ("g", "l", 1)
+    assert unserialize(serialize(callback))(group="g", leader="l") == ("g", "l", 1)
 
 
 def test_saved_class_methods_and_partial_keywords_keep_their_arguments():
@@ -121,3 +126,7 @@ def test_saved_class_methods_and_partial_keywords_keep_their_arguments():
     assert callback(group="g", question=2) == ("_ScoringTrialMaker", "g", 1)
     restored = unserialize(serialize(callback))
     assert restored(group="g") == ("_ScoringTrialMaker", "g", 1)
+
+    inherited = serialize_callable(_TeamScoringTrialMaker.describe, "below_quorum")
+    restored = unserialize(serialize(inherited))
+    assert restored(group="g", question=2) == ("_TeamScoringTrialMaker", "g", 2)

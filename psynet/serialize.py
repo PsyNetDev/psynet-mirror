@@ -81,7 +81,7 @@ def serialize_callable(callable_obj, context: str):
         if isinstance(method_self, type):
             try:
                 check_that_function_can_be_serialized(callable_obj.__func__)
-            except (TypeError, ValueError) as err:
+            except ValueError as err:
                 raise CallableSerializationError(
                     _format_callable_error(context, str(err))
                 ) from err
@@ -400,7 +400,11 @@ def callable_to_path(function):
     if inspect.ismethod(function):
         if function.__self__ is not None and not inspect.isclass(function.__self__):
             raise TypeError("Cannot serialize bound instance methods.")
-        function = function.__func__
+        cls = function.__self__
+        if "<locals>" in cls.__qualname__:
+            raise TypeError("Cannot serialize methods of classes defined in functions.")
+        # Name the class it is bound to, which may inherit the method.
+        return f"{cls.__module__}.{cls.__qualname__}.{function.__name__}"
 
     if getattr(function, "__name__", None) == "<lambda>":
         raise TypeError("Cannot serialize lambda functions.")
