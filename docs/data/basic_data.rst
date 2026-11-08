@@ -211,7 +211,8 @@ were in when they gave it:
 .. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: Exp.get_basic_data
 
-Rounds a player sat out have no row here; their visits to the regrouper with
+Rounds a player sat out have no row here, so ``pair_number`` counts the
+player's own pairs, not the game's rounds; their visits to the regrouper with
 ``sat_out`` set are in the ``participant_link_barrier`` table.
 
 .. seealso::

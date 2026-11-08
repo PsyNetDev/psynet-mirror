@@ -349,7 +349,8 @@ class Exp(psynet.experiment.Experiment):
                 next_link = player_links[i + 1] if i + 1 < len(player_links) else None
                 rows[link.id] = {
                     "pair_id": link.sync_group_id,
-                    "round": i + 1,
+                    # The player's own count of pairs: it skips rounds they sat out.
+                    "pair_number": i + 1,
                     "participant_id": link.participant_id,
                     "role": link.role,
                     "decision": decision(link, next_link),

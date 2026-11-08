@@ -85,8 +85,6 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Read partner state through `participant.sync_group.participants`,
   participant vars, trial vars, node vars, or `on_release` outputs. Do not let
   the browser decide shared experiment state.
-- Use `GroupCloser(group_type=...)` before regrouping participants with the same
-  `group_type`.
 - For games played in rounds with changing partners or rooms, put a
   `Regrouper(group_type, group_size=..., within=...)` at the start of each
   round instead of a grouper and closer. Pass `deadline=` to split once
