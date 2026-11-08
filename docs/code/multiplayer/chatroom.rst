@@ -61,8 +61,10 @@ Options
     a pair, or a larger group without ``subgroups`` once everyone has joined
     the chat, this matches the GroupPrompt. The server then
     doesn't send this participant the others' pseudonyms. Use it on pages
-    whose GroupPrompt is anonymous, so the chat doesn't reveal who the
-    partner is. A chat writes a name next to every message, so
+    whose GroupPrompt is anonymous, so the chat doesn't show who the
+    partner is. It hides names, not identities: the browser still receives
+    participant IDs, so a participant inspecting the page could tell
+    partners apart across rounds. A chat writes a name next to every message, so
     GroupPrompt's ``"on_hover"`` isn't available.
 
 Pseudonyms

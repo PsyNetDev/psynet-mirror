@@ -277,6 +277,12 @@ def test_simple_grouper_quorum():
         assert lobby().quorum == 4
     with pytest.warns(FutureWarning, match="deprecated"):
         assert lobby(min_group_size=3).quorum == 3
+    with pytest.warns(FutureWarning):
+        assert lobby(min_group_size=0).quorum == 1
+    with pytest.raises(ValueError, match="never reach"):
+        lobby(quorum=6, join_existing_groups=True, max_group_size=5)
+    with pytest.raises(ValueError, match="no effect"):
+        lobby(quorum=4, join_existing_groups=True, fail_participants_below_quorum=False)
 
 
 def _five_minutes(participant):

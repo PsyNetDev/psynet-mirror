@@ -1439,6 +1439,14 @@ def _group_barrier_outcome(group, members, waiting_ids):
     return "wait"
 
 
+def _validate_group_action(name, value):
+    """Raise unless a GroupBarrier action is ``"fail"`` or ``"leave_group"``."""
+    if value == "kick":
+        raise ValueError(f"{name}='kick' was renamed {name}='leave_group'.")
+    if value not in ("fail", "leave_group"):
+        raise ValueError(f"{name} must be 'fail' or 'leave_group', got {value!r}.")
+
+
 def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
     """Return the ``max_wait_time`` to use: ``default`` if not passed, or no limit with ``late_after``.
 
@@ -1611,12 +1619,6 @@ class GroupBarrier(Barrier):
 
     """
 
-    def _validate_max_wait_action(self, max_wait_action):
-        if max_wait_action not in ("fail", "leave_group"):
-            raise ValueError(
-                f"max_wait_action must be 'fail' or 'leave_group', got {max_wait_action!r}."
-            )
-
     def __init__(
         self,
         id_: str,
@@ -1637,7 +1639,7 @@ class GroupBarrier(Barrier):
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
     ):
-        self._validate_max_wait_action(max_wait_action)
+        _validate_group_action("max_wait_action", max_wait_action)
         max_wait_time = _group_max_wait_time(max_wait_time, late_after, default=20)
         super().__init__(
             id_=id_,
@@ -1663,10 +1665,7 @@ class GroupBarrier(Barrier):
                 "wait limit; use late_action instead."
             )
         self.late_after = late_after
-        if late_action not in ("fail", "leave_group"):
-            raise ValueError(
-                f"late_action must be 'fail' or 'leave_group', got {late_action!r}."
-            )
+        _validate_group_action("late_action", late_action)
         self.late_action = late_action
 
     def resolve(self):
@@ -2237,7 +2236,8 @@ class SimpleGrouper(Grouper):
         When a member leaves a group that doesn't accept top-ups and the group falls below
         ``quorum``, the group is dissolved at once. If ``True`` (default), the remaining
         members are failed. If ``False``, they are removed from the group without being failed and
-        continue the experiment without it. A member whose own request is in progress is handled within about a second
+        continue the experiment without it. Only for groups without top-ups; passing ``False`` with
+        ``join_existing_groups=True`` raises. A member whose own request is in progress is handled within about a second
         by the barrier poller instead.
 
     start_short_after
@@ -2307,7 +2307,8 @@ class SimpleGrouper(Grouper):
                 FutureWarning,
             )
             if min_group_size != "initial_group_size":
-                quorum = min_group_size
+                # 13.3.0 accepted 0, which behaves like 1.
+                quorum = max(min_group_size, 1)
         if batch_size == "initial_group_size":
             batch_size = initial_group_size
 
@@ -2317,6 +2318,12 @@ class SimpleGrouper(Grouper):
         self.join_existing_groups = join_existing_groups
         self.join_criterion = join_criterion
         self.fail_participants_below_quorum = fail_participants_below_quorum
+        if join_existing_groups and not fail_participants_below_quorum:
+            raise ValueError(
+                "fail_participants_below_quorum=False has no effect with "
+                "join_existing_groups=True: a group that accepts top-ups waits for "
+                "newcomers instead of dissolving."
+            )
         if (start_short_after is None) != (start_short_with is None):
             raise ValueError(
                 "Pass start_short_after and start_short_with together: how long to "
@@ -2350,6 +2357,11 @@ class SimpleGrouper(Grouper):
             raise ValueError(
                 f"Need 1 <= quorum <= initial_group_size, got quorum={quorum} "
                 "(a larger quorum needs join_existing_groups=True)."
+            )
+        if max_group_size is not None and quorum > max_group_size:
+            raise ValueError(
+                f"quorum ({quorum}) must be at most max_group_size ({max_group_size}): "
+                "a group could never reach it."
             )
         if start_short_with is not None and quorum > start_short_with:
             raise ValueError(

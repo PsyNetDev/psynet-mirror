@@ -102,7 +102,7 @@ is stored in two tables:
 ``participant_link_sync_group``
     One row per member of each group: ``participant_id``, ``sync_group_id``
     and ``active``. The row stays after the participant leaves the group, for
-    example by failing or being kicked, with ``active`` set to ``False``.
+    example by failing or being removed from it, with ``active`` set to ``False``.
     ``creation_time`` is when the participant joined.
 
 In a static trial maker, groups can share nodes and networks: in the

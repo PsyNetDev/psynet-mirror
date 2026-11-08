@@ -517,6 +517,16 @@ subclasses, ``get_waiting_participants(`` and ``SimpleGrouper(``.
   ``get_waiting_participants_from_barrier_id`` is removed.
 * ``SimpleGrouper`` IDs now include the group size. Pass the same ``id_``
   to two groupers that should share a waiting pool.
+* ``SimpleGrouper(min_group_size=...)`` is now ``quorum=...``: how many
+  active members a group needs to keep going. The old name still works with
+  a ``FutureWarning``. A grouper for groups of three or more without
+  ``quorum`` warns: pass ``quorum=initial_group_size`` to keep failing a group
+  as soon as one member leaves, or a smaller number if your code handles
+  smaller groups.
+* A trial maker's ``sync_group_max_wait_time`` without ``sync_group_type``
+  has no effect and now warns; remove it or set ``sync_group_type``.
+* In bot tests, ``advance_past_wait_pages(bots, max_iterations=...)`` is
+  deprecated; pass ``timeout=`` (seconds) instead.
 
 See :doc:`/code/multiplayer/synchronization`.
 

@@ -1861,6 +1861,13 @@
             }
         })
 
+        {% else %}
+        // Multi-page surveys submit themselves; this only keeps the answer on a time-out.
+        psynet.setStageResponseHandler(() => {
+            if (psynet.timeLimitSubmitting) {
+                psynet.response.staged.rawAnswer = JSON.stringify(survey.data);
+            }
+        });
         {% endif %}
 
         function handleSurveyCompletion(sender, options) {

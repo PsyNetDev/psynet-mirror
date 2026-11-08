@@ -2550,7 +2550,7 @@ class TrialMaker(Module):
             return self._prepare_trial_uncommitted(experiment, participant, leader)
 
     def _prepare_trial_uncommitted(self, experiment, participant, leader):
-        # In synchronous trial makers, we only make sure that the participant is still in the sync group (and not e.g. kicked out) before delivering the next trial.
+        # In synchronous trial makers, we only make sure that the participant is still in the sync group (and was not, e.g., removed from it) before delivering the next trial.
         if (
             self.sync_group_type is not None
             and self.sync_group_type not in participant.active_sync_groups

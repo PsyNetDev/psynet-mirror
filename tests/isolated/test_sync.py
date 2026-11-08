@@ -217,7 +217,7 @@ def test_max_wait_action_leave_group_requires_group_barrier():
     )
     assert barrier.max_wait_action == "leave_group"
     for option in ["max_wait_action", "late_action"]:
-        with pytest.raises(ValueError, match="'fail' or 'leave_group'"):
+        with pytest.raises(ValueError, match="renamed"):
             GroupBarrier(id_="group_barrier", group_type="main", **{option: "kick"})
 
 

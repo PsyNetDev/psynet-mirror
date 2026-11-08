@@ -1448,7 +1448,9 @@ class Page(Elt):
           countdown instead.
         - Just before the page submits itself, the browser dispatches a
           ``psynet:timeLimitReached`` event on ``document``, so custom
-          JavaScript can stage its state in ``psynet.response.staged``.
+          JavaScript can stage its state in ``psynet.response.staged`` (kept
+          only with ``time_limit_answer=CURRENT_ANSWER``, on pages without a
+          built-in control).
         - Cannot be combined with ``session_id``.
 
     time_limit_answer

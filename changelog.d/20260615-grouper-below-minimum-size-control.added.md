@@ -1,1 +1,1 @@
-Added `fail_participants_below_quorum` parameters to groupers, allowing experiments to release participants to continue the experiment when a group drops below `min_group_size` instead of failing them by default.
+Added `SimpleGrouper(fail_participants_below_quorum=False)`, which lets the remaining members of a group without top-ups continue the experiment, instead of being failed, when the group drops below its `quorum`. Passing it with `join_existing_groups=True` raises an error, because a group that accepts top-ups waits for newcomers instead of dissolving.

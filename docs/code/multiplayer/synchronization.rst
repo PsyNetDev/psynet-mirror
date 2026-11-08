@@ -640,8 +640,8 @@ After leaving a group
 
 A member removed from their group without being failed, through
 ``"leave_group"`` or ``fail_participants_below_quorum=False``, stays in the
-experiment but doesn't play on by themselves. They leave only the group of
-that type: a player removed from a ``"pair"`` stays in their ``"cohort"``.
+experiment and continues the timeline without that group; nothing makes
+them play alone. They leave only the group of that type: a player removed from a ``"pair"`` stays in their ``"cohort"``.
 For the rest of the timeline:
 
 - :class:`~psynet.sync.GroupBarrier`\ s of that group type let them straight
@@ -649,8 +649,8 @@ For the rest of the timeline:
 - Trial makers synchronized on that group type give them no more trials.
 - ``participant.active_sync_groups`` no longer has that group type, and
   ``trial.sync_group`` is ``None``. ``participant.sync_group`` is ``None``
-  only if they are in no other group; otherwise it is that other group, so
-  look groups up by type, as in
+  if they are in no other group, is that group if they are in exactly one
+  other, and raises if they are in several, so look groups up by type, as in
   ``participant.active_sync_groups.get("pair")``.
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only
   its text from their next page on. A participant who has been in groups of
