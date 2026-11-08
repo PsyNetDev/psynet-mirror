@@ -19,7 +19,7 @@ offer they would accept.
 
 A player who doesn't answer within ``DECISION_SECONDS`` gets nothing that
 round, and nor does their partner. A player who closes their page is taken
-out of their pair so their partner isn't held up. A player who misses a
+out of their pair and cohort, so nobody waits for them. A player who misses a
 round joins the next one, and nobody is failed for being slow. Players
 finish after ``N_ROUNDS`` rounds in a pair, or early, with an explanation,
 after sitting out ``MAX_SIT_OUTS`` rounds or if their cohort falls apart.
@@ -87,6 +87,8 @@ def ended_early_page(participant):
             f"You sat out {MAX_SIT_OUTS} rounds without a partner, "
             "so the game ended early for you."
         )
+    elif participant.sync_group_removal_reason("cohort") == "late":
+        text = "You were away for too long, so the game ended early for you."
     else:
         text = "Not enough players stayed to keep playing, so the game ended early."
     return InfoPage(text, time_estimate=5)
@@ -116,9 +118,15 @@ def keep_playing(participant):
     )
 
 
-def score_round(participants: List[Participant]):
+def score_round(group, participants: List[Participant]):
     """Pay out the round, or note who ran out of time or left."""
     if len(participants) < 2:
+        # A partner removed for being late has probably closed their page, so
+        # they leave the cohort too, and the rest of it doesn't wait for them.
+        for link in group.participant_links:
+            cohort = cohort_of(link.participant)
+            if link.removal_reason == "late" and cohort is not None:
+                cohort.remove_participant(link.participant, reason="late")
         participants[0].var.outcome = "Your partner left, so nobody was paid."
         participants[0].var.decisions = None
         return
@@ -167,7 +175,7 @@ def decision_page(participant):
         GroupPrompt(
             prompt, participant=participant, group_type="pair", names="anonymous"
         ),
-        PushButtonControl(choices=list(range(ENDOWMENT + 1))),
+        PushButtonControl(choices=list(range(ENDOWMENT + 1)), arrange_vertically=False),
         save_answer="decision",
         time_limit=DECISION_SECONDS,
         time_estimate=10,
@@ -225,7 +233,10 @@ def show_outcome(participant):
 
 def not_playing(participant):
     if pairing.sat_out(participant):
-        text = "You sit out this round. It doesn't count towards your rounds."
+        text = (
+            "You sit out this round without a partner. If you sit out "
+            f"{MAX_SIT_OUTS} rounds, the game ends early for you."
+        )
     else:
         # Removed from this round's pair before reaching the decision page.
         text = AWAY_TEXT
@@ -389,12 +400,22 @@ class Exp(psynet.experiment.Experiment):
         assert not _cohort_accepts_newcomers(bots[0])
         sitting_out = [b for b in others if "sit out" in b.current_page_text]
         assert len(sitting_out) == 1
-        _play([b for b in others if b not in sitting_out])
+        # One of the pair closes their page. Once late, they leave the pair and
+        # the cohort, so the rest of the cohort doesn't wait for them.
+        stayer, leaver = [b for b in others if b not in sitting_out]
+        _play([stayer])
+        assert "Your partner left" in stayer.current_page_text
+        assert leaver.with_participant(lambda p: cohort_of(p) is None)
+        # The leaver comes back later. This was their second round, so the game
+        # didn't end early for them.
+        for text in [AWAY_TEXT, "That's the end"]:
+            leaver.take_page()
+            assert text in leaver.current_page_text
 
-        # The pair has played its two rounds. The lingerer wasn't failed, and
+        # The stayer has played their two rounds. The lingerer wasn't failed, and
         # the sit-out didn't count, so those two play a final round together.
-        # The cohort stays closed to latecomers after the pair has left it.
-        for bot in bots:
+        # The cohort stays closed to latecomers after the stayer has left it.
+        for bot in [stayer, *sitting_out, bots[3]]:
             bot.take_page()
         last_pair = [sitting_out[0], bots[3]]
         advance_past_wait_pages(last_pair, timeout=WAIT_TIMEOUT)
@@ -408,11 +429,17 @@ class Exp(psynet.experiment.Experiment):
             assert "That's the end" in bot.current_page_text
             assert bot.current_notice is None
 
-        # Two pairs in round 1, then one pair in each of rounds 2 and 3, each
-        # with one proposer (5) and one responder (3).
+        # Two pairs in round 1, then one pair in each of rounds 2 and 3. The
+        # pairs that both played have one proposer (5) and one responder (3).
         rows = self.get_basic_data()["player_pair"]
         assert len(rows) == 8
-        assert all({row["decision"], row["partner_decision"]} == {3, 5} for row in rows)
+        late = [row for row in rows if row["removed_for_being_late"]]
+        assert [row["participant_id"] for row in late] == [leaver.id]
+        played = [row for row in rows if row["pair_id"] != late[0]["pair_id"]]
+        assert len(played) == 6
+        assert all(
+            {row["decision"], row["partner_decision"]} == {3, 5} for row in played
+        )
 
 
 def _play(bots):

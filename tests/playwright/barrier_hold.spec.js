@@ -136,7 +136,6 @@ test("default barriers hold the current page until websocket release", { tag: "@
     await expect(arrivalNotice).toHaveText("Your partner is ready.", {
       timeout: STEP_TIMEOUT_MS
     });
-    await expect(arrivalNotice).toHaveCSS("white-space", "nowrap");
     await expect(arrivalNotice).toHaveAttribute("title", "Your partner is ready.");
     await expect(arrivalNotice).toBeVisible();
     await expect(
@@ -156,8 +155,9 @@ test("default barriers hold the current page until websocket release", { tag: "@
     await secondParticipant.setViewportSize({ width: 375, height: 667 });
     const longNotice = await arrivalNotice.evaluate((el) => ({
       height: el.getBoundingClientRect().height,
-      overflowed: el.scrollWidth > el.clientWidth,
+      overflowed: el.scrollHeight > el.clientHeight,
     }));
+    // Two lines at most, then an ellipsis.
     expect(longNotice.height).toBeLessThan(48);
     expect(longNotice.overflowed).toBeTruthy();
     await expect(arrivalNotice).toHaveAttribute("title", longNoticeText);

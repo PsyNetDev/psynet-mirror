@@ -331,7 +331,7 @@ on the next page of a member removed after waiting too long), ``waiting_count`` 
 ``group_size``, and returns the text or ``None`` to hide it. For a notice it
 is called whenever the browser fetches the current count, which can be
 several times per arrival, so it should depend only on its arguments and
-have no side effects. Notices must fit on one line:
+have no side effects. Notices must fit on two lines of a phone screen:
 
 .. code-block:: python
 
