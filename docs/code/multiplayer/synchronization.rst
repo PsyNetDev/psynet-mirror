@@ -787,7 +787,7 @@ For the rest of the timeline:
 - ``participant.sync_group_removal_reason("pair")`` says why they left:
   ``"late"``, ``"waited_too_long"``, ``"group_dissolved"`` or ``"failed"``.
 - An answer submitted on the page where a member was removed for being late
-  has ``response.left_group_on_page`` set, so analysis can leave it out.
+  has ``response.too_late_for_group`` set, so analysis can leave it out.
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only
   its text from their next page on. A participant who has been in groups of
   several types needs ``group_type`` (or ``group``) on every ``GroupPrompt``.

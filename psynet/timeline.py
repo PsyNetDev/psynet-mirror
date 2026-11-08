@@ -2003,9 +2003,9 @@ class Page(Elt):
             metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
         from .sync import _removed_late_on_current_page
 
-        metadata = {k: v for k, v in metadata.items() if k != "left_group_on_page"}
+        metadata = {k: v for k, v in metadata.items() if k != "too_late_for_group"}
         if _removed_late_on_current_page(participant):
-            metadata = {**metadata, "left_group_on_page": True}
+            metadata = {**metadata, "too_late_for_group": True}
         # Untimed pages, such as feedback or a framework wait, keep the flag.
         if participant.waiting_barrier_id is None and self.time_limit is not None:
             participant.timed_out_since_barrier = timed_out
@@ -3340,15 +3340,16 @@ class Response(_Response):
         return bool((self.metadata or {}).get("time_limit_reached"))
 
     @property
-    def left_group_on_page(self) -> bool:
-        """Whether a barrier removed the participant from their group while they were on this page.
+    def too_late_for_group(self) -> bool:
+        """Whether this answer arrived after the participant's group went on without them.
 
-        This happens to a member who is late (``late_action="leave_group"``),
-        whether the group carries on or is dissolved. The group has gone on
-        without them, so an answer such as a move in a game usually shouldn't
+        It is ``True`` when a barrier removed the participant from their group
+        for being late (``late_action="leave_group"``) while they were on this
+        page, whether the group carried on or was dissolved. The group didn't
+        use the answer, so a move in a game, for example, usually shouldn't
         count.
         """
-        return bool((self.metadata or {}).get("left_group_on_page"))
+        return bool((self.metadata or {}).get("too_late_for_group"))
 
     async_jobs = relationship("AsyncJob")
     async_processes = _deprecated_async_processes

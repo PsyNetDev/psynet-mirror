@@ -4256,7 +4256,7 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     active = Column(Boolean, default=True)
     removal_reason = Column(String)
     # The page a member removed for being late was on; see
-    # ``Response.left_group_on_page``.
+    # ``Response.too_late_for_group``.
     removed_on_page = Column(String)
     # The member's role in the group (see ``Regrouper(roles=...)``).
     role = Column(String)

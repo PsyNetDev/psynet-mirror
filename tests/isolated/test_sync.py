@@ -6675,11 +6675,11 @@ def test_group_barrier_late_after_removes_missing_participants(
         late_answer = InfoPage("Your move").process_response(
             raw_answer=None,
             blobs={},
-            metadata={"left_group_on_page": False},
+            metadata={"too_late_for_group": False},
             experiment=exp,
             participant=missing_participant,
         )
-        assert late_answer.left_group_on_page
+        assert late_answer.too_late_for_group
     if min_group_size == 3:
         # The second removal dissolves the group, so nobody went on without either.
         assert all(p.failed for p in waiting_participants)
@@ -6708,11 +6708,11 @@ def test_group_barrier_late_after_removes_missing_participants(
     on_time_answer = InfoPage("Your move").process_response(
         raw_answer=None,
         blobs={},
-        metadata={"left_group_on_page": True},
+        metadata={"too_late_for_group": True},
         experiment=exp,
         participant=waiting_participants[0],
     )
-    assert not on_time_answer.left_group_on_page
+    assert not on_time_answer.too_late_for_group
 
 
 @pytest.mark.parametrize(
