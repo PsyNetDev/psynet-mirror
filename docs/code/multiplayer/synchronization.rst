@@ -614,8 +614,8 @@ Two separate settings decide what happens when someone leaves a group:
     (for example submitting a page) is handled by the background barrier
     check within about a second instead, once that request finishes.
 
-So in a pair, where any departure dissolves the group, the two settings
-together decide both fates:
+So in a :class:`~psynet.sync.SimpleGrouper` pair, where any departure
+dissolves the group, the two settings together decide both fates:
 
 .. list-table::
    :header-rows: 1
@@ -623,7 +623,8 @@ together decide both fates:
    * - The departing member
      - ``below_quorum="fail"`` (default)
      - ``below_quorum="leave_group"``
-   * - quits or is failed
+   * - quits or is failed (including by ``max_wait_action="fail"`` or
+       ``late_action="fail"``)
      - partner failed
      - partner carries on alone
    * - waited too long, ``max_wait_action="leave_group"``
@@ -634,8 +635,9 @@ together decide both fates:
      - both carry on alone
 
 The last row is rarely what a pair wants, so PsyNet logs a warning when it
-happens: in pairs, use ``late_action="fail"`` or
-``below_quorum="leave_group"``.
+happens. To let the partner who was on time carry on, set
+``below_quorum="leave_group"``; ``late_action="fail"`` instead ends the
+session for both.
 
 For example, a group of four that may start with two after a minute, and
 whose members carry on when others are slow or leave, combines these

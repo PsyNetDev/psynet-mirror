@@ -283,6 +283,8 @@ def test_simple_grouper_quorum():
         lobby(quorum=6, join_existing_groups=True, max_group_size=5)
     with pytest.raises(ValueError, match="no effect"):
         lobby(quorum=4, join_existing_groups=True, below_quorum="leave_group")
+    with pytest.raises(ValueError, match="not a lambda"):
+        lobby(quorum=4, below_quorum=lambda participant, group: "fail")
 
 
 def _five_minutes(participant):

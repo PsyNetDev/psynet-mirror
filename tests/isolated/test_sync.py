@@ -6927,6 +6927,42 @@ def test_group_barrier_late_after_removal_releases_waiters_after_dissolution(
         assert _removed_from_group_notice(p).startswith("Too few members")
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_late_member_leaving_a_pair_fails_the_partner_with_a_warning(
+    in_experiment_directory, db_session, caplog
+):
+    exp = get_experiment()
+    barrier = GroupBarrier(
+        id_="late_pair", group_type="main", late_after=5, late_action="leave_group"
+    )
+    on_time, late = new_participant(exp), new_participant(exp)
+    group = SimpleSyncGroup(
+        group_type="main",
+        initial_group_size=2,
+        max_group_size=2,
+        min_group_size=2,
+        accepts_top_ups=False,
+        below_quorum="fail",
+    )
+    db_session.add(group)
+    for p in (on_time, late):
+        p.status = "working"
+        group.add_participant(p)
+    _backdate_group(group, seconds=10)
+    db_session.commit()
+
+    with caplog.at_level("WARNING", logger="psynet"):
+        barrier.check_waiting_participants([on_time])
+    db_session.commit()
+
+    assert on_time.failed and not late.failed
+    assert "below_quorum='leave_group'" in caplog.text
+    InfoPage("Next").consume(exp, late)
+    assert _removed_from_group_notice(late).startswith("Your partner is no longer")
+
+
 @pytest.mark.parametrize("action", ["leave_group", "fail"])
 @pytest.mark.parametrize("min_group_size", [2, 3])
 @pytest.mark.parametrize("accepts_top_ups", [False, True])
@@ -7022,6 +7058,10 @@ def _fail_the_first_member(participant, group):
     return "fail" if group_seats(group)[participant.id] == 0 else "leave_group"
 
 
+def _broken_below_quorum(participant, group):
+    raise RuntimeError("bug in the author's function")
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
@@ -7031,6 +7071,7 @@ def _fail_the_first_member(participant, group):
         ("fail", [True, True]),
         ("leave_group", [False, False]),
         (_fail_the_first_member, [True, False]),
+        (_broken_below_quorum, [True, True]),
     ],
 )
 def test_group_barrier_below_quorum(

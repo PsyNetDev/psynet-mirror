@@ -1553,7 +1553,7 @@ class GroupBarrier(Barrier):
         ``on_arrival_message`` for larger groups), and a :class:`~psynet.group_prompt.GroupPrompt` marks them
         "(dropped out)". It is the waiting member who leaves, not the absent ones; to move on
         without slow members, use ``late_after`` and ``late_action`` instead. If that takes
-        the group below its quorum, as in a pair, the group dissolves, and the grouper's
+        the group below its quorum, as in a SimpleGrouper pair, the group dissolves, and the grouper's
         ``below_quorum`` decides what happens to the others.
 
     late_after
@@ -1924,6 +1924,7 @@ class GroupBarrier(Barrier):
             late = _lock_free_participants(late)
         group_size = len(group.active_participants)
         if self.late_action == "leave_group":
+            seats = len(group_seats(group))
             for participant in late:
                 logger.info(
                     "GroupBarrier '%s': removing participant %s from group %s (timeout between barriers)",
@@ -1936,18 +1937,18 @@ class GroupBarrier(Barrier):
                 for participant in late:
                     self._tell_removed_participant(participant, group, group_size)
                 return
-            if late and getattr(group, "below_quorum", None) == "fail":
+            if late and getattr(group, "below_quorum", None) in (None, "fail"):
                 logger.warning(
                     "GroupBarrier '%s': removing late members %s dissolved group %s, "
                     "so its members who were on time were failed while the late ones "
-                    "carry on. In pairs, use late_action='fail', or below_quorum="
-                    "'leave_group' on the grouper.",
+                    "carry on. Set below_quorum='leave_group' on the grouper to let "
+                    "them carry on too.",
                     self.id,
                     [p.id for p in late],
                     group.id,
                 )
             for participant in late:
-                _tell_group_ended(participant, group_size)
+                _tell_group_ended(participant, seats)
             return
         for participant in late:
             logger.info(
@@ -1986,7 +1987,7 @@ class GroupBarrier(Barrier):
         if not text:
             return
         if kind == "waited_too_long":
-            participant.group_removal_notice = {"next_page": True, "text": str(text)}
+            _set_next_page_notice(participant, text)
             return
         if not _lock_free_participants([participant]):
             return
@@ -2281,7 +2282,9 @@ class SimpleGrouper(Grouper):
         continue". ``"leave_group"`` removes them from the group without failing them, and their next
         page says that their group ended (see :ref:`sync-leaving-a-group`). A module-level function
         ``f(participant, group)`` returning ``"fail"`` or ``"leave_group"`` decides member by member,
-        for example from how many rounds they played. Only for groups without top-ups; passing
+        for example from how many rounds they played. It is called while the group is being
+        dissolved, so base the decision on the participant, not on who else is still in ``group``;
+        if it raises or returns anything else, the error is logged and the member is failed. Only for groups without top-ups; passing
         anything but ``"fail"`` with ``join_existing_groups=True`` raises. A member whose own request
         is in progress is handled within about a second by the barrier poller instead.
 
@@ -2363,6 +2366,11 @@ class SimpleGrouper(Grouper):
         self.join_existing_groups = join_existing_groups
         self.join_criterion = join_criterion
         if callable(below_quorum):
+            if getattr(below_quorum, "__name__", None) == "<lambda>":
+                raise ValueError(
+                    "below_quorum must be a module-level function, not a lambda, "
+                    "because PsyNet stores it with each group."
+                )
             below_quorum = serialize_callable(
                 below_quorum, "SimpleGrouper.below_quorum"
             )
@@ -3728,14 +3736,29 @@ class SyncGroup(SQLBase, SQLMixin):
     def _below_quorum_action(self, participant):
         """Return ``"fail"`` or ``"leave_group"`` for a member of this group as it dissolves."""
         policy = getattr(self, "below_quorum", None) or "fail"
-        if callable(policy):
+        if not callable(policy):
+            return policy
+        try:
             action = policy(participant=participant, group=self)
-            if action not in ("fail", "leave_group"):
-                raise ValueError(
-                    f"below_quorum must return 'fail' or 'leave_group', got {action!r}."
-                )
-            return action
-        return policy
+        except Exception as err:
+            if is_transient_transaction_error(err):
+                raise
+            logger.exception(
+                "below_quorum of group %s raised for participant %s; failing them.",
+                self.id,
+                participant.id,
+            )
+            return "fail"
+        if action not in ("fail", "leave_group"):
+            logger.error(
+                "below_quorum of group %s returned %r for participant %s instead of "
+                "'fail' or 'leave_group'; failing them.",
+                self.id,
+                action,
+                participant.id,
+            )
+            return "fail"
+        return action
 
 
 class SimpleSyncGroup(SyncGroup):
@@ -4529,7 +4552,13 @@ def _tell_group_ended(participant, group_size):
             "timeline_hold",
             "Too few members of your group remained. Please continue.",
         )
-    participant.group_removal_notice = {"next_page": True, "text": str(text)}
+    _set_next_page_notice(participant, text)
+
+
+def _set_next_page_notice(participant, text):
+    """Show ``text`` on the participant's next page, unless their own request holds their row."""
+    if _lock_free_participants([participant]):
+        participant.group_removal_notice = {"next_page": True, "text": str(text)}
 
 
 def _removed_from_group_notice(participant) -> Optional[str]:
