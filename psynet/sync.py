@@ -1910,11 +1910,17 @@ class GroupBarrier(Barrier):
             )
         db.session.add_all(rows.values())
         if _formed_by_regrouper(group):
-            db.session.add_all(self._sat_out_rows(group, number))
+            self._record_sat_out(group, number)
         _rounds_being_recorded[id(self)] = _RoundBeingRecorded(group_round, rows)
 
-    def _sat_out_rows(self, group, number):
-        """Return rows for the players the regrouper sat out of ``group``'s split, once per split."""
+    def _record_sat_out(self, group, number):
+        """Write a row for each player the regrouper sat out of ``group``'s split.
+
+        Every group of the split tries, each in its own transaction, so the
+        partial unique index on sit-out rows keeps one per player and round.
+        Inserting in participant order keeps two such transactions from
+        deadlocking.
+        """
         visits = ParticipantLinkBarrier.query.filter_by(
             barrier_id=group.grouper_id, sat_out=True, sat_out_at=group.creation_time
         )
@@ -1925,26 +1931,27 @@ class GroupBarrier(Barrier):
                     [link.participant_id for link in cohort.participant_links]
                 )
             )
-        recorded = {
-            participant_id
-            for (participant_id,) in db.session.query(
-                ParticipantRound.participant_id
-            ).filter_by(barrier_id=self.id, round=number, outcome="sat_out")
-        }
-        return [
-            ParticipantRound(
-                sync_group_id=group.within_group_id,
-                group_type=group.group_type,
-                barrier_id=self.id,
-                round=number,
-                participant_id=visit.participant_id,
-                outcome="sat_out",
-                other_member_ids=[],
-                data={},
+        sitter_ids = sorted({visit.participant_id for visit in visits})
+        if not sitter_ids:
+            return
+        rows = [
+            _insert_values_from_state(
+                ParticipantRound(
+                    sync_group_id=group.within_group_id,
+                    group_type=group.group_type,
+                    barrier_id=self.id,
+                    round=number,
+                    participant_id=participant_id,
+                    outcome="sat_out",
+                    other_member_ids=[],
+                    data={},
+                )
             )
-            for visit in visits
-            if visit.participant_id not in recorded
+            for participant_id in sitter_ids
         ]
+        db.session.execute(
+            pg_insert(ParticipantRound).values(rows).on_conflict_do_nothing()
+        )
 
     def resolve(self):
         group_type = self.group_type
@@ -4876,6 +4883,17 @@ class ParticipantRound(SQLBase, SQLMixin):
     other_member_ids = Column(PythonList)
     data = Column(PythonDict)
     bonus = Column(Float)
+
+    __table_args__ = (
+        Index(
+            "ix_participant_round_sat_out",
+            "participant_id",
+            "barrier_id",
+            "round",
+            unique=True,
+            postgresql_where=text("outcome = 'sat_out'"),
+        ),
+    )
 
 
 def participant_rounds(
