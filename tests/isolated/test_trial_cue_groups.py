@@ -166,6 +166,34 @@ def test_first_ungrouped_trials_cued_in_parallel_share_the_default_node(
     assert GenericTrialNetwork.query.count() == 1
 
 
-def test_cue_needs_round_exactly_when_the_trial_has_a_sync_group_type():
-    with pytest.raises(ValueError, match="needs round="):
-        PairTrial.cue({})
+@in_consents_experiment
+def test_a_one_round_group_can_leave_out_round(in_experiment_directory, db_session):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    logic = PairTrial.cue(_make_definition)
+    for participant in cohort:
+        logic[0].consume(exp, participant)
+    db.session.commit()
+
+    trials = PairTrial.query.all()
+    assert len({t.node_id for t in trials}) == 1
+    assert [t.sync_group_round for t in trials] == [None, None]
+    assert _definition_calls == [(cohort[0].active_sync_groups["pair"].id, None)]
+
+
+@in_consents_experiment
+def test_leaving_out_round_for_a_second_round_raises(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    logic = PairTrial.cue({"target": 1})
+    logic[0].consume(exp, cohort[0])
+    db.session.commit()
+    with pytest.raises(ValueError, match="pass round="):
+        logic[0].consume(exp, cohort[0])
+
+
+def test_cue_takes_round_only_when_the_trial_has_a_sync_group_type():
+    with pytest.raises(ValueError, match="takes round="):
+        SoloTrial.cue({}, round=0)

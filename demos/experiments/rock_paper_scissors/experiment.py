@@ -8,7 +8,6 @@ from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.chatroom import ChatRoom, EnableChatrooms
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
-from psynet.participant import Participant
 from psynet.sync import GroupBarrier, SimpleGrouper
 from psynet.timeline import Timeline, join
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
@@ -72,8 +71,8 @@ class RockPaperScissorsTrial(StaticTrial):
         )
 
     def show_feedback(self, experiment, participant):
-        last_trial = participant.var.last_trial
-        score = last_trial["score"]
+        result = self.var.result
+        score = result["score"]
         if score == -1:
             outcome = "You lost."
         elif score == 0:
@@ -81,25 +80,23 @@ class RockPaperScissorsTrial(StaticTrial):
         else:
             assert score == 1
             outcome = "You won!"
-        if last_trial["timed_out_self"]:
-            you = (
-                f"You ran out of time, so we chose {last_trial['action_self']} for you"
-            )
+        if result["timed_out_self"]:
+            you = f"You ran out of time, so we chose {result['action_self']} for you"
         else:
-            you = f"You chose {last_trial['action_self']}"
-        if last_trial["timed_out_other"]:
+            you = f"You chose {result['action_self']}"
+        if result["timed_out_other"]:
             other = (
                 "your partner ran out of time, so we chose "
-                f"{last_trial['action_other']} for them"
+                f"{result['action_other']} for them"
             )
         else:
-            other = f"your partner chose {last_trial['action_other']}"
+            other = f"your partner chose {result['action_other']}"
         prompt = tags.div()
         with prompt:
             tags.h1("Round results")
             tags.p(f"{you}, {other}. {outcome}")
-        actions = last_trial["action_by_player"]
-        winning_action = last_trial["action_self" if score == 1 else "action_other"]
+        actions = result["action_by_player"]
+        winning_action = result["action_self" if score == 1 else "action_other"]
         return ModularPage(
             "results",
             GroupPrompt(
@@ -124,19 +121,20 @@ class RockPaperScissorsTrial(StaticTrial):
             time_estimate=30,
         )
 
-    def score_trial(self, participants: List[Participant]):
-        assert len(participants) == 2
+    @classmethod
+    def score_trial(cls, trials: List["RockPaperScissorsTrial"]):
+        """Save each player's result for the round on their trial."""
+        assert len(trials) == 2
+        participants = [trial.participant for trial in trials]
         timed_out = [p.var.last_action is None for p in participants]
         answers = [
             random.choice(ACTIONS) if out else p.var.last_action
             for p, out in zip(participants, timed_out)
         ]
-        score_0 = self.scoring_matrix[answers[0]][answers[1]]
+        score_0 = cls.scoring_matrix[answers[0]][answers[1]]
         action_by_player = {p.id: a for p, a in zip(participants, answers)}
-        for i, (participant, score) in enumerate(
-            zip(participants, (score_0, -score_0))
-        ):
-            participant.var.last_trial = {
+        for i, (trial, score) in enumerate(zip(trials, (score_0, -score_0))):
+            trial.var.result = {
                 "action_self": answers[i],
                 "action_other": answers[1 - i],
                 "timed_out_self": timed_out[i],
