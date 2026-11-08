@@ -17,7 +17,8 @@ consuming snapshot matches as a multiset so two identical lines are not
 collapsed to one. An empty snapshot still completes the load.
 
 In an anonymous room (``ChatRoom(names="anonymous")``), members are not sent
-each other's pseudonyms, so the page can't reveal them. Each membership
+each other's pseudonyms, so the page doesn't show them. This hides names, not
+identities: frames still carry participant IDs. Each membership
 records whether its page is anonymous, and every frame is sent in two
 versions, with and without pseudonyms. The widget then labels the others
 as :class:`~psynet.group_prompt.GroupPrompt` does with
@@ -330,7 +331,8 @@ class ChatRoom(JavaScriptContributor):
           ``names="anonymous"``: "Your partner" while the viewer has met only
           one other member of the room, and "Another player" once they have
           met more, even if some have left since. The page is then not sent
-          the others' pseudonyms.
+          the others' pseudonyms, though it still receives their
+          participant IDs.
 
         A chat writes a name next to every message, so GroupPrompt's
         ``"on_hover"`` is not available.

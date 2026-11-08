@@ -1352,3 +1352,8 @@ def test_repeats_without_a_trial_limit_name_the_missing_argument():
         make_static_trial_maker(
             allow_repeated_nodes=True, max_trials_per_participant=None
         )
+
+
+def test_sync_group_actions_name_the_trial_maker_option():
+    with pytest.raises(ValueError, match="sync_group_late_action='kick' was renamed"):
+        make_trial_maker(sync_group_type="main", sync_group_late_action="kick")

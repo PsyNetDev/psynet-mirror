@@ -54,6 +54,7 @@ from ..sync import (
     SyncGroup,
     _group_max_wait_time,
     _removed_from_group,
+    _validate_group_action,
 )
 from ..timeline import (
     CodeBlock,
@@ -1823,6 +1824,8 @@ class TrialMaker(Module):
                 sync_group_late_action=(sync_group_late_action, "fail"),
                 sync_group_waiting_message=(sync_group_waiting_message, None),
             )
+        _validate_group_action("sync_group_max_wait_action", sync_group_max_wait_action)
+        _validate_group_action("sync_group_late_action", sync_group_late_action)
         self.sync_group_type = sync_group_type
         self.sync_group_max_wait_time = _group_max_wait_time(
             sync_group_max_wait_time,

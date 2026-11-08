@@ -81,7 +81,8 @@ Every message is stored in the :class:`~psynet.chatroom.ChatMessage` table,
 with the sender's participant and node IDs, the room ID, the text and the
 time the server received it. Joining and leaving a room is stored in the
 :class:`~psynet.chatroom.ChatRoomMember` table, with timestamps and an
-``active`` flag and the ``page_uuid`` of the page they joined from. A
+``active`` flag, the ``page_uuid`` of the page they joined from and an
+``anonymous`` flag for rooms with ``names="anonymous"``. A
 membership counts only while the participant is still on that page. Both
 tables appear in exports as ``database/chat_message.csv`` and
 ``database/chat_room_member.csv`` (see :doc:`/data/what_an_export_contains`).

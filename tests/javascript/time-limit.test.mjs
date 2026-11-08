@@ -62,12 +62,17 @@ it("announces the time-out and can submit the current answer", async () => {
 
   // As on Next, an asynchronous stage handler (e.g. MonitorControl's) runs first.
   psynet.getRetrieveResponseHandler = () => undefined;
+  // SurveyJS stages its data only while this flag is set.
+  let flagInHandler;
   psynet.getStageResponseHandler = () => async () => {
+    flagInHandler = psynet.timeLimitSubmitting;
     psynet.response.staged.rawAnswer = "staged";
   };
   activate({ root, vars, psynet });
   await flush();
   assert.equal(submissions[2][0], "staged");
+  assert.equal(flagInHandler, true);
+  assert.equal(psynet.timeLimitSubmitting, false);
 });
 
 it("resumes the countdown when the server's deadline is still to come", async () => {

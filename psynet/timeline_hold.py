@@ -229,7 +229,7 @@ def _queue_countdown_update(participant_id, release_time, *, hold_message=None):
 def default_group_barrier_arrival_message(
     *, kind, waiting_count, group_size, **_kwargs
 ):
-    """Return default GroupBarrier arrival copy for one recipient.
+    """Return default GroupBarrier arrival copy for one participant.
 
     Notices tell people still on an earlier page that partners are already
     waiting, and ``"removed"`` tells someone who was too slow that their group
