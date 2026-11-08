@@ -2450,16 +2450,16 @@ class SimpleGrouper(Grouper):
         If set, a group may start with fewer than ``batch_size`` participants once the
         longest-waiting participant has waited this many seconds and at least
         ``start_short_with`` participants are waiting. If fewer than ``initial_group_size``
-        are waiting, they form one smaller group. Requires ``start_short_with`` and a
-        ``max_wait_time`` longer than ``start_short_after`` (not checked when
-        ``max_wait_time`` is a function).
+        are waiting, they form one smaller group. Requires ``quorum`` or
+        ``start_short_with``, and a ``max_wait_time`` longer than
+        ``start_short_after`` (not checked when ``max_wait_time`` is a function).
         Default: ``None`` (always wait for ``batch_size``).
 
     start_short_with
         The smallest group that ``start_short_after`` may start, between 1 and
-        ``initial_group_size``. Required with ``start_short_after``, and only used with it.
-        ``quorum`` defaults to it and may not exceed it, so that a group started this way
-        is not below quorum at its first barrier.
+        ``initial_group_size``. Only used with ``start_short_after``, and defaults
+        to ``quorum``. ``quorum`` defaults to it and may not exceed it, so that a
+        group started this way is not below quorum at its first barrier.
 
     max_wait_time, max_wait_action
         How long a participant may wait for a group (default 20 seconds), and
@@ -2560,11 +2560,18 @@ class SimpleGrouper(Grouper):
         if top_up_wait is not None and top_up_wait <= 0:
             raise ValueError(f"top_up_wait must be positive, got {top_up_wait}.")
         self.top_up_wait = top_up_wait
-        if (start_short_after is None) != (start_short_with is None):
+        if start_short_after is None and start_short_with is not None:
             raise ValueError(
-                "Pass start_short_after and start_short_with together: how long to "
-                "wait before a short start, and the smallest group it may start."
+                "start_short_with is only used with start_short_after: pass how "
+                "long to wait before a short start too."
             )
+        if start_short_after is not None and start_short_with is None:
+            if quorum is None:
+                raise ValueError(
+                    "With start_short_after, pass quorum=...: a short start forms "
+                    "a group of at least that many (or pass start_short_with)."
+                )
+            start_short_with = quorum
         if start_short_with is not None and not (
             1 <= start_short_with <= initial_group_size
         ):

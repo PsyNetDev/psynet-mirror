@@ -62,9 +62,9 @@ the grouper has a ``waiting_screen`` (see below).
     participant may join that group. Only used with
     ``join_existing_groups=True``.
 
-``start_short_after`` and ``start_short_with`` (default: ``None``)
+``start_short_after`` and ``start_short_with`` (default: ``None``, and ``quorum``)
     Seconds after which a smaller group may start, and the smallest group
-    such a start may form; pass both or neither. Once the longest-waiting
+    such a start may form, which defaults to ``quorum``. Once the longest-waiting
     participant has waited ``start_short_after`` seconds and at least
     ``start_short_with`` are waiting, those waiting form a group even if
     there are fewer than ``batch_size``. Needs a ``max_wait_time`` (default
@@ -749,7 +749,6 @@ options:
         initial_group_size=4,
         quorum=2,
         start_short_after=60,
-        start_short_with=2,
         max_wait_time=120,
         # The last member left continues alone instead of being failed.
         below_quorum="continue_without_group",
