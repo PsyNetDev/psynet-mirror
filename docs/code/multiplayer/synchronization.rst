@@ -254,7 +254,8 @@ from saved settings, so read only scalar settings such as ``waiting_message`` an
 JSON-compatible values. Closures and lambdas can't be saved, so to share one
 callback between barriers, give each barrier its own arguments with
 :func:`functools.partial`. Pass them by keyword, as JSON-compatible values
-named in the function's parameters:
+named in the function's parameters; they take precedence over arguments of
+the same name that PsyNet passes:
 
 .. code-block:: python
 
