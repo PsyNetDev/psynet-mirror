@@ -745,8 +745,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         Returns ``None`` if they are still in such a group or were never in
         one. Otherwise returns ``"late"`` (removed by a barrier's
         ``late_action="leave_group"``), ``"waited_too_long"`` (by its
-        ``max_wait_action="leave_group"``, or a grouper's
-        ``max_wait_action="continue_without_group"``), ``"group_dissolved"`` (released
+        ``max_wait_action="leave_group"``), ``"no_group_formed"`` (a grouper
+        with ``max_wait_action="continue_without_group"`` found them no group
+        in time), ``"group_dissolved"`` (released
         when the group fell below its quorum, with
         ``below_quorum="continue_without_group"``), ``"moved_on"`` (went on to a new group
         at a :class:`~psynet.sync.Regrouper`), ``"finished"`` (left after playing
@@ -767,7 +768,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         if self.in_sync_group(group_type):
             return None
         if group_type in (self.ungrouped_group_types or []):
-            return "waited_too_long"
+            return "no_group_formed"
         latest = _latest_sync_group_link(self, group_type)
         return None if latest is None else latest.removal_reason
 

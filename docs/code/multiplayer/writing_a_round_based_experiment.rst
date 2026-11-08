@@ -120,7 +120,10 @@ For example, with a 30-second decision page and
   seconds after the round started.
 
 30 seconds is long enough for a tab in the background to notice that a
-round has started. A player who was removed from the pair sees "Your
+round has started. ``late_after`` counts from the previous barrier, so pages
+without a time limit before the decision page, such as the last round's
+results, count towards it: give them a time limit too, or make
+``late_after`` long enough for a slow reader. A player who was removed from the pair sees "Your
 partner went on without you. Please continue." on the progress bar (pass
 ``on_arrival_message`` to the barrier to change it) and joins the next round
 when they come back.
@@ -220,7 +223,9 @@ tells them whose turn it is; a :class:`~psynet.group_prompt.GroupPrompt` with
 ``show_progress=False`` shows the pair there without the waiting
 player's own tick. In bot tests, ``advance_past_wait_pages(bots,
 stop_at="investor_sent")`` leaves the bots waiting at that barrier, so the
-test can take the investor's turn first.
+test can take the investor's turn first. Once the investor's answer releases
+the barrier, the same call moves the trustee on: ``stop_at`` holds only bots
+the barrier hasn't released yet.
 
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
 example to pair players by their earlier answers. With roles, return each

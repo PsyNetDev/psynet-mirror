@@ -229,8 +229,11 @@ def advance_past_wait_pages(
         ID or IDs of barriers to leave bots waiting at, for example a responder
         waiting for the proposer's offer while the test plays the proposer.
         Only matches bots on the waiting indicator of a barrier, grouper or
-        regrouper with that ID that has no ``waiting_logic``; bots on a
-        ``WaitPage`` or on ``waiting_logic`` pages are always advanced.
+        regrouper with that ID that has no ``waiting_logic``, and only while
+        that barrier hasn't released them: bots it has released, for example
+        a turn-taking game's waiters once the writer submits, still catch up.
+        Bots on a ``WaitPage`` or on ``waiting_logic`` pages are always
+        advanced.
 
     Raises
     ------
@@ -260,7 +263,7 @@ def advance_past_wait_pages(
             # two would leave take_page submitting the stale waiting page.
             bot.refresh_status()
             page = bot.status.get("page") or {}
-            if page.get("barrier_id") in stop_at:
+            if page.get("barrier_id") in stop_at and not page.get("can_resume"):
                 continue
             if page.get("is_wait_page") or page.get("is_timeline_hold"):
                 waiting.append(bot)
@@ -276,6 +279,82 @@ def advance_past_wait_pages(
             raise RuntimeError(f"Bots {ids} are still waiting after {timeout} s.")
         if iteration >= 2:
             time.sleep(0.5)
+
+
+def run_bots_to_completion(bots: List["BotDriver"], timeout: Optional[float] = 60.0):
+    """Take pages for bots in turn until all of them have finished the experiment.
+
+    Use this instead of calling ``run_to_completion`` on each bot when the bots
+    still wait for each other, for example players a
+    :class:`~psynet.sync.Regrouper` keeps pairing: one bot run to completion on
+    its own would wait at the next barrier for partners who never move. Each
+    pass takes one page for every bot that is still working, answering with
+    the page's bot response; a bot waiting at a barrier polls it, as a browser
+    would.
+
+    Parameters
+    ----------
+    bots : list of BotDriver
+        Bots to run.
+    timeout : float, optional
+        Seconds to keep going before giving up (default 60). ``None`` means
+        no limit.
+
+    Raises
+    ------
+    RuntimeError
+        If some bots are still working after ``timeout`` seconds.
+    """
+    deadline = None if timeout is None else time.monotonic() + timeout
+    while True:
+        for bot in bots:
+            bot.refresh_status()
+        working = [bot for bot in bots if bot.is_working]
+        if not working:
+            return
+        if deadline is not None and time.monotonic() > deadline:
+            ids = [bot.id for bot in working]
+            raise RuntimeError(f"Bots {ids} are still working after {timeout} s.")
+        for bot in working:
+            bot.take_page()
+
+
+def bots_by_sync_group(bots: List["BotDriver"], group_type: str):
+    """Return the bots grouped by their current group of ``group_type``.
+
+    Groupers and regroupers can group bots in any order, so a test can use this
+    to find who plays with whom. Bots not in a group of that type are left out.
+
+    Parameters
+    ----------
+    bots : list of BotDriver
+        Bots to sort into groups.
+    group_type : str
+        The group type, as in ``participant.in_sync_group(group_type)``.
+
+    Returns
+    -------
+    list of list of BotDriver
+        One list per group, ordered by group ID, each ordered by bot ID.
+
+    Examples
+    --------
+    ::
+
+        for first, second in bots_by_sync_group(bots, "pair"):
+            first.take_page(response="circle")
+            second.take_page(response="square")
+    """
+    groups = {}
+    for bot in sorted(bots, key=lambda bot: bot.id):
+        group_id = bot.with_participant(
+            lambda participant: getattr(
+                participant.active_sync_groups.get(group_type), "id", None
+            )
+        )
+        if group_id is not None:
+            groups.setdefault(group_id, []).append(bot)
+    return [groups[group_id] for group_id in sorted(groups)]
 
 
 class BotDriver(ParticipantDriver):

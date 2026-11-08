@@ -170,9 +170,9 @@ class BaseVarStore:
     def __setattr__(self, key, value):
         raise NotImplementedError
 
-    def get(self, name: str, default=marker):
+    def get(self, name: str, default=None):
         """
-        Gets a variable with a specified name.
+        Gets a variable with a specified name, like ``dict.get``.
 
         Parameters
         ----------
@@ -181,28 +181,20 @@ class BaseVarStore:
             Name of variable to retrieve.
 
         default
-            Optional default value to return when the variable is uninitialized.
-
+            Value to return when the variable is uninitialized (default ``None``).
+            To raise ``KeyError`` for a missing variable instead, use
+            attribute access, as in ``participant.var.my_var``.
 
         Returns
         -------
 
         object
-            Retrieved variable.
-
-        Raises
-        ------
-
-        KeyError
-            Thrown if the variable doesn't exist and no default value is provided.
+            Retrieved variable, or ``default``.
         """
         try:
             return self.__getattr__(name)
         except KeyError:
-            if default == marker:
-                raise
-            else:
-                return default
+            return default
 
     def set(self, name, value):
         """
@@ -244,7 +236,7 @@ class BaseVarStore:
             ``True`` if the variable exists, ``False`` otherwise.
         """
         try:
-            self.get(name)
+            self.__getattr__(name)
             return True
         except KeyError:
             return False
@@ -275,7 +267,7 @@ class BaseVarStore:
         KeyError
             Thrown if the variable doesn't exist.
         """
-        original = self.get(name)
+        original = self.__getattr__(name)
         new = original + value
         self.set(name, new)
         return self

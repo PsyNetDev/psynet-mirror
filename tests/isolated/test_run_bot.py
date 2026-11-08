@@ -7,7 +7,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from psynet.asset import Asset
-from psynet.bot import BotDriver, advance_past_wait_pages
+from psynet.bot import (
+    BotDriver,
+    advance_past_wait_pages,
+    bots_by_sync_group,
+    run_bots_to_completion,
+)
 from psynet.experiment import Request
 from psynet.modular_page import ModularPage
 from psynet.participant import DriverStopped, ParticipantDriver
@@ -160,6 +165,22 @@ def test_advance_past_wait_pages_leaves_bots_at_stop_at_barriers():
     other.status = {"page": {}}
     advance_past_wait_pages([bot, other], stop_at="offer_made")
     bot.take_page.assert_not_called()
+
+
+def test_advance_past_wait_pages_moves_on_bots_a_stop_at_barrier_released():
+    from psynet.bot import advance_past_wait_pages
+
+    bot = MagicMock()
+    bot.status = {
+        "page": {"is_timeline_hold": True, "barrier_id": "turn", "can_resume": True}
+    }
+
+    def take_page():
+        bot.status = {"page": {}}
+
+    bot.take_page.side_effect = take_page
+    advance_past_wait_pages([bot], stop_at="turn")
+    bot.take_page.assert_called_once()
 
 
 def _driver_page_status(page_uuid, answer="ok"):
@@ -459,3 +480,31 @@ def test_advance_past_wait_pages_names_bots_still_waiting():
     with pytest.warns(FutureWarning, match="max_iterations"):
         with pytest.raises(RuntimeError, match="after 1 passes"):
             advance_past_wait_pages([stuck], max_iterations=1)
+
+
+def test_run_bots_to_completion_takes_turns_until_all_finish():
+    pages_left = {1: 1, 2: 3}
+    bots = []
+    for id_ in pages_left:
+        bot = MagicMock(id=id_)
+        bot.take_page.side_effect = lambda id_=id_: pages_left.__setitem__(
+            id_, pages_left[id_] - 1
+        )
+        type(bot).is_working = property(lambda self: pages_left[self.id] > 0)
+        bots.append(bot)
+    run_bots_to_completion(bots)
+    assert [bot.take_page.call_count for bot in bots] == [1, 3]
+
+
+def test_bots_by_sync_group_finds_who_plays_with_whom():
+    groups = {1: 20, 2: 10, 3: 20, 4: None, 5: 10}
+    bots = [
+        SimpleNamespace(id=id_, with_participant=lambda f, g=g: g)
+        for id_, g in groups.items()
+    ]
+    assert [
+        [bot.id for bot in group] for group in bots_by_sync_group(bots, "pair")
+    ] == [
+        [2, 5],
+        [1, 3],
+    ]

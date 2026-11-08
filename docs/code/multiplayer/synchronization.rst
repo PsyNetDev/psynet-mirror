@@ -140,7 +140,9 @@ Regrouping
 A participant can be in groups of different ``group_type`` at the same time,
 but in only one group of each type. To regroup participants, close the group
 with a :class:`~psynet.sync.GroupCloser` and place another grouper with the
-same ``group_type``. The ``simple_sync_group`` demo forms groups of three,
+same ``group_type``. A ``GroupCloser`` is a group barrier, so members wait
+there for each other; the end of the timeline needs none, because a group
+whose members have all finished closes by itself. The ``simple_sync_group`` demo forms groups of three,
 then groups of two, and assigns roles at a barrier each time:
 
 .. literalinclude:: ../../../demos/experiments/simple_sync_group/experiment.py
@@ -265,8 +267,8 @@ barrier ``on_release_data``, a dictionary that the callback reads as
 
 ``on_release`` runs only when the barrier releases the group. A member who
 leaves the group before then, or whose group is dissolved, doesn't get
-the results it would have stored, so read them with a default, as in
-``participant.var.get("score", None)``. If the group dissolves while some
+the results it would have stored, so read them with
+``participant.var.get("score")``, which returns ``None`` when it isn't set. If the group dissolves while some
 members are waiting at the barrier, ``on_dissolve`` runs for them instead,
 before they leave the group, with the same arguments except ``leader``.
 ``participants`` are then the members waiting at the barrier, so a quiz can
@@ -278,6 +280,12 @@ still score the last question for those who answered it:
                  on_release=score_question,
                  on_dissolve=score_question,
                  on_release_data={"question": 3})
+
+Members who are still on an earlier page, such as the question itself, when
+the group dissolves get neither callback: they pass the barrier without
+waiting. If they need a result too, give them one in a step after the
+barrier, for example when
+``participant.sync_group_removal_reason("team") == "group_dissolved"``.
 
 The barrier ``id_`` identifies one waiting point. Barriers with the same ID
 share a waiting pool, so give barriers with different ``on_release``
@@ -577,7 +585,8 @@ the maximum waiting time:
     next); at a grouper, where they have no group yet,
     ``"continue_without_group"`` lets them carry on without one, telling them
     "We couldn't find a partner for you in time. Please continue." (or "We
-    couldn't form a group for you in time." for larger groups). Either way it is
+    couldn't form a group for you in time. Please continue." for larger
+    groups). Either way it is
     the member who waited who leaves; to go on without slow members, use
     ``late_after`` instead.
     This also applies to a participant who closed the page while waiting,
@@ -684,8 +693,9 @@ Two separate settings decide what happens when someone leaves a group:
     accepting newcomers at its next barrier, as below. If every member leaves, the group closes at
     the next periodic sync-group check (every few seconds), and later
     arrivals form a new one. Once a newcomer could no longer catch up, for
-    example after the first round, call ``group.stop_top_ups()``, typically
-    in a barrier's ``on_release``; from then on the group is treated as one
+    example after the first round, pass ``stop_top_ups=True`` to the
+    :class:`~psynet.sync.GroupBarrier` it passes then (or call
+    ``group.stop_top_ups()``); from then on the group is treated as one
     without top-ups.
   - Otherwise the group is dissolved at once, and the grouper's
     ``below_quorum`` decides for each remaining member: ``"fail"`` (default)
@@ -759,16 +769,13 @@ waiting for a newcomer who may never come:
 
 .. code-block:: python
 
-    def start_game(group):
-        group.stop_top_ups()
-
     SimpleGrouper(
         group_type="team",
         # ... as above, and:
         join_existing_groups=True,
         top_up_wait=30,
     )
-    GroupBarrier(id_="game_starts", group_type="team", on_release=start_game)
+    GroupBarrier(id_="game_starts", group_type="team", stop_top_ups=True)
 
 ``late_after`` counts from the previous barrier pass, so make it cover any
 untimed pages between the two barriers as well.
@@ -796,8 +803,13 @@ that group type, as if they had left a group. A notice on their progress bar
 tells them why. A member removed for being
 late sees "Your group went on without you. Please
 continue." on the page they are on, until they leave it, even if their
-leaving dissolved the group. Whatever they submit there is saved,
-though the group has moved on. An answer to a timed page usually arrives
+leaving dissolved the group. The notices count the group as it was when they
+left it: if only one other member was left by then, for example in a group
+of three that had already lost someone, they read "Your partner went on
+without you. Please continue." instead. Whatever they submit there is saved,
+though the group has moved on, including into a participant variable
+through ``save_answer``; only the response's ``too_late_for_group`` (see
+below) marks it as late. An answer to a timed page usually arrives
 after its time limit by then, so it is saved as ``None``. In other cases, such as when their group was
 dissolved under them or they waited too long, the notice appears on their next page.
 
@@ -810,7 +822,8 @@ For the rest of the timeline:
 - :class:`~psynet.sync.GroupBarrier`\ s of that group type let them straight
   through. Pages between the barriers are still shown, so wrap the steps of
   a round in :func:`~psynet.sync.only_in_group`, which skips each step once
-  the participant is out of the group:
+  the participant is out of the group. Its ``otherwise=`` runs for them
+  afterwards instead, for example to answer the rest of a question alone:
 
   .. code-block:: python
 
@@ -835,8 +848,9 @@ For the rest of the timeline:
   :class:`~psynet.chatroom.ChatRoom` whose ``room_id`` comes from the group
   needs another room, or none, then.
 - ``participant.sync_group_removal_reason("pair")`` says why they left:
-  ``"late"``, ``"waited_too_long"``, ``"group_dissolved"`` or
-  ``"left_experiment"`` (they failed or returned the study).
+  ``"late"``, ``"waited_too_long"``, ``"no_group_formed"`` (a grouper found
+  them no group in time), ``"group_dissolved"``, ``"moved_on"``,
+  ``"finished"`` or ``"left_experiment"`` (they failed or returned the study).
 - An answer submitted on the page where a member was removed for being late
   has ``response.too_late_for_group`` set, so analysis can leave it out.
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only

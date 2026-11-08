@@ -8,11 +8,11 @@ both cases and is told why on their next page.
 """
 
 import psynet.experiment
-from psynet.bot import BotDriver, advance_past_wait_pages
+from psynet.bot import BotDriver, advance_past_wait_pages, run_bots_to_completion
 from psynet.consent import MainConsent
 from psynet.page import InfoPage
 from psynet.sync import GroupBarrier, SimpleGrouper, only_in_group
-from psynet.timeline import Timeline, conditional
+from psynet.timeline import Timeline
 
 LATE_AFTER = 5
 
@@ -41,11 +41,10 @@ class Exp(psynet.experiment.Experiment):
             on_release=_finish_round_1,
             on_dissolve=_finish_round_1,
         ),
-        conditional(
-            "still_paired",
-            lambda participant: participant.in_sync_group("pair"),
+        only_in_group(
+            "pair",
             InfoPage("Round 2 with your partner.", time_estimate=5),
-            InfoPage("Round 2 on your own.", time_estimate=5),
+            otherwise=InfoPage("Round 2 on your own.", time_estimate=5),
         ),
         GroupBarrier(id_="round_2", group_type="pair"),
         only_in_group(
@@ -64,6 +63,9 @@ class Exp(psynet.experiment.Experiment):
 
         # silent never answers round 1; on_time waits for them at the barrier.
         on_time.take_page()
+        assert on_time.current_page_text.startswith("Waiting for"), (
+            on_time.current_page_text
+        )
         assert silent.current_notice == "Your partner is ready."
 
         quitter.drop_out()
@@ -103,12 +105,13 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages([survivor])
         self._assert_carries_on_alone(survivor)
 
-        for bot in [stayer, on_time, silent, survivor]:
+        carried_on = [stayer, on_time, silent, survivor]
+        for bot in carried_on:
             bot.take_page()
             advance_past_wait_pages([bot])
             assert bot.current_page_text == "Done."
-            bot.run_to_completion()
-            assert not bot.failed
+        run_bots_to_completion(carried_on)
+        assert not any(bot.failed for bot in carried_on)
 
     @staticmethod
     def _assert_carries_on_alone(bot):

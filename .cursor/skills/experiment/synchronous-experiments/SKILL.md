@@ -70,9 +70,12 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   To share one callback between barriers, pass each `on_release_data={...}` and
   read `barrier.on_release_data` instead of parsing `barrier.id`. `on_release` doesn't run
   for members who left before the release or whose group dissolved, so read
-  what it stores with a default: `participant.var.get("score", None)`. Pass
-  the same function as `on_dissolve` too when members waiting at the barrier
-  as the group dissolves should still get their result.
+  what it stores with `participant.var.get("score")`, which returns `None`
+  when it isn't set. Pass the same function as `on_dissolve` too when members
+  waiting at the barrier as the group dissolves should still get their
+  result; members still on an earlier page then get neither callback, so
+  check `participant.sync_group_removal_reason(...)` in a step after the
+  barrier if they need a result too.
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Use `sync_group_type` on trial makers when all group members should follow the
@@ -108,9 +111,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `SimpleGrouper(start_short_after=..., start_short_with=...)`. Add
   `join_existing_groups=True` to let latecomers fill it up, at the cost that a
   group below its `quorum` then waits for a replacement instead of playing on.
-  Call `group.stop_top_ups()` (for example in the first barrier's
-  `on_release`) once newcomers can no longer catch up; `below_quorum` then
-  applies. Pass `top_up_wait=seconds` too, so a group that falls below its
+  Pass `stop_top_ups=True` to the `GroupBarrier` after which newcomers can
+  no longer catch up, such as the one that starts the game; `below_quorum`
+  then applies. Pass `top_up_wait=seconds` too, so a group that falls below its
   quorum before then doesn't wait for a newcomer for ever. To let participants who find no group carry on alone instead of
   being failed, pass the grouper `max_wait_action="continue_without_group"`.
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
@@ -119,7 +122,12 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `conditional("paired", in_pair, paired_trials, solo_trials)`. Wrap the
   steps of a round in `only_in_group(group_type, step, ...)` so a participant
   who loses their group partway skips the rest, instead of a `conditional`
-  per page.
+  per page; pass `otherwise=` for what they, and anyone who never had a
+  group, do instead, such as answering the rest of the question alone.
+  In a `Regrouper` game the player whose partner left stays in the pair, so
+  they play the round out and see its outcome, as in `ultimatum_pairing`;
+  only the player removed for being late is out of the pair, and gets their
+  own page there.
 - With `join_existing_groups=True`, also pass a task-specific `join_criterion`
   when a group can become unsuitable for newcomers in ways `stop_top_ups()`
   doesn't cover, for example a chain that is nearly finished.
@@ -275,18 +283,30 @@ were on time, fix the settings rather than the test.
 - Post chat messages with `bot.send_chat_message("...")`.
 - With several groups in one test, finish one group's story before driving
   the next: the `late_after` clock keeps running for a group while the test
-  drives another.
+  drives another, and a group still accepting top-ups takes the next bot
+  that reaches the grouper.
 - A `Regrouper` never dissolves its groups, so the partner of a bot that drops
   out sees the round's outcome, not a removal notice. Drop the bot out before
-  the next split.
+  the next split. Find who plays with whom with
+  `bots_by_sync_group(bots, "pair")`, and finish bots that are still being
+  re-paired with `run_bots_to_completion(bots)`, not `run_to_completion` on
+  one bot at a time, which waits for partners who never move.
 - A member removed for being late sees "went on without you" only on the page
   they were on; assert `current_notice` before that bot takes the page.
+- Notices name a partner when one other member was left, and the group
+  otherwise: "Your group went on without you. Please continue.", "Too few
+  members of your group remained. Please continue." (dissolved, larger
+  groups) and "We couldn't form a group for you in time. Please continue."
+  (grouper, larger groups).
 - Pytest doesn't show the compared values of a failed `assert` in
   `experiment.py`, so add a message: `assert text == "Round 2.", text`.
 
 ## Common failures
 
-- Make sure to close groups with `GroupCloser`.
+- Close a group with `GroupCloser` before a later grouper of the same
+  `group_type` forms new groups. It is a `GroupBarrier`, so members wait there
+  for each other; one isn't needed at the end of the timeline, because a group
+  whose members have all finished closes by itself.
 - Do not leave default wait limits in place for real recruitment sessions
   without checking whether they are appropriate.
 - Do not assume top-ups are safe; define exactly which groups may accept late

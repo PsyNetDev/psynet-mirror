@@ -732,7 +732,7 @@ def test_simple_grouper_groups_on_last_arrival(in_experiment_directory, db_sessi
 def test_grouper_leftover_waiter_joins_an_open_group(
     in_experiment_directory, db_session, stop_top_ups
 ):
-    """A waiter left over from a burst joins the group formed without them, unless it stopped top-ups."""
+    """A waiter left over from a burst joins the group formed without them, unless a barrier stopped top-ups."""
     exp = get_experiment()
     grouper = SimpleGrouper(
         group_type="quorum",
@@ -746,8 +746,13 @@ def test_grouper_leftover_waiter_joins_an_open_group(
     _commit_barrier_arrivals()
     leftover = next(p for p in participants if p.sync_group is None)
     if stop_top_ups:
-        next(p for p in participants if p is not leftover).sync_group.stop_top_ups()
-        db_session.commit()
+        game_starts = GroupBarrier(
+            id_="game_starts", group_type="quorum", stop_top_ups=True
+        )
+        for participant in participants:
+            if participant is not leftover:
+                _arrive_at_group_barrier(exp, game_starts, participant)
+        _commit_barrier_arrivals()
 
     check_barriers()
 
@@ -7388,7 +7393,7 @@ def test_grouper_lets_an_ungrouped_participant_carry_on(
 
     assert not participant.failed
     assert not participant.in_sync_group("pair")
-    assert participant.sync_group_removal_reason("pair") == "waited_too_long"
+    assert participant.sync_group_removal_reason("pair") == "no_group_formed"
     InfoPage("Next").consume(exp, participant)
     assert _removed_from_group_notice(participant) == (
         "We couldn't find a partner for you in time. Please continue."

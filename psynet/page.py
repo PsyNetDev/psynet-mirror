@@ -26,7 +26,13 @@ from .timeline import (
     join,
     while_loop,
 )
-from .utils import call_function, call_function_with_context, get_logger, get_translator
+from .utils import (
+    as_plain_text,
+    call_function,
+    call_function_with_context,
+    get_logger,
+    get_translator,
+)
 
 logger = get_logger()
 # Other packages' deprecation warnings are for their maintainers; PsyNet's,
@@ -246,6 +252,10 @@ class WaitPage(Page):
 
     def metadata(self, **kwargs):
         return {"wait_time": self.wait_time}
+
+    @property
+    def plain_text(self):
+        return as_plain_text(self.content)
 
     def get_bot_response(self, experiment, bot):
         return None

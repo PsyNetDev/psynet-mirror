@@ -1653,6 +1653,12 @@ class GroupBarrier(Barrier):
         the members waiting here, and ``barrier`` can read ``on_release_data``.
         The same serialization rules apply.
 
+    stop_top_ups
+        If ``True``, the group stops accepting newcomers once it passes this
+        barrier, as :meth:`SimpleSyncGroup.stop_top_ups` does, for example at
+        the barrier that starts a game a latecomer couldn't catch up with.
+        Only affects groups formed with ``join_existing_groups=True``.
+
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
         holds credit actual visible waiting time up to ``max_wait_time``.
@@ -1740,6 +1746,7 @@ class GroupBarrier(Barrier):
         waiting_screen=None,
         on_release_data: Optional[dict] = None,
         on_dissolve: Optional[Callable] = None,
+        stop_top_ups: bool = False,
     ):
         _validate_group_timeouts(max_wait_action, late_after, late_action)
         max_wait_time = _group_max_wait_time(max_wait_time, late_after, default=20)
@@ -1763,6 +1770,7 @@ class GroupBarrier(Barrier):
         self.late_action = late_action
         self.on_release_data = {} if on_release_data is None else dict(on_release_data)
         self.on_dissolve = on_dissolve
+        self.stop_top_ups = bool(stop_top_ups)
 
     def resolve(self):
         group_type = self.group_type
@@ -1920,6 +1928,8 @@ class GroupBarrier(Barrier):
                 group.last_barrier_pass_time = timenow()
                 for link in group.participant_links:
                     link.page_deadline = None
+                if self.stop_top_ups and hasattr(group, "stop_top_ups"):
+                    group.stop_top_ups()
 
                 if self.on_release:
                     try:
@@ -2160,7 +2170,7 @@ class Grouper(Barrier):
         time. Please continue." (or "...a group for you..."). Later barriers and synchronized trial makers of
         this group type treat them as having left a group (see :ref:`sync-leaving-a-group`), and
         :meth:`~psynet.participant.Participant.sync_group_removal_reason` returns
-        ``"waited_too_long"``. Branch on ``participant.in_sync_group(group_type)`` to give them
+        ``"no_group_formed"``. Branch on ``participant.in_sync_group(group_type)`` to give them
         something else to do or to end the experiment.
 
     expected_wait
@@ -3687,7 +3697,7 @@ class _RegroupHistory(NamedTuple):
     role_counts: Dict[int, Dict[str, int]]
 
 
-def only_in_group(group_type: str, *steps):
+def only_in_group(group_type: str, *steps, otherwise=None):
     """Run each of ``steps`` only while the participant is in a group of ``group_type``.
 
     The group is checked before each step, so a participant who leaves the
@@ -3702,6 +3712,12 @@ def only_in_group(group_type: str, *steps):
         The group type to check, as in ``participant.in_sync_group(group_type)``.
     steps
         Timeline elements or lists of elements, each one step.
+    otherwise
+        Optional timeline elements to run after the steps for a participant
+        who is not in a group of ``group_type`` by then: one who left partway,
+        and one who was never in such a group. A participant who left partway
+        may have answered some of the steps already, so check what they still
+        need, for example with ``participant.var.get(...)``.
 
     Examples
     --------
@@ -3714,18 +3730,45 @@ def only_in_group(group_type: str, *steps):
             GroupBarrier(id_="chat_done", group_type="pair"),
             PageMaker(outcome_page, time_estimate=10),
         )
+
+    One question of a group estimation game, which a participant without a
+    group answers alone::
+
+        only_in_group(
+            "team",
+            estimate_page(question),
+            GroupBarrier(id_=f"estimates_{question}", group_type="team",
+                         on_release=share_median),
+            revised_estimate_page(question),
+            otherwise=PageMaker(
+                lambda participant: (
+                    estimate_page(question)
+                    if participant.var.get(f"estimate_{question}") is None
+                    else InfoPage("Your group has ended. Let's move on.")
+                ),
+                time_estimate=10,
+            ),
+        )
     """
-    return join(
-        *(
+    group_steps = [
+        conditional(
+            f"only_in_group:{group_type}",
+            lambda participant: participant.in_sync_group(group_type),
+            step,
+            log_chosen_branch=False,
+        )
+        for step in steps
+    ]
+    if otherwise is not None:
+        group_steps.append(
             conditional(
-                f"only_in_group:{group_type}",
-                lambda participant: participant.in_sync_group(group_type),
-                step,
+                f"only_in_group:{group_type}:otherwise",
+                lambda participant: not participant.in_sync_group(group_type),
+                otherwise,
                 log_chosen_branch=False,
             )
-            for step in steps
         )
-    )
+    return join(*group_steps)
 
 
 def warn_if_late_removal_fails_group(barriers):
@@ -4105,13 +4148,11 @@ class SimpleSyncGroup(SyncGroup):
         the game has started and a newcomer couldn't catch up. From then on a
         group below its quorum is dissolved like any group without top-ups,
         and the grouper's ``below_quorum`` decides for its members; a group
-        already below its quorum is dissolved now. Call it from a barrier's
-        ``on_release``, which receives the group::
+        already below its quorum is dissolved now. To stop top-ups when the
+        group passes a barrier, pass ``stop_top_ups=True`` to that
+        :class:`GroupBarrier`::
 
-            def start_game(group):
-                group.stop_top_ups()
-
-            GroupBarrier(id_="game_starts", group_type="team", on_release=start_game)
+            GroupBarrier(id_="game_starts", group_type="team", stop_top_ups=True)
         """
         if not self.accepts_top_ups:
             return

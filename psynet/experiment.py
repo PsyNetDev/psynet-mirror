@@ -180,6 +180,7 @@ from .trial.record import (  # noqa -- this is to make sure the SQLAlchemy class
 )
 from .utils import (
     NoArgumentProvided,
+    as_plain_text,
     call_function,
     call_function_with_context,
     disable_logger,
@@ -6719,15 +6720,18 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not isinstance(bot_response, BotResponse):
                 bot_response = BotResponse(answer=bot_response)
 
-            shown_page = current_page
+            text = current_page.plain_text
             if _is_timeline_hold(current_page):
-                shown_page = (
-                    current_page.waiting_screen_page(participant) or current_page
+                waiting_screen = current_page.waiting_screen_page(participant)
+                text = (
+                    waiting_screen.plain_text
+                    if waiting_screen is not None
+                    else as_plain_text(current_page.overlay_html(participant))
                 )
             status["page"] = {
                 "id": current_page.id,
                 "label": current_page.label,
-                "text": shown_page.plain_text,
+                "text": text,
                 "time_estimate": current_page.time_estimate,
                 "min_duration": current_page.min_duration,
                 "is_timeline_hold": _is_timeline_hold(current_page),
@@ -6737,6 +6741,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             }
             if _is_timeline_hold(current_page):
                 status["page"]["check_interval"] = current_page.check_interval
+                status["page"]["can_resume"] = current_page.is_ready_to_resume(
+                    experiment, participant
+                )
         else:
             bot_response = None
         status["page_uuid"] = participant.page_uuid

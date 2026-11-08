@@ -227,10 +227,19 @@ Other helpers ask about a bot's group or act in it:
 - :meth:`~psynet.participant.ParticipantDriver.run_out_of_time` waits until
   the time limit of the bot's current page has passed and submits no answer,
   as a participant who leaves a timed page open does.
+- :func:`~psynet.bot.bots_by_sync_group` sorts bots into their current groups
+  of a type, for example ``for first, second in bots_by_sync_group(bots,
+  "pair")``, since a grouper can pair them in any order.
+- :func:`~psynet.bot.run_bots_to_completion` takes pages for several bots in
+  turn until all have finished. Use it instead of ``run_to_completion`` on
+  each bot while they still wait for each other, as players a
+  :class:`~psynet.sync.Regrouper` keeps pairing do: one bot run to the end
+  alone would wait at the next barrier for the others.
 
 When several groups play in one test, finish one group's story before driving
 the next: a barrier's ``late_after`` clock keeps running for a group while the
-test drives another. A :class:`~psynet.sync.Regrouper` forms new groups at each
+test drives another, and a group still accepting top-ups takes the next bot
+that reaches the grouper. A :class:`~psynet.sync.Regrouper` forms new groups at each
 split and never dissolves them, so make a bot drop out before the split you
 want it to miss.
 

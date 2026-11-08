@@ -65,8 +65,10 @@ assignments in lambdas:
     participant.var.color = "red"
     CodeBlock(lambda participant: participant.var.set("color", "red"))
 
-Use ``participant.var.get("score", default=0)`` when a variable may not be
-set yet.
+Use ``participant.var.get("score")`` when a variable may not be set yet: like
+``dict.get``, it returns ``None``, or the default you pass, as in
+``participant.var.get("score", default=0)``. Attribute access, as in
+``participant.var.score``, raises ``KeyError`` for a variable that isn't set.
 
 A page's answer is stored in a variable when the page is given
 ``save_answer``. In the demo above, the first page saves its answer as

@@ -1,1 +1,1 @@
-Added `psynet.sync.only_in_group(group_type, *steps)`, which skips the remaining steps of a round once a participant is no longer in their group, instead of a `conditional` before every page.
+Added `psynet.sync.only_in_group(group_type, *steps)`, which skips the remaining steps of a round once a participant is no longer in their group, instead of a `conditional` before every page. Its `otherwise=` runs instead for participants who are not in the group by the end, for example to answer the rest of a question alone.
