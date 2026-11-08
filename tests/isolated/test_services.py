@@ -477,6 +477,36 @@ def test_leftover_volume_does_not_look_like_a_container(monkeypatch):
     assert ["docker", "run", "-d", "redis"] in commands
 
 
+def test_postgres_service_matches_dallingers(monkeypatch):
+    """PsyNet starts Dallinger's Postgres service and replaces an older one."""
+    from dallinger.docker import postgres
+
+    from psynet import services
+
+    assert services._POSTGRES_CONTAINER == postgres.LOCAL_POSTGRES_CONTAINER
+    assert services._POSTGRES_IMAGE == postgres.POSTGRES_IMAGE
+    assert services._POSTGRES_VOLUME == postgres.LOCAL_POSTGRES_VOLUME
+    assert services._POSTGRES_DATA_PATH == postgres.data_mount_path(
+        postgres.POSTGRES_MAJOR
+    )
+
+    commands = []
+
+    def fake_run(args, **kwargs):
+        commands.append(args)
+        image = "{{.Config.Image}}" in args
+        return Mock(returncode=0, stdout="postgres:12" if image else "", stderr="")
+
+    monkeypatch.setattr("psynet.services.subprocess.run", fake_run)
+    monkeypatch.setattr("psynet.services._docker_container_exists", lambda name: False)
+    services._ensure_docker_container(
+        "dallinger_postgres", ["run", "postgres"], image=services._POSTGRES_IMAGE
+    )
+
+    assert ["docker", "rm", "--force", "dallinger_postgres"] in commands
+    assert commands[-1] == ["docker", "run", "postgres"]
+
+
 @pytest.mark.parametrize(
     "launch",
     [

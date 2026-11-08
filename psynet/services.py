@@ -36,7 +36,13 @@ from urllib.parse import parse_qs, unquote, urlparse
 import click
 
 _REDIS_CONTAINER = "dallinger_redis"
+# The same service as Dallinger's `dallinger docker start-services`. These copy
+# dallinger.docker.postgres, which this bootstrap module can't import because
+# Dallinger is not a core dependency; a test keeps them equal.
 _POSTGRES_CONTAINER = "dallinger_postgres"
+_POSTGRES_IMAGE = "postgres:18-trixie"
+_POSTGRES_VOLUME = "dallinger_postgres18"
+_POSTGRES_DATA_PATH = "/var/lib/postgresql"
 _READY_WAIT_SECONDS = 30
 _READY_POLL_INTERVAL_SECONDS = 0.5
 #: Set for a command that a parent process re-runs after checking the services
@@ -401,8 +407,34 @@ def _run_docker(args: list[str], *, description: str) -> None:
         raise click.ClickException(f"Failed to {description}.{suffix}") from exc
 
 
-def _ensure_docker_container(name: str, run_args: list[str]) -> None:
-    """Start an existing container or create it with ``run_args``."""
+def _remove_container_with_other_image(name: str, image: str) -> None:
+    """Remove container ``name`` if it runs another image, keeping its volumes."""
+    result = subprocess.run(
+        ["docker", "container", "inspect", "-f", "{{.Config.Image}}", name],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    current = result.stdout.strip()
+    if result.returncode != 0 or current in ("", image):
+        return
+    click.echo(
+        f"  Replacing container {name}, which runs {current}, with {image}. "
+        "Its data stays in its old volume; remove that volume with "
+        "'docker volume rm' once you no longer need it."
+    )
+    _run_docker(["rm", "--force", name], description=f"remove Docker container {name}")
+
+
+def _ensure_docker_container(
+    name: str, run_args: list[str], *, image: str | None = None
+) -> None:
+    """Start an existing container or create it with ``run_args``.
+
+    With ``image``, an existing container that runs another image is replaced.
+    """
+    if image:
+        _remove_container_with_other_image(name, image)
     if _docker_container_running(name):
         click.echo(f"  {name}: already running")
         return
@@ -457,13 +489,14 @@ def start_local_services_via_docker() -> None:
             "-e",
             "POSTGRES_DB=dallinger",
             "-v",
-            "dallinger_postgres:/var/lib/postgresql/data",
-            "postgres:12",
+            f"{_POSTGRES_VOLUME}:{_POSTGRES_DATA_PATH}",
+            _POSTGRES_IMAGE,
             # Matches Dallinger's Docker PostgreSQL: JIT slows experiments' short queries.
             "postgres",
             "-c",
             "jit=off",
         ],
+        image=_POSTGRES_IMAGE,
     )
 
 

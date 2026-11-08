@@ -41,6 +41,15 @@ else
 fi
 
 echo "Confirming that dallinger_postgres is running..."
+# Matches psynet/services.py; PostgreSQL 18 can't open the old container's
+# dallinger_postgres volume, so that container is replaced and the volume kept.
+postgres_image=postgres:18-trixie
+current_image="$(docker container inspect -f '{{.Config.Image}}' dallinger_postgres 2>/dev/null || true)"
+if [[ -n "$current_image" && "$current_image" != "$postgres_image" ]]
+then
+  echo "...replacing it, because it runs $current_image."
+  docker rm --force dallinger_postgres
+fi
 docker start dallinger_postgres || true
 if [[ "$(docker ps | grep dallinger_postgres)" = "" ]]
 then
@@ -49,8 +58,8 @@ then
   -e POSTGRES_USER=dallinger \
   -e POSTGRES_PASSWORD=dallinger \
   -e POSTGRES_DB=dallinger \
-  -v dallinger_postgres:/var/lib/postgresql/data \
-  postgres:12 postgres -c jit=off
+  -v dallinger_postgres18:/var/lib/postgresql \
+  "$postgres_image" postgres -c jit=off
 else
   echo "...yes."
 fi
