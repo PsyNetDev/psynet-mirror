@@ -222,6 +222,11 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     # group=None, as trial.sync_group is after a removal, shows no group
     # even if the participant is in one.
     assert GroupPrompt("Hi", group=None, participant=early).group_html == ""
+    # Bots read the note with the text, but only while it is shown.
+    assert GroupPrompt("Hi", participant=early, note="Score: 3").plain_text == (
+        "Hi Score: 3"
+    )
+    assert GroupPrompt("Hi", group=None, participant=early, note="3").plain_text == "Hi"
     with pytest.raises(ValueError, match="not both"):
         GroupPrompt("Hi", group=None, group_type="room", participant=early)
 

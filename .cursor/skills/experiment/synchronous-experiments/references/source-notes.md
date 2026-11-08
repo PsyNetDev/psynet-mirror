@@ -33,8 +33,8 @@ and platform docs when a study is near deployment.
 - `psynet.sync.GroupCloser` closes a group before participants are regrouped
   with the same `group_type`.
 - `participant.sync_group` is convenient when the participant has one active
-  group. Use `participant.active_sync_groups[group_type]` when multiple group
-  namespaces may be active.
+  group. Use `participant.active_sync_groups.get(group_type)` when multiple
+  group namespaces may be active; it is `None` once the participant has left.
 - Trial makers support `sync_group_type`. When it is set, the leader's ordinary
   node allocation drives the group and followers receive matching trials.
 - Trial-maker synchronization uses internal `GroupBarrier`s namespaced with

@@ -1,0 +1,1 @@
+Added `remove_participant(participant, reason="finished")` for members who leave a group after playing their part, such as players leaving a cohort after their last round. Their leaving doesn't dissolve the group below its quorum, so the last players are no longer told that too few members remained, and a `GroupPrompt` shows them as "(finished)".

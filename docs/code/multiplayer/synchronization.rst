@@ -120,6 +120,14 @@ group matching the trial maker's ``sync_group_type``. Elsewhere, use
 ``participant.in_sync_group(group_type)`` tells whether they are still in a
 group of that type.
 
+A :class:`~psynet.timeline.PageMaker` builds its page again when the
+participant submits it, and by then they may have left their group. Read
+the group with ``participant.active_sync_groups.get(group_type)``, which
+returns ``None`` once they have left, rather than indexing it, which raises
+a ``KeyError``, and build the page without the group in that case. To keep
+using a value from the group, such as a chat room ID, store it in a
+participant variable when the page is first built.
+
 ``sync_group.participants`` is a read-only list of the group's members; change
 membership with ``sync_group.add_participant(participant)`` and
 ``sync_group.remove_participant(participant)``. The list has no guaranteed
@@ -179,7 +187,9 @@ the round on their own.
 
 By default, those who have played the most rounds sit out when not
 everyone fits, players are kept apart from last round's partners where
-possible, and roles alternate. The regrouper counts each participant's
+possible, and roles alternate. With ``avoid_repeats="all_rounds"`` they are
+kept apart from everyone they have played with before, so that a cohort of
+four meets each partner once in three rounds of pairs. The regrouper counts each participant's
 rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
 :meth:`~psynet.sync.Regrouper.rounds_sat_out`,
 :meth:`~psynet.sync.Regrouper.sat_out` (for the latest round) and, with
@@ -256,7 +266,18 @@ barrier ``on_release_data``, a dictionary that the callback reads as
 ``on_release`` runs only when the barrier releases the group. A member who
 leaves the group before then, or whose group is dissolved, doesn't get
 the results it would have stored, so read them with a default, as in
-``participant.var.get("score", None)``.
+``participant.var.get("score", None)``. If the group dissolves while some
+members are waiting at the barrier, ``on_dissolve`` runs for them instead,
+before they leave the group, with the same arguments except ``leader``.
+``participants`` are then the members waiting at the barrier, so a quiz can
+still score the last question for those who answered it:
+
+.. code-block:: python
+
+    GroupBarrier(id_="question_3", group_type="team",
+                 on_release=score_question,
+                 on_dissolve=score_question,
+                 on_release_data={"question": 3})
 
 The barrier ``id_`` identifies one waiting point. Barriers with the same ID
 share a waiting pool, so give barriers with different ``on_release``
@@ -658,7 +679,9 @@ Two separate settings decide what happens when someone leaves a group:
 
   - While it accepts newcomers (``join_existing_groups=True``), the group's
     next barrier waits for new members to join, without a time limit if the
-    barrier sets ``late_after``. If every member leaves, the group closes at
+    barrier sets ``late_after``. The grouper's ``top_up_wait=seconds`` limits
+    that wait: once the group has been below its quorum that long, it stops
+    accepting newcomers at its next barrier, as below. If every member leaves, the group closes at
     the next periodic sync-group check (every few seconds), and later
     arrivals form a new one. Once a newcomer could no longer catch up, for
     example after the first round, call ``group.stop_top_ups()``, typically
@@ -730,13 +753,21 @@ options:
 The grouper leaves out ``join_existing_groups``: a group that accepts
 top-ups waits for replacements when it drops below its ``quorum``
 instead of carrying on. To accept replacements only at the start, pass
-``join_existing_groups=True`` and stop top-ups once the game starts:
+``join_existing_groups=True`` and stop top-ups once the game starts.
+``top_up_wait`` keeps a group that falls below its quorum before then from
+waiting for a newcomer who may never come:
 
 .. code-block:: python
 
     def start_game(group):
         group.stop_top_ups()
 
+    SimpleGrouper(
+        group_type="team",
+        # ... as above, and:
+        join_existing_groups=True,
+        top_up_wait=30,
+    )
     GroupBarrier(id_="game_starts", group_type="team", on_release=start_game)
 
 ``late_after`` counts from the previous barrier pass, so make it cover any
@@ -763,15 +794,32 @@ A participant whose grouper let them continue without a group
 (``max_wait_action="continue_without_group"``) is treated the same way for
 that group type, as if they had left a group. A notice on their progress bar
 tells them why. A member removed for being
-late while the group carries on sees "Your group went on without you. Please
-continue." on the page they are on, until they leave it; whatever they submit there is saved,
-though the group has moved on. In other cases, such as when their group was
-dissolved or they waited too long, the notice appears on their next page.
+late sees "Your group went on without you. Please
+continue." on the page they are on, until they leave it, even if their
+leaving dissolved the group. Whatever they submit there is saved,
+though the group has moved on. An answer to a timed page usually arrives
+after its time limit by then, so it is saved as ``None``. In other cases, such as when their group was
+dissolved under them or they waited too long, the notice appears on their next page.
+
+The members who carry on get no notice when someone leaves. A
+:class:`~psynet.group_prompt.GroupPrompt` marks the member who left, for
+example "(dropped out)", and the barriers stop waiting for them.
 
 For the rest of the timeline:
 
 - :class:`~psynet.sync.GroupBarrier`\ s of that group type let them straight
-  through.
+  through. Pages between the barriers are still shown, so wrap the steps of
+  a round in :func:`~psynet.sync.only_in_group`, which skips each step once
+  the participant is out of the group:
+
+  .. code-block:: python
+
+      only_in_group(
+          "pair",
+          PageMaker(chat_page, time_estimate=60),
+          GroupBarrier(id_="chat_done", group_type="pair"),
+          PageMaker(outcome_page, time_estimate=10),
+      )
 - Trial makers synchronized on that group type give them no more trials.
   A member who leaves before finishing any trial of such a trial maker,
   including one who is out of the group when it starts, skips the rest of

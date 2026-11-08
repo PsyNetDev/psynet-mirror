@@ -1,0 +1,1 @@
+Added `SimpleGrouper(top_up_wait=...)`, which limits how long a group that accepts newcomers waits for one after falling below its quorum. Then it stops accepting newcomers and `below_quorum` applies, so the members left are no longer stuck waiting if recruitment has stopped.

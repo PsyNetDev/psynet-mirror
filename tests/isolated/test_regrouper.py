@@ -105,6 +105,25 @@ def test_regrouper_pairs_within_cohorts_and_does_not_wait_for_absent_members(
 
 
 @in_consents_experiment
+def test_regrouper_can_avoid_everyone_met_before(in_experiment_directory, db_session):
+    exp = get_experiment()
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=4)
+    pairs = Regrouper("pair", within="cohort", group_size=2, avoid_repeats="all_rounds")
+    cohort = _working_participants(exp, 4)
+    _arrive(exp, cohort_grouper, cohort)
+
+    met = set()
+    for _ in range(3):
+        _arrive(exp, pairs, cohort)
+        met |= {
+            frozenset(p.id for p in member.active_sync_groups["pair"].participants)
+            for member in cohort
+        }
+    # Three rounds of pairs meet all six partnerships of a cohort of four.
+    assert len(met) == 6
+
+
+@in_consents_experiment
 def test_every_regrouper_splits_everyone_waiting_into_balanced_rooms(
     in_experiment_directory, db_session
 ):
@@ -306,8 +325,9 @@ def test_simple_grouper_accepts_callable_max_wait_time_with_start_short_after():
     )
 
 
-def _count_releases(**kwargs):
+def _count_releases(groups, **kwargs):
     _count_releases.calls += 1
+    assert all(group.id is not None for group in groups)
 
 
 @in_consents_experiment

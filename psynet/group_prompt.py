@@ -41,7 +41,7 @@ from markupsafe import Markup
 from .modular_page import Prompt
 from .pseudonym import anonymous_sticker_html
 from .static_resources import package_static_url
-from .utils import get_logger, get_translator
+from .utils import as_plain_text, get_logger, get_translator
 
 logger = get_logger()
 
@@ -294,6 +294,15 @@ class GroupPrompt(Prompt):
         return [package_static_url("psynet", "scripts/group-prompt.js")]
 
     @property
+    def plain_text(self):
+        """The prompt's text followed by its ``note``, which shows only with a group."""
+        text = super().plain_text
+        if self.group is None or not self.note:
+            return text
+        note = as_plain_text(Markup.escape(self.note))
+        return note if not text else f"{text} {note}"
+
+    @property
     def group_html(self) -> Markup:
         """HTML for the group display, or nothing without a group."""
         if self.group is None:
@@ -418,7 +427,11 @@ class GroupPrompt(Prompt):
     def _left_label(self, member, label):
         """Return ``label`` marked with why ``member`` is no longer in the group."""
         _p = get_translator(context=True)
-        if member.failed or member.status != "working":
+        if member.failed:
+            return _p("group prompt", "{NAME} (left)").format(NAME=label)
+        if self._removal_reasons().get(member.id) == "finished":
+            return _p("group prompt", "{NAME} (finished)").format(NAME=label)
+        if member.status != "working":
             return _p("group prompt", "{NAME} (left)").format(NAME=label)
         if self._removal_reasons().get(member.id) == "late":
             return _p("group prompt", "{NAME} (removed)").format(NAME=label)

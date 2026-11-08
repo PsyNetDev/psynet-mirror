@@ -186,7 +186,9 @@ too often, or their cohort is down to one player:
    :pyobject: keep_playing
 
 Players who finish leave the cohort, so that the regrouper doesn't wait for
-them in later rounds:
+them in later rounds. With ``reason="finished"`` their leaving doesn't
+dissolve the cohort below its quorum, so the last players aren't told that
+too few players remained while they finish their own rounds:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: leave_cohort

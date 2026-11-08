@@ -749,7 +749,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         ``max_wait_action="continue_without_group"``), ``"group_dissolved"`` (released
         when the group fell below its quorum, with
         ``below_quorum="continue_without_group"``), ``"moved_on"`` (went on to a new group
-        at a :class:`~psynet.sync.Regrouper`), ``"left_experiment"`` (failed,
+        at a :class:`~psynet.sync.Regrouper`), ``"finished"`` (left after playing
+        their part), ``"left_experiment"`` (failed,
         including returning the study), or ``None`` if no
         reason was recorded, for example after removal from the dashboard.
 
@@ -1876,6 +1877,34 @@ class ParticipantDriver:
                 Participant.query.filter_by(id=self.id).populate_existing().one()
             )
             return function(participant)
+
+    def run_out_of_time(self):
+        """Let the time limit of the bot's current page run out without answering.
+
+        Waits until the page's ``time_limit`` has passed, then submits as the
+        browser does at that moment, so the page saves its ``time_limit_answer``
+        and :attr:`~psynet.timeline.Response.time_limit_reached` is ``True``.
+        The bot is still on time for a barrier's ``late_after``.
+
+        Returns
+        -------
+        bool
+            ``True`` if the participant should continue, ``False`` if finished.
+        """
+        from .bot import BotResponse
+
+        deadline = self.with_participant(lambda participant: participant.page_deadline)
+        if deadline is None:
+            raise ValueError("The bot's current page has no time limit.")
+        self._sleep(max(0.0, (deadline - timenow()).total_seconds()))
+        page = {
+            **self.status["page"],
+            "bot_response": BotResponse(
+                raw_answer=None, metadata={"time_limit_reached": True}
+            ).__json__(),
+        }
+        self._submit_response({**self.status, "page": page}, {})
+        return self.is_working
 
     def send_chat_message(self, content: str):
         """Post ``content`` to the :class:`~psynet.chatroom.ChatRoom` on the bot's current page.

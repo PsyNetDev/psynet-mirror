@@ -224,6 +224,9 @@ Other helpers ask about a bot's group or act in it:
   why it left its pair.
 - :meth:`~psynet.participant.ParticipantDriver.send_chat_message` posts a
   message to the :class:`~psynet.chatroom.ChatRoom` on the bot's current page.
+- :meth:`~psynet.participant.ParticipantDriver.run_out_of_time` waits until
+  the time limit of the bot's current page has passed and submits no answer,
+  as a participant who leaves a timed page open does.
 
 When several groups play in one test, finish one group's story before driving
 the next: a barrier's ``late_after`` clock keeps running for a group while the

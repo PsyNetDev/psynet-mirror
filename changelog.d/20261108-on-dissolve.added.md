@@ -1,0 +1,1 @@
+Added `GroupBarrier(on_dissolve=...)`, called with the members waiting at the barrier when their group dissolves, so that a game can still score the round they finished, for example by passing the same function as `on_release`.

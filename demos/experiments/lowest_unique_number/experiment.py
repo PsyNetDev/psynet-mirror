@@ -26,7 +26,6 @@ the cohorts first and regroup within them::
 See the ``ultimatum_pairing`` demo for a full example.
 """
 
-import time
 from typing import List
 
 import psynet.experiment
@@ -37,7 +36,6 @@ from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.sync import GroupBarrier, Regrouper
 from psynet.timeline import (
-    TIME_LIMIT_GRACE_SECONDS,
     PageMaker,
     Timeline,
     for_loop,
@@ -207,12 +205,10 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         assert [bot.current_page_label for bot in bots] == ["choose"] * 3
 
-        # The third player doesn't choose in time, so their late answer
-        # counts as no choice and they miss the round.
+        # The third player doesn't choose in time, so they miss the round.
         bots[0].take_page(response=1)
         bots[1].take_page(response=2)
-        time.sleep(CHOICE_SECONDS + TIME_LIMIT_GRACE_SECONDS + 1)
-        bots[2].take_page(response=1)
+        bots[2].run_out_of_time()
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         assert "You won with 1!" in bots[0].current_page_text
         assert "The room picked 1, 2." in bots[1].current_page_text

@@ -55,6 +55,10 @@ class InfoPage(ModularPage):
     time_estimate:
         Time estimated for the page.
 
+    label:
+        The page's label, for example to find the page in a bot test with
+        ``bot.current_page_label``. Defaults to ``"info"``.
+
     **kwargs:
         Further arguments to pass to :class:`psynet.modular_page.ModularPage`.
     """
@@ -63,11 +67,12 @@ class InfoPage(ModularPage):
         self,
         content: Union[str, Markup, dom_tag],
         time_estimate: Optional[float] = None,
+        label: str = "info",
         **kwargs,
     ):
         self.content = content
         super().__init__(
-            label="info",
+            label=label,
             prompt=content,
             time_estimate=time_estimate,
             save_answer=False,

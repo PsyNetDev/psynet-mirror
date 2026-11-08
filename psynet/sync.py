@@ -100,6 +100,7 @@ import inspect
 import random
 import time
 import uuid
+from collections import Counter
 from contextlib import contextmanager
 from datetime import timedelta
 from math import ceil, floor
@@ -170,6 +171,7 @@ from psynet.timeline import (
     EltCollection,
     _is_timeline_hold,
     conditional,
+    join,
 )
 from psynet.timeline_hold import (
     HoldMessage,
@@ -1448,7 +1450,8 @@ def _group_barrier_outcome(group, members, waiting_ids):
     peek and the real release share one decision.
     """
     if len(members) < group.min_group_size:
-        return "wait" if group.accepts_top_ups else "dissolve"
+        waits_for_top_ups = group.accepts_top_ups and not _top_up_wait_over(group)
+        return "wait" if waits_for_top_ups else "dissolve"
     if all(participant.id in waiting_ids for participant in members):
         return "release"
     return "wait"
@@ -1495,7 +1498,12 @@ def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
 
 
 RemovalReason = Literal[
-    "left_experiment", "late", "waited_too_long", "group_dissolved", "moved_on"
+    "left_experiment",
+    "late",
+    "waited_too_long",
+    "group_dissolved",
+    "moved_on",
+    "finished",
 ]
 REMOVAL_REASONS = (None, *get_args(RemovalReason))
 
@@ -1636,6 +1644,15 @@ class GroupBarrier(Barrier):
 
         Barriers that share an ``id_`` must pass the same ``on_release_data``.
 
+    on_dissolve
+        Optional callback invoked when the group dissolves below its quorum
+        while members are waiting at this barrier, before they are removed from
+        the group, so that what they did is not lost. For example, it can score
+        the last question for the members who answered it. It takes the same
+        arguments as ``on_release`` except ``leader``: ``participants`` are
+        the members waiting here, and ``barrier`` can read ``on_release_data``.
+        The same serialization rules apply.
+
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
         holds credit actual visible waiting time up to ``max_wait_time``.
@@ -1722,6 +1739,7 @@ class GroupBarrier(Barrier):
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
         on_release_data: Optional[dict] = None,
+        on_dissolve: Optional[Callable] = None,
     ):
         _validate_group_timeouts(max_wait_action, late_after, late_action)
         max_wait_time = _group_max_wait_time(max_wait_time, late_after, default=20)
@@ -1744,6 +1762,7 @@ class GroupBarrier(Barrier):
         self.late_after = late_after
         self.late_action = late_action
         self.on_release_data = {} if on_release_data is None else dict(on_release_data)
+        self.on_dissolve = on_dissolve
 
     def resolve(self):
         group_type = self.group_type
@@ -1887,6 +1906,7 @@ class GroupBarrier(Barrier):
                 # The group can never reach its quorum, so remove everyone
                 # and release whoever is waiting here, after the grouper's
                 # below_quorum has failed or released each of them.
+                group.accepts_top_ups = False
                 participants_to_release.extend(
                     participant
                     for participant in group._dissolve()
@@ -1985,7 +2005,6 @@ class GroupBarrier(Barrier):
             late = _lock_free_participants(late)
         group_size = len(group.active_participants)
         if self.late_action == "leave_group":
-            seats = len(group_seats(group))
             for participant in late:
                 logger.info(
                     "GroupBarrier '%s': removing participant %s from group %s (timeout between barriers)",
@@ -1993,13 +2012,13 @@ class GroupBarrier(Barrier):
                     participant.id,
                     group.id,
                 )
-                group.remove_participant(participant, reason="late")
-            if group.n_active_participants > 0 and not group.dissolving:
-                for participant in late:
-                    self._tell_removed_participant(participant, group, group_size)
-                return
+                SyncGroup.remove_participant(group, participant, reason="late")
+            if late and hasattr(group, "dissolve_if_below_quorum"):
+                group.dissolve_if_below_quorum()
+            dissolved = group.n_active_participants == 0 or group.dissolving
             if (
-                late
+                dissolved
+                and late
                 and getattr(group, "below_quorum", None) != "continue_without_group"
             ):
                 logger.warning(
@@ -2013,7 +2032,7 @@ class GroupBarrier(Barrier):
                     group.id,
                 )
             for participant in late:
-                _tell_group_ended(participant, seats)
+                self._tell_removed_participant(participant, group, group_size)
             return
         for participant in late:
             logger.info(
@@ -2404,9 +2423,17 @@ class SimpleGrouper(Grouper):
         dissolved, so base the decision on the participant, not on who else is still in
         ``group``; if it raises or returns anything else, the error is logged and the member
         is failed. With ``join_existing_groups=True`` it applies once the group stops
-        accepting newcomers (see :meth:`SimpleSyncGroup.stop_top_ups`). A member whose own
-        request is in progress is handled within about a second by the barrier poller
-        instead.
+        accepting newcomers (see :meth:`SimpleSyncGroup.stop_top_ups` and
+        ``top_up_wait``). A member whose own request is in progress is handled within
+        about a second by the barrier poller instead.
+
+    top_up_wait
+        With ``join_existing_groups=True``, how many seconds a group below its
+        ``quorum`` waits for newcomers. Then it stops accepting them, as with
+        :meth:`SimpleSyncGroup.stop_top_ups`, and ``below_quorum`` applies to the
+        members left. The time counts from when the group fell below its quorum,
+        and runs out when its members are waiting at a barrier of the group.
+        Default: ``None``, waiting for newcomers without a limit.
 
     start_short_after
         If set, a group may start with fewer than ``batch_size`` participants once the
@@ -2447,6 +2474,7 @@ class SimpleGrouper(Grouper):
         start_short_after: Optional[float] = None,
         start_short_with: Optional[int] = None,
         quorum: Optional[int] = None,
+        top_up_wait: Optional[float] = None,
         **kwargs,
     ):
         _reject_old_below_quorum_names(kwargs)
@@ -2513,6 +2541,14 @@ class SimpleGrouper(Grouper):
                 f"returning one of these, got {below_quorum!r}.{hint}"
             )
         self.below_quorum = below_quorum
+        if top_up_wait is not None and not join_existing_groups:
+            raise ValueError(
+                "top_up_wait requires join_existing_groups=True: only groups that "
+                "accept newcomers wait for them."
+            )
+        if top_up_wait is not None and top_up_wait <= 0:
+            raise ValueError(f"top_up_wait must be positive, got {top_up_wait}.")
+        self.top_up_wait = top_up_wait
         if (start_short_after is None) != (start_short_with is None):
             raise ValueError(
                 "Pass start_short_after and start_short_with together: how long to "
@@ -2810,6 +2846,7 @@ class SimpleGrouper(Grouper):
             min_group_size=self.quorum,
             accepts_top_ups=self.join_existing_groups,
             below_quorum=self.below_quorum,
+            top_up_wait=self.top_up_wait,
         )
 
     @staticmethod
@@ -2868,7 +2905,8 @@ class Regrouper(Grouper):
 
     By default, when not everyone waiting fits into a group, those who have
     played the most rounds sit out, and members are kept apart from the
-    people they were grouped with last time where possible. The regrouper
+    people they were grouped with last time where possible (see
+    ``avoid_repeats``). The regrouper
     counts each participant's rounds (:meth:`rounds_played`,
     :meth:`rounds_sat_out`, :meth:`sat_out`) and, with ``roles``, gives out roles
     (:meth:`role`), all while it holds its lock, so two splits cannot give
@@ -2943,6 +2981,13 @@ class Regrouper(Grouper):
         Subclasses can override :meth:`form_groups` instead. The callable must be
         a module-level function so it can be stored with the barrier.
 
+    avoid_repeats
+        Whom the default grouping keeps members apart from where possible:
+        ``"last_round"`` (default), the members of their previous group, or
+        ``"all_rounds"``, everyone they have been grouped with before,
+        preferring those they met least often, for example so that a cohort of
+        four meets each partner once in three rounds of pairs.
+
     left_over
         What participants left over after a split do: ``"wait"`` (default)
         keeps them waiting for the next split, and ``"sit_out"`` lets them
@@ -2959,7 +3004,8 @@ class Regrouper(Grouper):
     on_release
         Optional callback ``on_release(within_group, groups, left_over, barrier)``
         run after each split that forms at least one group, after roles are
-        given out; ``barrier`` is this regrouper. A late member can make a split
+        given out; ``barrier`` is this regrouper. The new ``groups`` already
+        have their ``id``, for example to save as a pair ID. A late member can make a split
         of their own in the same round, so count rounds per participant (see
         :meth:`rounds_played`) rather than here.
 
@@ -2994,6 +3040,7 @@ class Regrouper(Grouper):
         roles: Optional[Sequence[str]] = None,
         keep_roles: bool = False,
         form_groups: Optional[Callable] = None,
+        avoid_repeats: Literal["last_round", "all_rounds"] = "last_round",
         left_over: Literal["wait", "sit_out"] = "wait",
         on_release: Optional[Callable] = None,
         max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
@@ -3041,6 +3088,11 @@ class Regrouper(Grouper):
                 "below_quorum doesn't apply; it is an option of "
                 "the SimpleGrouper that forms the groups being regrouped."
             )
+        if avoid_repeats not in ("last_round", "all_rounds"):
+            raise ValueError(
+                "avoid_repeats must be 'last_round' or 'all_rounds', "
+                f"got {avoid_repeats!r}."
+            )
         if left_over not in ("wait", "sit_out"):
             raise ValueError(
                 f"left_over must be 'wait' or 'sit_out', got {left_over!r}."
@@ -3071,6 +3123,7 @@ class Regrouper(Grouper):
         self.roles = None if roles is None else list(roles)
         self.keep_roles = keep_roles
         self.form_groups_function = form_groups
+        self.avoid_repeats = avoid_repeats
         self.left_over = left_over
         self.on_release = on_release
 
@@ -3221,33 +3274,40 @@ class Regrouper(Grouper):
         return {visit.participant_id: visit for visit in visits}
 
     def _history(self, members) -> "_RegroupHistory":
-        """Return the members' rounds, last group-mates and role counts, keyed by ID."""
+        """Return the members' rounds, past group-mates and role counts, keyed by ID."""
         rounds = {m.id: 0 for m in members}
         role_counts = {m.id: {} for m in members}
-        latest_group = {}
+        groups = {pid: [] for pid in rounds}
         for link in self._links(list(rounds)):
             rounds[link.participant_id] += 1
-            latest_group[link.participant_id] = link.sync_group_id
+            groups[link.participant_id].append(link.sync_group_id)
             if link.role:
                 counts = role_counts[link.participant_id]
                 counts[link.role] = counts.get(link.role, 0) + 1
-        mates = {}
-        if latest_group:
+        if self.avoid_repeats == "last_round":
+            groups = {pid: group_ids[-1:] for pid, group_ids in groups.items()}
+        members_of = {}
+        group_ids = {group_id for ids in groups.values() for group_id in ids}
+        if group_ids:
             for link in ParticipantLinkSyncGroup.query.filter(
-                ParticipantLinkSyncGroup.sync_group_id.in_(set(latest_group.values()))
+                ParticipantLinkSyncGroup.sync_group_id.in_(group_ids)
             ):
-                mates.setdefault(link.sync_group_id, set()).add(link.participant_id)
-        last_mates = {
-            pid: mates.get(latest_group.get(pid), set()) - {pid} for pid in rounds
-        }
-        return _RegroupHistory(rounds, last_mates, role_counts)
+                members_of.setdefault(link.sync_group_id, set()).add(
+                    link.participant_id
+                )
+        times_met = {pid: Counter() for pid in rounds}
+        for pid, ids in groups.items():
+            for group_id in ids:
+                times_met[pid].update(members_of.get(group_id, set()) - {pid})
+        return _RegroupHistory(rounds, times_met, role_counts)
 
     def _best_groups(self, make_groups, history, attempts: int = 50):
         """Return the groups from ``make_groups()`` with the fewest repeats.
 
-        A repeat is a member grouped with someone from their last group, or,
-        when roles alternate, a member who must take a role they have had
-        more often than another.
+        A repeat is a member grouped with someone they met before (see
+        ``avoid_repeats``), counted once per earlier meeting, or, when roles
+        alternate, a member who must take a role they have had more often
+        than another.
         """
         best, best_cost = [], None
         for _ in range(attempts):
@@ -3262,7 +3322,7 @@ class Regrouper(Grouper):
     def _repeats(self, group, history) -> int:
         """Return how many partnerships and role imbalances ``group`` repeats."""
         repeats = sum(
-            other.id in history.last_mates[member.id]
+            history.times_met[member.id][other.id]
             for member in group
             for other in group
         )
@@ -3537,6 +3597,8 @@ class Regrouper(Grouper):
                 return left_over
             return []
         if self.on_release:
+            # Gives the new groups their IDs, for example to store as pair IDs.
+            db.session.flush()
             try:
                 self.on_release(
                     within_group=within_group,
@@ -3621,8 +3683,49 @@ class _RegroupHistory(NamedTuple):
     """Regrouper history of a set of members, each field keyed by participant ID."""
 
     rounds: Dict[int, int]
-    last_mates: Dict[int, set]
+    times_met: Dict[int, Counter]
     role_counts: Dict[int, Dict[str, int]]
+
+
+def only_in_group(group_type: str, *steps):
+    """Run each of ``steps`` only while the participant is in a group of ``group_type``.
+
+    The group is checked before each step, so a participant who leaves the
+    group partway, for example because their partner returned the study,
+    skips the rest of the steps rather than seeing pages that only make sense
+    with a partner. A :class:`GroupBarrier` already lets such a participant
+    straight through; this covers the pages between barriers.
+
+    Parameters
+    ----------
+    group_type
+        The group type to check, as in ``participant.in_sync_group(group_type)``.
+    steps
+        Timeline elements or lists of elements, each one step.
+
+    Examples
+    --------
+    One round of a trust game, where a participant who loses their partner
+    skips straight to whatever follows the round::
+
+        only_in_group(
+            "pair",
+            PageMaker(chat_page, time_estimate=60),
+            GroupBarrier(id_="chat_done", group_type="pair"),
+            PageMaker(outcome_page, time_estimate=10),
+        )
+    """
+    return join(
+        *(
+            conditional(
+                f"only_in_group:{group_type}",
+                lambda participant: participant.in_sync_group(group_type),
+                step,
+                log_chosen_branch=False,
+            )
+            for step in steps
+        )
+    )
 
 
 def warn_if_late_removal_fails_group(barriers):
@@ -3865,6 +3968,11 @@ class SyncGroup(SQLBase, SQLMixin):
               being late (``late_action="leave_group"``).
             - ``"moved_on"``: not shown, unless the page shows their answer,
               for a member who went on to their next group.
+            - ``"finished"``: "(finished)", for a member who has played their
+              part, such as a player leaving a cohort after their last round.
+              Their leaving doesn't dissolve a group below its quorum, so the
+              members finishing their own last rounds aren't told that too few
+              remained.
         """
         if reason not in REMOVAL_REASONS:
             raise ValueError(
@@ -3906,6 +4014,8 @@ class SyncGroup(SQLBase, SQLMixin):
         self._dissolving_below_quorum = True
         try:
             remaining = list(self.active_participants)
+            if not self.dissolving:
+                _run_on_dissolve(self, remaining)
             removed = _lock_free_participants(remaining)
             group_size = len(group_seats(self))
             for participant in removed:
@@ -3964,6 +4074,10 @@ class SimpleSyncGroup(SyncGroup):
     #: How many active members the group needs to keep going.
     quorum = synonym("min_group_size")
     accepts_top_ups = Column(Boolean)
+    #: Seconds a group below quorum waits for newcomers; see ``SimpleGrouper(top_up_wait=...)``.
+    top_up_wait = Column(Float)
+    #: When the group last fell below its quorum while accepting newcomers.
+    below_quorum_since = Column(DateTime)
     #: What happens to members when the group dissolves below quorum: ``"fail"``,
     #: ``"continue_without_group"``, or a serialized function returning one of these.
     below_quorum = Column(PythonObject, default="fail")
@@ -3974,7 +4088,15 @@ class SimpleSyncGroup(SyncGroup):
         reason: Optional[RemovalReason] = None,
     ):
         super().remove_participant(participant, reason=reason)
-        self.dissolve_if_below_quorum()
+        if reason != "finished":
+            self.dissolve_if_below_quorum()
+
+    def check_numbers(self):
+        super().check_numbers()
+        if self.n_active_participants >= (self.min_group_size or 0):
+            self.below_quorum_since = None
+        elif self.below_quorum_since is None:
+            self.below_quorum_since = timenow()
 
     def stop_top_ups(self):
         """Stop newcomers joining this group, so that it no longer waits for them.
@@ -4010,6 +4132,43 @@ class SimpleSyncGroup(SyncGroup):
         ):
             return
         self._dissolve()
+
+
+def _run_on_dissolve(group, members):
+    """Call ``on_dissolve`` of each barrier of ``group`` where some of ``members`` are waiting."""
+    reconstructed = {}
+    waiting = {}
+    for participant in members:
+        for link in list(participant.active_barriers.values()):
+            instance = link.barrier_instance
+            if instance is None or instance.group_id != group.id:
+                continue
+            barrier = _reconstructed_arrival_barrier(link, reconstructed)
+            if getattr(barrier, "on_dissolve", None) is None:
+                continue
+            waiting.setdefault(link.barrier_instance_id, (barrier, []))[1].append(
+                participant
+            )
+    for barrier, participants in waiting.values():
+        try:
+            barrier.on_dissolve(group=group, participants=participants, barrier=barrier)
+        except Exception as err:
+            # Dissolving runs in other participants' requests, such as one
+            # returning the study, which must not fail because of this hook.
+            if is_transient_transaction_error(err):
+                raise
+            logger.exception(
+                "Barrier '%s' on_dissolve failed for group %s.", barrier.id, group.id
+            )
+
+
+def _top_up_wait_over(group) -> bool:
+    """Return whether a group below its quorum has waited its ``top_up_wait`` for newcomers."""
+    top_up_wait = getattr(group, "top_up_wait", None)
+    since = getattr(group, "below_quorum_since", None)
+    if top_up_wait is None or since is None:
+        return False
+    return (timenow() - since).total_seconds() >= top_up_wait
 
 
 def _lock_free_participants(participants):

@@ -6681,9 +6681,13 @@ def test_group_barrier_late_after_removes_missing_participants(
         )
         assert late_answer.too_late_for_group
     if min_group_size == 3:
-        # The second removal dissolves the group, so nobody went on without either.
+        # Both are removed for being late before the group dissolves.
         assert all(p.failed for p in waiting_participants)
-        assert all(pending_arrival_notice_for(p) is None for p in missing_participants)
+        for missing_participant in missing_participants:
+            assert missing_participant.sync_group_links[0].removal_reason == "late"
+            assert pending_arrival_notice_for(missing_participant).startswith(
+                "Your group went on without you"
+            )
         return
     released = barrier.choose_who_to_release(waiting_participants)
     db_session.commit()
@@ -6948,8 +6952,12 @@ def test_group_barrier_late_after_removal_releases_waiters_after_dissolution(
     assert group.active_participants == []
     assert missing_participant not in released
     assert set(released) == set(waiting_participants)
-    # Everyone carries on alone, the late member included, and is told why.
-    for p in participants:
+    # Everyone carries on alone. The late member is told they were too slow,
+    # on the page they are on; the others are told why on their next page.
+    assert pending_arrival_notice_for(missing_participant).startswith(
+        "Your group went on without you"
+    )
+    for p in waiting_participants:
         InfoPage("Next").consume(exp, p)
         assert _removed_from_group_notice(p).startswith("Too few members")
 
@@ -6988,6 +6996,37 @@ def test_timeline_warns_when_a_late_member_would_fail_their_partner(
             make_timeline()
 
 
+@pytest.mark.parametrize("reason, dissolved", [("finished", False), (None, True)])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_members_who_finish_dont_dissolve_the_group(
+    in_experiment_directory, db_session, reason, dissolved
+):
+    exp = get_experiment()
+    first, second, last = [new_participant(exp) for _ in range(3)]
+    group = SimpleSyncGroup(
+        group_type="main",
+        initial_group_size=3,
+        max_group_size=3,
+        min_group_size=2,
+        accepts_top_ups=False,
+        below_quorum="continue_without_group",
+    )
+    db_session.add(group)
+    for p in (first, second, last):
+        p.status = "working"
+        group.add_participant(p)
+    db_session.commit()
+
+    group.remove_participant(first)
+    group.remove_participant(second, reason=reason)
+
+    assert last.in_sync_group("main") is not dissolved
+    InfoPage("Next").consume(exp, last)
+    assert (_removed_from_group_notice(last) is not None) is dissolved
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
@@ -7020,8 +7059,7 @@ def test_late_member_leaving_a_pair_fails_the_partner_with_a_warning(
 
     assert on_time.failed and not late.failed
     assert "below_quorum='continue_without_group'" in caplog.text
-    InfoPage("Next").consume(exp, late)
-    assert _removed_from_group_notice(late).startswith("Your partner is no longer")
+    assert pending_arrival_notice_for(late).startswith("Your partner went on")
 
 
 @pytest.mark.parametrize("action", ["leave_group", "fail"])
@@ -7293,6 +7331,37 @@ def test_stopping_top_ups_dissolves_a_group_below_quorum(
         "group_dissolved",
         "group_dissolved",
     ]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_top_up_wait_limits_how_long_a_group_waits_for_newcomers(
+    in_experiment_directory, db_session
+):
+    with pytest.raises(ValueError, match="join_existing_groups"):
+        SimpleGrouper("team", initial_group_size=2, top_up_wait=10)
+    exp = get_experiment()
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=2,
+        join_existing_groups=True,
+        below_quorum="continue_without_group",
+        top_up_wait=10,
+    )
+    barrier = GroupBarrier(id_="game_starts", group_type="team")
+    quitter, waiter = [new_participant(exp) for _ in range(2)]
+    for p in (quitter, waiter):
+        p.status = "working"
+    group = grouper._make_group([quitter, waiter], initial_group_size=2)
+    db_session.commit()
+
+    quitter.fail("quit")
+    assert barrier.choose_who_to_release([waiter]) == []
+    group.below_quorum_since -= timedelta(seconds=11)
+    assert barrier.choose_who_to_release([waiter]) == [waiter]
+    assert not waiter.failed and not group.accepts_top_ups
+    assert waiter.sync_group_removal_reason("team") == "group_dissolved"
 
 
 @pytest.mark.parametrize(

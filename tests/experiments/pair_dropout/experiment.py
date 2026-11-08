@@ -11,7 +11,7 @@ import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.consent import MainConsent
 from psynet.page import InfoPage
-from psynet.sync import GroupBarrier, SimpleGrouper
+from psynet.sync import GroupBarrier, SimpleGrouper, only_in_group
 from psynet.timeline import Timeline, conditional
 
 LATE_AFTER = 5
@@ -39,6 +39,7 @@ class Exp(psynet.experiment.Experiment):
             late_after=LATE_AFTER,
             late_action="leave_group",
             on_release=_finish_round_1,
+            on_dissolve=_finish_round_1,
         ),
         conditional(
             "still_paired",
@@ -47,6 +48,9 @@ class Exp(psynet.experiment.Experiment):
             InfoPage("Round 2 on your own.", time_estimate=5),
         ),
         GroupBarrier(id_="round_2", group_type="pair"),
+        only_in_group(
+            "pair", InfoPage("Thanks for playing together.", time_estimate=5)
+        ),
         InfoPage("Done.", time_estimate=5),
     )
 
@@ -70,6 +74,13 @@ class Exp(psynet.experiment.Experiment):
 
         advance_past_wait_pages([on_time], timeout=LATE_AFTER + 10)
         self._assert_carries_on_alone(on_time)
+        # Their pair dissolved while they waited, so on_dissolve ended the round
+        # for them; the stayer arrived after their pair had gone.
+        finished = [
+            bot.with_participant(lambda p: p.var.get("finished_round_1", False))
+            for bot in (on_time, stayer)
+        ]
+        assert finished == [True, False]
 
         assert (
             silent.with_participant(
@@ -77,8 +88,14 @@ class Exp(psynet.experiment.Experiment):
             )
             == "late"
         )
+        # Told they were too slow on the page they are on, not that their
+        # partner left them.
+        assert silent.current_notice == (
+            "Your partner went on without you. Please continue."
+        )
         silent.take_page()
-        self._assert_carries_on_alone(silent)
+        assert silent.current_page_text == "Round 2 on your own."
+        assert silent.current_notice is None
 
         failer.allow_failure()
         failer.fail("failed_check")
@@ -87,6 +104,9 @@ class Exp(psynet.experiment.Experiment):
         self._assert_carries_on_alone(survivor)
 
         for bot in [stayer, on_time, silent, survivor]:
+            bot.take_page()
+            advance_past_wait_pages([bot])
+            assert bot.current_page_text == "Done."
             bot.run_to_completion()
             assert not bot.failed
 

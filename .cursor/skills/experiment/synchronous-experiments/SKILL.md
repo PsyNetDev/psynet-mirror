@@ -70,7 +70,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   To share one callback between barriers, pass each `on_release_data={...}` and
   read `barrier.on_release_data` instead of parsing `barrier.id`. `on_release` doesn't run
   for members who left before the release or whose group dissolved, so read
-  what it stores with a default: `participant.var.get("score", None)`.
+  what it stores with a default: `participant.var.get("score", None)`. Pass
+  the same function as `on_dissolve` too when members waiting at the barrier
+  as the group dissolves should still get their result.
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Use `sync_group_type` on trial makers when all group members should follow the
@@ -93,7 +95,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   with a `time_limit`, nobody is late before the limit has run out plus 10 s,
   so the timeout need not cover the page; the demos use 30 s so that a
   background tab can notice the round has started. The regrouper avoids
-  repeat partners, sits out whoever has played most, and counts rounds
+  last round's partners (`avoid_repeats="all_rounds"` avoids everyone met
+  before), sits out whoever has played most, and counts rounds
   (`rounds_played`, `rounds_sat_out`); pass `roles=[...]` (with
   `keep_roles=True` for fixed roles) and read `regrouper.role(participant)`
   instead of assigning roles yourself. With `left_over="sit_out"`, odd
@@ -107,12 +110,16 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   group below its `quorum` then waits for a replacement instead of playing on.
   Call `group.stop_top_ups()` (for example in the first barrier's
   `on_release`) once newcomers can no longer catch up; `below_quorum` then
-  applies. To let participants who find no group carry on alone instead of
+  applies. Pass `top_up_wait=seconds` too, so a group that falls below its
+  quorum before then doesn't wait for a newcomer for ever. To let participants who find no group carry on alone instead of
   being failed, pass the grouper `max_wait_action="continue_without_group"`.
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
   needs a group: stop a rounds loop with it in the `while_loop` condition,
   and give a synchronized trial maker a solo alternative, for example
-  `conditional("paired", in_pair, paired_trials, solo_trials)`.
+  `conditional("paired", in_pair, paired_trials, solo_trials)`. Wrap the
+  steps of a round in `only_in_group(group_type, step, ...)` so a participant
+  who loses their group partway skips the rest, instead of a `conditional`
+  per page.
 - With `join_existing_groups=True`, also pass a task-specific `join_criterion`
   when a group can become unsuitable for newcomers in ways `stop_top_ups()`
   doesn't cover, for example a chain that is nearly finished.
@@ -124,9 +131,12 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Use `ChatRoom` only for participant communication; keep phase advancement
   and scoring in barriers. Inside a trial, scope the room with
   `self.sync_group.id`. Elsewhere use
-  `participant.active_sync_groups[group_type].id`.
-  `participant.sync_group` raises if more than one group is active. Both are
-  `None` after the participant left the group, so show no `ChatRoom` then.
+  `participant.active_sync_groups.get(group_type)`, which is `None` after
+  the participant left the group, so show no `ChatRoom` then.
+  `participant.sync_group` raises if more than one group is active.
+- A `PageMaker` builds its page again on submit, when the participant may
+  have left the group. Never index `active_sync_groups[group_type]` there:
+  it raises `KeyError`, which fails the participant.
 - For games with turns one after the other, such as investor then trustee,
   follow "Turns one after the other" in
   `code/multiplayer/writing_a_round_based_experiment`.
@@ -189,6 +199,7 @@ shown a page that only makes sense with a group.
 |---|---|
 | Returns the study | `bot.drop_out()` |
 | Is failed by the experiment | `bot.allow_failure()`, then `bot.fail("reason")` |
+| Runs out of time on a timed page | `bot.run_out_of_time()` |
 | Closes the tab or stops responding | Stop taking pages for that bot and keep advancing the others |
 | Comes back after being removed | Take pages for the silent bot again |
 | Arrives when no group can form | Send one bot more than fills the groups to the grouper, and wait out its `max_wait_time` |

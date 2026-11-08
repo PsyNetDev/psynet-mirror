@@ -118,7 +118,9 @@ form one round.
 
 A participant variable (``participant.var``) holds only its latest value. To
 keep a result from every round in the export, save it on the trial, for
-example in ``trial.score`` or ``trial.var``.
+example in ``trial.score`` or ``trial.var``, or, in games without trials,
+rebuild it from the groups and responses as in
+:ref:`basic_data_regrouper`.
 
 A convenient layout for dyads and small groups is one row per participant per
 round, with columns for the group, the round, the participant, their partner,
@@ -192,6 +194,25 @@ participants are regrouped, a participant has one ``participant_link_sync_group`
 row per group; assign each trial to the group whose link ``creation_time``
 precedes the trial's ``creation_time`` and whose ``end_time`` is empty or
 follows it.
+
+.. _basic_data_regrouper:
+
+Games with a regrouper
+~~~~~~~~~~~~~~~~~~~~~~
+
+Games that re-pair players with a :class:`~psynet.sync.Regrouper` often have
+no trials, but each group the regrouper forms is one round of one group, and
+each member's ``participant_link_sync_group`` row records their ``role`` and,
+in ``removal_reason``, whether they were removed for being late. Their answers
+are in the ``response`` table, which has one row per page answered. The
+``ultimatum_pairing`` demo matches each player's decision to the pair they
+were in when they gave it:
+
+.. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
+   :pyobject: Exp.get_basic_data
+
+Rounds a player sat out have no row here; their visits to the regrouper with
+``sat_out`` set are in the ``participant_link_barrier`` table.
 
 .. seealso::
 

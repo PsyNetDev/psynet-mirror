@@ -211,15 +211,15 @@ class Exp(psynet.experiment.Experiment):
         texts = [bot.current_page_text for bot in bots]
         assert (
             texts[0]
-            == "You voted for yoghurt, your partners voted for pudding and yoghurt. Here is what everyone made."
+            == "You voted for yoghurt, your partners voted for pudding and yoghurt. Here is what everyone made. yoghurt got the most votes."
         )
         assert (
             texts[1]
-            == "You voted for yoghurt, your partners voted for pudding and yoghurt. Here is what everyone made."
+            == "You voted for yoghurt, your partners voted for pudding and yoghurt. Here is what everyone made. yoghurt got the most votes."
         )
         assert (
             texts[2]
-            == "You voted for pudding, your partners voted for yoghurt and yoghurt. Here is what everyone made."
+            == "You voted for pudding, your partners voted for yoghurt and yoghurt. Here is what everyone made. yoghurt got the most votes."
         )
         assert bots[0].get_current_page().prompt.note == "yoghurt got the most votes."
 
@@ -243,15 +243,15 @@ class Exp(psynet.experiment.Experiment):
         texts = [bot.current_page_text for bot in bots]
         assert (
             texts[0]
-            == "You voted for salad, your partners voted for salad and schnitzel. Here is what everyone made."
+            == "You voted for salad, your partners voted for salad and schnitzel. Here is what everyone made. salad got the most votes."
         )
         assert (
             texts[1]
-            == "You voted for schnitzel, your partners voted for salad and salad. Here is what everyone made."
+            == "You voted for schnitzel, your partners voted for salad and salad. Here is what everyone made. salad got the most votes."
         )
         assert (
             texts[2]
-            == "You voted for salad, your partners voted for salad and schnitzel. Here is what everyone made."
+            == "You voted for salad, your partners voted for salad and schnitzel. Here is what everyone made. salad got the most votes."
         )
 
         bots[0].take_page()
@@ -274,15 +274,15 @@ class Exp(psynet.experiment.Experiment):
         texts = [bot.current_page_text for bot in bots]
         assert (
             texts[0]
-            == "You voted for soup, your partners voted for melon and soup. Here is what everyone made."
+            == "You voted for soup, your partners voted for melon and soup. Here is what everyone made. soup got the most votes."
         )
         assert (
             texts[1]
-            == "You voted for soup, your partners voted for melon and soup. Here is what everyone made."
+            == "You voted for soup, your partners voted for melon and soup. Here is what everyone made. soup got the most votes."
         )
         assert (
             texts[2]
-            == "You voted for melon, your partners voted for soup and soup. Here is what everyone made."
+            == "You voted for melon, your partners voted for soup and soup. Here is what everyone made. soup got the most votes."
         )
 
         bots[0].take_page()
