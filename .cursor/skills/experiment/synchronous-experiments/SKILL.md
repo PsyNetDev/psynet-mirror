@@ -202,11 +202,13 @@ class PickTrial(Trial):
 
     @classmethod
     def score_room(cls, trials, node):
-        choices = {t.participant_id: t.participant.var.choice for t in trials}
-        winner = lowest_unique({p: n for p, n in choices.items() if n is not None})
+        # String keys, since node.var is stored as JSON.
+        picks = {str(t.participant_id): t.participant.var.choice for t in trials}
+        choices = {p: n for p, n in picks.items() if n is not None}
+        winner = lowest_unique(choices) if len(choices) > 1 else None
         node.var.winning_number = winner  # the room's result
         for trial in trials:  # each player's result
-            trial.var.won = winner is not None and choices[trial.participant_id] == winner
+            trial.var.won = winner is not None and picks[str(trial.participant_id)] == winner
 
 # The Module gives the nodes a module_id to find them by when exporting.
 Module("game", for_loop(
@@ -215,16 +217,15 @@ Module("game", for_loop(
 ))
 ```
 
-- Leave out `round`: `cue` numbers each group's rounds from 0, joining the
-  group's newest node or starting its next round. A `Regrouper`'s groups
-  play round 0; a fixed group advances each round; a late joiner joins the
-  current round. Keep a `GroupBarrier` in every round so members stay in
-  step.
-- All trials of one group and round share the node and its definition,
-  whatever their class. A later cue with a different `dict` raises an error.
-  With several classes in a round, put the barrier after the round's last
-  class (or in every class): with a barrier only in the first, a fast
-  player can open the next round early.
+- Leave out `round`: `cue` numbers each group's rounds from 0. A cue joins
+  the group's newest node unless the participant already has a trial on it;
+  otherwise it starts the next round. A `Regrouper`'s groups play round 0; a
+  fixed group advances each round; a late joiner joins the current round.
+  Keep a `GroupBarrier` in every round so members stay in step.
+- A round with two phases is normally one trial class with several pages.
+  To put two classes in one round, pass both the same `round=`; they then
+  share the node and its definition, and a later cue with a different `dict`
+  raises an error.
 - `trial.answer` is only set when the trial ends, after the barrier, so
   `on_release` reads what `save_answer` stored, while `score_answer`,
   `show_feedback` and `get_basic_data` read the trial and `self.node.var`.

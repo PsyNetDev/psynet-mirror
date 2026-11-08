@@ -190,30 +190,45 @@ def test_cue_takes_round_only_when_the_trial_has_a_sync_group_type():
         SoloTrial.cue({}, round=0)
 
 
-class RespondTrial(PairTrial):
-    pass
-
-
 class VoteTrial(Trial):
     time_estimate = 1
     sync_group_type = "pair"
 
 
 @in_consents_experiment
-def test_trial_classes_in_one_round_share_its_node_and_definition(
+def test_alternating_trial_classes_advance_the_round(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
-    # A subclass, then its parent, then an unrelated class: all in round 0.
-    for trial_class in (RespondTrial, PairTrial, VoteTrial):
-        trial_class.cue({"target": 1})[0].consume(exp, cohort[0])
+    for trial_class in (PairTrial, VoteTrial):
+        for participant in cohort:
+            trial_class.cue({"target": 1})[0].consume(exp, participant)
     db.session.commit()
 
-    assert SyncGroupNode.query.count() == 1
-    assert {t.sync_group_round for t in Trial.query} == {0}
+    assert sorted((type(t).__name__, t.sync_group_round) for t in Trial.query) == [
+        ("PairTrial", 0),
+        ("PairTrial", 0),
+        ("VoteTrial", 1),
+        ("VoteTrial", 1),
+    ]
+
+
+@in_consents_experiment
+def test_an_explicit_round_lets_two_classes_share_a_node(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    for trial_class in (PairTrial, VoteTrial):
+        trial_class.cue({"target": 1}, round=4)[0].consume(exp, cohort[0])
     with pytest.raises(ValueError, match="already has the definition"):
-        PairTrial.cue({"target": 2})[0].consume(exp, cohort[1])
+        VoteTrial.cue({"target": 2}, round=4)[0].consume(exp, cohort[1])
+    PairTrial.cue({"target": 1})[0].consume(exp, cohort[0])
+    db.session.commit()
+
+    assert [t.sync_group_round for t in Trial.query.order_by(Trial.id)] == [4, 4, 5]
+    assert SyncGroupNode.query.count() == 2
 
 
 @in_consents_experiment
@@ -260,7 +275,9 @@ class CustomStaticTrialMaker(StaticTrialMaker):
 
     def prepare_trial(self, experiment, participant):
         node = Trial.get_default_parent_node(participant, experiment)
+        node.trial_maker_id = self.id  # as the trial maker's own nodes have
         trial = PairTrial(experiment, node, participant, False, False, definition={})
+        self._finalize_created_trial(trial)
         return trial, "available"
 
 
@@ -283,7 +300,14 @@ def test_a_synchronized_trial_maker_records_group_role_and_round(
         participant.start_module(trial_maker)
 
     members = [pair.leader, *pair.active_followers]
-    for round in (0, 1):
+    for round in (0, 1, 2):
+        if round == 2:
+            # Repeat each player's last trial.
+            for p in members:
+                state = p.module_state
+                state.in_repeat_phase = True
+                state.trials_to_repeat = [p.current_trial.id]
+                state.repeat_trial_index = 0
         trial_maker._try_to_prepare_trial_group(pair)
         db.session.flush()
         assert [
@@ -294,6 +318,7 @@ def test_a_synchronized_trial_maker_records_group_role_and_round(
             )
             for p in members
         ] == [(pair.id, pairs.role(p), round) for p in members]
+    assert all(p.current_trial.is_repeat_trial for p in members)
 
 
 class TeamTrial(Trial):

@@ -88,18 +88,23 @@ Each trial records the pair (``sync_group_id``), the player's role
 them after the pair ends. The ``Module`` gives the nodes a ``module_id`` to
 find them by when exporting.
 
-``cue`` numbers each group's rounds by itself, from 0: a cue joins the
-group's newest node, or starts its next round if the player already has a
-trial of that class there. So every pair here, new each round, plays round
-0, while a fixed group cued in a loop plays rounds 0, 1, 2 and so on, and a
-member who joins it late joins its current round. This needs a barrier in
-each round, such as the one in ``show_trial`` below, so that no member
-starts the next round before the others have cued this one. Trials of
-different classes that a group cues in one round, such as the two phases of
-a round, share its node. Then put the barrier after the round's last class,
-or in every class: with a barrier only in the first class, a fast player
-could cue the first class again, and so open the next round, while the
-others are still in this one.
+``cue`` numbers each group's rounds by itself, from 0:
+
+- A cue joins the group's newest node in the module, unless the player
+  already has a trial on it.
+- Otherwise it starts the group's next round.
+
+So every pair here, new each round, plays round 0, while a fixed group cued
+in a loop plays rounds 0, 1, 2 and so on, whichever trial classes it cues,
+and a member who joins it late joins its current round. This needs a
+barrier in each round, such as the one in ``show_trial`` below, so that no
+member starts the next round before the others have cued this one.
+
+A round with two phases, such as an offer and a reply, is normally one
+trial class with several pages. If you really need trials of two classes in
+one round, pass the same ``round=`` to both cues, for example the index of
+the surrounding :func:`~psynet.timeline.for_loop`; they then share the
+round's node and its definition.
 
 :func:`~psynet.sync.only_in_group` runs the trial only for players in a
 pair. Those who sat out, or were removed from their pair partway, see the

@@ -1211,18 +1211,22 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         without needing to create a corresponding trial maker.
 
         If the trial class sets :attr:`sync_group_type`, the trial is played with
-        the participant's group of that type: all the trials that the group's
-        members cue in one module and round, whatever their class, hang off one
-        shared :class:`SyncGroupNode`, so the group's results for that round can
-        go in ``trial.node.var``. Rounds advance by themselves: a cue joins the
-        group's newest node, or starts the group's next round if the
-        participant already has a trial of this class there. Put a
-        :class:`~psynet.sync.GroupBarrier` in each round, for example in
-        :meth:`show_trial`, so that no member starts the next round before the
-        others have cued this one. Each trial records ``sync_group_id``,
-        ``sync_group_role`` and ``sync_group_round``. A participant who is in no
-        group of that type when the trial starts gets an ungrouped trial on the
-        module's default node.
+        the participant's group of that type: the trials that the group's
+        members cue in one module and round hang off one shared
+        :class:`SyncGroupNode`, so the group's results for that round can go in
+        ``trial.node.var``. Rounds advance by themselves:
+
+        - A cue joins the group's newest node in the module, unless the
+          participant already has a trial on it.
+        - Otherwise it starts the group's next round, counted from 0.
+        - Put a :class:`~psynet.sync.GroupBarrier` in each round, for example
+          in :meth:`show_trial`, so that no member starts the next round
+          before the others have cued this one.
+
+        Each trial records ``sync_group_id``, ``sync_group_role`` and
+        ``sync_group_round``. A participant who is in no group of that type
+        when the trial starts gets an ungrouped trial on the module's default
+        node.
 
         Parameters
         ----------
@@ -1261,7 +1265,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             Rarely needed: the group's round to put this trial in, overriding
             the automatic one. Only for a trial class that sets
             :attr:`sync_group_type`; every member of the group must pass the
-            same value.
+            same value. A round with two phases is normally one trial class
+            with several pages; to put trials of two classes in one round,
+            pass both the same ``round``.
 
         Examples
         --------
@@ -1387,7 +1393,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             node = cls.get_default_parent_node(participant, experiment)
             return node, None, make_definition(round)
         node = SyncGroupNode.for_cue(
-            cls, group, round, participant, experiment, make_definition
+            group, round, participant, experiment, make_definition
         )
         if not callable(definition) and definition != node.definition:
             raise ValueError(
@@ -1996,6 +2002,14 @@ class TrialMaker(Module):
                 sync_group_waiting_message,
                 f"Trial maker '{id_}'",
                 argument="sync_group_waiting_message",
+            )
+        class_group_type = getattr(trial_class, "sync_group_type", None)
+        if class_group_type is not None and class_group_type != sync_group_type:
+            raise ValueError(
+                f"Trial maker '{id_}' has sync_group_type={sync_group_type!r}, but "
+                f"its trial class {trial_class.__name__} sets sync_group_type="
+                f"{class_group_type!r}, which only Trial.cue uses. Pass the group "
+                "type to the trial maker and leave it off the trial class."
             )
         self.sync_group_type = sync_group_type
         self.sync_group_max_wait_time = _group_max_wait_time(
@@ -2949,9 +2963,12 @@ class TrialMaker(Module):
         ]
         if not trials:
             return
-        key = f"trial_rounds_{self.id}"
-        number = group.var.get(key) or 0
-        group.var.set(key, number + 1)
+        latest = (
+            db.session.query(func.max(Trial.sync_group_round))
+            .filter_by(sync_group_id=group.id, trial_maker_id=self.id)
+            .scalar()
+        )
+        number = 0 if latest is None else latest + 1
         for trial in trials:
             trial.sync_group_round = number
 
@@ -4205,9 +4222,13 @@ class GenericTrialNode(TrialNode):
 
     def __init__(self, module_id, experiment):
         super().__init__(
-            network=GenericTrialNetwork.for_module(module_id, experiment),
+            network=self.get_default_network(module_id, experiment),
             participant=None,
         )
+
+    def get_default_network(self, module_id, experiment):
+        """Return the module's network for cued trials, creating it if needed."""
+        return GenericTrialNetwork.for_module(module_id, experiment)
 
 
 class SyncGroupNode(GenericTrialNode):
@@ -4236,14 +4257,12 @@ class SyncGroupNode(GenericTrialNode):
         return db.session.get(SyncGroup, self.sync_group_id)
 
     @classmethod
-    def for_cue(
-        cls, trial_class, group, round, participant, experiment, make_definition
-    ):
-        """Return the node that ``participant``'s cued ``trial_class`` trial joins, creating it if needed.
+    def for_cue(cls, group, round, participant, experiment, make_definition):
+        """Return the node that ``participant``'s cued trial joins, creating it if needed.
 
         Without ``round``, this is the group's newest node in the module,
-        unless the participant already has a ``trial_class`` trial on it; then
-        the group moves on to a new node for the next round, counted from 0.
+        unless the participant already has a trial on it; then the group moves
+        on to a new node for the next round, counted from 0.
         With ``round``, it is the group's node for that round. A new node's
         definition is ``make_definition(round)``.
 
@@ -4260,9 +4279,7 @@ class SyncGroupNode(GenericTrialNode):
                 round = 0
             elif (
                 Trial.query.filter_by(
-                    node_id=newest.id,
-                    participant_id=participant.id,
-                    type=trial_class.__mapper__.polymorphic_identity,
+                    node_id=newest.id, participant_id=participant.id
                 ).first()
                 is None
             ):
