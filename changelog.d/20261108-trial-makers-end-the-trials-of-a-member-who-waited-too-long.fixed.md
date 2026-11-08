@@ -1,0 +1,1 @@
+A synchronized trial maker now gives no more trials to a member whom `sync_group_max_wait_action="leave_group"` removed while they waited for the next trial. Previously such a member was shown their previous trial again, or hit an error if they had no trial yet.

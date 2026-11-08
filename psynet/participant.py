@@ -486,7 +486,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     complete = Column(Boolean)
     pending_redirect = Column(String)
     # The progress-bar notice for a participant whom a GroupBarrier removed
-    # from their group, with the ``page_uuid`` of the page it belongs to.
+    # from their group, with the ``page_uuid`` of the page it belongs to, or
+    # ``next_page`` until Page.consume binds it to the participant's next page.
     group_removal_notice = Column(PythonDict)
     # Keys into Experiment.pseudonym_scheme, set only when a pseudonym is chosen
     # rather than derived from the participant ID; see ``Participant.pseudonym``.

@@ -425,7 +425,12 @@ class TestHandleMessage:
             for payload, ids in zip(_published_payloads(exp), _recipients(exp))
         }
         assert set(occupancy[str({str(hidden.id)})]) == {str(hidden.id), "member-2"}
-        assert str(named.id) in occupancy[str({str(named.id)})]
+        assert set(occupancy[str({str(named.id)})]) == {str(hidden.id), str(named.id)}
+        exp.publish_to_participants.reset_mock()
+        self._send(
+            handler, exp, hidden, {"type": "message", "room_id": room, "content": "yo"}
+        )
+        assert [p["sender"] for p in _published_payloads(exp)] == [str(hidden.id)] * 2
         with pytest.raises(RuntimeError, match="EnableChatrooms"):
             ChatRoom(room_id=room).check_enabled(experiment)
         config = ChatRoom(room_id=room, names="anonymous").get_js_vars()

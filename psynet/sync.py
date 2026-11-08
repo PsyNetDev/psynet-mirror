@@ -1635,6 +1635,10 @@ class GroupBarrier(Barrier):
         defaults to "Your partner didn't arrive in time. Please continue." or
         "Your group didn't arrive in time. Please continue.".
 
+        Check ``kind`` for each of these rather than treating everything
+        that isn't ``"removed"`` as a progress notice, or a removed member
+        sees "Your partner is ready." after waiting too long.
+
     """
 
     def __init__(
@@ -2416,7 +2420,7 @@ class SimpleGrouper(Grouper):
             "SimpleGrouper.min_group_size is deprecated; set quorum instead.",
             FutureWarning,
         )
-        self.quorum = value
+        self.quorum = max(value, 1)
 
     def resolve(self):
         from .timeline import conditional, join

@@ -1159,7 +1159,18 @@ def test_sync_trial_maker_exits_after_leaving_group(monkeypatch):
 
     monkeypatch.setattr(trial_maker, "prepare_trial", fail_if_prepare_trial_called)
 
-    trial_maker._try_to_prepare_trial_solo(experiment=None, participant=participant)
+    # Members released by a max-wait time-out skip on_release, so the exit
+    # check must come after the prepare barrier, not only before it.
+    elts = trial_maker._wait_for_trial()
+    hold_page = next(
+        i for i, elt in enumerate(elts) if type(elt).__name__ == "_BarrierHoldPage"
+    )
+    exit_check = next(
+        elt
+        for elt in elts[hold_page:]
+        if getattr(elt, "function", None) == trial_maker._exit_if_left_group
+    )
+    exit_check.function(experiment=None, participant=participant)
 
     assert participant.current_trial is None
     assert participant.trial_status == "exit"

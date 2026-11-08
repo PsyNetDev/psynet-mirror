@@ -63,9 +63,9 @@ Options
     a pair, or a larger group without ``subgroups`` once everyone has joined
     the chat, this matches the GroupPrompt. The server then
     doesn't send this participant the others' pseudonyms or participant
-    IDs: the others appear under aliases that differ from room to room, so
-    nobody can recognise a partner from an earlier round, even by
-    inspecting the page. Use it on pages whose GroupPrompt is anonymous. A
+    IDs, even for someone inspecting the page: the others appear under
+    aliases numbered by order of joining each room (``member-1``,
+    ``member-2``, ...), which say nothing about who they are. Use it on pages whose GroupPrompt is anonymous. A
     chat writes a name next to every message, so
     GroupPrompt's ``"on_hover"`` isn't available.
 

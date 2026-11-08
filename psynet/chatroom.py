@@ -19,9 +19,8 @@ collapsed to one. An empty snapshot still completes the load.
 In an anonymous room (``ChatRoom(names="anonymous")``), members are not sent
 each other's pseudonyms or participant IDs: each anonymous member gets their
 own copy of every frame, in which the others appear under per-room aliases
-(``member-1``, ``member-2``, ... by order of first joining the room). Aliases
-differ between rooms, so a member can't be recognised across rounds from the
-page. Each membership records whether its page is anonymous. The widget then labels the others
+(``member-1``, ``member-2``, ... by order of first joining the room), so the
+page never holds another member's participant ID. Each membership records whether its page is anonymous. The widget then labels the others
 as :class:`~psynet.group_prompt.GroupPrompt` does with
 ``names="anonymous"``: "Your partner" while the viewer has met only one
 other member of the room, and "Another player" once there are more.
@@ -369,7 +368,7 @@ class ChatRoom(JavaScriptContributor):
           one other member of the room, and "Another player" once they have
           met more, even if some have left since. The page is then not sent
           the others' pseudonyms or participant IDs, which appear under
-          aliases that differ between rooms.
+          per-room aliases instead.
 
         A chat writes a name next to every message, so GroupPrompt's
         ``"on_hover"`` is not available.

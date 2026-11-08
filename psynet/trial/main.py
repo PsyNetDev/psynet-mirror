@@ -2670,20 +2670,22 @@ class TrialMaker(Module):
         def try_to_prepare_trial():
             if not self.sync_group_type:
                 return CodeBlock(self._try_to_prepare_trial_solo)
-            return conditional(
-                "prepare_trial",
-                lambda participant: (
-                    not _removed_from_group(participant, self.sync_group_type)
-                ),
-                join(
+            return join(
+                conditional(
+                    "prepare_trial",
+                    lambda participant: (
+                        not _removed_from_group(participant, self.sync_group_type)
+                    ),
                     GroupBarrier(
                         id_=self.with_namespace("prepare_trial"),
                         on_release=self._try_to_prepare_trial_group,
                         fix_time_credit=False,  # we're already within a while loop with fixed time credit
                         **self._sync_group_barrier_kwargs(),
-                    )
+                    ),
                 ),
-                CodeBlock(self._try_to_prepare_trial_solo),
+                # Also reached by a member released from the barrier by
+                # sync_group_max_wait_action="leave_group", without on_release.
+                CodeBlock(self._exit_if_left_group),
             )
 
         return join(
@@ -2708,6 +2710,11 @@ class TrialMaker(Module):
                 fix_time_credit=False,
             ),
         )
+
+    def _exit_if_left_group(self, experiment, participant):
+        """End the trial loop for a participant who is no longer in the group."""
+        if self.sync_group_type not in participant.active_sync_groups:
+            self._try_to_prepare_trial_solo(experiment, participant)
 
     def _try_to_prepare_trial_solo(self, experiment, participant):
         trial, trial_status = self._prepare_trial(experiment, participant)
