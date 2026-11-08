@@ -100,10 +100,12 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   for rounds on fixed ticks (`lowest_unique_number`). Slow participants miss
   a round and join the next one rather than being failed. Pair it with
   `GroupBarrier(late_after=..., late_action="leave_group")` so late members are
-  removed; they then pass the round's later group barriers alone. On a page
+  removed; they then pass the round's later group barriers alone.
+- On a page
   with a `time_limit`, nobody is late before the limit has run out plus 10 s,
   so the timeout need not cover the page; the demos use 30 s so that a
-  background tab can notice the round has started. The regrouper avoids
+  background tab can notice the round has started.
+- The regrouper avoids
   last round's partners (`avoid_repeats="all_rounds"` avoids everyone met
   before), sits out whoever has played most, and counts rounds
   (`rounds_played`, `rounds_sat_out`); pass `roles=[...]` (with
@@ -126,17 +128,15 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
   needs a group: stop a rounds loop with it in the `while_loop` condition,
   and give a synchronized trial maker a solo alternative, for example
-  `conditional("paired", in_pair, paired_trials, solo_trials)`. Wrap the
-  steps of a round in `only_in_group(group_type, step, ...)` so a participant
+  `conditional("paired", in_pair, paired_trials, solo_trials)`.
+- Wrap the steps of a round in `only_in_group(group_type, step, ...)` so a participant
   who loses their group partway skips the rest, instead of a `conditional`
-  per page. A loop passed to `only_in_group` is one step and runs to its end
-  once entered, so pass a list of the rounds' steps,
-  `only_in_group("pair", [round_steps(n) for n in range(N_ROUNDS)])`, or put
-  `only_in_group` inside the loop. Put the grouper or `Regrouper` before
-  `only_in_group`, never among its steps (see the `only_in_group`
-  docstring). Pass `otherwise=` for what they, and anyone who never had a
+  per page. Pass a list of the rounds' steps,
+  `only_in_group("pair", [round_steps(n) for n in range(N_ROUNDS)])`, not a
+  loop, and put the grouper or `Regrouper` before it (see the
+  `only_in_group` docstring for why). Pass `otherwise=` for what they, and anyone who never had a
   group, do instead, such as answering the rest of the question alone.
-  In a `Regrouper` game the player whose partner left stays in the pair, so
+- In a `Regrouper` game the player whose partner left stays in the pair, so
   they play the round out and see its outcome, as in `ultimatum_pairing`;
   only the player removed for being late is out of the pair, and gets their
   own page there. The barrier's `on_release` can take `left`, the members
