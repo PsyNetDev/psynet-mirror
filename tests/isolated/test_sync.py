@@ -7673,3 +7673,17 @@ def test_a_group_dissolving_mid_round_records_the_round_nobody_reached(
     assert outcomes == (
         ["dissolved", "dissolved", "left_experiment"] if recorded else []
     )
+
+
+def test_only_in_group_skips_the_steps_after_the_participant_leaves():
+    checks = iter([True, False, False])
+    participant = SimpleNamespace(
+        module_state=None, in_sync_group=lambda group_type: next(checks)
+    )
+    elts = only_in_group(
+        "pair",
+        InfoPage("Round 1", label="round_1", time_estimate=1),
+        InfoPage("Round 2", label="round_2", time_estimate=1),
+        otherwise=InfoPage("Alone", label="alone", time_estimate=1),
+    )
+    assert _labels_reached(elts, participant) == ["round_1", "alone"]
