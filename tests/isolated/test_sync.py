@@ -218,23 +218,18 @@ def test_max_wait_action_kick_requires_group_barrier():
     assert barrier.max_wait_action == "kick"
 
 
-def test_group_barrier_preserves_positional_timeout_arguments():
-    barrier = GroupBarrier(
-        "group_barrier",
-        "main",
-        None,
-        3,
-        None,
-        "fail",
-        None,
-        False,
-        5,
-        "kick",
-    )
+def _noop_on_release(group, participants, participant, barrier):
+    pass
 
-    assert barrier.late_after == 5
-    assert barrier.late_action == "kick"
-    assert barrier.expected_wait == 1.5
+
+def test_group_barrier_keeps_the_released_positional_order():
+    """v13.3.0: (id_, group_type, waiting_logic, repetitions, max_wait_time, on_release, fix_time_credit)."""
+    barrier = GroupBarrier("group_barrier", "main", None, 3, 30, _noop_on_release, True)
+
+    assert barrier.max_wait_time == 30
+    assert barrier.on_release.function is _noop_on_release
+    assert barrier.fix_time_credit is True
+    assert barrier.max_wait_action == "fail"
 
 
 def test_default_barrier_uses_timeline_hold():
