@@ -354,11 +354,17 @@ def test_live_pages_redraw_the_group_when_someone_joins(
     assert late.pseudonym.name in html
     html = redrawn_group_html(first.unique_id, anonymous)["html"]
     assert ">Your partner<" in html and late.pseudonym.name not in html
-    highlighted = token(highlight={late.id: "winner"}, note="Round 2")
-    # The page can read its token, so it names other members by seat.
-    assert _token_serializer().loads(highlighted)["highlight"] == {"1": "winner"}
+    highlighted = token(
+        highlight={first.id: "duplicate", late.id: "winner"}, note="Round 2"
+    )
+    # The page can read its token, so it names members by seat.
+    assert _token_serializer().loads(highlighted)["highlight"] == {
+        "0": "duplicate",
+        "1": "winner",
+    }
     html = redrawn_group_html(first.unique_id, highlighted)["html"]
     assert "psynet-group-member--winner" in html and "Round 2" in html
+    assert "psynet-group-member--duplicate" in html
     # Tokens only work for the participant they were made for, unchanged.
     assert redrawn_group_html(other.unique_id, named) == {"html": None}
     assert redrawn_group_html(first.unique_id, named[:-2]) == {"html": None}

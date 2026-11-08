@@ -653,6 +653,12 @@ For the rest of the timeline:
 - :class:`~psynet.sync.GroupBarrier`\ s of that group type let them straight
   through.
 - Trial makers synchronized on that group type give them no more trials.
+  A member who leaves before finishing any trial of such a trial maker,
+  including one who is out of the group when it starts, skips the rest of
+  it, with no ``on_complete`` or end-of-trial-maker performance check. A
+  member who leaves after finishing some trials gets no more, then the trial
+  maker finishes as usual: ``on_complete`` runs, and so does a performance
+  check, over the trials they did.
 - ``participant.active_sync_groups`` no longer has that group type, and
   ``trial.sync_group`` is ``None``. ``participant.sync_group`` is ``None``
   if they are in no other group, is that group if they are in exactly one

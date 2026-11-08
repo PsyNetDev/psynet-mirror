@@ -1165,6 +1165,24 @@ def test_sync_trial_maker_exits_after_leaving_group():
     assert participant.trial_status == "exit"
 
 
+def test_sync_trial_maker_is_skipped_by_members_who_left_before_any_trial():
+    trial_maker = make_trial_maker(sync_group_type="main")
+    conditions = [
+        elt.function
+        for elt in trial_maker.compile_elts()
+        if type(elt).__name__ == "StartSwitch"
+        and elt.label in ("in_sync_group", "had_trials_or_in_sync_group")
+    ]
+    participant = DummyParticipant()
+    assert len(conditions) == 2
+    assert not any(c(participant=participant) for c in conditions)
+    participant.module_state.n_completed_trials = 1
+    assert all(c(participant=participant) for c in conditions)
+    participant.module_state.n_completed_trials = 0
+    participant.active_sync_groups["main"] = DummySyncGroup()
+    assert all(c(participant=participant) for c in conditions)
+
+
 def test_sync_trial_maker_initializes_members_released_alone(monkeypatch):
     trial_maker = make_trial_maker(
         sync_group_type="main", sync_group_max_wait_action="leave_group"

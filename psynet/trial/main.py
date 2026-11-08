@@ -1704,8 +1704,8 @@ class TrialMaker(Module):
     sync_group_max_wait_action
         What happens to a member who waits longer than ``sync_group_max_wait_time``: ``"fail"``
         (default) fails them and sends them to the end of the experiment; ``"leave_group"`` removes them
-        from the group, and they get no more trials from this trial maker (see
-        :ref:`sync-leaving-a-group`).
+        from the group, and they get no more trials from this trial maker, or skip the rest of it if
+        they haven't finished a trial (see :ref:`sync-leaving-a-group`).
 
     sync_group_late_after
         Acts on members who haven't reached the trial maker's barrier yet: the longest each may
@@ -1879,14 +1879,43 @@ class TrialMaker(Module):
             RegisterTrialMaker(self),
             self._setup_core,
             self._setup_extra,
-            self.introduction,
-            self._trial_loop(),
-            self._wrapup_core,
-            (
-                self._check_performance_logic(type="end")
-                if self.check_performance_at_end
-                else None
+            conditional(
+                "in_sync_group",
+                lambda participant: not self._left_before_any_trial(participant),
+                join(self.introduction, self._trial_loop()),
+                log_chosen_branch=False,
             ),
+            conditional(
+                "had_trials_or_in_sync_group",
+                lambda participant: not self._left_before_any_trial(participant),
+                join(
+                    self._wrapup_core,
+                    (
+                        self._check_performance_logic(type="end")
+                        if self.check_performance_at_end
+                        else None
+                    ),
+                ),
+                log_chosen_branch=False,
+            ),
+        )
+
+    def _left_before_any_trial(self, participant):
+        """Return whether the participant left the trial maker's group before finishing a trial here.
+
+        They skip the rest of the trial maker, including a performance check
+        that would judge them on no trials.
+        """
+        return (
+            self._left_sync_group(participant)
+            and not participant.module_state.n_completed_trials
+        )
+
+    def _left_sync_group(self, participant):
+        """Return whether the trial maker is synchronized and the participant is out of its group."""
+        return (
+            self.sync_group_type is not None
+            and self.sync_group_type not in participant.active_sync_groups
         )
 
     def custom(self, *args, assets=None, nodes=None):
@@ -1945,7 +1974,7 @@ class TrialMaker(Module):
         if self.sync_group_type is None:
             return False
         if _removed_from_group(participant, self.sync_group_type):
-            # They initialize alone and leave before their first trial.
+            # They initialize alone, then skip the rest of the trial maker.
             return False
         if self.sync_group_type not in participant.active_sync_groups:
             participant_id = getattr(participant, "id", "<unknown>")
@@ -1969,7 +1998,8 @@ class TrialMaker(Module):
         return state.trial_maker_initialized
 
     def _init_participants_in_sync_group(self, group: SyncGroup, experiment):
-        self.init_participant(experiment, group.leader)
+        if not self._is_initialized(group.leader):
+            self.init_participant(experiment, group.leader)
         for participant in group.active_participants:
             if participant != group.leader and not self._is_initialized(participant):
                 self.init_participant(experiment, participant)
@@ -2715,7 +2745,7 @@ class TrialMaker(Module):
 
     def _exit_if_left_group(self, experiment, participant):
         """End the trial loop for a participant who is no longer in the group."""
-        if self.sync_group_type not in participant.active_sync_groups:
+        if self._left_sync_group(participant):
             participant.current_trial = None
             participant.trial_status = "exit"
 
@@ -2897,8 +2927,8 @@ class NetworkTrialMaker(TrialMaker):
     sync_group_max_wait_action
         What happens to a member who waits longer than ``sync_group_max_wait_time``: ``"fail"``
         (default) fails them and sends them to the end of the experiment; ``"leave_group"`` removes them
-        from the group, and they get no more trials from this trial maker (see
-        :ref:`sync-leaving-a-group`).
+        from the group, and they get no more trials from this trial maker, or skip the rest of it if
+        they haven't finished a trial (see :ref:`sync-leaving-a-group`).
 
     sync_group_late_after
         Acts on members who haven't reached the trial maker's barrier yet: the longest each may

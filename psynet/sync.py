@@ -1550,8 +1550,8 @@ class GroupBarrier(Barrier):
         What happens to a member who waits longer than ``max_wait_time``: ``"fail"`` (default) fails them and
         sends them to the end of the experiment; ``"leave_group"`` removes them from the group, and they carry on with the
         experiment without it (see :ref:`sync-leaving-a-group`).
-        Their next page says "Your partner didn't arrive in time. Please continue." (see
-        ``on_arrival_message``), and a :class:`~psynet.group_prompt.GroupPrompt` marks them
+        Their next page says "Your partner didn't arrive in time. Please continue." in a pair (see
+        ``on_arrival_message`` for larger groups), and a :class:`~psynet.group_prompt.GroupPrompt` marks them
         "(dropped out)". It is the waiting member who leaves, not the absent ones; to move on
         without slow members, use ``late_after`` and ``late_action`` instead. If that takes
         the group below its quorum, as in a pair, the group dissolves, failing the others

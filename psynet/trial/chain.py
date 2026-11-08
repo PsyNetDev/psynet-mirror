@@ -1533,8 +1533,8 @@ class ChainTrialMaker(NetworkTrialMaker):
     sync_group_max_wait_action
         What happens to a member who waits longer than ``sync_group_max_wait_time``: ``"fail"``
         (default) fails them and sends them to the end of the experiment; ``"leave_group"`` removes them
-        from the group, and they get no more trials from this trial maker (see
-        :ref:`sync-leaving-a-group`).
+        from the group, and they get no more trials from this trial maker, or skip the rest of it if
+        they haven't finished a trial (see :ref:`sync-leaving-a-group`).
 
     sync_group_late_after
         Acts on members who haven't reached the trial maker's barrier yet: the longest each may

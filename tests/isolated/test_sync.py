@@ -5781,6 +5781,15 @@ def test_default_group_barrier_arrival_message_copy():
         )
         == "2/3 of your group are ready."
     )
+    for kind, pair, group in [
+        ("waited_too_long", "Your partner didn't", "Not everyone in your group"),
+        ("removed", "Your partner went on", "Your group went on"),
+    ]:
+        for size, start in [(2, pair), (3, group)]:
+            message = default_group_barrier_arrival_message(
+                kind=kind, waiting_count=0, group_size=size
+            )
+            assert message.startswith(start)
 
 
 def test_group_barrier_notify_arrivals_defaults_on():
