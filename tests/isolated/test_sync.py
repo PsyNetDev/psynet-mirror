@@ -7022,6 +7022,27 @@ def test_timeline_warns_when_a_late_member_would_fail_their_partner(
             make_timeline()
 
 
+@pytest.mark.parametrize("stop_top_ups", [False, True])
+def test_timeline_warns_about_late_members_once_top_ups_stop(stop_top_ups):
+    def make_timeline():
+        return Timeline(
+            SimpleGrouper("team", initial_group_size=2, join_existing_groups=True),
+            GroupBarrier(id_="start", group_type="team", stop_top_ups=stop_top_ups),
+            GroupBarrier(
+                id_="round", group_type="team", late_after=30, late_action="leave_group"
+            ),
+            InfoPage("Done", time_estimate=1),
+        )
+
+    if stop_top_ups:
+        with pytest.warns(UserWarning, match="single late member fails everyone"):
+            make_timeline()
+    else:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            make_timeline()
+
+
 @pytest.mark.parametrize("reason, dissolved", [("finished", False), (None, True)])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True

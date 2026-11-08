@@ -74,8 +74,9 @@ the grouper has a ``waiting_screen`` (see below).
     :ref:`a message function <sync-countdown-messages>` returns.
 
 ``start_short_with`` (default: ``quorum``)
-    The smallest group a short start may form. Pass it to start short only
-    with more members than the quorum. If you pass it without ``quorum``, the
+    The smallest group a short start may form. Leave it unset to start short
+    at the quorum; pass a larger value to require more members than the
+    quorum before a short start. If you pass it without ``quorum``, the
     quorum defaults to it; the quorum may not be larger, so that a group
     started short is not below quorum at its first barrier.
 
@@ -873,7 +874,9 @@ For the rest of the timeline:
   everyone not yet in a group: at the start that is everyone, and later it is
   anyone who sat out a round, who would then never be grouped again; when pairs change every round,
   use ``for_loop(..., logic=join(Regrouper(...), only_in_group("pair",
-  round_steps())))``.
+  round_steps(), otherwise=sitting_out)))``, where ``sitting_out`` is a page
+  for anyone the regrouper sat out that round; without ``otherwise`` they
+  skip the round with no page.
 - Trial makers synchronized on that group type give them no more trials.
   A member who leaves before finishing any trial of such a trial maker,
   including one who is out of the group when it starts, skips the rest of
