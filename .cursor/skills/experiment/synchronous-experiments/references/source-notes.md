@@ -15,8 +15,7 @@ and platform docs when a study is near deployment.
   that request so the group does not wait for the 0.5 s poller; lock contention
   falls back to the poller. Arrival notices are on by default: a pill on the
   progress bar for members who have not arrived yet, plus remaining-not-ready
-  hold copy in groups of three or more. Pair holds keep the title only. Keep
-  `on_arrival_message` notice copy to a short sentence. Set
+  hold copy in groups of three or more. Pair holds keep the title only. Set
   `notify_arrivals=False` to disable them, or customize copy with
   `on_arrival_message`.
   It checks the group's `quorum`, can wait for top-ups, can fail groups below quorum,
