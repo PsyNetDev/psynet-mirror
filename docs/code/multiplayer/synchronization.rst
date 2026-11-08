@@ -866,8 +866,8 @@ For the rest of the timeline:
   :class:`~psynet.sync.Regrouper` that forms it goes before
   ``only_in_group``, never among its steps. There it would be skipped by
   everyone not yet in a group: at the start that is everyone, and later it is
-  anyone who sat out a round, who would then never be grouped again; when pairs change every round,
-  use ``for_loop(..., logic=join(Regrouper(...), only_in_group("pair",
+  anyone who sat out a round, who would then never be grouped again. When
+  pairs change every round, use ``for_loop(..., logic=join(Regrouper(...), only_in_group("pair",
   round_steps(), otherwise=sitting_out)))``, where ``sitting_out`` is a page
   for anyone not in a pair by the end of the round: sat out by the
   regrouper, or removed partway for being late. Without ``otherwise`` they
