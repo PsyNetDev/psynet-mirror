@@ -1,5 +1,7 @@
 import json
 import sys
+from functools import partial
+from types import SimpleNamespace
 
 import pytest
 from dominate import tags
@@ -42,8 +44,9 @@ class ThresholdBarrier(Barrier):
         return waiting_participants
 
 
-def on_release(group, participants):
+def on_release(group, participants, question=None):
     group.released_count = len(participants)
+    group.question = question
 
 
 def test_custom_barrier_round_trip_uses_plain_json():
@@ -68,15 +71,16 @@ def test_callback_round_trip():
     original = GroupBarrier(
         "callback",
         group_type="pair",
-        on_release=on_release,
-        on_release_data={"question": 1},
+        on_release=partial(on_release, question=1),
     )
 
     restored = barrier_from_spec_json(barrier_spec_json(original))
 
     assert restored.group_type == "pair"
     assert restored.on_release.function is on_release
-    assert restored.on_release_data == {"question": 1}
+    group = SimpleNamespace()
+    restored.on_release(group=group, participants=[object()])
+    assert (group.released_count, group.question) == (1, 1)
 
 
 def test_reconstructed_barrier_runs_release_hooks():

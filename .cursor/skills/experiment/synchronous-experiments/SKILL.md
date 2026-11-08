@@ -131,7 +131,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   per page. A loop passed to `only_in_group` is one step and runs to its end
   once entered, so pass a list of the rounds' steps,
   `only_in_group("pair", [round_steps(n) for n in range(N_ROUNDS)])`, or put
-  `only_in_group` inside the loop. Pass `otherwise=` for what they, and anyone who never had a
+  `only_in_group` inside the loop. Put the grouper or `Regrouper` before
+  `only_in_group`, never among its steps, where it would be skipped because
+  nobody is in a group yet. Pass `otherwise=` for what they, and anyone who never had a
   group, do instead, such as answering the rest of the question alone.
   In a `Regrouper` game the player whose partner left stays in the pair, so
   they play the round out and see its outcome, as in `ultimatum_pairing`;

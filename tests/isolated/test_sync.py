@@ -48,6 +48,7 @@ from psynet.sync import (
     BarrierInstance,
     GroupBarrier,
     ParticipantLinkBarrier,
+    Regrouper,
     SimpleGrouper,
     SimpleSyncGroup,
     SyncGroup,
@@ -78,14 +79,15 @@ from psynet.sync import (
     pending_arrival_notice_for,
 )
 from psynet.timeline import (
+    AsyncCodeBlock,
     CodeBlock,
-    CreditEstimate,
     Page,
     PageMaker,
     ReactiveGoTo,
     Response,
-    StartSwitch,
     Timeline,
+    _split_into_steps,
+    for_loop,
     join,
 )
 from psynet.timeline_hold import (
@@ -7548,7 +7550,6 @@ def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_s
             id_="round_finished",
             group_type="main",
             on_release=_record_score,
-            on_release_data={"game": "test"},
             record_rounds=True,
         )
         for stayer in stayers:
@@ -7567,7 +7568,6 @@ def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_s
         (2, first, "played", first * 10, 0.5),
         (2, second, "played", second * 10, 0.5),
     ]
-    assert all(r["game"] == "test" for r in participant_rounds())
     assert [r["round"] for r in participant_rounds("round_finished", stayers[0])] == [
         1,
         2,
@@ -7677,21 +7677,43 @@ def test_a_group_dissolving_mid_round_records_the_round_nobody_reached(
     )
 
 
-def test_only_in_group_checks_each_step_of_joined_rounds():
+def _do_nothing(participant):
+    return None
+
+
+@pytest.mark.parametrize(
+    "make_construct",
+    [
+        lambda: GroupBarrier(id_="round_done", group_type="pair"),
+        lambda: SimpleGrouper("pair", initial_group_size=2, quorum=2),
+        lambda: Regrouper("pair", group_size=2, every=30),
+        lambda: AsyncCodeBlock(_do_nothing, expected_wait=5),
+        lambda: for_loop(
+            label="rounds",
+            iterate_over=range(2),
+            logic=lambda number: InfoPage(f"Round {number}"),
+            time_estimate_per_iteration=1,
+        ),
+    ],
+)
+def test_split_into_steps_keeps_each_construct_whole(make_construct):
+    page = InfoPage("Hello", time_estimate=1)
+    assert len(_split_into_steps(join(page, make_construct(), page))) == 3
+
+
+def test_only_in_group_skips_the_rounds_after_the_participant_leaves():
     def round_steps(number):
         return join(
-            InfoPage(f"Round {number}", time_estimate=1),
-            GroupBarrier(id_=f"round_{number}", group_type="pair"),
+            InfoPage("Choose", label=f"choose_{number}", time_estimate=1),
+            InfoPage("Outcome", label=f"outcome_{number}", time_estimate=1),
         )
 
+    checks = iter([True, False, False, False])
+    participant = SimpleNamespace(
+        module_state=None, in_sync_group=lambda group_type: next(checks)
+    )
     elts = only_in_group("pair", [round_steps(number) for number in range(2)])
-    checks = [
-        elt
-        for elt in elts
-        if isinstance(elt, StartSwitch) and elt.label == "only_in_group:pair"
-    ]
-    assert len(checks) == 4
-    assert CreditEstimate(elts).get_max("time") > 0
+    assert _labels_reached(elts, participant) == ["choose_0"]
 
 
 def test_only_in_group_skips_the_steps_after_the_participant_leaves():

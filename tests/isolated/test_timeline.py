@@ -1917,12 +1917,13 @@ def test_async_code_block_initiate__no_stale_job():
 
 def test_async_code_block_initiate__stores_generated_code_block_id_from_timeline():
     timeline = Timeline(AsyncCodeBlock(_async_target, wait=False))
-    code_block = timeline.elts["main"][0]
+    code_block = next(
+        elt for elt in timeline.elts["main"] if isinstance(elt, CodeBlock)
+    )
     participant = _make_participant(stale_job=None)
     new_job = _new_job()
 
-    assert isinstance(code_block, CodeBlock)
-    assert code_block.id == ["main", 0]
+    assert code_block.id == ["main", timeline.elts["main"].index(code_block)]
 
     with patch("psynet.async_job.WorkerAsyncJob", return_value=new_job) as ctor:
         code_block.consume(MagicMock(), participant)

@@ -600,9 +600,11 @@ class AsyncCodeBlock(EltCollection):
 
     def resolve(self):
         return join(
+            _StartConstruct(),
             CodeBlock(self.initiate),
             self.wait_logic() if self.wait else [],
             CodeBlock(self.wrap_up),
+            _EndConstruct(),
         )
 
     def initiate(self, participant, code_block):
@@ -4736,6 +4738,8 @@ def _split_into_steps(*elts) -> List[List[Elt]]:
             depth += 1
         elif isinstance(elt, _STEP_ENDS):
             depth -= 1
+        if depth < 0:
+            raise ValueError("Unmatched end of a timeline construct.")
         if depth == 0:
             steps.append(current)
             current = []
