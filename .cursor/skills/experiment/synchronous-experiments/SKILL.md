@@ -145,7 +145,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   races matter.
 - Assert group formation, active group size, role assignment, shared node/trial
   IDs, barrier IDs, `on_release` side effects, and failed/overflow exits.
-- Test dropout and top-up behavior, not only a complete group that finishes.
+- Test each kind of dropout, as described in "Test dropouts" below, and
+  top-ups, not only a complete group that finishes.
 - Test waiting-phase retention aids: filler trials should save usable data or
   stay harmless, alerts should fire at the intended transition, timers should be
   visible, and automatic submissions should record a valid response or failure
@@ -155,6 +156,86 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   participant-flow recordings.
 - Inspect exported data to confirm group IDs, platform IDs, roles, phase
   timestamps, responses, failures, and partial-completion reasons are analyzable.
+
+## Test dropouts
+
+Real groups lose members in several ways, and PsyNet handles each through a
+different setting. Write a serial bot test for every kind your design can
+meet, and check that the experiment behaves sensibly for everyone involved:
+members who did nothing wrong are not failed unless the design says so, their
+next page tells them what happened, nobody waits for a partner who has gone,
+and nobody is shown a page that only makes sense with a group.
+
+| Dropout | Simulate it in the bot test | Setting that reacts |
+|---|---|---|
+| Returns the study or quits | `bot.drop_out()` | The member is failed at once; the grouper's `below_quorum` decides for the rest |
+| Closes the tab or stops responding | Stop taking pages for that bot and keep advancing the others | The next barrier's `late_after` and `late_action` |
+| Is gone when the others reach a barrier without `late_after` | As above | That barrier's `max_wait_time` and `max_wait_action` act on the members waiting |
+| Comes back after being removed | Take pages for the silent bot again | Their next page should show the removal notice and a solo branch |
+| Is failed by your own code, such as a failed check | `bot.fail("reason")` | As for a member who quits |
+| Arrives when no group can form | Send one bot more than fills the groups to the grouper | The grouper's `max_wait_time` |
+
+After each dropout, assert who failed (`bot.failed`), what each remaining bot
+sees (`bot.current_page_text` and `bot.current_notice`), and that branches on
+`participant.in_sync_group(group_type)` lead somewhere sensible. This pair
+test drops one member of each pair, one by quitting
+and one by going silent:
+
+```python
+LATE_AFTER = 5
+
+class Exp(psynet.experiment.Experiment):
+    test_n_bots = 4
+    timeline = Timeline(
+        MainConsent(),
+        SimpleGrouper("pair", initial_group_size=2, below_quorum="leave_group"),
+        InfoPage("Round 1.", time_estimate=5),
+        GroupBarrier(id_="round_1", group_type="pair",
+                     late_after=LATE_AFTER, late_action="leave_group"),
+        conditional(
+            "still_paired",
+            lambda participant: participant.in_sync_group("pair"),
+            InfoPage("Round 2 with your partner.", time_estimate=5),
+            InfoPage("Round 2 on your own.", time_estimate=5),
+        ),
+        GroupBarrier(id_="round_2", group_type="pair"),
+        InfoPage("Done.", time_estimate=5),
+    )
+
+    def test_serial_run_bots(self, bots):
+        quitter, stayer, on_time, silent = bots
+        for pair in [(quitter, stayer), (on_time, silent)]:
+            for bot in pair:
+                bot.take_page()
+            advance_past_wait_pages(list(pair))
+
+        quitter.drop_out()
+        stayer.take_page()
+        advance_past_wait_pages([stayer])
+        assert stayer.current_page_text == "Round 2 on your own."
+        assert stayer.current_notice == (
+            "Your partner is no longer in your group. Please continue."
+        )
+
+        on_time.take_page()  # silent never answers round 1
+        advance_past_wait_pages([on_time], timeout=LATE_AFTER + 10)
+        assert on_time.current_page_text == "Round 2 on your own."
+
+        silent.take_page()  # comes back after being removed
+        assert silent.current_page_text == "Round 2 on your own."
+
+        for bot in [stayer, on_time, silent]:
+            bot.run_to_completion()
+            assert not bot.failed
+```
+
+Bot tests wait out the real timeouts, so pass `advance_past_wait_pages` a
+`timeout` longer than the `late_after` or `max_wait_time` being tested. The
+default `test_check_bot` accepts bots that called `drop_out()`; override it
+when the design fails other members on purpose, such as a partner left behind
+under `below_quorum="fail"`. If PsyNet warns at load time that a late member
+would fail the partners who were on time, fix the settings rather than the
+test.
 
 ## Common failures
 

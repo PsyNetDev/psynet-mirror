@@ -220,8 +220,8 @@ class Exp(psynet.experiment.Experiment):
         answers = [as_plain_text(page.prompt.answers[bot.id]) for bot in original_bots]
         assert [a.strip() for a in answers] == ["100", "110", "120"]
 
-        # Now we make one of the bots fail during a trial
-        bots[0].fail(reason="simulated_failure")
+        # Now one of the bots drops out during a trial
+        bots[0].drop_out()
         group = SyncGroup.query.one()
         assert group.n_active_participants < group.quorum
 
@@ -286,9 +286,6 @@ class Exp(psynet.experiment.Experiment):
             page = bot.get_current_page()
             text = as_plain_text(page.prompt.text)
             assert "That's the end!" in text
-
-    def test_check_bot(self, bot: Bot, **kwargs):
-        assert not bot.failed or bot.failed_reason == "simulated_failure"
 
     # Uncomment the following to run bots in the background of the experiment.
     # @staticmethod

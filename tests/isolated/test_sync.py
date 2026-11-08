@@ -3,6 +3,7 @@ import sys
 import threading
 import time
 import uuid
+import warnings
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -6925,6 +6926,26 @@ def test_group_barrier_late_after_removal_releases_waiters_after_dissolution(
     for p in participants:
         InfoPage("Next").consume(exp, p)
         assert _removed_from_group_notice(p).startswith("Too few members")
+
+
+@pytest.mark.parametrize("below_quorum", ["fail", "leave_group"])
+def test_timeline_warns_when_a_late_member_would_fail_their_partner(below_quorum):
+    def make_timeline():
+        return Timeline(
+            SimpleGrouper("pair", initial_group_size=2, below_quorum=below_quorum),
+            GroupBarrier(
+                id_="round", group_type="pair", late_after=30, late_action="leave_group"
+            ),
+            InfoPage("Done", time_estimate=1),
+        )
+
+    if below_quorum == "fail":
+        with pytest.warns(UserWarning, match="single late member fails everyone"):
+            make_timeline()
+    else:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            make_timeline()
 
 
 @pytest.mark.parametrize(

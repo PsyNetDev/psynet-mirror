@@ -100,6 +100,7 @@ import inspect
 import random
 import time
 import uuid
+import warnings
 from contextlib import contextmanager
 from datetime import timedelta
 from math import ceil, floor
@@ -3504,6 +3505,50 @@ class _RegroupHistory(NamedTuple):
     rounds: Dict[int, int]
     last_mates: Dict[int, set]
     role_counts: Dict[int, Dict[str, int]]
+
+
+def warn_if_late_removal_fails_group(barriers):
+    """Warn if removing one late member would fail the members who were on time.
+
+    That happens when a :class:`GroupBarrier` has ``late_action="leave_group"``
+    and the :class:`SimpleGrouper` of its group type has ``below_quorum="fail"``
+    and a ``quorum`` that the loss of one member breaks, as in a pair.
+
+    Parameters
+    ----------
+    barriers : iterable of Barrier
+        The barriers in the timeline. Barriers created inside a trial, such as
+        in ``Trial.show_trial``, are not visible here.
+    """
+    barriers = list(barriers)
+    fragile_groupers = {
+        grouper.group_type: grouper
+        for grouper in barriers
+        if isinstance(grouper, SimpleGrouper)
+        and grouper.below_quorum == "fail"
+        and not grouper.join_existing_groups
+        and grouper.quorum > grouper.initial_group_size - 1
+    }
+    for barrier in barriers:
+        if not (
+            isinstance(barrier, GroupBarrier)
+            and barrier.late_after is not None
+            and barrier.late_action == "leave_group"
+        ):
+            continue
+        grouper = fragile_groupers.get(barrier.group_type)
+        if grouper is None:
+            continue
+        warnings.warn(
+            f"GroupBarrier '{barrier.id}' removes late members, but grouper "
+            f"'{grouper.id}' fails the members left behind when that leaves the "
+            "group below its quorum. So a single late member fails everyone who "
+            "was on time, while the late one carries on. Pass "
+            "below_quorum='leave_group' to the grouper to let everyone carry on, "
+            "or late_action='fail' to end the session for the whole group.",
+            UserWarning,
+            stacklevel=2,
+        )
 
 
 def group_seats(group) -> Dict[int, int]:

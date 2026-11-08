@@ -2,7 +2,7 @@ import time
 from typing import List
 
 import psynet.experiment
-from psynet.bot import Bot, BotDriver
+from psynet.bot import BotDriver
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
@@ -142,7 +142,7 @@ class Exp(psynet.experiment.Experiment):
             assert "We are now quorate." in bot.current_page_text
             assert bot.sync_group_n_active_participants == 3
 
-        bots[0].fail("simulated_failure")
+        bots[0].drop_out()
 
         for bot in [bots[1], bots[2]]:
             bot.take_page()
@@ -170,6 +170,3 @@ class Exp(psynet.experiment.Experiment):
 
         for bot in [bots[1], bots[2], bots[3]]:
             bot.run_to_completion(render_pages=True)
-
-    def test_check_bot(self, bot: Bot, **kwargs):
-        assert not bot.failed or bot.failed_reason == "simulated_failure"

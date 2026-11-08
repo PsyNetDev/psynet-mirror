@@ -13,7 +13,7 @@ import time
 import zipfile
 from contextlib import ExitStack
 from smtplib import SMTPAuthenticationError
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING, Dict, Optional
 
 import dallinger.models
 import requests
@@ -734,6 +734,14 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     @property
     def active_sync_groups(self) -> Dict[str, "SyncGroup"]:
         return {group.group_type: group for group in self.sync_groups if group.active}
+
+    def in_sync_group(self, group_type: str) -> bool:
+        """Return whether the participant is in an active group of ``group_type``.
+
+        This becomes ``False`` once they leave the group, for example after a
+        barrier's ``late_action="leave_group"`` or when their group is dissolved.
+        """
+        return group_type in self.active_sync_groups
 
     @property
     def sync_group(self) -> "SyncGroup":
@@ -1788,6 +1796,43 @@ class ParticipantDriver:
         with transaction(commit=True):
             participant = Participant.query.get(self.id)
             participant.fail(reason, redirect_to_end=redirect_to_end)
+
+    def drop_out(self):
+        """Leave the experiment as if returning the study on the recruitment platform.
+
+        The participant is failed with the ``premature_exit`` tag, and their
+        group reacts as it would to a real dropout. The default
+        :meth:`~psynet.experiment.Experiment.test_check_bot` accepts bots that
+        dropped out. To simulate a participant who closes the tab without
+        telling the platform, stop taking pages for that bot instead, and let
+        the barriers' timeouts deal with them.
+        """
+        with transaction(commit=True):
+            participant = Participant.query.get(self.id)
+            if participant.status == "working":
+                participant.status = "returned"
+                self.experiment.assignment_returned(participant)
+
+    @property
+    def failed(self) -> bool:
+        """Whether the participant has failed, read from the database."""
+        return self.from_db("failed")
+
+    @property
+    def current_notice(self) -> Optional[str]:
+        """The notice that the participant's progress bar shows now, if any.
+
+        For example "Your partner is no longer in your group. Please continue."
+        after their group dissolved, or a partner-ready notice.
+        """
+        from .sync import pending_arrival_notice_for
+
+        with transaction(commit=False):
+            participant = (
+                Participant.query.filter_by(id=self.id).populate_existing().one()
+            )
+            notice = pending_arrival_notice_for(participant)
+            return None if notice is None else str(notice)
 
     def from_db(self, attr: str):
         with transaction(commit=False):

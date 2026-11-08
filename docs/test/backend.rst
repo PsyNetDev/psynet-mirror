@@ -90,7 +90,8 @@ bot took one trial per node:
         super().test_check_bot(bot, **kwargs)
         assert len(bot.alive_trials) == len(nodes)
 
-The base implementation asserts that the bot didn't fail.
+The base implementation asserts that the bot didn't fail, unless it
+dropped out (see :ref:`bots_that_drop_out`).
 
 To check something across all bots, such as how trials were shared between
 them, override ``Experiment.test_check_bots``. It runs once after every bot
@@ -169,6 +170,40 @@ PsyNet finish the run:
 ``response`` is saved as the final answer, like a plain ``bot_response``
 value. Find the page label and the answer format in the prescreener's source
 code or in the ``response`` table of a previous test run.
+
+.. _bots_that_drop_out:
+
+Bots that drop out
+------------------
+
+In a group experiment, test what happens when a member leaves. Call
+:meth:`~psynet.participant.ParticipantDriver.drop_out` for a participant who
+returns the study on the recruitment platform, and stop taking pages for a
+bot to simulate one who closes the tab, so that the barriers' timeouts deal
+with them. Then check the others with ``bot.failed``, ``current_page_text``
+and :attr:`~psynet.participant.ParticipantDriver.current_notice`, the notice
+on their progress bar:
+
+.. code-block:: python
+
+    def test_serial_run_bots(self, bots: List[BotDriver]):
+        quitter, stayer = bots
+        for bot in bots:
+            bot.take_page()
+        advance_past_wait_pages(bots)
+
+        quitter.drop_out()
+        stayer.take_page()
+        advance_past_wait_pages([stayer])
+        assert stayer.current_notice == (
+            "Your partner is no longer in your group. Please continue."
+        )
+        stayer.run_to_completion()
+
+The default ``test_check_bot`` accepts bots that dropped out, but not others
+that failed, such as a partner failed under the grouper's default
+``below_quorum="fail"``. See :ref:`groups_below_min_size` for what happens
+to the members who stay.
 
 .. _parallel_bot_tests:
 

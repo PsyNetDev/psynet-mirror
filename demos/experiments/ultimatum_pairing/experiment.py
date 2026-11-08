@@ -62,7 +62,7 @@ def cohort_of(participant):
 
 
 def in_pair(participant):
-    return "pair" in participant.active_sync_groups
+    return participant.in_sync_group("pair")
 
 
 def lobby_message(seconds_left):

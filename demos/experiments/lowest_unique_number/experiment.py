@@ -113,7 +113,7 @@ def your_pick(participant):
 
 
 def show_result(participant):
-    if "room" not in participant.active_sync_groups:
+    if not participant.in_sync_group("room"):
         return InfoPage(
             "You were away for too long, so you missed this round.", time_estimate=5
         )

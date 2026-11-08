@@ -697,7 +697,7 @@ For the rest of the timeline:
   member who leaves after finishing some trials gets no more, then the trial
   maker finishes as usual: ``on_complete`` runs, and so does a performance
   check, over the trials they did.
-- ``participant.active_sync_groups`` no longer has that group type, and
+- ``participant.in_sync_group("pair")`` is ``False``, and
   ``trial.sync_group`` is ``None``. ``participant.sync_group`` is ``None``
   if they are in no other group, is that group if they are in exactly one
   other, and raises if they are in several, so look groups up by type, as in
@@ -705,7 +705,11 @@ For the rest of the timeline:
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only
   its text from their next page on. A participant who has been in groups of
   several types needs ``group_type`` (or ``group``) on every ``GroupPrompt``.
-- A later grouper of that type can put them in a new group.
+- A later grouper of that type can put them in a new group. Two groupers
+  with the same group type and settings get the same automatic ID and so
+  share one waiting pool, which pairs those who left a group with newcomers
+  still waiting at the first grouper. Pass the later grouper its own ``id_``
+  if they should only be paired with each other.
 
 Your own code blocks, pages and callbacks must handle this: check for
 ``None`` before using the group, and expect results, such as a score from

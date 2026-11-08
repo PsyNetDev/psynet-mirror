@@ -2961,6 +2961,24 @@ class Timeline:
         self.check_for_time_estimate()
         self.check_modules()
         self.check_barrier_ids()
+        self.check_group_policies()
+
+    def check_group_policies(self):
+        """Warn about grouper and barrier settings that fail members who were on time."""
+        from .sync import warn_if_late_removal_fails_group
+
+        warn_if_late_removal_fails_group(
+            {id(barrier): barrier for barrier in self._barriers()}.values()
+        )
+
+    def _barriers(self):
+        """Yield the barrier behind each timeline element that has one."""
+        from .sync import Barrier
+
+        for elt in self.all_elts:
+            barrier = elt if isinstance(elt, Barrier) else elt.links.get("barrier")
+            if isinstance(barrier, Barrier):
+                yield barrier
 
     def check_barrier_ids(self):
         """Reject one barrier ID used with different release behavior.
@@ -2970,14 +2988,10 @@ class Timeline:
         definitions in the same timeline must use distinct IDs.
         """
         from .barrier_spec import behavior_hash
-        from .sync import Barrier
 
         seen = {}
         hashes = {}
-        for elt in self.all_elts:
-            barrier = elt if isinstance(elt, Barrier) else elt.links.get("barrier")
-            if not isinstance(barrier, Barrier):
-                continue
+        for barrier in self._barriers():
             digest = hashes.get(id(barrier))
             if digest is None:
                 digest = behavior_hash(barrier)
