@@ -1636,6 +1636,7 @@ class GroupBarrier(Barrier):
                 for participant in left:
                     reason = participant.sync_group_removal_reason("pair")
                     ...
+
         Must be a module-level function, ``@staticmethod``/``@classmethod``,
         or a bound method on a TrialMaker or ORM instance with a primary key.
         To share one callback between several barriers, pass each its own ``on_release_data``.
