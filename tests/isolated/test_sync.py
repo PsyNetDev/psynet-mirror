@@ -7412,6 +7412,42 @@ def test_top_up_wait_limits_how_long_a_group_waits_for_newcomers(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_latest_sync_group_and_seat_survive_leaving_and_closing(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    members, group = _sync_group_of(exp, db_session, 3, group_type="story")
+    loner = new_participant(exp)
+    group.remove_participant(members[0], reason="late")
+    db_session.commit()
+
+    assert [p.latest_sync_group("story") for p in members] == [group] * 3
+    assert [p.sync_group_seat("story") for p in members] == [0, 1, 2]
+    assert loner.latest_sync_group("story") is None
+    assert loner.sync_group_seat("story") is None
+
+    group.close()
+    db_session.commit()
+    assert members[2].latest_sync_group("story") == group
+
+    next_group = SimpleSyncGroup(
+        group_type="story",
+        initial_group_size=1,
+        max_group_size=1,
+        min_group_size=1,
+        n_active_participants=1,
+        accepts_top_ups=False,
+    )
+    db_session.add(next_group)
+    next_group.add_participant(members[2])
+    db_session.commit()
+    assert members[2].latest_sync_group("story") == next_group
+    assert members[2].sync_group_seat("story") == 0
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_grouper_lets_an_ungrouped_participant_carry_on(
     in_experiment_directory, db_session
 ):

@@ -128,11 +128,22 @@ a ``KeyError``, and build the page without the group in that case. To keep
 using a value from the group, such as a chat room ID, store it in a
 participant variable when the page is first built.
 
+State the whole group shares, such as a story the members write together,
+can live in the group's own variables, ``group.var``.
+:meth:`~psynet.participant.Participant.latest_sync_group` returns the
+participant's current group of a type or, once they have left it or it has
+ended, the last one they were in, so a page after the game can still read
+``participant.latest_sync_group("story").var.story``.
+
 ``sync_group.participants`` is a read-only list of the group's members; change
 membership with ``sync_group.add_participant(participant)`` and
 ``sync_group.remove_participant(participant)``. The list has no guaranteed
-order, so sort by participant ID when you need a stable one, for example to
-assign roles. ``sync_group.leader`` is the group's leader.
+order. For a stable one, for example to assign roles or take turns, use
+:meth:`~psynet.participant.Participant.sync_group_seat`, which numbers
+members from 0 in the order they joined and doesn't change when others
+leave: ``participant.sync_group_seat("story") == turn % GROUP_SIZE``.
+:func:`~psynet.sync.group_seats` gives the seats of the whole group.
+``sync_group.leader`` is the group's leader.
 
 Regrouping
 ~~~~~~~~~~

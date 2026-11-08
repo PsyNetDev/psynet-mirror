@@ -780,6 +780,41 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         """
         return group_type in self.active_sync_groups
 
+    def latest_sync_group(self, group_type: str) -> Optional["SyncGroup"]:
+        """Return the participant's current or most recent group of ``group_type``.
+
+        Unlike ``active_sync_groups``, this still finds the group after it has
+        ended or the participant has left it. Returns ``None`` if they were
+        never in a group of that type.
+
+        For example, shared state kept in ``group.var`` can be read after the
+        game::
+
+            story = participant.latest_sync_group("story").var.story
+        """
+        from .sync import _latest_sync_group_link
+
+        latest = _latest_sync_group_link(self, group_type)
+        return None if latest is None else latest.sync_group
+
+    def sync_group_seat(self, group_type: str) -> Optional[int]:
+        """Return the participant's seat in their latest group of ``group_type``.
+
+        Seats are 0-based and number members in the order they joined (see
+        :func:`~psynet.sync.group_seats`), so they stay the same when other
+        members leave. Returns ``None`` if the participant was never in a
+        group of that type.
+
+        For example, members can take turns::
+
+            writer = turn % GROUP_SIZE
+            is_writer = participant.sync_group_seat("story") == writer
+        """
+        from .sync import group_seats
+
+        group = self.latest_sync_group(group_type)
+        return None if group is None else group_seats(group)[self.id]
+
     @property
     def sync_group(self) -> "SyncGroup":
         candidates = self.active_sync_groups

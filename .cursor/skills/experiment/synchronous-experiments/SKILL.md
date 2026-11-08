@@ -149,6 +149,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - A `PageMaker` builds its page again on submit, when the participant may
   have left the group. Never index `active_sync_groups[group_type]` there:
   it raises `KeyError`, which fails the participant.
+- Keep state the group shares in `group.var`, not copied into each
+  `participant.var`, and read it after the game with
+  `participant.latest_sync_group(group_type)`. For turn order or roles use
+  `participant.sync_group_seat(group_type)` instead of sorting
+  `participant_links`.
 - For games with turns one after the other, such as investor then trustee,
   follow "Turns one after the other" in
   `code/multiplayer/writing_a_round_based_experiment`.
