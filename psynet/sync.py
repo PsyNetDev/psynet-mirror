@@ -1511,6 +1511,8 @@ RemovalReason = Literal[
     "finished",
 ]
 REMOVAL_REASONS = (None, *get_args(RemovalReason))
+# Reasons for leaving that don't dissolve a group below its quorum.
+_KEEPS_GROUP_REASONS = ("finished", "moved_on")
 
 _OLD_BELOW_QUORUM_NAMES = (
     "fail_participants_below_min_size",
@@ -4086,7 +4088,9 @@ class SyncGroup(SQLBase, SQLMixin):
               group or to sit the round out. Like ``"finished"``, it doesn't
               dissolve a group below its quorum, so a pair a
               :class:`SimpleGrouper` formed isn't dissolved, failing the
-              partner, when the first member reaches a :class:`Regrouper`.
+              partner, when the first member reaches a :class:`Regrouper`. A
+              later :class:`GroupBarrier` of the group's type still dissolves
+              it if fewer than its quorum are left.
             - ``"finished"``: "(finished)", for a member who has played their
               part, such as a player leaving a cohort after their last round.
               Their leaving doesn't dissolve a group below its quorum, so the
@@ -4207,7 +4211,7 @@ class SimpleSyncGroup(SyncGroup):
         reason: Optional[RemovalReason] = None,
     ):
         super().remove_participant(participant, reason=reason)
-        if reason not in ("finished", "moved_on"):
+        if reason not in _KEEPS_GROUP_REASONS:
             self.dissolve_if_below_quorum()
 
     def check_numbers(self):
