@@ -1851,6 +1851,7 @@ class ParticipantDriver:
             participant = Participant.query.get(self.id)
             participant.fail(reason, redirect_to_end=redirect_to_end)
         _check_barriers_now()
+        self._fetch_status()
 
     def drop_out(self):
         """Leave the experiment as if returning the study on the recruitment platform.

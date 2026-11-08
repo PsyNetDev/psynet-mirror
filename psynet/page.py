@@ -255,7 +255,10 @@ class WaitPage(Page):
 
     @property
     def plain_text(self):
-        return as_plain_text(self.content)
+        content = self.content
+        if isinstance(content, str):
+            content = Markup.escape(content)
+        return as_plain_text(content)
 
     def get_bot_response(self, experiment, bot):
         return None

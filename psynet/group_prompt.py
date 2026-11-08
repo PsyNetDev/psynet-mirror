@@ -22,7 +22,8 @@ Design constraints:
   ``answers`` fix the display when the page loads.
 - Members who drop out of the group stay in their seat, faded and marked
   "(left)" if they failed or left the experiment, "(removed)" if a
-  barrier removed them for being late, and "(dropped out)" otherwise.
+  barrier removed them for being late, "(finished)" if they left after
+  playing their part, and "(dropped out)" otherwise.
   Members who moved on to their next group, as in a new round, are no
   longer shown, except on pages with ``answers`` that include their answer,
   where they keep their seat and bubble. The reason comes from
@@ -75,7 +76,7 @@ class GroupPrompt(Prompt):
     and in a zigzag across the width of the page for more. Hovering over or
     tapping a member brings their speech bubble to the front. A member who
     dropped out of the group is drawn faded and marked "(left)",
-    "(removed)" or "(dropped out)"; one who moved on to their next group, as in a
+    "(removed)", "(finished)" or "(dropped out)"; one who moved on to their next group, as in a
     new round, is no longer shown, unless the page shows their answer.
 
     A page shows either progress (ticks for who has answered) or

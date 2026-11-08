@@ -16,7 +16,6 @@ bound.
 import hashlib
 import json
 
-from jsonpickle.unpickler import loadclass
 from jsonpickle.util import importable_name
 from markupsafe import Markup
 
@@ -25,6 +24,7 @@ from psynet.serialize import (
     SerializedCallable,
     callable_from_path,
     callable_to_path,
+    load_class,
     serialize_callable,
 )
 from psynet.utils import finalize_template_value
@@ -58,7 +58,7 @@ class BarrierSpecError(ValueError):
 
 
 def _importable_class_path(cls, context):
-    """Return an import path that round-trips through ``loadclass``."""
+    """Return an import path that round-trips through ``load_class``."""
     path = importable_name(cls)
     qualname = getattr(cls, "__qualname__", "")
     if "<locals>" in path or "<locals>" in qualname:
@@ -66,7 +66,7 @@ def _importable_class_path(cls, context):
             f"{context} is a local class and cannot be reconstructed. "
             "Define the class at module level."
         )
-    loaded = loadclass(path)
+    loaded = load_class(path)
     if loaded is None:
         raise BarrierSpecError(
             f"{context} class {path!r} cannot be imported after encoding."
@@ -133,7 +133,7 @@ def barrier_from_spec_json(serialized):
             f"Unsupported barrier spec version {spec.get('version')!r}."
         )
     try:
-        barrier_class = loadclass(spec["class"])
+        barrier_class = load_class(spec["class"])
     except (KeyError, ImportError, AttributeError) as err:
         raise BarrierSpecError(
             "Barrier spec class is missing or cannot be imported."
@@ -245,7 +245,7 @@ def _decode_value(value):
             arguments=_decode_value(value["arguments"]),
         )
     if kind == "orm":
-        model = loadclass(value["class"])
+        model = load_class(value["class"])
         if model is None:
             raise BarrierSpecError(f"ORM class {value['class']!r} cannot be imported.")
         identifiers = _decode_value(value["identifiers"])
@@ -259,7 +259,7 @@ def _decode_value(value):
     if kind == "markup":
         return Markup(value["html"])
     if kind == "class":
-        cls = loadclass(value["path"])
+        cls = load_class(value["path"])
         if cls is None:
             raise BarrierSpecError(f"Class {value['path']!r} cannot be imported.")
         return cls
