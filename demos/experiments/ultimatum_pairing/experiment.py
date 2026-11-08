@@ -33,7 +33,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper
+from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper, only_in_group
 from psynet.timeline import (
     CodeBlock,
     PageMaker,
@@ -59,10 +59,6 @@ WAIT_TIMEOUT = ROUND_DEADLINE_SECONDS + DECISION_SECONDS + 20
 
 def cohort_of(participant):
     return participant.active_sync_groups.get("cohort")
-
-
-def in_pair(participant):
-    return participant.in_sync_group("pair")
 
 
 def lobby_message(seconds_left):
@@ -219,8 +215,6 @@ AWAY_TEXT = "You were away for too long, so you got no coins this round."
 
 
 def show_outcome(participant):
-    if not in_pair(participant):
-        return InfoPage(AWAY_TEXT, time_estimate=5)
     if participant.var.decisions is None:
         return InfoPage(participant.var.outcome, time_estimate=5)
     return ModularPage(
@@ -243,7 +237,7 @@ def not_playing(participant):
             f"{MAX_SIT_OUTS} rounds, the game ends early for you."
         )
     else:
-        # Removed from this round's pair before reaching the decision page.
+        # Removed from this round's pair for being away too long.
         text = AWAY_TEXT
     return InfoPage(text, time_estimate=5)
 
@@ -262,29 +256,26 @@ pairing = Regrouper(
 def play_round():
     return join(
         pairing,
-        conditional(
-            "paired",
-            in_pair,
-            join(
-                PageMaker(decision_page, time_estimate=10),
-                GroupBarrier(
-                    id_="round_finished",
-                    group_type="pair",
-                    waiting_message="Waiting for your partner…",
-                    waiting_screen=waiting_for_partner,
-                    # A player is taken out 30 s after the round starts (long
-                    # enough for a background tab to notice), but not while their
-                    # answer to the timed decision page may still be on its way.
-                    late_after=30,
-                    late_action="leave_group",
-                    on_release=score_round,
-                ),
-                PageMaker(show_outcome, time_estimate=5),
+        only_in_group(
+            "pair",
+            PageMaker(decision_page, time_estimate=10),
+            GroupBarrier(
+                id_="round_finished",
+                group_type="pair",
+                waiting_message="Waiting for your partner…",
+                waiting_screen=waiting_for_partner,
+                # A player is taken out 30 s after the round starts (long
+                # enough for a background tab to notice), but not while their
+                # answer to the timed decision page may still be on its way.
+                late_after=30,
+                late_action="leave_group",
+                on_release=score_round,
             ),
+            PageMaker(show_outcome, time_estimate=5),
             # Without a cohort the game is over and the ended-early page
             # explains why, but a player removed for being away, who left the
             # cohort too, is told about the round.
-            conditional(
+            otherwise=conditional(
                 "explain_round",
                 lambda participant: (
                     cohort_of(participant) is not None
@@ -314,9 +305,6 @@ class Exp(psynet.experiment.Experiment):
             waiting_message=lobby_message,
             waiting_screen=forming_cohort,
             max_wait_time=300,
-            # Once a cohort stops taking newcomers, removing a late player can
-            # leave it below its quorum; the rest then end early, not failed.
-            below_quorum="continue_without_group",
         ),
         while_loop(
             "rounds",
@@ -419,13 +407,13 @@ class Exp(psynet.experiment.Experiment):
         _play([stayer])
         assert "Your partner was away" in stayer.current_page_text
         assert leaver.with_participant(lambda p: cohort_of(p) is None)
-        # The leaver comes back later. This was their second round, so the game
-        # didn't end early for them.
+        # The leaver comes back later. Rounds count the pairs a player joined,
+        # so this pair was their second round and the game didn't end early.
         for text in [AWAY_TEXT, "That's the end"]:
             leaver.take_page()
             assert text in leaver.current_page_text
 
-        # The stayer has played their two rounds. The lingerer wasn't failed, and
+        # The stayer has been in two pairs. The lingerer wasn't failed, and
         # the sit-out didn't count, so those two play a final round together.
         # The cohort stays closed to latecomers after the stayer has left it.
         for bot in [stayer, *sitting_out, bots[3]]:

@@ -157,7 +157,8 @@ test("default barriers hold the current page until websocket release", { tag: "@
       height: el.getBoundingClientRect().height,
       overflowed: el.scrollHeight > el.clientHeight,
     }));
-    // Two lines at most, then an ellipsis.
+    // Two lines at most, then an ellipsis. 48 px fits two lines of the
+    // narrow-screen notice (under 720 px), not of the desktop one.
     expect(longNotice.height).toBeLessThan(48);
     expect(longNotice.overflowed).toBeTruthy();
     await expect(arrivalNotice).toHaveAttribute("title", longNoticeText);
