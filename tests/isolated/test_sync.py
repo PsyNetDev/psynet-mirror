@@ -7576,12 +7576,21 @@ def test_a_dissolving_group_records_the_round_for_every_member(
     _arrive_at_group_barrier(exp, barrier, waiter)
     _commit_barrier_arrivals()
 
-    quitter.fail("returned")
-    db_session.commit()
+    # The deciding member's own request is busy, so the poller removes them later.
+    with db.engine.connect() as busy_request, busy_request.begin():
+        busy_request.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": deciding.id},
+        )
+        quitter.fail("returned")
+        db_session.commit()
+    check_barriers()
 
-    outcomes = {r["participant_id"]: r["outcome"] for r in group_rounds()}
-    assert outcomes == {
-        waiter.id: "dissolved",
-        deciding.id: "dissolved",
-        quitter.id: "left_experiment",
-    }
+    rounds = sorted(
+        (r["participant_id"], r["round"], r["outcome"]) for r in group_rounds()
+    )
+    assert rounds == [
+        (waiter.id, 1, "dissolved"),
+        (deciding.id, 1, "dissolved"),
+        (quitter.id, 1, "left_experiment"),
+    ]

@@ -1846,8 +1846,15 @@ class GroupBarrier(Barrier):
         number = _round_number(group, self.id)
         roles = {link.participant_id: link.role for link in group.participant_links}
         member_ids = [participant.id for participant in members]
-        rows = {}
+        rows = {
+            row.participant_id: row
+            for row in GroupRound.query.filter_by(
+                sync_group_id=group.id, barrier_id=self.id, round=number
+            )
+        }
         for participant in [*members, *left]:
+            if participant.id in rows:
+                continue
             if participant in members:
                 participant_outcome = outcome
                 others = [id_ for id_ in member_ids if id_ != participant.id]
@@ -4184,7 +4191,7 @@ class SyncGroup(SQLBase, SQLMixin):
         try:
             remaining = list(self.active_participants)
             removed = _lock_free_participants(remaining)
-            _run_on_dissolve(self, removed)
+            _run_on_dissolve(self, remaining, removed)
             group_size = len(group_seats(self))
             for participant in removed:
                 action = self._below_quorum_action(participant)
@@ -4300,8 +4307,13 @@ class SimpleSyncGroup(SyncGroup):
         self._dissolve()
 
 
-def _run_on_dissolve(group, members):
-    """Record the round and call ``on_dissolve`` at each barrier of ``group`` where some of ``members`` are waiting."""
+def _run_on_dissolve(group, members, removed):
+    """Record the round and call ``on_dissolve`` at each barrier of ``group`` where members wait.
+
+    Every member in ``members`` gets a round record, but only those in
+    ``removed``, whose rows this transaction holds, are passed to
+    ``on_dissolve``. The others get it when the poller removes them.
+    """
     reconstructed = {}
     waiting = {}
     for participant in members:
@@ -4323,8 +4335,9 @@ def _run_on_dissolve(group, members):
                 group.last_barrier_pass_time or group.creation_time
             )
             barrier._start_round_records(group, members, left, "dissolved")
+        participants = [p for p in participants if p in removed]
         try:
-            if barrier.on_dissolve is not None:
+            if barrier.on_dissolve is not None and participants:
                 barrier.on_dissolve(
                     group=group, participants=participants, barrier=barrier
                 )
@@ -4660,7 +4673,8 @@ class GroupRound(SQLBase, SQLMixin):
     group_type = Column(String)
     barrier_id = Column(String, index=True)
     round = Column(Integer)
-    participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
+    # No foreign key: dissolving records members whose rows their own requests hold.
+    participant_id = Column(Integer, index=True)
     role = Column(String)
     # "played", "dissolved", or why the member left, as in
     # ``Participant.sync_group_removal_reason``.
@@ -4725,7 +4739,8 @@ def _round_number(group, barrier_id):
 
     Groups a :class:`Regrouper` forms in one split share a creation time, so
     their rounds are numbered by split, the same for the whole cohort.
-    Other groups count their own rounds at the barrier.
+    Other groups count their own rounds at the barrier. A group that
+    dissolved there keeps that round for members removed afterwards.
     """
     definition = (
         None
@@ -4743,15 +4758,14 @@ def _round_number(group, barrier_id):
             else SyncGroup.within_group_id == group.within_group_id,
         )
         return query.scalar()
-    previous = (
-        db.session.query(func.max(GroupRound.round))
-        .filter(
-            GroupRound.sync_group_id == group.id,
-            GroupRound.barrier_id == barrier_id,
-        )
-        .scalar()
+    rounds = db.session.query(func.max(GroupRound.round)).filter(
+        GroupRound.sync_group_id == group.id,
+        GroupRound.barrier_id == barrier_id,
     )
-    return (previous or 0) + 1
+    dissolved = rounds.filter(GroupRound.outcome == "dissolved").scalar()
+    if dissolved is not None:
+        return dissolved
+    return (rounds.scalar() or 0) + 1
 
 
 @register_table
