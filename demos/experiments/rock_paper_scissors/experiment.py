@@ -62,7 +62,7 @@ class RockPaperScissorsTrial(StaticTrial):
                 id_="finished_trial",
                 group_type="rock_paper_scissors",
                 waiting_message="Waiting for your partner",
-                on_release=self.score_round,
+                on_release=self.score_trial,
                 max_wait_time=PARTNER_WAIT_SECONDS,
             ),
         )
@@ -77,12 +77,12 @@ class RockPaperScissorsTrial(StaticTrial):
             PushButtonControl(choices=ACTIONS),
             time_estimate=5,
             save_answer="last_action",
-            # Running out of time saves None; score_round then plays a random move.
+            # Running out of time saves None; score_trial then plays a random move.
             time_limit=CHOICE_SECONDS,
         )
 
     @classmethod
-    def score_round(cls, trials: List["RockPaperScissorsTrial"]):
+    def score_trial(cls, trials: List["RockPaperScissorsTrial"]):
         """Save each player's action, their partner's and the score on their trial."""
         timed_out = {t.id: t.participant.var.last_action is None for t in trials}
         actions = {
@@ -93,7 +93,7 @@ class RockPaperScissorsTrial(StaticTrial):
         }
         for trial in trials:
             (partner,) = [t for t in trials if t != trial]
-            trial.var.round_result = {
+            trial.var.result = {
                 "action": actions[trial.id],
                 "timed_out": timed_out[trial.id],
                 "partner_id": partner.participant_id,
@@ -103,7 +103,7 @@ class RockPaperScissorsTrial(StaticTrial):
             }
 
     def show_feedback(self, experiment, participant):
-        result = self.var.round_result
+        result = self.var.result
         outcome = {1: "You won!", 0: "You drew.", -1: "You lost."}[result["score"]]
         if result["timed_out"]:
             you = f"You ran out of time, so we chose {result['action']} for you"
@@ -164,10 +164,10 @@ class Exp(psynet.experiment.Experiment):
                 "participant_id": trial.participant_id,
                 "trial_id": trial.id,
                 # A player who ran out of time played a random action.
-                **trial.var.round_result,
+                **trial.var.result,
             }
             for trial in trials
-            if trial.var.has("round_result")
+            if trial.var.has("result")
         ]
         rows.sort(key=lambda r: (r["group_id"], r["round"], r["participant_id"]))
         return {"player_round": rows}

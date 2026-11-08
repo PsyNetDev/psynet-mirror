@@ -411,8 +411,9 @@ participant-level staircase inside a :func:`~psynet.timeline.while_loop`; the
 approach to adaptive designs.
 
 In group games, cued trials can be the rounds. Set ``sync_group_type`` on
-the trial class and pass ``round`` to ``cue``: the trials that the members of
-a group cue for the same round share one
+the trial class and pass ``round`` to ``cue``, or leave it out when each
+group plays a single round: the trials that the members of a group cue for
+the same round share one
 :class:`~psynet.trial.main.SyncGroupNode`, whose ``var`` holds the group's
 results, and each trial records the group, the player's role and the round.
 ``definition`` can then be a function of ``group`` and ``round``, called

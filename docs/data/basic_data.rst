@@ -95,7 +95,8 @@ a :class:`~psynet.sync.Regrouper` gave one, in ``trial.sync_group_role``.
 ``trial.sync_group_round`` says which of the group's rounds the trial belongs
 to: a trial maker numbers them from 0, shared by a member who joined the group
 late, and a cued trial stores the ``round`` passed to
-:meth:`~psynet.trial.main.Trial.cue`. The group's trials with the same
+:meth:`~psynet.trial.main.Trial.cue`, or ``None`` if the group plays a
+single round and ``round`` was left out. The group's trials with the same
 ``sync_group_id`` and ``sync_group_round`` are one round. All three stay after
 the group ends. Cued trials of one group and round also share a
 :class:`~psynet.trial.main.SyncGroupNode`, which can hold the group's results;
@@ -144,7 +145,7 @@ their trial, including the random action played for someone who ran out of
 time, because that action is in no answer:
 
 .. literalinclude:: ../../demos/experiments/rock_paper_scissors/experiment.py
-   :pyobject: RockPaperScissorsTrial.score_round
+   :pyobject: RockPaperScissorsTrial.score_trial
 
 ``get_basic_data`` then reads one row from each scored trial:
 
