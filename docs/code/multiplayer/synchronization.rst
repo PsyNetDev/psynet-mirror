@@ -251,19 +251,19 @@ function, a static or class method, or a method bound to a trial maker or a
 saved database object such as a trial. The ``barrier`` it receives is rebuilt
 from saved settings, so read only scalar settings such as ``waiting_message`` and
 ``max_wait_time`` from it, and store custom barrier attributes as
-JSON-compatible values. To share one callback between barriers, pass each
-barrier ``on_release_data``, a dictionary that the callback reads as
-``barrier.on_release_data``:
+JSON-compatible values. Closures and lambdas can't be saved, so to share one
+callback between barriers, give each barrier its own arguments with
+:func:`functools.partial`, passed by keyword and JSON-compatible:
 
 .. code-block:: python
 
-    def score_question(group, barrier):
-        question = barrier.on_release_data["question"]
+    from functools import partial
+
+    def score_question(group, question):
         ...
 
     GroupBarrier(id_="question_1", group_type="team",
-                 on_release=score_question,
-                 on_release_data={"question": 1})
+                 on_release=partial(score_question, question=1))
 
 ``on_release`` can also take ``left``, the members who left the group since
 its previous barrier pass (or since it formed), ordered by participant ID;
@@ -284,9 +284,8 @@ still score the last question for those who answered it:
 .. code-block:: python
 
     GroupBarrier(id_="question_3", group_type="team",
-                 on_release=score_question,
-                 on_dissolve=score_question,
-                 on_release_data={"question": 3})
+                 on_release=partial(score_question, question=3),
+                 on_dissolve=partial(score_question, question=3))
 
 Members who are still on an earlier page, such as the question itself, when
 the group dissolves get neither callback: they pass the barrier without
@@ -860,7 +859,12 @@ For the rest of the timeline:
   it, so a loop passed to ``only_in_group`` runs to its end. For rounds,
   pass a list of the rounds' steps, as in
   ``only_in_group("pair", [round_steps(n) for n in range(N_ROUNDS)])``, or
-  put ``only_in_group`` inside the loop's ``logic``.
+  put ``only_in_group`` inside the loop's ``logic``. The steps are for
+  participants already in the group, so the grouper or
+  :class:`~psynet.sync.Regrouper` that forms it goes before
+  ``only_in_group``, never among its steps; when pairs change every round,
+  use ``for_loop(..., logic=join(Regrouper(...), only_in_group("pair",
+  round_steps())))``.
 - Trial makers synchronized on that group type give them no more trials.
   A member who leaves before finishing any trial of such a trial maker,
   including one who is out of the group when it starts, skips the rest of
