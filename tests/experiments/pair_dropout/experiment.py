@@ -3,8 +3,9 @@
 In the first pair, one member returns the study mid-game. In the second, one
 member stops responding and is removed for being late. In the third, one member
 fails, as after a failed check. With
-``below_quorum="continue_without_group"``, the partner who stayed carries on alone in
-both cases and is told why on their next page.
+``below_quorum="continue_without_group"``, the partner who stayed carries on
+alone in each case and is told why on their next page. The member removed for
+being late is told on the page they are on.
 """
 
 import psynet.experiment
@@ -59,14 +60,15 @@ class Exp(psynet.experiment.Experiment):
             for bot in pair:
                 bot.take_page()
             advance_past_wait_pages(list(pair))
-            assert all(bot.current_page_text == "Round 1." for bot in pair)
+            texts = [bot.current_page_text for bot in pair]
+            assert texts == ["Round 1."] * 2, texts
 
         # silent never answers round 1; on_time waits for them at the barrier.
         on_time.take_page()
         assert on_time.current_page_text.startswith("Waiting for"), (
             on_time.current_page_text
         )
-        assert silent.current_notice == "Your partner is ready."
+        assert silent.current_notice == "Your partner is ready.", silent.current_notice
 
         quitter.drop_out()
         assert quitter.failed
@@ -94,10 +96,12 @@ class Exp(psynet.experiment.Experiment):
         # partner left them.
         assert silent.current_notice == (
             "Your partner went on without you. Please continue."
-        )
+        ), silent.current_notice
         silent.take_page()
-        assert silent.current_page_text == "Round 2 on your own."
-        assert silent.current_notice is None
+        assert silent.current_page_text == "Round 2 on your own.", (
+            silent.current_page_text
+        )
+        assert silent.current_notice is None, silent.current_notice
 
         failer.allow_failure()
         failer.fail("failed_check")
@@ -109,13 +113,13 @@ class Exp(psynet.experiment.Experiment):
         for bot in carried_on:
             bot.take_page()
             advance_past_wait_pages([bot])
-            assert bot.current_page_text == "Done."
+            assert bot.current_page_text == "Done.", bot.current_page_text
         run_bots_to_completion(carried_on)
         assert not any(bot.failed for bot in carried_on)
 
     @staticmethod
     def _assert_carries_on_alone(bot):
-        assert bot.current_page_text == "Round 2 on your own."
+        assert bot.current_page_text == "Round 2 on your own.", bot.current_page_text
         assert bot.current_notice == (
             "Your partner is no longer in your group. Please continue."
-        )
+        ), bot.current_notice

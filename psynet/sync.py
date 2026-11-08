@@ -3862,8 +3862,11 @@ def only_in_group(group_type: str, *steps, otherwise=None):
 
     Each step is checked once, when the participant reaches it, so a loop
     passed as one step runs to its end. For rounds, pass each round's steps
-    as separate steps, as the ``public_goods`` demo does, or stop the loop
-    on ``participant.in_sync_group(group_type)``.
+    as separate steps, as ``tests/experiments/pair_dropout`` does, or stop
+    the loop on ``participant.in_sync_group(group_type)``. Put a
+    :class:`GroupCloser` after the block, not among its steps: it takes
+    everyone out of the group, so the steps after it and ``otherwise`` would
+    treat them all as having left.
 
     Parameters
     ----------
@@ -3891,23 +3894,25 @@ def only_in_group(group_type: str, *steps, otherwise=None):
         )
 
     One question of a group estimation game, which a participant without a
-    group answers alone::
+    group answers alone. Build each question's steps in a function, so that
+    the lambda sees that question rather than the last one of a loop::
 
-        only_in_group(
-            "team",
-            estimate_page(question),
-            GroupBarrier(id_=f"estimates_{question}", group_type="team",
-                         on_release=share_median),
-            revised_estimate_page(question),
-            otherwise=PageMaker(
-                lambda participant: (
-                    estimate_page(question)
-                    if participant.var.get(f"estimate_{question}") is None
-                    else InfoPage("Your group has ended. Let's move on.")
+        def question_steps(question):
+            return only_in_group(
+                "team",
+                estimate_page(question),
+                GroupBarrier(id_=f"estimates_{question}", group_type="team",
+                             on_release=share_median),
+                revised_estimate_page(question),
+                otherwise=PageMaker(
+                    lambda participant: (
+                        estimate_page(question)
+                        if participant.var.get(f"estimate_{question}") is None
+                        else InfoPage("Your group has ended. Let's move on.")
+                    ),
+                    time_estimate=10,
                 ),
-                time_estimate=10,
-            ),
-        )
+            )
     """
     group_steps = [
         conditional(
