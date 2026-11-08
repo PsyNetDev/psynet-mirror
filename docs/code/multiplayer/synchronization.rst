@@ -62,9 +62,9 @@ the grouper has a ``waiting_screen`` (see below).
     participant may join that group. Only used with
     ``join_existing_groups=True``.
 
-``start_short_after`` and ``start_short_with`` (default: ``None``)
+``start_short_after`` and ``start_short_with`` (default: ``None``, and ``quorum``)
     Seconds after which a smaller group may start, and the smallest group
-    such a start may form; pass both or neither. Once the longest-waiting
+    such a start may form, which defaults to ``quorum``. Once the longest-waiting
     participant has waited ``start_short_after`` seconds and at least
     ``start_short_with`` are waiting, those waiting form a group even if
     there are fewer than ``batch_size``. Needs a ``max_wait_time`` (default
@@ -265,7 +265,8 @@ from saved settings, so read only scalar settings such as ``waiting_message`` an
 JSON-compatible values. Closures and lambdas can't be saved, so to share one
 callback between barriers, give each barrier its own arguments with
 :func:`functools.partial`. Pass them by keyword, as JSON-compatible values
-named in the function's parameters:
+named in the function's parameters; they take precedence over arguments of
+the same name that PsyNet passes:
 
 .. code-block:: python
 
@@ -759,7 +760,6 @@ options:
         initial_group_size=4,
         quorum=2,
         start_short_after=60,
-        start_short_with=2,
         max_wait_time=120,
         # The last member left continues alone instead of being failed.
         below_quorum="continue_without_group",
@@ -868,9 +868,9 @@ For the rest of the timeline:
   put ``only_in_group`` inside the loop's ``logic``. The steps are for
   participants already in the group, so the grouper or
   :class:`~psynet.sync.Regrouper` that forms it goes before
-  ``only_in_group``, never among its steps: there it would be skipped by
-  anyone not in a group yet, which at the first grouper is everyone, and
-  later a player who sat out; when pairs change every round,
+  ``only_in_group``, never among its steps. There it would be skipped by
+  everyone not yet in a group: at the start that is everyone, and later it is
+  anyone who sat out a round, who would then never be grouped again; when pairs change every round,
   use ``for_loop(..., logic=join(Regrouper(...), only_in_group("pair",
   round_steps())))``.
 - Trial makers synchronized on that group type give them no more trials.

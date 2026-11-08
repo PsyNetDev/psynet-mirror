@@ -288,7 +288,6 @@ class Exp(psynet.experiment.Experiment):
             initial_group_size=COHORT_SIZE,
             quorum=MIN_COHORT_SIZE,
             start_short_after=SHORT_START_SECONDS,
-            start_short_with=MIN_COHORT_SIZE,
             join_existing_groups=True,
             join_criterion=cohort_accepts_newcomers,
             waiting_message=lobby_message,
