@@ -93,10 +93,9 @@ class sets ``sync_group_type``, record the group the participant was in when
 the trial was created, in ``trial.sync_group_id``, and their role in it, if
 a :class:`~psynet.sync.Regrouper` gave one, in ``trial.sync_group_role``.
 ``trial.sync_group_round`` says which of the group's rounds the trial belongs
-to: a trial maker numbers them from 0, shared by a member who joined the group
-late, and a cued trial stores the ``round`` passed to
-:meth:`~psynet.trial.main.Trial.cue`, or ``None`` if the group plays a
-single round and ``round`` was left out. The group's trials with the same
+to, counted from 0 and shared by a member who joined the group late; a group
+re-formed every round, as by a :class:`~psynet.sync.Regrouper`, plays only
+round 0. The group's trials with the same
 ``sync_group_id`` and ``sync_group_round`` are one round. All three stay after
 the group ends. Cued trials of one group and round also share a
 :class:`~psynet.trial.main.SyncGroupNode`, which can hold the group's results;

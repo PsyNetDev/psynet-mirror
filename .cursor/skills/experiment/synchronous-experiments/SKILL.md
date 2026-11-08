@@ -100,47 +100,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `GroupBarrier(late_after=..., late_action="leave_group")` so late members are
   removed; they then pass the round's later group barriers alone.
 - Write such a game as one cued trial per player per round, not as pages
-  with round bookkeeping in participant variables ("One trial per player
-  per round" in `code/multiplayer/writing_a_round_based_experiment`):
-
-  ```python
-  class PickTrial(Trial):
-      sync_group_type = "room"  # a room's trials for one round share a node
-      time_estimate = 15
-
-      def show_trial(self, experiment, participant):
-          return join(
-              PageMaker(self.choose_number, time_estimate=5),  # save_answer="choice"
-              GroupBarrier(id_="round_finished", group_type="room",
-                           on_release=self.score_room),
-          )
-
-      @classmethod
-      def score_room(cls, trials, node):
-          choices = {t.participant_id: t.participant.var.choice for t in trials}
-          winner = lowest_unique(choices)
-          node.var.winning_number = winner  # the room's result
-          for trial in trials:  # each player's result
-              trial.var.won = winner is not None and choices[trial.participant_id] == winner
-
-  for_loop(label="rounds", iterate_over=range(N_ROUNDS), time_estimate_per_iteration=20,
-           logic=join(Regrouper("room", ...), PickTrial.cue({"numbers": NUMBERS})))
-  ```
-
-  Leave `round` out when groups are re-formed every round, as by a
-  `Regrouper`: the group identifies the round, and its members can be at
-  different loop passes (a latecomer or someone who sat out), so a loop index
-  would split them across nodes. Number each player's trials in the export
-  instead if you need a round column (`lowest_unique_number`). Pass the same
-  `round` for all members, such as the loop index, when a fixed group plays
-  several rounds; without it, `cue` raises an error at the group's second
-  round.
-  `trial.answer` is only set when the trial ends,
-  after the barrier, so `on_release` reads what `save_answer` stored, while
-  `score_answer`, `show_feedback` and `get_basic_data` read the trial and
-  `self.node.var`. Use `self.sync_group_role` for role-specific pages, and
-  wrap the cue in `only_in_group(group_type, ..., otherwise=...)` so a
-  player the regrouper sat out gets a page instead of a trial.
+  with round bookkeeping in participant variables; see "Rounds as cued
+  trials" below.
 - On a page
   with a `time_limit`, nobody is late before the limit has run out plus 10 s,
   so the timeout need not cover the page; the demos use 30 s so that a
@@ -221,6 +182,55 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Use visible timers, warning states, automatic staging/submission, and clear
   timeout behavior for timed phases. These patterns keep groups responsive and
   prevent one inactive participant from blocking everyone else indefinitely.
+
+### Rounds as cued trials
+
+Follow "One trial per player per round" in
+`code/multiplayer/writing_a_round_based_experiment`:
+
+```python
+class PickTrial(Trial):
+    sync_group_type = "room"  # a room's trials in one round share a node
+    time_estimate = 15
+
+    def show_trial(self, experiment, participant):
+        return join(
+            PageMaker(self.choose_number, time_estimate=5),  # save_answer="choice"
+            GroupBarrier(id_="round_finished", group_type="room",
+                         on_release=self.score_room),
+        )
+
+    @classmethod
+    def score_room(cls, trials, node):
+        choices = {t.participant_id: t.participant.var.choice for t in trials}
+        winner = lowest_unique({p: n for p, n in choices.items() if n is not None})
+        node.var.winning_number = winner  # the room's result
+        for trial in trials:  # each player's result
+            trial.var.won = winner is not None and choices[trial.participant_id] == winner
+
+# The Module gives the nodes a module_id to find them by when exporting.
+Module("game", for_loop(
+    label="rounds", iterate_over=range(N_ROUNDS), time_estimate_per_iteration=20,
+    logic=join(Regrouper("room", ...), PickTrial.cue({"numbers": NUMBERS})),
+))
+```
+
+- Leave out `round`: `cue` numbers each group's rounds from 0, joining the
+  group's newest node or starting its next round. A `Regrouper`'s groups
+  play round 0; a fixed group advances each round; a late joiner joins the
+  current round. Keep a `GroupBarrier` in every round so members stay in
+  step.
+- All trials of one group and round share the node and its definition,
+  whatever their class. A later cue with a different `dict` raises an error.
+  With several classes in a round, put the barrier after the round's last
+  class (or in every class): with a barrier only in the first, a fast
+  player can open the next round early.
+- `trial.answer` is only set when the trial ends, after the barrier, so
+  `on_release` reads what `save_answer` stored, while `score_answer`,
+  `show_feedback` and `get_basic_data` read the trial and `self.node.var`.
+- Use `self.sync_group_role` for role-specific pages, and wrap the cue in
+  `only_in_group(group_type, ..., otherwise=...)` so a player the regrouper
+  sat out gets a page instead of a trial.
 
 ## Recruitment and platform design
 

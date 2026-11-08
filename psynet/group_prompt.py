@@ -101,8 +101,9 @@ class GroupPrompt(Prompt):
         ``group_type`` or ``group``.
         If the lookup finds no group, for example because a barrier removed
         them for being late, the page shows just ``text``, as it does for
-        ``group=None`` (what ``trial.sync_group`` is after such a removal).
-        A group passed explicitly is drawn even if the viewer has left it.
+        ``group=None``. A group passed explicitly, such as
+        ``trial.sync_group``, which keeps the group the trial was played in,
+        is drawn even if the viewer has left it.
     group_type
         The type of group to show when ``group`` is omitted, for example
         ``"pair"``.

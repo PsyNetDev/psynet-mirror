@@ -82,25 +82,24 @@ maker:
    :dedent: 8
 
 The trial class sets ``sync_group_type``, so the trials that a pair's
-members cue share one :class:`~psynet.trial.main.SyncGroupNode`. Each trial
-records the pair (``sync_group_id``) and the player's role
-(``sync_group_role``), and keeps them after the pair ends. The ``Module``
-gives the nodes a ``module_id`` to find them by when exporting.
+members cue in a round share one :class:`~psynet.trial.main.SyncGroupNode`.
+Each trial records the pair (``sync_group_id``), the player's role
+(``sync_group_role``) and the pair's round (``sync_group_round``), and keeps
+them after the pair ends. The ``Module`` gives the nodes a ``module_id`` to
+find them by when exporting.
 
-Every pair here is new and plays a single round, so ``cue`` needs no round
-number, and ``sync_group_round`` is ``None``. Whether to pass ``round``
-depends on how long a group lasts:
-
-- **Groups re-formed every round**, as by a :class:`~psynet.sync.Regrouper`:
-  leave ``round`` out. The group identifies the round. Don't pass the loop
-  index here: members can be at different passes of the loop, for example
-  when one of them sat the last round out or joined late, and their trials
-  would then land on different nodes.
-- **Fixed groups playing several rounds**, such as pairs from a
-  :class:`~psynet.sync.SimpleGrouper`: pass ``round=``, the same value for all
-  members, such as the index of the surrounding
-  :func:`~psynet.timeline.for_loop`. Leaving it out raises an error at the
-  group's second round.
+``cue`` numbers each group's rounds by itself, from 0: a cue joins the
+group's newest node, or starts its next round if the player already has a
+trial of that class there. So every pair here, new each round, plays round
+0, while a fixed group cued in a loop plays rounds 0, 1, 2 and so on, and a
+member who joins it late joins its current round. This needs a barrier in
+each round, such as the one in ``show_trial`` below, so that no member
+starts the next round before the others have cued this one. Trials of
+different classes that a group cues in one round, such as the two phases of
+a round, share its node. Then put the barrier after the round's last class,
+or in every class: with a barrier only in the first class, a fast player
+could cue the first class again, and so open the next round, while the
+others are still in this one.
 
 :func:`~psynet.sync.only_in_group` runs the trial only for players in a
 pair. Those who sat out, or were removed from their pair partway, see the
@@ -270,10 +269,11 @@ Variations
 
 **Larger groups and fixed rounds.** The ``lowest_unique_number`` demo
 regroups all waiting players into rooms of up to eight every 10 seconds,
-with ``every=10`` and no ``within``, for a fixed number of rounds. A room
-can mix players at different rounds, for example a latecomer playing their
-first round with others playing their second, so the cue leaves ``round``
-out, and the export numbers each player's own trials instead:
+with ``every=10`` and no ``within``, for a fixed number of rounds. Each
+room is new, so its trials are all in round 0. A room can mix players at
+different rounds of the game, for example a latecomer playing their first
+round with others playing their second, so the export numbers each player's
+own trials as their round:
 
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: get_timeline
