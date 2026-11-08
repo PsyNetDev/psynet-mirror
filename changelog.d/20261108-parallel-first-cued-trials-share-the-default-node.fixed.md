@@ -1,0 +1,1 @@
+Fixed `Trial.cue` failing with `MultipleResultsFound` after several participants started their first cued trial of a module at the same time: they now share one node, and the module's cued trials share one network.

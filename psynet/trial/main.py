@@ -20,6 +20,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    UniqueConstraint,
     and_,
     distinct,
     exists,
@@ -30,7 +31,6 @@ from sqlalchemy import (
     select,
     text,
 )
-from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import deferred, relationship
@@ -51,7 +51,9 @@ from ..page import InfoPage, UnsuccessfulEndPage, WaitPage, wait_while
 from ..participant import Participant
 from ..sync import (
     GroupBarrier,
+    ParticipantLinkSyncGroup,
     SyncGroup,
+    _execute_advisory_xact_lock,
     _group_max_wait_time,
     _removed_from_group,
     _validate_group_timeouts,
@@ -286,6 +288,14 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         can read earlier answers. Otherwise, the default behaviour is to only store the
         answer from the final page.
 
+    sync_group_type : str or None
+        Set this class attribute to a group type to make :meth:`cue` play the
+        trial with the participant's group of that type: the trials that the
+        group's members cue for the same ``round`` share one
+        :class:`SyncGroupNode`, and each trial records the group, the
+        participant's role and the round. Only used by :meth:`cue`; trial
+        makers take ``sync_group_type`` as an argument instead.
+
     time_credit_before_trial: float
         Reports the amount of time credit that the participant had before they started the trial (in seconds).
 
@@ -344,6 +354,30 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         doc=(
             "Zero-based creation position among all trials from this trial maker "
             "for the participant."
+        ),
+    )
+    # No foreign key, so that creating a trial doesn't wait for a barrier
+    # check that holds the group's row.
+    sync_group_id = Column(
+        Integer,
+        index=True,
+        doc=(
+            "The group of the trial maker's (or, for cued trials, the trial "
+            "class's) ``sync_group_type`` that the participant was in when the "
+            "trial was created, kept after the group ends."
+        ),
+    )
+    sync_group_role = Column(
+        String,
+        doc="The participant's role in ``sync_group_id``, if a Regrouper gave one.",
+    )
+    sync_group_round = Column(
+        Integer,
+        doc=(
+            "Which round of ``sync_group_id`` this trial belongs to. In a trial "
+            "maker, rounds are counted from 1 and a member who joined the group "
+            "late shares the group's numbers; cued trials store the ``round`` "
+            "passed to :meth:`Trial.cue`."
         ),
     )
     definition = Column(PythonObject)
@@ -467,6 +501,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     wait_for_feedback = True  # determines whether feedback waits for the trial to be finalized or failed
     accumulate_answers = False
+    sync_group_type = None
 
     # Back-compat alias: older code referred to the creating node as ``origin``.
     @property
@@ -656,15 +691,14 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @property
     def sync_group(self) -> Optional[SyncGroup]:
         """
-        The :class:`~psynet.sync.SyncGroup` that this trial's participant belongs
-        to for this trial maker, or ``None`` if the trial maker is not
-        synchronised (its ``sync_group_type`` is ``None``) or the participant is no
-        longer in a group of that type.
+        The :class:`~psynet.sync.SyncGroup` that the trial was played in
+        (``sync_group_id``), or ``None`` if the trial is not synchronised or the
+        participant was in no group of that type when the trial was created.
+        The group is returned even if the participant has left it since.
         """
-        sync_group_type = self.trial_maker.sync_group_type
-        if sync_group_type is None:
+        if self.sync_group_id is None:
             return None
-        return self.participant.active_sync_groups.get(sync_group_type)
+        return db.session.get(SyncGroup, self.sync_group_id)
 
     def _allocate_performance_reward(self):
         reward = self.compute_performance_reward(score=self.score)
@@ -1169,10 +1203,20 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         assets=None,
         on_trial_created=None,
         creation_context=None,
+        *,
+        round=None,
     ):
         """
         Use this method to add a trial directly into a timeline,
         without needing to create a corresponding trial maker.
+
+        If the trial class sets :attr:`sync_group_type`, the trial is played with
+        the participant's group of that type: the trials that the group's members
+        cue for the same ``round`` hang off one shared :class:`SyncGroupNode`, so
+        the group's results for that round can go in ``trial.node.var``. Each
+        trial records ``sync_group_id``, ``sync_group_role`` and
+        ``sync_group_round``. A participant who is in no group of that type when
+        the trial starts gets an ungrouped trial on the module's default node.
 
         Parameters
         ----------
@@ -1182,6 +1226,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             Alternatively, it can be a ``Node`` object, in which case the ``Node`` object
             will be saved to ``trial.node``, and ``node.definition`` will be saved
             to ``trial.definition``.
+            It can also be a function returning the ``dict``, taking any of
+            ``group``, ``round``, ``participant`` and ``experiment``. With
+            :attr:`sync_group_type`, it is called once per group and round, when
+            the first member's trial creates the node, and every member's trial
+            gets its result; ``participant`` is that first member. Otherwise it is
+            called for each trial, with ``group=None``.
 
         assets :
             Optional dictionary of assets to add to the trial (in addition to any provided by
@@ -1199,37 +1249,65 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             Optional request-local value passed to ``on_trial_created``. This is
             useful for recording adaptive-selection provenance without adding it
             to the participant-facing trial definition.
+
+        round :
+            The group's round that this trial belongs to, for example the index
+            of the surrounding ``for_loop``. Required if, and only if, the trial
+            class sets :attr:`sync_group_type`.
+
+        Examples
+        --------
+
+        ::
+
+            class PickTrial(Trial):
+                sync_group_type = "room"
+
+            for_loop(
+                label="rounds",
+                iterate_over=range(3),
+                logic=lambda number: join(
+                    Regrouper("room", group_size=4),
+                    PickTrial.cue(lambda group: {"target": random.randint(1, 5)}, round=number),
+                ),
+                time_estimate_per_iteration=20,
+            )
         """
         from psynet.trial.chain import ChainNode
 
         if creation_context is not None and on_trial_created is None:
             raise ValueError("creation_context requires an on_trial_created callback.")
+        if (cls.sync_group_type is None) != (round is None):
+            raise ValueError(
+                f"{cls.__name__}.cue() needs round= if and only if "
+                f"{cls.__name__}.sync_group_type is set."
+            )
 
         if isinstance(definition, ChainNode):
-            use_default_node = False
-            node = definition
-            cls.check_node_is_valid(node)
-            definition = node.definition
-        elif isinstance(definition, dict):
-            use_default_node = True
-            node = None
-        else:
+            if cls.sync_group_type is not None:
+                raise TypeError(
+                    f"{cls.__name__} has a sync_group_type, so cue() makes the "
+                    "group's node itself; pass a dict or a function instead of a node."
+                )
+            cls.check_node_is_valid(definition)
+        elif not (isinstance(definition, dict) or callable(definition)):
             raise TypeError(f"Invalid definition type: {type(definition)}")
 
         def _register_trial(experiment, participant):
-            nonlocal node
-
-            if use_default_node:
-                node = cls.get_default_parent_node(participant, experiment)
-
+            node, group, trial_definition = cls._cued_trial_node(
+                definition, round, participant, experiment
+            )
             trial = cls(
                 experiment,
                 node,
                 participant,
                 propagate_failure=False,
                 is_repeat_trial=False,
-                definition=definition,
+                definition=trial_definition,
             )
+            if group is not None:
+                _record_sync_group(trial, participant, group)
+                trial.sync_group_round = round
             db.session.add(trial)
             participant.current_trial = trial
 
@@ -1254,17 +1332,70 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         )
 
     @classmethod
+    def _cued_trial_node(cls, definition, round, participant, experiment):
+        """Return the node, sync group and definition for a trial made by :meth:`cue`."""
+        from psynet.trial.chain import ChainNode
+
+        if isinstance(definition, ChainNode):
+            return definition, None, definition.definition
+
+        group = None
+        if cls.sync_group_type is not None:
+            group = participant.active_sync_groups.get(cls.sync_group_type)
+            if group is None:
+                logger.info(
+                    "Participant %s is in no '%s' group, so their %s for round %s "
+                    "is not grouped.",
+                    participant.id,
+                    cls.sync_group_type,
+                    cls.__name__,
+                    round,
+                )
+
+        def make_definition():
+            if not callable(definition):
+                return definition
+            return call_function_with_context(
+                definition,
+                group=group,
+                round=round,
+                participant=participant,
+                experiment=experiment,
+            )
+
+        if group is None:
+            node = cls.get_default_parent_node(participant, experiment)
+            return node, None, make_definition()
+        node = SyncGroupNode.get_or_create(
+            group, round, participant.module_id, experiment, make_definition
+        )
+        return node, group, node.definition
+
+    @classmethod
     def get_default_parent_node(cls, participant, experiment):
+        """Return the module's shared node for ungrouped cued trials, creating it if needed."""
         module_id = participant.module_id
-        try:
-            return TrialNode.query.filter_by(
-                module_id=module_id,
-            ).one()
-        except NoResultFound:
+
+        def find():
+            return (
+                GenericTrialNode.query.filter_by(
+                    module_id=module_id,
+                    type=GenericTrialNode.__mapper__.polymorphic_identity,
+                )
+                .order_by(GenericTrialNode.id)
+                .first()
+            )
+
+        node = find()
+        if node is None:
+            # The first trials of a module can be cued in parallel requests.
+            _lock_until_commit(f"generic_trial_node:{module_id}")
+            node = find()
+        if node is None:
             node = GenericTrialNode(module_id, experiment)
             db.session.add(node)
             node.check_on_deploy()
-            return node
+        return node
 
     @classmethod
     def check_node_is_valid(cls, source):
@@ -2770,6 +2901,23 @@ class TrialMaker(Module):
                 participant=follower,
                 leader=group.leader,
             )
+        self._number_group_round(group, [leader, *group.active_followers])
+
+    def _number_group_round(self, group: SyncGroup, members):
+        """Give the trials just created for ``group`` its next round number."""
+        trials = [
+            member.current_trial
+            for member in members
+            if member.current_trial is not None
+            and member.current_trial.sync_group_round is None
+        ]
+        if not trials:
+            return
+        key = f"trial_rounds_{self.id}"
+        number = (group.var.get(key) or 0) + 1
+        group.var.set(key, number)
+        for trial in trials:
+            trial.sync_group_round = number
 
     max_time_waiting_for_trial = 60
 
@@ -3360,8 +3508,17 @@ class NetworkTrialMaker(TrialMaker):
             is_repeat_trial=False,
         )
         self._finalize_created_trial(trial)
+        self._record_trial_group(trial, participant)
         db.session.add(trial)
         return trial
+
+    def _record_trial_group(self, trial, participant):
+        """Save the participant's group and role on a trial of a synchronized trial maker."""
+        if self.sync_group_type is None:
+            return
+        group = participant.active_sync_groups.get(self.sync_group_type)
+        if group is not None:
+            _record_sync_group(trial, participant, group)
 
     @staticmethod
     def _finalize_created_trial(trial):
@@ -3761,6 +3918,7 @@ class TrialNode(SQLMixinDallinger, dallinger.models.Node, AssetParentMixin):
     module_id = Column(String, index=True)
     module_state_id = Column(Integer, ForeignKey("module_state.id"), index=True)
     is_global = Column(Integer, ForeignKey("experiment.id"), index=True)
+    definition = Column(PythonObject, default=lambda: {})
 
     on_deploy_complete = Column(Boolean, default=False, index=True)
 
@@ -3965,7 +4123,23 @@ class TrialNode(SQLMixinDallinger, dallinger.models.Node, AssetParentMixin):
         self.set_network(network)
 
 
+def _lock_until_commit(key):
+    """Wait for, then hold until the transaction ends, a PostgreSQL advisory lock on ``key``."""
+    _execute_advisory_xact_lock(db.session, key, wait=True)
+
+
+def _record_sync_group(trial, participant, group):
+    """Save ``group`` and the participant's role in it on ``trial``."""
+    trial.sync_group_id = group.id
+    link = ParticipantLinkSyncGroup.query.filter_by(
+        participant_id=participant.id, sync_group_id=group.id
+    ).first()
+    trial.sync_group_role = None if link is None else link.role
+
+
 class GenericTrialNetwork(TrialNetwork):
+    """The network holding a module's nodes for trials made by :meth:`Trial.cue`."""
+
     trials_per_node = None
 
     def __init__(self, module_id, experiment):
@@ -3978,15 +4152,86 @@ class GenericTrialNetwork(TrialNetwork):
     def grow(self, experiment):
         pass
 
+    @classmethod
+    def for_module(cls, module_id, experiment):
+        """Return the module's network, creating it if needed."""
+
+        def find():
+            return (
+                cls.query.filter_by(module_id=module_id, trial_maker_id=None)
+                .order_by(cls.id)
+                .first()
+            )
+
+        network = find()
+        if network is None:
+            _lock_until_commit(f"generic_trial_network:{module_id}")
+            network = find()
+        if network is None:
+            network = cls(module_id, experiment)
+            db.session.add(network)
+        return network
+
 
 class GenericTrialNode(TrialNode):
+    """A node for trials made by :meth:`Trial.cue`, which have no trial maker."""
+
     def __init__(self, module_id, experiment):
         super().__init__(
-            network=self.get_default_network(module_id, experiment),
+            network=GenericTrialNetwork.for_module(module_id, experiment),
             participant=None,
         )
 
-    def get_default_network(self, module_id, experiment):
-        network = GenericTrialNetwork(module_id, experiment)
-        db.session.add(network)
-        return network
+
+class SyncGroupNode(GenericTrialNode):
+    """The node shared by a sync group's cued trials in one round.
+
+    :meth:`Trial.cue` creates one per module, group and round for a trial class
+    with ``sync_group_type``. Its ``definition`` is every member's trial
+    definition, and ``var`` is the place for the group's results, for example
+    those that a :class:`~psynet.sync.GroupBarrier`'s ``on_release`` computes.
+    """
+
+    # No foreign key, as on Trial.sync_group_id.
+    sync_group_id = Column(Integer, index=True)
+    sync_group_round = Column(Integer)
+
+    def __init__(self, module_id, experiment, group, round, definition):
+        super().__init__(module_id, experiment)
+        self.sync_group_id = group.id
+        self.sync_group_round = round
+        self.definition = definition
+
+    @property
+    def sync_group(self) -> Optional[SyncGroup]:
+        """The :class:`~psynet.sync.SyncGroup` whose round this node holds."""
+        return db.session.get(SyncGroup, self.sync_group_id)
+
+    @classmethod
+    def get_or_create(cls, group, round, module_id, experiment, make_definition):
+        """Return the group's node for ``round``, creating it with ``make_definition()`` if needed.
+
+        The group's members cue their trials in parallel requests, so creation
+        holds an advisory lock on the group until the request commits; the
+        others then find the node it made.
+        """
+
+        def find():
+            return cls.query.filter_by(
+                module_id=module_id, sync_group_id=group.id, sync_group_round=round
+            ).one_or_none()
+
+        node = find()
+        if node is None:
+            _lock_until_commit(f"sync_group_node:{group.id}")
+            node = find()
+        if node is None:
+            node = cls(module_id, experiment, group, round, make_definition())
+            db.session.add(node)
+            node.check_on_deploy()
+        return node
+
+
+UniqueConstraint(
+    SyncGroupNode.module_id, SyncGroupNode.sync_group_id, SyncGroupNode.sync_group_round
+)

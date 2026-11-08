@@ -207,6 +207,48 @@ here, only the pairs have barriers:
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: leave_cohort
 
+.. _rounds-cued-trials:
+
+Rounds as trials
+----------------
+
+A round can also be one trial per player, added to the timeline with
+:meth:`Trial.cue() <psynet.trial.main.Trial.cue>`, without a trial maker. Set
+``sync_group_type`` on the trial class and pass the round number to ``cue``:
+the trials that a group's members cue for the same round then share one
+:class:`~psynet.trial.main.SyncGroupNode`, and each trial records the group
+(``sync_group_id``), the player's role (``sync_group_role``) and the round
+(``sync_group_round``). The ``lowest_unique_number`` demo plays its rounds
+this way:
+
+.. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
+   :pyobject: get_timeline
+
+``definition`` can also be a function, for example
+``lambda group: {"target": random.choice(TARGETS)}``. It is called once per
+group and round, when the first member's trial creates the node, so the
+whole group plays the same draw.
+
+A :class:`~psynet.sync.GroupBarrier` in ``show_trial`` scores the round. Its
+``on_release`` receives ``trials``, the members' current trials in the same
+order as ``participants``, so a ``@classmethod`` on the trial class can save
+the group's results on the shared node and each player's on their trial:
+
+.. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
+   :pyobject: PickTrial.score_room
+
+The trial is finalized after the barrier, so ``score_answer`` and
+``compute_performance_reward`` can read what ``on_release`` saved, and
+``show_feedback`` reads ``self.node.var``. The results stay on the trials
+and nodes, so ``get_basic_data`` builds one table per player per round and
+one per group per round from them:
+
+.. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
+   :pyobject: Exp.get_basic_data
+
+A player who is in no group of that type when the trial starts gets an
+ungrouped trial, with ``sync_group_id`` set to ``None``.
+
 .. _rounds-variations:
 
 Variations

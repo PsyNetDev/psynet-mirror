@@ -1627,7 +1627,10 @@ class GroupBarrier(Barrier):
 
     on_release
         Optional callback invoked when the barrier releases the group. It may take
-        ``group``, ``participants`` (the group's active members), ``leader`` (the
+        ``group``, ``participants`` (the group's active members), ``trials``
+        (each member's ``current_trial``, in the same order as ``participants``,
+        for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
+        ``sync_group_type`` that the barrier is part of), ``leader`` (the
         group's leader), ``participant`` (the same object as ``leader``, kept for
         compatibility), ``left`` (the members who left the group since its
         previous barrier pass, or since it formed; see below) and ``barrier``,
@@ -1663,7 +1666,7 @@ class GroupBarrier(Barrier):
         the group, so that what they did is not lost. For example, it can score
         the last question for the members who answered it. It takes the same
         arguments as ``on_release`` except ``leader`` and ``left``: ``participants`` are
-        the members waiting here. The same serialization rules apply. A waiting member whose own request
+        the members waiting here, and ``trials`` their current trials. The same serialization rules apply. A waiting member whose own request
         is busy at that moment is handled once it finishes, in a second call
         with just them.
 
@@ -1951,6 +1954,7 @@ class GroupBarrier(Barrier):
                         self.on_release(
                             group=group,
                             participants=group.active_participants,
+                            trials=_current_trials(group.active_participants),
                             leader=group.leader,
                             participant=group.leader,
                             left=left,
@@ -4261,6 +4265,11 @@ class SimpleSyncGroup(SyncGroup):
         self._dissolve()
 
 
+def _current_trials(participants):
+    """Return each participant's ``current_trial``, in the same order, for barrier callbacks."""
+    return [participant.current_trial for participant in participants]
+
+
 def _run_on_dissolve(group, members):
     """Call ``on_dissolve`` of each barrier of ``group`` where some of ``members`` are waiting."""
     reconstructed = {}
@@ -4278,7 +4287,12 @@ def _run_on_dissolve(group, members):
             )
     for barrier, participants in waiting.values():
         try:
-            barrier.on_dissolve(group=group, participants=participants, barrier=barrier)
+            barrier.on_dissolve(
+                group=group,
+                participants=participants,
+                trials=_current_trials(participants),
+                barrier=barrier,
+            )
         except Exception as err:
             # Dissolving runs in other participants' requests, such as one
             # returning the study, which must not fail because of this hook.

@@ -405,7 +405,9 @@ Groups
     ``Regrouper`` with ``every``: rooms of up to eight form every 10
     seconds, and players who are too slow miss a round instead of being
     failed. A ``GroupPrompt`` shows who has chosen and then everyone's
-    number. :doc:`/code/multiplayer/synchronization`.
+    number. Each round is one cued trial per player, sharing a node with
+    the room. :doc:`/code/multiplayer/synchronization`,
+    :ref:`rounds-cued-trials`.
 
 `experiments/ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__
     An ultimatum game in cohorts, formed by a grouper that starts cohorts short

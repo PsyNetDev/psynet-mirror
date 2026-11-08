@@ -793,7 +793,6 @@ class ChainNode(TrialNode):
     child_id = Column(Integer, ForeignKey("node.id"), index=True)
     parent_id = Column(Integer, ForeignKey("node.id"), index=True)
     seed = Column(PythonObject, default=lambda: {})
-    definition = Column(PythonObject, default=lambda: {})
     context = Column(PythonObject)
     participant_group = Column(String, index=True)
     block = Column(String, index=True)

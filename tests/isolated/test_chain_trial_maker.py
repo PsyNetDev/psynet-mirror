@@ -425,15 +425,6 @@ def test_participant_whose_group_was_closed_still_needs_a_new_group():
         trial_maker._requires_sync_group_initialization_barrier(closed)
 
 
-def test_trial_sync_group_returns_none_after_leaving_group():
-    trial = SimpleNamespace(
-        trial_maker=SimpleNamespace(sync_group_type="main"),
-        participant=DummyParticipant(),
-    )
-
-    assert Trial.sync_group.fget(trial) is None
-
-
 def test_trial_position_is_stored_and_continues_through_repeats():
     assert Trial.__table__.c.position is not None
     state = TrialMakerState(SimpleNamespace(id="trial-maker"), participant=None)

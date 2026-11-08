@@ -2,7 +2,13 @@
 
 Every ``ROUND_SECONDS`` the :class:`~psynet.sync.Regrouper` puts everyone who
 is waiting into rooms of at most ``ROOM_SIZE`` players. Each player picks a
-number, and the lowest number that nobody else in the room picked wins.
+number, and the lowest number that nobody else in the room picked wins
+``WIN_BONUS``.
+
+Each round is one cued ``PickTrial`` per player. Because the trial class has
+``sync_group_type = "room"``, the trials of a room's players in one round share
+a node: the room's results go in ``trial.node.var`` and each player's in
+``trial.var``, and ``get_basic_data`` reads both back.
 
 The choice page has a ``time_limit`` of ``CHOICE_SECONDS``. A player who
 doesn't choose in time misses the round and joins the next one, so the rest
@@ -13,19 +19,12 @@ Missing a round doesn't fail anyone. A player who comes back after the
 others' last round has started waits alone, though, and is failed once they
 reach the regrouper's ``max_wait_time`` (300 s by default), as at any barrier.
 
-To keep the same people together across rounds, for example in cohorts, form
-the cohorts first and regroup within them::
-
-    SimpleGrouper(
-        "cohort", initial_group_size=8, quorum=2,
-        start_short_after=60, max_wait_time=300,
-    ),
-    ...
-    Regrouper("room", within="cohort", group_size=4, deadline=30),
-
-See the ``ultimatum_pairing`` demo for a full example.
+To keep the same people together across rounds, form cohorts first and
+regroup within them (``Regrouper("room", within="cohort", ...)``); see the
+``ultimatum_pairing`` demo.
 """
 
+import time
 from typing import List
 
 import psynet.experiment
@@ -33,21 +32,47 @@ from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
-from psynet.participant import Participant
 from psynet.sync import GroupBarrier, Regrouper
-from psynet.timeline import (
-    PageMaker,
-    Timeline,
-    for_loop,
-    join,
-)
+from psynet.timeline import Module, PageMaker, Timeline, for_loop, join
+from psynet.trial.main import SyncGroupNode, Trial
 
 ROUND_SECONDS = 10
 CHOICE_SECONDS = 15
 ROOM_SIZE = 8
 N_ROUNDS = 2
 NUMBERS = [1, 2, 3, 4, 5]
+WIN_BONUS = 0.10
 WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + 20
+
+
+def get_timeline():
+    return Timeline(
+        InfoPage(
+            "In each round, pick a number. The lowest number that nobody else "
+            "in your room picked wins.",
+            time_estimate=5,
+        ),
+        Module(
+            "game",
+            for_loop(
+                label="rounds",
+                iterate_over=range(N_ROUNDS),
+                logic=lambda number: join(
+                    Regrouper(
+                        "room",
+                        group_size=ROOM_SIZE,
+                        smallest_group=2,
+                        every=ROUND_SECONDS,
+                        waiting_message=round_message,
+                        waiting_screen="Getting the next round ready.",
+                    ),
+                    PickTrial.cue({"numbers": NUMBERS}, round=number),
+                ),
+                time_estimate_per_iteration=PickTrial.time_estimate + 5,
+                expected_repetitions=N_ROUNDS,
+            ),
+        ),
+    )
 
 
 def lowest_unique(choices: dict):
@@ -57,43 +82,107 @@ def lowest_unique(choices: dict):
     return min(unique, default=None)
 
 
-def score_round(participants: List[Participant]):
-    """Record the room's choices and winning number for every player in the room.
-
-    Players who ran out of time have no choice and miss the round.
-    Nobody wins when only one player chose.
-    """
-    choices = {p.id: p.var.choice for p in participants if p.var.choice is not None}
-    winner = lowest_unique(choices) if len(choices) > 1 else None
-    for participant in participants:
-        participant.var.last_round = {
-            "choices": sorted(choices.values()),
-            "choice_by_player": choices,
-            "winning_number": winner,
-            "won": winner is not None and choices.get(participant.id) == winner,
-        }
-
-
 def round_message(seconds_left):
     if seconds_left is None:
         return "Waiting for another player."
     return "The next round starts in {SECONDS} s."
 
 
-def choose_number(participant):
-    return ModularPage(
-        "choose",
-        # Ticks appear as the others choose.
-        GroupPrompt(
-            "Pick a number.",
-            participant=participant,
-            group_type="room",
-        ),
-        PushButtonControl(choices=NUMBERS, arrange_vertically=False),
-        save_answer="choice",
-        time_limit=CHOICE_SECONDS,
-        time_estimate=5,
-    )
+class PickTrial(Trial):
+    sync_group_type = "room"
+    time_estimate = 15
+
+    def show_trial(self, experiment, participant):
+        return join(
+            PageMaker(self.choose_number, time_estimate=5),
+            GroupBarrier(
+                id_="round_finished",
+                group_type="room",
+                waiting_message="Waiting for the rest of the room…",
+                waiting_screen=your_pick,
+                # A player is taken out 30 s after the round starts (long enough
+                # for a background tab to notice), but not while their answer to
+                # the timed choice page may still be on its way.
+                late_after=30,
+                late_action="leave_group",
+                on_release=self.score_room,
+            ),
+        )
+
+    def choose_number(self, participant):
+        return ModularPage(
+            "choose",
+            # Ticks appear as the others choose.
+            GroupPrompt(
+                "Pick a number.", participant=participant, group=self.sync_group
+            ),
+            PushButtonControl(
+                choices=self.definition["numbers"], arrange_vertically=False
+            ),
+            save_answer="choice",
+            time_limit=CHOICE_SECONDS,
+            time_estimate=5,
+        )
+
+    @classmethod
+    def score_room(cls, trials: List["PickTrial"]):
+        """Save the room's choices and winning number on the node, and each player's on their trial.
+
+        Players who ran out of time have no choice and miss the round.
+        Nobody wins when only one player chose.
+        """
+        picks = {str(t.participant_id): t.participant.var.choice for t in trials}
+        choices = {pid: n for pid, n in picks.items() if n is not None}
+        winner = lowest_unique(choices) if len(choices) > 1 else None
+        trials[0].node.var.choices = choices
+        trials[0].node.var.winning_number = winner
+        for trial in trials:
+            trial.var.choice = picks[str(trial.participant_id)]
+            trial.var.won = winner is not None and trial.var.choice == winner
+
+    def score_answer(self, answer, definition):
+        return 1 if self.var.get("won") else 0
+
+    def compute_performance_reward(self, score):
+        return WIN_BONUS * score
+
+    def show_feedback(self, experiment, participant):
+        if not self.var.has("choice"):
+            return InfoPage(
+                "You were away for too long, so you missed this round.", time_estimate=5
+            )
+        if self.var.choice is None:
+            return InfoPage(
+                "You ran out of time, so you missed this round.", time_estimate=5
+            )
+        choices, winner = self.node.var.choices, self.node.var.winning_number
+        picks = sorted(choices.values())
+        if len(picks) == 1:
+            return InfoPage(
+                "Nobody else in your room picked a number in time, so nobody won this round.",
+                time_estimate=5,
+            )
+        if winner is None:
+            outcome = "Nobody picked a unique number, so nobody won."
+        elif self.var.won:
+            outcome = f"You won with {winner}! You earn ${WIN_BONUS:.2f}."
+        else:
+            outcome = f"The winning number was {winner}."
+        return ModularPage(
+            "result",
+            GroupPrompt(
+                f"The room picked {', '.join(map(str, picks))}. {outcome}",
+                participant=participant,
+                group=self.sync_group,
+                answers=choices,
+                highlight={
+                    pid: "winner" if n == winner else "duplicate"
+                    for pid, n in choices.items()
+                    if n == winner or picks.count(n) > 1
+                },
+            ),
+            time_estimate=5,
+        )
 
 
 def your_pick(participant):
@@ -103,105 +192,63 @@ def your_pick(participant):
     else:
         text = f"You picked {participant.var.choice}."
     # Ticks appear as the others choose.
-    return GroupPrompt(
-        text,
-        participant=participant,
-        group_type="room",
-    )
+    return GroupPrompt(text, participant=participant, group_type="room")
 
 
-def show_result(participant):
-    if not participant.in_sync_group("room"):
-        return InfoPage(
-            "You were away for too long, so you missed this round.", time_estimate=5
-        )
-    if participant.var.choice is None:
-        return InfoPage(
-            "You ran out of time, so you missed this round.", time_estimate=5
-        )
-    result = participant.var.last_round
-    winner = result["winning_number"]
-    if len(result["choices"]) == 1:
-        return InfoPage(
-            "Nobody else in your room picked a number in time, so nobody won this round.",
-            time_estimate=5,
-        )
-    if winner is None:
-        outcome = "Nobody picked a unique number, so nobody won."
-    elif result["won"]:
-        outcome = f"You won with {winner}!"
-    else:
-        outcome = f"The winning number was {winner}."
-    choices = result["choice_by_player"]
-    picks = list(choices.values())
-    highlight = {
-        pid: "winner" if n == winner else "duplicate"
-        for pid, n in choices.items()
-        if n == winner or picks.count(n) > 1
-    }
-    return ModularPage(
-        "result",
-        GroupPrompt(
-            f"The room picked {', '.join(map(str, result['choices']))}. {outcome}",
-            participant=participant,
-            group_type="room",
-            answers=choices,
-            highlight=highlight,
-        ),
-        time_estimate=5,
-    )
+def _arrive_together(bots):
+    """Take each bot's page to the regrouper between the same two ticks.
 
-
-def play_round():
-    return join(
-        Regrouper(
-            "room",
-            group_size=ROOM_SIZE,
-            smallest_group=2,
-            every=ROUND_SECONDS,
-            waiting_message=round_message,
-            waiting_screen="Getting the next round ready.",
-        ),
-        PageMaker(choose_number, time_estimate=5),
-        GroupBarrier(
-            id_="round_finished",
-            group_type="room",
-            waiting_message="Waiting for the rest of the room…",
-            waiting_screen=your_pick,
-            # A player is taken out 30 s after the round starts (long enough
-            # for a background tab to notice), but not while their answer to
-            # the timed choice page may still be on its way.
-            late_after=30,
-            late_action="leave_group",
-            on_release=score_round,
-        ),
-        PageMaker(show_result, time_estimate=5),
-    )
+    A tick between two arrivals would form a room without the later bots, and
+    a bot left alone never gets a room.
+    """
+    seconds_to_tick = ROUND_SECONDS - time.time() % ROUND_SECONDS
+    if seconds_to_tick < 3:
+        time.sleep(seconds_to_tick + 0.1)
+    for bot in bots:
+        bot.take_page()
 
 
 class Exp(psynet.experiment.Experiment):
     label = "Lowest unique number demo"
 
-    timeline = Timeline(
-        InfoPage(
-            "In each round, pick a number. The lowest number that nobody else "
-            "in your room picked wins.",
-            time_estimate=5,
-        ),
-        for_loop(
-            label="rounds",
-            iterate_over=range(N_ROUNDS),
-            logic=play_round(),
-            expected_repetitions=N_ROUNDS,
-        ),
-    )
+    timeline = get_timeline()
+
+    @classmethod
+    def get_basic_data(cls, context=None, **kwargs):
+        """Return one row per player per round, from the trials, and one per room per round, from the nodes."""
+        trials = PickTrial.query.filter(PickTrial.sync_group_id.isnot(None))
+        rooms = SyncGroupNode.query.filter_by(module_id="game")
+        return {
+            "player_round": [
+                {
+                    "round": t.sync_group_round,
+                    "room_id": t.sync_group_id,
+                    "participant_id": t.participant_id,
+                    "trial_id": t.id,
+                    "choice": t.var.get("choice"),
+                    "bonus": t.performance_reward,
+                }
+                for t in trials.order_by(PickTrial.sync_group_round, PickTrial.id)
+            ],
+            "room_round": [
+                {
+                    "round": n.sync_group_round,
+                    "room_id": n.sync_group_id,
+                    "node_id": n.id,
+                    "choices": n.var.get("choices"),
+                    "winning_number": n.var.get("winning_number"),
+                }
+                for n in rooms.order_by(
+                    SyncGroupNode.sync_group_round, SyncGroupNode.id
+                )
+            ],
+        }
 
     test_n_bots = 3
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        for bot in bots:
-            bot.take_page()
+        _arrive_together(bots)
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         assert [bot.current_page_label for bot in bots] == ["choose"] * 3
 
@@ -215,8 +262,7 @@ class Exp(psynet.experiment.Experiment):
         assert "missed this round" in bots[2].current_page_text
 
         # Next round, the third player is back in the room.
-        for bot in bots:
-            bot.take_page()
+        _arrive_together(bots)
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         bots[0].take_page(response=3)
         # While the others choose, the waiting screen shows the player's pick.
@@ -229,3 +275,19 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         assert "You won with 4!" in bots[2].current_page_text
         assert "The room picked 3, 3, 4." in bots[0].current_page_text
+
+        data = self.get_basic_data()
+        assert [
+            (r["round"], sorted(r["choices"].values()), r["winning_number"])
+            for r in data["room_round"]
+        ] == [(0, [1, 2], 1), (1, [3, 3, 4], 4)], data["room_round"]
+        assert [
+            (r["round"], r["choice"], r["bonus"]) for r in data["player_round"]
+        ] == [
+            (0, 1, WIN_BONUS),
+            (0, 2, 0.0),
+            (0, None, 0.0),
+            (1, 3, 0.0),
+            (1, 3, 0.0),
+            (1, 4, WIN_BONUS),
+        ], data["player_round"]

@@ -120,7 +120,8 @@ Accessing the group
 
 Each group is a :class:`~psynet.sync.SyncGroup`. Inside a trial,
 :attr:`Trial.sync_group <psynet.trial.main.Trial.sync_group>` returns the
-group matching the trial maker's ``sync_group_type``. Elsewhere, use
+group of the trial maker's ``sync_group_type`` (or, for a cued trial, the
+trial class's) that the trial was played in. Elsewhere, use
 ``participant.sync_group`` if the participant is in one active group, or
 ``participant.active_sync_groups[group_type]`` if they are in several.
 ``participant.in_sync_group(group_type)`` tells whether they are still in a
@@ -516,11 +517,12 @@ GroupPrompt shows the group as it is now:
   :class:`~psynet.sync.Regrouper`, is no longer shown, except on a results
   page (one with ``answers``) that shows their answer.
 - A participant who is no longer in the group, for example because a
-  barrier removed them for being late, sees only the text, as they do with
-  ``group=self.sync_group`` in trial code (it is ``None`` after such a
-  removal). The prompt needs no special case on pages that such a player
-  may still reach, though the page's other content, such as a round's
-  outcome, may.
+  barrier removed them for being late, sees only the text when the prompt
+  is given ``group_type``. The prompt then needs no special case on pages
+  that such a player may still reach, though the page's other content, such
+  as a round's outcome, may. ``group=self.sync_group`` in trial code is the
+  group the trial was played in, which the prompt shows even after the
+  player has left it.
 
 :meth:`~psynet.sync.SyncGroup.remove_participant` takes a ``reason``
 that sets these labels, such as ``"moved_on"`` or ``"late"``.

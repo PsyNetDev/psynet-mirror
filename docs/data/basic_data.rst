@@ -88,9 +88,22 @@ URL, keep sensitive information out of basic data.
 Group experiments
 -----------------
 
-Trials don't record which group they belong to. Group membership, for
-groups formed by a grouper (see :doc:`/code/multiplayer/synchronization`),
-is stored in two tables:
+Trials of a trial maker with ``sync_group_type``, and cued trials whose
+class sets ``sync_group_type``, record the group the participant was in when
+the trial was created, in ``trial.sync_group_id``, and their role in it, if
+a :class:`~psynet.sync.Regrouper` gave one, in ``trial.sync_group_role``.
+``trial.sync_group_round`` says which of the group's rounds the trial belongs
+to: a trial maker numbers them from 1, shared by a member who joined the group
+late, and a cued trial stores the ``round`` passed to
+:meth:`~psynet.trial.main.Trial.cue`. The group's trials with the same
+``sync_group_id`` and ``sync_group_round`` are one round. All three stay after
+the group ends. Cued trials of one group and round also share a
+:class:`~psynet.trial.main.SyncGroupNode`, which can hold the group's results;
+the ``lowest_unique_number`` demo builds a table per player and round and
+one per room and round from them (see :ref:`rounds-cued-trials`).
+
+Group membership, for groups formed by a grouper (see
+:doc:`/code/multiplayer/synchronization`), is stored in two tables:
 
 ``sync_group``
     One row per group: ``id``, ``group_type``, ``leader_id``, ``active``,
@@ -111,10 +124,8 @@ within-chain trial makers with ``sync_group_type`` record the group in
 ``network.sync_group_id``.
 
 ``trial.position`` is the zero-based position of a trial among the
-participant's trials from that trial maker. In a trial maker with
-``sync_group_type``, the members of a group start each trial together, so
-if they joined the group together, their trials with the same ``position``
-form one round.
+participant's own trials from that trial maker, so it differs from
+``sync_group_round`` for a member who joined late or played in several groups.
 
 A participant variable (``participant.var``) holds only its latest value. To
 keep a result from every round in the export, save it on the trial, for

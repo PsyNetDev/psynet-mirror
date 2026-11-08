@@ -94,6 +94,16 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   a round and join the next one rather than being failed. Pair it with
   `GroupBarrier(late_after=..., late_action="leave_group")` so late members are
   removed; they then pass the round's later group barriers alone.
+- To keep each round's data on trials in such a game, cue one trial per
+  player per round: set `sync_group_type = "room"` on the trial class and call
+  `PickTrial.cue(definition, round=number)` after the `Regrouper` in the
+  rounds loop. The group's trials for that round share one `SyncGroupNode`; a
+  callable `definition` (taking `group`, `round`) runs once per group and
+  round. Score in the `show_trial` barrier's `on_release`, a `@classmethod`
+  taking `trials`: group results in `trials[0].node.var`, per-player results
+  in `trial.var`, which `score_answer`, `show_feedback` and `get_basic_data`
+  then read (`lowest_unique_number`; "Rounds as trials" in
+  `code/multiplayer/writing_a_round_based_experiment`).
 - On a page
   with a `time_limit`, nobody is late before the limit has run out plus 10 s,
   so the timeout need not cover the page; the demos use 30 s so that a
