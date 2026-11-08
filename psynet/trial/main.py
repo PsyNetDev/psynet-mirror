@@ -1255,10 +1255,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             The group's round that this trial belongs to, for example the index
             of the surrounding ``for_loop``; every member of the group must
             pass the same value. Only for a trial class that sets
-            :attr:`sync_group_type`. Leave it out when each group plays a
-            single round, as the groups of a
-            :class:`~psynet.sync.Regrouper` usually do: the group's trials in
-            the module then share one node, and ``sync_group_round`` is
+            :attr:`sync_group_type`. Pass it for a fixed group that plays
+            several rounds. Leave it out when groups are re-formed every
+            round, as by a :class:`~psynet.sync.Regrouper`, whose members can
+            be at different passes of the loop: the group's trials in the
+            module then share one node, and ``sync_group_round`` is
             ``None``. Cueing a second trial on that node for the same
             participant raises a ``ValueError``, since their group plays
             several rounds and needs ``round``.
@@ -1271,13 +1272,24 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             class PickTrial(Trial):
                 sync_group_type = "room"
 
+            # A fixed room plays three rounds, so each cue passes its round.
+            join(
+                SimpleGrouper("room", initial_group_size=4),
+                for_loop(
+                    label="rounds",
+                    iterate_over=range(3),
+                    logic=lambda number: PickTrial.cue(
+                        lambda group: {"target": random.randint(1, 5)}, round=number
+                    ),
+                    time_estimate_per_iteration=20,
+                ),
+            )
+
+            # A Regrouper forms new rooms every round, so the cue leaves round out.
             for_loop(
                 label="rounds",
                 iterate_over=range(3),
-                logic=lambda number: join(
-                    Regrouper("room", group_size=4),
-                    PickTrial.cue(lambda group: {"target": random.randint(1, 5)}, round=number),
-                ),
+                logic=join(Regrouper("room", group_size=4, every=10), PickTrial.cue({})),
                 time_estimate_per_iteration=20,
             )
         """

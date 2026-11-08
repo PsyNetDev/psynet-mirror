@@ -6,9 +6,12 @@ number, and the lowest number that nobody else in the room picked wins
 ``WIN_BONUS``.
 
 Each round is one cued ``PickTrial`` per player. Because the trial class has
-``sync_group_type = "room"``, the trials of a room's players in one round share
-a node: the room's results go in ``trial.node.var`` and each player's in
-``trial.var``, and ``get_basic_data`` reads both back.
+``sync_group_type = "room"``, the trials of a room's players share a node: the
+room's results go in ``trial.node.var`` and each player's in ``trial.var``, and
+``get_basic_data`` reads both back. The regrouper forms new rooms every round,
+so the cue needs no round number. A room can mix players at different rounds,
+for example a latecomer playing their first round with others playing their
+second, so the export numbers each player's own rounds.
 
 The choice page has a ``time_limit`` of ``CHOICE_SECONDS``. A player who
 doesn't choose in time misses the round and joins the next one, so the rest
@@ -57,7 +60,7 @@ def get_timeline():
             for_loop(
                 label="rounds",
                 iterate_over=range(N_ROUNDS),
-                logic=lambda number: join(
+                logic=join(
                     Regrouper(
                         "room",
                         group_size=ROOM_SIZE,
@@ -66,7 +69,7 @@ def get_timeline():
                         waiting_message=round_message,
                         waiting_screen="Getting the next round ready.",
                     ),
-                    PickTrial.cue({"numbers": NUMBERS}, round=number),
+                    PickTrial.cue({"numbers": NUMBERS}),
                 ),
                 time_estimate_per_iteration=PickTrial.time_estimate + 5,
                 expected_repetitions=N_ROUNDS,
@@ -218,13 +221,22 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per round, from the trials, and one per room per round, from the nodes."""
-        trials = PickTrial.query.filter(PickTrial.sync_group_id.isnot(None))
+        """Return one row per player per round, from the trials, and one per room, from the nodes.
+
+        A room can mix players at different rounds, so ``round`` counts each
+        player's own trials from 0, and rooms have no round number.
+        """
+        rounds = {}
+        player_rounds = []
+        for t in PickTrial.query.order_by(PickTrial.id):
+            round_ = rounds[t.participant_id] = rounds.get(t.participant_id, -1) + 1
+            if t.sync_group_id is not None:
+                player_rounds.append((round_, t))
         rooms = SyncGroupNode.query.filter_by(module_id="game")
         return {
             "player_round": [
                 {
-                    "round": t.sync_group_round,
+                    "round": round_,
                     "room_id": t.sync_group_id,
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
@@ -233,19 +245,16 @@ class Exp(psynet.experiment.Experiment):
                     "won": t.var.get("won"),
                     "bonus": t.performance_reward,
                 }
-                for t in trials.order_by(PickTrial.sync_group_round, PickTrial.id)
+                for round_, t in player_rounds
             ],
-            "room_round": [
+            "room": [
                 {
-                    "round": n.sync_group_round,
                     "room_id": n.sync_group_id,
                     "node_id": n.id,
                     "choices": n.var.get("choices"),
                     "winning_number": n.var.get("winning_number"),
                 }
-                for n in rooms.order_by(
-                    SyncGroupNode.sync_group_round, SyncGroupNode.id
-                )
+                for n in rooms.order_by(SyncGroupNode.id)
             ],
         }
 
@@ -283,9 +292,8 @@ class Exp(psynet.experiment.Experiment):
 
         data = self.get_basic_data()
         assert [
-            (r["round"], sorted(r["choices"].values()), r["winning_number"])
-            for r in data["room_round"]
-        ] == [(0, [1, 2], 1), (1, [3, 3, 4], 4)], data["room_round"]
+            (sorted(r["choices"].values()), r["winning_number"]) for r in data["room"]
+        ] == [([1, 2], 1), ([3, 3, 4], 4)], data["room"]
         # Players cue their trials in their own order, so compare sorted rows.
         assert sorted(
             ((r["round"], r["choice"], r["bonus"]) for r in data["player_round"]),

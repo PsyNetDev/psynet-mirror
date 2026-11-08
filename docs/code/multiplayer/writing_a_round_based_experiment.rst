@@ -88,13 +88,19 @@ records the pair (``sync_group_id``) and the player's role
 gives the nodes a ``module_id`` to find them by when exporting.
 
 Every pair here is new and plays a single round, so ``cue`` needs no round
-number, and ``sync_group_round`` is ``None``. A group that plays several
-rounds needs ``round=``, the same value for all its members, such as the
-index of the surrounding :func:`~psynet.timeline.for_loop`, as in
-:ref:`rounds-variations`; leaving it out there raises an error at the
-group's second round. A count of the player's own rounds would not do as
-``round``, because members can be at different passes of the loop, for
-example when one of them sat the last round out.
+number, and ``sync_group_round`` is ``None``. Whether to pass ``round``
+depends on how long a group lasts:
+
+- **Groups re-formed every round**, as by a :class:`~psynet.sync.Regrouper`:
+  leave ``round`` out. The group identifies the round. Don't pass the loop
+  index here: members can be at different passes of the loop, for example
+  when one of them sat the last round out or joined late, and their trials
+  would then land on different nodes.
+- **Fixed groups playing several rounds**, such as pairs from a
+  :class:`~psynet.sync.SimpleGrouper`: pass ``round=``, the same value for all
+  members, such as the index of the surrounding
+  :func:`~psynet.timeline.for_loop`. Leaving it out raises an error at the
+  group's second round.
 
 :func:`~psynet.sync.only_in_group` runs the trial only for players in a
 pair. Those who sat out, or were removed from their pair partway, see the
@@ -264,8 +270,10 @@ Variations
 
 **Larger groups and fixed rounds.** The ``lowest_unique_number`` demo
 regroups all waiting players into rooms of up to eight every 10 seconds,
-with ``every=10`` and no ``within``, for a fixed number of rounds. It passes
-the loop's index as the round:
+with ``every=10`` and no ``within``, for a fixed number of rounds. A room
+can mix players at different rounds, for example a latecomer playing their
+first round with others playing their second, so the cue leaves ``round``
+out, and the export numbers each player's own trials instead:
 
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: get_timeline

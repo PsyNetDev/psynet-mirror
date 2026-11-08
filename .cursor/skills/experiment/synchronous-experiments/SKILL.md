@@ -124,15 +124,17 @@ Read these pages before acting. The "Documentation" section of the experiment's 
               trial.var.won = winner is not None and choices[trial.participant_id] == winner
 
   for_loop(label="rounds", iterate_over=range(N_ROUNDS), time_estimate_per_iteration=20,
-           logic=lambda number: join(Regrouper("room", ...),
-                                     PickTrial.cue({"numbers": NUMBERS}, round=number)))
+           logic=join(Regrouper("room", ...), PickTrial.cue({"numbers": NUMBERS})))
   ```
 
-  All members of a group must pass the same `round`: the loop index when
-  everyone plays in step (`lowest_unique_number`). Leave `round` out when
-  every group lasts one round, as with a `Regrouper` whose members can be at
-  different loop passes (`ultimatum_pairing`); a group that plays several
-  rounds without `round` raises an error at its second round.
+  Leave `round` out when groups are re-formed every round, as by a
+  `Regrouper`: the group identifies the round, and its members can be at
+  different loop passes (a latecomer or someone who sat out), so a loop index
+  would split them across nodes. Number each player's trials in the export
+  instead if you need a round column (`lowest_unique_number`). Pass the same
+  `round` for all members, such as the loop index, when a fixed group plays
+  several rounds; without it, `cue` raises an error at the group's second
+  round.
   `trial.answer` is only set when the trial ends,
   after the barrier, so `on_release` reads what `save_answer` stored, while
   `score_answer`, `show_feedback` and `get_basic_data` read the trial and
