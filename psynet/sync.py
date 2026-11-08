@@ -2134,8 +2134,8 @@ class Grouper(Barrier):
 
     max_wait_action
         What happens to a participant who waits longer than ``max_wait_time`` without being grouped:
-        ``"fail"`` (default) fails them and sends them to the end of the experiment; ``"leave_group"``
-        lets them carry on with the experiment without a group, which suits a participant who was
+        ``"fail"`` (default) fails them and sends them to the end of the experiment;
+        ``"continue_without_group"`` lets them carry on with the experiment without a group, which suits a participant who was
         available but couldn't be matched. Their next page says "We couldn't find a partner for you in
         time. Please continue." (or "...a group for you..."). Later barriers and synchronized trial makers of
         this group type treat them as having left a group (see :ref:`sync-leaving-a-group`), and
@@ -2179,11 +2179,18 @@ class Grouper(Barrier):
         waiting_message=None,
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
-        max_wait_action: Literal["fail", "leave_group"] = "fail",
+        max_wait_action: Literal["fail", "continue_without_group"] = "fail",
     ):
-        if max_wait_action not in ("fail", "leave_group"):
+        if max_wait_action not in ("fail", "continue_without_group"):
+            hint = (
+                " A grouper's participants aren't in a group yet, so use "
+                "'continue_without_group'."
+                if max_wait_action == "leave_group"
+                else ""
+            )
             raise ValueError(
-                f"max_wait_action must be 'fail' or 'leave_group', got {max_wait_action!r}."
+                "A grouper's max_wait_action must be 'fail' or "
+                f"'continue_without_group', got {max_wait_action!r}.{hint}"
             )
         if not id_:
             id_ = f"{group_type}_grouper"
@@ -2202,9 +2209,10 @@ class Grouper(Barrier):
         self.max_wait_action = max_wait_action
 
     def handle_max_wait_timeout(self, participant: Participant):
-        """Let an ungrouped participant carry on with ``"leave_group"``, then release the barrier link."""
-        if self.max_wait_action == "leave_group" and not participant.in_sync_group(
-            self.group_type
+        """Let an ungrouped participant carry on with ``"continue_without_group"``, then release the barrier link."""
+        if (
+            self.max_wait_action == "continue_without_group"
+            and not participant.in_sync_group(self.group_type)
         ):
             participant.ungrouped_group_types = sorted(
                 {*(participant.ungrouped_group_types or []), self.group_type}

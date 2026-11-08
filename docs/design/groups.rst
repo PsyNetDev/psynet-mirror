@@ -69,9 +69,10 @@ different way:
        early end, or a new group.
    * - arrives when no group can form
      - When they have waited at the grouper for its maximum waiting time:
-       they are failed.
-     - Whether a smaller group may start instead, or whether they may join a
-       group that has lost a member.
+       they are failed, or continue without a group.
+     - Whether a smaller group may start instead, whether they may join a
+       group that has lost a member, and whether those left over are failed
+       or continue on their own.
 
 A member on a page with its own time limit is not late before the page's time
 limit has run out. By default, participants are credited for the actual time

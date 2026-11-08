@@ -518,7 +518,9 @@ decisions each one needs. These settings carry them out:
   they see and what the rest of the timeline does with them.
 - **Arriving when no group can form:** the grouper's ``max_wait_time``, with
   ``start_short_after`` to start a smaller group, or
-  ``join_existing_groups`` to fill a gap in an existing one.
+  ``join_existing_groups`` to fill a gap in an existing one. Its
+  ``max_wait_action`` fails those left over, or with
+  ``"continue_without_group"`` lets them carry on (see `Timeouts`_).
 - **Falling behind in rounds with a** :class:`~psynet.sync.Regrouper`:
   ``late_action="leave_group"`` makes them miss the round and join the next
   (see `Rounds with changing groups`_).
@@ -542,7 +544,8 @@ the maximum waiting time:
     happens to a participant who waits longer: ``"fail"`` (default) fails
     them. At a :class:`~psynet.sync.GroupBarrier`, ``"leave_group"`` removes
     them from the group (see :ref:`sync-leaving-a-group` for what they see
-    next); at a grouper, it lets them continue without a group, telling them
+    next); at a grouper, where they have no group yet,
+    ``"continue_without_group"`` lets them carry on without one, telling them
     "We couldn't find a partner for you in time. Please continue." (or "We
     couldn't form a group for you in time." for larger groups). Either way it is
     the member who waited who leaves; to go on without slow members, use
@@ -613,7 +616,7 @@ The default ``max_wait_time`` depends on where it is set:
 
 Choose ``max_wait_time`` at the grouper together with how quickly you
 recruit, because a participant is failed (or, with
-``max_wait_action="leave_group"``, continues without a group) if too few
+``max_wait_action="continue_without_group"``, continues without one) if too few
 others arrive while they wait. To lose fewer than 1 in 20, expect at least 1.3 times the group
 size to arrive within one ``max_wait_time``. For groups of three, that is
 about 12 participants a minute with the default 20 seconds, or 2 a minute

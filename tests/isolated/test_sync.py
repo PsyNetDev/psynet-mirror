@@ -7284,7 +7284,11 @@ def test_grouper_lets_an_ungrouped_participant_carry_on(
     exp = get_experiment()
     participant = new_participant(exp)
     participant.status = "working"
-    grouper = SimpleGrouper("pair", initial_group_size=2, max_wait_action="leave_group")
+    with pytest.raises(ValueError, match="continue_without_group"):
+        SimpleGrouper("pair", initial_group_size=2, max_wait_action="leave_group")
+    grouper = SimpleGrouper(
+        "pair", initial_group_size=2, max_wait_action="continue_without_group"
+    )
     grouper.receive_participant(participant)
     db_session.commit()
 

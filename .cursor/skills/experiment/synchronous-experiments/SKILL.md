@@ -108,7 +108,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   Call `group.stop_top_ups()` (for example in the first barrier's
   `on_release`) once newcomers can no longer catch up; `below_quorum` then
   applies. To let participants who find no group carry on alone instead of
-  being failed, pass the grouper `max_wait_action="leave_group"`.
+  being failed, pass the grouper `max_wait_action="continue_without_group"`.
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
   needs a group: stop a rounds loop with it in the `while_loop` condition,
   and give a synchronized trial maker a solo alternative, for example
