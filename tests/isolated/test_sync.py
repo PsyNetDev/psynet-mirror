@@ -74,9 +74,18 @@ from psynet.sync import (
     check_sync_groups,
     group_seats,
     hold_message,
+    only_in_group,
     pending_arrival_notice_for,
 )
-from psynet.timeline import CodeBlock, Page, PageMaker, Response, Timeline
+from psynet.timeline import (
+    CodeBlock,
+    Page,
+    PageMaker,
+    ReactiveGoTo,
+    Response,
+    Timeline,
+    join,
+)
 from psynet.timeline_hold import (
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
@@ -7512,3 +7521,36 @@ def test_on_release_is_told_who_left_since_the_last_barrier(
         [(late.id, "late"), (quitter.id, "left_experiment")],
         [],
     ]
+
+
+def _labels_reached(elts, participant):
+    """Walk ``elts`` as the timeline would, returning the labels of the pages shown."""
+    elts, i, labels = join(elts), 0, []
+    while i < len(elts):
+        elt = elts[i]
+        if isinstance(elt, ReactiveGoTo):
+            target = elt.get_target(experiment=None, participant=participant)
+            i = next(j for j, other in enumerate(elts) if other is target)
+            continue
+        if isinstance(elt, Page):
+            labels.append(elt.label)
+        i += 1
+    return labels
+
+
+@pytest.mark.parametrize(
+    "in_group, expected", [(True, ["play", "outcome"]), (False, ["alone"])]
+)
+def test_only_in_group_runs_otherwise_for_participants_out_of_the_group(
+    in_group, expected
+):
+    elts = only_in_group(
+        "pair",
+        InfoPage("Play", label="play", time_estimate=1),
+        InfoPage("Outcome", label="outcome", time_estimate=1),
+        otherwise=InfoPage("Alone", label="alone", time_estimate=1),
+    )
+    participant = SimpleNamespace(
+        module_state=None, in_sync_group=lambda group_type: in_group
+    )
+    assert _labels_reached(elts, participant) == expected

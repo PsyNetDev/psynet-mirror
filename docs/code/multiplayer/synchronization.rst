@@ -832,15 +832,25 @@ For the rest of the timeline:
   through. Pages between the barriers are still shown, so wrap the steps of
   a round in :func:`~psynet.sync.only_in_group`, which skips each step once
   the participant is out of the group. Its ``otherwise=`` runs for them
-  afterwards instead, for example to answer the rest of a question alone:
+  afterwards instead, for example to answer a question alone if they never
+  answered it with the group:
 
   .. code-block:: python
 
       only_in_group(
-          "pair",
-          PageMaker(chat_page, time_estimate=60),
-          GroupBarrier(id_="chat_done", group_type="pair"),
-          PageMaker(outcome_page, time_estimate=10),
+          "team",
+          estimate_page(question),
+          GroupBarrier(id_=f"estimates_{question}", group_type="team",
+                       on_release=share_median),
+          revised_estimate_page(question),
+          otherwise=PageMaker(
+              lambda participant: (
+                  estimate_page(question)
+                  if participant.var.get(f"estimate_{question}") is None
+                  else InfoPage("Your group has ended. Let's move on.")
+              ),
+              time_estimate=10,
+          ),
       )
 - Trial makers synchronized on that group type give them no more trials.
   A member who leaves before finishing any trial of such a trial maker,

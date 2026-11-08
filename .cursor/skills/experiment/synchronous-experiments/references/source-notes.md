@@ -19,7 +19,7 @@ and platform docs when a study is near deployment.
   `on_arrival_message` notice copy to a short sentence. Set
   `notify_arrivals=False` to disable them, or customize copy with
   `on_arrival_message`.
-  It checks the group's `quorum`, can wait for top-ups, can fail under-quota groups,
+  It checks the group's `quorum`, can wait for top-ups, can fail groups below quorum,
   and accepts `on_release(group, participants, leader, barrier)` for atomic shared updates.
   The `barrier` argument is reconstructed; see
   `docs/code/multiplayer/synchronization.rst` (published at https://psynetdev.gitlab.io/PsyNet/code/multiplayer/synchronization.html) ("Release callbacks").

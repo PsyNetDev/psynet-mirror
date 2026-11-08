@@ -2147,7 +2147,7 @@ class GroupBarrier(Barrier):
 class Grouper(Barrier):
     """
     A Grouper is a kind of Barrier that assigns incoming participants into groups.
-    This is a generic class that requires several methods to be overrun, in particular
+    This is a generic class whose subclasses must override several methods, in particular
     ``ready_to_group`` and ``group``.
 
     Parameters
@@ -2426,7 +2426,7 @@ class SimpleGrouper(Grouper):
 
     join_existing_groups
         If set to ``True``, then before a new group is created, the Grouper will check if there are any existing
-        groups that are under-quota (e.g. because some participants left the experiment early).
+        groups that aren't full (e.g. because some participants left the experiment early).
         If so, the arriving participant will be assigned to one of these groups instead.
         Participants already waiting at the grouper join such a group on the next barrier check.
         Closed groups and groups with no active members are not joined.

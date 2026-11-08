@@ -252,17 +252,21 @@ class Exp(psynet.experiment.Experiment):
         quitter.drop_out()
         stayer.take_page()
         advance_past_wait_pages([stayer])
-        assert stayer.current_page_text == "Round 2 on your own."
+        assert stayer.current_page_text == "Round 2 on your own.", stayer.current_page_text
         assert stayer.current_notice == (
             "Your partner is no longer in your group. Please continue."
-        )
+        ), stayer.current_notice
 
         on_time.take_page()  # silent never answers round 1
         advance_past_wait_pages([on_time], timeout=LATE_AFTER + 10)
-        assert on_time.current_page_text == "Round 2 on your own."
+        assert on_time.current_page_text == "Round 2 on your own.", on_time.current_page_text
 
-        silent.take_page()  # comes back after being removed
-        assert silent.current_page_text == "Round 2 on your own."
+        # silent comes back after being removed, and is told on the page they are on
+        assert silent.current_notice == (
+            "Your partner went on without you. Please continue."
+        ), silent.current_notice
+        silent.take_page()
+        assert silent.current_page_text == "Round 2 on your own.", silent.current_page_text
 
         run_bots_to_completion([stayer, on_time, silent])
         assert not any(bot.failed for bot in [stayer, on_time, silent])
