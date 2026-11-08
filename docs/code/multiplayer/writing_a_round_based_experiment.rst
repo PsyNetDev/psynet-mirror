@@ -191,7 +191,9 @@ too often, or their cohort is down to one player:
 Players who finish leave the cohort, so that the regrouper doesn't wait for
 them in later rounds. With ``reason="finished"`` their leaving doesn't
 dissolve the cohort below its quorum, so the last players aren't told that
-too few players remained while they finish their own rounds:
+too few players remained while they finish their own rounds. A later
+``GroupBarrier`` for the cohort would still dissolve it below its quorum;
+here, only the pairs have barriers:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: leave_cohort

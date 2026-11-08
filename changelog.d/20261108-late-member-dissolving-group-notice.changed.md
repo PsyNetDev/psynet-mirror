@@ -1,1 +1,0 @@
-A member removed from a group for being late now sees "Your group went on without you" (or "Your partner went on without you") on their current page even when their removal dissolves the group, instead of "Too few members of your group remained" on their next page. Several late members removed at once are all recorded as late.

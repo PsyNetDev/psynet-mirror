@@ -268,9 +268,10 @@ barrier ``on_release_data``, a dictionary that the callback reads as
 ``on_release`` runs only when the barrier releases the group. A member who
 leaves the group before then, or whose group is dissolved, doesn't get
 the results it would have stored, so read them with
-``participant.var.get("score")``, which returns ``None`` when it isn't set. If the group dissolves while some
-members are waiting at the barrier, ``on_dissolve`` runs for them instead,
-before they leave the group, with the same arguments except ``leader``.
+``participant.var.get("score")``, which returns ``None`` when it isn't set.
+If the group dissolves while some members are waiting at the barrier,
+``on_dissolve`` runs for them instead, before they leave the group, with the
+same arguments except ``leader``.
 ``participants`` are then the members waiting at the barrier, so a quiz can
 still score the last question for those who answered it:
 
@@ -495,7 +496,8 @@ GroupPrompt shows the group as it is now:
 
 - A member who left stays in their seat, faded, with the reason:
   "(removed)" if a barrier removed them from the group for being late,
-  "(left)" if they failed or left the experiment, and "(dropped out)"
+  "(left)" if they failed or left the experiment, "(finished)" if they left
+  after playing their part (``reason="finished"``), and "(dropped out)"
   otherwise. Groups that accept top-ups don't keep these seats.
 - A member who moved on to another group, such as next round's pair at a
   :class:`~psynet.sync.Regrouper`, is no longer shown, except on a results
@@ -795,23 +797,24 @@ After leaving a group
 ~~~~~~~~~~~~~~~~~~~~~
 
 A member removed from their group without being failed, through a
-barrier's ``"leave_group"`` or ``below_quorum="continue_without_group"``, stays in the
-experiment and continues the timeline without that group. They leave only the group of that type: a player removed from a ``"pair"`` stays in their ``"cohort"``.
-A participant whose grouper let them continue without a group
-(``max_wait_action="continue_without_group"``) is treated the same way for
-that group type, as if they had left a group. A notice on their progress bar
-tells them why. A member removed for being
-late sees "Your group went on without you. Please
-continue." on the page they are on, until they leave it, even if their
-leaving dissolved the group. The notices count the group as it was when they
+barrier's ``"leave_group"`` or ``below_quorum="continue_without_group"``,
+stays in the experiment and continues the timeline without that group. They
+leave only the group of that type: a player removed from a ``"pair"`` stays
+in their ``"cohort"``. A participant whose grouper let them continue without
+a group (``max_wait_action="continue_without_group"``) is treated the same
+way for that group type, as if they had left a group. A notice on their
+progress bar tells them why. A member removed for being late sees "Your
+group went on without you. Please continue." on the page they are on, until
+they leave it, even if their leaving dissolved the group. The notices count the group as it was when they
 left it: if only one other member was left by then, for example in a group
 of three that had already lost someone, they read "Your partner went on
 without you. Please continue." instead. Whatever they submit there is saved,
 though the group has moved on, including into a participant variable
 through ``save_answer``; only the response's ``too_late_for_group`` (see
 below) marks it as late. An answer to a timed page usually arrives
-after its time limit by then, so it is saved as ``None``. In other cases, such as when their group was
-dissolved under them or they waited too long, the notice appears on their next page.
+after its time limit by then, so it is saved as ``None``. In other cases,
+such as when their group was dissolved under them or they waited too long,
+the notice appears on their next page.
 
 The members who carry on get no notice when someone leaves. A
 :class:`~psynet.group_prompt.GroupPrompt` marks the member who left, for

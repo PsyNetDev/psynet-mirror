@@ -382,6 +382,11 @@ migration instructions in the error.
   ``custom_html.html``, escape plain strings. Pass ``html``, card bodies and
   list items as ``Markup``; for a ``dominate`` tag, ``Markup(tag.render())``.
 * ``KeyboardPage`` now requires ``prompt``.
+* ``participant.var.get(name)`` (and ``var.get`` on nodes, networks and
+  trials) returns ``None`` for a missing variable, like ``dict.get``,
+  instead of raising ``KeyError``. Search for ``var.get(``: where the
+  error was wanted, for example inside ``try`` / ``except KeyError``, read
+  ``participant.var.name`` instead, or check ``participant.var.has(name)``.
 * A ``REPPVolumeCalibration`` subclass whose ``what_are_we_playing`` returns
   HTML must return ``Markup``.
 * Custom templates that call ``AudioMeterControl.to_json`` must write
