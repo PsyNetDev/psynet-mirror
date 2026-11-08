@@ -469,6 +469,14 @@ class NullElt(Elt):
         pass
 
 
+class _StartConstruct(NullElt):
+    """Marks the start of a construct whose elements must run together."""
+
+
+class _EndConstruct(NullElt):
+    """Marks the end of a construct started by :class:`_StartConstruct`."""
+
+
 class CodeBlock(Elt):
     """
     A timeline component that executes some back-end logic without showing
@@ -4552,6 +4560,7 @@ def for_loop(
         flag_modified(participant, "for_loops")
 
     return join(
+        _StartConstruct(),
         CodeBlock(setup),
         while_loop(
             "for_loop",
@@ -4568,6 +4577,7 @@ def for_loop(
             fix_time_credit=False,
         ),
         CodeBlock(wrapup),
+        _EndConstruct(),
     )
 
 
@@ -4638,6 +4648,7 @@ def sequence(
     label = f"sequence_{label}"
 
     return join(
+        _StartConstruct(),
         CodeBlock(initialize_sequence),
         while_loop(
             label=label,
@@ -4654,6 +4665,7 @@ def sequence(
             fix_time_credit=False,
         ),
         CodeBlock(tear_down_sequence),
+        _EndConstruct(),
     )
 
 
@@ -4690,3 +4702,43 @@ class RegisterTrialMaker(NullElt):
 
 
 TimelineLogic = Union[Elt, List[Elt], EltCollection]
+
+
+_STEP_STARTS = (
+    _StartConstruct,
+    StartFixElt,
+    StartWhile,
+    StartSwitch,
+    StartModule,
+    StartAccumulateAnswers,
+)
+_STEP_ENDS = (
+    _EndConstruct,
+    EndFixElt,
+    EndWhile,
+    EndSwitch,
+    EndModule,
+    EndAccumulateAnswers,
+)
+
+
+def _split_into_steps(*elts) -> List[List[Elt]]:
+    """Join ``elts`` and split the result into steps that can each be skipped.
+
+    A construct such as a barrier, ``conditional`` or loop becomes several
+    elements when joined, from a start marker to its matching end; each step
+    keeps such a construct whole.
+    """
+    steps, current, depth = [], [], 0
+    for elt in join(*elts):
+        current.append(elt)
+        if isinstance(elt, _STEP_STARTS):
+            depth += 1
+        elif isinstance(elt, _STEP_ENDS):
+            depth -= 1
+        if depth == 0:
+            steps.append(current)
+            current = []
+    if current:
+        raise ValueError("Unmatched start of a timeline construct.")
+    return steps

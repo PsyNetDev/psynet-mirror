@@ -170,6 +170,7 @@ from psynet.timeline import (
     CodeBlock,
     EltCollection,
     _is_timeline_hold,
+    _split_into_steps,
     conditional,
     join,
 )
@@ -3708,16 +3709,15 @@ def only_in_group(group_type: str, *steps, otherwise=None):
     with a partner. A :class:`GroupBarrier` already lets such a participant
     straight through; this covers the pages between barriers.
 
-    Each step is checked once, when the participant reaches it, so a loop
-    passed as one step runs to its end. For rounds, pass each round's steps
-    as separate steps::
+    Lists and ``join(...)`` are split into their steps, but a barrier,
+    ``conditional`` or loop is one step, checked when the participant reaches
+    it, so a loop passed to ``only_in_group`` runs to its end. For rounds,
+    pass a list of the rounds' steps instead::
 
-        only_in_group(
-            "pair",
-            *[step for number in range(N_ROUNDS) for step in round_steps(number)],
-        )
+        only_in_group("pair", [round_steps(number) for number in range(N_ROUNDS)])
 
-    or stop the loop on ``participant.in_sync_group(group_type)``. Put a
+    or put ``only_in_group`` inside the loop, as in
+    ``for_loop(..., logic=only_in_group("pair", round_steps()))``. Put a
     :class:`GroupCloser` after the block, not among its steps: it takes
     everyone out of the group, so the steps after it and ``otherwise`` would
     treat them all as having left.
@@ -3775,7 +3775,7 @@ def only_in_group(group_type: str, *steps, otherwise=None):
             step,
             log_chosen_branch=False,
         )
-        for step in steps
+        for step in _split_into_steps(*steps)
     ]
     if otherwise is not None:
         group_steps.append(
