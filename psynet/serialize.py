@@ -385,7 +385,17 @@ def callable_to_path(function):
 def callable_from_path(path):
     """Load a supported callable from its import path."""
     module_name, qualname = path.split(".", 1)
-    module = importlib.import_module(module_name)
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError:
+        if module_name != "dallinger_experiment":
+            raise
+        # Bot tests run in a process where pytest has unloaded the experiment
+        # package, so load it again from the experiment directory.
+        from .experiment import import_local_experiment
+
+        import_local_experiment()
+        module = importlib.import_module(module_name)
     target = module
     for attr in qualname.split("."):
         target = getattr(target, attr)

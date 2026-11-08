@@ -17,6 +17,11 @@ from psynet.timeline import Timeline, conditional
 LATE_AFTER = 5
 
 
+def _finish_round_1(participants):
+    for participant in participants:
+        participant.var.finished_round_1 = True
+
+
 class Exp(psynet.experiment.Experiment):
     label = "Pair dropout"
 
@@ -33,6 +38,7 @@ class Exp(psynet.experiment.Experiment):
             group_type="pair",
             late_after=LATE_AFTER,
             late_action="leave_group",
+            on_release=_finish_round_1,
         ),
         conditional(
             "still_paired",
@@ -52,13 +58,16 @@ class Exp(psynet.experiment.Experiment):
             advance_past_wait_pages(list(pair))
             assert all(bot.current_page_text == "Round 1." for bot in pair)
 
+        # silent never answers round 1; on_time waits for them at the barrier.
+        on_time.take_page()
+        assert silent.current_notice == "Your partner is ready."
+
         quitter.drop_out()
         assert quitter.failed
         stayer.take_page()
         advance_past_wait_pages([stayer])
         self._assert_carries_on_alone(stayer)
 
-        on_time.take_page()
         advance_past_wait_pages([on_time], timeout=LATE_AFTER + 10)
         self._assert_carries_on_alone(on_time)
 
