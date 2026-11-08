@@ -37,6 +37,7 @@ from psynet.sync import (
     GroupBarrier,
     Regrouper,
     SimpleGrouper,
+    SyncGroup,
     group_rounds,
     participant_rounds,
 )
@@ -122,7 +123,9 @@ def keep_playing(participant):
     )
 
 
-def score_round(participants: List[Participant], left: List[Participant], barrier):
+def score_round(
+    group: SyncGroup, participants: List[Participant], left: List[Participant]
+):
     """Record the pair's offer and its result, and each player's decision and coins."""
     roles = {pairing.role(p): p for p in participants}
     proposer, responder = roles.get("proposer"), roles.get("responder")
@@ -135,7 +138,7 @@ def score_round(participants: List[Participant], left: List[Participant], barrie
         result = "timed_out"
     else:
         result = "accepted" if offer >= minimum else "rejected"
-    barrier.record_group(
+    group.record_round(
         proposer_id=proposer.id if proposer else None,
         responder_id=responder.id if responder else None,
         offer=offer,
@@ -147,9 +150,7 @@ def score_round(participants: List[Participant], left: List[Participant], barrie
     else:
         coins = {"proposer": 0, "responder": 0}
     for role, participant in roles.items():
-        barrier.record(
-            participant, decision=participant.var.decision, coins=coins[role]
-        )
+        participant.record_round(decision=participant.var.decision, coins=coins[role])
 
 
 def decision_page(participant):

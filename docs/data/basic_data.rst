@@ -207,12 +207,12 @@ PsyNet writes a :class:`~psynet.sync.ParticipantRound` row for every member each
 time the barrier releases the group, including members who left the group
 during the round, and a :class:`~psynet.sync.SyncGroupRound` row for the
 group. The barrier's ``on_release`` adds the results:
-``barrier.record(participant, ...)`` for each player's, and
-``barrier.record_group(...)`` for those of the whole group, such as an offer
+``participant.record_round(...)`` for each player's, and
+``group.record_round(...)`` for those of the whole group, such as an offer
 and whether it was accepted, or the winning number. Pass ``bonus=`` to
-``record`` to pay the participant, so that the record and the payment can't
-disagree. The ``ultimatum_pairing`` demo records the pair's offer and result,
-and each player's decision and coins:
+``participant.record_round`` to pay the participant, so that the record and
+the payment can't disagree. The ``ultimatum_pairing`` demo records the pair's
+offer and result, and each player's decision and coins:
 
 .. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: score_round

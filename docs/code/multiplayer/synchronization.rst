@@ -495,7 +495,7 @@ the group (hidden, like the group, when there is no group to show):
 
 Store the answers when the barrier releases, as the ``lowest_unique_number``
 demo does by recording them on the room's round with
-``barrier.record_group(choices=...)`` (see :ref:`basic_data_regrouper`), rather
+``group.record_round(choices=...)`` (see :ref:`basic_data_regrouper`), rather
 than reading them from the group's current members: a member who has already
 moved on to the next round is no longer in the group, and would disappear if
 the page is reloaded.

@@ -138,9 +138,9 @@ Scoring the round
 
 The barrier's ``on_release`` scores the pair once both have arrived, or once
 the one who is left has, and records the round (see
-:ref:`basic_data_regrouper`): ``barrier.record_group`` stores the pair's
-offer and its result once, and ``barrier.record`` each player's decision
-and coins. A page reloaded later still shows them. When a partner left or
+:ref:`basic_data_regrouper`): ``group.record_round`` stores the pair's
+offer and its result once, and ``participant.record_round`` each player's
+decision and coins. A page reloaded later still shows them. When a partner left or
 ran out of time, nobody is paid. The ``left`` argument lists the members
 who left the pair this round, and ``sync_group_removal_reason`` tells a
 partner who was too slow apart from one who returned the study:

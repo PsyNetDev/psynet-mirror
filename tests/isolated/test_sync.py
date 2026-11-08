@@ -1915,14 +1915,14 @@ def _record_who_left(left):
     _left_at_release.append([(p.id, p.sync_group_removal_reason("main")) for p in left])
 
 
-def _record_score(participants, barrier):
+def _record_score(group, participants):
     for participant in participants:
-        barrier.record(participant, score=participant.id * 10, bonus=0.5)
-    barrier.record_group(total=sum(p.id * 10 for p in participants))
+        participant.record_round(score=participant.id * 10, bonus=0.5)
+    group.record_round(total=sum(p.id * 10 for p in participants))
 
 
-def _record_who_waited(participants, barrier):
-    barrier.record_group(**{f"waited_{p.id}": True for p in participants})
+def _record_who_waited(group, participants):
+    group.record_round(**{f"waited_{p.id}": True for p in participants})
 
 
 def _custom_arrival_message(*, kind, waiting_count=None, group_size=None, **kwargs):
@@ -7595,6 +7595,15 @@ def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_s
     # The late member's rounds are those they have a record in.
     assert [r["round"] for r in group_rounds(participant=late)] == [1]
     assert [r["round"] for r in group_rounds("round_finished", stayers[0], 2)] == [2]
+
+
+def test_record_round_outside_a_recording_barrier_raises():
+    from psynet.participant import Participant
+
+    with pytest.raises(RuntimeError, match="record_rounds=True"):
+        Participant.record_round(SimpleNamespace(id=1), score=1)
+    with pytest.raises(RuntimeError, match="record_rounds=True"):
+        SyncGroup.record_round(SimpleNamespace(id=1), total=1)
 
 
 @pytest.mark.parametrize(

@@ -79,15 +79,15 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   barrier if they need a result too.
 - To export rounds, pass the barrier that ends each round
   `record_rounds=True`. In `on_release` (and `on_dissolve`), record each
-  member's results and pay with `barrier.record(...)`, and the group's
-  results once with `barrier.record_group(...)`; export both tables from
+  member's results and pay with `participant.record_round(...)`, and the
+  group's results once with `group.record_round(...)`; export both tables from
   `get_basic_data`. Rows include members who left, players a `Regrouper`
   sat out and dissolved rounds, so pay only through `bonus=`. Results pages
   read the latest row instead of `participant.var`:
 
   ```python
-  barrier.record(participant, decision=answer, bonus=payoff)
-  barrier.record_group(winner_id=winner.id, choices=choices)
+  participant.record_round(decision=answer, bonus=payoff)
+  group.record_round(winner_id=winner.id, choices=choices)
   latest = group_rounds("round_finished", participant)[-1]
   ```
 - Sort `sync_group.participants` by participant ID before deterministic role

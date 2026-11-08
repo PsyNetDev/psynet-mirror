@@ -35,7 +35,13 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, Regrouper, group_rounds, participant_rounds
+from psynet.sync import (
+    GroupBarrier,
+    Regrouper,
+    SyncGroup,
+    group_rounds,
+    participant_rounds,
+)
 from psynet.timeline import (
     PageMaker,
     Timeline,
@@ -59,7 +65,7 @@ def lowest_unique(choices: dict):
     return min(unique, default=None)
 
 
-def score_round(participants: List[Participant], barrier):
+def score_round(group: SyncGroup, participants: List[Participant]):
     """Record the room's choices and winning number, and pay the winner a bonus.
 
     Players who ran out of time have no choice and miss the round.
@@ -70,11 +76,10 @@ def score_round(participants: List[Participant], barrier):
         str(p.id): p.var.choice for p in participants if p.var.choice is not None
     }
     winner = lowest_unique(choices) if len(choices) > 1 else None
-    barrier.record_group(choices=choices, winning_number=winner)
+    group.record_round(choices=choices, winning_number=winner)
     for participant in participants:
         won = winner is not None and participant.var.choice == winner
-        barrier.record(
-            participant,
+        participant.record_round(
             bonus=WIN_BONUS if won else 0.0,
             choice=participant.var.choice,
         )

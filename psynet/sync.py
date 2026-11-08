@@ -98,6 +98,7 @@ methods are live-only.
 
 import inspect
 import random
+import threading
 import time
 import uuid
 from collections import Counter
@@ -1683,9 +1684,10 @@ class GroupBarrier(Barrier):
         :class:`Regrouper` carry on from the rounds the cohort's earlier
         splits recorded, so the groups of one split share round numbers.
         ``on_release`` and ``on_dissolve`` add each member's results, and a
-        bonus, with :meth:`record`, and the group's with
-        :meth:`record_group`; :func:`participant_rounds` and
-        :func:`group_rounds` return the rows for ``get_basic_data``.
+        bonus, with :meth:`~psynet.participant.Participant.record_round`,
+        and the group's with :meth:`SyncGroup.record_round`;
+        :func:`participant_rounds` and :func:`group_rounds` return the rows
+        for ``get_basic_data``.
 
     stop_top_ups
         If ``True``, the group stops accepting newcomers once it passes this
@@ -1806,71 +1808,22 @@ class GroupBarrier(Barrier):
         self.stop_top_ups = bool(stop_top_ups)
         self.record_rounds = bool(record_rounds)
 
-    def record(self, participant, *, bonus: Optional[float] = None, **data):
-        """Add results to ``participant``'s record of this round.
-
-        Only works in the ``on_release`` or ``on_dissolve`` of a barrier with
-        ``record_rounds=True``, for any member of the round, including those
-        in ``left``. Calling it again for the same member adds more fields.
-
-        Parameters
-        ----------
-        participant
-            The member.
-        bonus
-            Optional amount to add to the participant's performance reward,
-            once per round, so that the record and the payment agree.
-        **data
-            Fields to store, such as the member's answer and payoff. They
-            become columns of :func:`participant_rounds`.
-        """
-        rows = self._round_being_recorded("record").rows
-        row = rows.get(participant.id)
-        if row is None:
-            raise ValueError(
-                f"Participant {participant.id} has no record in this round of "
-                f"barrier '{self.id}'."
-            )
-        _check_unreserved(data, _PARTICIPANT_ROUND_COLUMNS)
-        row.data = {**(row.data or {}), **data}
-        if bonus is not None:
-            if row.bonus is not None:
-                raise ValueError(
-                    f"Participant {participant.id} already has a bonus for this round."
-                )
-            row.bonus = bonus
-            participant.inc_performance_reward(bonus)
-
-    def record_group(self, **data):
-        """Add results to the group's record of this round, such as the winning answer.
-
-        Only works where :meth:`record` does. The group's record is shared
-        by the round's members, whose own records link to it through
-        ``round_id``. Calling it again adds more fields.
-
-        Parameters
-        ----------
-        **data
-            Fields to store, such as everyone's choices or the pot. They
-            become columns of :func:`group_rounds`. Values are stored as
-            JSON, so a nested dictionary's keys come back as strings once
-            the row is reloaded, for example in a later request.
-        """
-        group_round = self._round_being_recorded("record_group").group_round
-        _check_unreserved(data, _GROUP_ROUND_COLUMNS)
-        group_round.data = {**group_round.data, **data}
-
-    def _round_being_recorded(self, method):
-        recording = _rounds_being_recorded.get(id(self))
-        if recording is None:
-            raise RuntimeError(
-                f"barrier.{method}() works only in on_release or on_dissolve of a "
-                "GroupBarrier with record_rounds=True."
-            )
-        return recording
+    @contextmanager
+    def _recording_round(self, group, members, left, outcome):
+        """Keep this round's records open for ``record_round`` while the callbacks run."""
+        if not self.record_rounds:
+            yield
+            return
+        recording = self._start_round_records(group, members, left, outcome)
+        rounds = _rounds_being_recorded()
+        rounds.append(recording)
+        try:
+            yield
+        finally:
+            rounds[:] = [other for other in rounds if other is not recording]
 
     def _start_round_records(self, group, members, left, outcome):
-        """Write this round's rows for the group, ``members`` and ``left``, for :meth:`record`."""
+        """Write this round's rows for the group, ``members`` and ``left``, and return them."""
         number = _round_number(group, self.id)
         group_round = SyncGroupRound.query.filter_by(
             sync_group_id=group.id, barrier_id=self.id, round=number
@@ -1919,7 +1872,7 @@ class GroupBarrier(Barrier):
         db.session.add_all(rows.values())
         if _formed_by_regrouper(group):
             self._record_sat_out(group, number)
-        _rounds_being_recorded[id(self)] = _RoundBeingRecorded(group_round, rows)
+        return _RoundBeingRecorded(group.id, group_round, rows)
 
     def _record_sat_out(self, group, number):
         """Write a row for each player the regrouper sat out of ``group``'s split.
@@ -2123,28 +2076,25 @@ class GroupBarrier(Barrier):
                 if self.stop_top_ups and hasattr(group, "stop_top_ups"):
                     group.stop_top_ups()
 
-                if self.record_rounds:
-                    self._start_round_records(
-                        group, group.active_participants, left, "played"
-                    )
-                try:
-                    if self.on_release:
-                        self.on_release(
-                            group=group,
-                            participants=group.active_participants,
-                            leader=group.leader,
-                            participant=group.leader,
-                            left=left,
-                            barrier=self,
-                        )
-                except Exception as err:
-                    if is_transient_transaction_error(err):
-                        raise
-                    raise _BarrierAuthorHookError(
-                        f"Barrier '{self.id}' on_release failed."
-                    ) from err
-                finally:
-                    _rounds_being_recorded.pop(id(self), None)
+                with self._recording_round(
+                    group, group.active_participants, left, "played"
+                ):
+                    try:
+                        if self.on_release:
+                            self.on_release(
+                                group=group,
+                                participants=group.active_participants,
+                                leader=group.leader,
+                                participant=group.leader,
+                                left=left,
+                                barrier=self,
+                            )
+                    except Exception as err:
+                        if is_transient_transaction_error(err):
+                            raise
+                        raise _BarrierAuthorHookError(
+                            f"Barrier '{self.id}' on_release failed."
+                        ) from err
 
         participants_to_release_ids = {p.id for p in participants_to_release}
         for participant in waiting_participants:
@@ -4295,6 +4245,37 @@ class SyncGroup(SQLBase, SQLMixin):
             key=lambda participant: participant.id,
         )
 
+    def record_round(self, **data):
+        """Add results to the group's record of the round being recorded, such as the winning answer.
+
+        Only works in the ``on_release`` or ``on_dissolve`` of a
+        :class:`GroupBarrier` with ``record_rounds=True``. The group's record
+        is shared by the round's members, whose own records, written with
+        :meth:`~psynet.participant.Participant.record_round`, link to it
+        through ``round_id``. Calling it again adds more fields.
+
+        Parameters
+        ----------
+        **data
+            Fields to store, such as everyone's choices or the pot. They
+            become columns of :func:`group_rounds`. Values are stored as
+            JSON, so a nested dictionary's keys come back as strings once
+            the row is reloaded, for example in a later request.
+
+        Examples
+        --------
+        ::
+
+            def score_round(group, participants):
+                choices = {str(p.id): p.var.choice for p in participants}
+                group.record_round(choices=choices)
+        """
+        group_round = _open_round(
+            "group.record_round", lambda r: r.group_id == self.id
+        ).group_round
+        _check_unreserved(data, _GROUP_ROUND_COLUMNS)
+        group_round.data = {**group_round.data, **data}
+
     def _dissolve(self):
         """Remove every active member, failing them if the group says so.
 
@@ -4456,27 +4437,30 @@ def _run_on_dissolve(group, members, removed):
         if barrier is not None:
             waiting[barrier.id] = (barrier, [])
     for barrier, participants in waiting.values():
-        if barrier.record_rounds:
-            left = group.members_who_left_since(
+        left = (
+            group.members_who_left_since(
                 group.last_barrier_pass_time or group.creation_time
             )
-            barrier._start_round_records(group, members, left, "dissolved")
+            if barrier.record_rounds
+            else []
+        )
         participants = [p for p in participants if p in removed]
-        try:
-            if barrier.on_dissolve is not None and participants:
-                barrier.on_dissolve(
-                    group=group, participants=participants, barrier=barrier
+        with barrier._recording_round(group, members, left, "dissolved"):
+            try:
+                if barrier.on_dissolve is not None and participants:
+                    barrier.on_dissolve(
+                        group=group, participants=participants, barrier=barrier
+                    )
+            except Exception as err:
+                # Dissolving runs in other participants' requests, such as one
+                # returning the study, which must not fail because of this hook.
+                if is_transient_transaction_error(err):
+                    raise
+                logger.exception(
+                    "Barrier '%s' on_dissolve failed for group %s.",
+                    barrier.id,
+                    group.id,
                 )
-        except Exception as err:
-            # Dissolving runs in other participants' requests, such as one
-            # returning the study, which must not fail because of this hook.
-            if is_transient_transaction_error(err):
-                raise
-            logger.exception(
-                "Barrier '%s' on_dissolve failed for group %s.", barrier.id, group.id
-            )
-        finally:
-            _rounds_being_recorded.pop(id(barrier), None)
 
 
 def _recording_barrier_ahead(group_type, members):
@@ -4798,13 +4782,57 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
 
 
 class _RoundBeingRecorded(NamedTuple):
+    group_id: int
     group_round: "SyncGroupRound"
     rows: Dict[int, "ParticipantRound"]
 
 
-# The rounds whose callbacks are running, by ``id()`` of the barrier, for
-# ``GroupBarrier.record`` and ``GroupBarrier.record_group``.
-_rounds_being_recorded: Dict[int, _RoundBeingRecorded] = {}
+# Local to the request (gevent makes it local to the greenlet), so that
+# concurrent requests never see each other's rounds.
+_round_recording_state = threading.local()
+
+
+def _rounds_being_recorded() -> List[_RoundBeingRecorded]:
+    """Return the rounds whose callbacks are running in this request, innermost last.
+
+    A group releases or dissolves at one barrier at a time, so each group has
+    at most one open round, unless a callback dissolves another group, whose
+    round is then opened inside it.
+    """
+    if not hasattr(_round_recording_state, "rounds"):
+        _round_recording_state.rounds = []
+    return _round_recording_state.rounds
+
+
+def _open_round(method, matches):
+    """Return the innermost open round for which ``matches`` is true."""
+    recording = next(
+        (r for r in reversed(_rounds_being_recorded()) if matches(r)), None
+    )
+    if recording is None:
+        raise RuntimeError(
+            f"{method}() works only in on_release or on_dissolve of a "
+            "GroupBarrier with record_rounds=True."
+        )
+    return recording
+
+
+def _record_participant_round(participant, bonus, data):
+    """Add ``data`` and ``bonus`` to the participant's row of their open round."""
+    recording = _open_round(
+        "participant.record_round", lambda r: participant.id in r.rows
+    )
+    row = recording.rows[participant.id]
+    _check_unreserved(data, _PARTICIPANT_ROUND_COLUMNS)
+    row.data = {**(row.data or {}), **data}
+    if bonus is not None:
+        if row.bonus is not None:
+            raise ValueError(
+                f"Participant {participant.id} already has a bonus for this round."
+            )
+        row.bonus = bonus
+        participant.inc_performance_reward(bonus)
+
 
 _GROUP_ROUND_COLUMNS = (
     "round_id",
@@ -4845,7 +4873,7 @@ class SyncGroupRound(SQLBase, SQLMixin):
 
     PsyNet writes it with the round's :class:`ParticipantRound` rows, which
     link to it through ``round_id``. The barrier's callbacks add results
-    that concern the whole group with :meth:`GroupBarrier.record_group`,
+    that concern the whole group with :meth:`SyncGroup.record_round`,
     and :func:`group_rounds` returns the rows. The groups a
     :class:`Regrouper` forms in one split share round numbers but each
     has its own rows.
@@ -4874,7 +4902,8 @@ class ParticipantRound(SQLBase, SQLMixin):
     PsyNet writes a row for every member each time such a barrier releases
     the group or the group dissolves while someone waits there, including
     the members who left the group since its previous barrier. The barrier's
-    callbacks add the round's results with :meth:`GroupBarrier.record`, and
+    callbacks add the round's results with
+    :meth:`~psynet.participant.Participant.record_round`, and
     :func:`participant_rounds` returns the rows for ``get_basic_data``.
     ``round_id`` links the row to its group's :class:`SyncGroupRound`,
     except for players a :class:`Regrouper` sat out, who played in no group;
@@ -4927,7 +4956,8 @@ def participant_rounds(
     as ``"late"``),
     ``other_member_ids`` (the members who played the round, other than this
     one), ``bonus`` and the fields the barrier's
-    callbacks passed to :meth:`GroupBarrier.record`.
+    callbacks passed to
+    :meth:`~psynet.participant.Participant.record_round`.
 
     Parameters
     ----------
@@ -4985,7 +5015,7 @@ def group_rounds(
     ``group_id``, ``group_type``, ``outcome`` (``"played"`` or
     ``"dissolved"``), ``member_ids`` (the members who played the round),
     ``time`` (when it was recorded) and the fields the barrier's callbacks
-    passed to :meth:`GroupBarrier.record_group`.
+    passed to :meth:`SyncGroup.record_round`.
 
     Parameters
     ----------
