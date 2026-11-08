@@ -2279,7 +2279,7 @@ class SimpleGrouper(Grouper):
         instead (a barrier's ``max_wait_action`` or ``late_action``, or their failure).
         ``"fail"`` (default) fails them, telling them "Too few members of your group remained to
         continue". ``"leave_group"`` removes them from the group without failing them, and their next
-        page says why they carry on alone (see :ref:`sync-leaving-a-group`). A module-level function
+        page says that their group ended (see :ref:`sync-leaving-a-group`). A module-level function
         ``f(participant, group)`` returning ``"fail"`` or ``"leave_group"`` decides member by member,
         for example from how many rounds they played. Only for groups without top-ups; passing
         anything but ``"fail"`` with ``join_existing_groups=True`` raises. A member whose own request
@@ -4522,12 +4522,12 @@ def _tell_group_ended(participant, group_size):
     if group_size <= 2:
         text = _p(
             "timeline_hold",
-            "Your partner can't continue with you, so you'll carry on by yourself.",
+            "Your partner is no longer in your group. Please continue.",
         )
     else:
         text = _p(
             "timeline_hold",
-            "Too few members of your group remained, so you'll carry on by yourself.",
+            "Too few members of your group remained. Please continue.",
         )
     participant.group_removal_notice = {"next_page": True, "text": str(text)}
 

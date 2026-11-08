@@ -606,8 +606,8 @@ Two separate settings decide what happens when someone leaves a group:
     fails them, telling them "Too few members of your group remained to
     continue, so we ended your session."; ``"leave_group"`` removes them
     from the group without failing them, and their next page says "Your
-    partner can't continue with you, so you'll carry on by yourself." (or
-    "Too few members of your group remained, …" in larger groups; see
+    partner is no longer in your group. Please continue." (or "Too few
+    members of your group remained. Please continue." in larger groups; see
     :ref:`sync-leaving-a-group`). A module-level function of
     ``participant`` and ``group`` that returns one of these decides member
     by member. A member who is in the middle of a request at that moment

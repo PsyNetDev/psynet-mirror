@@ -7072,7 +7072,7 @@ def test_group_barrier_below_quorum(
         InfoPage("Next").consume(exp, p)
         notice = _removed_from_group_notice(p)
         assert (notice is None) == was_failed
-        assert was_failed or notice.startswith("Your partner can't continue")
+        assert was_failed or notice.startswith("Your partner is no longer")
 
 
 @pytest.mark.parametrize(
