@@ -419,7 +419,9 @@ Groups
 `experiments/ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__
     An ultimatum game in cohorts, formed by a grouper that starts cohorts short
     and lets latecomers join. Each round re-pairs the cohort with a ``Regrouper``, and an odd
-    player out sits out. :doc:`/code/multiplayer/writing_a_round_based_experiment`.
+    player out sits out. Each round is one cued trial per player, with
+    role-specific pages and the pair's result on the node its trials share.
+    :doc:`/code/multiplayer/writing_a_round_based_experiment`.
 
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
     A multi-room chat written directly on WebSockets rather than

@@ -410,6 +410,14 @@ participant-level staircase inside a :func:`~psynet.timeline.while_loop`; the
 :doc:`/skills/make-experiment-adaptive` skill describes the recommended
 approach to adaptive designs.
 
+In group games, cued trials can be the rounds. Set ``sync_group_type`` on
+the trial class and pass ``round`` to ``cue``: the trials that the members of
+a group cue for the same round share one
+:class:`~psynet.trial.main.SyncGroupNode`, whose ``var`` holds the group's
+results, and each trial records the group, the player's role and the round.
+``definition`` can then be a function of ``group`` and ``round``, called
+once per group and round. See :ref:`rounds-cued-trials`.
+
 A trial maker is the better choice when trials should be balanced across
 nodes or participants, when chains develop across participants, or when you
 need performance checks or trial-based recruitment.

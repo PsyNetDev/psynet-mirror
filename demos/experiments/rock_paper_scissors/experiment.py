@@ -186,6 +186,50 @@ class Exp(psynet.experiment.Experiment):
         ),
     )
 
+    @classmethod
+    def get_basic_data(cls, context=None, **kwargs):
+        """Return one row per player per round, with both players' actions."""
+        from psynet.sync import ParticipantLinkSyncGroup
+
+        trials = RockPaperScissorsTrial.query.filter_by(
+            failed=False, complete=True
+        ).all()
+        links = ParticipantLinkSyncGroup.query.filter(
+            ParticipantLinkSyncGroup.sync_group_id.in_(
+                [trial.sync_group_id for trial in trials]
+            )
+        )
+        members = {}
+        for link in links:
+            members.setdefault(link.sync_group_id, []).append(link.participant_id)
+        actions = {
+            (t.participant_id, t.sync_group_id, t.sync_group_round): t.answer[
+                "choose_action"
+            ]
+            for t in trials
+        }
+
+        rows = []
+        for trial in sorted(
+            trials,
+            key=lambda t: (t.sync_group_id, t.sync_group_round, t.participant_id),
+        ):
+            group_id, round_ = trial.sync_group_id, trial.sync_group_round
+            partners = [p for p in members[group_id] if p != trial.participant_id]
+            partner_id = partners[0] if len(partners) == 1 else None
+            rows.append(
+                {
+                    "group_id": group_id,
+                    "round": round_,
+                    "participant_id": trial.participant_id,
+                    "partner_id": partner_id,
+                    "trial_id": trial.id,
+                    "action": actions[(trial.participant_id, group_id, round_)],
+                    "partner_action": actions.get((partner_id, group_id, round_)),
+                }
+            )
+        return {"player_round": rows}
+
     test_n_bots = 2
     test_mode = "serial"
 
@@ -272,8 +316,15 @@ class Exp(psynet.experiment.Experiment):
         assert "That's the end!" in bots[0].current_page_text
         assert "That's the end!" in bots[1].current_page_text
 
-        rounds = [
-            t.sync_group_round
-            for t in RockPaperScissorsTrial.query.order_by(RockPaperScissorsTrial.id)
-        ]
-        assert rounds == [0, 0, 1, 1, 2, 2]
+        rows = self.get_basic_data()["player_round"]
+        assert [
+            (row["round"], row["action"], row["partner_action"]) for row in rows
+        ] == [
+            (0, "rock", "paper"),
+            (0, "paper", "rock"),
+            (1, "scissors", "paper"),
+            (1, "paper", "scissors"),
+            (2, "scissors", "scissors"),
+            (2, "scissors", "scissors"),
+        ], rows
+        assert {row["partner_id"] for row in rows} == {bot.id for bot in bots}

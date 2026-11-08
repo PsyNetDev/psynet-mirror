@@ -36,9 +36,11 @@ Participants whose ``room_id`` values match share the same messages and
 participant list. The ``room_id`` can be any string. To give each group a
 private room, build it from
 :attr:`Trial.sync_group <psynet.trial.main.Trial.sync_group>`, as the demo
-does. ``self.sync_group`` returns the group matching the trial maker's
-``sync_group_type``, so it works even when a participant is in several
-groups (see :doc:`synchronization`).
+does. ``self.sync_group`` returns the group of the trial maker's (or, for a
+cued trial, the trial class's) ``sync_group_type`` that the trial was played
+in, so it works even when a participant is in several groups, and still
+returns the group after the participant has left it (see
+:doc:`synchronization`).
 
 Options
 -------

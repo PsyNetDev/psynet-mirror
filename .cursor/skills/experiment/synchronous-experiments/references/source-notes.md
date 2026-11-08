@@ -20,7 +20,8 @@ and platform docs when a study is near deployment.
   `notify_arrivals=False` to disable them, or customize copy with
   `on_arrival_message`.
   It checks the group's `quorum`, can wait for top-ups, can fail groups below quorum,
-  and accepts `on_release(group, participants, leader, barrier)` for atomic shared updates.
+  and accepts `on_release(group, participants, trials, node, leader, left, barrier)`
+  (any subset) for atomic shared updates.
   The `barrier` argument is reconstructed; see
   `docs/code/multiplayer/synchronization.rst` (published at https://psynetdev.gitlab.io/PsyNet/code/multiplayer/synchronization.html) ("Release callbacks").
 - `psynet.sync.SimpleGrouper` creates `SyncGroup`s by waiting for `batch_size`
@@ -66,6 +67,10 @@ and platform docs when a study is near deployment.
 - `gibbs_within_sync` shows `GibbsTrialMaker(sync_group_type=...)`,
   `join_existing_groups=True`, a task-specific `join_criterion`, dropout
   simulation, and a top-up participant joining a still-active group.
+- `ultimatum_pairing` and `lowest_unique_number` show games played in rounds
+  with a `Regrouper`: one `Trial.cue` per player per round on a trial class
+  with `sync_group_type`, group results on the shared `SyncGroupNode`,
+  per-player results on the trial, and basic data read from trials and nodes.
 
 ## Practical group-search findings
 
