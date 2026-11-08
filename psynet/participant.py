@@ -491,7 +491,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     # ``next_page`` until Page.consume binds it to the participant's next page.
     group_removal_notice = Column(PythonDict)
     # Group types whose grouper let the participant carry on without a group
-    # (``max_wait_action="leave_group"``); cleared when they join one.
+    # (``max_wait_action="continue_without_group"``); cleared when they join one.
     ungrouped_group_types = Column(PythonList)
     # Keys into Experiment.pseudonym_scheme, set only when a pseudonym is chosen
     # rather than derived from the participant ID; see ``Participant.pseudonym``.
@@ -745,7 +745,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         Returns ``None`` if they are still in such a group or were never in
         one. Otherwise returns ``"late"`` (removed by a barrier's
         ``late_action="leave_group"``), ``"waited_too_long"`` (by its
-        ``max_wait_action="leave_group"``, or let go ungrouped by a grouper's), ``"group_dissolved"`` (released
+        ``max_wait_action="leave_group"``, or a grouper's
+        ``max_wait_action="continue_without_group"``), ``"group_dissolved"`` (released
         when the group fell below its quorum, with
         ``below_quorum="leave_group"``), ``"moved_on"`` (went on to a new group
         at a :class:`~psynet.sync.Regrouper`), ``"failed"``, or ``None`` if no

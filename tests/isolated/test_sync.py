@@ -725,13 +725,14 @@ def test_simple_grouper_groups_on_last_arrival(in_experiment_directory, db_sessi
     assert len(first.sync_group.participants) == 2
 
 
+@pytest.mark.parametrize("stop_top_ups", [False, True])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_grouper_leftover_waiter_joins_an_open_group(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, stop_top_ups
 ):
-    """A waiter left over from a burst joins the group formed without them."""
+    """A waiter left over from a burst joins the group formed without them, unless it stopped top-ups."""
     exp = get_experiment()
     grouper = SimpleGrouper(
         group_type="quorum",
@@ -744,10 +745,16 @@ def test_grouper_leftover_waiter_joins_an_open_group(
         _arrive_at_group_barrier(exp, grouper, participant)
     _commit_barrier_arrivals()
     leftover = next(p for p in participants if p.sync_group is None)
+    if stop_top_ups:
+        next(p for p in participants if p is not leftover).sync_group.stop_top_ups()
+        db_session.commit()
 
     check_barriers()
 
     db_session.refresh(leftover)
+    if stop_top_ups:
+        assert leftover.sync_group is None
+        return
     assert grouper.can_participant_exit(leftover)
     assert len(leftover.sync_group.participants) == 3
 
@@ -6661,7 +6668,18 @@ def test_group_barrier_late_after_removes_missing_participants(
     db_session.commit()
     publications = _hold_wake_publications(monkeypatch)
 
+    for missing_participant in missing_participants:
+        missing_participant.page_uuid = f"round-page-{missing_participant.id}"
     barrier.check_waiting_participants(waiting_participants)
+    for missing_participant in missing_participants:
+        late_answer = InfoPage("Your move").process_response(
+            raw_answer=None,
+            blobs={},
+            metadata={"left_group_on_page": False},
+            experiment=exp,
+            participant=missing_participant,
+        )
+        assert late_answer.left_group_on_page
     if min_group_size == 3:
         # The second removal dissolves the group, so nobody went on without either.
         assert all(p.failed for p in waiting_participants)
@@ -6685,16 +6703,16 @@ def test_group_barrier_late_after_removes_missing_participants(
         assert missing_participant not in group.active_participants
         assert missing_participant.sync_group_links[0].removal_reason == "late"
         assert arrival_notice_payload(missing_participant.unique_id)["removed"]
-    late_answer = InfoPage("Your move").process_response(
-        raw_answer=None,
-        blobs={},
-        metadata={},
-        experiment=exp,
-        participant=missing_participants[0],
-    )
-    assert late_answer.left_group_on_page
     missing_participants[0].page_uuid = "next-page"
     assert pending_arrival_notice_for(missing_participants[0]) is None
+    on_time_answer = InfoPage("Your move").process_response(
+        raw_answer=None,
+        blobs={},
+        metadata={"left_group_on_page": True},
+        experiment=exp,
+        participant=waiting_participants[0],
+    )
+    assert not on_time_answer.left_group_on_page
 
 
 @pytest.mark.parametrize(
@@ -7302,9 +7320,8 @@ def test_grouper_lets_an_ungrouped_participant_carry_on(
     assert _removed_from_group_notice(participant) == (
         "We couldn't find a partner for you in time. Please continue."
     )
-    assert GroupBarrier(id_="after", group_type="pair").can_participant_exit(
-        participant
-    )
+    assert _removed_from_group(participant, "pair")
+    assert not _removed_from_group(new_participant(exp), "pair")
 
 
 @pytest.mark.parametrize(

@@ -22,7 +22,8 @@ start a smaller group once its first participant has waited long enough.
 
 Groups are formed from whoever is online at the same moment, so recruitment
 has to bring participants in close together. A participant who waits too long
-without a group is failed and sent to the end of the experiment.
+without a group is failed and sent to the end of the experiment, unless you
+choose to let them continue without one, for example with a task of their own.
 
 Keeping a group in step
 -----------------------

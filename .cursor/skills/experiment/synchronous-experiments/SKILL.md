@@ -113,8 +113,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   needs a group: stop a rounds loop with it in the `while_loop` condition,
   and give a synchronized trial maker a solo alternative, for example
   `conditional("paired", in_pair, paired_trials, solo_trials)`.
-- Use `join_existing_groups=True` only with a task-specific `join_criterion`
-  that rejects stale, completed, or unsuitable groups.
+- With `join_existing_groups=True`, also pass a task-specific `join_criterion`
+  when a group can become unsuitable for newcomers in ways `stop_top_ups()`
+  doesn't cover, for example a chain that is nearly finished.
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with
   filler work via `trial_maker.custom(...)`, as in `sync_quorum`.
 - For chain or Gibbs designs, distinguish true co-presence from async

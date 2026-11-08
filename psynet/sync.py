@@ -112,6 +112,7 @@ from typing import (
     Optional,
     Sequence,
     Union,
+    get_args,
 )
 
 from dallinger import db
@@ -1493,14 +1494,10 @@ def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
     return None
 
 
-REMOVAL_REASONS = (
-    None,
-    "failed",
-    "late",
-    "waited_too_long",
-    "group_dissolved",
-    "moved_on",
-)
+RemovalReason = Literal[
+    "failed", "late", "waited_too_long", "group_dissolved", "moved_on"
+]
+REMOVAL_REASONS = (None, *get_args(RemovalReason))
 
 _OLD_BELOW_QUORUM_NAMES = (
     "fail_participants_below_min_size",
@@ -1556,8 +1553,9 @@ class GroupBarrier(Barrier):
     :class:`Barrier` for the live-versus-reconstructed method split.
 
     A participant who was removed from their group of ``group_type``, for example by a timeout with ``"leave_group"``,
-    and is in no other group of that type passes straight through. A participant who was never in
-    such a group gets an error, which usually means a grouper is missing from the timeline.
+    and is in no other group of that type passes straight through, as does one whose grouper let them
+    continue without a group (``max_wait_action="continue_without_group"``). Any other participant who
+    was never in such a group gets an error, which usually means a grouper is missing from the timeline.
 
     Parameters
     ----------
@@ -2179,6 +2177,7 @@ class Grouper(Barrier):
         waiting_message=None,
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
+        *,
         max_wait_action: Literal["fail", "continue_without_group"] = "fail",
     ):
         if max_wait_action not in ("fail", "continue_without_group"):
@@ -2421,8 +2420,14 @@ class SimpleGrouper(Grouper):
         ``quorum`` defaults to it and may not exceed it, so that a group started this way
         is not below quorum at its first barrier.
 
+    max_wait_time, max_wait_action
+        How long a participant may wait for a group (default 20 seconds), and
+        what happens then: ``"fail"`` (default) fails them, and
+        ``"continue_without_group"`` lets them carry on without a group (see
+        :class:`Grouper`).
+
     kwargs
-        Further arguments to pass to Grouper.
+        Further arguments to pass to Grouper, such as ``waiting_message``.
     """
 
     def __init__(
@@ -3825,7 +3830,7 @@ class SyncGroup(SQLBase, SQLMixin):
     def remove_participant(
         self,
         participant: Participant,
-        reason: Optional[Literal["moved_on", "late"]] = None,
+        reason: Optional[RemovalReason] = None,
     ):
         """Remove a participant from the group.
 
@@ -3859,6 +3864,8 @@ class SyncGroup(SQLBase, SQLMixin):
             if is_member and link.active:
                 link.active = False
                 link.removal_reason = reason
+                if reason == "late":
+                    link.removed_on_page = participant.page_uuid
         self.check_numbers()
         _notify_membership_change(self)
         if self.n_active_participants == 0 and not getattr(
@@ -3950,7 +3957,7 @@ class SimpleSyncGroup(SyncGroup):
     def remove_participant(
         self,
         participant: Participant,
-        reason: Optional[Literal["moved_on", "late"]] = None,
+        reason: Optional[RemovalReason] = None,
     ):
         super().remove_participant(participant, reason=reason)
         self.dissolve_if_below_quorum()
@@ -4248,6 +4255,9 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     arrival_time = Column(DateTime)
     active = Column(Boolean, default=True)
     removal_reason = Column(String)
+    # The page a member removed for being late was on; see
+    # ``Response.left_group_on_page``.
+    removed_on_page = Column(String)
     # The member's role in the group (see ``Regrouper(roles=...)``).
     role = Column(String)
     # The deadline of the latest timed page the member started outside
@@ -4751,6 +4761,17 @@ def _set_next_page_notice(participant, text):
     """Show ``text`` on the participant's next page, unless their own request holds their row."""
     if _lock_free_participants([participant]):
         participant.group_removal_notice = {"next_page": True, "text": str(text)}
+
+
+def _removed_late_on_current_page(participant) -> bool:
+    """Return whether a barrier removed the participant for being late while on their current page."""
+    return (
+        participant.page_uuid is not None
+        and ParticipantLinkSyncGroup.query.filter_by(
+            participant_id=participant.id, removed_on_page=participant.page_uuid
+        ).first()
+        is not None
+    )
 
 
 def _removed_from_group_notice(participant) -> Optional[str]:

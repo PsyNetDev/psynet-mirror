@@ -2001,10 +2001,10 @@ class Page(Elt):
         else:
             # The flag skips validation, so only the server may set it.
             metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
-        from .sync import _removed_from_group_notice
+        from .sync import _removed_late_on_current_page
 
         metadata = {k: v for k, v in metadata.items() if k != "left_group_on_page"}
-        if _removed_from_group_notice(participant) is not None:
+        if _removed_late_on_current_page(participant):
             metadata = {**metadata, "left_group_on_page": True}
         # Untimed pages, such as feedback or a framework wait, keep the flag.
         if participant.waiting_barrier_id is None and self.time_limit is not None:
@@ -3343,9 +3343,10 @@ class Response(_Response):
     def left_group_on_page(self) -> bool:
         """Whether a barrier removed the participant from their group while they were on this page.
 
-        This happens to a member who is late (``late_action="leave_group"``)
-        while the group carries on. The group has moved on without them, so
-        an answer such as a move in a game usually shouldn't count.
+        This happens to a member who is late (``late_action="leave_group"``),
+        whether the group carries on or is dissolved. The group has gone on
+        without them, so an answer such as a move in a game usually shouldn't
+        count.
         """
         return bool((self.metadata or {}).get("left_group_on_page"))
 

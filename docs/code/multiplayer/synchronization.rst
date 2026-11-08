@@ -46,7 +46,8 @@ the grouper has a ``waiting_screen`` (see below).
     the next barrier check after one has room. Closed groups and groups with
     no active members are not joined. Groups formed with this option accept
     *top-ups*: when a member drops out, barriers wait for a replacement
-    instead of dissolving the group.
+    instead of dissolving the group, until ``group.stop_top_ups()`` is
+    called; ``below_quorum`` applies from then on.
 
 ``max_group_size`` (default: ``initial_group_size``)
     The largest size a group can reach through ``join_existing_groups``;
@@ -78,6 +79,11 @@ the grouper has a ``waiting_screen`` (see below).
     the participant sees "Waiting for other participants…", or what
     :ref:`a message function <sync-countdown-messages>` returns.
 
+``max_wait_time`` (default: 20) and ``max_wait_action`` (default: ``"fail"``)
+    How long a participant may wait for a group, and what happens then:
+    ``"fail"`` fails them, and ``"continue_without_group"`` lets them carry
+    on without one (see `Timeouts`_).
+
 ``waiting_message``
     The message on the waiting indicator. If omitted, participants see
     "Waiting for other participants…". For translated experiments, mark it as
@@ -99,8 +105,9 @@ leader has more than one trial left:
 
 Groups are formed only from participants who are waiting at the same time,
 so recruitment must bring them in close together. A participant who waits at
-a grouper for longer than ``max_wait_time`` (default 20 seconds) is failed;
-raise it if participants arrive slowly.
+a grouper for longer than ``max_wait_time`` (default 20 seconds) is failed,
+or continues without a group with ``max_wait_action="continue_without_group"``;
+raise ``max_wait_time`` if participants arrive slowly.
 
 Accessing the group
 ~~~~~~~~~~~~~~~~~~~
@@ -623,7 +630,8 @@ about 12 participants a minute with the default 20 seconds, or 2 a minute
 with ``max_wait_time=120``. In one test with groups of three and about 3
 arrivals a minute, the grouper failed 45% of participants with a 20-second
 wait and none with 120 seconds. When recruitment stops, up to one fewer than
-the group size are left without a group and are failed.
+the group size are left without a group, and are failed unless the grouper
+has ``max_wait_action="continue_without_group"``.
 
 At later barriers, ``max_wait_time`` needs to cover how much longer some
 members take over the previous page than others. A member who times out
@@ -749,7 +757,10 @@ After leaving a group
 A member removed from their group without being failed, through
 ``"leave_group"`` or ``below_quorum="leave_group"``, stays in the
 experiment and continues the timeline without that group. They leave only the group of that type: a player removed from a ``"pair"`` stays in their ``"cohort"``.
-A notice on their progress bar tells them why. A member removed for being
+A participant whose grouper let them continue without a group
+(``max_wait_action="continue_without_group"``) is treated the same way for
+that group type, as if they had left a group. A notice on their progress bar
+tells them why. A member removed for being
 late while the group carries on sees "Your group went on without you. Please
 continue." on the page they are on, until they leave it; whatever they submit there is saved,
 though the group has moved on. In other cases, such as when their group was
