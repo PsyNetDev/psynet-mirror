@@ -9,7 +9,6 @@ from sqlalchemy.types import TypeDecorator
 from .utils import get_logger
 
 logger = get_logger()
-marker = object()
 
 
 class PythonObject(TypeDecorator):

@@ -113,9 +113,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   group below its `quorum` then waits for a replacement instead of playing on.
   Pass `stop_top_ups=True` to the `GroupBarrier` after which newcomers can
   no longer catch up, such as the one that starts the game; `below_quorum`
-  then applies. Pass `top_up_wait=seconds` too, so a group that falls below its
-  quorum before then doesn't wait for a newcomer for ever. To let participants who find no group carry on alone instead of
-  being failed, pass the grouper `max_wait_action="continue_without_group"`.
+  then applies. Pass `top_up_wait=seconds` too, so a group that falls below
+  its quorum before then doesn't wait for a newcomer for ever. To let
+  participants who find no group carry on alone instead of being failed,
+  pass the grouper `max_wait_action="continue_without_group"`.
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
   needs a group: stop a rounds loop with it in the `while_loop` condition,
   and give a synchronized trial maker a solo alternative, for example
@@ -232,13 +233,12 @@ class Exp(psynet.experiment.Experiment):
         InfoPage("Round 1.", time_estimate=5),
         GroupBarrier(id_="round_1", group_type="pair",
                      late_after=LATE_AFTER, late_action="leave_group"),
-        conditional(
-            "still_paired",
-            lambda participant: participant.in_sync_group("pair"),
+        only_in_group(
+            "pair",
             InfoPage("Round 2 with your partner.", time_estimate=5),
-            InfoPage("Round 2 on your own.", time_estimate=5),
+            GroupBarrier(id_="round_2", group_type="pair"),
+            otherwise=InfoPage("Round 2 on your own.", time_estimate=5),
         ),
-        GroupBarrier(id_="round_2", group_type="pair"),
         InfoPage("Done.", time_estimate=5),
     )
 
@@ -264,9 +264,8 @@ class Exp(psynet.experiment.Experiment):
         silent.take_page()  # comes back after being removed
         assert silent.current_page_text == "Round 2 on your own."
 
-        for bot in [stayer, on_time, silent]:
-            bot.run_to_completion()
-            assert not bot.failed
+        run_bots_to_completion([stayer, on_time, silent])
+        assert not any(bot.failed for bot in [stayer, on_time, silent])
 ```
 
 `tests/experiments/pair_dropout` in the PsyNet repository extends this with
@@ -284,23 +283,14 @@ were on time, fix the settings rather than the test.
   `bot.with_participant(lambda p: p.sync_group_removal_reason("pair"))`, and
   read Regrouper roles with `bot.with_participant(pairing.role)`.
 - Post chat messages with `bot.send_chat_message("...")`.
-- With several groups in one test, finish one group's story before driving
-  the next: the `late_after` clock keeps running for a group while the test
-  drives another, and a group still accepting top-ups takes the next bot
-  that reaches the grouper.
-- A `Regrouper` never dissolves its groups, so the partner of a bot that drops
-  out sees the round's outcome, not a removal notice. Drop the bot out before
-  the next split. Find who plays with whom with
-  `bots_by_sync_group(bots, "pair")`, and finish bots that are still being
-  re-paired with `run_bots_to_completion(bots)`, not `run_to_completion` on
-  one bot at a time, which waits for partners who never move.
+- Find who plays with whom with `bots_by_sync_group(bots, "pair")`, and
+  finish bots that still wait for each other with
+  `run_bots_to_completion(bots)`. For several groups in one test, and for
+  `Regrouper` partners, follow "Bots that drop out" in `test/backend`.
 - A member removed for being late sees "went on without you" only on the page
-  they were on; assert `current_notice` before that bot takes the page.
-- Notices name a partner when one other member was left, and the group
-  otherwise: "Your group went on without you. Please continue.", "Too few
-  members of your group remained. Please continue." (dissolved, larger
-  groups) and "We couldn't form a group for you in time. Please continue."
-  (grouper, larger groups).
+  they were on; assert `current_notice` before that bot takes the page. "After
+  leaving a group" in `code/multiplayer/synchronization` gives the wording,
+  which depends on how many members were left.
 - Pytest doesn't show the compared values of a failed `assert` in
   `experiment.py`, so add a message: `assert text == "Round 2.", text`.
 

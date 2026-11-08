@@ -1,4 +1,5 @@
 import json
+import sys
 
 import pytest
 from dominate import tags
@@ -10,6 +11,9 @@ from psynet.barrier_spec import (
     barrier_spec_json,
     behavior_hash,
 )
+from psynet.experiment import get_experiment
+from psynet.pytest_psynet import path_to_test_experiment
+from psynet.serialize import load_class
 from psynet.sync import Barrier, GroupBarrier, GroupCloser, SimpleGrouper
 
 _PAGE_ATTRS = (
@@ -252,3 +256,19 @@ def test_dominate_waiting_message_round_trips_as_markup():
     restored = barrier_from_spec_json(barrier_spec_json(original))
     assert isinstance(restored.waiting_message, Markup)
     assert str(restored.waiting_message) == "<em>Wait</em>"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_load_class_reloads_an_unloaded_experiment_package(
+    in_experiment_directory, monkeypatch
+):
+    """Bot tests rebuild barriers after pytest has unloaded the experiment package."""
+    experiment_class = type(get_experiment())
+    path = f"{experiment_class.__module__}.{experiment_class.__qualname__}"
+    for name in list(sys.modules):
+        if name.split(".")[0] == "dallinger_experiment":
+            monkeypatch.delitem(sys.modules, name)
+
+    assert load_class(path).__qualname__ == experiment_class.__qualname__

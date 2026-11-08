@@ -2,6 +2,7 @@ import importlib
 import inspect
 import json
 import pickle
+import sys
 import types
 import warnings
 from dataclasses import dataclass
@@ -224,7 +225,7 @@ class PsyNetUnpickler(Unpickler):
         if cls_id.startswith("dallinger_experiment"):
             cls = self.get_experiment_object(cls_id)
         else:
-            cls = loadclass(cls_id)
+            cls = load_class(cls_id)
         is_sql_object = hasattr(cls, "_sa_registry")
         if is_sql_object:
             return self.load_sql_object(cls, obj)
@@ -382,21 +383,32 @@ def callable_to_path(function):
     return f"{module}.{function.__qualname__}"
 
 
-def callable_from_path(path):
-    """Load a supported callable from its import path."""
-    module_name, qualname = path.split(".", 1)
-    try:
-        module = importlib.import_module(module_name)
-    except ModuleNotFoundError:
-        if module_name != "dallinger_experiment":
-            raise
-        # Bot tests run in a process where pytest has unloaded the experiment
-        # package, so load it again from the experiment directory.
+def _load_experiment_package_for(path):
+    """Load the experiment package if ``path`` is inside it and it isn't loaded.
+
+    Bot tests run in a process where pytest has unloaded the experiment
+    package, so it is loaded again from the experiment directory.
+    """
+    if (
+        path.split(".", 1)[0] == "dallinger_experiment"
+        and "dallinger_experiment" not in sys.modules
+    ):
         from .experiment import import_local_experiment
 
         import_local_experiment()
-        module = importlib.import_module(module_name)
-    target = module
+
+
+def load_class(path):
+    """Load a class from its import path, or return ``None``, as ``loadclass`` does."""
+    _load_experiment_package_for(path)
+    return loadclass(path)
+
+
+def callable_from_path(path):
+    """Load a supported callable from its import path."""
+    _load_experiment_package_for(path)
+    module_name, qualname = path.split(".", 1)
+    target = importlib.import_module(module_name)
     for attr in qualname.split("."):
         target = getattr(target, attr)
     return target

@@ -7039,6 +7039,33 @@ def test_members_who_finish_dont_dissolve_the_group(
     assert (_removed_from_group_notice(last) is not None) is dissolved
 
 
+def _score_dissolved(participants, barrier):
+    for participant in participants:
+        participant.var.scored_at = barrier.id
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_on_dissolve_runs_for_the_members_waiting_at_the_barrier(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    (waiter, answering, quitter), group = _sync_group_of(exp, db_session, 3)
+    group.below_quorum = "continue_without_group"
+    barrier = GroupBarrier(
+        id_="question_3", group_type="main", on_dissolve=_score_dissolved
+    )
+    _arrive_at_group_barrier(exp, barrier, waiter)
+    _commit_barrier_arrivals()
+
+    quitter.fail("returned")
+    db_session.commit()
+
+    assert waiter.var.get("scored_at") == "question_3"
+    assert answering.var.get("scored_at") is None
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )

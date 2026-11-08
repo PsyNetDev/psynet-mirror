@@ -1662,7 +1662,9 @@ class GroupBarrier(Barrier):
         the last question for the members who answered it. It takes the same
         arguments as ``on_release`` except ``leader`` and ``left``: ``participants`` are
         the members waiting here, and ``barrier`` can read ``on_release_data``.
-        The same serialization rules apply.
+        The same serialization rules apply. A waiting member whose own request
+        is busy at that moment is handled once it finishes, in a second call
+        with just them.
 
     stop_top_ups
         If ``True``, the group stops accepting newcomers once it passes this
@@ -4030,7 +4032,8 @@ class SyncGroup(SQLBase, SQLMixin):
               part, such as a player leaving a cohort after their last round.
               Their leaving doesn't dissolve a group below its quorum, so the
               members finishing their own last rounds aren't told that too few
-              remained.
+              remained. A later :class:`GroupBarrier` of the group's type
+              still dissolves it if fewer than its quorum are left.
         """
         if reason not in REMOVAL_REASONS:
             raise ValueError(
@@ -4089,9 +4092,8 @@ class SyncGroup(SQLBase, SQLMixin):
         self._dissolving_below_quorum = True
         try:
             remaining = list(self.active_participants)
-            if not self.dissolving:
-                _run_on_dissolve(self, remaining)
             removed = _lock_free_participants(remaining)
+            _run_on_dissolve(self, removed)
             group_size = len(group_seats(self))
             for participant in removed:
                 action = self._below_quorum_action(participant)
