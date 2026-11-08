@@ -93,7 +93,7 @@ class sets ``sync_group_type``, record the group the participant was in when
 the trial was created, in ``trial.sync_group_id``, and their role in it, if
 a :class:`~psynet.sync.Regrouper` gave one, in ``trial.sync_group_role``.
 ``trial.sync_group_round`` says which of the group's rounds the trial belongs
-to: a trial maker numbers them from 1, shared by a member who joined the group
+to: a trial maker numbers them from 0, shared by a member who joined the group
 late, and a cued trial stores the ``round`` passed to
 :meth:`~psynet.trial.main.Trial.cue`. The group's trials with the same
 ``sync_group_id`` and ``sync_group_round`` are one round. All three stay after
@@ -141,9 +141,8 @@ participant's own trials from that trial maker, so it differs from
 
 A participant variable (``participant.var``) holds only its latest value. To
 keep a result from every round in the export, save it on the trial, for
-example in ``trial.score`` or ``trial.var``, or, in games without trials,
-rebuild it from the groups and responses as in
-:ref:`basic_data_regrouper`.
+example in ``trial.score`` or ``trial.var``, and the group's results on the
+node its trials share, as in :ref:`basic_data_regrouper`.
 
 A convenient layout for dyads and small groups is one row per participant per
 round, with columns for the group, the round, the participant, their partner,
@@ -223,20 +222,22 @@ follows it.
 Games with a regrouper
 ~~~~~~~~~~~~~~~~~~~~~~
 
-Games that re-pair players with a :class:`~psynet.sync.Regrouper` often have
-no trials, but each group the regrouper forms is one round of one group, and
-each member's ``participant_link_sync_group`` row records their ``role`` and,
-in ``removal_reason``, whether they were removed for being late. Their answers
-are in the ``response`` table, which has one row per page answered. The
-``ultimatum_pairing`` demo matches each player's decision to the pair they
-were in when they gave it:
+In games that re-pair players with a :class:`~psynet.sync.Regrouper`, each
+group the regrouper forms is one round of one group. With one cued trial per
+player per round (see :ref:`rounds-cued-trials`), each trial records the pair
+and the player's role, and the pair's node holds its results. The
+``ultimatum_pairing`` demo reads one table from the trials and one from the
+nodes:
 
 .. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: Exp.get_basic_data
 
-Rounds a player sat out have no row here, so ``pair_number`` counts the
-player's own pairs, not the game's rounds; their visits to the regrouper with
-``sat_out`` set are in the ``participant_link_barrier`` table.
+Rounds a player sat out have no trial, so the third table counts them with
+:meth:`~psynet.sync.Regrouper.rounds_sat_out`; each visit to the regrouper,
+with ``sat_out`` set for a sit-out, is a row of the
+``participant_link_barrier`` table. Each member's
+``participant_link_sync_group`` row also records, in ``removal_reason``,
+whether they were removed from their pair for being late.
 
 .. seealso::
 

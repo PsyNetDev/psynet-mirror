@@ -271,3 +271,9 @@ class Exp(psynet.experiment.Experiment):
 
         assert "That's the end!" in bots[0].current_page_text
         assert "That's the end!" in bots[1].current_page_text
+
+        rounds = [
+            t.sync_group_round
+            for t in RockPaperScissorsTrial.query.order_by(RockPaperScissorsTrial.id)
+        ]
+        assert rounds == [0, 0, 1, 1, 2, 2]

@@ -375,7 +375,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Integer,
         doc=(
             "Which round of ``sync_group_id`` this trial belongs to. In a trial "
-            "maker, rounds are counted from 1 and a member who joined the group "
+            "maker, rounds are counted from 0 and a member who joined the group "
             "late shares the group's numbers; cued trials store the ``round`` "
             "passed to :meth:`Trial.cue`."
         ),
@@ -2914,8 +2914,8 @@ class TrialMaker(Module):
         if not trials:
             return
         key = f"trial_rounds_{self.id}"
-        number = (group.var.get(key) or 0) + 1
-        group.var.set(key, number)
+        number = group.var.get(key) or 0
+        group.var.set(key, number + 1)
         for trial in trials:
             trial.sync_group_round = number
 

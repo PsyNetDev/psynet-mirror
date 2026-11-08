@@ -13,6 +13,10 @@ Good reference for nesting a `Regrouper` inside persistent cohorts made by a
 `SimpleGrouper` with `start_short_after` and top-ups, with the default
 re-pairing that avoids repeat partners and a `join_criterion` that closes
 the cohort to latecomers once someone has finished a round.
+Each round is one cued trial per player (`Trial.cue(..., round=0)` with
+`sync_group_type = "pair"`, inside `only_in_group`), so the pair's offer and
+result live on a node shared by its two trials, sit-outs get a page instead
+of a trial, and the basic data is read from trials and nodes.
 
 ## Usage
 
