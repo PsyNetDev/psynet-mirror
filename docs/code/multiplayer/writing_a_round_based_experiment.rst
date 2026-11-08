@@ -47,7 +47,8 @@ pair and wait for the next split:
 The round starts as soon as the whole cohort (``within``) is waiting, or at
 the ``deadline`` (counted from when the first player is back) without whoever
 isn't back yet, if enough players are waiting to
-form a pair; latecomers join the next round.
+form a pair. A player who isn't back by then is still in the cohort, and
+joins the next round.
 With ``roles``, each pair has a proposer and a responder, and each player
 alternates between them. Partners from last round are kept apart where
 possible. ``waiting_message`` counts down to the deadline. See
@@ -171,8 +172,25 @@ without a time limit before the decision page, such as the last round's
 results, count towards it: give them a time limit too, or make
 ``late_after`` long enough for a slow reader. A player who was removed from the pair sees "Your
 partner went on without you. Please continue." on the progress bar (pass
-``on_arrival_message`` to the barrier to change it) and joins the next round
-when they come back.
+``on_arrival_message`` to the barrier to change it).
+
+The barrier removes a late player from the pair only (see
+:ref:`sync-leaving-a-group`), so they would still be in the cohort, and the
+next split would wait for them until its deadline. A late player has usually
+closed their page, so the demo also takes them out of the cohort when the
+barrier scores their partner's round (in ``score_pair``, shown in full below):
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+   :start-at: away = [p for p in left
+   :end-before: result = "partner_away"
+   :dedent: 12
+
+If they come back, they are told that they were away, and their game ends.
+Leaving for being late counts as dropping out, so a cohort that no longer
+takes newcomers would be dissolved if it fell below its quorum, failing the
+players who were on time; the cohort's grouper sets
+``below_quorum="continue_without_group"`` so that they end the game early
+instead (see :ref:`groups_below_min_size`).
 
 A player who was removed from their pair passes the round's later group
 barriers straight through, and ``only_in_group`` skips the rest of their
@@ -228,14 +246,16 @@ they move on without a pair instead of waiting (see
 :class:`~psynet.sync.Regrouper`), so ``only_in_group`` shows them its
 ``otherwise`` page and they get no trial that round. A player who was paired
 but removed from the pair before finishing the round is told that they were
-away instead:
+away instead. They have left the cohort too, so the ``explain_round``
+condition in the timeline above also checks
+``participant.sync_group_removal_reason("pair")``:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: not_playing
 
 .. figure:: ../../_static/images/rounds/sit_out.png
    :width: 600
-   :alt: A page saying "You sit out this round. It doesn't count towards your rounds."
+   :alt: A page saying "You sit out this round without a partner. If you sit out 2 rounds, the game ends early for you."
 
 Ending the game
 ---------------

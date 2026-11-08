@@ -80,6 +80,9 @@ def get_timeline():
             waiting_message=lobby_message,
             waiting_screen=forming_cohort,
             max_wait_time=300,
+            # Once a cohort stops taking newcomers, removing a late player can
+            # leave it below its quorum; the rest then end early, not failed.
+            below_quorum="continue_without_group",
         ),
         Module(
             "game",
