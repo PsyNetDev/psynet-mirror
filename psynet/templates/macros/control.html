@@ -1841,7 +1841,16 @@
         survey.showNavigationButtons = false;
 
         let psynetSurveyCompletionStarted = false;
+        let psynetSurveyTimedOut = false;
+        const surveyContainer = document.getElementById("surveyContainer");
+        document.addEventListener("psynet:timeLimitReached", () => {
+            if (!surveyContainer.isConnected) return;
+            // Keeps a partly filled survey, unvalidated, as the timed-out answer.
+            psynetSurveyTimedOut = true;
+            psynet.response.staged.rawAnswer = JSON.stringify(survey.data);
+        });
         psynet.setStageResponseHandler(() => {
+            if (psynetSurveyTimedOut) return;
             // This will actually do more than stage the response,
             // it'll trigger the full submission.
             psynetSurveyCompletionStarted = false;

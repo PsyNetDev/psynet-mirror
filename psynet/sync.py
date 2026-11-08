@@ -1461,7 +1461,8 @@ def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
 def _removed_from_group(participant, group_type) -> bool:
     """Return whether the participant left their group of ``group_type`` and is in no other."""
     return group_type not in participant.active_sync_groups and any(
-        not link.active and link.sync_group.group_type == group_type
+        (not link.active or not link.sync_group.active)
+        and link.sync_group.group_type == group_type
         for link in participant.sync_group_links
     )
 
@@ -1953,9 +1954,10 @@ class GroupBarrier(Barrier):
 
         Each member is timed from the group's last barrier pass or from when
         they joined the group, whichever is later, so newcomers to an open
-        group are not late as soon as they join. A member on a page with a
-        time limit, outside waiting logic, is not late until that limit has
-        run out and an answer sent at the deadline has had time to arrive.
+        group are not late as soon as they join. A member who has started a
+        page with a time limit since then, outside waiting logic, is not late
+        until that limit has run out and an answer sent at the deadline has
+        had time to arrive, even if they have already left the page.
         """
         if self.late_after is None:
             return []
@@ -2777,6 +2779,8 @@ class Regrouper(Grouper):
             )
         if every is not None and every <= 0:
             raise ValueError("every must be positive.")
+        if isinstance(deadline, (int, float)) and deadline <= 0:
+            raise ValueError("deadline must be positive.")
         if deadline is None and every is None and within is None:
             raise ValueError(
                 "A Regrouper without `within` needs a deadline or every, because "
@@ -2799,9 +2803,9 @@ class Regrouper(Grouper):
         ):
             raise ValueError(
                 f"max_wait_time ({max_wait_time} s) must be longer than twice the "
-                f"deadline ({longest_lone_wait} s): with release_left_over, a player "
-                "waiting alone for cohort members who are still playing waits up to two "
-                "deadlines before sitting out."
+                f"deadline or every period ({longest_lone_wait} s): with "
+                "release_left_over, a player waiting alone for cohort members who are "
+                "still playing waits up to two periods before sitting out."
             )
         kwargs.setdefault("id_", f"{group_type}_regrouper")
         super().__init__(group_type=group_type, max_wait_time=max_wait_time, **kwargs)

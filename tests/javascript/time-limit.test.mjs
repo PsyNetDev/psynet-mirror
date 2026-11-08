@@ -39,6 +39,7 @@ it("announces the time-out and can submit the current answer", async () => {
     pageReady: true,
     pageReceivedAt: Date.now() - 10000,
     response: { staged: { rawAnswer: null, metadata: {}, blobs: {} } },
+    SUBMISSION_HANDLED: Symbol("handled"),
     getRetrieveResponseHandler: () => undefined,
     nextPage: (rawAnswer, metadata) => submissions.push([rawAnswer, metadata]),
   };
@@ -58,6 +59,15 @@ it("announces the time-out and can submit the current answer", async () => {
   activate({ root, vars, psynet });
   await flush();
   assert.equal(submissions[1][0], "typed");
+
+  // As on Next, an asynchronous stage handler (e.g. MonitorControl's) runs first.
+  psynet.getRetrieveResponseHandler = () => undefined;
+  psynet.getStageResponseHandler = () => async () => {
+    psynet.response.staged.rawAnswer = "staged";
+  };
+  activate({ root, vars, psynet });
+  await flush();
+  assert.equal(submissions[2][0], "staged");
 });
 
 it("resumes the countdown when the server's deadline is still to come", async () => {

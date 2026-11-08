@@ -62,6 +62,7 @@ from psynet.sync import (
     _process_barrier_instance,
     _queue_barrier_check,
     _queue_released_hold_waiters,
+    _removed_from_group,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
     _take_released_hold_waiter_ids,
@@ -3018,6 +3019,18 @@ def test_group_barrier_arrival_requires_active_sync_group(
 
     with pytest.raises(RuntimeError, match="is not in a sync group"):
         BarrierInstance.for_arrival(barrier, participant)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_closed_group_counts_as_removed(in_experiment_directory, db_session):
+    """Members of a group closed by a GroupCloser pass its later barriers."""
+    (first, _), group = _pair_sync_group(get_experiment(), db_session)
+    assert not _removed_from_group(first, "main")
+    group.close()
+    db_session.commit()
+    assert _removed_from_group(first, "main")
 
 
 @pytest.mark.parametrize(

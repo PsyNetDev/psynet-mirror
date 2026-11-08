@@ -328,8 +328,9 @@ class ChatRoom(JavaScriptContributor):
         - ``"anonymous"``: all with the same neutral figure, labelled as by a
           :class:`~psynet.group_prompt.GroupPrompt` with
           ``names="anonymous"``: "Your partner" while the viewer has met only
-          one other member of the room, and "Another player" once there are
-          more. The page is then not sent the others' pseudonyms.
+          one other member of the room, and "Another player" once they have
+          met more, even if some have left since. The page is then not sent
+          the others' pseudonyms.
 
         A chat writes a name next to every message, so GroupPrompt's
         ``"on_hover"`` is not available.

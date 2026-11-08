@@ -45,16 +45,18 @@ export function activate({root, vars, psynet}) {
         timer = window.setTimeout(submit, 1000);
     }
 
-    function currentAnswer(staged) {
+    async function currentAnswer() {
         // The answer the page's controls would submit, without validating it.
+        // As on Next, a stage handler (e.g. MonitorControl's) runs first.
         var retrieve = psynet.getRetrieveResponseHandler && psynet.getRetrieveResponseHandler();
-        if (!retrieve) return staged;
+        var stage = psynet.getStageResponseHandler && psynet.getStageResponseHandler();
         try {
-            return retrieve() || {};
+            if (retrieve) return retrieve() || {};
+            if (stage && (await stage()) === psynet.SUBMISSION_HANDLED) return null;
         } catch (error) {
             console.warn("Could not read the answer when the time limit ran out:", error);
-            return staged;
         }
+        return (psynet.response && psynet.response.staged) || {};
     }
 
     function submit() {
@@ -67,12 +69,6 @@ export function activate({root, vars, psynet}) {
         submitted = true;
         document.dispatchEvent(new Event("psynet:timeLimitReached"));
         var staged = (psynet.response && psynet.response.staged) || {};
-        var answer = config.currentAnswer ? currentAnswer(staged) : {};
-        var rawAnswer = answer.rawAnswer === undefined ? null : answer.rawAnswer;
-        var metadata = Object.assign(
-            {}, staged.metadata || {}, answer.metadata || {}, {time_limit_reached: true}
-        );
-        var blobs = config.currentAnswer ? Object.assign({}, staged.blobs, answer.blobs) : {};
         var early = null;
         var refused = false;
         function onRejection(response) {
@@ -84,8 +80,15 @@ export function activate({root, vars, psynet}) {
                 refused = true;
             }
         }
-        Promise.resolve()
-            .then(function () {
+        Promise.resolve(config.currentAnswer ? currentAnswer() : {})
+            .then(function (answer) {
+                // The page's own handler has already submitted it.
+                if (answer === null) return true;
+                var rawAnswer = answer.rawAnswer === undefined ? null : answer.rawAnswer;
+                var metadata = Object.assign(
+                    {}, staged.metadata || {}, answer.metadata || {}, {time_limit_reached: true}
+                );
+                var blobs = config.currentAnswer ? Object.assign({}, staged.blobs, answer.blobs) : {};
                 return psynet.nextPage(rawAnswer, metadata, blobs, onRejection);
             })
             .then(function (accepted) {

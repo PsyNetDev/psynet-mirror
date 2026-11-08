@@ -109,10 +109,10 @@ class GroupPrompt(Prompt):
         Optional ``{participant_id: answer}`` to show in speech bubbles, for
         example after the group's barrier has released. Answers are shown
         as text; pass :class:`~markupsafe.Markup` for HTML such as an image.
-        Members with an entry keep their seat even after moving on to their
-        next group; an entry of ``None``, as for a member who ran out of
-        time, shows the member without a bubble. Members without an entry
-        get no bubble.
+        Members with an entry, even ``None`` (as for a member who ran out of
+        time), keep their seat after moving on to their next group; ``None``
+        shows an empty bubble. Members without an entry get an empty bubble
+        while still in the group and are omitted once they have moved on.
     highlight
         Optional ``{participant_id: style}``. ``"winner"`` and
         ``"duplicate"`` have built-in styles; any other style becomes the

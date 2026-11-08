@@ -205,7 +205,7 @@ class BotResponse:
 def advance_past_wait_pages(
     bots: List["BotDriver"],
     max_iterations: Optional[int] = None,
-    timeout: Optional[float] = 10.0,
+    timeout: Optional[float] = NoArgumentProvided,
     stop_at: Union[str, Sequence[str]] = (),
 ):
     """
@@ -223,8 +223,8 @@ def advance_past_wait_pages(
     max_iterations : int, optional
         Deprecated; use ``timeout``. If given, also stop after this many passes.
     timeout : float, optional
-        Seconds to keep trying before giving up. Default: 10. ``None`` means
-        no limit.
+        Seconds to keep trying before giving up. ``None`` means no limit.
+        Default: 10, or no limit if only ``max_iterations`` is given.
     stop_at : str or sequence of str
         ID or IDs of barriers to leave bots waiting at, for example a responder
         waiting for the proposer's offer while the test plays the proposer.
@@ -247,6 +247,8 @@ def advance_past_wait_pages(
             FutureWarning,
             stacklevel=2,
         )
+    if timeout is NoArgumentProvided:
+        timeout = None if max_iterations is not None else 10.0
     stop_at = {stop_at} if isinstance(stop_at, str) else set(stop_at)
     deadline = None if timeout is None else time.monotonic() + timeout
     iteration = 0
