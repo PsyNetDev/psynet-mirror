@@ -6,9 +6,11 @@ from pathlib import Path
 import pytest
 from dallinger import db
 from flask import Flask
+from markupsafe import Markup
 
 from psynet.experiment import Experiment, get_experiment
 from psynet.modular_page import ModularPage
+from psynet.page import WaitPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import SimpleGrouper, waiting_status_payload
@@ -281,3 +283,8 @@ def test_hold_pages_get_no_waiting_config(in_experiment_directory, db_session):
 def test_release_grace_is_checked(kwargs, message):
     with pytest.raises(ValueError, match=message):
         SimpleGrouper("pair", initial_group_size=2, **kwargs)
+
+
+def test_wait_page_plain_text_keeps_plain_strings_and_renders_markup():
+    assert "<b>x</b>" in WaitPage(1, content="<b>x</b>").plain_text
+    assert "<b>" not in WaitPage(1, content=Markup("<b>x</b>")).plain_text
