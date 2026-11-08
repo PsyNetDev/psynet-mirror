@@ -223,6 +223,7 @@ class Exp(psynet.experiment.Experiment):
         ], summary
         assert len({r["group_id"] for r in rows}) == 1, rows
         assert rows[0]["group_id"] is not None, rows
+        assert {r["partner_id"] for r in rows} == {bot.id for bot in bots}, rows
 
 
 def _assert_on_page(bots, label):

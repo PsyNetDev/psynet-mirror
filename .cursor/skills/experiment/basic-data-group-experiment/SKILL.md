@@ -28,8 +28,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 ## Where each round is recorded
 
 Play each round as one trial per player, so that PsyNet records the group
-and round on the trial. Use these columns rather than matching timestamps
-across tables.
+and round on the trial; a game written as pages without trials should
+become one cued trial per player per round. Use these columns rather than
+matching timestamps across tables.
 
 - Trials of a trial maker with `sync_group_type`, and cued trials whose
   class sets `sync_group_type` (`Trial.cue(..., round=number)`), have

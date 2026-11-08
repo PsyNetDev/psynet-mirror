@@ -95,9 +95,13 @@ their data will be analyzed.
 Groups can go through the experiment in two ways. A **trial maker** with a
 group type gives a group's members trials on the same stimuli, or nodes,
 and keeps them in step from trial to trial; use it when a group works
-through stimuli together. A **loop** with a regrouper and barriers (see
-`New groups for each round`_) suits games without stimuli, and designs
-where partners change from round to round.
+through stimuli together. A **loop** in the timeline with one trial per
+player in each round, after a regrouper when partners change (see
+`New groups for each round`_), suits games without stimuli, and designs
+where partners change from round to round; the trials of a group's round
+share a node that holds the group's results. Either way, each trial records
+the group, the player's role and the round, so the data can be analyzed
+round by round.
 
 Talking to each other
 ---------------------

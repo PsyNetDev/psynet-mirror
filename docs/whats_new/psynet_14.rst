@@ -98,6 +98,14 @@ partners are ready. Group membership changes through
 barriers implement ``check_waiting_participants()`` and
 ``choose_who_to_release()``. See :doc:`/code/multiplayer/synchronization`.
 
+**Round-based games.** A ``Regrouper`` forms new groups every round, for
+example new pairs within a cohort, and lets a slow player miss a round
+instead of holding up or failing the others. Each round can be one
+``Trial.cue`` per player: with ``sync_group_type`` on the trial class, the
+trials of a group's round share a node that holds the group's results, and
+every trial records its group, the player's role and the round. See
+:doc:`/code/multiplayer/writing_a_round_based_experiment`.
+
 Stimuli and assets
 ------------------
 

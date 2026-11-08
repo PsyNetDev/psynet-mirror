@@ -85,11 +85,16 @@ The trial class sets ``sync_group_type``, so ``cue`` needs the round
 number, and the trials that a pair's members cue for the same round share
 one :class:`~psynet.trial.main.SyncGroupNode`. Each trial records the pair
 (``sync_group_id``), the player's role (``sync_group_role``) and the round
-(``sync_group_round``), and keeps them after the pair ends. Here every pair
-is new and plays a single round, so the round is always ``0``; in a game
-whose groups play several rounds, pass the index of the surrounding
-:func:`~psynet.timeline.for_loop`, as in :ref:`rounds-variations`. The
-``Module`` gives the nodes a ``module_id`` to find them by when exporting.
+(``sync_group_round``), and keeps them after the pair ends. The ``Module``
+gives the nodes a ``module_id`` to find them by when exporting.
+
+All members of a group must pass the same round. Here every pair is new and
+plays a single round, so the round is always ``0``. A count of the player's
+own rounds would not do, because the two members of a pair can be at
+different passes of the loop, for example when one of them sat the last
+round out. When everyone plays the same rounds in step, pass the index of
+the surrounding :func:`~psynet.timeline.for_loop`, as in
+:ref:`rounds-variations`.
 
 :func:`~psynet.sync.only_in_group` runs the trial only for players in a
 pair. Those who sat out, or were removed from their pair partway, see the

@@ -113,9 +113,11 @@ Group membership, for groups formed by a grouper (see
     ``min_group_size``, ``max_group_size`` and ``accepts_top_ups``.
 
 ``participant_link_sync_group``
-    One row per member of each group: ``participant_id``, ``sync_group_id``
-    and ``active``. The row stays after the participant leaves the group, for
-    example by failing or being removed from it, with ``active`` set to ``False``.
+    One row per member of each group: ``participant_id``, ``sync_group_id``,
+    ``active`` and, for groups a :class:`~psynet.sync.Regrouper` formed with
+    ``roles``, ``role``. The row stays after the participant leaves the group, for
+    example by failing or being removed from it, with ``active`` set to ``False``
+    and the reason in ``removal_reason``.
     ``creation_time`` is when the participant joined.
 
 In a static trial maker, groups can share nodes and networks: in the
@@ -175,8 +177,8 @@ In games that re-pair players with a :class:`~psynet.sync.Regrouper`, each
 group the regrouper forms is one round of one group. With one cued trial per
 player per round (see :ref:`rounds-cued-trials`), each trial records the pair
 and the player's role, and the pair's node holds its results. The
-``ultimatum_pairing`` demo reads one table from the trials and one from the
-nodes:
+``ultimatum_pairing`` demo reads one table from the trials, one from the
+nodes and one per player:
 
 .. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: Exp.get_basic_data
@@ -184,9 +186,7 @@ nodes:
 Rounds a player sat out have no trial, so the third table counts them with
 :meth:`~psynet.sync.Regrouper.rounds_sat_out`; each visit to the regrouper,
 with ``sat_out`` set for a sit-out, is a row of the
-``participant_link_barrier`` table. Each member's
-``participant_link_sync_group`` row also records, in ``removal_reason``,
-whether they were removed from their pair for being late.
+``participant_link_barrier`` table.
 
 .. seealso::
 
