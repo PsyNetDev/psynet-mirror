@@ -1461,8 +1461,7 @@ def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
 def _removed_from_group(participant, group_type) -> bool:
     """Return whether the participant left their group of ``group_type`` and is in no other."""
     return group_type not in participant.active_sync_groups and any(
-        (not link.active or not link.sync_group.active)
-        and link.sync_group.group_type == group_type
+        not link.active and link.sync_group.group_type == group_type
         for link in participant.sync_group_links
     )
 

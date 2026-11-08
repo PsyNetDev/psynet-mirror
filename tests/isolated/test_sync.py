@@ -3024,13 +3024,12 @@ def test_group_barrier_arrival_requires_active_sync_group(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_closed_group_counts_as_removed(in_experiment_directory, db_session):
-    """Members of a group closed by a GroupCloser pass its later barriers."""
+def test_closed_group_needs_a_new_grouper(in_experiment_directory, db_session):
+    """After a GroupCloser, a barrier of that type needs a new group."""
     (first, _), group = _pair_sync_group(get_experiment(), db_session)
-    assert not _removed_from_group(first, "main")
     group.close()
     db_session.commit()
-    assert _removed_from_group(first, "main")
+    assert not _removed_from_group(first, "main")
 
 
 @pytest.mark.parametrize(
