@@ -206,7 +206,7 @@ Games without trials, such as those that re-pair players with a
 PsyNet writes a :class:`~psynet.sync.ParticipantRound` row for every member each
 time the barrier releases the group, including members who left the group
 during the round, and the barrier's ``on_release`` adds the results with
-``barrier.record(participant, ...)``. Pass ``bonus=`` there to pay the
+``participant.record_round(...)``. Pass ``bonus=`` there to pay the
 participant, so that the record and the payment can't disagree. The
 ``ultimatum_pairing`` demo records each player's decision and coins:
 

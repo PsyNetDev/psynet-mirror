@@ -33,7 +33,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
    before any data are collected. Games without trials, such as those that
    re-pair players with a `Regrouper`, should record each round at the
    barrier that ends it with `GroupBarrier(record_rounds=True)` and
-   `barrier.record(...)`, and export `participant_rounds(...)`; see "Games with a
+   `participant.record_round(...)`, and export `participant_rounds(...)`; see "Games with a
    regrouper" in `data/basic_data`.
 2. Define the round state before flattening. List the variables that
    determine it, such as shared and private resources, visible signals,

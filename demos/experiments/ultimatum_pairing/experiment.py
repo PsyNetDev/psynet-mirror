@@ -116,10 +116,10 @@ def keep_playing(participant):
     )
 
 
-def score_round(participants: List[Participant], left: List[Participant], barrier):
+def score_round(participants: List[Participant], left: List[Participant]):
     """Pay out the round, or note who ran out of time or left, and record it."""
     for participant in participants:
-        barrier.record(participant, decision=participant.var.decision)
+        participant.record_round(decision=participant.var.decision)
     if len(participants) < 2:
         partner_was_away = any(
             p.sync_group_removal_reason("pair") == "late" for p in left
@@ -159,7 +159,7 @@ def score_round(participants: List[Participant], left: List[Participant], barrie
             )
             outcome = f"The offer of {offer} coins was accepted. You earned {coins}."
         participant.var.outcome = outcome
-        barrier.record(participant, coins=coins)
+        participant.record_round(coins=coins)
 
 
 def decision_page(participant):

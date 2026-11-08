@@ -1915,9 +1915,9 @@ def _record_who_left(left):
     _left_at_release.append([(p.id, p.sync_group_removal_reason("main")) for p in left])
 
 
-def _record_score(participants, barrier):
+def _record_score(participants):
     for participant in participants:
-        barrier.record(participant, score=participant.id * 10, bonus=0.5)
+        participant.record_round(score=participant.id * 10, bonus=0.5)
 
 
 def _custom_arrival_message(*, kind, waiting_count=None, group_size=None, **kwargs):
@@ -7579,6 +7579,13 @@ def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_s
         second,
     ]
     assert [p.performance_reward for p in stayers] == [1.0, 1.0]
+
+
+def test_record_round_outside_a_recording_barrier_raises():
+    from psynet.participant import Participant
+
+    with pytest.raises(RuntimeError, match="record_rounds=True"):
+        Participant.record_round(SimpleNamespace(id=1), score=1)
 
 
 @pytest.mark.parametrize(

@@ -59,7 +59,7 @@ def lowest_unique(choices: dict):
     return min(unique, default=None)
 
 
-def score_round(participants: List[Participant], barrier):
+def score_round(participants: List[Participant]):
     """Record every player's choice and pay the winner a bonus.
 
     Players who ran out of time have no choice and miss the round.
@@ -69,8 +69,7 @@ def score_round(participants: List[Participant], barrier):
     winner = lowest_unique(choices) if len(choices) > 1 else None
     for participant in participants:
         won = winner is not None and choices.get(participant.id) == winner
-        barrier.record(
-            participant,
+        participant.record_round(
             bonus=WIN_BONUS if won else 0.0,
             choice=participant.var.choice,
             winning_number=winner,

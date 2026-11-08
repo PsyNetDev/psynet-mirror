@@ -772,6 +772,38 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         latest = _latest_sync_group_link(self, group_type)
         return None if latest is None else latest.removal_reason
 
+    def record_round(self, *, bonus: Optional[float] = None, **data):
+        """Add results to the participant's record of the round being recorded.
+
+        Only works in the ``on_release`` or ``on_dissolve`` of a
+        :class:`~psynet.sync.GroupBarrier` with ``record_rounds=True``, for
+        any member of the round, including those in ``left``. Calling it
+        again adds more fields.
+
+        Parameters
+        ----------
+        bonus
+            Optional amount to add to the participant's performance reward,
+            once per round, so that the record and the payment agree.
+        **data
+            Fields to store, such as the participant's answer and payoff. They
+            become columns of :func:`~psynet.sync.participant_rounds`.
+
+        Examples
+        --------
+        ::
+
+            def score_round(participants):
+                for participant in participants:
+                    participant.record_round(answer=participant.var.answer, bonus=0.1)
+
+            GroupBarrier("round_finished", group_type="pair",
+                         on_release=score_round, record_rounds=True)
+        """
+        from .sync import _record_participant_round
+
+        _record_participant_round(self, bonus, data)
+
     def in_sync_group(self, group_type: str) -> bool:
         """Return whether the participant is in an active group of ``group_type``.
 
