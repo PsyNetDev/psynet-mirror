@@ -138,7 +138,7 @@ def test_regrouper_countdown_after_a_concurrent_release(
 ):
     """Another request can put a waiter into a group while their countdown is drawn."""
     exp = get_experiment()
-    rooms = Regrouper("room", group_size=3, deadline=30, release_left_over=True)
+    rooms = Regrouper("room", group_size=3, deadline=30, left_over="sit_out")
     participants = _working_participants(exp, 2)
     _arrive(exp, rooms, participants)
     populate = sync._populate_active_barriers
@@ -288,7 +288,7 @@ def test_simple_grouper_quorum():
         lobby(quorum=6, join_existing_groups=True, max_group_size=5)
     with pytest.raises(ValueError, match="not a lambda"):
         lobby(quorum=4, below_quorum=lambda participant, group: "fail")
-    with pytest.raises(TypeError, match="below_quorum='leave_group'"):
+    with pytest.raises(TypeError, match="below_quorum='continue_without_group'"):
         lobby(quorum=4, fail_participants_below_min_size=False)
 
 
@@ -321,7 +321,7 @@ def test_regrouper_left_over_waits_for_cohort_still_in_the_round(
         within="cohort",
         group_size=2,
         deadline=15,
-        release_left_over=True,
+        left_over="sit_out",
         on_release=_count_releases,
     )
     cohort = _working_participants(exp, 3)
@@ -365,7 +365,7 @@ def test_every_regrouper_left_over_waits_one_more_tick(
         within="cohort",
         group_size=2,
         every=15,
-        release_left_over=True,
+        left_over="sit_out",
     )
     cohort = _working_participants(exp, 3)
     _arrive(exp, cohort_grouper, cohort)
@@ -390,7 +390,7 @@ def test_every_regrouper_left_over_waits_one_more_tick(
         ({}, "needs group_size"),
         ({"roles": ["a", "b"], "group_size": 3}, "len\\(roles\\)"),
         ({"group_size": 2, "deadline": 30, "every": 30}, "not both"),
-        ({"group_size": 2, "below_quorum": "leave_group"}, "never"),
+        ({"group_size": 2, "below_quorum": "continue_without_group"}, "never"),
         ({"group_size": 2, "deadline": 0}, "deadline must be positive"),
         ({"group_size": 2, "every": 0}, "every must be positive"),
     ],
@@ -403,7 +403,7 @@ def test_regrouper_checks_its_settings(kwargs, message):
 def test_regrouper_max_wait_time_outlasts_a_lone_wait():
     def pairs(**kwargs):
         return Regrouper(
-            "pair", within="cohort", group_size=2, release_left_over=True, **kwargs
+            "pair", within="cohort", group_size=2, left_over="sit_out", **kwargs
         )
 
     assert pairs(deadline=30).max_wait_time == 300
@@ -461,7 +461,7 @@ def _cohort_and_pairs(exp, n, **kwargs):
         "pair",
         within="cohort",
         roles=["proposer", "responder"],
-        release_left_over=True,
+        left_over="sit_out",
         deadline=30,
         **kwargs,
     )

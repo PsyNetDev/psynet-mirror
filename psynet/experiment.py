@@ -2187,14 +2187,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         By default, the bot must not have failed, unless it dropped out with
         :meth:`~psynet.participant.ParticipantDriver.drop_out` or the test
-        called :meth:`~psynet.participant.ParticipantDriver.expect_failure`
+        called :meth:`~psynet.participant.ParticipantDriver.allow_failure`
         for it, for example for group members failed because a partner
         dropped out. Override this for other checks.
         """
         assert (
             not bot.failed
             or bot.status == "returned"
-            or bot.var.get("test_expected_to_fail", False)
+            or bot.var.get("test_allowed_to_fail", False)
         ), f"Bot {bot.id} failed (failure tags: {bot.failure_tags})."
 
     @classmethod

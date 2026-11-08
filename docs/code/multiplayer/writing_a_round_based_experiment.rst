@@ -163,7 +163,7 @@ Sitting out
 -----------
 
 With three players in a cohort, one of them has no partner. The player who has
-played the most rounds sits the round out; with ``release_left_over=True``
+played the most rounds sits the round out; with ``left_over="sit_out"``
 they move on to a page saying so instead of waiting (see
 :class:`~psynet.sync.Regrouper`). A player who was paired but removed
 from the pair before reaching the decision page is told that they were away

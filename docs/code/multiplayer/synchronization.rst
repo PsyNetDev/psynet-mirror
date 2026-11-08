@@ -174,7 +174,7 @@ the round on their own.
         within="cohort",
         roles=["proposer", "responder"],
         deadline=50,
-        release_left_over=True,  # an odd player out sits the round out
+        left_over="sit_out",  # an odd player out sits the round out
     )
 
 By default, those who have played the most rounds sit out when not
@@ -240,16 +240,18 @@ saved database object such as a trial. The ``barrier`` it receives is rebuilt
 from saved settings, so read only scalar settings such as ``waiting_message`` and
 ``max_wait_time`` from it, and store custom barrier attributes as
 JSON-compatible values. To share one callback between barriers, pass each
-barrier ``data``, a dictionary that the callback reads as ``barrier.data``:
+barrier ``on_release_data``, a dictionary that the callback reads as
+``barrier.on_release_data``:
 
 .. code-block:: python
 
     def score_question(group, barrier):
-        question = barrier.data["question"]
+        question = barrier.on_release_data["question"]
         ...
 
     GroupBarrier(id_="question_1", group_type="team",
-                 on_release=score_question, data={"question": 1})
+                 on_release=score_question,
+                 on_release_data={"question": 1})
 
 ``on_release`` runs only when the barrier releases the group. A member who
 leaves the group before then, or whose group is dissolved, doesn't get
@@ -665,8 +667,8 @@ Two separate settings decide what happens when someone leaves a group:
   - Otherwise the group is dissolved at once, and the grouper's
     ``below_quorum`` decides for each remaining member: ``"fail"`` (default)
     fails them, telling them "Too few members of your group remained to
-    continue, so we ended your session."; ``"leave_group"`` removes them
-    from the group without failing them, and their next page says "Your
+    continue, so we ended your session."; ``"continue_without_group"``
+    lets them carry on without the group, and their next page says "Your
     partner is no longer in your group. Please continue." (or "Too few
     members of your group remained. Please continue." in larger groups; see
     :ref:`sync-leaving-a-group`). A module-level function of
@@ -683,7 +685,7 @@ dissolves the group, the two settings together decide both fates:
 
    * - The departing member
      - ``below_quorum="fail"`` (default)
-     - ``below_quorum="leave_group"``
+     - ``below_quorum="continue_without_group"``
    * - quits or is failed (including by ``max_wait_action="fail"`` or
        ``late_action="fail"``)
      - partner failed
@@ -697,7 +699,7 @@ dissolves the group, the two settings together decide both fates:
 
 The last row is rarely what a pair wants, so PsyNet warns about it when the
 experiment loads, and logs a warning when it happens. To let the partner who was on time carry on, set
-``below_quorum="leave_group"``; ``late_action="fail"`` instead ends the
+``below_quorum="continue_without_group"``; ``late_action="fail"`` instead ends the
 session for both.
 
 For example, a group of four that may start with two after a minute, and
@@ -714,7 +716,7 @@ options:
         start_short_with=2,
         max_wait_time=120,
         # The last member left continues alone instead of being failed.
-        below_quorum="leave_group",
+        below_quorum="continue_without_group",
     )
 
     # In each round, after the timed decision page:
@@ -754,8 +756,8 @@ top-ups:
 After leaving a group
 ~~~~~~~~~~~~~~~~~~~~~
 
-A member removed from their group without being failed, through
-``"leave_group"`` or ``below_quorum="leave_group"``, stays in the
+A member removed from their group without being failed, through a
+barrier's ``"leave_group"`` or ``below_quorum="continue_without_group"``, stays in the
 experiment and continues the timeline without that group. They leave only the group of that type: a player removed from a ``"pair"`` stays in their ``"cohort"``.
 A participant whose grouper let them continue without a group
 (``max_wait_action="continue_without_group"``) is treated the same way for
@@ -785,7 +787,8 @@ For the rest of the timeline:
   :class:`~psynet.chatroom.ChatRoom` whose ``room_id`` comes from the group
   needs another room, or none, then.
 - ``participant.sync_group_removal_reason("pair")`` says why they left:
-  ``"late"``, ``"waited_too_long"``, ``"group_dissolved"`` or ``"failed"``.
+  ``"late"``, ``"waited_too_long"``, ``"group_dissolved"`` or
+  ``"left_experiment"`` (they failed or returned the study).
 - An answer submitted on the page where a member was removed for being late
   has ``response.too_late_for_group`` set, so analysis can leave it out.
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only

@@ -3,7 +3,7 @@
 In the first pair, one member returns the study mid-game. In the second, one
 member stops responding and is removed for being late. In the third, one member
 fails, as after a failed check. With
-``below_quorum="leave_group"``, the partner who stayed carries on alone in
+``below_quorum="continue_without_group"``, the partner who stayed carries on alone in
 both cases and is told why on their next page.
 """
 
@@ -24,7 +24,9 @@ class Exp(psynet.experiment.Experiment):
 
     timeline = Timeline(
         MainConsent(),
-        SimpleGrouper("pair", initial_group_size=2, below_quorum="leave_group"),
+        SimpleGrouper(
+            "pair", initial_group_size=2, below_quorum="continue_without_group"
+        ),
         InfoPage("Round 1.", time_estimate=5),
         GroupBarrier(
             id_="round_1",
@@ -69,7 +71,7 @@ class Exp(psynet.experiment.Experiment):
         silent.take_page()
         self._assert_carries_on_alone(silent)
 
-        failer.expect_failure()
+        failer.allow_failure()
         failer.fail("failed_check")
         survivor.take_page()
         advance_past_wait_pages([survivor])

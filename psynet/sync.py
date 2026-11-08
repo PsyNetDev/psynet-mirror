@@ -1036,7 +1036,7 @@ class Barrier(EltCollection):
         self.max_wait_action = "fail"
 
     def __setattr__(self, name, value):
-        if name.startswith("on_") or (
+        if (name.startswith("on_") and name != "on_release_data") or (
             name == "waiting_message" and inspect.isroutine(value)
         ):
             value = serialize_callable(value, f"{self.__class__.__name__}.{name}")
@@ -1495,7 +1495,7 @@ def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
 
 
 RemovalReason = Literal[
-    "failed", "late", "waited_too_long", "group_dissolved", "moved_on"
+    "left_experiment", "late", "waited_too_long", "group_dissolved", "moved_on"
 ]
 REMOVAL_REASONS = (None, *get_args(RemovalReason))
 
@@ -1511,7 +1511,7 @@ def _reject_old_below_quorum_names(kwargs):
         if old in kwargs:
             raise TypeError(
                 f"{old} was replaced by below_quorum: pass "
-                f"below_quorum='leave_group' instead of {old}=False."
+                f"below_quorum='continue_without_group' instead of {old}=False."
             )
 
 
@@ -1620,21 +1620,21 @@ class GroupBarrier(Barrier):
         visit (scalar presentation and notification settings, not wait pages).
         Must be a module-level function, ``@staticmethod``/``@classmethod``,
         or a bound method on a TrialMaker or ORM instance with a primary key.
-        To share one callback between several barriers, pass each its own ``data``.
+        To share one callback between several barriers, pass each its own ``on_release_data``.
 
-    data
+    on_release_data
         Optional dictionary of JSON-compatible values that ``on_release`` can read as
-        ``barrier.data``, for example the number of the question the barrier ends, so that
+        ``barrier.on_release_data``, for example the number of the question the barrier ends, so that
         one callback serves several barriers::
 
             def score_question(group, barrier):
-                question = barrier.data["question"]
+                question = barrier.on_release_data["question"]
                 ...
 
             GroupBarrier(id_="question_1", group_type="team",
-                         on_release=score_question, data={"question": 1})
+                         on_release=score_question, on_release_data={"question": 1})
 
-        Barriers that share an ``id_`` must pass the same ``data``.
+        Barriers that share an ``id_`` must pass the same ``on_release_data``.
 
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
@@ -1721,7 +1721,7 @@ class GroupBarrier(Barrier):
         on_arrival_message: Optional[Callable] = None,
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
-        data: Optional[dict] = None,
+        on_release_data: Optional[dict] = None,
     ):
         _validate_group_timeouts(max_wait_action, late_after, late_action)
         max_wait_time = _group_max_wait_time(max_wait_time, late_after, default=20)
@@ -1743,7 +1743,7 @@ class GroupBarrier(Barrier):
         self.notify_arrivals = bool(notify_arrivals)
         self.late_after = late_after
         self.late_action = late_action
-        self.data = {} if data is None else dict(data)
+        self.on_release_data = {} if on_release_data is None else dict(on_release_data)
 
     def resolve(self):
         group_type = self.group_type
@@ -1998,12 +1998,15 @@ class GroupBarrier(Barrier):
                 for participant in late:
                     self._tell_removed_participant(participant, group, group_size)
                 return
-            if late and getattr(group, "below_quorum", None) != "leave_group":
+            if (
+                late
+                and getattr(group, "below_quorum", None) != "continue_without_group"
+            ):
                 logger.warning(
                     "GroupBarrier '%s': removing late members %s dissolved group %s, "
                     "so its below_quorum may have failed the members who were on "
                     "time while the late ones carry on. Set "
-                    "below_quorum='leave_group' on the grouper to let them carry on "
+                    "below_quorum='continue_without_group' on the grouper to let them carry on "
                     "too.",
                     self.id,
                     [p.id for p in late],
@@ -2393,10 +2396,10 @@ class SimpleGrouper(Grouper):
         then dissolved at once. The member whose departure caused it is handled by their own
         cause instead (a barrier's ``max_wait_action`` or ``late_action``, or their
         failure). ``"fail"`` (default) fails them, telling them "Too few members of your
-        group remained to continue, so we ended your session." ``"leave_group"`` removes
-        them from the group without failing them, and their next page says that their group
-        ended (see :ref:`sync-leaving-a-group`). A module-level function ``f(participant,
-        group)`` returning ``"fail"`` or ``"leave_group"`` decides member by member, for
+        group remained to continue, so we ended your session." ``"continue_without_group"``
+        lets them carry on with the experiment without the group, and their next page says
+        that their group ended (see :ref:`sync-leaving-a-group`). A module-level function
+        ``f(participant, group)`` returning ``"fail"`` or ``"continue_without_group"`` decides member by member, for
         example from how many rounds they played. It is called while the group is being
         dissolved, so base the decision on the participant, not on who else is still in
         ``group``; if it raises or returns anything else, the error is logged and the member
@@ -2498,10 +2501,16 @@ class SimpleGrouper(Grouper):
             below_quorum = serialize_callable(
                 below_quorum, "SimpleGrouper.below_quorum"
             )
-        elif below_quorum not in ("fail", "leave_group"):
+        elif below_quorum not in ("fail", "continue_without_group"):
+            hint = (
+                " The remaining members don't leave the group; it ends around them, "
+                "so use 'continue_without_group'."
+                if below_quorum == "leave_group"
+                else ""
+            )
             raise ValueError(
-                "below_quorum must be 'fail', 'leave_group' or a function returning "
-                f"one of these, got {below_quorum!r}."
+                "below_quorum must be 'fail', 'continue_without_group' or a function "
+                f"returning one of these, got {below_quorum!r}.{hint}"
             )
         self.below_quorum = below_quorum
         if (start_short_after is None) != (start_short_with is None):
@@ -2934,10 +2943,11 @@ class Regrouper(Grouper):
         Subclasses can override :meth:`form_groups` instead. The callable must be
         a module-level function so it can be stored with the barrier.
 
-    release_left_over
-        If ``True``, participants left over after a split continue ungrouped,
-        for example to a sit-out page, and come back for the next split. If
-        ``False`` (default), they keep waiting for the next split. With
+    left_over
+        What participants left over after a split do: ``"wait"`` (default)
+        keeps them waiting for the next split, and ``"sit_out"`` lets them
+        continue ungrouped, for example to a sit-out page, and come back for
+        the next split. With
         ``within``, when too few are waiting to form any group, for example
         one player whose cohort is still playing a round, they wait for
         the rest of the cohort for up to one more ``deadline`` (or ``every`` tick)
@@ -2956,7 +2966,7 @@ class Regrouper(Grouper):
     max_wait_time
         Longest a participant waits at the regrouper before being failed.
         Defaults to 300 seconds, or to twice the ``deadline`` (or ``every``
-        period) plus 60 seconds if that is longer. With ``release_left_over``
+        period) plus 60 seconds if that is longer. With ``left_over="sit_out"``
         and ``within``, a value you pass must be longer than twice the
         period, so that a player waiting alone sits out instead of being
         failed.
@@ -2984,7 +2994,7 @@ class Regrouper(Grouper):
         roles: Optional[Sequence[str]] = None,
         keep_roles: bool = False,
         form_groups: Optional[Callable] = None,
-        release_left_over: bool = False,
+        left_over: Literal["wait", "sit_out"] = "wait",
         on_release: Optional[Callable] = None,
         max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         **kwargs,
@@ -3031,11 +3041,15 @@ class Regrouper(Grouper):
                 "below_quorum doesn't apply; it is an option of "
                 "the SimpleGrouper that forms the groups being regrouped."
             )
+        if left_over not in ("wait", "sit_out"):
+            raise ValueError(
+                f"left_over must be 'wait' or 'sit_out', got {left_over!r}."
+            )
         longest_lone_wait = every or deadline
         if max_wait_time is NoArgumentProvided:
             max_wait_time = max(300, 2 * (longest_lone_wait or 0) + 60)
         elif (
-            release_left_over
+            left_over == "sit_out"
             and within is not None
             and longest_lone_wait is not None
             and isinstance(max_wait_time, (int, float))
@@ -3044,7 +3058,7 @@ class Regrouper(Grouper):
             raise ValueError(
                 f"max_wait_time ({max_wait_time} s) must be longer than twice the "
                 f"deadline or every period ({longest_lone_wait} s): with "
-                "release_left_over, a player waiting alone for cohort members who are "
+                "left_over='sit_out', a player waiting alone for cohort members who are "
                 "still playing waits up to two periods before sitting out."
             )
         kwargs.setdefault("id_", f"{group_type}_regrouper")
@@ -3057,7 +3071,7 @@ class Regrouper(Grouper):
         self.roles = None if roles is None else list(roles)
         self.keep_roles = keep_roles
         self.form_groups_function = form_groups
-        self.release_left_over = release_left_over
+        self.left_over = left_over
         self.on_release = on_release
 
     def receive_participant(self, participant: Participant):
@@ -3121,13 +3135,13 @@ class Regrouper(Grouper):
         )
 
     def rounds_sat_out(self, participant) -> int:
-        """Return how often ``participant`` was released without a group (see ``release_left_over``)."""
+        """Return how often ``participant`` sat a round out (see ``left_over``)."""
         return ParticipantLinkBarrier.query.filter_by(
             barrier_id=self.id, participant_id=participant.id, sat_out=True
         ).count()
 
     def sat_out(self, participant) -> bool:
-        """Return whether ``participant``'s latest visit here ended without a group (see ``release_left_over``)."""
+        """Return whether ``participant``'s latest visit here ended without a group (see ``left_over``)."""
         latest_visit = (
             ParticipantLinkBarrier.query.filter_by(
                 barrier_id=self.id, participant_id=participant.id
@@ -3429,7 +3443,7 @@ class Regrouper(Grouper):
         sitting out round after round; but only for one more deadline, in case
         those members have stopped playing.
         """
-        return self.release_left_over and (
+        return self.left_over == "sit_out" and (
             within_group is None
             or self._pool_is_complete(within_group, members)
             or self._waited_an_extra_deadline(within_group, members)
@@ -3537,7 +3551,7 @@ class Regrouper(Grouper):
                     f"Regrouper '{self.id}' on_release failed."
                 ) from err
         released = [p for group in groups for p in group.participants]
-        if self.release_left_over:
+        if self.left_over == "sit_out":
             self._record_sit_outs(left_over)
             released += left_over
         return released
@@ -3599,7 +3613,7 @@ class Regrouper(Grouper):
             max_group_size=len(participants),
             min_group_size=1,
             accepts_top_ups=False,
-            below_quorum="leave_group",
+            below_quorum="continue_without_group",
         )
 
 
@@ -3651,7 +3665,7 @@ def warn_if_late_removal_fails_group(barriers):
             f"'{grouper.id}' fails the members left behind when that leaves the "
             "group below its quorum. So a single late member fails everyone who "
             "was on time, while the late one carries on. Pass "
-            "below_quorum='leave_group' to the grouper to let everyone carry on, "
+            "below_quorum='continue_without_group' to the grouper to let everyone carry on, "
             "or late_action='fail' to end the session for the whole group.",
             UserWarning,
         )
@@ -3844,7 +3858,7 @@ class SyncGroup(SQLBase, SQLMixin):
             It also sets how :class:`~psynet.group_prompt.GroupPrompt` shows
             them to the remaining members:
 
-            - ``None`` (default), ``"failed"``, ``"waited_too_long"`` or
+            - ``None`` (default), ``"left_experiment"``, ``"waited_too_long"`` or
               ``"group_dissolved"``: "(dropped out)", or "(left)" once they
               have failed or finished the experiment.
             - ``"late"``: "(removed)", for a member a barrier removed for
@@ -3901,7 +3915,7 @@ class SyncGroup(SQLBase, SQLMixin):
                 SyncGroup.remove_participant(
                     self, participant, reason="group_dissolved"
                 )
-                if action == "leave_group":
+                if action == "continue_without_group":
                     _tell_group_ended(participant, group_size)
             self.check_numbers()
             self.dissolving = len(removed) < len(remaining)
@@ -3912,7 +3926,7 @@ class SyncGroup(SQLBase, SQLMixin):
         return removed
 
     def _below_quorum_action(self, participant):
-        """Return ``"fail"`` or ``"leave_group"`` for a member of this group as it dissolves."""
+        """Return ``"fail"`` or ``"continue_without_group"`` for a member of this group as it dissolves."""
         policy = getattr(self, "below_quorum", None) or "fail"
         if not callable(policy):
             return policy
@@ -3927,10 +3941,10 @@ class SyncGroup(SQLBase, SQLMixin):
                 participant.id,
             )
             return "fail"
-        if action not in ("fail", "leave_group"):
+        if action not in ("fail", "continue_without_group"):
             logger.error(
                 "below_quorum of group %s returned %r for participant %s instead of "
-                "'fail' or 'leave_group'; failing them.",
+                "'fail' or 'continue_without_group'; failing them.",
                 self.id,
                 action,
                 participant.id,
@@ -3951,7 +3965,7 @@ class SimpleSyncGroup(SyncGroup):
     quorum = synonym("min_group_size")
     accepts_top_ups = Column(Boolean)
     #: What happens to members when the group dissolves below quorum: ``"fail"``,
-    #: ``"leave_group"``, or a serialized function returning one of these.
+    #: ``"continue_without_group"``, or a serialized function returning one of these.
     below_quorum = Column(PythonObject, default="fail")
 
     def remove_participant(

@@ -748,8 +748,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         ``max_wait_action="leave_group"``, or a grouper's
         ``max_wait_action="continue_without_group"``), ``"group_dissolved"`` (released
         when the group fell below its quorum, with
-        ``below_quorum="leave_group"``), ``"moved_on"`` (went on to a new group
-        at a :class:`~psynet.sync.Regrouper`), ``"failed"``, or ``None`` if no
+        ``below_quorum="continue_without_group"``), ``"moved_on"`` (went on to a new group
+        at a :class:`~psynet.sync.Regrouper`), ``"left_experiment"`` (failed,
+        including returning the study), or ``None`` if no
         reason was recorded, for example after removal from the dashboard.
 
         For example, a page after the game can say why it ended early::
@@ -1252,7 +1253,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         )
 
         for group in list(self.active_sync_groups.values()):
-            group.remove_participant(self, reason="failed")
+            group.remove_participant(self, reason="left_experiment")
 
         if redirect_to_end:
             self._redirect_to_unsuccessful_end(exp)
@@ -1849,7 +1850,7 @@ class ParticipantDriver:
                 self.experiment.assignment_returned(participant)
         self._fetch_status()
 
-    def expect_failure(self):
+    def allow_failure(self):
         """Tell the default :meth:`~psynet.experiment.Experiment.test_check_bot` that this bot may fail.
 
         Use it for bots that the test makes fail on purpose, such as the partner
@@ -1857,7 +1858,7 @@ class ParticipantDriver:
         """
         with transaction(commit=True):
             participant = Participant.query.get(self.id)
-            participant.var.set("test_expected_to_fail", True)
+            participant.var.set("test_allowed_to_fail", True)
 
     def with_participant(self, function):
         """Return ``function(participant)``, called with the bot's database row.

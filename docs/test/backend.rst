@@ -211,7 +211,7 @@ on their progress bar:
 The default ``test_check_bot`` accepts bots that dropped out, but not others
 that failed, such as a partner failed under the grouper's default
 ``below_quorum="fail"``. Call
-:meth:`~psynet.participant.ParticipantDriver.expect_failure` for those bots.
+:meth:`~psynet.participant.ParticipantDriver.allow_failure` for those bots.
 See :ref:`groups_below_min_size` for what happens to the members who stay.
 
 Other helpers ask about a bot's group or act in it:

@@ -67,8 +67,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   callback's `barrier` argument is the reconstructed registry object; read
   `waiting_message` and timeouts from it. Wait pages stay on the live timeline
   barrier (see "Release callbacks" in `code/multiplayer/synchronization`).
-  To share one callback between barriers, pass each `data={...}` and read
-  `barrier.data` instead of parsing `barrier.id`. `on_release` doesn't run
+  To share one callback between barriers, pass each `on_release_data={...}` and
+  read `barrier.on_release_data` instead of parsing `barrier.id`. `on_release` doesn't run
   for members who left before the release or whose group dissolved, so read
   what it stores with a default: `participant.var.get("score", None)`.
 - Sort `sync_group.participants` by participant ID before deterministic role
@@ -96,7 +96,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   repeat partners, sits out whoever has played most, and counts rounds
   (`rounds_played`, `rounds_sat_out`); pass `roles=[...]` (with
   `keep_roles=True` for fixed roles) and read `regrouper.role(participant)`
-  instead of assigning roles yourself. With `release_left_over=True`, odd
+  instead of assigning roles yourself. With `left_over="sit_out"`, odd
   players out sit out the round; with `within`, a player waiting alone first
   waits one more period for cohort members. The default `max_wait_time`
   allows for this; an explicit one must then exceed twice the `deadline` or
@@ -188,7 +188,7 @@ shown a page that only makes sense with a group.
 | Dropout | Simulate it in the bot test |
 |---|---|
 | Returns the study | `bot.drop_out()` |
-| Is failed by the experiment | `bot.expect_failure()`, then `bot.fail("reason")` |
+| Is failed by the experiment | `bot.allow_failure()`, then `bot.fail("reason")` |
 | Closes the tab or stops responding | Stop taking pages for that bot and keep advancing the others |
 | Comes back after being removed | Take pages for the silent bot again |
 | Arrives when no group can form | Send one bot more than fills the groups to the grouper, and wait out its `max_wait_time` |
@@ -206,7 +206,7 @@ class Exp(psynet.experiment.Experiment):
     test_n_bots = 4
     timeline = Timeline(
         MainConsent(),
-        SimpleGrouper("pair", initial_group_size=2, below_quorum="leave_group"),
+        SimpleGrouper("pair", initial_group_size=2, below_quorum="continue_without_group"),
         InfoPage("Round 1.", time_estimate=5),
         GroupBarrier(id_="round_1", group_type="pair",
                      late_after=LATE_AFTER, late_action="leave_group"),
@@ -253,7 +253,7 @@ a third pair whose member is failed.
 Bot tests wait out the real timeouts, so pass `advance_past_wait_pages` a
 `timeout` longer than the `late_after` or `max_wait_time` being tested. The
 default `test_check_bot` accepts bots that called `drop_out()` or
-`expect_failure()`; call `expect_failure()` for every bot the design fails on
+`allow_failure()`; call `allow_failure()` for every bot the design fails on
 purpose, such as a partner left behind under `below_quorum="fail"`. If
 PsyNet warns at load time that a late member would fail the partners who
 were on time, fix the settings rather than the test.

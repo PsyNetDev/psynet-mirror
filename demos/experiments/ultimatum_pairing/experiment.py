@@ -237,7 +237,7 @@ pairing = Regrouper(
     within="cohort",
     roles=["proposer", "responder"],
     deadline=ROUND_DEADLINE_SECONDS,
-    release_left_over=True,
+    left_over="sit_out",
     waiting_message=round_message,
     waiting_screen=pairing_up,
 )

@@ -1218,7 +1218,7 @@ def test_manual_sync_group_participant_kick_dissolves_group_below_min_size(
         min_group_size=3,
         n_active_participants=3,
         accepts_top_ups=False,
-        below_quorum="fail" if fail_below_min_size else "leave_group",
+        below_quorum="fail" if fail_below_min_size else "continue_without_group",
     )
     db_session.add(group)
     for participant in participants:
@@ -6934,7 +6934,7 @@ def test_group_barrier_late_after_removal_releases_waiters_after_dissolution(
         min_group_size=3,
         n_active_participants=3,
         accepts_top_ups=False,
-        below_quorum="leave_group",
+        below_quorum="continue_without_group",
     )
     db_session.add(group)
     for p in participants:
@@ -6954,7 +6954,7 @@ def test_group_barrier_late_after_removal_releases_waiters_after_dissolution(
         assert _removed_from_group_notice(p).startswith("Too few members")
 
 
-@pytest.mark.parametrize("below_quorum", ["fail", "leave_group"])
+@pytest.mark.parametrize("below_quorum", ["fail", "continue_without_group"])
 @pytest.mark.parametrize(
     "group_size",
     [
@@ -7019,7 +7019,7 @@ def test_late_member_leaving_a_pair_fails_the_partner_with_a_warning(
     db_session.commit()
 
     assert on_time.failed and not late.failed
-    assert "below_quorum='leave_group'" in caplog.text
+    assert "below_quorum='continue_without_group'" in caplog.text
     InfoPage("Next").consume(exp, late)
     assert _removed_from_group_notice(late).startswith("Your partner is no longer")
 
@@ -7052,7 +7052,7 @@ def test_group_barrier_would_release_predicts_late_after(
         min_group_size=min_group_size,
         n_active_participants=3,
         accepts_top_ups=accepts_top_ups,
-        below_quorum="leave_group",
+        below_quorum="continue_without_group",
     )
     db_session.add(group)
     for p in participants:
@@ -7116,7 +7116,9 @@ def test_group_barrier_late_after_fail_missing_participants(
 
 
 def _fail_the_first_member(participant, group):
-    return "fail" if group_seats(group)[participant.id] == 0 else "leave_group"
+    return (
+        "fail" if group_seats(group)[participant.id] == 0 else "continue_without_group"
+    )
 
 
 def _broken_below_quorum(participant, group):
@@ -7130,7 +7132,7 @@ def _broken_below_quorum(participant, group):
     "below_quorum, failed",
     [
         ("fail", [True, True]),
-        ("leave_group", [False, False]),
+        ("continue_without_group", [False, False]),
         (_fail_the_first_member, [True, False]),
         (_broken_below_quorum, [True, True]),
     ],
@@ -7170,7 +7172,7 @@ def test_group_barrier_below_quorum(
     assert all(p.active_sync_groups.get("main") is None for p in participants)
     assert [p.failed for p in participants] == failed
     assert [p.sync_group_removal_reason("main") for p in participants] == [
-        "failed" if was_failed else "group_dissolved" for was_failed in failed
+        "left_experiment" if was_failed else "group_dissolved" for was_failed in failed
     ]
     # Members who carry on alone are told why on their next page.
     for p, was_failed in zip(participants, failed):
@@ -7222,7 +7224,7 @@ def test_group_barrier_below_min_size_only_releases_waiting_participants(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-@pytest.mark.parametrize("below_quorum", ["fail", "leave_group"])
+@pytest.mark.parametrize("below_quorum", ["fail", "continue_without_group"])
 def test_waiter_leaving_a_pair_after_max_wait(
     in_experiment_directory, db_session, below_quorum
 ):
@@ -7270,7 +7272,7 @@ def test_stopping_top_ups_dissolves_a_group_below_quorum(
         max_group_size=3,
         min_group_size=3,
         accepts_top_ups=True,
-        below_quorum="leave_group",
+        below_quorum="continue_without_group",
     )
     db_session.add(group)
     for p in members:
@@ -7287,7 +7289,7 @@ def test_stopping_top_ups_dissolves_a_group_below_quorum(
 
     assert not any(p.failed for p in members[1:])
     assert [p.sync_group_removal_reason("team") for p in members] == [
-        "failed",
+        "left_experiment",
         "group_dissolved",
         "group_dissolved",
     ]
@@ -7304,6 +7306,8 @@ def test_grouper_lets_an_ungrouped_participant_carry_on(
     participant.status = "working"
     with pytest.raises(ValueError, match="continue_without_group"):
         SimpleGrouper("pair", initial_group_size=2, max_wait_action="leave_group")
+    with pytest.raises(ValueError, match="continue_without_group"):
+        SimpleGrouper("pair", initial_group_size=2, below_quorum="leave_group")
     grouper = SimpleGrouper(
         "pair", initial_group_size=2, max_wait_action="continue_without_group"
     )

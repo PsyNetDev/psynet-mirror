@@ -83,7 +83,7 @@ When someone leaves, a group that still has its **quorum**, the smallest
 size at which it can go on, carries on. Below it, by default, the group is
 dissolved and its remaining members are failed too. Decide this for every
 grouper (a regrouper's groups are never dissolved): let the others continue
-the experiment without the group (``below_quorum="leave_group"``), or have the
+the experiment without the group (``below_quorum="continue_without_group"``), or have the
 group wait for a newcomer to replace the one who left
 (``join_existing_groups=True``). Failed participants are paid for what they
 completed (see :doc:`/code/participants/payment`).
