@@ -28,7 +28,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `demos/experiments/create_rate_sync`,
   `demos/experiments/rock_paper_scissors`,
   `demos/experiments/sync_quorum`, and
-  `demos/experiments/gibbs_within_sync`.
+  `demos/experiments/gibbs_within_sync`; for games played in rounds, also
+  `demos/experiments/ultimatum_pairing` and
+  `demos/experiments/lowest_unique_number`.
 
 ## Choose the synchronization model
 
@@ -49,8 +51,13 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 
 ## PsyNet implementation hints
 
-- Prefer `TrialMaker`s for organizing rounds. For choosing `StaticTrialMaker`
-  vs chain-based makers, read `develop-experiment-back-end/SKILL.md`.
+- Make every round a trial, so its data stay on trials and nodes. Use a
+  trial maker with `sync_group_type` when all group members should follow
+  the leader's node allocation and trial sequence, and one cued trial per
+  player per round (below) for games played in rounds, especially with
+  changing partners. For choosing
+  `StaticTrialMaker` vs chain-based makers, read
+  `develop-experiment-back-end/SKILL.md`.
 - Use `SimpleGrouper(group_type=..., initial_group_size=...)` to create cohorts
   and `GroupBarrier(id_=..., group_type=..., waiting_message=...)` to release
   group members together. Pass `waiting_message` to customize the hold
@@ -71,16 +78,14 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   arguments with `functools.partial` instead of parsing `barrier.id`
   (see "Release callbacks"). `on_release` doesn't run
   for members who left before the release or whose group dissolved, so read
-  what it stores with `participant.var.get("score")`, which returns `None`
-  when it isn't set. Pass the same function as `on_dissolve` too when members
+  what it stores with `trial.var.get("score")` (or `participant.var.get`),
+  which returns `None` when it isn't set. Pass the same function as `on_dissolve` too when members
   waiting at the barrier as the group dissolves should still get their
   result; members still on an earlier page then get neither callback, so
   check `participant.sync_group_removal_reason(...)` in a step after the
   barrier if they need a result too.
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
-- Use `sync_group_type` on trial makers when all group members should follow the
-  leader's node allocation and trial sequence.
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries
   such as submit, rate, reveal, score, or bonus computation.
 - Read partner state through `participant.sync_group.participants`,
@@ -94,16 +99,44 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   a round and join the next one rather than being failed. Pair it with
   `GroupBarrier(late_after=..., late_action="leave_group")` so late members are
   removed; they then pass the round's later group barriers alone.
-- To keep each round's data on trials in such a game, cue one trial per
-  player per round: set `sync_group_type = "room"` on the trial class and call
-  `PickTrial.cue(definition, round=number)` after the `Regrouper` in the
-  rounds loop. The group's trials for that round share one `SyncGroupNode`; a
-  callable `definition` (taking `group`, `round`) runs once per group and
-  round. Score in the `show_trial` barrier's `on_release`, a `@classmethod`
-  taking `trials` and `node`: group results in `node.var`, per-player results
-  in `trial.var`, which `score_answer`, `show_feedback` and `get_basic_data`
-  then read (`lowest_unique_number`; "Rounds as trials" in
-  `code/multiplayer/writing_a_round_based_experiment`).
+- Write such a game as one cued trial per player per round, not as pages
+  with round bookkeeping in participant variables ("One trial per player
+  per round" in `code/multiplayer/writing_a_round_based_experiment`):
+
+  ```python
+  class PickTrial(Trial):
+      sync_group_type = "room"  # a room's trials for one round share a node
+      time_estimate = 15
+
+      def show_trial(self, experiment, participant):
+          return join(
+              PageMaker(self.choose_number, time_estimate=5),  # save_answer="choice"
+              GroupBarrier(id_="round_finished", group_type="room",
+                           on_release=self.score_room),
+          )
+
+      @classmethod
+      def score_room(cls, trials, node):
+          choices = {t.participant_id: t.participant.var.choice for t in trials}
+          winner = lowest_unique(choices)
+          node.var.winning_number = winner  # the room's result
+          for trial in trials:  # each player's result
+              trial.var.won = winner is not None and choices[trial.participant_id] == winner
+
+  for_loop(label="rounds", iterate_over=range(N_ROUNDS), time_estimate_per_iteration=20,
+           logic=lambda number: join(Regrouper("room", ...),
+                                     PickTrial.cue({"numbers": NUMBERS}, round=number)))
+  ```
+
+  All members of a group must pass the same `round`: the loop index when
+  everyone plays in step (`lowest_unique_number`), or `0` when every group
+  lasts one round and its members can be at different loop passes
+  (`ultimatum_pairing`). `trial.answer` is only set when the trial ends,
+  after the barrier, so `on_release` reads what `save_answer` stored, while
+  `score_answer`, `show_feedback` and `get_basic_data` read the trial and
+  `self.node.var`. Use `self.sync_group_role` for role-specific pages, and
+  wrap the cue in `only_in_group(group_type, ..., otherwise=...)` so a
+  player the regrouper sat out gets a page instead of a trial.
 - On a page
   with a `time_limit`, nobody is late before the limit has run out plus 10 s,
   so the timeout need not cover the page; the demos use 30 s so that a

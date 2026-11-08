@@ -125,9 +125,11 @@ Group membership, for groups formed by a grouper (see
     ``min_group_size``, ``max_group_size`` and ``accepts_top_ups``.
 
 ``participant_link_sync_group``
-    One row per member of each group: ``participant_id``, ``sync_group_id``
-    and ``active``. The row stays after the participant leaves the group, for
-    example by failing or being removed from it, with ``active`` set to ``False``.
+    One row per member of each group: ``participant_id``, ``sync_group_id``,
+    ``active`` and, for groups a :class:`~psynet.sync.Regrouper` formed with
+    ``roles``, ``role``. The row stays after the participant leaves the group, for
+    example by failing or being removed from it, with ``active`` set to ``False``
+    and the reason in ``removal_reason``.
     ``creation_time`` is when the participant joined.
 
 In a static trial maker, groups can share nodes and networks: in the
@@ -148,52 +150,13 @@ A convenient layout for dyads and small groups is one row per participant per
 round, with columns for the group, the round, the participant, their partner,
 the trial ID (to trace each row back to the database) and both players'
 responses. Group-level measures can be computed from this table.
-For the ``rock_paper_scissors`` demo, where each trial's answer is a
-dictionary such as ``{"choose_action": "rock"}``:
+The ``rock_paper_scissors`` demo, where each trial's answer is a
+dictionary such as ``{"choose_action": "rock"}``, matches each trial to its
+partner's by the group and round that the trials record, and reads the
+partner from the group's members:
 
-.. code:: python
-
-    @classmethod
-    def get_basic_data(cls, context=None, **kwargs):
-        from psynet.sync import ParticipantLinkSyncGroup, SyncGroup
-
-        links = (
-            ParticipantLinkSyncGroup.query.join(SyncGroup)
-            .filter(SyncGroup.group_type == "rock_paper_scissors")
-            .all()
-        )
-        group_ids = {link.participant_id: link.sync_group_id for link in links}
-        members = {}
-        for link in links:
-            members.setdefault(link.sync_group_id, []).append(link.participant_id)
-
-        trials = RockPaperScissorsTrial.query.filter_by(
-            failed=False, complete=True
-        ).all()
-        actions = {
-            (trial.participant_id, trial.position): trial.answer["choose_action"]
-            for trial in trials
-        }
-
-        rows = []
-        for trial in sorted(trials, key=lambda t: (t.position, t.participant_id)):
-            group_id = group_ids.get(trial.participant_id)
-            partners = [
-                p for p in members.get(group_id, []) if p != trial.participant_id
-            ]
-            partner_id = partners[0] if len(partners) == 1 else None
-            rows.append(
-                {
-                    "group_id": group_id,
-                    "round": trial.position,
-                    "participant_id": trial.participant_id,
-                    "partner_id": partner_id,
-                    "trial_id": trial.id,
-                    "action": actions[(trial.participant_id, trial.position)],
-                    "partner_action": actions.get((partner_id, trial.position)),
-                }
-            )
-        return {"player_round": rows}
+.. literalinclude:: ../../demos/experiments/rock_paper_scissors/experiment.py
+   :pyobject: Exp.get_basic_data
 
 For one pair playing three rounds, this returns:
 
@@ -211,11 +174,8 @@ Each complete round has one row per member, and ``partner_id`` points in
 both directions. A missing ``partner_action`` means the partner has no
 completed trial for that round, for example because they dropped out.
 
-The example assumes each participant is in one group of this type. If
-participants are regrouped, a participant has one ``participant_link_sync_group``
-row per group; assign each trial to the group whose link ``creation_time``
-precedes the trial's ``creation_time`` and whose ``end_time`` is empty or
-follows it.
+Because each trial records its own group, this also works when participants
+are regrouped.
 
 .. _basic_data_regrouper:
 
@@ -226,8 +186,8 @@ In games that re-pair players with a :class:`~psynet.sync.Regrouper`, each
 group the regrouper forms is one round of one group. With one cued trial per
 player per round (see :ref:`rounds-cued-trials`), each trial records the pair
 and the player's role, and the pair's node holds its results. The
-``ultimatum_pairing`` demo reads one table from the trials and one from the
-nodes:
+``ultimatum_pairing`` demo reads one table from the trials, one from the
+nodes and one per player:
 
 .. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: Exp.get_basic_data
@@ -235,9 +195,7 @@ nodes:
 Rounds a player sat out have no trial, so the third table counts them with
 :meth:`~psynet.sync.Regrouper.rounds_sat_out`; each visit to the regrouper,
 with ``sat_out`` set for a sit-out, is a row of the
-``participant_link_barrier`` table. Each member's
-``participant_link_sync_group`` row also records, in ``removal_reason``,
-whether they were removed from their pair for being late.
+``participant_link_barrier`` table.
 
 .. seealso::
 

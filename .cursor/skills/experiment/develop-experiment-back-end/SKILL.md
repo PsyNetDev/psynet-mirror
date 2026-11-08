@@ -32,7 +32,11 @@ its reason in the plan:
 - `Trial.cue` inside timeline loops: complex ordering, custom adaptive
   selection, or a space of trial configurations too large to store as nodes
   (for example, random draws of several items from a large bank). For
-  adaptive designs, also read `make-experiment-adaptive/SKILL.md`.
+  adaptive designs, also read `make-experiment-adaptive/SKILL.md`. Also the
+  default for multiplayer games played in rounds: with `sync_group_type`
+  on the trial class, each player's round is one cued trial and a group's
+  trials share a node for the group's results (see
+  `synchronous-experiments/SKILL.md`).
 
 Inspect the closest demo and the trial maker's source before committing to
 one (`explore-psynet-repository/SKILL.md`). When participants are grouped or
