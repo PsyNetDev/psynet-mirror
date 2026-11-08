@@ -252,7 +252,7 @@ def default_group_barrier_arrival_message(
                 "timeline_hold", "Your partner went on without you. Please continue."
             )
         return _p("timeline_hold", "Your group went on without you. Please continue.")
-    if group_size == 2:
+    if group_size <= 2:
         return _p("timeline_hold", "Your partner is ready.")
     return _p("timeline_hold", "{ARRIVED}/{TOTAL} of your group are ready.").format(
         ARRIVED=waiting_count,

@@ -685,8 +685,7 @@ After leaving a group
 
 A member removed from their group without being failed, through
 ``"leave_group"`` or ``below_quorum="leave_group"``, stays in the
-experiment and continues the timeline without that group; nothing makes
-them play alone. They leave only the group of that type: a player removed from a ``"pair"`` stays in their ``"cohort"``.
+experiment and continues the timeline without that group. They leave only the group of that type: a player removed from a ``"pair"`` stays in their ``"cohort"``.
 For the rest of the timeline:
 
 - :class:`~psynet.sync.GroupBarrier`\ s of that group type let them straight

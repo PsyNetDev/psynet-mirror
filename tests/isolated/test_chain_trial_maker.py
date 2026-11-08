@@ -1171,7 +1171,8 @@ def test_sync_trial_maker_is_skipped_by_members_who_left_before_any_trial():
         elt.function
         for elt in trial_maker.compile_elts()
         if type(elt).__name__ == "StartSwitch"
-        and elt.label in ("in_sync_group", "had_trials_or_in_sync_group")
+        and elt.label
+        in ("not_left_before_any_trial", "not_left_before_any_trial_wrapup")
     ]
     participant = DummyParticipant()
     assert len(conditions) == 2

@@ -1880,13 +1880,13 @@ class TrialMaker(Module):
             self._setup_core,
             self._setup_extra,
             conditional(
-                "in_sync_group",
+                "not_left_before_any_trial",
                 lambda participant: not self._left_before_any_trial(participant),
                 join(self.introduction, self._trial_loop()),
                 log_chosen_branch=False,
             ),
             conditional(
-                "had_trials_or_in_sync_group",
+                "not_left_before_any_trial_wrapup",
                 lambda participant: not self._left_before_any_trial(participant),
                 join(
                     self._wrapup_core,

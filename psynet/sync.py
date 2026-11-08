@@ -1479,6 +1479,16 @@ def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
     return None
 
 
+def _reject_old_below_quorum_names(kwargs):
+    """Point a grouper given a 14.0 release-candidate name to ``below_quorum``."""
+    for old in ("fail_participants_below_min_size", "fail_participants_below_quorum"):
+        if old in kwargs:
+            raise TypeError(
+                f"{old} was replaced by below_quorum: pass "
+                f"below_quorum='leave_group' instead of {old}=False."
+            )
+
+
 def _removed_from_group(participant, group_type) -> bool:
     """Return whether the participant left their latest group of ``group_type`` and is in no other."""
     if group_type in participant.active_sync_groups:
@@ -1937,7 +1947,7 @@ class GroupBarrier(Barrier):
                 for participant in late:
                     self._tell_removed_participant(participant, group, group_size)
                 return
-            if late and getattr(group, "below_quorum", None) in (None, "fail"):
+            if late and getattr(group, "below_quorum", None) != "leave_group":
                 logger.warning(
                     "GroupBarrier '%s': removing late members %s dissolved group %s, "
                     "so its members who were on time were failed while the late ones "
@@ -2252,7 +2262,7 @@ class SimpleGrouper(Grouper):
         Defaults to ``start_short_with`` if given, and otherwise to
         ``initial_group_size``, so that a group needs all its members; for
         groups of three or more, leaving it out warns. Must be at most
-        ``start_short_with``.
+        ``start_short_with`` when that is set.
 
     min_group_size
         Deprecated name for ``quorum``.
@@ -2275,18 +2285,20 @@ class SimpleGrouper(Grouper):
         To be used in conjunction with ``join_existing_groups=True``.
 
     below_quorum
-        What happens to the members left in a group that falls below ``quorum``, which is then
-        dissolved at once. The member whose departure caused it is handled by their own cause
-        instead (a barrier's ``max_wait_action`` or ``late_action``, or their failure).
-        ``"fail"`` (default) fails them, telling them "Too few members of your group remained to
-        continue". ``"leave_group"`` removes them from the group without failing them, and their next
-        page says that their group ended (see :ref:`sync-leaving-a-group`). A module-level function
-        ``f(participant, group)`` returning ``"fail"`` or ``"leave_group"`` decides member by member,
-        for example from how many rounds they played. It is called while the group is being
-        dissolved, so base the decision on the participant, not on who else is still in ``group``;
-        if it raises or returns anything else, the error is logged and the member is failed. Only for groups without top-ups; passing
-        anything but ``"fail"`` with ``join_existing_groups=True`` raises. A member whose own request
-        is in progress is handled within about a second by the barrier poller instead.
+        What happens to the members left in a group that falls below ``quorum``, which is
+        then dissolved at once. The member whose departure caused it is handled by their own
+        cause instead (a barrier's ``max_wait_action`` or ``late_action``, or their
+        failure). ``"fail"`` (default) fails them, telling them "Too few members of your
+        group remained to continue, so we ended your session." ``"leave_group"`` removes
+        them from the group without failing them, and their next page says that their group
+        ended (see :ref:`sync-leaving-a-group`). A module-level function ``f(participant,
+        group)`` returning ``"fail"`` or ``"leave_group"`` decides member by member, for
+        example from how many rounds they played. It is called while the group is being
+        dissolved, so base the decision on the participant, not on who else is still in
+        ``group``; if it raises or returns anything else, the error is logged and the member
+        is failed. Only for groups without top-ups; passing anything but ``"fail"`` with
+        ``join_existing_groups=True`` raises. A member whose own request is in progress is
+        handled within about a second by the barrier poller instead.
 
     start_short_after
         If set, a group may start with fewer than ``batch_size`` participants once the
@@ -2323,6 +2335,7 @@ class SimpleGrouper(Grouper):
         quorum: Optional[int] = None,
         **kwargs,
     ):
+        _reject_old_below_quorum_names(kwargs)
         if "group_size" in kwargs:
             raise ValueError(
                 "The group_size argument has been renamed to initial_group_size, "
@@ -2903,7 +2916,11 @@ class Regrouper(Grouper):
                 "A Regrouper without `within` needs a deadline or every, because "
                 "it cannot tell when everyone is present."
             )
-        if "below_quorum" in kwargs:
+        old_names = (
+            "fail_participants_below_min_size",
+            "fail_participants_below_quorum",
+        )
+        if "below_quorum" in kwargs or any(name in kwargs for name in old_names):
             raise TypeError(
                 "Regrouper groups are never dissolved when a member leaves, so "
                 "below_quorum doesn't apply; it is an option of "

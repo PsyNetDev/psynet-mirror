@@ -7158,6 +7158,42 @@ def test_group_barrier_below_min_size_only_releases_waiting_participants(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+@pytest.mark.parametrize("below_quorum", ["fail", "leave_group"])
+def test_waiter_leaving_a_pair_after_max_wait(
+    in_experiment_directory, db_session, below_quorum
+):
+    exp = get_experiment()
+    waiter, absent = new_participant(exp), new_participant(exp)
+    group = SimpleSyncGroup(
+        group_type="main",
+        initial_group_size=2,
+        max_group_size=2,
+        min_group_size=2,
+        accepts_top_ups=False,
+        below_quorum=below_quorum,
+    )
+    db_session.add(group)
+    for p in (waiter, absent):
+        p.status = "working"
+        group.add_participant(p)
+    barrier = GroupBarrier(
+        id_="pair_max_wait", group_type="main", max_wait_action="leave_group"
+    )
+    barrier.receive_participant(waiter)
+    db_session.commit()
+
+    barrier.handle_max_wait_timeout(waiter)
+    db_session.commit()
+
+    assert not waiter.failed
+    assert absent.failed == (below_quorum == "fail")
+    InfoPage("Next").consume(exp, waiter)
+    assert _removed_from_group_notice(waiter).startswith("Your partner didn't")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_group_barrier_max_wait_leave_group_releases_barrier_link(
     in_experiment_directory, db_session
 ):
