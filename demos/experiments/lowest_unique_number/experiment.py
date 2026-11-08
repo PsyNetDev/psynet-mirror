@@ -125,7 +125,7 @@ class PickTrial(Trial):
         )
 
     @classmethod
-    def score_room(cls, trials: List["PickTrial"]):
+    def score_room(cls, trials: List["PickTrial"], node: SyncGroupNode):
         """Save the room's choices and winning number on the node, and each player's on their trial.
 
         Players who ran out of time have no choice and miss the round.
@@ -134,8 +134,8 @@ class PickTrial(Trial):
         picks = {str(t.participant_id): t.participant.var.choice for t in trials}
         choices = {pid: n for pid, n in picks.items() if n is not None}
         winner = lowest_unique(choices) if len(choices) > 1 else None
-        trials[0].node.var.choices = choices
-        trials[0].node.var.winning_number = winner
+        node.var.choices = choices
+        node.var.winning_number = winner
         for trial in trials:
             trial.var.choice = picks[str(trial.participant_id)]
             trial.var.won = winner is not None and trial.var.choice == winner
@@ -281,9 +281,11 @@ class Exp(psynet.experiment.Experiment):
             (r["round"], sorted(r["choices"].values()), r["winning_number"])
             for r in data["room_round"]
         ] == [(0, [1, 2], 1), (1, [3, 3, 4], 4)], data["room_round"]
-        assert [
-            (r["round"], r["choice"], r["bonus"]) for r in data["player_round"]
-        ] == [
+        # Players cue their trials in their own order, so compare sorted rows.
+        assert sorted(
+            ((r["round"], r["choice"], r["bonus"]) for r in data["player_round"]),
+            key=lambda row: (row[0], row[1] is None, row[1] or 0),
+        ) == [
             (0, 1, WIN_BONUS),
             (0, 2, 0.0),
             (0, None, 0.0),

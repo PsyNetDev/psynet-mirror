@@ -100,7 +100,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   rounds loop. The group's trials for that round share one `SyncGroupNode`; a
   callable `definition` (taking `group`, `round`) runs once per group and
   round. Score in the `show_trial` barrier's `on_release`, a `@classmethod`
-  taking `trials`: group results in `trials[0].node.var`, per-player results
+  taking `trials` and `node`: group results in `node.var`, per-player results
   in `trial.var`, which `score_answer`, `show_feedback` and `get_basic_data`
   then read (`lowest_unique_number`; "Rounds as trials" in
   `code/multiplayer/writing_a_round_based_experiment`).

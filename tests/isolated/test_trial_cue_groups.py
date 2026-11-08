@@ -39,8 +39,8 @@ class PairTrial(Trial):
         raise NotImplementedError
 
     @classmethod
-    def score_pair(cls, trials):
-        trials[0].node.var.players = [trial.participant_id for trial in trials]
+    def score_pair(cls, trials, node):
+        node.var.players = [trial.participant_id for trial in trials]
         for trial in trials:
             trial.var.scored = True
 

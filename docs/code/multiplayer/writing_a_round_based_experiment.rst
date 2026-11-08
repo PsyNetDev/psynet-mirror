@@ -231,8 +231,9 @@ whole group plays the same draw.
 
 A :class:`~psynet.sync.GroupBarrier` in ``show_trial`` scores the round. Its
 ``on_release`` receives ``trials``, the members' current trials in the same
-order as ``participants``, so a ``@classmethod`` on the trial class can save
-the group's results on the shared node and each player's on their trial:
+order as ``participants``, and ``node``, the node they share. So a
+``@classmethod`` on the trial class can save the group's results on the node
+and each player's on their trial:
 
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: PickTrial.score_room

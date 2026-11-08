@@ -1630,7 +1630,10 @@ class GroupBarrier(Barrier):
         ``group``, ``participants`` (the group's active members), ``trials``
         (each member's ``current_trial``, in the same order as ``participants``,
         for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
-        ``sync_group_type`` that the barrier is part of), ``leader`` (the
+        ``sync_group_type`` that the barrier is part of), ``node`` (the node
+        all those trials share, such as the group's
+        :class:`~psynet.trial.main.SyncGroupNode` for the round, or ``None`` if
+        they don't share one), ``leader`` (the
         group's leader), ``participant`` (the same object as ``leader``, kept for
         compatibility), ``left`` (the members who left the group since its
         previous barrier pass, or since it formed; see below) and ``barrier``,
@@ -1666,7 +1669,8 @@ class GroupBarrier(Barrier):
         the group, so that what they did is not lost. For example, it can score
         the last question for the members who answered it. It takes the same
         arguments as ``on_release`` except ``leader`` and ``left``: ``participants`` are
-        the members waiting here, and ``trials`` their current trials. The same serialization rules apply. A waiting member whose own request
+        the members waiting here, and ``trials`` and ``node`` refer to their
+        current trials. The same serialization rules apply. A waiting member whose own request
         is busy at that moment is handled once it finishes, in a second call
         with just them.
 
@@ -1955,6 +1959,7 @@ class GroupBarrier(Barrier):
                             group=group,
                             participants=group.active_participants,
                             trials=_current_trials(group.active_participants),
+                            node=_shared_node(group.active_participants),
                             leader=group.leader,
                             participant=group.leader,
                             left=left,
@@ -4281,6 +4286,16 @@ def _current_trials(participants):
     return [participant.current_trial for participant in participants]
 
 
+def _shared_node(participants):
+    """Return the node that all ``participants``' current trials share, or ``None``."""
+    nodes = {
+        trial.node_id: trial.node
+        for trial in _current_trials(participants)
+        if trial is not None
+    }
+    return next(iter(nodes.values())) if len(nodes) == 1 else None
+
+
 def _run_on_dissolve(group, members):
     """Call ``on_dissolve`` of each barrier of ``group`` where some of ``members`` are waiting."""
     reconstructed = {}
@@ -4302,6 +4317,7 @@ def _run_on_dissolve(group, members):
                 group=group,
                 participants=participants,
                 trials=_current_trials(participants),
+                node=_shared_node(participants),
                 barrier=barrier,
             )
         except Exception as err:
