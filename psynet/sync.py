@@ -745,6 +745,19 @@ class _BarrierHoldPage(_TimelineHoldPage):
             None if release_time is None else round((release_time - time.time()) * 1000)
         )
         seconds = None if remaining_ms is None else max(0, ceil(remaining_ms / 1000))
+        if (
+            remaining_ms is None
+            and not message_is_function
+            and isinstance(self.barrier, SimpleGrouper)
+        ):
+            # Until enough people wait to start short, the countdown has no
+            # number, so show the default text; the grouper sends the
+            # message again once the countdown starts.
+            _p = get_translator(context=True)
+            return compose_hold_overlay_html(
+                _p("timeline_hold", "Waiting for other participants…"),
+                self.hold_progress_text(participant),
+            )
         if message_is_function:
             context = {} if participant is None else {"participant": participant}
             message = message(
@@ -908,8 +921,9 @@ class Barrier(EltCollection):
         with a release time (:class:`SimpleGrouper` with ``start_short_after``,
         :class:`Regrouper` with ``deadline`` or ``every``, or a subclass that
         overrides :meth:`expected_release_time`), a ``{SECONDS}`` placeholder
-        counts down to that time, showing "…" while it is unknown; elsewhere
-        it raises an error. ``waiting_message`` can also be a module-level function
+        counts down to that time, showing "…" while it is unknown (a
+        :class:`SimpleGrouper` shows "Waiting for other participants…" instead
+        until enough people wait to start short); elsewhere it raises an error. ``waiting_message`` can also be a module-level function
         that returns the message, for example one that depends on the
         participant's role; it may take ``participant``, ``seconds_left``
         (whole seconds, or ``None`` while the release time is unknown) and
@@ -1479,6 +1493,15 @@ def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
     return None
 
 
+REMOVAL_REASONS = (
+    None,
+    "failed",
+    "late",
+    "waited_too_long",
+    "group_dissolved",
+    "moved_on",
+)
+
 _OLD_BELOW_QUORUM_NAMES = (
     "fail_participants_below_min_size",
     "fail_participants_below_quorum",
@@ -1499,15 +1522,22 @@ def _removed_from_group(participant, group_type) -> bool:
     """Return whether the participant left their latest group of ``group_type`` and is in no other."""
     if group_type in participant.active_sync_groups:
         return False
+    if group_type in (getattr(participant, "ungrouped_group_types", None) or []):
+        return True
+    latest = _latest_sync_group_link(participant, group_type)
+    return latest is not None and not latest.active
+
+
+def _latest_sync_group_link(participant, group_type):
+    """Return the participant's newest link to a group of ``group_type``, or ``None``."""
     links = [
         link
         for link in participant.sync_group_links
         if link.sync_group.group_type == group_type
     ]
     if not links:
-        return False
-    latest = max(links, key=lambda link: (link.id is None, link.id or 0))
-    return not latest.active
+        return None
+    return max(links, key=lambda link: (link.id is None, link.id or 0))
 
 
 class GroupBarrier(Barrier):
@@ -1592,6 +1622,21 @@ class GroupBarrier(Barrier):
         visit (scalar presentation and notification settings, not wait pages).
         Must be a module-level function, ``@staticmethod``/``@classmethod``,
         or a bound method on a TrialMaker or ORM instance with a primary key.
+        To share one callback between several barriers, pass each its own ``data``.
+
+    data
+        Optional dictionary of JSON-compatible values that ``on_release`` can read as
+        ``barrier.data``, for example the number of the question the barrier ends, so that
+        one callback serves several barriers::
+
+            def score_question(group, barrier):
+                question = barrier.data["question"]
+                ...
+
+            GroupBarrier(id_="question_1", group_type="team",
+                         on_release=score_question, data={"question": 1})
+
+        Barriers that share an ``id_`` must pass the same ``data``.
 
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
@@ -1678,6 +1723,7 @@ class GroupBarrier(Barrier):
         on_arrival_message: Optional[Callable] = None,
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
+        data: Optional[dict] = None,
     ):
         _validate_group_timeouts(max_wait_action, late_after, late_action)
         max_wait_time = _group_max_wait_time(max_wait_time, late_after, default=20)
@@ -1699,6 +1745,7 @@ class GroupBarrier(Barrier):
         self.notify_arrivals = bool(notify_arrivals)
         self.late_after = late_after
         self.late_action = late_action
+        self.data = {} if data is None else dict(data)
 
     def resolve(self):
         group_type = self.group_type
@@ -1821,7 +1868,7 @@ class GroupBarrier(Barrier):
         group = participant.active_sync_groups.get(self.group_type)
         if self.max_wait_action == "leave_group" and group is not None:
             group_size = len(group.active_participants)
-            group.remove_participant(participant)
+            group.remove_participant(participant, reason="waited_too_long")
             self._tell_removed_participant(
                 participant, group, group_size, kind="waited_too_long"
             )
@@ -2080,10 +2127,21 @@ class Grouper(Barrier):
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
-        if this time is exceeded and the participant is still not released, then the participant will be failed
-        and sent to the end of the experiment. This is a hard limit counted from arrival: with explicit
+        if this time is exceeded and the participant is still not released, then ``max_wait_action`` is
+        applied to them. This is a hard limit counted from arrival: with explicit
         ``waiting_logic``, the server applies it even while the participant is partway through a filler page,
         so make it long enough to cover long filler pages (for example trials used as filler).
+
+    max_wait_action
+        What happens to a participant who waits longer than ``max_wait_time`` without being grouped:
+        ``"fail"`` (default) fails them and sends them to the end of the experiment; ``"leave_group"``
+        lets them carry on with the experiment without a group, which suits a participant who was
+        available but couldn't be matched. Their next page says "We couldn't find a partner for you in
+        time. Please continue." (or "...a group for you..."). Later barriers and synchronized trial makers of
+        this group type treat them as having left a group (see :ref:`sync-leaving-a-group`), and
+        :meth:`~psynet.participant.Participant.sync_group_removal_reason` returns
+        ``"waited_too_long"``. Branch on ``participant.in_sync_group(group_type)`` to give them
+        something else to do or to end the experiment.
 
     expected_wait
         See :class:`Barrier`.
@@ -2121,7 +2179,12 @@ class Grouper(Barrier):
         waiting_message=None,
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
+        max_wait_action: Literal["fail", "leave_group"] = "fail",
     ):
+        if max_wait_action not in ("fail", "leave_group"):
+            raise ValueError(
+                f"max_wait_action must be 'fail' or 'leave_group', got {max_wait_action!r}."
+            )
         if not id_:
             id_ = f"{group_type}_grouper"
         super().__init__(
@@ -2136,6 +2199,33 @@ class Grouper(Barrier):
             waiting_screen=waiting_screen,
         )
         self.group_type = group_type
+        self.max_wait_action = max_wait_action
+
+    def handle_max_wait_timeout(self, participant: Participant):
+        """Let an ungrouped participant carry on with ``"leave_group"``, then release the barrier link."""
+        if self.max_wait_action == "leave_group" and not participant.in_sync_group(
+            self.group_type
+        ):
+            participant.ungrouped_group_types = sorted(
+                {*(participant.ungrouped_group_types or []), self.group_type}
+            )
+            group_size = getattr(self, "initial_group_size", None) or getattr(
+                self, "group_size", None
+            )
+            _p = get_translator(context=True)
+            text = (
+                _p(
+                    "timeline_hold",
+                    "We couldn't find a partner for you in time. Please continue.",
+                )
+                if group_size == 2
+                else _p(
+                    "timeline_hold",
+                    "We couldn't form a group for you in time. Please continue.",
+                )
+            )
+            _set_next_page_notice(participant, text)
+        super().handle_max_wait_timeout(participant)
 
     def ready_to_group(self, participants: List[Participant]) -> bool:
         """
@@ -2264,8 +2354,8 @@ class SimpleGrouper(Grouper):
     quorum
         How many active members a group needs to keep going. A group whose
         members fail or leave until it has fewer than this is below quorum:
-        with ``join_existing_groups=True`` its barriers wait for newcomers,
-        and otherwise it is dissolved (see ``below_quorum``).
+        while it accepts newcomers (``join_existing_groups=True``) its barriers
+        wait for them, and otherwise it is dissolved (see ``below_quorum``).
         Defaults to ``start_short_with`` if given, and otherwise to
         ``initial_group_size``, so that a group needs all its members; for
         groups of three or more, leaving it out warns. Must be at most
@@ -2303,9 +2393,10 @@ class SimpleGrouper(Grouper):
         example from how many rounds they played. It is called while the group is being
         dissolved, so base the decision on the participant, not on who else is still in
         ``group``; if it raises or returns anything else, the error is logged and the member
-        is failed. Only for groups without top-ups; passing anything but ``"fail"`` with
-        ``join_existing_groups=True`` raises. A member whose own request is in progress is
-        handled within about a second by the barrier poller instead.
+        is failed. With ``join_existing_groups=True`` it applies once the group stops
+        accepting newcomers (see :meth:`SimpleSyncGroup.stop_top_ups`). A member whose own
+        request is in progress is handled within about a second by the barrier poller
+        instead.
 
     start_short_after
         If set, a group may start with fewer than ``batch_size`` participants once the
@@ -2400,11 +2491,6 @@ class SimpleGrouper(Grouper):
                 f"one of these, got {below_quorum!r}."
             )
         self.below_quorum = below_quorum
-        if join_existing_groups and below_quorum != "fail":
-            raise ValueError(
-                "below_quorum has no effect with join_existing_groups=True: a group "
-                "that accepts top-ups waits for newcomers instead of dissolving."
-            )
         if (start_short_after is None) != (start_short_with is None):
             raise ValueError(
                 "Pass start_short_after and start_short_with together: how long to "
@@ -2515,6 +2601,7 @@ class SimpleGrouper(Grouper):
         query = SimpleSyncGroup.query.filter(
             SimpleSyncGroup.group_type == self.group_type,
             SimpleSyncGroup.active.is_(True),
+            SimpleSyncGroup.accepts_top_ups.is_(True),
             SimpleSyncGroup.n_active_participants > 0,
         )
 
@@ -2558,7 +2645,7 @@ class SimpleGrouper(Grouper):
                 .populate_existing()
                 .first()
             )
-            if group is None or not group.active:
+            if group is None or not group.active or not group.accepts_top_ups:
                 continue
             db.session.expire(group, ["participant_links"])
             n_members = len(group.active_participants)
@@ -3632,6 +3719,10 @@ class SyncGroup(SQLBase, SQLMixin):
         """
         self._give_distinct_pseudonym(participant)
         _forget_active_sync_group(participant)
+        if self.group_type in (participant.ungrouped_group_types or []):
+            participant.ungrouped_group_types = [
+                t for t in participant.ungrouped_group_types if t != self.group_type
+            ]
         # Setting ``sync_group`` also appends to ``participant_links``, and lets
         # ``participant.active_sync_groups`` see the group before a flush.
         ParticipantLinkSyncGroup(
@@ -3735,20 +3826,22 @@ class SyncGroup(SQLBase, SQLMixin):
         participant
             The member to remove.
         reason
-            Why they left, stored on their link. It sets how
-            :class:`~psynet.group_prompt.GroupPrompt` shows them to the
-            remaining members:
+            Why they left, stored on their link and returned by
+            :meth:`~psynet.participant.Participant.sync_group_removal_reason`.
+            It also sets how :class:`~psynet.group_prompt.GroupPrompt` shows
+            them to the remaining members:
 
-            - ``None`` (default): "(dropped out)", or "(left)" once they have
-              failed or finished the experiment.
+            - ``None`` (default), ``"failed"``, ``"waited_too_long"`` or
+              ``"group_dissolved"``: "(dropped out)", or "(left)" once they
+              have failed or finished the experiment.
             - ``"late"``: "(removed)", for a member a barrier removed for
               being late (``late_action="leave_group"``).
             - ``"moved_on"``: not shown, unless the page shows their answer,
               for a member who went on to their next group.
         """
-        if reason not in (None, "moved_on", "late"):
+        if reason not in REMOVAL_REASONS:
             raise ValueError(
-                f"reason must be None, 'moved_on' or 'late', got {reason!r}."
+                f"reason must be one of {REMOVAL_REASONS}, got {reason!r}."
             )
         _forget_active_sync_group(participant)
         for link in self.participant_links:
@@ -3790,7 +3883,9 @@ class SyncGroup(SQLBase, SQLMixin):
                 action = self._below_quorum_action(participant)
                 if action == "fail":
                     participant.fail("sync group below minimum size")
-                SyncGroup.remove_participant(self, participant)
+                SyncGroup.remove_participant(
+                    self, participant, reason="group_dissolved"
+                )
                 if action == "leave_group":
                     _tell_group_ended(participant, group_size)
             self.check_numbers()
@@ -3850,6 +3945,27 @@ class SimpleSyncGroup(SyncGroup):
         reason: Optional[Literal["moved_on", "late"]] = None,
     ):
         super().remove_participant(participant, reason=reason)
+        self.dissolve_if_below_quorum()
+
+    def stop_top_ups(self):
+        """Stop newcomers joining this group, so that it no longer waits for them.
+
+        For a group formed with ``join_existing_groups=True``, for example once
+        the game has started and a newcomer couldn't catch up. From then on a
+        group below its quorum is dissolved like any group without top-ups,
+        and the grouper's ``below_quorum`` decides for its members; a group
+        already below its quorum is dissolved now. Call it from a barrier's
+        ``on_release``, which receives the group::
+
+            def start_game(group):
+                group.stop_top_ups()
+
+            GroupBarrier(id_="game_starts", group_type="team", on_release=start_game)
+        """
+        if not self.accepts_top_ups:
+            return
+        self.accepts_top_ups = False
+        self.check_numbers()
         self.dissolve_if_below_quorum()
 
     def dissolve_if_below_quorum(self):

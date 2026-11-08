@@ -1,0 +1,1 @@
+A `SimpleGrouper` with `start_short_after` and a fixed `waiting_message` containing `{SECONDS}` now shows "Waiting for other participants…" until enough people wait for the countdown to start, instead of a countdown showing "…".

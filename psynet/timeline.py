@@ -825,6 +825,8 @@ class ReactiveGoTo(GoTo):
             experiment=experiment,
             participant=participant,
         )
+        if set(self.targets) == {True, False}:
+            val = bool(val)
         try:
             return self.targets[val]
         except KeyError:
@@ -1999,6 +2001,11 @@ class Page(Elt):
         else:
             # The flag skips validation, so only the server may set it.
             metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
+        from .sync import _removed_from_group_notice
+
+        metadata = {k: v for k, v in metadata.items() if k != "left_group_on_page"}
+        if _removed_from_group_notice(participant) is not None:
+            metadata = {**metadata, "left_group_on_page": True}
         # Untimed pages, such as feedback or a framework wait, keep the flag.
         if participant.waiting_barrier_id is None and self.time_limit is not None:
             participant.timed_out_since_barrier = timed_out
@@ -3332,6 +3339,16 @@ class Response(_Response):
         """
         return bool((self.metadata or {}).get("time_limit_reached"))
 
+    @property
+    def left_group_on_page(self) -> bool:
+        """Whether a barrier removed the participant from their group while they were on this page.
+
+        This happens to a member who is late (``late_action="leave_group"``)
+        while the group carries on. The group has moved on without them, so
+        an answer such as a move in a game usually shouldn't count.
+        """
+        return bool((self.metadata or {}).get("left_group_on_page"))
+
     async_jobs = relationship("AsyncJob")
     async_processes = _deprecated_async_processes
     # assets = relationship(
@@ -3782,8 +3799,9 @@ def conditional(
 
     condition:
         A function with up to two arguments named ``participant`` and ``experiment``,
-        that is executed once the participant reaches the corresponding part of the timeline,
-        returning a Boolean.
+        that is executed once the participant reaches the corresponding part of the timeline.
+        Its result is converted with ``bool()``, so a truthy value such as a number or a
+        non-empty list chooses ``logic_if_true``.
 
     logic_if_true:
         An elt (or list of elts) to display if ``condition`` returns ``True``.

@@ -34,13 +34,32 @@ from psynet.timeline import (
     Page,
     PageMaker,
     ProgressStage,
+    ReactiveGoTo,
     Timeline,
+    conditional,
     join,
     switch,
     while_loop,
 )
 from psynet.trial.chain import ChainNode, ChainTrial, ChainTrialMaker
 from psynet.utils import DuplicateKeyError
+
+
+def test_conditional_treats_a_truthy_result_as_true():
+    true_page, false_page = (
+        InfoPage("Yes", time_estimate=1),
+        InfoPage("No", time_estimate=1),
+    )
+    elts = conditional(
+        "sent", lambda participant: 4, true_page, false_page, log_chosen_branch=False
+    )
+    go_to = next(elt for elt in elts if isinstance(elt, ReactiveGoTo))
+    assert (
+        go_to.get_target(
+            experiment=None, participant=SimpleNamespace(module_state=None)
+        )
+        is go_to.targets[True]
+    )
 
 
 def test_merge_media_spec():

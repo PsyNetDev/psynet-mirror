@@ -23,7 +23,7 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages
-from psynet.chatroom import ChatRoom, EnableChatrooms
+from psynet.chatroom import ChatMessage, ChatRoom, EnableChatrooms
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
@@ -147,6 +147,16 @@ class Exp(psynet.experiment.Experiment):
             bots[0].get_current_page().chatroom.room_id
             == bots[1].get_current_page().chatroom.room_id
         )
+
+        bots[0].send_chat_message("Hello!")
+        assert bots[0].with_participant(
+            lambda participant: [
+                message.content
+                for message in ChatMessage.query.filter_by(
+                    participant_id=participant.id
+                )
+            ]
+        ) == ["Hello!"]
 
         bots[0].take_page()
         bots[1].take_page()

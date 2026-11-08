@@ -210,9 +210,16 @@ def _lobby_message(seconds_left):
     return "Starting in {SECONDS} s"
 
 
+@pytest.mark.parametrize(
+    "waiting_message, lone_text",
+    [
+        (_lobby_message, "Waiting for another player."),
+        ("Starting in {SECONDS} s", "Waiting for other participants…"),
+    ],
+)
 @in_consents_experiment
 def test_simple_grouper_starts_a_short_group_after_waiting(
-    in_experiment_directory, db_session, monkeypatch
+    in_experiment_directory, db_session, monkeypatch, waiting_message, lone_text
 ):
     exp = get_experiment()
     published = []
@@ -222,14 +229,12 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
         initial_group_size=4,
         start_short_after=10,
         start_short_with=2,
-        waiting_message=_lobby_message,
+        waiting_message=waiting_message,
     )
     participants = _working_participants(exp, 2)
     _arrive(exp, grouper, participants[:1])
     assert grouper.expected_release_time(participants[0]) is None
-    assert "Waiting for another player." in grouper.waiting_logic.overlay_html(
-        participants[0]
-    )
+    assert lone_text in grouper.waiting_logic.overlay_html(participants[0])
     _arrive(exp, grouper, participants[1:])
     assert not grouper.ready_to_group(participants)
     assert grouper.expected_release_time(participants[0]) == pytest.approx(
@@ -281,8 +286,6 @@ def test_simple_grouper_quorum():
         assert lobby(min_group_size=0).quorum == 1
     with pytest.raises(ValueError, match="never reach"):
         lobby(quorum=6, join_existing_groups=True, max_group_size=5)
-    with pytest.raises(ValueError, match="no effect"):
-        lobby(quorum=4, join_existing_groups=True, below_quorum="leave_group")
     with pytest.raises(ValueError, match="not a lambda"):
         lobby(quorum=4, below_quorum=lambda participant, group: "fail")
     with pytest.raises(TypeError, match="below_quorum='leave_group'"):

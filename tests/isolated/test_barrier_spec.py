@@ -65,12 +65,14 @@ def test_callback_round_trip():
         "callback",
         group_type="pair",
         on_release=on_release,
+        data={"question": 1},
     )
 
     restored = barrier_from_spec_json(barrier_spec_json(original))
 
     assert restored.group_type == "pair"
     assert restored.on_release.function is on_release
+    assert restored.data == {"question": 1}
 
 
 def test_reconstructed_barrier_runs_release_hooks():

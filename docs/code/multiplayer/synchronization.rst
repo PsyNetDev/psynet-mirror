@@ -74,9 +74,9 @@ the grouper has a ``waiting_screen`` (see below).
     a group that drops below quorum then waits for a replacement;
     leave it out to keep playing with fewer members (see
     :ref:`groups below quorum <groups_below_min_size>`). A ``{SECONDS}`` placeholder in ``waiting_message`` counts down
-    to that short start once ``start_short_with`` are waiting, and shows
-    "…" until then; :ref:`a message function <sync-countdown-messages>` can
-    show other text instead.
+    to that short start once ``start_short_with`` are waiting; until then
+    the participant sees "Waiting for other participants…", or what
+    :ref:`a message function <sync-countdown-messages>` returns.
 
 ``waiting_message``
     The message on the waiting indicator. If omitted, participants see
@@ -194,8 +194,9 @@ shows "…" instead of a number.
 .. _sync-countdown-messages:
 
 **Countdown messages.** Sometimes the barrier doesn't know yet when the
-wait will end, for example while a participant waits alone for a partner,
-and ``{SECONDS}`` shows "…". To show different text then, pass a
+wait will end, for example while a participant waits alone for a partner.
+Then ``{SECONDS}`` shows "…", or a :class:`~psynet.sync.SimpleGrouper`
+shows "Waiting for other participants…" in place of a fixed message. To show different text then, pass a
 module-level function as ``waiting_message``. It receives ``seconds_left``, which
 is ``None`` while the time is unknown and otherwise the whole seconds left
 (0 once the time has passed), and can also take ``participant`` and
@@ -231,7 +232,22 @@ function, a static or class method, or a method bound to a trial maker or a
 saved database object such as a trial. The ``barrier`` it receives is rebuilt
 from saved settings, so read only scalar settings such as ``waiting_message`` and
 ``max_wait_time`` from it, and store custom barrier attributes as
-JSON-compatible values.
+JSON-compatible values. To share one callback between barriers, pass each
+barrier ``data``, a dictionary that the callback reads as ``barrier.data``:
+
+.. code-block:: python
+
+    def score_question(group, barrier):
+        question = barrier.data["question"]
+        ...
+
+    GroupBarrier(id_="question_1", group_type="team",
+                 on_release=score_question, data={"question": 1})
+
+``on_release`` runs only when the barrier releases the group. A member who
+leaves the group before then, or whose group is dissolved, doesn't get
+the results it would have stored, so read them with a default, as in
+``participant.var.get("score", None)``.
 
 The barrier ``id_`` identifies one waiting point. Barriers with the same ID
 share a waiting pool, so give barriers with different ``on_release``
@@ -454,7 +470,7 @@ GroupPrompt shows the group as it is now:
   outcome, may.
 
 :meth:`~psynet.sync.SyncGroup.remove_participant` takes a ``reason``
-(``"moved_on"`` or ``"late"``) that sets these labels.
+that sets these labels, such as ``"moved_on"`` or ``"late"``.
 
 Trial makers
 ~~~~~~~~~~~~
@@ -522,11 +538,13 @@ the maximum waiting time:
     table below for other defaults), or no limit
     at a :class:`~psynet.sync.GroupBarrier` that sets ``late_after``, which
     then handles late members instead; passing ``max_wait_time`` together
-    with ``late_after`` raises an error. At a grouper, a participant who
-    waits longer is failed. At a :class:`~psynet.sync.GroupBarrier`,
-    ``max_wait_action`` decides: ``"fail"`` (default) fails the participant,
-    and ``"leave_group"`` removes them from the group (see
-    :ref:`sync-leaving-a-group` for what they see next). Either way it is
+    with ``late_after`` raises an error. ``max_wait_action`` decides what
+    happens to a participant who waits longer: ``"fail"`` (default) fails
+    them. At a :class:`~psynet.sync.GroupBarrier`, ``"leave_group"`` removes
+    them from the group (see :ref:`sync-leaving-a-group` for what they see
+    next); at a grouper, it lets them continue without a group, telling them
+    "We couldn't find a partner for you in time. Please continue." (or "We
+    couldn't form a group for you in time." for larger groups). Either way it is
     the member who waited who leaves; to go on without slow members, use
     ``late_after`` instead.
     This also applies to a participant who closed the page while waiting,
@@ -594,8 +612,9 @@ The default ``max_wait_time`` depends on where it is set:
        if that is longer
 
 Choose ``max_wait_time`` at the grouper together with how quickly you
-recruit, because a participant is failed if too few others arrive while
-they wait. To lose fewer than 1 in 20, expect at least 1.3 times the group
+recruit, because a participant is failed (or, with
+``max_wait_action="leave_group"``, continues without a group) if too few
+others arrive while they wait. To lose fewer than 1 in 20, expect at least 1.3 times the group
 size to arrive within one ``max_wait_time``. For groups of three, that is
 about 12 participants a minute with the default 20 seconds, or 2 a minute
 with ``max_wait_time=120``. In one test with groups of three and about 3
@@ -624,10 +643,14 @@ Two separate settings decide what happens when someone leaves a group:
   its ``quorum``. Below it, what happens depends on whether the group
   accepts top-ups:
 
-  - With ``join_existing_groups=True``, the group's next barrier waits for
-    new members to join. If every member leaves, the group closes at the
-    next periodic sync-group check (every few seconds), and later arrivals
-    form a new one.
+  - While it accepts newcomers (``join_existing_groups=True``), the group's
+    next barrier waits for new members to join, without a time limit if the
+    barrier sets ``late_after``. If every member leaves, the group closes at
+    the next periodic sync-group check (every few seconds), and later
+    arrivals form a new one. Once a newcomer could no longer catch up, for
+    example after the first round, call ``group.stop_top_ups()``, typically
+    in a barrier's ``on_release``; from then on the group is treated as one
+    without top-ups.
   - Otherwise the group is dissolved at once, and the grouper's
     ``below_quorum`` decides for each remaining member: ``"fail"`` (default)
     fails them, telling them "Too few members of your group remained to
@@ -693,8 +716,18 @@ options:
 
 The grouper leaves out ``join_existing_groups``: a group that accepts
 top-ups waits for replacements when it drops below its ``quorum``
-instead of carrying on. ``late_after`` counts from the previous barrier
-pass, so make it cover any untimed pages between the two barriers as well.
+instead of carrying on. To accept replacements only at the start, pass
+``join_existing_groups=True`` and stop top-ups once the game starts:
+
+.. code-block:: python
+
+    def start_game(group):
+        group.stop_top_ups()
+
+    GroupBarrier(id_="game_starts", group_type="team", on_release=start_game)
+
+``late_after`` counts from the previous barrier pass, so make it cover any
+untimed pages between the two barriers as well.
 
 The ``sync_quorum`` demo lets participants into part of the timeline only
 while at least three are present. Its grouper has no maximum size and accepts
@@ -734,7 +767,13 @@ For the rest of the timeline:
   ``trial.sync_group`` is ``None``. ``participant.sync_group`` is ``None``
   if they are in no other group, is that group if they are in exactly one
   other, and raises if they are in several, so look groups up by type, as in
-  ``participant.active_sync_groups.get("pair")``.
+  ``participant.active_sync_groups.get("pair")``. A
+  :class:`~psynet.chatroom.ChatRoom` whose ``room_id`` comes from the group
+  needs another room, or none, then.
+- ``participant.sync_group_removal_reason("pair")`` says why they left:
+  ``"late"``, ``"waited_too_long"``, ``"group_dissolved"`` or ``"failed"``.
+- An answer submitted on the page where a member was removed for being late
+  has ``response.left_group_on_page`` set, so analysis can leave it out.
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only
   its text from their next page on. A participant who has been in groups of
   several types needs ``group_type`` (or ``group``) on every ``GroupPrompt``.

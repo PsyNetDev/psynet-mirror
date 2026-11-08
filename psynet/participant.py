@@ -490,6 +490,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     # from their group, with the ``page_uuid`` of the page it belongs to, or
     # ``next_page`` until Page.consume binds it to the participant's next page.
     group_removal_notice = Column(PythonDict)
+    # Group types whose grouper let the participant carry on without a group
+    # (``max_wait_action="leave_group"``); cleared when they join one.
+    ungrouped_group_types = Column(PythonList)
     # Keys into Experiment.pseudonym_scheme, set only when a pseudonym is chosen
     # rather than derived from the participant ID; see ``Participant.pseudonym``.
     # Use ``set_pseudonym`` rather than writing them.
@@ -735,6 +738,35 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     @property
     def active_sync_groups(self) -> Dict[str, "SyncGroup"]:
         return {group.group_type: group for group in self.sync_groups if group.active}
+
+    def sync_group_removal_reason(self, group_type: str) -> Optional[str]:
+        """Return why the participant left their latest group of ``group_type``.
+
+        Returns ``None`` if they are still in such a group or were never in
+        one. Otherwise returns ``"late"`` (removed by a barrier's
+        ``late_action="leave_group"``), ``"waited_too_long"`` (by its
+        ``max_wait_action="leave_group"``, or let go ungrouped by a grouper's), ``"group_dissolved"`` (released
+        when the group fell below its quorum, with
+        ``below_quorum="leave_group"``), ``"moved_on"`` (went on to a new group
+        at a :class:`~psynet.sync.Regrouper`), ``"failed"``, or ``None`` if no
+        reason was recorded, for example after removal from the dashboard.
+
+        For example, a page after the game can say why it ended early::
+
+            reason = participant.sync_group_removal_reason("team")
+            if reason == "late":
+                text = "You were away for too long, so the game went on without you."
+            elif reason == "group_dissolved":
+                text = "Too few players remained, so the game ended early."
+        """
+        from .sync import _latest_sync_group_link
+
+        if self.in_sync_group(group_type):
+            return None
+        if group_type in (self.ungrouped_group_types or []):
+            return "waited_too_long"
+        latest = _latest_sync_group_link(self, group_type)
+        return None if latest is None else latest.removal_reason
 
     def in_sync_group(self, group_type: str) -> bool:
         """Return whether the participant is in an active group of ``group_type``.
@@ -1219,7 +1251,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         )
 
         for group in list(self.active_sync_groups.values()):
-            group.remove_participant(self)
+            group.remove_participant(self, reason="failed")
 
         if redirect_to_end:
             self._redirect_to_unsuccessful_end(exp)
@@ -1815,6 +1847,60 @@ class ParticipantDriver:
                 participant.status = "returned"
                 self.experiment.assignment_returned(participant)
         self._fetch_status()
+
+    def expect_failure(self):
+        """Tell the default :meth:`~psynet.experiment.Experiment.test_check_bot` that this bot may fail.
+
+        Use it for bots that the test makes fail on purpose, such as the partner
+        of a bot that drops out.
+        """
+        with transaction(commit=True):
+            participant = Participant.query.get(self.id)
+            participant.var.set("test_expected_to_fail", True)
+
+    def with_participant(self, function):
+        """Return ``function(participant)``, called with the bot's database row.
+
+        Useful for questions that take a participant, for example::
+
+            role = bot.with_participant(pairing.role)
+            pair_id = bot.with_participant(lambda p: p.active_sync_groups["pair"].id)
+
+        Return plain values rather than database objects, which expire when the
+        call ends.
+        """
+        with transaction(commit=False):
+            participant = (
+                Participant.query.filter_by(id=self.id).populate_existing().one()
+            )
+            return function(participant)
+
+    def send_chat_message(self, content: str):
+        """Post ``content`` to the :class:`~psynet.chatroom.ChatRoom` on the bot's current page.
+
+        The message goes through the same handler as one typed on the page, so
+        the bot first joins the room.
+        """
+        from .chatroom import EnableChatrooms
+
+        with transaction(commit=True):
+            participant = Participant.query.get(self.id)
+            chatroom = getattr(participant.get_current_page(), "chatroom", None)
+            if chatroom is None:
+                raise RuntimeError(
+                    f"Bot {self.id}'s current page doesn't show a ChatRoom."
+                )
+            for message in (
+                {"type": "join_room"},
+                {"type": "message", "content": content},
+            ):
+                self.experiment.handle_websocket_message(
+                    json.dumps({**message, "room_id": chatroom.room_id}),
+                    channel_name=EnableChatrooms.channel,
+                    participant_id=self.id,
+                    scope=participant.websocket_scope,
+                    receive_time=timenow(),
+                )
 
     @property
     def failed(self) -> bool:

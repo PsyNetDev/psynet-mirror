@@ -1,0 +1,1 @@
+Added `SimpleSyncGroup.stop_top_ups()`, which stops newcomers joining a group formed with `join_existing_groups=True`, for example once its game has started. From then on the grouper's `below_quorum` applies to the group, so `below_quorum` can now be combined with `join_existing_groups`.

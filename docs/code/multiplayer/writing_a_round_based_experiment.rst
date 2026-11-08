@@ -209,6 +209,17 @@ the room sees who has picked, who ran out of time and who is still deciding:
 play for the whole game, and newcomers get the role that lets the most
 waiting players play.
 
+**Turns one after the other.** In games such as a trust game, the investor
+decides before the trustee. Put each role's page in a
+:func:`~psynet.timeline.conditional` on the role, followed by a
+:class:`~psynet.sync.GroupBarrier` for the pair: the other player waits at
+the barrier while it is not their turn. A ``waiting_screen`` on the barrier
+tells them whose turn it is; a :class:`~psynet.group_prompt.GroupPrompt` with
+``show_progress=False`` shows the pair there without the waiting
+player's own tick. In bot tests, ``advance_past_wait_pages(bots,
+stop_at="investor_sent")`` leaves the bots waiting at that barrier, so the
+test can take the investor's turn first.
+
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
 example to pair players by their earlier answers. With roles, return each
 group as a ``{role: participant}`` dict. See

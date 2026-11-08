@@ -260,7 +260,11 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     assert "(left)" not in html()
     group.accepts_top_ups = False
     late.status = "working"
-    for reason, label in [(None, "(dropped out)"), ("moved_on", None)]:
+    for reason, label in [
+        (None, "(dropped out)"),
+        ("group_dissolved", "(dropped out)"),
+        ("moved_on", None),
+    ]:
         group.add_participant(late)
         group.remove_participant(late, reason=reason)
         db_session.flush()

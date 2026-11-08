@@ -2186,11 +2186,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Check one bot at the end of the test.
 
         By default, the bot must not have failed, unless it dropped out with
-        :meth:`~psynet.participant.ParticipantDriver.drop_out`. Override this
-        when the test fails bots on purpose, for example group members failed
-        because a partner dropped out.
+        :meth:`~psynet.participant.ParticipantDriver.drop_out` or the test
+        called :meth:`~psynet.participant.ParticipantDriver.expect_failure`
+        for it, for example for group members failed because a partner
+        dropped out. Override this for other checks.
         """
-        assert not bot.failed or bot.status == "returned"
+        assert (
+            not bot.failed
+            or bot.status == "returned"
+            or bot.var.get("test_expected_to_fail", False)
+        ), f"Bot {bot.id} failed (failure tags: {bot.failure_tags})."
 
     @classmethod
     def error_page(

@@ -1,7 +1,8 @@
 """Pairs that lose a member, as a model for testing dropouts with bots.
 
 In the first pair, one member returns the study mid-game. In the second, one
-member stops responding and is removed for being late. With
+member stops responding and is removed for being late. In the third, one member
+fails, as after a failed check. With
 ``below_quorum="leave_group"``, the partner who stayed carries on alone in
 both cases and is told why on their next page.
 """
@@ -19,7 +20,7 @@ LATE_AFTER = 5
 class Exp(psynet.experiment.Experiment):
     label = "Pair dropout"
 
-    test_n_bots = 4
+    test_n_bots = 6
 
     timeline = Timeline(
         MainConsent(),
@@ -42,8 +43,8 @@ class Exp(psynet.experiment.Experiment):
     )
 
     def test_serial_run_bots(self, bots: list[BotDriver]):
-        quitter, stayer, on_time, silent = bots
-        for pair in [(quitter, stayer), (on_time, silent)]:
+        quitter, stayer, on_time, silent, failer, survivor = bots
+        for pair in [(quitter, stayer), (on_time, silent), (failer, survivor)]:
             for bot in pair:
                 bot.take_page()
             advance_past_wait_pages(list(pair))
@@ -59,10 +60,22 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages([on_time], timeout=LATE_AFTER + 10)
         self._assert_carries_on_alone(on_time)
 
+        assert (
+            silent.with_participant(
+                lambda participant: participant.sync_group_removal_reason("pair")
+            )
+            == "late"
+        )
         silent.take_page()
         self._assert_carries_on_alone(silent)
 
-        for bot in [stayer, on_time, silent]:
+        failer.expect_failure()
+        failer.fail("failed_check")
+        survivor.take_page()
+        advance_past_wait_pages([survivor])
+        self._assert_carries_on_alone(survivor)
+
+        for bot in [stayer, on_time, silent, survivor]:
             bot.run_to_completion()
             assert not bot.failed
 

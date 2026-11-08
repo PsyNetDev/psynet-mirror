@@ -91,7 +91,15 @@ bot took one trial per node:
         assert len(bot.alive_trials) == len(nodes)
 
 The base implementation asserts that the bot didn't fail, unless it
-dropped out (see :ref:`bots_that_drop_out`).
+dropped out or the test said it may fail (see :ref:`bots_that_drop_out`).
+
+PsyNet imports ``experiment.py`` before pytest starts, so a failed ``assert``
+there reports only the line, not the values it compared. Give the assert a
+message that shows them:
+
+.. code-block:: python
+
+    assert bot.current_page_text == "Round 2.", bot.current_page_text
 
 To check something across all bots, such as how trials were shared between
 them, override ``Experiment.test_check_bots``. It runs once after every bot
@@ -202,8 +210,26 @@ on their progress bar:
 
 The default ``test_check_bot`` accepts bots that dropped out, but not others
 that failed, such as a partner failed under the grouper's default
-``below_quorum="fail"``. See :ref:`groups_below_min_size` for what happens
-to the members who stay.
+``below_quorum="fail"``. Call
+:meth:`~psynet.participant.ParticipantDriver.expect_failure` for those bots.
+See :ref:`groups_below_min_size` for what happens to the members who stay.
+
+Other helpers ask about a bot's group or act in it:
+
+- :meth:`~psynet.participant.ParticipantDriver.with_participant` calls a
+  function with the bot's participant, for example
+  ``bot.with_participant(pairing.role)`` for its role from a
+  :class:`~psynet.sync.Regrouper`, or
+  ``bot.with_participant(lambda p: p.sync_group_removal_reason("pair"))`` for
+  why it left its pair.
+- :meth:`~psynet.participant.ParticipantDriver.send_chat_message` posts a
+  message to the :class:`~psynet.chatroom.ChatRoom` on the bot's current page.
+
+When several groups play in one test, finish one group's story before driving
+the next: a barrier's ``late_after`` clock keeps running for a group while the
+test drives another. A :class:`~psynet.sync.Regrouper` forms new groups at each
+split and never dissolves them, so make a bot drop out before the split you
+want it to miss.
 
 .. _parallel_bot_tests:
 

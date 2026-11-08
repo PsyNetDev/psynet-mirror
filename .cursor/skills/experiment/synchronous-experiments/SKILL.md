@@ -67,6 +67,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   callback's `barrier` argument is the reconstructed registry object; read
   `waiting_message` and timeouts from it. Wait pages stay on the live timeline
   barrier (see "Release callbacks" in `code/multiplayer/synchronization`).
+  To share one callback between barriers, pass each `data={...}` and read
+  `barrier.data` instead of parsing `barrier.id`. `on_release` doesn't run
+  for members who left before the release or whose group dissolved, so read
+  what it stores with a default: `participant.var.get("score", None)`.
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Use `sync_group_type` on trial makers when all group members should follow the
@@ -101,6 +105,14 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `SimpleGrouper(start_short_after=..., start_short_with=...)`. Add
   `join_existing_groups=True` to let latecomers fill it up, at the cost that a
   group below its `quorum` then waits for a replacement instead of playing on.
+  Call `group.stop_top_ups()` (for example in the first barrier's
+  `on_release`) once newcomers can no longer catch up; `below_quorum` then
+  applies. To let participants who find no group carry on alone instead of
+  being failed, pass the grouper `max_wait_action="leave_group"`.
+- Branch on `participant.in_sync_group(group_type)` wherever the timeline
+  needs a group: stop a rounds loop with it in the `while_loop` condition,
+  and give a synchronized trial maker a solo alternative, for example
+  `conditional("paired", in_pair, paired_trials, solo_trials)`.
 - Use `join_existing_groups=True` only with a task-specific `join_criterion`
   that rejects stale, completed, or unsuitable groups.
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with
@@ -112,7 +124,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   and scoring in barriers. Inside a trial, scope the room with
   `self.sync_group.id`. Elsewhere use
   `participant.active_sync_groups[group_type].id`.
-  `participant.sync_group` raises if more than one group is active.
+  `participant.sync_group` raises if more than one group is active. Both are
+  `None` after the participant left the group, so show no `ChatRoom` then.
+- For games with turns one after the other, such as investor then trustee,
+  follow "Turns one after the other" in
+  `code/multiplayer/writing_a_round_based_experiment`.
 - Prefer engaging waiting trials over passive wait screens when waits may be
   long. Participants may be distracted or running multiple experiments at once;
   useful filler tasks can improve retention and reduce idle no-shows.
@@ -171,10 +187,10 @@ shown a page that only makes sense with a group.
 | Dropout | Simulate it in the bot test |
 |---|---|
 | Returns the study | `bot.drop_out()` |
-| Is failed by the experiment | `bot.fail("reason")` |
+| Is failed by the experiment | `bot.expect_failure()`, then `bot.fail("reason")` |
 | Closes the tab or stops responding | Stop taking pages for that bot and keep advancing the others |
 | Comes back after being removed | Take pages for the silent bot again |
-| Arrives when no group can form | Send one bot more than fills the groups to the grouper |
+| Arrives when no group can form | Send one bot more than fills the groups to the grouper, and wait out its `max_wait_time` |
 
 After each dropout, assert who failed (`bot.failed`), what each remaining bot
 sees (`bot.current_page_text` and `bot.current_notice`), and that branches on
@@ -230,14 +246,31 @@ class Exp(psynet.experiment.Experiment):
             assert not bot.failed
 ```
 
+`tests/experiments/pair_dropout` in the PsyNet repository extends this with
+a third pair whose member is failed.
+
 Bot tests wait out the real timeouts, so pass `advance_past_wait_pages` a
 `timeout` longer than the `late_after` or `max_wait_time` being tested. The
-default `test_check_bot` accepts bots that called `drop_out()`; override it
-for any other bot the design fails on purpose, such as one failed with
-`bot.fail()`, one left without a group, or a partner left behind under
-`below_quorum="fail"`. If PsyNet warns at load time that a late member
-would fail the partners who were on time, fix the settings rather than the
-test.
+default `test_check_bot` accepts bots that called `drop_out()` or
+`expect_failure()`; call `expect_failure()` for every bot the design fails on
+purpose, such as a partner left behind under `below_quorum="fail"`. If
+PsyNet warns at load time that a late member would fail the partners who
+were on time, fix the settings rather than the test.
+
+- Check why a bot left with
+  `bot.with_participant(lambda p: p.sync_group_removal_reason("pair"))`, and
+  read Regrouper roles with `bot.with_participant(pairing.role)`.
+- Post chat messages with `bot.send_chat_message("...")`.
+- With several groups in one test, finish one group's story before driving
+  the next: the `late_after` clock keeps running for a group while the test
+  drives another.
+- A `Regrouper` never dissolves its groups, so the partner of a bot that drops
+  out sees the round's outcome, not a removal notice. Drop the bot out before
+  the next split.
+- A member removed for being late sees "went on without you" only on the page
+  they were on; assert `current_notice` before that bot takes the page.
+- Pytest doesn't show the compared values of a failed `assert` in
+  `experiment.py`, so add a message: `assert text == "Round 2.", text`.
 
 ## Common failures
 

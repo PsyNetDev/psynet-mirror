@@ -6685,6 +6685,14 @@ def test_group_barrier_late_after_removes_missing_participants(
         assert missing_participant not in group.active_participants
         assert missing_participant.sync_group_links[0].removal_reason == "late"
         assert arrival_notice_payload(missing_participant.unique_id)["removed"]
+    late_answer = InfoPage("Your move").process_response(
+        raw_answer=None,
+        blobs={},
+        metadata={},
+        experiment=exp,
+        participant=missing_participants[0],
+    )
+    assert late_answer.left_group_on_page
     missing_participants[0].page_uuid = "next-page"
     assert pending_arrival_notice_for(missing_participants[0]) is None
 
@@ -7143,6 +7151,9 @@ def test_group_barrier_below_quorum(
     assert group.active_participants == []
     assert all(p.active_sync_groups.get("main") is None for p in participants)
     assert [p.failed for p in participants] == failed
+    assert [p.sync_group_removal_reason("main") for p in participants] == [
+        "failed" if was_failed else "group_dissolved" for was_failed in failed
+    ]
     # Members who carry on alone are told why on their next page.
     for p, was_failed in zip(participants, failed):
         InfoPage("Next").consume(exp, p)
@@ -7222,8 +7233,74 @@ def test_waiter_leaving_a_pair_after_max_wait(
 
     assert not waiter.failed
     assert absent.failed == (below_quorum == "fail")
+    assert waiter.sync_group_removal_reason("main") == "waited_too_long"
     InfoPage("Next").consume(exp, waiter)
     assert _removed_from_group_notice(waiter).startswith("Your partner didn't")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_stopping_top_ups_dissolves_a_group_below_quorum(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    members = [new_participant(exp) for _ in range(3)]
+    group = SimpleSyncGroup(
+        group_type="team",
+        initial_group_size=3,
+        max_group_size=3,
+        min_group_size=3,
+        accepts_top_ups=True,
+        below_quorum="leave_group",
+    )
+    db_session.add(group)
+    for p in members:
+        p.status = "working"
+        group.add_participant(p)
+    db_session.commit()
+
+    members[0].fail("quit")
+    assert group.active
+    assert [p.in_sync_group("team") for p in members[1:]] == [True, True]
+
+    group.stop_top_ups()
+    db_session.commit()
+
+    assert not any(p.failed for p in members[1:])
+    assert [p.sync_group_removal_reason("team") for p in members] == [
+        "failed",
+        "group_dissolved",
+        "group_dissolved",
+    ]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_grouper_lets_an_ungrouped_participant_carry_on(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    participant = new_participant(exp)
+    participant.status = "working"
+    grouper = SimpleGrouper("pair", initial_group_size=2, max_wait_action="leave_group")
+    grouper.receive_participant(participant)
+    db_session.commit()
+
+    grouper.handle_max_wait_timeout(participant)
+    db_session.commit()
+
+    assert not participant.failed
+    assert not participant.in_sync_group("pair")
+    assert participant.sync_group_removal_reason("pair") == "waited_too_long"
+    InfoPage("Next").consume(exp, participant)
+    assert _removed_from_group_notice(participant) == (
+        "We couldn't find a partner for you in time. Please continue."
+    )
+    assert GroupBarrier(id_="after", group_type="pair").can_participant_exit(
+        participant
+    )
 
 
 @pytest.mark.parametrize(
