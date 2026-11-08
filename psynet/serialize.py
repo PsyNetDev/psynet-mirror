@@ -17,7 +17,12 @@ from jsonpickle.util import importable_name
 from markupsafe import Markup
 
 from .data import SQLBase, get_primary_key_values
-from .utils import NoArgumentProvided, call_function_with_context, get_logger
+from .utils import (
+    NoArgumentProvided,
+    call_function_with_context,
+    get_args,
+    get_logger,
+)
 
 logger = get_logger()
 
@@ -59,18 +64,7 @@ def serialize_callable(callable_obj, context: str):
     if callable_obj is None or isinstance(callable_obj, SerializedCallable):
         return callable_obj
     if isinstance(callable_obj, partial):
-        if callable_obj.args:
-            raise CallableSerializationError(
-                _format_callable_error(
-                    context,
-                    "Pass the arguments of functools.partial by keyword.",
-                )
-            )
-        inner = serialize_callable(callable_obj.func, context)
-        return SerializedCallable(
-            function=inner.function,
-            arguments={**(inner.arguments or {}), **callable_obj.keywords},
-        )
+        return _serialize_partial(callable_obj, context)
     if not callable(callable_obj):
         raise CallableSerializationError(
             _format_callable_error(
@@ -113,6 +107,57 @@ def serialize_callable(callable_obj, context: str):
     return SerializedCallable(function=function, arguments=arguments)
 
 
+_CONTEXT_ARGUMENTS = frozenset(
+    {
+        "assets",
+        "barrier",
+        "experiment",
+        "group",
+        "leader",
+        "left",
+        "nodes",
+        "participant",
+        "participants",
+        "trial",
+        "trial_maker",
+    }
+)
+
+
+def _serialize_partial(callable_obj: partial, context: str) -> SerializedCallable:
+    """Serialize ``functools.partial(function, **keywords)``, keeping the keywords."""
+    keywords = dict(callable_obj.keywords)
+    problem = None
+    if callable_obj.args:
+        problem = "Pass the arguments of functools.partial by keyword."
+    elif getattr(callable_obj.func, "__name__", None) == "<lambda>":
+        problem = "A lambda can't be saved, even inside functools.partial."
+    elif _CONTEXT_ARGUMENTS & keywords.keys():
+        problem = (
+            "functools.partial can't set arguments that PsyNet passes itself: "
+            f"{sorted(_CONTEXT_ARGUMENTS & keywords.keys())}."
+        )
+    else:
+        unknown = sorted(set(keywords) - set(get_args(callable_obj.func)))
+        if unknown:
+            problem = (
+                f"The function doesn't take the keyword arguments {unknown} "
+                "given to functools.partial."
+            )
+    if problem:
+        raise CallableSerializationError(_format_callable_error(context, problem))
+    inner = serialize_callable(callable_obj.func, context)
+    arguments = dict(inner.arguments or {})
+    if inner.function is _call_trial_maker_method:
+        arguments["method_kwargs"] = {
+            **arguments.get("method_kwargs", {}),
+            **keywords,
+        }
+    else:
+        arguments.update(keywords)
+    return SerializedCallable(function=inner.function, arguments=arguments)
+
+
 def _format_callable_error(context: str, detail: str) -> str:
     return (
         f"{context} must be a module-level function, a @staticmethod/@classmethod, "
@@ -136,6 +181,7 @@ def _call_trial_maker_method(
     participant=None,
     barrier=None,
     experiment=None,
+    method_kwargs=None,
 ):
     from psynet.experiment import get_trial_maker
 
@@ -155,6 +201,7 @@ def _call_trial_maker_method(
         participant=participant,
         barrier=barrier,
         experiment=experiment,
+        **(method_kwargs or {}),
     )
 
 

@@ -1,12 +1,21 @@
 import datetime
 import math
+from functools import partial
 
 import jsonpickle
 import numpy as np
 import pytest
 from markupsafe import Markup
 
-from psynet.serialize import PsyNetUnpickler, serialize, unserialize
+import psynet.experiment
+from psynet.serialize import (
+    CallableSerializationError,
+    PsyNetUnpickler,
+    serialize,
+    serialize_callable,
+    unserialize,
+)
+from psynet.trial.main import TrialMaker
 
 shared = {"x": 1}
 
@@ -68,3 +77,35 @@ def test_unserialize_decodes_plain_json_without_jsonpickle(monkeypatch):
         "a": [1, 2.5, None, True, "py"]
     }
     assert math.isnan(unserialize("NaN"))
+
+
+def _score(group, question):
+    return group, question
+
+
+class _ScoringTrialMaker(TrialMaker):
+    def score(self, group, question):
+        return group, question
+
+
+@pytest.mark.parametrize(
+    "callback",
+    [
+        partial(_score, 1),
+        partial(_score, group="g"),
+        partial(_score, typo=1),
+        partial(lambda group, question: None, question=1),
+    ],
+)
+def test_partial_callbacks_reject_arguments_that_would_be_lost(callback):
+    with pytest.raises(CallableSerializationError):
+        serialize_callable(callback, "on_release")
+
+
+def test_partial_of_a_trial_maker_method_keeps_its_arguments(monkeypatch):
+    trial_maker = _ScoringTrialMaker.__new__(_ScoringTrialMaker)
+    trial_maker.id = "scoring"
+    monkeypatch.setattr(psynet.experiment, "get_trial_maker", lambda id_: trial_maker)
+    monkeypatch.setattr(psynet.experiment, "get_experiment", lambda: None)
+    callback = serialize_callable(partial(trial_maker.score, question=1), "on_release")
+    assert callback(group="g") == ("g", 1)

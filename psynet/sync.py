@@ -103,6 +103,7 @@ import uuid
 from collections import Counter
 from contextlib import contextmanager
 from datetime import timedelta
+from functools import partial
 from math import ceil, floor
 from typing import (
     Callable,
@@ -1042,7 +1043,8 @@ class Barrier(EltCollection):
 
     def __setattr__(self, name, value):
         if name.startswith("on_") or (
-            name == "waiting_message" and inspect.isroutine(value)
+            name == "waiting_message"
+            and (inspect.isroutine(value) or isinstance(value, partial))
         ):
             value = serialize_callable(value, f"{self.__class__.__name__}.{name}")
         super().__setattr__(name, value)
@@ -3718,10 +3720,11 @@ def only_in_group(group_type: str, *steps, otherwise=None):
     ``for_loop(..., logic=only_in_group("pair", round_steps()))``. The steps
     are for participants already in the group, so put the grouper or
     :class:`Regrouper` that forms it before the block: inside, it would be
-    skipped because the participant is not in a group yet. For the same
-    reason, put a :class:`GroupCloser` after the block: it takes everyone out
-    of the group, so the steps after it and ``otherwise`` would treat them
-    all as having left. When pairs change every round, regroup inside the
+    skipped by anyone not in a group at that moment, such as a newcomer or
+    a player who sat out the last round, who would then never be grouped.
+    Put a :class:`GroupCloser` after the block: it takes everyone out of the
+    group, so the steps after it and ``otherwise`` would treat them all as
+    having left. When pairs change every round, regroup inside the
     loop, as in ``for_loop(..., logic=join(Regrouper(...),
     only_in_group("pair", round_steps())))``.
 

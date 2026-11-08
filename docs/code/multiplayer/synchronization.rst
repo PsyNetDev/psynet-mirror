@@ -253,7 +253,9 @@ from saved settings, so read only scalar settings such as ``waiting_message`` an
 ``max_wait_time`` from it, and store custom barrier attributes as
 JSON-compatible values. Closures and lambdas can't be saved, so to share one
 callback between barriers, give each barrier its own arguments with
-:func:`functools.partial`, passed by keyword and JSON-compatible:
+:func:`functools.partial`. Pass them by keyword, as JSON-compatible values,
+and name them in the function's parameters; names PsyNet passes itself, such
+as ``group`` or ``barrier``, are refused:
 
 .. code-block:: python
 
@@ -856,7 +858,9 @@ For the rest of the timeline:
   put ``only_in_group`` inside the loop's ``logic``. The steps are for
   participants already in the group, so the grouper or
   :class:`~psynet.sync.Regrouper` that forms it goes before
-  ``only_in_group``, never among its steps; when pairs change every round,
+  ``only_in_group``, never among its steps, where anyone not in a group at
+  that moment, such as a player who sat out, would skip it and never be
+  grouped again; when pairs change every round,
   use ``for_loop(..., logic=join(Regrouper(...), only_in_group("pair",
   round_steps())))``.
 - Trial makers synchronized on that group type give them no more trials.

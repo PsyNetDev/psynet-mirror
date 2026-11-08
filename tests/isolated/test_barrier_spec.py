@@ -83,6 +83,18 @@ def test_callback_round_trip():
     assert (group.released_count, group.question) == (1, 1)
 
 
+def test_barriers_sharing_an_id_must_share_partial_arguments():
+    def barrier(question):
+        return GroupBarrier(
+            "callback",
+            group_type="pair",
+            on_release=partial(on_release, question=question),
+        )
+
+    assert behavior_hash(barrier(1)) == behavior_hash(barrier(1))
+    assert behavior_hash(barrier(1)) != behavior_hash(barrier(2))
+
+
 def test_reconstructed_barrier_runs_release_hooks():
     original = ThresholdBarrier("threshold", threshold=2)
     restored = barrier_from_spec_json(barrier_spec_json(original))
