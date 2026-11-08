@@ -179,8 +179,9 @@ custom grouping.
 placeholder shows a live countdown to the deadline, for example ``"The next round starts in {SECONDS} s."``.
 Only waits with a release time can count down: a regrouper with ``deadline``
 or ``every``, and a :class:`~psynet.sync.SimpleGrouper` with
-``start_short_after``. A ``{SECONDS}`` placeholder anywhere else raises an
-error.
+``start_short_after``. A ``{SECONDS}`` placeholder in a fixed message
+anywhere else raises an error; a message function that returns one there
+shows "…" instead of a number.
 
 .. _sync-countdown-messages:
 
@@ -336,9 +337,10 @@ by their pseudonyms (see :doc:`pseudonyms`), with the participant viewing the
 page labelled "You". Each member appears as their pseudonym animal, drawn
 in their colour. ``names`` decides how the other members are named: by
 pseudonym, read out by screen readers and shown on hover (``"on_hover"``,
-the default), also written below the animals (``"shown"``), or not at all
-(``"anonymous"``), every member then being drawn as the same grey figure,
-labelled "Your partner" in a pair and "Another player" in a larger group.
+the default), also written below the animals (``"shown"``), or not by
+pseudonym at all (``"anonymous"``), every member then being drawn as the
+same grey figure, labelled below with "Your partner" in a pair and "Another
+player" in a larger group.
 Use ``"anonymous"`` when partners must not recognise each other across
 rounds, with ``ChatRoom(names="anonymous")`` if the page has a chat room.
 Members sit in a row for up to four people and in a zigzag across the
@@ -608,6 +610,11 @@ options:
         late_after=30,
         late_action="kick",
     )
+
+The grouper leaves out ``join_existing_groups``: a group that accepts
+top-ups waits for replacements when it drops below ``min_group_size``
+instead of carrying on. ``late_after`` counts from the previous barrier
+pass, so make it cover any untimed pages between the two barriers as well.
 
 The ``sync_quorum`` demo lets participants into part of the timeline only
 while at least three are present. Its grouper has no maximum size and accepts

@@ -111,8 +111,8 @@ class GroupPrompt(Prompt):
         as text; pass :class:`~markupsafe.Markup` for HTML such as an image.
         Members with an entry, even ``None`` (as for a member who ran out of
         time), keep their seat after moving on to their next group; ``None``
-        shows an empty bubble. Members without an entry get an empty bubble
-        while still in the group and are omitted once they have moved on.
+        shows no bubble. Members without an entry get no bubble either, and
+        are omitted once they have moved on.
     highlight
         Optional ``{participant_id: style}``. ``"winner"`` and
         ``"duplicate"`` have built-in styles; any other style becomes the

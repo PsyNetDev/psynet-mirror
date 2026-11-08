@@ -126,8 +126,9 @@ partner went on without you. Please continue." on the progress bar (pass
 when they come back.
 
 A player who was removed from their pair passes the round's later group
-barriers straight through. Only a player who was never in a pair gets an
-error there, which usually means a grouper is missing.
+barriers straight through. A player who was never in a pair, or whose pair
+was closed by a :class:`~psynet.sync.GroupCloser`, gets an error there,
+which usually means a grouper is missing.
 
 Scoring the round
 -----------------

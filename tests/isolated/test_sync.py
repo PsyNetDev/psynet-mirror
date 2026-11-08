@@ -3025,9 +3025,18 @@ def test_group_barrier_arrival_requires_active_sync_group(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_closed_group_needs_a_new_grouper(in_experiment_directory, db_session):
-    """After a GroupCloser, a barrier of that type needs a new group."""
-    (first, _), group = _pair_sync_group(get_experiment(), db_session)
-    group.close()
+    """After a GroupCloser, a barrier of that type needs a new group, even after an earlier kick."""
+    (first, *_), group = _sync_group_of(get_experiment(), db_session, 3)
+    group.remove_participant(first, reason="late")
+    db_session.commit()
+    assert _removed_from_group(first, "main")
+
+    regrouped = SimpleSyncGroup(
+        group_type="main", initial_group_size=1, accepts_top_ups=False
+    )
+    db_session.add(regrouped)
+    regrouped.add_participant(first)
+    regrouped.close()
     db_session.commit()
     assert not _removed_from_group(first, "main")
 

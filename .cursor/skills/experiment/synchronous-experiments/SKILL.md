@@ -79,9 +79,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Use `GroupCloser(group_type=...)` before regrouping participants with the same
   `group_type`.
 - For games played in rounds with changing partners or rooms, put a
-  `Regrouper(group_type, max_group_size=..., deadline=..., within=...)` at the
-  start of each round instead of a grouper and closer, as in the
-  `lowest_unique_number` and `ultimatum_pairing` demos. Slow participants miss
+  `Regrouper(group_type, max_group_size=..., within=...)` at the start of each
+  round instead of a grouper and closer. Pass `deadline=` to split once
+  everyone is back or the timeout passes (`ultimatum_pairing`), or `every=`
+  for rounds on fixed ticks (`lowest_unique_number`). Slow participants miss
   a round and join the next one rather than being failed. Pair it with
   `GroupBarrier(late_after=..., late_action="kick")` so late members are
   removed; they then pass the round's later group barriers alone. On a page
@@ -93,8 +94,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `keep_roles=True` for fixed roles) and read `regrouper.role(participant)`
   instead of assigning roles yourself. With `release_left_over=True`, odd
   players out sit out the round; with `within`, a player waiting alone first
-  waits one more deadline for cohort members. The default `max_wait_time`
-  allows for this; an explicit one must exceed twice the deadline.
+  waits one more period for cohort members. The default `max_wait_time`
+  allows for this; an explicit one must then exceed twice the `deadline` or
+  `every` period.
 - For a lobby that should not wait forever for a full group, use
   `SimpleGrouper(start_short_after=..., start_short_with=...)`, with
   `join_existing_groups=True` to let latecomers fill it up.

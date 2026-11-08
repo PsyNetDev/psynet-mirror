@@ -1459,11 +1459,18 @@ def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
 
 
 def _removed_from_group(participant, group_type) -> bool:
-    """Return whether the participant left their group of ``group_type`` and is in no other."""
-    return group_type not in participant.active_sync_groups and any(
-        not link.active and link.sync_group.group_type == group_type
+    """Return whether the participant left their latest group of ``group_type`` and is in no other."""
+    if group_type in participant.active_sync_groups:
+        return False
+    links = [
+        link
         for link in participant.sync_group_links
-    )
+        if link.sync_group.group_type == group_type
+    ]
+    if not links:
+        return False
+    latest = max(links, key=lambda link: (link.id is None, link.id or 0))
+    return not latest.active
 
 
 class GroupBarrier(Barrier):
@@ -1522,6 +1529,8 @@ class GroupBarrier(Barrier):
     max_wait_action
         What happens to a member who waits longer than ``max_wait_time``: ``"fail"`` (default) fails them and
         sends them to the end of the experiment; ``"kick"`` removes them from the group and lets them continue.
+        Unlike ``late_action="kick"``, this shows them no notice, and a
+        :class:`~psynet.group_prompt.GroupPrompt` marks them "(dropped out)".
 
     late_after
         Acts on members who haven't reached this barrier yet: the longest each may take to reach it, in seconds,
