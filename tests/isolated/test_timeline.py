@@ -62,6 +62,16 @@ def test_conditional_treats_a_truthy_result_as_true():
     )
 
 
+def test_switch_with_integer_keys_still_rejects_other_values():
+    pages = {n: InfoPage(str(n), time_estimate=1) for n in (0, 1)}
+    elts = switch("n", lambda participant: 2, pages, log_chosen_branch=False)
+    go_to = next(elt for elt in elts if isinstance(elt, ReactiveGoTo))
+    with pytest.raises(ValueError, match="not present among the target keys"):
+        go_to.get_target(
+            experiment=None, participant=SimpleNamespace(module_state=None)
+        )
+
+
 def test_merge_media_spec():
     x = MediaSpec(audio={"stim-0": "stim-0.wav"})
     y = MediaSpec(audio={"stim-1": "stim-1.wav", "stim-2": "stim-2.wav"})
