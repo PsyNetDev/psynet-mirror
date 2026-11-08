@@ -218,6 +218,10 @@ and returns the rows as its basic data with :func:`~psynet.sync.group_rounds`:
 .. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: Exp.get_basic_data
 
+Pass a participant to read only their rows, for example to show them their
+latest result, as the results page of the ``lowest_unique_number`` demo
+does with ``group_rounds("round_finished", participant)[-1]``.
+
 Each row has the ``round``, the ``group_id``, the member's ``participant_id``
 and ``role``, ``other_member_ids`` (who else played the round), ``outcome``
 (``"played"``, ``"sat_out"``, ``"dissolved"`` or why the member left, such

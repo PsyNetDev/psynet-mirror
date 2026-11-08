@@ -477,8 +477,12 @@ the group (hidden, like the group, when there is no group to show):
 
 .. code-block:: python
 
-    result = participant.var.last_round
-    choices = result["choice_by_player"]
+    result = group_rounds("round_finished", participant)[-1]
+    choices = {
+        row["participant_id"]: row["choice"]
+        for row in group_rounds("round_finished")
+        if row["round"] == result["round"] and row["group_id"] == result["group_id"]
+    }
     GroupPrompt(
         "The winning number was 2.",
         participant=participant,
@@ -488,9 +492,10 @@ the group (hidden, like the group, when there is no group to show):
     )
 
 Store the answers when the barrier releases, as the ``lowest_unique_number``
-demo does in ``on_release``, rather than reading them from the group's
-current members: a member who has already moved on to the next round is no
-longer in the group, and would disappear if the page is reloaded.
+demo does by recording the round (see :ref:`basic_data_regrouper`), rather
+than reading them from the group's current members: a member who has already
+moved on to the next round is no longer in the group, and would disappear if
+the page is reloaded.
 
 Without ``group``, the prompt shows the participant's group of type
 ``group_type``. ``group_type`` can be left out only while a participant has
