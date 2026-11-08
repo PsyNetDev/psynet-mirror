@@ -1334,6 +1334,18 @@ class DriverStopped(Exception):
     """Raised by a :class:`ParticipantDriver` whose ``stop_event`` has been set."""
 
 
+def _check_barriers_now():
+    """Check barriers now, as the periodic check would, after a bot left its group.
+
+    A member leaving doesn't trigger a barrier check, so without this the
+    partners waiting for them are released only by the next periodic check,
+    and a test that advances them at once can find them still waiting.
+    """
+    from .sync import check_barriers
+
+    check_barriers()
+
+
 class ParticipantDriver:
     """
     Driver class for automating participant actions in an experiment.
@@ -1830,9 +1842,15 @@ class ParticipantDriver:
             return participant.get_current_page()
 
     def fail(self, reason=None, *, redirect_to_end=True):
+        """Fail the participant, as after a failed check.
+
+        Barriers where their group waits are checked before this returns, so
+        members waiting there for them have been released.
+        """
         with transaction(commit=True):
             participant = Participant.query.get(self.id)
             participant.fail(reason, redirect_to_end=redirect_to_end)
+        _check_barriers_now()
 
     def drop_out(self):
         """Leave the experiment as if returning the study on the recruitment platform.
@@ -1843,6 +1861,10 @@ class ParticipantDriver:
         dropped out. To simulate a participant who closes the tab without
         telling the platform, stop taking pages for that bot instead, and let
         the barriers' timeouts deal with them.
+
+        Barriers where their group waits are checked before this returns, so
+        members waiting there for them have been released. On a server, the
+        periodic barrier check releases them a few seconds later.
         """
         with transaction(commit=True):
             participant = Participant.query.get(self.id)
@@ -1850,6 +1872,7 @@ class ParticipantDriver:
                 participant.end_time = timenow()
                 participant.status = "returned"
                 self.experiment.assignment_returned(participant)
+        _check_barriers_now()
         self._fetch_status()
 
     def allow_failure(self):
