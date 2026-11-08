@@ -3864,8 +3864,9 @@ def warn_if_late_removal_fails_group(barriers):
                 or grouper.top_up_wait is not None
                 or grouper.group_type in frozen_types
             )
+            # The quorum is the smallest size a group can start at.
             and grouper.quorum
-            > (grouper.start_short_with or grouper.initial_group_size) - 1
+            >= (grouper.start_short_with or grouper.initial_group_size)
         ):
             fragile_groupers.setdefault(grouper.group_type, grouper)
     for barrier in barriers:
@@ -3885,6 +3886,7 @@ def warn_if_late_removal_fails_group(barriers):
             + (
                 " (after top_up_wait, if no newcomer joins)"
                 if grouper.top_up_wait is not None
+                and grouper.group_type not in frozen_types
                 else ""
             )
             + ". So a single late member fails everyone who "
