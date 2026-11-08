@@ -7572,6 +7572,11 @@ def test_barriers_record_each_round_with_its_bonus(in_experiment_directory, db_s
         1,
         2,
     ]
+    assert [r["participant_id"] for r in participant_rounds(round=1)] == [
+        late.id,
+        first,
+        second,
+    ]
     assert [p.performance_reward for p in stayers] == [1.0, 1.0]
 
 

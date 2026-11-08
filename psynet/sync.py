@@ -4779,7 +4779,9 @@ class ParticipantRound(SQLBase, SQLMixin):
 
 
 def participant_rounds(
-    barrier_id: Optional[str] = None, participant: Optional[Participant] = None
+    barrier_id: Optional[str] = None,
+    participant: Optional[Participant] = None,
+    round: Optional[int] = None,
 ) -> List[dict]:
     """Return the recorded rounds, one dictionary per member per round.
 
@@ -4799,6 +4801,8 @@ def participant_rounds(
     participant
         Only return this participant's rounds, for example to show them their
         latest result: ``participant_rounds("round_finished", participant)[-1]``.
+    round
+        Only return this round, counted from 1 at each barrier.
 
     Examples
     --------
@@ -4813,6 +4817,8 @@ def participant_rounds(
         query = query.filter(ParticipantRound.barrier_id == barrier_id)
     if participant is not None:
         query = query.filter(ParticipantRound.participant_id == participant.id)
+    if round is not None:
+        query = query.filter(ParticipantRound.round == round)
     rows = query.order_by(
         ParticipantRound.barrier_id,
         ParticipantRound.round,

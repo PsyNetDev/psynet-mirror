@@ -127,10 +127,8 @@ def show_result(participant):
         )
     choices = {
         row["participant_id"]: row["choice"]
-        for row in participant_rounds("round_finished")
-        if row["round"] == result["round"]
-        and row["group_id"] == result["group_id"]
-        and row.get("choice") is not None
+        for row in participant_rounds("round_finished", round=result["round"])
+        if row["group_id"] == result["group_id"] and row.get("choice") is not None
     }
     picks = sorted(choices.values())
     winner = result["winning_number"]
