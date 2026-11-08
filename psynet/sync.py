@@ -2866,7 +2866,8 @@ class Regrouper(Grouper):
         if "fail_participants_below_quorum" in kwargs:
             raise TypeError(
                 "Regrouper groups are never dissolved when a member leaves, so "
-                "fail_participants_below_quorum doesn't apply."
+                "fail_participants_below_quorum doesn't apply; it is an option of "
+                "the SimpleGrouper that forms the groups being regrouped."
             )
         longest_lone_wait = every or deadline
         if max_wait_time is NoArgumentProvided:
