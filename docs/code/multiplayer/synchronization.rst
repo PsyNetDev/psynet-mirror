@@ -142,6 +142,8 @@ order. For a stable one, for example to assign roles or take turns, use
 :meth:`~psynet.participant.Participant.sync_group_seat`, which numbers
 members from 0 in the order they joined and doesn't change when others
 leave: ``participant.sync_group_seat("story") == turn % GROUP_SIZE``.
+:meth:`~psynet.sync.SyncGroup.member_in_seat` goes the other way, returning
+the current member in a seat, such as the one whose turn it is, and
 :func:`~psynet.sync.group_seats` gives the seats of the whole group.
 ``sync_group.leader`` is the group's leader.
 

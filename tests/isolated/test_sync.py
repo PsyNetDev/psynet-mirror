@@ -7419,10 +7419,12 @@ def test_latest_sync_group_and_seat_survive_leaving_and_closing(
     exp = get_experiment()
     members, group = _sync_group_of(exp, db_session, 3, group_type="story")
     loner = new_participant(exp)
+    assert [group.member_in_seat(seat) for seat in range(4)] == [*members, None]
     group.remove_participant(members[0], reason="late")
     db_session.commit()
 
     assert [p.latest_sync_group("story") for p in members] == [group] * 3
+    assert group.member_in_seat(0) is None
     assert [p.sync_group_seat("story") for p in members] == [0, 1, 2]
     assert loner.latest_sync_group("story") is None
     assert loner.sync_group_seat("story") is None

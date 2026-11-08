@@ -3938,6 +3938,17 @@ class SyncGroup(SQLBase, SQLMixin):
         )
         _notify_membership_change(self, newcomer=participant)
 
+    def member_in_seat(self, seat: int) -> Optional[Participant]:
+        """Return the current member in ``seat`` (see :func:`group_seats`), or ``None``.
+
+        ``None`` means the participant who had that seat has left the group,
+        or nobody ever had it. For example, the member whose turn it is::
+
+            writer = group.member_in_seat(turn % GROUP_SIZE)
+        """
+        seats = group_seats(self)
+        return next((p for p in self.participants if seats[p.id] == seat), None)
+
     @property
     def active_participants(self) -> List[Participant]:
         return [p for p in self.participants if not p.failed and p.status == "working"]
