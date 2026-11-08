@@ -377,7 +377,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             "Which round of ``sync_group_id`` this trial belongs to. In a trial "
             "maker, rounds are counted from 0 and a member who joined the group "
             "late shares the group's numbers; cued trials store the ``round`` "
-            "passed to :meth:`Trial.cue`."
+            "passed to :meth:`Trial.cue`, or ``None`` for a group that plays "
+            "one round."
         ),
     )
     definition = Column(PythonObject)
@@ -1252,8 +1253,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
         round :
             The group's round that this trial belongs to, for example the index
-            of the surrounding ``for_loop``. Required if, and only if, the trial
-            class sets :attr:`sync_group_type`.
+            of the surrounding ``for_loop``; every member of the group must
+            pass the same value. Only for a trial class that sets
+            :attr:`sync_group_type`. Leave it out when each group plays a
+            single round, as the groups of a
+            :class:`~psynet.sync.Regrouper` usually do: the group's trials in
+            the module then share one node, and ``sync_group_round`` is
+            ``None``. Cueing a second trial on that node for the same
+            participant raises a ``ValueError``, since their group plays
+            several rounds and needs ``round``.
 
         Examples
         --------
@@ -1277,9 +1285,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
         if creation_context is not None and on_trial_created is None:
             raise ValueError("creation_context requires an on_trial_created callback.")
-        if (cls.sync_group_type is None) != (round is None):
+        if cls.sync_group_type is None and round is not None:
             raise ValueError(
-                f"{cls.__name__}.cue() needs round= if and only if "
+                f"{cls.__name__}.cue() takes round= only if "
                 f"{cls.__name__}.sync_group_type is set."
             )
 
@@ -1369,6 +1377,17 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         node = SyncGroupNode.get_or_create(
             group, round, participant.module_id, experiment, make_definition
         )
+        if round is None and node.id is not None:
+            earlier = Trial.query.filter_by(
+                node_id=node.id, participant_id=participant.id
+            ).first()
+            if earlier is not None:
+                raise ValueError(
+                    f"Participant {participant.id} already has a {cls.__name__} "
+                    f"in '{cls.sync_group_type}' group {group.id}, so the group "
+                    f"plays several rounds: pass round= to {cls.__name__}.cue(), "
+                    "for example the index of the surrounding for_loop."
+                )
         return node, group, node.definition
 
     @classmethod

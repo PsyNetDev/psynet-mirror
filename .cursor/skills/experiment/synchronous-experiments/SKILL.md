@@ -129,9 +129,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   ```
 
   All members of a group must pass the same `round`: the loop index when
-  everyone plays in step (`lowest_unique_number`), or `0` when every group
-  lasts one round and its members can be at different loop passes
-  (`ultimatum_pairing`). `trial.answer` is only set when the trial ends,
+  everyone plays in step (`lowest_unique_number`). Leave `round` out when
+  every group lasts one round, as with a `Regrouper` whose members can be at
+  different loop passes (`ultimatum_pairing`); a group that plays several
+  rounds without `round` raises an error at its second round.
+  `trial.answer` is only set when the trial ends,
   after the barrier, so `on_release` reads what `save_answer` stored, while
   `score_answer`, `show_feedback` and `get_basic_data` read the trial and
   `self.node.var`. Use `self.sync_group_role` for role-specific pages, and
