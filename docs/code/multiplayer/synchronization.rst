@@ -134,6 +134,12 @@ pool. Give them different ``id_`` values if they should not.
 Rounds with changing groups
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+If the same group plays every round, you need no regrouper: form the group
+once with a :class:`~psynet.sync.SimpleGrouper` and put the
+:class:`~psynet.sync.GroupBarrier` objects inside the round loop. Use a
+regrouper when each round should form new groups, for example new pairs
+within a cohort.
+
 In games played over many rounds, a participant who is slow in one round
 should not hold up everyone else, and should not be failed either. A
 :class:`~psynet.sync.Regrouper` placed at the start of each round handles
@@ -577,6 +583,31 @@ happens depends on whether the group accepts top-ups:
   they continue alone. A member who is in the middle of a request at that
   moment (for example submitting a page) is handled by the background
   barrier check within about a second instead, once that request finishes.
+
+For example, a group of four that may start with two after a minute, and
+whose members carry on when others are slow or leave, combines these
+options:
+
+.. code-block:: python
+
+    SimpleGrouper(
+        group_type="team",
+        initial_group_size=4,
+        min_group_size=2,
+        start_short_after=60,
+        start_short_with=2,
+        max_wait_time=120,
+        # The last member left continues alone instead of being failed.
+        fail_participants_below_min_size=False,
+    )
+
+    # In each round, after the timed decision page:
+    GroupBarrier(
+        id_="round_finished",
+        group_type="team",
+        late_after=30,
+        late_action="kick",
+    )
 
 The ``sync_quorum`` demo lets participants into part of the timeline only
 while at least three are present. Its grouper has no maximum size and accepts

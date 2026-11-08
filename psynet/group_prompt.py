@@ -153,8 +153,8 @@ class GroupPrompt(Prompt):
           and shown on hover;
         - ``"shown"``: by pseudonym, also written below each animal;
         - ``"anonymous"``: all drawn as the same neutral figure, labelled
-          "Your partner" in the viewer's pair (or two-member subgroup) and
-          "Another player" otherwise, so that nobody can recognise a member
+          below with "Your partner" in the viewer's pair (or two-member
+          subgroup) and "Another player" otherwise, so that nobody can recognise a member
           they met in an earlier group. Pair it with
           ``ChatRoom(names="anonymous")`` on pages with a chat room.
     text_align
@@ -325,7 +325,7 @@ class GroupPrompt(Prompt):
         classes = "psynet-group-prompt"
         if self.answers is not None:
             classes += " psynet-group-prompt--answers"
-        if self.names == "shown":
+        if self.names in ("shown", "anonymous"):
             classes += " psynet-group-prompt--names"
         if viewer_present:
             classes += " psynet-group-prompt--with-viewer"
