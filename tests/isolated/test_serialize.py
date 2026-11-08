@@ -109,6 +109,18 @@ def test_partial_callbacks_reject_arguments_that_would_be_lost(callback):
         serialize_callable(callback, "on_release")
 
 
+def test_class_methods_of_local_classes_are_refused():
+    class Local:
+        @classmethod
+        def score(cls, group):
+            return group
+
+    with pytest.raises(
+        CallableSerializationError, match="classes defined in functions"
+    ):
+        serialize_callable(Local.score, "on_release")
+
+
 def test_partial_of_a_trial_maker_method_keeps_its_arguments(monkeypatch):
     trial_maker = _ScoringTrialMaker.__new__(_ScoringTrialMaker)
     trial_maker.id = "scoring"

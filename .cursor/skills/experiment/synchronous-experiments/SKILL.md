@@ -129,7 +129,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `only_in_group("pair", [round_steps(n) for n in range(N_ROUNDS)])`, not a
   loop, and put the grouper or `Regrouper` before it (see the
   `only_in_group` docstring for why). Pass `otherwise=` for what they, and anyone who never had a
-  group, do instead, such as answering the rest of the question alone.
+  group, do instead, such as answering the rest of the question alone. With
+  a `Regrouper` in the loop, `otherwise=` is also the page for a player it
+  sat out that round:
+  `join(Regrouper(...), only_in_group("pair", round_steps(), otherwise=sitting_out))`.
 - In a `Regrouper` game the player whose partner left stays in the pair, so
   they play the round out and see its outcome, as in `ultimatum_pairing`;
   only the player removed for being late is out of the pair, and gets their

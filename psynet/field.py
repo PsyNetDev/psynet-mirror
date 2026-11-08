@@ -1,6 +1,5 @@
 from datetime import datetime
 
-from jsonpickle.unpickler import loadclass
 from jsonpickle.util import importable_name
 from sqlalchemy import types
 from sqlalchemy.ext.mutable import MutableDict, MutableList
@@ -98,7 +97,9 @@ class PythonClass(PythonObject):
 
     @classmethod
     def unserialize(cls, value):
-        return loadclass(value)
+        from .serialize import load_class
+
+        return load_class(value)
 
 
 def claim_var(
