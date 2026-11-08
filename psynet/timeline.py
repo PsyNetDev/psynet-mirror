@@ -835,7 +835,8 @@ class ReactiveGoTo(GoTo):
             experiment=experiment,
             participant=participant,
         )
-        if set(self.targets) == {True, False}:
+        # Keys 0 and 1 compare equal to False and True, so check the type too.
+        if all(type(key) is bool for key in self.targets):
             val = bool(val)
         try:
             return self.targets[val]
@@ -2014,7 +2015,7 @@ class Page(Elt):
         from .sync import _removed_late_on_current_page
 
         metadata = {k: v for k, v in metadata.items() if k != "too_late_for_group"}
-        if _removed_late_on_current_page(participant):
+        if participant.sync_group_links and _removed_late_on_current_page(participant):
             metadata = {**metadata, "too_late_for_group": True}
         # Untimed pages, such as feedback or a framework wait, keep the flag.
         if participant.waiting_barrier_id is None and self.time_limit is not None:

@@ -74,10 +74,10 @@ the grouper has a ``waiting_screen`` (see below).
     :ref:`a message function <sync-countdown-messages>` returns.
 
 ``start_short_with`` (default: ``quorum``)
-    The smallest group a short start may form. Pass it only to start short
-    with more members than the quorum: ``quorum`` defaults to it and may not
-    be larger, so that a group started short is not below quorum at its first
-    barrier.
+    The smallest group a short start may form. Pass it to start short only
+    with more members than the quorum. If you pass it without ``quorum``, the
+    quorum defaults to it; the quorum may not be larger, so that a group
+    started short is not below quorum at its first barrier.
 
     With ``join_existing_groups=True``, later arrivals can fill a group
     started short up, but a group that drops below quorum then waits for a
