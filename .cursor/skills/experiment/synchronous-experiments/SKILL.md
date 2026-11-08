@@ -127,7 +127,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   In a `Regrouper` game the player whose partner left stays in the pair, so
   they play the round out and see its outcome, as in `ultimatum_pairing`;
   only the player removed for being late is out of the pair, and gets their
-  own page there.
+  own page there. The barrier's `on_release` can take `left`, the members
+  who left since the previous barrier, and
+  `p.sync_group_removal_reason("pair")` tells the one who stayed whether
+  their partner returned the study or was too slow.
 - With `join_existing_groups=True`, also pass a task-specific `join_criterion`
   when a group can become unsuitable for newcomers in ways `stop_top_ups()`
   doesn't cover, for example a chain that is nearly finished.

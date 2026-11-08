@@ -116,10 +116,17 @@ def keep_playing(participant):
     )
 
 
-def score_round(participants: List[Participant]):
+def score_round(participants: List[Participant], left: List[Participant]):
     """Pay out the round, or note who ran out of time or left."""
     if len(participants) < 2:
-        participants[0].var.outcome = "Your partner left, so nobody was paid."
+        partner_was_away = any(
+            p.sync_group_removal_reason("pair") == "late" for p in left
+        )
+        participants[0].var.outcome = (
+            "Your partner was away for too long, so nobody was paid."
+            if partner_was_away
+            else "Your partner left, so nobody was paid."
+        )
         participants[0].var.decisions = None
         return
     if any(p.var.decision is None for p in participants):

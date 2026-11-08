@@ -1894,6 +1894,13 @@ def _count_group_release(
     _group_release_calls.append(group.id)
 
 
+_left_at_release = []
+
+
+def _record_who_left(left):
+    _left_at_release.append([(p.id, p.sync_group_removal_reason("main")) for p in left])
+
+
 def _custom_arrival_message(*, kind, waiting_count=None, group_size=None, **kwargs):
     return "custom"
 
@@ -7449,3 +7456,32 @@ def test_group_barrier_max_wait_leave_group_releases_barrier_link(
     )
     InfoPage("After").consume(exp, participant)
     assert _removed_from_group_notice(participant) is None
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_on_release_is_told_who_left_since_the_last_barrier(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    participants, group = _sync_group_of(exp, db_session, 4)
+    group.min_group_size = 2
+    late, quitter, *stayers = participants
+    group.remove_participant(late, reason="late")
+    quitter.fail("returned")
+    db_session.commit()
+    _left_at_release.clear()
+
+    for round_ in (1, 2):
+        barrier = GroupBarrier(
+            id_=f"round_{round_}", group_type="main", on_release=_record_who_left
+        )
+        for stayer in stayers:
+            _arrive_at_group_barrier(exp, barrier, stayer)
+        _commit_barrier_arrivals()
+
+    assert _left_at_release == [
+        [(late.id, "late"), (quitter.id, "left_experiment")],
+        [],
+    ]

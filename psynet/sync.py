@@ -1624,8 +1624,18 @@ class GroupBarrier(Barrier):
         Optional callback invoked when the barrier releases the group. It may take
         ``group``, ``participants`` (the group's active members), ``leader`` (the
         group's leader), ``participant`` (the same object as ``leader``, kept for
-        compatibility) and ``barrier``, the reconstructed registry object for this
+        compatibility), ``left`` (the members who left the group since its
+        previous barrier pass, or since it formed; see below) and ``barrier``,
+        the reconstructed registry object for this
         visit (scalar presentation and notification settings, not wait pages).
+        ``participant.sync_group_removal_reason(group_type)`` says why each
+        member in ``left`` went, for example to tell a player whose partner
+        returned the study apart from one whose partner was too slow::
+
+            def score_round(participants, left, barrier):
+                for participant in left:
+                    reason = participant.sync_group_removal_reason("pair")
+                    ...
         Must be a module-level function, ``@staticmethod``/``@classmethod``,
         or a bound method on a TrialMaker or ORM instance with a primary key.
         To share one callback between several barriers, pass each its own ``on_release_data``.
@@ -1649,7 +1659,7 @@ class GroupBarrier(Barrier):
         while members are waiting at this barrier, before they are removed from
         the group, so that what they did is not lost. For example, it can score
         the last question for the members who answered it. It takes the same
-        arguments as ``on_release`` except ``leader``: ``participants`` are
+        arguments as ``on_release`` except ``leader`` and ``left``: ``participants`` are
         the members waiting here, and ``barrier`` can read ``on_release_data``.
         The same serialization rules apply.
 
@@ -1925,6 +1935,9 @@ class GroupBarrier(Barrier):
                 for participant in group.active_participants:
                     participants_to_release.append(participant)
 
+                left = group.members_who_left_since(
+                    group.last_barrier_pass_time or group.creation_time
+                )
                 group.last_barrier_pass_time = timenow()
                 for link in group.participant_links:
                     link.page_deadline = None
@@ -1938,6 +1951,7 @@ class GroupBarrier(Barrier):
                             participants=group.active_participants,
                             leader=group.leader,
                             participant=group.leader,
+                            left=left,
                             barrier=self,
                         )
                     except Exception as err:
@@ -4029,6 +4043,7 @@ class SyncGroup(SQLBase, SQLMixin):
             if is_member and link.active:
                 link.active = False
                 link.removal_reason = reason
+                link.removal_time = timenow()
                 if reason == "late":
                     link.removed_on_page = participant.page_uuid
         self.check_numbers()
@@ -4039,6 +4054,22 @@ class SyncGroup(SQLBase, SQLMixin):
             self.close()
         else:
             self.check_leader()
+
+    def members_who_left_since(self, time) -> List[Participant]:
+        """Return the members who left the group at or after ``time``, ordered by participant ID.
+
+        ``participant.sync_group_removal_reason(group_type)`` says why each left.
+        """
+        return sorted(
+            (
+                link.participant
+                for link in self.participant_links
+                if not link.active
+                and link.removal_time is not None
+                and (time is None or link.removal_time >= time)
+            ),
+            key=lambda participant: participant.id,
+        )
 
     def _dissolve(self):
         """Remove every active member, failing them if the group says so.
@@ -4469,6 +4500,7 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     arrival_time = Column(DateTime)
     active = Column(Boolean, default=True)
     removal_reason = Column(String)
+    removal_time = Column(DateTime)
     # The page a member removed for being late was on; see
     # ``Response.too_late_for_group``.
     removed_on_page = Column(String)

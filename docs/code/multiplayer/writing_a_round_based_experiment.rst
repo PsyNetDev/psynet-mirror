@@ -139,7 +139,16 @@ Scoring the round
 The barrier's ``on_release`` scores the pair once both have arrived, or once
 the one who is left has. It stores each player's outcome, so that a page
 reloaded later still shows it. When a partner left or ran out of time,
-``score_round`` stores a message saying so and pays nobody. Otherwise it
+``score_round`` stores a message saying so and pays nobody. Its ``left``
+argument lists the members who left the pair this round, and
+``sync_group_removal_reason`` tells a partner who was too slow apart from
+one who returned the study:
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+   :start-at: def score_round
+   :end-at: return
+
+Otherwise it looks up each player's role and pays out the offer: Otherwise it
 looks up each player's role and pays out the offer:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py

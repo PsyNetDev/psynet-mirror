@@ -265,12 +265,19 @@ barrier ``on_release_data``, a dictionary that the callback reads as
                  on_release=score_question,
                  on_release_data={"question": 1})
 
+``on_release`` can also take ``left``, the members who left the group since
+its previous barrier pass (or since it formed), ordered by participant ID;
+``participant.sync_group_removal_reason(group_type)`` says why each went, for
+example to tell a player whether their partner returned the study or was too
+slow.
+
 ``on_release`` runs only when the barrier releases the group. A member who
 leaves the group before then, or whose group is dissolved, doesn't get
 the results it would have stored, so read them with
 ``participant.var.get("score")``, which returns ``None`` when it isn't set. If the group dissolves while some
 members are waiting at the barrier, ``on_dissolve`` runs for them instead,
-before they leave the group, with the same arguments except ``leader``.
+before they leave the group, with the same arguments except ``leader`` and
+``left``.
 ``participants`` are then the members waiting at the barrier, so a quiz can
 still score the last question for those who answered it:
 
