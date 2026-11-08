@@ -62,22 +62,27 @@ the grouper has a ``waiting_screen`` (see below).
     participant may join that group. Only used with
     ``join_existing_groups=True``.
 
-``start_short_after`` and ``start_short_with`` (default: ``None``, and ``quorum``)
-    Seconds after which a smaller group may start, and the smallest group
-    such a start may form, which defaults to ``quorum``. Once the longest-waiting
-    participant has waited ``start_short_after`` seconds and at least
-    ``start_short_with`` are waiting, those waiting form a group even if
-    there are fewer than ``batch_size``. Needs a ``max_wait_time`` (default
-    20 seconds) longer than ``start_short_after``. ``quorum`` defaults to
-    ``start_short_with`` and may not be larger, so that a group started short
-    is not below quorum at its first barrier. With
-    ``join_existing_groups=True``, later arrivals can fill the group up, but
-    a group that drops below quorum then waits for a replacement;
-    leave it out to keep playing with fewer members (see
-    :ref:`groups below quorum <groups_below_min_size>`). A ``{SECONDS}`` placeholder in ``waiting_message`` counts down
-    to that short start once ``start_short_with`` are waiting; until then
-    the participant sees "Waiting for other participants…", or what
+``start_short_after`` (default: ``None``)
+    Seconds after which a smaller group may start. Once the longest-waiting
+    participant has waited this long and at least ``start_short_with`` are
+    waiting, those waiting form a group even if there are fewer than
+    ``batch_size``. Needs ``quorum`` or ``start_short_with``, and a
+    ``max_wait_time`` (default 20 seconds) longer than ``start_short_after``.
+    A ``{SECONDS}`` placeholder in ``waiting_message`` counts down to that
+    short start once ``start_short_with`` are waiting; until then the
+    participant sees "Waiting for other participants…", or what
     :ref:`a message function <sync-countdown-messages>` returns.
+
+``start_short_with`` (default: ``quorum``)
+    The smallest group a short start may form. Pass it only to start short
+    with more members than the quorum: ``quorum`` defaults to it and may not
+    be larger, so that a group started short is not below quorum at its first
+    barrier.
+
+    With ``join_existing_groups=True``, later arrivals can fill a group
+    started short up, but a group that drops below quorum then waits for a
+    replacement; leave ``join_existing_groups`` out to keep playing with fewer
+    members (see :ref:`groups below quorum <groups_below_min_size>`).
 
 ``max_wait_time`` (default: 20) and ``max_wait_action`` (default: ``"fail"``)
     How long a participant may wait for a group, and what happens then:
@@ -816,7 +821,8 @@ after its time limit by then, so it is saved as ``None``. In other cases,
 such as when their group was dissolved under them or they waited too long,
 the notice appears on their next page.
 
-The members who carry on get no notice when someone leaves. A
+Members who stay in the group get no notice when someone leaves; members
+whose group ended under them are told on their next page. A
 :class:`~psynet.group_prompt.GroupPrompt` marks the member who left, for
 example "(dropped out)", and the barriers stop waiting for them.
 
