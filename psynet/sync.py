@@ -1669,9 +1669,12 @@ class GroupBarrier(Barrier):
     record_rounds
         If ``True``, PsyNet records each round at this barrier, one
         :class:`GroupRound` row per member, each time the barrier releases the
-        group or the group dissolves while someone waits here: members still
-        in the group, those who left it since its previous barrier, and, when
-        it dissolves, those who hadn't reached the barrier yet. ``on_release``
+        group or the group dissolves during the round: members still in the
+        group, those who left it since its previous barrier, players a
+        :class:`Regrouper` sat out of the round, and, when it dissolves, those
+        who hadn't reached the barrier yet. A group dissolving with nobody
+        here is recorded only if this is the timeline's one recording barrier
+        for the group type and a member is still on their way to it. ``on_release``
         and ``on_dissolve`` add the round's results, and a bonus, with
         :meth:`record`; :func:`group_rounds` returns the rows for
         ``get_basic_data``.
@@ -1875,7 +1878,42 @@ class GroupBarrier(Barrier):
                 data=dict(self.on_release_data),
             )
         db.session.add_all(rows.values())
+        if _formed_by_regrouper(group):
+            db.session.add_all(self._sat_out_rows(group, number))
         _rounds_being_recorded[id(self)] = rows
+
+    def _sat_out_rows(self, group, number):
+        """Return rows for the players the regrouper sat out of ``group``'s split, once per split."""
+        visits = ParticipantLinkBarrier.query.filter_by(
+            barrier_id=group.grouper_id, sat_out=True, sat_out_at=group.creation_time
+        )
+        if group.within_group_id is not None:
+            cohort = SyncGroup.query.get(group.within_group_id)
+            visits = visits.filter(
+                ParticipantLinkBarrier.participant_id.in_(
+                    [link.participant_id for link in cohort.participant_links]
+                )
+            )
+        recorded = {
+            participant_id
+            for (participant_id,) in db.session.query(
+                GroupRound.participant_id
+            ).filter_by(barrier_id=self.id, round=number, outcome="sat_out")
+        }
+        return [
+            GroupRound(
+                sync_group_id=group.within_group_id,
+                group_type=group.group_type,
+                barrier_id=self.id,
+                round=number,
+                participant_id=visit.participant_id,
+                outcome="sat_out",
+                other_member_ids=[],
+                data=dict(self.on_release_data),
+            )
+            for visit in visits
+            if visit.participant_id not in recorded
+        ]
 
     def resolve(self):
         group_type = self.group_type
@@ -3718,7 +3756,7 @@ class Regrouper(Grouper):
         left_over = [p for p in members if p.id not in placed]
         if not groups:
             if self._may_release_only_left_over(within_group, members):
-                self._record_sit_outs(left_over)
+                self._record_sit_outs(left_over, split_time)
                 return left_over
             return []
         if self.on_release:
@@ -3739,14 +3777,15 @@ class Regrouper(Grouper):
                 ) from err
         released = [p for group in groups for p in group.participants]
         if self.left_over == "sit_out":
-            self._record_sit_outs(left_over)
+            self._record_sit_outs(left_over, split_time)
             released += left_over
         return released
 
-    def _record_sit_outs(self, left_over):
-        """Mark these members' current visits as sat out."""
+    def _record_sit_outs(self, left_over, split_time):
+        """Mark these members' current visits as sat out of the split at ``split_time``."""
         for visit in self._visits(left_over).values():
             visit.sat_out = True
+            visit.sat_out_at = split_time
 
     def _in_role_order(self, group_members) -> list:
         """Return a planned group as a list, putting a ``{role: participant}`` dict in role order."""
@@ -4329,6 +4368,10 @@ def _run_on_dissolve(group, members, removed):
             waiting.setdefault(link.barrier_instance_id, (barrier, []))[1].append(
                 participant
             )
+    if not any(barrier.record_rounds for barrier, _ in waiting.values()):
+        barrier = _recording_barrier_ahead(group.group_type, members)
+        if barrier is not None:
+            waiting[barrier.id] = (barrier, [])
     for barrier, participants in waiting.values():
         if barrier.record_rounds:
             left = group.members_who_left_since(
@@ -4351,6 +4394,38 @@ def _run_on_dissolve(group, members, removed):
             )
         finally:
             _rounds_being_recorded.pop(id(barrier), None)
+
+
+def _recording_barrier_ahead(group_type, members):
+    """Return the barrier whose round ``members`` are playing, when nobody waits there.
+
+    That is the timeline's only ``GroupBarrier(record_rounds=True)`` for
+    ``group_type``, provided some member is still on their way to it. A
+    group that dissolves between rounds or after its last round, or whose
+    timeline has several such barriers, has no round to record.
+    """
+    from .experiment import get_experiment
+
+    positions = {}
+    barriers = {}
+    for elt in get_experiment().timeline.all_elts:
+        barrier = elt if isinstance(elt, Barrier) else elt.links.get("barrier")
+        if (
+            isinstance(barrier, GroupBarrier)
+            and barrier.record_rounds
+            and barrier.group_type == group_type
+        ):
+            barriers[barrier.id] = barrier
+            positions.setdefault(barrier.id, elt.id)
+    if len(barriers) != 1:
+        return None
+    ((barrier_id, barrier),) = barriers.items()
+    branch, index = positions[barrier_id][:2]
+    on_the_way = any(
+        participant.elt_id[0] == branch and participant.elt_id[1] < index
+        for participant in members
+    )
+    return barrier if on_the_way else None
 
 
 def _top_up_wait_over(group) -> bool:
@@ -4689,7 +4764,8 @@ def group_rounds(barrier_id: Optional[str] = None) -> List[dict]:
 
     Each dictionary has ``barrier_id``, ``round``, ``group_id``,
     ``group_type``, ``participant_id``, ``role``, ``outcome``
-    (``"played"``, ``"dissolved"`` or why the member left, such as ``"late"``),
+    (``"played"``, ``"sat_out"``, ``"dissolved"`` or why the member left, such
+    as ``"late"``),
     ``other_member_ids`` (the members who played the round, other than this
     one), ``bonus``, the barrier's ``on_release_data`` and the fields its
     callbacks passed to :meth:`GroupBarrier.record`.
@@ -4734,6 +4810,16 @@ def group_rounds(barrier_id: Optional[str] = None) -> List[dict]:
     ]
 
 
+def _formed_by_regrouper(group) -> bool:
+    """Return whether a :class:`Regrouper` formed ``group``."""
+    definition = (
+        None
+        if group.grouper_id is None
+        else BarrierDefinition.query.get(group.grouper_id)
+    )
+    return definition is not None and issubclass(definition.barrier_class, Regrouper)
+
+
 def _round_number(group, barrier_id):
     """Number the round that ``group`` is finishing at ``barrier_id``, from 1.
 
@@ -4742,12 +4828,7 @@ def _round_number(group, barrier_id):
     Other groups count their own rounds at the barrier. A group that
     dissolved there keeps that round for members removed afterwards.
     """
-    definition = (
-        None
-        if group.grouper_id is None
-        else BarrierDefinition.query.get(group.grouper_id)
-    )
-    if definition is not None and issubclass(definition.barrier_class, Regrouper):
+    if _formed_by_regrouper(group):
         query = db.session.query(
             func.count(func.distinct(SyncGroup.creation_time))
         ).filter(
@@ -4787,6 +4868,8 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     released = Column(Boolean, default=False)
     # A Regrouper released the participant without a group.
     sat_out = Column(Boolean, default=False)
+    # The split they sat out: the creation time of the groups it formed.
+    sat_out_at = Column(DateTime)
     # The last page the participant answered before arriving, other than a
     # waiting page, ended on its time limit
     # (``Participant.timed_out_since_barrier``).

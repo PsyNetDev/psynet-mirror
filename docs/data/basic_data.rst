@@ -220,13 +220,19 @@ and returns the rows as its basic data with :func:`~psynet.sync.group_rounds`:
 
 Each row has the ``round``, the ``group_id``, the member's ``participant_id``
 and ``role``, ``other_member_ids`` (who else played the round), ``outcome``
-(``"played"``, ``"dissolved"`` or why the member left, such as ``"late"``),
-``bonus`` and the recorded fields. In groups a regrouper forms, ``round``
-counts the regrouper's splits, so it is the same for the whole cohort, and a
-player who sat out a round has no row for it. Other groups count their own
-rounds at the barrier. When a group dissolves while some members wait at the
-barrier, every member gets a ``"dissolved"`` row, and ``on_dissolve`` can
-record their results too.
+(``"played"``, ``"sat_out"``, ``"dissolved"`` or why the member left, such
+as ``"late"``), ``bonus`` and the recorded fields. In groups a regrouper
+forms, ``round`` counts the regrouper's splits, so it is the same for the
+whole cohort, and a player the regrouper sat out gets a ``"sat_out"`` row for
+that round, with the cohort as its ``group_id``. Other groups count their own
+rounds at the barrier.
+
+When a group dissolves during a round, every member gets a ``"dissolved"``
+row for it. If some members wait at the barrier, ``on_dissolve`` can record
+their results too. If nobody has reached it yet, the round is recorded only
+when it is the timeline's one recording barrier for that group type and a
+member is still on their way to it; a group that dissolves between rounds,
+or after its last round, has no round to record.
 
 .. seealso::
 

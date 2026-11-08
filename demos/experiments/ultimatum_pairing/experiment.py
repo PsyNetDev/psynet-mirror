@@ -369,14 +369,17 @@ class Exp(psynet.experiment.Experiment):
             assert bot.current_notice is None
 
         # Two pairs in round 1, then one pair in each of rounds 2 and 3, each
-        # with one proposer (5) and one responder (3). The cohort numbers the
-        # rounds, so the player who sat out round 2 has no row for it.
+        # with one proposer (5) and one responder (3). Round 2 also has a row
+        # for the player who sat it out; the lingerer missed it.
         rows = self.get_basic_data()["player_round"]
-        assert [row["round"] for row in rows] == [1] * 4 + [2] * 2 + [3] * 2, rows
-        assert all(row["outcome"] == "played" for row in rows)
+        assert [row["round"] for row in rows] == [1] * 4 + [2] * 3 + [3] * 2, rows
+        played = [row for row in rows if row["outcome"] == "played"]
+        assert [row["participant_id"] for row in rows if row not in played] == [
+            sitting_out[0].id
+        ], rows
         assert all(
             row["decision"] == {"proposer": 5, "responder": 3}[row["role"]]
-            for row in rows
+            for row in played
         )
 
 

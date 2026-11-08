@@ -7636,3 +7636,36 @@ def test_only_in_group_runs_otherwise_for_participants_out_of_the_group(
         module_state=None, in_sync_group=lambda group_type: in_group
     )
     assert _labels_reached(elts, participant) == expected
+
+
+@pytest.mark.parametrize("before_the_barrier, recorded", [(True, True), (False, False)])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_group_dissolving_mid_round_records_the_round_nobody_reached(
+    in_experiment_directory, db_session, monkeypatch, before_the_barrier, recorded
+):
+    """With nobody waiting, the round counts only while members are on their way to its barrier."""
+    from psynet.sync import group_rounds
+
+    exp = get_experiment()
+    monkeypatch.setattr(
+        exp,
+        "timeline",
+        Timeline(
+            InfoPage("Decide", time_estimate=1),
+            GroupBarrier(id_="round_done", group_type="main", record_rounds=True),
+            InfoPage("Done", time_estimate=1),
+        ),
+    )
+    participants, group = _sync_group_of(exp, db_session, 3)
+    group.below_quorum = "continue_without_group"
+    for participant in participants:
+        participant.elt_id = ["main", -1 if before_the_barrier else 99]
+    participants[2].fail("returned")
+    db_session.commit()
+
+    outcomes = [row["outcome"] for row in group_rounds("round_done")]
+    assert outcomes == (
+        ["dissolved", "dissolved", "left_experiment"] if recorded else []
+    )

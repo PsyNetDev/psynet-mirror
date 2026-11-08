@@ -80,9 +80,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   each round `record_rounds=True` and call
   `barrier.record(participant, answer=..., bonus=...)` in `on_release` (and
   `on_dissolve`); return `group_rounds("barrier_id")` from `get_basic_data`.
-  Rows include members who left during the round, and every member when the
-  group dissolves while someone waits there, so pay through `bonus=` to keep
-  the payment and the record in step.
+  Rows include members who left during the round, players a `Regrouper`
+  sat out, and every member when the group dissolves mid-round, so pay
+  through `bonus=` to keep the payment and the record in step.
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Use `sync_group_type` on trial makers when all group members should follow the
