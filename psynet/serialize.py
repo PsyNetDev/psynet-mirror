@@ -6,7 +6,7 @@ import sys
 import types
 import warnings
 from dataclasses import dataclass
-from functools import cached_property
+from functools import cached_property, partial
 
 import dominate.tags
 import jsonpickle
@@ -58,6 +58,19 @@ def serialize_callable(callable_obj, context: str):
     """
     if callable_obj is None or isinstance(callable_obj, SerializedCallable):
         return callable_obj
+    if isinstance(callable_obj, partial):
+        if callable_obj.args:
+            raise CallableSerializationError(
+                _format_callable_error(
+                    context,
+                    "Pass the arguments of functools.partial by keyword.",
+                )
+            )
+        inner = serialize_callable(callable_obj.func, context)
+        return SerializedCallable(
+            function=inner.function,
+            arguments={**(inner.arguments or {}), **callable_obj.keywords},
+        )
     if not callable(callable_obj):
         raise CallableSerializationError(
             _format_callable_error(
@@ -103,7 +116,8 @@ def serialize_callable(callable_obj, context: str):
 def _format_callable_error(context: str, detail: str) -> str:
     return (
         f"{context} must be a module-level function, a @staticmethod/@classmethod, "
-        "or an instance method on a TrialMaker or ORM model with a primary key. "
+        "or an instance method on a TrialMaker or ORM model with a primary key, "
+        "optionally wrapped in functools.partial with keyword arguments. "
         f"{detail}"
     )
 

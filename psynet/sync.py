@@ -169,8 +169,10 @@ from psynet.timeline import (
     TIME_LIMIT_GRACE_SECONDS,
     CodeBlock,
     EltCollection,
+    _EndConstruct,
     _is_timeline_hold,
     _split_into_steps,
+    _StartConstruct,
     conditional,
     join,
 )
@@ -1039,7 +1041,7 @@ class Barrier(EltCollection):
         self.max_wait_action = "fail"
 
     def __setattr__(self, name, value):
-        if (name.startswith("on_") and name != "on_release_data") or (
+        if name.startswith("on_") or (
             name == "waiting_message" and inspect.isroutine(value)
         ):
             value = serialize_callable(value, f"{self.__class__.__name__}.{name}")
@@ -1120,7 +1122,7 @@ class Barrier(EltCollection):
             # the participant back to it.
             if elt is not leave:
                 elt.links.setdefault("barrier", self)
-        return elts
+        return join(_StartConstruct(), elts, _EndConstruct())
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Release the participant's active barrier link after a max-wait timeout."""
@@ -1629,21 +1631,18 @@ class GroupBarrier(Barrier):
         visit (scalar presentation and notification settings, not wait pages).
         Must be a module-level function, ``@staticmethod``/``@classmethod``,
         or a bound method on a TrialMaker or ORM instance with a primary key.
-        To share one callback between several barriers, pass each its own ``on_release_data``.
+        To share one callback between several barriers, give each its own
+        arguments with :func:`functools.partial`, passed by keyword and
+        JSON-compatible, for example the number of the question the barrier
+        ends::
 
-    on_release_data
-        Optional dictionary of JSON-compatible values that ``on_release`` can read as
-        ``barrier.on_release_data``, for example the number of the question the barrier ends, so that
-        one callback serves several barriers::
-
-            def score_question(group, barrier):
-                question = barrier.on_release_data["question"]
+            def score_question(group, question):
                 ...
 
             GroupBarrier(id_="question_1", group_type="team",
-                         on_release=score_question, on_release_data={"question": 1})
+                         on_release=partial(score_question, question=1))
 
-        Barriers that share an ``id_`` must pass the same ``on_release_data``.
+        Barriers that share an ``id_`` must pass the same arguments.
 
     on_dissolve
         Optional callback invoked when the group dissolves below its quorum
@@ -1651,8 +1650,7 @@ class GroupBarrier(Barrier):
         the group, so that what they did is not lost. For example, it can score
         the last question for the members who answered it. It takes the same
         arguments as ``on_release`` except ``leader``: ``participants`` are
-        the members waiting here, and ``barrier`` can read ``on_release_data``.
-        The same serialization rules apply. A waiting member whose own request
+        the members waiting here. The same serialization rules apply. A waiting member whose own request
         is busy at that moment is handled once it finishes, in a second call
         with just them.
 
@@ -1747,7 +1745,6 @@ class GroupBarrier(Barrier):
         on_arrival_message: Optional[Callable] = None,
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
-        on_release_data: Optional[dict] = None,
         on_dissolve: Optional[Callable] = None,
         stop_top_ups: bool = False,
     ):
@@ -1771,7 +1768,6 @@ class GroupBarrier(Barrier):
         self.notify_arrivals = bool(notify_arrivals)
         self.late_after = late_after
         self.late_action = late_action
-        self.on_release_data = {} if on_release_data is None else dict(on_release_data)
         self.on_dissolve = on_dissolve
         self.stop_top_ups = bool(stop_top_ups)
 
@@ -2639,6 +2635,7 @@ class SimpleGrouper(Grouper):
         from .timeline import conditional, join
 
         return join(
+            _StartConstruct(),
             CodeBlock(self._join_existing_groups),
             conditional(
                 "joined_an_existing_group",
@@ -2648,6 +2645,7 @@ class SimpleGrouper(Grouper):
                 logic_if_true=[],
                 logic_if_false=super().resolve(),
             ),
+            _EndConstruct(),
         )
 
     def _find_group_to_join(self, participant: Participant):
@@ -3717,10 +3715,15 @@ def only_in_group(group_type: str, *steps, otherwise=None):
         only_in_group("pair", [round_steps(number) for number in range(N_ROUNDS)])
 
     or put ``only_in_group`` inside the loop, as in
-    ``for_loop(..., logic=only_in_group("pair", round_steps()))``. Put a
-    :class:`GroupCloser` after the block, not among its steps: it takes
-    everyone out of the group, so the steps after it and ``otherwise`` would
-    treat them all as having left.
+    ``for_loop(..., logic=only_in_group("pair", round_steps()))``. The steps
+    are for participants already in the group, so put the grouper or
+    :class:`Regrouper` that forms it before the block: inside, it would be
+    skipped because the participant is not in a group yet. For the same
+    reason, put a :class:`GroupCloser` after the block: it takes everyone out
+    of the group, so the steps after it and ``otherwise`` would treat them
+    all as having left. When pairs change every round, regroup inside the
+    loop, as in ``for_loop(..., logic=join(Regrouper(...),
+    only_in_group("pair", round_steps())))``.
 
     Parameters
     ----------
