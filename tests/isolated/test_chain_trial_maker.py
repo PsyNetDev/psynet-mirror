@@ -225,9 +225,9 @@ def test_sync_group_max_wait_time_with_late_after():
 @pytest.mark.parametrize(
     "option",
     [
-        {"sync_group_max_wait_action": "kick"},
+        {"sync_group_max_wait_action": "leave_group"},
         {"sync_group_late_after": 30},
-        {"sync_group_late_action": "kick"},
+        {"sync_group_late_action": "leave_group"},
         {"sync_group_waiting_message": "Waiting for your partner"},
     ],
 )
@@ -1141,7 +1141,7 @@ def test_sync_trial_maker_waiting_message_is_used_by_internal_barriers():
 def test_sync_trial_maker_prepare_barrier_kick_exits_cleanly(monkeypatch):
     trial_maker = make_trial_maker(
         sync_group_type="main",
-        sync_group_max_wait_action="kick",
+        sync_group_max_wait_action="leave_group",
     )
     participant = DummyParticipant()
     participant.module_state = DummyModuleState()

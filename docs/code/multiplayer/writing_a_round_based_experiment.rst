@@ -99,7 +99,7 @@ Moving slow players on
 
 The :class:`~psynet.sync.GroupBarrier` after the decision page waits for
 both partners. A player who hasn't reached it within ``late_after`` seconds
-of the round's start is late, and with ``late_action="kick"`` is removed
+of the round's start is late, and with ``late_action="leave_group"`` is removed
 from the pair, so that their partner carries on alone (see
 :class:`~psynet.sync.GroupBarrier` for both options). A player on a page
 with a time limit is not late before that limit has run out and an answer

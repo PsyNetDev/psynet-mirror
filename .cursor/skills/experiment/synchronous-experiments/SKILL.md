@@ -84,7 +84,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   everyone is back or the timeout passes (`ultimatum_pairing`), or `every=`
   for rounds on fixed ticks (`lowest_unique_number`). Slow participants miss
   a round and join the next one rather than being failed. Pair it with
-  `GroupBarrier(late_after=..., late_action="kick")` so late members are
+  `GroupBarrier(late_after=..., late_action="leave_group")` so late members are
   removed; they then pass the round's later group barriers alone. On a page
   with a `time_limit`, nobody is late before the limit has run out plus 10 s,
   so the timeout need not cover the page; the demos use 30 s so that a

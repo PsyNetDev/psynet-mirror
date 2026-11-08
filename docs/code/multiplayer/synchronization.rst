@@ -73,7 +73,7 @@ the grouper has a ``waiting_screen`` (see below).
     ``join_existing_groups=True``, later arrivals can fill the group up, but
     a group that drops below quorum then waits for a replacement;
     leave it out to keep playing with fewer members (see
-    :ref:`groups below minimum size <groups_below_min_size>`). A ``{SECONDS}`` placeholder in ``waiting_message`` counts down
+    :ref:`groups below quorum <groups_below_min_size>`). A ``{SECONDS}`` placeholder in ``waiting_message`` counts down
     to that short start once ``start_short_with`` are waiting, and shows
     "…" until then; :ref:`a message function <sync-countdown-messages>` can
     show other text instead.
@@ -492,8 +492,8 @@ limit, which act on different members:
     with ``late_after`` raises an error. At a grouper, a participant who
     waits longer is failed. At a :class:`~psynet.sync.GroupBarrier`,
     ``max_wait_action`` decides: ``"fail"`` (default) fails the participant,
-    and ``"kick"`` removes them from the group so that they continue alone,
-    passing later group barriers of that type straight through.
+    and ``"leave_group"`` removes them from the group (see
+    :ref:`sync-leaving-a-group` for what they see next).
     This also applies to a participant who closed the page while waiting,
     including on ``waiting_logic`` pages: the server applies the timeout
     shortly after the deadline.
@@ -509,7 +509,7 @@ limit, which act on different members:
     :class:`~psynet.sync.GroupBarrier` yet: a member who hasn't reached the
     barrier within ``late_after`` seconds of the group's previous barrier
     pass, or of joining the group if that is later, is late, and is handled
-    by ``late_action``: ``"fail"`` (default) fails them, and ``"kick"``
+    by ``late_action``: ``"fail"`` (default) fails them, and ``"leave_group"``
     removes them from the group. Members who arrive on time wait for the
     others until they arrive or are late, so they need no ``max_wait_time``
     of their own.
@@ -528,7 +528,7 @@ limit, which act on different members:
     before they arrive. Removing a late member from the group can also take
     the group below its ``quorum``; a group that doesn't accept top-ups is then dissolved,
     which by default fails the members who arrived on time (see
-    :ref:`groups below minimum size <groups_below_min_size>`).
+    :ref:`groups below quorum <groups_below_min_size>`).
 
 Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_`` prefix: ``sync_group_max_wait_time``,
@@ -571,12 +571,12 @@ the group size are left without a group and are failed.
 At later barriers, ``max_wait_time`` needs to cover how much longer some
 members take over the previous page than others. A member who times out
 there can take the group below its ``quorum``, with the consequences
-described under *Groups below minimum size* below.
+described under :ref:`groups_below_min_size` below.
 
 .. _groups_below_min_size:
 
-Groups below minimum size
-~~~~~~~~~~~~~~~~~~~~~~~~~
+Groups below quorum
+~~~~~~~~~~~~~~~~~~~
 
 When failed or departed members take a group below its ``quorum``, what
 happens depends on whether the group accepts top-ups:
@@ -587,8 +587,8 @@ happens depends on whether the group accepts top-ups:
   new one.
 - Otherwise the group is dissolved as soon as the member leaves, and its
   remaining members are failed. Set ``fail_participants_below_quorum=False``
-  on the grouper to remove them from the group without failing them, so that
-  they continue alone. A member who is in the middle of a request at that
+  on the grouper to remove them from the group without failing them instead
+  (see :ref:`sync-leaving-a-group`). A member who is in the middle of a request at that
   moment (for example submitting a page) is handled by the background
   barrier check within about a second instead, once that request finishes.
 
@@ -614,7 +614,7 @@ options:
         id_="round_finished",
         group_type="team",
         late_after=30,
-        late_action="kick",
+        late_action="leave_group",
     )
 
 The grouper leaves out ``join_existing_groups``: a group that accepts
@@ -630,6 +630,28 @@ top-ups:
    :start-at: SimpleGrouper(
    :end-before: for_loop(
    :dedent: 12
+
+.. _sync-leaving-a-group:
+
+After leaving a group
+~~~~~~~~~~~~~~~~~~~~~
+
+A member removed from their group without being failed, through
+``"leave_group"`` or ``fail_participants_below_quorum=False``, stays in the
+experiment but doesn't play on by themselves. For the rest of the timeline:
+
+- :class:`~psynet.sync.GroupBarrier`\ s of that group type let them straight
+  through.
+- Trial makers synchronized on that group type give them no more trials.
+- ``participant.sync_group`` and ``trial.sync_group`` are ``None``, and
+  ``participant.active_sync_groups`` no longer has that group type. A
+  :class:`~psynet.group_prompt.GroupPrompt` shows only its text.
+- A later grouper of that type can put them in a new group.
+
+Your own code blocks, pages and callbacks must handle this: check for
+``None`` before using the group, and expect results, such as a score from
+the group's last round, to be missing. If your experiment can't continue
+meaningfully without a group, keep the default ``"fail"``.
 
 Waiting pages
 ~~~~~~~~~~~~~

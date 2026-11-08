@@ -1532,8 +1532,9 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     sync_group_max_wait_action
         What happens to a member who waits longer than ``sync_group_max_wait_time``: ``"fail"``
-        (default) fails them and sends them to the end of the experiment; ``"kick"`` removes them
-        from the group and lets them continue.
+        (default) fails them and sends them to the end of the experiment; ``"leave_group"`` removes them
+        from the group, and they get no more trials from this trial maker (see
+        :ref:`sync-leaving-a-group`).
 
     sync_group_late_after
         Acts on members who haven't reached the trial maker's barrier yet: the longest each may
@@ -1544,8 +1545,8 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     sync_group_late_action
         What happens to a member who is later than ``sync_group_late_after``: ``"fail"``
-        (default) fails them; ``"kick"`` removes them from the group, so the rest can go on
-        without them.
+        (default) fails them; ``"leave_group"`` removes them from the group, so the rest can go on
+        without them (see :ref:`sync-leaving-a-group`).
 
     sync_group_waiting_message
         Message on the waiting indicator at the trial maker's own sync-group waits
@@ -1636,9 +1637,9 @@ class ChainTrialMaker(NetworkTrialMaker):
         choose_participant_group: Optional[callable] = None,
         sync_group_type: Optional[str] = None,
         sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
-        sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
+        sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
-        sync_group_late_action: Literal["fail", "kick"] = "fail",
+        sync_group_late_action: Literal["fail", "leave_group"] = "fail",
         sync_group_waiting_message=None,
     ):
         if network_class is None:

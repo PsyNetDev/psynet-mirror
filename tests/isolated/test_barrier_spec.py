@@ -186,7 +186,7 @@ def test_group_barrier_restores_scalar_presentation_not_waiting_pages():
         group_type="pair",
         waiting_message="Waiting for your partner",
         max_wait_time=30,
-        max_wait_action="kick",
+        max_wait_action="leave_group",
         notify_arrivals=False,
     )
 
@@ -195,7 +195,7 @@ def test_group_barrier_restores_scalar_presentation_not_waiting_pages():
 
     assert restored.waiting_message == "Waiting for your partner"
     assert restored.max_wait_time == 30
-    assert restored.max_wait_action == "kick"
+    assert restored.max_wait_action == "leave_group"
     assert restored.notify_arrivals is False
     _assert_page_fields_omitted(spec, restored)
     assert behavior_hash(restored) == behavior_hash(

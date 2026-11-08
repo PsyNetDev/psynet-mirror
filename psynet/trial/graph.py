@@ -400,9 +400,9 @@ class GraphChainTrialMaker(ChainTrialMaker):
         choose_participant_group: Optional[callable] = None,
         sync_group_type: Optional[str] = None,
         sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
-        sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
+        sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
-        sync_group_late_action: Literal["fail", "kick"] = "fail",
+        sync_group_late_action: Literal["fail", "leave_group"] = "fail",
         sync_group_waiting_message=None,
     ):
         if chain_type == "within":

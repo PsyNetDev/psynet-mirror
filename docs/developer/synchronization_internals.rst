@@ -59,7 +59,7 @@ row:
   ``dissolving``, and the barrier poller finishes the dissolution once that
   request commits.
 - A between-barrier timeout with ``"fail"`` also skips busy late members;
-  they are still late at the barrier's next check. Kicking only changes the
+  they are still late at the barrier's next check. ``"leave_group"`` only changes the
   group's links, so it does not lock the member's row.
 - Re-electing a leader picks only a member whose row is free, because the
   foreign-key check on ``leader_id`` locks the new leader's row.

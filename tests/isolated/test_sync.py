@@ -205,17 +205,17 @@ def test_random_partition():
 
 def test_max_wait_action_kick_requires_group_barrier():
     with pytest.raises(TypeError, match="max_wait_action"):
-        Barrier(id_="plain_barrier", max_wait_action="kick")
+        Barrier(id_="plain_barrier", max_wait_action="leave_group")
 
     with pytest.raises(TypeError, match="max_wait_action"):
-        RecordingBarrier(id_="recording_barrier", max_wait_action="kick")
+        RecordingBarrier(id_="recording_barrier", max_wait_action="leave_group")
 
     barrier = GroupBarrier(
         id_="group_barrier",
         group_type="main",
-        max_wait_action="kick",
+        max_wait_action="leave_group",
     )
-    assert barrier.max_wait_action == "kick"
+    assert barrier.max_wait_action == "leave_group"
 
 
 def _noop_on_release(group, participants, participant, barrier):
@@ -622,7 +622,7 @@ def test_group_barrier_resolved_timeout_uses_overridden_handler():
     barrier = RecordingTimeoutGroupBarrier(
         id_="group_barrier",
         group_type="main",
-        max_wait_action="kick",
+        max_wait_action="leave_group",
     )
     elts = barrier.resolve()
     hold = next(elt for elt in elts if getattr(elt, "is_timeline_hold", False))
@@ -3533,7 +3533,7 @@ def test_check_barriers_recovers_inactive_grouped_instance_with_waiters(
 
 
 @pytest.mark.parametrize("waiting_page", [False, True])
-@pytest.mark.parametrize("action", ["fail", "kick"])
+@pytest.mark.parametrize("action", ["fail", "leave_group"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
@@ -3631,7 +3631,7 @@ def test_callable_max_wait_time_is_evaluated_once_on_arrival(
         exp.timeline = original_timeline
 
 
-@pytest.mark.parametrize("action", ["fail", "kick"])
+@pytest.mark.parametrize("action", ["fail", "leave_group"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
@@ -6603,7 +6603,7 @@ def test_group_barrier_max_wait_time_with_late_after():
     with pytest.raises(ValueError, match="late_after must be positive"):
         barrier(late_after=0)
     with pytest.raises(ValueError, match="use late_action instead"):
-        barrier(late_after=30, max_wait_action="kick")
+        barrier(late_after=30, max_wait_action="leave_group")
 
 
 @pytest.mark.parametrize(
@@ -6619,7 +6619,7 @@ def test_group_barrier_late_after_kick_missing_participants(
         id_="late_after_kick",
         group_type="main",
         late_after=5,
-        late_action="kick",
+        late_action="leave_group",
         notify_arrivals=notify_arrivals,
     )
 
@@ -6700,7 +6700,7 @@ def test_late_after_counts_from_joining_the_group(
         id_="first_after_grouper",
         group_type="main",
         late_after=5,
-        late_action="kick",
+        late_action="leave_group",
     )
     waiting, late = participants[:2], participants[2]
 
@@ -6756,7 +6756,7 @@ def test_late_after_follows_a_timed_page(
         id_="after_timed_page",
         group_type="main",
         late_after=20,
-        late_action="kick",
+        late_action="leave_group",
     )
 
     barrier.check_waiting_participants([waiting])
@@ -6806,7 +6806,7 @@ def test_a_group_barrier_pass_forgets_earlier_timed_pages(
         id_="next",
         group_type="main",
         late_after=10,
-        late_action="kick",
+        late_action="leave_group",
     )
     barrier.check_waiting_participants([second])
     assert first not in group.active_participants
@@ -6851,7 +6851,7 @@ def test_skipping_a_group_barrier_forgets_a_time_out(
     exp = get_experiment()
     (kicked,) = _working_participants(exp, 1)
     kicked.timed_out_since_barrier = True
-    skipped = GroupBarrier("decided", group_type="pair", late_action="kick")
+    skipped = GroupBarrier("decided", group_type="pair", late_action="leave_group")
     elts = skipped.resolve()
     (switch,) = [
         elt
@@ -6877,7 +6877,7 @@ def test_group_barrier_late_after_kick_releases_waiters_after_dissolution(
         id_="late_after_kick_below_min",
         group_type="main",
         late_after=5,
-        late_action="kick",
+        late_action="leave_group",
     )
 
     participants = [new_participant(exp) for _ in range(3)]
@@ -6909,7 +6909,7 @@ def test_group_barrier_late_after_kick_releases_waiters_after_dissolution(
     assert set(released) == set(waiting_participants)
 
 
-@pytest.mark.parametrize("action", ["kick", "fail"])
+@pytest.mark.parametrize("action", ["leave_group", "fail"])
 @pytest.mark.parametrize("min_group_size", [2, 3])
 @pytest.mark.parametrize("accepts_top_ups", [False, True])
 @pytest.mark.parametrize(
@@ -7142,7 +7142,7 @@ def test_group_barrier_max_wait_kick_releases_barrier_link(
     barrier = GroupBarrier(
         id_="max_wait_kick",
         group_type="main",
-        max_wait_action="kick",
+        max_wait_action="leave_group",
     )
     barrier.receive_participant(participant)
     db_session.commit()

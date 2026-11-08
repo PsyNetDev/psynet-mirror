@@ -225,9 +225,9 @@ class DenseTrialMaker(StaticTrialMaker):
         n_repeat_trials: int = 0,
         sync_group_type: Optional[str] = None,
         sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
-        sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
+        sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
-        sync_group_late_action: Literal["fail", "kick"] = "fail",
+        sync_group_late_action: Literal["fail", "leave_group"] = "fail",
         sync_group_waiting_message=None,
     ):
         super().__init__(

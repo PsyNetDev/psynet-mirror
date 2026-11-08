@@ -260,7 +260,7 @@ def play_round():
                     # enough for a background tab to notice), but not while their
                     # answer to the timed decision page may still be on its way.
                     late_after=30,
-                    late_action="kick",
+                    late_action="leave_group",
                     on_release=score_round,
                 ),
                 PageMaker(show_outcome, time_estimate=5),

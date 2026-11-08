@@ -1,0 +1,1 @@
+Renamed the `"kick"` value of `GroupBarrier`'s `max_wait_action` and `late_action`, and of trial makers' `sync_group_max_wait_action` and `sync_group_late_action`, to `"leave_group"`, since the member is not removed from the experiment but carries on without their group. Experiments written against the 14.0 release candidates must replace `"kick"` with `"leave_group"`.

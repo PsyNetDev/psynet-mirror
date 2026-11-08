@@ -1491,7 +1491,7 @@ class GroupBarrier(Barrier):
     ``on_release`` receives the reconstructed registry barrier; see
     :class:`Barrier` for the live-versus-reconstructed method split.
 
-    A participant who was removed from their group of ``group_type``, for example kicked by a timeout,
+    A participant who was removed from their group of ``group_type``, for example by a timeout with ``"leave_group"``,
     and is in no other group of that type passes straight through. A participant who was never in
     such a group gets an error, which usually means a grouper is missing from the timeline.
 
@@ -1529,8 +1529,9 @@ class GroupBarrier(Barrier):
 
     max_wait_action
         What happens to a member who waits longer than ``max_wait_time``: ``"fail"`` (default) fails them and
-        sends them to the end of the experiment; ``"kick"`` removes them from the group and lets them continue.
-        Unlike ``late_action="kick"``, this shows them no notice, and a
+        sends them to the end of the experiment; ``"leave_group"`` removes them from the group, and they carry on with the
+        experiment without it (see :ref:`sync-leaving-a-group`).
+        Unlike ``late_action="leave_group"``, this shows them no notice, and a
         :class:`~psynet.group_prompt.GroupPrompt` marks them "(dropped out)".
 
     late_after
@@ -1542,8 +1543,8 @@ class GroupBarrier(Barrier):
 
     late_action
         What happens to a member who is later than ``late_after``: ``"fail"`` (default) fails them and sends
-        them to the end of the experiment; ``"kick"`` removes them from the group, so the rest can go on
-        without them, and they pass this and later barriers of ``group_type`` alone.
+        them to the end of the experiment; ``"leave_group"`` removes them from the group, so the rest can go on
+        without them (see :ref:`sync-leaving-a-group` for what the removed member sees).
 
     on_release
         Optional callback invoked when the barrier releases the group. It may take
@@ -1576,7 +1577,7 @@ class GroupBarrier(Barrier):
         yet see a pill on the progress bar, and waiting participants in groups
         of three or more see remaining-not-ready copy on the hold overlay.
         Pairs show only the message. Set ``False`` to disable both. A
-        member removed by ``late_action="kick"`` is told
+        member removed by ``late_action="leave_group"`` is told
         either way; return ``None`` from ``on_arrival_message`` for
         ``kind="removed"`` to hide it. To change the waiting indicator's
         progress line, return :func:`hold_message` from a
@@ -1603,8 +1604,8 @@ class GroupBarrier(Barrier):
         only on its arguments and have no side effects. Notices stay on one
         line (overflow ellipsizes), so keep them to a short sentence.
 
-        ``"removed"`` is the progress-bar notice for someone kicked by
-        ``late_action="kick"``, shown until they leave
+        ``"removed"`` is the progress-bar notice for someone removed by
+        ``late_action="leave_group"``, shown until they leave
         their page. It defaults to "Your partner went on without you. Please
         continue." or "Your group went on without you. Please continue.", and
         ``group_size`` counts the group before anyone was removed.
@@ -1615,14 +1616,14 @@ class GroupBarrier(Barrier):
     def _kick_participant_after_max_wait(
         participant: Participant, group_type: str
     ) -> None:
-        """Remove the participant from their sync group when max wait uses action ``'kick'``."""
+        """Remove the participant from their sync group when max wait uses action ``'leave_group'``."""
         if group_type in participant.active_sync_groups:
             participant.active_sync_groups[group_type].remove_participant(participant)
 
     def _validate_max_wait_action(self, max_wait_action):
-        if max_wait_action not in ("fail", "kick"):
+        if max_wait_action not in ("fail", "leave_group"):
             raise ValueError(
-                f"max_wait_action must be 'fail' or 'kick', got {max_wait_action!r}."
+                f"max_wait_action must be 'fail' or 'leave_group', got {max_wait_action!r}."
             )
 
     def __init__(
@@ -1635,9 +1636,9 @@ class GroupBarrier(Barrier):
         on_release: Optional[Callable] = None,
         fix_time_credit=False,
         *,
-        max_wait_action: Literal["fail", "kick"] = "fail",
+        max_wait_action: Literal["fail", "leave_group"] = "fail",
         late_after: Optional[float] = None,
-        late_action: Literal["fail", "kick"] = "fail",
+        late_action: Literal["fail", "leave_group"] = "fail",
         expected_wait=None,
         waiting_message=None,
         notify_arrivals: bool = True,
@@ -1671,9 +1672,9 @@ class GroupBarrier(Barrier):
                 "wait limit; use late_action instead."
             )
         self.late_after = late_after
-        if late_action not in ("fail", "kick"):
+        if late_action not in ("fail", "leave_group"):
             raise ValueError(
-                f"late_action must be 'fail' or 'kick', got {late_action!r}."
+                f"late_action must be 'fail' or 'leave_group', got {late_action!r}."
             )
         self.late_action = late_action
 
@@ -1794,7 +1795,7 @@ class GroupBarrier(Barrier):
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Kick from the sync group when requested, then release the barrier link."""
-        if self.max_wait_action == "kick":
+        if self.max_wait_action == "leave_group":
             self._kick_participant_after_max_wait(
                 participant=participant, group_type=self.group_type
             )
@@ -1912,7 +1913,7 @@ class GroupBarrier(Barrier):
         if self.late_action == "fail":
             late = _lock_free_participants(late)
         group_size = len(group.active_participants)
-        if self.late_action == "kick":
+        if self.late_action == "leave_group":
             for participant in late:
                 logger.info(
                     "GroupBarrier '%s': kicking participant %s from group %s (timeout between barriers)",
@@ -2244,9 +2245,9 @@ class SimpleGrouper(Grouper):
 
     fail_participants_below_quorum
         When a member leaves a group that doesn't accept top-ups and the group falls below
-        ``min_group_size``, the group is dissolved at once. If ``True`` (default), the remaining
+        ``quorum``, the group is dissolved at once. If ``True`` (default), the remaining
         members are failed. If ``False``, they are removed from the group without being failed and
-        continue alone. A member whose own request is in progress is handled within about a second
+        continue the experiment without it. A member whose own request is in progress is handled within about a second
         by the barrier poller instead.
 
     start_short_after
@@ -3601,7 +3602,7 @@ class SyncGroup(SQLBase, SQLMixin):
             - ``None`` (default): "(dropped out)", or "(left)" once they have
               failed or finished the experiment.
             - ``"late"``: "(removed)", for a member a barrier removed for
-              being late (``late_action="kick"``).
+              being late (``late_action="leave_group"``).
             - ``"moved_on"``: not shown, unless the page shows their answer,
               for a member who went on to their next group.
         """

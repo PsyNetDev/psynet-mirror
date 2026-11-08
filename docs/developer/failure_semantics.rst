@@ -78,7 +78,7 @@ does not accept top-ups, it is dissolved at once: the remaining members are
 removed, and failed when ``fail_participants_below_quorum`` is ``True``. A
 barrier applies the same rule if it finds a group below minimum size. A group
 that accepts top-ups waits for newcomers instead, but closes once it has no
-active members left, whether they failed, were kicked or finished.
+active members left, whether they failed, were removed or finished.
 
 Recruiter exit events
 ---------------------

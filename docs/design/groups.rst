@@ -44,7 +44,7 @@ Waiting and dropouts
 Every barrier and grouper has a **maximum waiting time**. A participant who
 waits longer, for example because a partner closed the browser, is released.
 At a grouper they are failed; at a barrier, depending on its settings, they
-are either failed or removed from the group so that they can continue alone.
+are either failed or removed from the group, continuing the experiment without it.
 A barrier can also catch members who fall behind: a member who hasn't
 reached the barrier within a set number of seconds is **late**, and is
 failed or removed from the group. A member on a page with its own time
