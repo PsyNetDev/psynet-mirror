@@ -401,6 +401,13 @@ Groups
 `experiments/rock_paper_scissors <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/rock_paper_scissors>`__
     A two-player game with scored rounds and a chat after each round.
 
+`experiments/crowd_estimate <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/crowd_estimate>`__
+    A wisdom-of-crowds estimation game in an open lobby: groups of up to
+    four may start short and take latecomers until the game starts, and
+    anyone left without a group answers alone. Each question is one cued
+    trial per player, with the group's median on the node they share.
+    :doc:`/code/multiplayer/synchronization`.
+
 `experiments/lowest_unique_number <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/lowest_unique_number>`__
     ``Regrouper`` with ``every``: rooms of up to eight form every 10
     seconds, and players who are too slow miss a round instead of being

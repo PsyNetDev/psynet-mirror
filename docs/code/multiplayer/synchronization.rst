@@ -109,6 +109,10 @@ leader has more than one trial left:
 .. literalinclude:: ../../../demos/experiments/gibbs_within_sync/experiment.py
    :pyobject: is_group_joinable
 
+The ``crowd_estimate`` demo starts groups short and tops them up until its
+game starts; :ref:`groups below quorum <groups_below_min_size>` shows its
+grouper.
+
 Groups are formed only from participants who are waiting at the same time,
 so recruitment must bring them in close together. A participant who waits at
 a grouper for longer than ``max_wait_time`` (default 20 seconds) is failed,
@@ -779,19 +783,18 @@ options:
 The grouper leaves out ``join_existing_groups``: a group that accepts
 top-ups waits for replacements when it drops below its ``quorum``
 instead of carrying on. To accept replacements only at the start, pass
-``join_existing_groups=True`` and stop top-ups once the game starts.
-``top_up_wait`` keeps a group that falls below its quorum before then from
-waiting for a newcomer who may never come:
+``join_existing_groups=True`` and stop top-ups once the game starts, with
+``stop_top_ups=True`` on the barrier that starts it. ``top_up_wait`` keeps a
+group that falls below its quorum before then from waiting for a newcomer
+who may never come. The ``crowd_estimate`` demo does this for groups of up
+to four that may start with three. A group that falls below three ends, at
+once during the game and before it once its wait has run out, and its
+members answer the remaining questions alone:
 
-.. code-block:: python
-
-    SimpleGrouper(
-        group_type="team",
-        # ... as above, and:
-        join_existing_groups=True,
-        top_up_wait=30,
-    )
-    GroupBarrier(id_="game_starts", group_type="team", stop_top_ups=True)
+.. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
+   :start-at: SimpleGrouper(
+   :end-before: Module(
+   :dedent: 8
 
 ``late_after`` counts from the previous barrier pass, so make it cover any
 untimed pages between the two barriers as well.
@@ -863,6 +866,20 @@ For the rest of the timeline:
                   time_estimate=10,
               ),
           )
+
+  When each round is a trial added with
+  :meth:`Trial.cue() <psynet.trial.main.Trial.cue>`, a participant who is out
+  of the group when the trial starts gets an ungrouped trial, so
+  ``show_trial`` can give them the solo version of the round. In the
+  ``crowd_estimate`` demo, they give their estimate without the group's
+  median, and a member removed partway through a question is told there is
+  no median to show:
+
+  .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
+     :pyobject: EstimateTrial.show_trial
+
+  .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
+     :pyobject: EstimateTrial.revise_page
 
   Lists and ``join(...)`` are split into their steps, but a barrier,
   ``conditional`` or loop is one step, checked when the participant reaches

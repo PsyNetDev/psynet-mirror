@@ -161,6 +161,9 @@ has a demo to start from.
   and `create_rate_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/create_rate_sync>`__.
 - **A group shares a chain of stimuli**, each member rating the same one:
   `gibbs_within_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/gibbs_within_sync>`__.
+- **An open lobby that latecomers can join**, with groups that start short
+  and fill up until their game starts:
+  `crowd_estimate <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/crowd_estimate>`__.
 - **Part of the experiment needs enough people present**, with other work
   until then:
   `sync_quorum <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/sync_quorum>`__.
@@ -223,6 +226,32 @@ trials instead of waiting.
 
 .. figure:: ../_static/images/design/groups/sync_quorum.svg
    :alt: A grouper waits for three participants while they do filler trials. Then, three times, a member sees the quorum page if enough members are present, or a filler trial otherwise.
+
+Groups that latecomers can join
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Waiting for a full group makes the first arrivals wait longest, and a group
+that loses a member early may still be worth saving. An **open lobby** lets
+a group **start short**, with fewer members than it would like, once its
+first member has waited long enough, and then **tops it up**: latecomers join
+a group that has a free place instead of waiting for a new one. Top-ups
+stop when the game starts, because a latecomer who missed the first round
+couldn't catch up; from then on, latecomers wait for a new group. A group
+that falls below its quorum before the game starts waits a little while for
+a latecomer to replace the member who left, and otherwise ends.
+
+In ``demos/experiments/crowd_estimate``, groups of up to four play a
+wisdom-of-crowds game; a group of three may start after a short wait. For
+each of two questions, every member estimates the answer, a barrier shares
+the group's median, and members see everyone's estimate and may revise their
+own. A group needs three members, because the median of two estimates is
+just their mean: a group that falls below three ends. Nobody is failed for
+waiting or for what another player did: a participant who finds no group,
+whose group ends, or who was removed for being late answers the remaining
+questions alone.
+
+.. figure:: ../_static/images/design/groups/crowd_estimate.svg
+   :alt: A grouper forms groups of up to four that latecomers can join, and a barrier starts the game and closes the group to latecomers. Then, for each question, members estimate, a barrier shares the group's median, and members revise their estimate on a group page that shows everyone's estimate.
 
 New groups for each round
 ^^^^^^^^^^^^^^^^^^^^^^^^^

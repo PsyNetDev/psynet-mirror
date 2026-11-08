@@ -129,6 +129,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   its quorum before then doesn't wait for a newcomer for ever. To let
   participants who find no group carry on alone instead of being failed,
   pass the grouper `max_wait_action="continue_without_group"`.
+  `demos/experiments/crowd_estimate` shows this whole open-lobby workflow,
+  with each question as a cued trial whose ungrouped version lets a player
+  without a group answer alone.
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
   needs a group: stop a rounds loop with it in the `while_loop` condition,
   and give a synchronized trial maker a solo alternative, for example
