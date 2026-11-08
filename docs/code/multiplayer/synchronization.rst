@@ -484,48 +484,30 @@ with side effects.
 Waiting and dropouts
 --------------------
 
-.. _sync-kinds-of-dropout:
+.. _sync-dropout-settings:
 
-Kinds of dropout
-~~~~~~~~~~~~~~~~
+Settings for each kind of dropout
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Participants leave a group in several ways, and PsyNet learns of each in a
-different way. Decide what should happen in each case your design can meet,
-and test each one (see :ref:`bots_that_drop_out`).
+:ref:`concept_groups` describes the ways participants leave a group and the
+decisions each one needs. These settings carry them out:
 
-.. list-table::
-   :header-rows: 1
-   :widths: 30 70
+- **Returning the study or being failed:** the grouper's ``below_quorum``
+  decides for the members who stay (see `Groups below quorum`_).
+- **Closing the tab or not responding:** a barrier's ``late_after`` and
+  ``late_action`` act on the member who is late. Without ``late_after``, the
+  barrier's ``max_wait_time`` and ``max_wait_action`` act on the members
+  waiting for them (see `Timeouts`_).
+- **Coming back after being removed:** see `After leaving a group`_ for what
+  they see and what the rest of the timeline does with them.
+- **Arriving when no group can form:** the grouper's ``max_wait_time``, with
+  ``start_short_after`` to start a smaller group, or
+  ``join_existing_groups`` to fill a gap in an existing one.
+- **Falling behind in rounds with a** :class:`~psynet.sync.Regrouper`:
+  ``late_action="leave_group"`` makes them miss the round and join the next
+  (see `Rounds with changing groups`_).
 
-   * - The participant…
-     - What happens
-   * - returns the study on the recruitment platform
-     - The recruiter tells PsyNet, which fails them at once and removes them
-       from their groups.
-   * - is failed by the experiment, for example by a failed check
-     - The same as returning the study.
-   * - closes the tab or stops responding
-     - PsyNet isn't told, so nothing happens until a time limit runs out. If
-       the next barrier sets ``late_after``, they are late there, and its
-       ``late_action`` fails them or removes them from the group. Otherwise
-       the others wait at the barrier until their ``max_wait_time`` runs
-       out, and its ``max_wait_action`` acts on *those waiting*: they are
-       failed, or leave the group and carry on without it.
-   * - comes back after being removed from the group
-     - They carry on with the experiment without the group, and their next
-       page says why (see `After leaving a group`_). A participant who was
-       failed sees the end of the experiment instead.
-   * - arrives when no group can form
-     - The grouper's ``max_wait_time`` fails them, unless
-       ``start_short_after`` lets a smaller group start or
-       ``join_existing_groups`` lets them fill a gap in an existing group.
-   * - falls behind in rounds with a :class:`~psynet.sync.Regrouper`
-     - With ``late_action="leave_group"`` they miss the round and join the
-       next one (see `Rounds with changing groups`_).
-
-When someone leaves, the members who stay carry on as before while the group
-still has its quorum. Below it, the grouper's ``below_quorum`` decides what
-happens to them (see `Groups below quorum`_).
+Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
 
 Timeouts
 ~~~~~~~~
@@ -731,6 +713,12 @@ After leaving a group
 A member removed from their group without being failed, through
 ``"leave_group"`` or ``below_quorum="leave_group"``, stays in the
 experiment and continues the timeline without that group. They leave only the group of that type: a player removed from a ``"pair"`` stays in their ``"cohort"``.
+A notice on their progress bar tells them why. A member removed for being
+late while the group carries on sees "Your group went on without you. Please
+continue." on the page they are on, until they leave it; whatever they submit there is saved,
+though the group has moved on. In other cases, such as when their group was
+dissolved or they waited too long, the notice appears on their next page.
+
 For the rest of the timeline:
 
 - :class:`~psynet.sync.GroupBarrier`\ s of that group type let them straight

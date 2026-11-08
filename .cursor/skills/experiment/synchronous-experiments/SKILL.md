@@ -159,8 +159,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 
 ## Test dropouts
 
-Real groups lose members in several ways, each handled by a different
-setting; "Kinds of dropout" in `code/multiplayer/synchronization` lists them.
+Real groups lose members in several ways; "Waiting and dropouts" in
+`design/groups` lists them, and "Settings for each kind of dropout" in
+`code/multiplayer/synchronization` gives the setting for each.
 Write a serial bot test for every kind your design can meet, and check that
 the experiment behaves sensibly for everyone involved: members who did
 nothing wrong are not failed unless the design says so, their next page tells

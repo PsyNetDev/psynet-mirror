@@ -41,21 +41,47 @@ everyone sees the same stimulus in each round.
 Waiting and dropouts
 --------------------
 
-Every barrier and grouper has a **maximum waiting time**. A participant who
-waits longer, for example because a partner closed the browser, is released.
-At a grouper they are failed; at a barrier, depending on its settings, they
-are either failed or removed from the group, continuing the experiment without it.
-A barrier can also catch members who fall behind: a member who hasn't
-reached the barrier within a set number of seconds is **late**, and is
-failed or removed from the group. A member on a page with its own time
-limit is not late before the page's time limit has run out. By default,
-participants are credited for the actual time they wait, up to the maximum.
+Participants leave groups in several ways, and PsyNet learns of each in a
+different way:
 
-By default, when a member is failed or leaves the experiment, a group that
-falls below its quorum is dissolved, and its remaining members are
-failed too. Decide this for every grouper (a regrouper's groups are never
-dissolved): let the others continue with
-fewer members (``below_quorum="leave_group"``), or have the
+.. list-table::
+   :header-rows: 1
+   :widths: 28 36 36
+
+   * - The participant…
+     - When PsyNet acts
+     - What you decide
+   * - returns the study on the recruitment platform, or is failed by the
+       experiment, for example for a failed check
+     - At once: they are failed and leave their group.
+     - Whether the others carry on without them.
+   * - closes the tab or stops responding
+     - Only when a time limit runs out. Either they are **late**: they
+       haven't reached the next barrier within a set number of seconds. Or
+       the members waiting for them at a barrier reach its **maximum waiting
+       time**.
+     - Whether the late member, or the members who waited, are failed or
+       continue the experiment without the group.
+   * - comes back after being removed from the group
+     - A notice tells them what happened, and they continue the experiment
+       without the group.
+     - What they do for the rest of the experiment: a task on their own, an
+       early end, or a new group.
+   * - arrives when no group can form
+     - When they have waited at the grouper for its maximum waiting time:
+       they are failed.
+     - Whether a smaller group may start instead, or whether they may join a
+       group that has lost a member.
+
+A member on a page with its own time limit is not late before the page's time
+limit has run out. By default, participants are credited for the actual time
+they wait, up to the maximum.
+
+When someone leaves, a group that still has its **quorum**, the smallest
+size at which it can go on, carries on. Below it, by default, the group is
+dissolved and its remaining members are failed too. Decide this for every
+grouper (a regrouper's groups are never dissolved): let the others continue
+the experiment without the group (``below_quorum="leave_group"``), or have the
 group wait for a newcomer to replace the one who left
 (``join_existing_groups=True``). Failed participants are paid for what they
 completed (see :doc:`/code/participants/payment`).
