@@ -189,9 +189,9 @@ class Exp(psynet.experiment.Experiment):
         """Return one row per player per round, with both players' actions."""
         from psynet.sync import ParticipantLinkSyncGroup
 
-        trials = RockPaperScissorsTrial.query.filter_by(
-            failed=False, complete=True
-        ).all()
+        trials = RockPaperScissorsTrial.query.filter(
+            RockPaperScissorsTrial.sync_group_id.isnot(None)
+        ).filter_by(failed=False, complete=True)
         links = ParticipantLinkSyncGroup.query.filter(
             ParticipantLinkSyncGroup.sync_group_id.in_(
                 [trial.sync_group_id for trial in trials]

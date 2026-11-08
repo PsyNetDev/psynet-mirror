@@ -1632,10 +1632,9 @@ class GroupBarrier(Barrier):
         ``group``, ``participants`` (the group's active members), ``trials``
         (each member's ``current_trial``, in the same order as ``participants``,
         for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
-        ``sync_group_type`` that the barrier is part of), ``node`` (the node
-        all those trials share, such as the group's
-        :class:`~psynet.trial.main.SyncGroupNode` for the round, or ``None`` if
-        they don't share one), ``leader`` (the
+        ``sync_group_type`` that the barrier is part of), ``node`` (the
+        group's :class:`~psynet.trial.main.SyncGroupNode` for the round, if
+        all those trials are on it, and otherwise ``None``), ``leader`` (the
         group's leader), ``participant`` (the same object as ``leader``, kept for
         compatibility), ``left`` (the members who left the group since its
         previous barrier pass, or since it formed; see below) and ``barrier``,
@@ -1961,7 +1960,7 @@ class GroupBarrier(Barrier):
                             group=group,
                             participants=group.active_participants,
                             trials=_current_trials(group.active_participants),
-                            node=_shared_node(group.active_participants),
+                            node=_shared_node(group, group.active_participants),
                             leader=group.leader,
                             participant=group.leader,
                             left=left,
@@ -4292,14 +4291,21 @@ def _current_trials(participants):
     return [participant.current_trial for participant in participants]
 
 
-def _shared_node(participants):
-    """Return the node that all ``participants``' current trials share, or ``None``."""
+def _shared_node(group, participants):
+    """Return ``group``'s node that all ``participants``' current trials share, or ``None``."""
+    from .trial.main import SyncGroupNode
+
     nodes = {
         trial.node_id: trial.node
         for trial in _current_trials(participants)
         if trial is not None
     }
-    return next(iter(nodes.values())) if len(nodes) == 1 else None
+    if len(nodes) != 1:
+        return None
+    node = next(iter(nodes.values()))
+    if isinstance(node, SyncGroupNode) and node.sync_group_id == group.id:
+        return node
+    return None
 
 
 def _run_on_dissolve(group, members):
@@ -4323,7 +4329,7 @@ def _run_on_dissolve(group, members):
                 group=group,
                 participants=participants,
                 trials=_current_trials(participants),
-                node=_shared_node(participants),
+                node=_shared_node(group, participants),
                 barrier=barrier,
             )
         except Exception as err:

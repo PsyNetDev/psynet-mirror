@@ -9,9 +9,9 @@ Each round is one cued ``PickTrial`` per player. Because the trial class has
 ``sync_group_type = "room"``, the trials of a room's players share a node: the
 room's results go in ``trial.node.var`` and each player's in ``trial.var``, and
 ``get_basic_data`` reads both back. The regrouper forms new rooms every round,
-so the cue needs no round number. A room can mix players at different rounds,
-for example a latecomer playing their first round with others playing their
-second, so the export numbers each player's own rounds.
+so every room plays only its round 0. A room can mix players at different
+rounds of the game, for example a latecomer playing their first round with
+others playing their second, so the export numbers each player's own rounds.
 
 The choice page has a ``time_limit`` of ``CHOICE_SECONDS``. A player who
 doesn't choose in time misses the round and joins the next one, so the rest
@@ -224,7 +224,8 @@ class Exp(psynet.experiment.Experiment):
         """Return one row per player per round, from the trials, and one per room, from the nodes.
 
         A room can mix players at different rounds, so ``round`` counts each
-        player's own trials from 0, and rooms have no round number.
+        player's own trials from 0. Each room plays one round, so the room
+        table has no round column.
         """
         rounds = {}
         player_rounds = []

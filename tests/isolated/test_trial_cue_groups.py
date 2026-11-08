@@ -4,6 +4,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from dallinger import db
@@ -13,11 +14,13 @@ from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import GroupBarrier
 from psynet.trial.main import GenericTrialNetwork, SyncGroupNode, Trial
+from psynet.trial.static import StaticNode, StaticTrialMaker
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
 from test_regrouper import _arrive, _cohort_and_pairs  # noqa: E402
+from timeline_hold_helpers import _working_participants  # noqa: E402
 
 in_consents_experiment = pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
@@ -59,8 +62,8 @@ def test_a_pair_s_cued_trials_share_one_node_per_round(
     exp = get_experiment()
     cohort, pairs = _paired(exp)
     pair = cohort[0].active_sync_groups["pair"]
-    for round in (0, 1):
-        logic = PairTrial.cue(_make_definition, round=round)
+    logic = PairTrial.cue(_make_definition)
+    for _ in range(2):
         for participant in cohort:
             logic[0].consume(exp, participant)
     db.session.commit()
@@ -83,7 +86,13 @@ def test_a_pair_s_cued_trials_share_one_node_per_round(
     assert isinstance(nodes[0], SyncGroupNode)
     assert nodes[0] is nodes[1] and nodes[2] is nodes[3] and nodes[0] is not nodes[2]
     assert nodes[0].network is nodes[2].network
+
+    pair.remove_participant(cohort[0])
     assert trials[0].sync_group is pair
+    PairTrial.cue({"target": 9})[0].consume(exp, cohort[0])
+    ungrouped = cohort[0].current_trial
+    assert ungrouped.sync_group_id is None
+    assert not isinstance(ungrouped.node, SyncGroupNode)
 
 
 @in_consents_experiment
@@ -92,7 +101,7 @@ def test_group_barrier_passes_the_members_trials_to_on_release(
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
-    logic = PairTrial.cue({"target": 3}, round=0)
+    logic = PairTrial.cue({"target": 3})
     for participant in cohort:
         logic[0].consume(exp, participant)
     db.session.commit()
@@ -140,7 +149,7 @@ def _cue_in_parallel(exp, logic, participants):
 def test_members_cueing_in_parallel_get_one_node(in_experiment_directory, db_session):
     exp = get_experiment()
     cohort, _ = _paired(exp)
-    _cue_in_parallel(exp, PairTrial.cue(_make_definition, round=0), cohort)
+    _cue_in_parallel(exp, PairTrial.cue(_make_definition), cohort)
 
     assert SyncGroupNode.query.count() == 1
     assert {t.node_id for t in PairTrial.query} == {SyncGroupNode.query.one().id}
@@ -152,6 +161,13 @@ class SoloTrial(Trial):
 
     def show_trial(self, experiment, participant):
         raise NotImplementedError
+
+    @classmethod
+    def record_node(cls, node):
+        _released_nodes.append(node)
+
+
+_released_nodes = []
 
 
 @in_consents_experiment
@@ -166,34 +182,99 @@ def test_first_ungrouped_trials_cued_in_parallel_share_the_default_node(
     assert GenericTrialNetwork.query.count() == 1
 
 
-@in_consents_experiment
-def test_a_one_round_group_can_leave_out_round(in_experiment_directory, db_session):
-    exp = get_experiment()
-    cohort, _ = _paired(exp)
-    logic = PairTrial.cue(_make_definition)
-    for participant in cohort:
-        logic[0].consume(exp, participant)
-    db.session.commit()
+def test_cue_takes_round_only_when_the_trial_has_a_sync_group_type():
+    with pytest.raises(ValueError, match="takes round="):
+        SoloTrial.cue({}, round=0)
 
-    trials = PairTrial.query.all()
-    assert len({t.node_id for t in trials}) == 1
-    assert [t.sync_group_round for t in trials] == [None, None]
-    assert _definition_calls == [(cohort[0].active_sync_groups["pair"].id, None)]
+
+class RespondTrial(PairTrial):
+    pass
 
 
 @in_consents_experiment
-def test_leaving_out_round_for_a_second_round_raises(
+def test_two_trial_classes_in_one_round_share_its_node_and_definition(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
-    logic = PairTrial.cue({"target": 1})
-    logic[0].consume(exp, cohort[0])
+    for participant in cohort:
+        PairTrial.cue({"target": 1})[0].consume(exp, participant)
+    RespondTrial.cue({"target": 1})[0].consume(exp, cohort[0])
     db.session.commit()
-    with pytest.raises(ValueError, match="pass round="):
-        logic[0].consume(exp, cohort[0])
+
+    assert SyncGroupNode.query.count() == 1
+    assert {t.sync_group_round for t in Trial.query} == {0}
+    with pytest.raises(ValueError, match="already has the definition"):
+        RespondTrial.cue({"target": 2})[0].consume(exp, cohort[1])
 
 
-def test_cue_takes_round_only_when_the_trial_has_a_sync_group_type():
-    with pytest.raises(ValueError, match="takes round="):
-        SoloTrial.cue({}, round=0)
+@in_consents_experiment
+def test_a_late_joiner_joins_the_group_s_current_round(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    (late,) = _working_participants(exp, 1)
+    logic = PairTrial.cue({"target": 1})
+    for participant in cohort:
+        logic[0].consume(exp, participant)
+    pair.add_participant(late)
+    logic[0].consume(exp, late)
+    db.session.commit()
+
+    assert {(t.node_id, t.sync_group_round) for t in PairTrial.query} == {
+        (SyncGroupNode.query.one().id, 0)
+    }
+
+
+@in_consents_experiment
+def test_on_release_gets_no_node_for_trials_off_the_group_s_node(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    logic = SoloTrial.cue({"target": 1})
+    for participant in cohort:
+        logic[0].consume(exp, participant)
+    db.session.commit()
+    _released_nodes.clear()
+
+    barrier = GroupBarrier(
+        "solo_done", group_type="pair", on_release=SoloTrial.record_node
+    )
+    _arrive(exp, barrier, cohort)
+    assert _released_nodes == [None]
+
+
+@in_consents_experiment
+def test_a_synchronized_trial_maker_records_group_role_and_round(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    cohort, pairs = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    trial_maker = StaticTrialMaker(
+        id_="paired_static",
+        trial_class=PairTrial,
+        nodes=[StaticNode(definition={})],
+        expected_trials_per_participant=1,
+        max_trials_per_participant=1,
+        sync_group_type="pair",
+    )
+
+    def custom_trial(**kwargs):
+        return SimpleNamespace(sync_group_id=None, sync_group_round=None), "available"
+
+    monkeypatch.setattr(trial_maker, "prepare_trial", custom_trial)
+    for participant in cohort:
+        participant.start_module(trial_maker)
+
+    for round in (0, 1):
+        trials = [trial_maker._prepare_trial(exp, p)[0] for p in cohort]
+        trial_maker._number_group_round(
+            pair, [SimpleNamespace(current_trial=t) for t in trials]
+        )
+        assert [
+            (t.sync_group_id, t.sync_group_role, t.sync_group_round) for t in trials
+        ] == [(pair.id, pairs.role(p), round) for p in cohort]
