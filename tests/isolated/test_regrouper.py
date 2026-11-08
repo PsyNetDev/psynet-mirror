@@ -282,6 +282,16 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
         ({"start_short_with": 2}, "only used with start_short_after"),
         ({"start_short_after": 10, "start_short_with": 5}, "start_short_with <="),
         ({"start_short_after": 60, "start_short_with": 2}, "less than max_wait_time"),
+        ({"start_short_after": 10, "quorum": 5}, "can't be larger than"),
+        (
+            {
+                "start_short_after": 10,
+                "quorum": 5,
+                "join_existing_groups": True,
+                "max_group_size": 6,
+            },
+            "pass start_short_with between",
+        ),
     ],
 )
 def test_simple_grouper_checks_start_short_after(kwargs, message):
@@ -353,6 +363,9 @@ def test_regrouper_left_over_waits_for_cohort_still_in_the_round(
     assert _count_releases.calls == 1
     (odd_one_out,) = [p for p in cohort if "pair" not in p.active_sync_groups]
     paired = [p for p in cohort if p is not odd_one_out]
+    # Sitting out the first round: never in a pair, so no removal reason.
+    assert pairs.sat_out(odd_one_out)
+    assert odd_one_out.sync_group_removal_reason("pair") is None
 
     # The pair's round runs past the deadline; the odd one out, back first,
     # keeps waiting for them instead of sitting out again.
@@ -572,6 +585,7 @@ def test_regrouper_alternates_roles_and_partners_and_counts_rounds(
         assert pairs.role(p) != role
         assert _partner(p) is not partner
         assert pairs.rounds_played(p) == 2
+        assert p.sync_group_removal_reason("pair") is None
     # A player removed from their pair, as by a kick, still sees their role.
     role = pairs.role(cohort[0])
     cohort[0].active_sync_groups["pair"].remove_participant(cohort[0])
@@ -583,6 +597,7 @@ def test_regrouper_alternates_roles_and_partners_and_counts_rounds(
     (sitter,) = [p for p in cohort[:3] if "pair" not in p.active_sync_groups]
     assert pairs.role(sitter) is None
     assert (pairs.rounds_sat_out(sitter), pairs.sat_out(sitter)) == (1, True)
+    assert sitter.sync_group_removal_reason("pair") == "moved_on"
     _arrive(exp, pairs, cohort[:3])
     assert "pair" in sitter.active_sync_groups
     assert not pairs.sat_out(sitter)

@@ -2704,7 +2704,11 @@ class SimpleGrouper(Grouper):
                 raise ValueError(
                     f"A short start forms a group of at least quorum ({quorum}), "
                     f"which is more than initial_group_size ({initial_group_size}); "
-                    "pass start_short_with."
+                    + (
+                        "pass start_short_with between 1 and initial_group_size."
+                        if join_existing_groups
+                        else "the quorum can't be larger than initial_group_size."
+                    )
                 )
             start_short_with = quorum
         if start_short_with is not None and not (
@@ -4194,7 +4198,8 @@ class SyncGroup(SQLBase, SQLMixin):
             - ``"late"``: "(removed)", for a member a barrier removed for
               being late (``late_action="leave_group"``).
             - ``"moved_on"``: not shown, unless the page shows their answer,
-              for a member who went on to their next group.
+              for a member who left at a :class:`Regrouper`, for their next
+              group or to sit the round out.
             - ``"finished"``: "(finished)", for a member who has played their
               part, such as a player leaving a cohort after their last round.
               Their leaving doesn't dissolve a group below its quorum, so the
