@@ -4764,7 +4764,9 @@ class GroupRound(SQLBase, SQLMixin):
     bonus = Column(Float)
 
 
-def group_rounds(barrier_id: Optional[str] = None) -> List[dict]:
+def group_rounds(
+    barrier_id: Optional[str] = None, participant: Optional[Participant] = None
+) -> List[dict]:
     """Return the recorded rounds, one dictionary per member per round.
 
     Each dictionary has ``barrier_id``, ``round``, ``group_id``,
@@ -4780,6 +4782,9 @@ def group_rounds(barrier_id: Optional[str] = None) -> List[dict]:
     barrier_id
         Only return the rounds of this barrier. By default, return those of
         every ``GroupBarrier(record_rounds=True)``.
+    participant
+        Only return this participant's rounds, for example to show them their
+        latest result: ``group_rounds("round_done", participant)[-1]``.
 
     Examples
     --------
@@ -4792,6 +4797,8 @@ def group_rounds(barrier_id: Optional[str] = None) -> List[dict]:
     query = GroupRound.query
     if barrier_id is not None:
         query = query.filter(GroupRound.barrier_id == barrier_id)
+    if participant is not None:
+        query = query.filter(GroupRound.participant_id == participant.id)
     rows = query.order_by(
         GroupRound.barrier_id,
         GroupRound.round,
