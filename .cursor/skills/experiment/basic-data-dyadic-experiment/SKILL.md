@@ -30,13 +30,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
    role or player index, partner) using "Group experiments" in
    `data/basic_data`. If a per-round value exists only in participant
    variables or browser state, change the experiment to save it on the trial
-   before any data are collected. Games without trials, such as those that
-   re-pair players with a `Regrouper`, should record each round at the
-   barrier that ends it with `GroupBarrier(record_rounds=True)`,
-   `barrier.record(...)` for each player's results and
-   `barrier.record_group(...)` for the group's, and export both
-   `participant_rounds(...)` and `group_rounds(...)`, which join on
-   `round_id`; see "Games with a regrouper" in `data/basic_data`.
+   before any data are collected. Games without trials should record their
+   rounds at a barrier, as `synchronous-experiments/SKILL.md` describes;
+   see "Games with a regrouper" in `data/basic_data` for the two tables.
 2. Define the round state before flattening. List the variables that
    determine it, such as shared and private resources, visible signals,
    hidden attributes, current turn, previous actions, timers, and cumulative

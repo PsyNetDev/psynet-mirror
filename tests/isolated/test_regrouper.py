@@ -18,6 +18,7 @@ from psynet.sync import (
     SimpleGrouper,
     SyncGroup,
     _latest_tick,
+    group_rounds,
     participant_rounds,
 )
 from psynet.timeline import Timeline
@@ -589,23 +590,37 @@ def test_regrouper_alternates_roles_and_partners_and_counts_rounds(
 
 
 @in_consents_experiment
-def test_pairs_from_one_split_record_the_sit_out_once(
+def test_pairs_from_one_split_record_rounds_with_shared_numbers(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
     cohort, pairs = _cohort_and_pairs(exp, 5)
-    _arrive(exp, pairs, cohort)
-    (sitter,) = [p for p in cohort if "pair" not in p.active_sync_groups]
     barrier = GroupBarrier("round_finished", group_type="pair", record_rounds=True)
-    for pair in {p.active_sync_groups["pair"] for p in cohort if p is not sitter}:
-        _arrive(exp, barrier, pair.participants)
+    sitters = []
+    # Two rounds in the first split, one in the second.
+    for n_rounds in (2, 1):
+        _arrive(exp, pairs, cohort)
+        (sitter,) = [p for p in cohort if "pair" not in p.active_sync_groups]
+        sitters.append(sitter)
+        groups = {p.active_sync_groups["pair"] for p in cohort if p is not sitter}
+        for _ in range(n_rounds):
+            for pair in groups:
+                _arrive(exp, barrier, pair.participants)
 
+    rounds = group_rounds("round_finished")
+    assert [r["round"] for r in rounds] == [1, 1, 2, 2, 3, 3]
+    round_ids = {(r["group_id"], r["round"]): r["round_id"] for r in rounds}
     rows = participant_rounds("round_finished")
-    assert sorted(r["outcome"] for r in rows) == ["played"] * 4 + ["sat_out"]
-    assert {r["round"] for r in rows} == {1}
-    assert [r["participant_id"] for r in rows if r["outcome"] == "sat_out"] == [
-        sitter.id
+    played = [r for r in rows if r["outcome"] == "played"]
+    assert len(played) == 12
+    assert all(r["round_id"] == round_ids[r["group_id"], r["round"]] for r in played)
+    sat_out = [
+        (r["round"], r["participant_id"], r["round_id"])
+        for r in rows
+        if r["outcome"] == "sat_out"
     ]
+    first, second = (p.id for p in sitters)
+    assert sat_out == [(1, first, None), (2, first, None), (3, second, None)]
 
 
 @in_consents_experiment

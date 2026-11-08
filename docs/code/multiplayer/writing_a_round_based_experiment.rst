@@ -149,8 +149,9 @@ partner who was too slow apart from one who returned the study:
    :pyobject: score_round
 
 The results page reads the pair's round with
-:func:`~psynet.sync.group_rounds` and passes both answers to the prompt as
-speech bubbles:
+:func:`~psynet.sync.group_rounds`, passes both answers to the prompt as
+speech bubbles, and reads the player's coins from their own round with
+:func:`~psynet.sync.participant_rounds`:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: show_outcome

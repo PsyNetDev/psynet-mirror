@@ -472,9 +472,10 @@ bubble, as a dictionary from participant ID to answer; ``show_progress``
 then defaults to ``False``, and passing ``show_progress=True`` or
 ``has_answered`` with ``answers`` raises an error. A member whose answer is
 ``None``, for example because they ran out of time, keeps their seat
-without a bubble. Participant variables
-store dictionary keys as strings, so a dictionary read back from one can be
-passed as it is; ``highlight`` takes string IDs too. Speech bubbles may
+without a bubble. Participant variables and recorded rounds store
+dictionary keys as strings, so a dictionary read back from one, such as
+the ``choices`` below, can be passed as it is; ``highlight`` takes string
+IDs too. Speech bubbles may
 overlap a neighbour; hovering over or tapping a member brings their bubble to
 the front. Answers are shown as text; pass :class:`~markupsafe.Markup` for
 HTML such as an image. ``highlight`` marks members, with built-in styles for

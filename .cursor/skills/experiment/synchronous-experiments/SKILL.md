@@ -77,18 +77,19 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   result; members still on an earlier page then get neither callback, so
   check `participant.sync_group_removal_reason(...)` in a step after the
   barrier if they need a result too.
-- For one row per member per round in the export, pass the barrier that ends
-  each round `record_rounds=True` and call
-  `barrier.record(participant, answer=..., bonus=...)` in `on_release` (and
-  `on_dissolve`); return `participant_rounds("barrier_id")` from `get_basic_data`.
-  Rows include members who left during the round, players a `Regrouper`
-  sat out, and every member when the group dissolves mid-round, so pay
-  through `bonus=` to keep the payment and the record in step. Record
-  results that belong to the whole group, such as a winning number or an
-  offer, once with `barrier.record_group(...)`, and export
-  `group_rounds("barrier_id")` too; player rows link to it by `round_id`.
-  Results pages read `group_rounds("barrier_id", participant)[-1]` rather
-  than scanning other members' rows or storing text in `participant.var`.
+- To export rounds, pass the barrier that ends each round
+  `record_rounds=True`. In `on_release` (and `on_dissolve`), record each
+  member's results and pay with `barrier.record(...)`, and the group's
+  results once with `barrier.record_group(...)`; export both tables from
+  `get_basic_data`. Rows include members who left, players a `Regrouper`
+  sat out and dissolved rounds, so pay only through `bonus=`. Results pages
+  read the latest row instead of `participant.var`:
+
+  ```python
+  barrier.record(participant, decision=answer, bonus=payoff)
+  barrier.record_group(winner_id=winner.id, choices=choices)
+  latest = group_rounds("round_finished", participant)[-1]
+  ```
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Use `sync_group_type` on trial makers when all group members should follow the

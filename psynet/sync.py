@@ -1669,17 +1669,23 @@ class GroupBarrier(Barrier):
         with just them.
 
     record_rounds
-        If ``True``, PsyNet records each round at this barrier, one
-        :class:`ParticipantRound` row per member, each time the barrier releases the
-        group or the group dissolves during the round: members still in the
-        group, those who left it since its previous barrier, players a
-        :class:`Regrouper` sat out of the round, and, when it dissolves, those
-        who hadn't reached the barrier yet. A group dissolving with nobody
+        If ``True``, PsyNet records each round at this barrier, each time
+        the barrier releases the group or the group dissolves during the
+        round: one :class:`SyncGroupRound` row for the group and one
+        :class:`ParticipantRound` row per member, linked to it by
+        ``round_id``. Members are those still in the group, those who left
+        it since its previous barrier, and, when it dissolves, those who
+        hadn't reached the barrier yet. Players a :class:`Regrouper` sat out
+        of the round get a row without a ``round_id``. A group dissolving with nobody
         here is recorded only if this is the timeline's one recording barrier
-        for the group type and a member is still on their way to it. ``on_release``
-        and ``on_dissolve`` add the round's results, and a bonus, with
-        :meth:`record`; :func:`participant_rounds` returns the rows for
-        ``get_basic_data``.
+        for the group type and a member is still on their way to it.
+        Rounds are counted from 1 for each group; the groups of a
+        :class:`Regrouper` carry on from the rounds the cohort's earlier
+        splits recorded, so the groups of one split share round numbers.
+        ``on_release`` and ``on_dissolve`` add each member's results, and a
+        bonus, with :meth:`record`, and the group's with
+        :meth:`record_group`; :func:`participant_rounds` and
+        :func:`group_rounds` return the rows for ``get_basic_data``.
 
     stop_top_ups
         If ``True``, the group stops accepting newcomers once it passes this
@@ -1846,7 +1852,9 @@ class GroupBarrier(Barrier):
         ----------
         **data
             Fields to store, such as everyone's choices or the pot. They
-            become columns of :func:`group_rounds`.
+            become columns of :func:`group_rounds`. Values are stored as
+            JSON, so a nested dictionary's keys come back as strings once
+            the row is reloaded, for example in a later request.
         """
         group_round = self._round_being_recorded("record_group").group_round
         _check_unreserved(data, _GROUP_ROUND_COLUMNS)
@@ -4833,8 +4841,8 @@ class SyncGroupRound(SQLBase, SQLMixin):
     link to it through ``round_id``. The barrier's callbacks add results
     that concern the whole group with :meth:`GroupBarrier.record_group`,
     and :func:`group_rounds` returns the rows. The groups a
-    :class:`Regrouper` forms in one split share a round number but each
-    has its own row.
+    :class:`Regrouper` forms in one split share round numbers but each
+    has its own rows.
     """
 
     __tablename__ = "sync_group_round"
@@ -4885,6 +4893,8 @@ class ParticipantRound(SQLBase, SQLMixin):
     bonus = Column(Float)
 
     __table_args__ = (
+        # Sit-out rows have no ``round_id``, so this leaves them to the index below.
+        UniqueConstraint("round_id", "participant_id"),
         Index(
             "ix_participant_round_sat_out",
             "participant_id",
@@ -5031,22 +5041,12 @@ def _formed_by_regrouper(group) -> bool:
 def _round_number(group, barrier_id):
     """Number the round that ``group`` is finishing at ``barrier_id``, from 1.
 
-    Groups a :class:`Regrouper` forms in one split share a creation time, so
-    their rounds are numbered by split, the same for the whole cohort.
-    Other groups count their own rounds at the barrier. A group that
-    dissolved there keeps that round for members removed afterwards.
+    A group counts its own rounds at the barrier. A group that dissolved
+    there keeps that round for members removed afterwards. A group a
+    :class:`Regrouper` formed carries on from the latest round that the
+    groups of the cohort's earlier splits recorded there, so the groups of
+    one split share their round numbers.
     """
-    if _formed_by_regrouper(group):
-        query = db.session.query(
-            func.count(func.distinct(SyncGroup.creation_time))
-        ).filter(
-            SyncGroup.grouper_id == group.grouper_id,
-            SyncGroup.creation_time <= group.creation_time,
-            SyncGroup.within_group_id.is_(None)
-            if group.within_group_id is None
-            else SyncGroup.within_group_id == group.within_group_id,
-        )
-        return query.scalar()
     rounds = db.session.query(func.max(SyncGroupRound.round)).filter(
         SyncGroupRound.sync_group_id == group.id,
         SyncGroupRound.barrier_id == barrier_id,
@@ -5054,7 +5054,22 @@ def _round_number(group, barrier_id):
     dissolved = rounds.filter(SyncGroupRound.outcome == "dissolved").scalar()
     if dissolved is not None:
         return dissolved
-    return (rounds.scalar() or 0) + 1
+    latest = rounds.scalar()
+    if latest is None and _formed_by_regrouper(group):
+        latest = (
+            db.session.query(func.max(SyncGroupRound.round))
+            .join(SyncGroup, SyncGroup.id == SyncGroupRound.sync_group_id)
+            .filter(
+                SyncGroupRound.barrier_id == barrier_id,
+                SyncGroup.grouper_id == group.grouper_id,
+                SyncGroup.creation_time < group.creation_time,
+                SyncGroup.within_group_id.is_(None)
+                if group.within_group_id is None
+                else SyncGroup.within_group_id == group.within_group_id,
+            )
+            .scalar()
+        )
+    return (latest or 0) + 1
 
 
 @register_table

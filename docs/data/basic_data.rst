@@ -231,18 +231,28 @@ latest round went, as the results pages of both demos do with
 ``group_rounds("round_finished", participant)[-1]``; pass ``round=`` for
 one round.
 
-Each player row has the ``round``, the ``group_id``, the member's ``participant_id``
-and ``role``, ``other_member_ids`` (who else played the round), ``outcome``
+Each player row has the ``round_id``, ``barrier_id``, ``round``,
+``group_id`` and ``group_type``, the member's ``participant_id`` and
+``role``, ``other_member_ids`` (who else played the round), ``outcome``
 (``"played"``, ``"sat_out"``, ``"dissolved"`` or why the member left, such
 as ``"late"``), ``bonus`` and the recorded fields. Each group row has the
-``round``, the ``group_id``, ``member_ids`` (who played the round),
-``outcome`` (``"played"`` or ``"dissolved"``), ``time`` and the recorded
-fields. In groups a regrouper
-forms, ``round`` counts the regrouper's splits, so it is the same for the
-whole cohort, though each group has its own group row. A player the
-regrouper sat out gets a ``"sat_out"`` row for that round, with the cohort
-as its ``group_id`` and no ``round_id``. Other groups count their own
-rounds at the barrier.
+``round_id``, ``barrier_id``, ``round``, ``group_id`` and ``group_type``,
+``member_ids`` (who played the round), ``outcome`` (``"played"`` or
+``"dissolved"``), ``time`` and the recorded fields. Both tables have
+``barrier_id``, ``round``, ``group_id``, ``group_type`` and ``outcome``,
+so a join gives two copies of each, for example ``outcome_x`` and
+``outcome_y`` with pandas' default suffixes; the player's ``outcome`` says
+how that player's round ended, which can differ from the group's, such as
+``"late"`` in a round the group ``"played"``. Join on ``round_id`` alone
+and drop or rename the duplicates.
+
+Each group counts its own rounds at the barrier. Groups a regrouper forms
+carry on from the rounds that the cohort's earlier splits recorded there,
+so the groups of one split share round numbers, though each has its own
+group rows; a group that passes the barrier three times between splits
+records three rounds. A player the regrouper sat out gets a
+``"sat_out"`` row for each of those rounds, with the cohort as its
+``group_id`` and no ``round_id``.
 
 When a group dissolves during a round, the group and every member get a
 ``"dissolved"`` row for it. If some members wait at the barrier,

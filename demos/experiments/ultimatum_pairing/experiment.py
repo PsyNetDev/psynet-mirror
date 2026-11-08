@@ -124,9 +124,10 @@ def keep_playing(participant):
 
 def score_round(participants: List[Participant], left: List[Participant], barrier):
     """Record the pair's offer and its result, and each player's decision and coins."""
-    decisions = {pairing.role(p): (p.id, p.var.decision) for p in participants}
-    proposer_id, offer = decisions.get("proposer", (None, None))
-    responder_id, minimum = decisions.get("responder", (None, None))
+    roles = {pairing.role(p): p for p in participants}
+    proposer, responder = roles.get("proposer"), roles.get("responder")
+    offer = proposer.var.decision if proposer else None
+    minimum = responder.var.decision if responder else None
     if len(participants) < 2:
         away = any(p.sync_group_removal_reason("pair") == "late" for p in left)
         result = "partner_away" if away else "partner_left"
@@ -135,25 +136,20 @@ def score_round(participants: List[Participant], left: List[Participant], barrie
     else:
         result = "accepted" if offer >= minimum else "rejected"
     barrier.record_group(
-        proposer_id=proposer_id,
-        responder_id=responder_id,
+        proposer_id=proposer.id if proposer else None,
+        responder_id=responder.id if responder else None,
         offer=offer,
         minimum=minimum,
         result=result,
     )
-    for participant in participants:
+    if result == "accepted":
+        coins = {"proposer": ENDOWMENT - offer, "responder": offer}
+    else:
+        coins = {"proposer": 0, "responder": 0}
+    for role, participant in roles.items():
         barrier.record(
-            participant,
-            decision=participant.var.decision,
-            coins=earnings(pairing.role(participant), offer, result),
+            participant, decision=participant.var.decision, coins=coins[role]
         )
-
-
-def earnings(role, offer, result):
-    """Return the coins a player in ``role`` earns from the pair's ``result``."""
-    if result != "accepted":
-        return 0
-    return ENDOWMENT - offer if role == "proposer" else offer
 
 
 def decision_page(participant):
@@ -231,7 +227,7 @@ def show_outcome(participant):
     if result == "rejected":
         text = f"The offer of {offer} coins was rejected, so nobody was paid."
     else:
-        coins = earnings(pairing.role(participant), offer, result)
+        coins = participant_rounds("round_finished", participant)[-1]["coins"]
         text = f"The offer of {offer} coins was accepted. You earned {coins}."
     return ModularPage(
         "outcome",
