@@ -378,7 +378,9 @@ def test_participant_removed_from_their_group_initializes_alone(chain_kwargs):
     kicked = SimpleNamespace(
         active_sync_groups={},
         sync_group_links=[
-            SimpleNamespace(active=False, sync_group=SimpleNamespace(group_type="main"))
+            SimpleNamespace(
+                id=1, active=False, sync_group=SimpleNamespace(group_type="main")
+            )
         ],
         select_module=lambda module_id: None,
         module_state=SimpleNamespace(participant_group=None),
@@ -415,7 +417,9 @@ def test_participant_whose_group_was_closed_still_needs_a_new_group():
         id=3,
         active_sync_groups={},
         sync_group_links=[
-            SimpleNamespace(active=True, sync_group=SimpleNamespace(group_type="main"))
+            SimpleNamespace(
+                id=1, active=True, sync_group=SimpleNamespace(group_type="main")
+            )
         ],
     )
     with pytest.raises(RuntimeError, match="expected participant 3"):
