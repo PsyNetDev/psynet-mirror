@@ -7055,7 +7055,9 @@ def test_timeline_warns_about_late_members_once_top_ups_stop(stop_top_ups, top_u
             make_timeline()
 
 
-@pytest.mark.parametrize("reason, dissolved", [("finished", False), (None, True)])
+@pytest.mark.parametrize(
+    "reason, dissolved", [("finished", False), ("moved_on", False), (None, True)]
+)
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
