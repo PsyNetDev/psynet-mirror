@@ -25,6 +25,7 @@ if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
 from test_regrouper import _arrive, _cohort_and_pairs  # noqa: E402
 from test_sync import _sync_group_of  # noqa: E402
+from test_trial_cue import _register_trial  # noqa: E402
 from timeline_hold_helpers import _working_participants  # noqa: E402
 
 in_consents_experiment = pytest.mark.parametrize(
@@ -78,7 +79,7 @@ def test_a_pair_s_cued_trials_share_one_node_per_round(
     logic = PairTrial.cue(_make_definition)
     for _ in range(2):
         for participant in cohort:
-            logic[0].consume(exp, participant)
+            _register_trial(logic).consume(exp, participant)
     db.session.commit()
 
     trials = PairTrial.query.order_by(PairTrial.id).all()
@@ -99,18 +100,18 @@ def test_a_pair_s_cued_trials_share_one_node_per_round(
     assert isinstance(nodes[0], SyncGroupNode)
     assert nodes[0] is nodes[1] and nodes[2] is nodes[3] and nodes[0] is not nodes[2]
     assert nodes[0].network is nodes[2].network
-    PairTrial.cue({"target": 7})[0].consume(exp, cohort[0])
+    _register_trial(PairTrial.cue({"target": 7})).consume(exp, cohort[0])
     with pytest.raises(ValueError, match="already has the definition"):
-        PairTrial.cue({"target": 8})[0].consume(exp, cohort[1])
+        _register_trial(PairTrial.cue({"target": 8})).consume(exp, cohort[1])
 
     pair.remove_participant(cohort[0])
     assert trials[0].sync_group is pair
-    PairTrial.cue({"target": 9})[0].consume(exp, cohort[0])
+    _register_trial(PairTrial.cue({"target": 9})).consume(exp, cohort[0])
     ungrouped = cohort[0].current_trial
     assert ungrouped.sync_group_id is None
     assert not isinstance(ungrouped.node, SyncGroupNode)
     _definition_calls.clear()
-    PairTrial.cue(_record_definition_args)[0].consume(exp, cohort[0])
+    _register_trial(PairTrial.cue(_record_definition_args)).consume(exp, cohort[0])
     assert _definition_calls == [(None, None)]
 
 
@@ -122,7 +123,7 @@ def test_group_barrier_passes_the_members_trials_to_on_release(
     cohort, _ = _paired(exp)
     logic = PairTrial.cue({"target": 3})
     for participant in cohort:
-        logic[0].consume(exp, participant)
+        _register_trial(logic).consume(exp, participant)
     db.session.commit()
 
     barrier = GroupBarrier(
@@ -143,9 +144,9 @@ def test_only_ungrouped_trials_check_their_time_credit(
     exp = get_experiment()
     cohort, _ = _paired(exp)
     pair = cohort[0].active_sync_groups["pair"]
-    PairTrial.cue({})[0].consume(exp, cohort[0])
+    _register_trial(PairTrial.cue({})).consume(exp, cohort[0])
     pair.remove_participant(cohort[1])
-    PairTrial.cue({})[0].consume(exp, cohort[1])
+    _register_trial(PairTrial.cue({})).consume(exp, cohort[1])
     with caplog.at_level(logging.INFO):
         for participant in cohort:
             PairTrial._log_time_credit_before_trial(participant)
@@ -163,7 +164,7 @@ def test_a_barrier_release_closes_the_round(in_experiment_directory, db_session)
     pair = cohort[0].active_sync_groups["pair"]
     logic = PairTrial.cue({"target": 1})
     for participant in cohort:
-        logic[0].consume(exp, participant)
+        _register_trial(logic).consume(exp, participant)
     db.session.commit()
     # The first of the round's two barriers (submitted, then revealed)
     # releases, and the trials aren't complete yet.
@@ -171,7 +172,7 @@ def test_a_barrier_release_closes_the_round(in_experiment_directory, db_session)
     (newcomer,) = _working_participants(exp, 1)
     pair.add_participant(newcomer)
     for participant in [newcomer, *cohort]:
-        logic[0].consume(exp, participant)
+        _register_trial(logic).consume(exp, participant)
     db.session.commit()
 
     assert newcomer.current_trial.sync_group_round == 1
@@ -185,7 +186,7 @@ def test_a_release_waits_for_a_cue_holding_the_round_lock(
     exp = get_experiment()
     cohort, _ = _paired(exp)
     for participant in cohort:
-        PairTrial.cue({"target": 1})[0].consume(exp, participant)
+        _register_trial(PairTrial.cue({"target": 1})).consume(exp, participant)
     db.session.commit()
     node = cohort[0].current_trial.node
     barrier = GroupBarrier("submitted", group_type="pair")
@@ -213,7 +214,9 @@ def _cue_in_parallel(exp, logic, participants):
 
     def cue(participant_id, delay_commit):
         try:
-            logic[0].consume(exp, db.session.get(Participant, participant_id))
+            _register_trial(logic).consume(
+                exp, db.session.get(Participant, participant_id)
+            )
             first_cued.set()
             time.sleep(delay_commit)
             db.session.commit()
@@ -303,7 +306,7 @@ def test_each_module_numbers_a_group_s_rounds_from_0(
     for module_id in ("practice", "main"):
         for participant in cohort:
             participant.start_module(Module(module_id, InfoPage("Hi", time_estimate=1)))
-            PairTrial.cue({"target": 1})[0].consume(exp, participant)
+            _register_trial(PairTrial.cue({"target": 1})).consume(exp, participant)
     db.session.commit()
 
     assert sorted((n.module_id, n.sync_group_round) for n in SyncGroupNode.query) == [
@@ -325,7 +328,7 @@ def test_alternating_trial_classes_advance_the_round(
     cohort, _ = _paired(exp)
     for trial_class in (PairTrial, VoteTrial):
         for participant in cohort:
-            trial_class.cue({"target": 1})[0].consume(exp, participant)
+            _register_trial(trial_class.cue({"target": 1})).consume(exp, participant)
     db.session.commit()
 
     assert sorted((type(t).__name__, t.sync_group_round) for t in Trial.query) == [
@@ -336,8 +339,8 @@ def test_alternating_trial_classes_advance_the_round(
     ]
 
     # Different classes cued by different players in an open round share it.
-    PairTrial.cue({"target": 1})[0].consume(exp, cohort[0])
-    VoteTrial.cue({"target": 1})[0].consume(exp, cohort[1])
+    _register_trial(PairTrial.cue({"target": 1})).consume(exp, cohort[0])
+    _register_trial(VoteTrial.cue({"target": 1})).consume(exp, cohort[1])
     assert cohort[0].current_trial.node is cohort[1].current_trial.node
 
 
@@ -348,15 +351,17 @@ def test_an_explicit_round_lets_two_classes_share_a_node(
     exp = get_experiment()
     cohort, _ = _paired(exp)
     for participant in cohort:
-        PairTrial.cue(lambda: {"target": 1}, round=4)[0].consume(exp, participant)
+        _register_trial(PairTrial.cue(lambda: {"target": 1}, round=4)).consume(
+            exp, participant
+        )
     db.session.commit()
     # The first class's barrier releases, but round= still joins the round.
     _arrive(exp, GroupBarrier("offered", group_type="pair"), cohort)
     with pytest.raises(ValueError, match="already has the definition"):
-        VoteTrial.cue({"target": 2}, round=4)[0].consume(exp, cohort[1])
+        _register_trial(VoteTrial.cue({"target": 2}, round=4)).consume(exp, cohort[1])
     for participant in cohort:
-        VoteTrial.cue({"target": 1}, round=4)[0].consume(exp, participant)
-    PairTrial.cue({"target": 1})[0].consume(exp, cohort[0])
+        _register_trial(VoteTrial.cue({"target": 1}, round=4)).consume(exp, participant)
+    _register_trial(PairTrial.cue({"target": 1})).consume(exp, cohort[0])
     db.session.commit()
 
     assert [t.sync_group_round for t in Trial.query.order_by(Trial.id)] == [
@@ -379,9 +384,9 @@ def test_a_late_joiner_joins_an_open_round_or_starts_the_next(
     early, between = _working_participants(exp, 2)
     logic = PairTrial.cue({"target": 1})
     for participant in cohort:
-        logic[0].consume(exp, participant)
+        _register_trial(logic).consume(exp, participant)
     pair.add_participant(early)
-    logic[0].consume(exp, early)
+    _register_trial(logic).consume(exp, early)
     # Round 0 ends: one trial completes, one fails, and a member with an
     # unfinished trial leaves.
     cohort[0].current_trial.complete = True
@@ -389,7 +394,7 @@ def test_a_late_joiner_joins_an_open_round_or_starts_the_next(
     pair.remove_participant(early)
     pair.add_participant(between)
     for participant in [between, *cohort]:
-        logic[0].consume(exp, participant)
+        _register_trial(logic).consume(exp, participant)
     db.session.commit()
 
     rounds = {t.participant_id: [] for t in PairTrial.query}
@@ -412,7 +417,7 @@ def test_on_release_gets_no_node_for_trials_off_the_group_s_node(
     cohort, _ = _paired(exp)
     logic = SoloTrial.cue({"target": 1})
     for participant in cohort:
-        logic[0].consume(exp, participant)
+        _register_trial(logic).consume(exp, participant)
     db.session.commit()
     _released_nodes.clear()
 
@@ -501,7 +506,7 @@ def test_on_dissolve_gets_the_waiting_members_trials_and_node(
     group.below_quorum = "continue_without_group"
     logic = TeamTrial.cue({})
     for participant in (waiter, quitter):
-        logic[0].consume(exp, participant)
+        _register_trial(logic).consume(exp, participant)
     db.session.commit()
     _dissolved.clear()
     barrier = GroupBarrier(

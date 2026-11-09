@@ -238,7 +238,7 @@ def test_a_trial_ending_in_the_request_that_cued_it_can_pay_its_participant(
 
     # The trial may end before anything flushes it to the database.
     with db.session.no_autoflush:
-        RewardTrial.cue(definition={})[0].consume(experiment, participant)
+        _register_trial(RewardTrial.cue(definition={})).consume(experiment, participant)
         participant.current_trial.on_finalized()
 
     assert participant.performance_reward == 0.5
