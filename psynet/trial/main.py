@@ -547,6 +547,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         if not self.failed:
             logger.info(f"Failing trial (id: {self.id}, reason: {reason})")
             super().fail(reason=reason)
+            _close_round_of_trial(self)
 
     @property
     def _recording_failed(self):
@@ -1624,6 +1625,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
             trial.answer = trial.format_answer(answer)
             trial.complete = True
+            _close_round_of_trial(trial)
 
             if trial_maker:
                 with forbid_commits(f"{type(trial_maker).__name__}.finalize_trial"):
@@ -4347,8 +4349,12 @@ class SyncGroupNode(GenericTrialNode):
     # No foreign key, as on Trial.sync_group_id.
     sync_group_id = Column(Integer, index=True)
     sync_group_round = Column(Integer)
-    # Set when a GroupBarrier releases the group with all its trials here.
-    sync_group_released = Column(Boolean, default=False)
+    # Set once the round no longer takes members who have no trial on it:
+    # when a GroupBarrier releases the group with all its trials here, or
+    # when no current member has an unfinished trial here any more (see
+    # _close_round_if_finished). Written under the round lock that for_cue
+    # holds, so a cue reads it consistently.
+    sync_group_closed = Column(Boolean, default=False)
 
     def __init__(self, module_id, experiment, group, round_number, definition):
         super().__init__(module_id, experiment)
@@ -4361,28 +4367,6 @@ class SyncGroupNode(GenericTrialNode):
         """The :class:`~psynet.sync.SyncGroup` whose round this node holds."""
         return db.session.get(SyncGroup, self.sync_group_id)
 
-    def is_open(self, group) -> bool:
-        """Whether this round still takes members of ``group`` who have no trial on it.
-
-        It is open until a :class:`~psynet.sync.GroupBarrier` releases the
-        group with all its trials here (``sync_group_released``), or until
-        no current member has an unfinished trial on it.
-        """
-        if self.sync_group_released:
-            return False
-        members = [p.id for p in group.active_participants]
-        if not members:
-            return False
-        return (
-            Trial.query.filter(
-                Trial.node_id == self.id,
-                Trial.participant_id.in_(members),
-                Trial.complete.is_not(True),
-                Trial.failed.is_not(True),
-            ).first()
-            is not None
-        )
-
     @staticmethod
     def _round_is_open(node, group, participant):
         """Whether ``participant``'s cue should join ``node``, a round of ``group``.
@@ -4391,7 +4375,7 @@ class SyncGroupNode(GenericTrialNode):
         round a cue's ``round`` names, which may be a past one.
         """
         played = Trial.query.filter_by(node_id=node.id, participant_id=participant.id)
-        return played.first() is None and node.is_open(group)
+        return played.first() is None and not node.sync_group_closed
 
     @classmethod
     def for_cue(cls, group, round_number, participant, experiment, make_definition):
@@ -4405,7 +4389,9 @@ class SyncGroupNode(GenericTrialNode):
         moves on to a new node for the next round, counted from 0, which the
         others then join. A trial ends when it gets its answer
         (``trial.complete``); trials of players who have left the group don't
-        keep a round open.
+        keep a round open. The node stores its closure in
+        ``sync_group_closed``, set where a round closes (see
+        :func:`_close_round_if_finished`).
         With ``round_number``, it is the group's node for that round, or
         ``None`` if the group finished that round without the participant:
         they have no trial on it and it is no longer open. A new node's
@@ -4444,7 +4430,7 @@ class SyncGroupNode(GenericTrialNode):
                 played = Trial.query.filter_by(
                     node_id=node.id, participant_id=participant.id
                 ).first()
-                if played is None and not node.is_open(group):
+                if played is None and node.sync_group_closed:
                     _record_round_position(group, participant, node, skipped=True)
                     return None
                 _record_round_position(group, participant, node)
@@ -4457,6 +4443,45 @@ class SyncGroupNode(GenericTrialNode):
         db.session.flush()
         _record_round_position(group, participant, node)
         return node
+
+
+def _close_round_if_finished(node):
+    """Store that ``node``'s round has closed if no current member of its group has an unfinished trial on it.
+
+    Called wherever that can change: a trial on the node completing or
+    failing, and a member with a trial on it leaving the group. Waits for
+    and holds the round lock until commit, as
+    :meth:`SyncGroupNode.for_cue` does, so a cue never joins a round that
+    another request is closing, and two trials ending at once can't each
+    see the other as unfinished.
+    """
+    if not isinstance(node, SyncGroupNode) or node.sync_group_closed:
+        return
+    _lock_until_commit(f"sync_group_node:{node.module_id}:{node.sync_group_id}")
+    db.session.refresh(node, ["sync_group_closed"])
+    group = node.sync_group
+    if node.sync_group_closed or group is None:
+        return
+    db.session.expire(group, ["participant_links"])
+    members = [p.id for p in group.active_participants]
+    unfinished = (
+        Trial.query.filter(
+            Trial.node_id == node.id,
+            Trial.participant_id.in_(members),
+            Trial.complete.is_not(True),
+            Trial.failed.is_not(True),
+        ).first()
+        if members
+        else None
+    )
+    if unfinished is None:
+        node.sync_group_closed = True
+
+
+def _close_round_of_trial(trial):
+    """Call :func:`_close_round_if_finished` for a grouped trial that has just ended."""
+    if trial.sync_group_id is not None:
+        _close_round_if_finished(trial.node)
 
 
 def _record_round_position(group, participant, node, skipped=False):

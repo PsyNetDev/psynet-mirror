@@ -2014,7 +2014,7 @@ class GroupBarrier(Barrier):
                 node = _shared_node(group, trials)
                 if node is not None:
                     # Closes the round to newcomers: their cues start the next.
-                    node.sync_group_released = True
+                    node.sync_group_closed = True
                 if self.on_release:
                     try:
                         self.on_release(
@@ -4180,7 +4180,10 @@ class SyncGroup(SQLBase, SQLMixin):
             raise ValueError(
                 f"reason must be one of {REMOVAL_REASONS}, got {reason!r}."
             )
+        from .trial.main import SyncGroupNode, _close_round_if_finished
+
         _forget_active_sync_group(participant)
+        rounds = []
         for link in self.participant_links:
             is_member = (
                 link.participant is participant or link.participant_id == participant.id
@@ -4191,7 +4194,12 @@ class SyncGroup(SQLBase, SQLMixin):
                 link.removal_time = timenow()
                 if reason == "late":
                     link.removed_on_page = participant.page_uuid
+                if link.round_node_id is not None and not link.skipped_round:
+                    rounds.append(link.round_node_id)
         self.check_numbers()
+        for node_id in rounds:
+            # Their trial may have been the round's last unfinished one.
+            _close_round_if_finished(db.session.get(SyncGroupNode, node_id))
         _notify_membership_change(self)
         if self.n_active_participants == 0 and not getattr(
             self, "accepts_top_ups", False
@@ -4421,8 +4429,8 @@ def _barrier_scope(group, waiting_participants) -> _BarrierScope:
     round, or none yet) only while the round is still open, since once it
     has closed they will skip it. It doesn't wait for members who skipped
     the round or are in a round played after it. A visit that belongs to no
-    round waits for every member. Costs at most one query, to check whether
-    the round is open when someone is behind.
+    round waits for every member. Costs at most one query, re-reading the
+    round's stored closure when someone is behind.
     """
     members = group.active_participants
     links = _active_links(group)
@@ -4441,7 +4449,9 @@ def _barrier_scope(group, waiting_participants) -> _BarrierScope:
         else:
             continue
         releasable.add(participant.id)
-    if behind and node.is_open(group):
+    if behind:
+        db.session.refresh(node, ["sync_group_closed"])
+    if behind and not node.sync_group_closed:
         played |= behind
     return _BarrierScope(
         [p for p in members if p.id in played],

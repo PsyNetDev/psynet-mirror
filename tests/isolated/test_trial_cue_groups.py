@@ -198,11 +198,11 @@ def test_a_release_waits_for_a_cue_holding_the_round_lock(
         )
         assert not barrier.would_release(cohort)
         assert barrier.choose_who_to_release(cohort) == []
-    assert not node.sync_group_released
+    assert not node.sync_group_closed
     assert barrier.would_release(cohort)
     released = barrier.choose_who_to_release(cohort)
     assert {p.id for p in released} == {p.id for p in cohort}
-    assert node.sync_group_released
+    assert node.sync_group_closed
 
 
 def _cue_in_parallel(exp, logic, participants):
@@ -398,6 +398,10 @@ def test_an_explicit_round_skips_a_round_the_group_finished_without_the_player(
     assert alone.sync_group_id is None and alone.definition == {"target": 2}
 
 
+def _complete(exp, participant):
+    PairTrial._finalize_trial().consume(exp, participant)
+
+
 def _cue_round(exp, participant, i):
     PairTrial.cue({"target": i}, round=i)[0].consume(exp, participant)
     return participant.current_trial
@@ -447,7 +451,7 @@ def test_a_feedback_barrier_after_the_round_ended_doesnt_wait_for_a_newcomer(
     for participant in cohort:
         _cue_round(exp, participant, 0)
     for participant in cohort:
-        participant.current_trial.complete = True
+        _complete(exp, participant)
     # The newcomer hasn't cued yet, and will skip the round, which has ended.
     (newcomer,) = _working_participants(exp, 1)
     pair.add_participant(newcomer)
@@ -455,6 +459,21 @@ def test_a_feedback_barrier_after_the_round_ended_doesnt_wait_for_a_newcomer(
     feedback = GroupBarrier("feedback", group_type="pair")
     _arrive(exp, feedback, cohort)
     assert not any(feedback._participant_is_waiting(p) for p in cohort)
+
+
+@in_consents_experiment
+def test_a_round_closes_when_its_last_unfinished_trial_fails(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    for participant in cohort:
+        _cue_round(exp, participant, 0)
+    node = cohort[0].current_trial.node
+    _complete(exp, cohort[0])
+    assert not node.sync_group_closed
+    cohort[1].current_trial.fail()
+    assert node.sync_group_closed
 
 
 @in_consents_experiment
@@ -486,7 +505,7 @@ def test_a_skipped_cue_moves_on_to_the_next_page(
     for participant in cohort:
         PairTrial.cue({}, round=0)[0].consume(exp, participant)
     for participant in cohort:
-        participant.current_trial.complete = True
+        _complete(exp, participant)
     (newcomer,) = _working_participants(exp, 1)
     pair.add_participant(newcomer)
     after = InfoPage("After the round", time_estimate=5)
@@ -555,8 +574,8 @@ def test_a_late_joiner_joins_an_open_round_or_starts_the_next(
     logic[0].consume(exp, early)
     # Round 0 ends: one trial completes, one fails, and a member with an
     # unfinished trial leaves.
-    cohort[0].current_trial.complete = True
-    cohort[1].current_trial.failed = True
+    _complete(exp, cohort[0])
+    cohort[1].current_trial.fail()
     pair.remove_participant(early)
     pair.add_participant(between)
     for participant in [between, *cohort]:
