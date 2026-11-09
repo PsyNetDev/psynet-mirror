@@ -186,44 +186,41 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per round, with both players' actions."""
-        from psynet.sync import ParticipantLinkSyncGroup
+        """Return one row per player per round, from the result each trial saved.
 
-        trials = RockPaperScissorsTrial.query.filter_by(
-            failed=False, complete=True
-        ).all()
-        links = ParticipantLinkSyncGroup.query.filter(
-            ParticipantLinkSyncGroup.sync_group_id.in_(
-                [trial.sync_group_id for trial in trials]
+        A player who timed out plays a random move, which the result records.
+        """
+        trials = (
+            RockPaperScissorsTrial.query.filter(
+                RockPaperScissorsTrial.sync_group_id.isnot(None)
             )
+            .filter_by(failed=False, complete=True)
+            .order_by(
+                RockPaperScissorsTrial.sync_group_id,
+                RockPaperScissorsTrial.sync_group_round,
+                RockPaperScissorsTrial.participant_id,
+            )
+            .all()
         )
-        members = {}
-        for link in links:
-            members.setdefault(link.sync_group_id, []).append(link.participant_id)
-        actions = {
-            (t.participant_id, t.sync_group_id, t.sync_group_round): t.answer[
-                "choose_action"
-            ]
-            for t in trials
-        }
-
         rows = []
-        for trial in sorted(
-            trials,
-            key=lambda t: (t.sync_group_id, t.sync_group_round, t.participant_id),
-        ):
-            group_id, round_ = trial.sync_group_id, trial.sync_group_round
-            partners = [p for p in members[group_id] if p != trial.participant_id]
-            partner_id = partners[0] if len(partners) == 1 else None
+        for trial in trials:
+            result = trial.var.result
+            partners = [
+                int(p)
+                for p in result["action_by_player"]
+                if int(p) != trial.participant_id
+            ]
             rows.append(
                 {
-                    "group_id": group_id,
-                    "round": round_,
+                    "group_id": trial.sync_group_id,
+                    "round": trial.sync_group_round,
                     "participant_id": trial.participant_id,
-                    "partner_id": partner_id,
+                    "partner_id": partners[0] if partners else None,
                     "trial_id": trial.id,
-                    "action": actions[(trial.participant_id, group_id, round_)],
-                    "partner_action": actions.get((partner_id, group_id, round_)),
+                    "action": result["action_self"],
+                    "partner_action": result["action_other"],
+                    "timed_out": result["timed_out_self"],
+                    "score": result["score"],
                 }
             )
         return {"player_round": rows}

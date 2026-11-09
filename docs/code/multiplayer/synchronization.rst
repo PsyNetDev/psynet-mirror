@@ -34,8 +34,8 @@ the grouper has a ``waiting_screen`` (see below).
 ``quorum`` (default: ``start_short_with``, or else ``initial_group_size``)
     How many active members a group needs to keep going. A group whose
     members fail or leave until it has fewer is below quorum: it cannot pass
-    a barrier, and is dissolved unless it accepts top-ups; see
-    `Waiting and dropouts`_. For groups of three or more, leaving it out
+    a barrier, and waits for newcomers or is dissolved (see
+    `Groups below quorum`_). For groups of three or more, leaving it out
     warns, so that you decide how many may drop out. ``min_group_size`` is
     a deprecated name for it.
 
@@ -45,9 +45,8 @@ the grouper has a ``waiting_screen`` (see below).
     group. Participants already waiting at the grouper join such a group on
     the next barrier check after one has room. Closed groups and groups with
     no active members are not joined. Groups formed with this option accept
-    *top-ups*: when a member drops out, barriers wait for a replacement
-    instead of dissolving the group, until ``group.stop_top_ups()`` is
-    called; ``below_quorum`` applies from then on.
+    *top-ups*; see `Groups below quorum`_ for how they stop and what they
+    change when a member drops out.
 
 ``max_group_size`` (default: ``initial_group_size``)
     The largest size a group can reach through ``join_existing_groups``;
@@ -60,7 +59,8 @@ the grouper has a ``waiting_screen`` (see below).
 ``join_criterion``
     A function of ``group`` and ``participant`` that returns whether the
     participant may join that group. Only used with
-    ``join_existing_groups=True``.
+    ``join_existing_groups=True``. Returning ``False`` only turns that
+    newcomer away; it doesn't stop top-ups (see `Groups below quorum`_).
 
 ``start_short_after`` (default: ``None``)
     Seconds after which a smaller group may start. Once the longest-waiting
@@ -81,9 +81,8 @@ the grouper has a ``waiting_screen`` (see below).
     started short is not below quorum at its first barrier.
 
     With ``join_existing_groups=True``, later arrivals can fill a group
-    started short up, but a group that drops below quorum then waits for a
-    replacement; leave ``join_existing_groups`` out to keep playing with fewer
-    members (see :ref:`groups below quorum <groups_below_min_size>`).
+    started short up; see `Groups below quorum`_ for what top-ups change
+    when a member then drops out.
 
 ``max_wait_time`` (default: 20) and ``max_wait_action`` (default: ``"fail"``)
     How long a participant may wait for a group, and what happens then:
@@ -266,11 +265,14 @@ on their trial, where ``show_feedback`` reads it:
 
 ``on_release`` can take any of the arguments ``group``, ``participants``,
 ``trials`` (each member's current trial, in the same order as
-``participants``), ``node`` (the node those trials share, or ``None``),
+``participants``), ``node`` (the group's
+:class:`~psynet.trial.main.SyncGroupNode` for the round if those trials are
+on it, and otherwise ``None``),
 ``leader`` and ``barrier`` (``participant`` is the leader too, kept for
 compatibility). In ``rock_paper_scissors`` every pair plays on the same
-node, so the results go on the trials. Cued trials share a node per group
-and round, so there a ``@classmethod`` on the trial class can also save the
+node, which is not a group's node, so ``node`` is ``None`` and the results
+go on the trials. Cued trials share a node per group and round, so there a
+``@classmethod`` on the trial class can also save the
 group's results in ``node.var`` (see :ref:`rounds-cued-trials`). Results on
 the trial or node stay in the export for every round, while a participant
 variable keeps only the latest. It must be a module-level
@@ -302,8 +304,9 @@ slow.
 
 ``on_release`` runs only when the barrier releases the group. A member who
 leaves the group before then, or whose group is dissolved, doesn't get
-the results it would have stored, so read them with
-``participant.var.get("score")``, which returns ``None`` when it isn't set.
+the results it would have stored, so read them with ``.get``, which returns
+``None`` when they aren't set: ``trial.var.get("score")`` for results saved on
+the trial, or ``participant.var.get("score")`` when there is no trial.
 If the group dissolves while some members are waiting at the barrier,
 ``on_dissolve`` runs for them instead, before they leave the group, with the
 same arguments except ``leader`` and ``left``.
@@ -345,7 +348,7 @@ on the next page of a member removed after waiting too long), ``waiting_count`` 
 ``group_size``, and returns the text or ``None`` to hide it. For a notice it
 is called whenever the browser fetches the current count, which can be
 several times per arrival, so it should depend only on its arguments and
-have no side effects. Notices must fit on one line:
+have no side effects. Notices must fit on two lines of a phone screen:
 
 .. code-block:: python
 
@@ -600,9 +603,13 @@ decisions each one needs. These settings carry them out:
   ``join_existing_groups`` to fill a gap in an existing one. Its
   ``max_wait_action`` fails those left over, or with
   ``"continue_without_group"`` lets them carry on (see `Timeouts`_).
-- **Falling behind in rounds with a** :class:`~psynet.sync.Regrouper`:
-  ``late_action="leave_group"`` makes them miss the round and join the next
-  (see `Rounds with changing groups`_).
+- **Falling behind in rounds with a** :class:`~psynet.sync.Regrouper`: a
+  player who isn't back by the split's deadline misses the round and joins
+  the next (see `Rounds with changing groups`_). One who stops responding
+  partway through a round is removed from their group by
+  ``late_action="leave_group"``, but stays in the ``within`` group, so the
+  next split waits for them until its deadline; :ref:`rounds-slow-players`
+  shows how to take them out of it too.
 
 Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
 
@@ -662,8 +669,8 @@ the maximum waiting time:
     Size it to cover everything between the grouper and that barrier, such as
     instructions or a practice trial, or members who read slowly are late
     before they arrive. Removing a late member from the group can also take
-    the group below its ``quorum``; a group that doesn't accept top-ups is then dissolved,
-    which by default fails the members who arrived on time (see
+    the group below its ``quorum``, which can dissolve it and by default fail
+    the members who arrived on time (see
     :ref:`groups below quorum <groups_below_min_size>`).
 
 Trial makers with ``sync_group_type`` take the same settings with a
@@ -716,7 +723,9 @@ described under :ref:`groups_below_min_size` below.
 Groups below quorum
 ~~~~~~~~~~~~~~~~~~~
 
-Two separate settings decide what happens when someone leaves a group:
+This section, with :meth:`~psynet.sync.SyncGroup.remove_participant`, is
+where the rule for when a group is dissolved is stated; other pages point
+here. Two separate settings decide what happens when someone leaves a group:
 
 - **The member who leaves** is handled by why they left: a barrier's
   ``max_wait_action`` (they waited too long for the others) or
@@ -737,7 +746,8 @@ Two separate settings decide what happens when someone leaves a group:
     example after the first round, pass ``stop_top_ups=True`` to the
     :class:`~psynet.sync.GroupBarrier` it passes then (or call
     ``group.stop_top_ups()``); from then on the group is treated as one
-    without top-ups.
+    without top-ups. A ``join_criterion`` that returns ``False`` only turns
+    that newcomer away; it doesn't stop top-ups.
   - Otherwise the group is dissolved at once, and the grouper's
     ``below_quorum`` decides for each remaining member: ``"fail"`` (default)
     fails them, telling them "Too few members of your group remained to
@@ -751,9 +761,11 @@ Two separate settings decide what happens when someone leaves a group:
     (for example submitting a page) is handled by the background barrier
     check within about a second instead, once that request finishes.
   - Members who leave with ``reason="finished"``, or who move on at a
-    :class:`~psynet.sync.Regrouper`, don't dissolve the group; the group's
-    next :class:`~psynet.sync.GroupBarrier` dissolves it if it is still
-    below quorum.
+    :class:`~psynet.sync.Regrouper`, don't dissolve the group. Its next
+    :class:`~psynet.sync.GroupBarrier` treats it like any group below
+    quorum: it waits for a newcomer while the group accepts top-ups, and
+    dissolves it otherwise.
+  - Groups made by a :class:`~psynet.sync.Regrouper` are never dissolved.
 
 So in a :class:`~psynet.sync.SimpleGrouper` pair, where any dropout
 dissolves the group, the two settings together decide both fates:
@@ -804,16 +816,15 @@ options:
         late_action="leave_group",
     )
 
-The grouper leaves out ``join_existing_groups``: a group that accepts
-top-ups waits for replacements when it drops below its ``quorum``
-instead of carrying on. To accept replacements only at the start, pass
-``join_existing_groups=True`` and stop top-ups once the game starts, with
-``stop_top_ups=True`` on the barrier that starts it. ``top_up_wait`` keeps a
-group that falls below its quorum before then from waiting for a newcomer
-who may never come. The ``crowd_estimate`` demo does this for groups of up
-to four that may start with three. A group that falls below three ends, at
-once during the game and before it once its wait has run out, and its
-members answer the remaining questions alone:
+The grouper leaves out ``join_existing_groups``, so a team that falls below
+its quorum is dissolved rather than waiting for a replacement (see
+`Groups below quorum`_). To accept replacements only at the start, pass
+``join_existing_groups=True``, stop top-ups once the game starts with
+``stop_top_ups=True`` on the barrier that starts it, and set
+``top_up_wait`` so that a team below its quorum before then doesn't wait
+for a newcomer who may never come. The ``crowd_estimate`` demo does this for
+groups of up to four that may start with three, and its members answer the
+remaining questions alone once their group has ended:
 
 .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
    :start-at: SimpleGrouper(
@@ -841,7 +852,8 @@ A member removed from their group without being failed, through a
 barrier's ``"leave_group"`` or ``below_quorum="continue_without_group"``,
 stays in the experiment and continues the timeline without that group. They
 leave only the group of that type: a player removed from a ``"pair"`` stays
-in their ``"cohort"``. A participant whose grouper let them continue without
+in their ``"cohort"`` unless the experiment also removes them from it with
+``remove_participant`` (see :ref:`rounds-slow-players`). A participant whose grouper let them continue without
 a group (``max_wait_action="continue_without_group"``) is treated the same
 way for that group type, as if they had left a group. A notice on their
 progress bar tells them why. A member removed for being late sees "Your

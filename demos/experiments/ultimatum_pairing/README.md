@@ -3,16 +3,18 @@
 An ultimatum game played in cohorts. Players wait in a lobby until a cohort
 forms, or start in a smaller cohort if nobody else arrives in time. Every
 round, the cohort is randomly re-paired into proposers and responders, an odd
-player out sits out, and slow players miss a round rather than holding up
-their partner or being failed. An anonymous `GroupPrompt` shows the pair,
+player out sits out, and nobody is failed for being slow: a player who isn't
+back in time for a split joins the next round, and one who closes their tab
+mid-round is taken out of their pair and cohort, so nobody waits for them.
+An anonymous `GroupPrompt` shows the pair,
 with a tick once the partner has decided, and then both decisions in speech
 bubbles; partners appear as the same grey figure, so nobody recognises a
 partner from an earlier round.
 
 Good reference for nesting a `Regrouper` inside persistent cohorts made by a
 `SimpleGrouper` with `start_short_after` and top-ups, with the default
-re-pairing that avoids repeat partners and a `join_criterion` that closes
-the cohort to latecomers once someone has finished a round.
+re-pairing that avoids repeat partners and a `join_criterion` that turns
+latecomers away once the cohort's second round starts.
 Each round is one cued trial per player (`Trial.cue(...)` with
 `sync_group_type = "pair"`, inside `only_in_group`), so the pair's offer and
 result live on a node shared by its two trials, sit-outs get a page instead

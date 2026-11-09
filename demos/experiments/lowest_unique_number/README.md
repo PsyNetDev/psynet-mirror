@@ -9,7 +9,7 @@ instead of holding up their room or being failed. Someone left waiting with
 nobody to play with is still failed after the usual five-minute wait. Good
 reference for `Regrouper(every=...)` rounds on fixed ticks, the `{SECONDS}` countdown,
 a page `time_limit`, and `GroupBarrier` timeouts that remove late players from the group rather than fail them.
-Each round is one cued trial per player (`Trial.cue(..., round=...)` with
+Each round is one cued trial per player (`Trial.cue(...)` with
 `sync_group_type`), so the room's results live on a node shared by its trials
 and the basic data is read from trials and nodes.
 
