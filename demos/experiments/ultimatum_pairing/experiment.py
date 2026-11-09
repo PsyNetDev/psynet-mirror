@@ -300,10 +300,8 @@ class Exp(psynet.experiment.Experiment):
             waiting_message=lobby_message,
             waiting_screen=forming_cohort,
             max_wait_time=300,
-            # Here the cohort keeps accepting top-ups (join_criterion only turns
-            # newcomers away), so it is never dissolved. In a cohort without
-            # top-ups, removing a late player would dissolve it below its
-            # quorum, and the default "fail" would fail the players on time.
+            # No effect here, since the cohort accepts top-ups; it keeps the
+            # recipe copy-safe ("Moving slow players on" in the guide).
             below_quorum="continue_without_group",
         ),
         while_loop(
