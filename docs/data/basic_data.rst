@@ -103,9 +103,10 @@ the ``lowest_unique_number`` demo builds a table per player and round and
 one per room from them (see :ref:`rounds-cued-trials`).
 
 Groups that stay together save their rounds the same way. The
-``public_goods`` demo saves the group's ``contributions``, ``pot`` and
-``share`` once per round on the node, and each player's ``contribution``
-(``None`` for a player who ran out of time) and ``payoff`` on their trial:
+``public_goods`` demo saves the group's ``contributions``, ``pot``,
+``multiplied_pot`` and ``share`` once per round on the node, and each
+player's ``contribution`` (``None`` for a player who ran out of time) and
+``payoff`` on their trial:
 
 .. literalinclude:: ../../demos/experiments/public_goods/experiment.py
    :pyobject: ContributionTrial.score_round

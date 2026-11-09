@@ -10,10 +10,12 @@ Each round is one cued ``ContributionTrial`` per player. The team's trials in
 one round share a node, which holds the team's contributions and pot; each
 player's contribution and payoff are on their trial, which pays the bonus.
 
-- Running out of time on the contribution page puts nothing in the pot.
+- Running out of time on the contribution page puts nothing in the pot, so
+  the player keeps their tokens and still gets their share.
 - A player who returns the study, or closes the page and so is late for the
-  end of a round (``LATE_AFTER``), leaves the group. The others carry on
-  while at least two remain, sharing the pot between fewer players.
+  end of a round (``LATE_AFTER``), leaves the group and earns nothing for
+  that round. The others carry on while at least two remain, sharing the pot
+  between fewer players.
 - When one player remains, the group dissolves, the round is cancelled and
   they keep their tokens for it.
 - Nobody is failed because others left: the last player, a player who comes
@@ -107,6 +109,8 @@ class ContributionTrial(Trial):
         )
 
     def contribution_page(self, participant):
+        # sync_group_round is None on an ungrouped trial, which the loop's
+        # stop_if=left_team never cues; without it, check for a group first.
         return ModularPage(
             "contribution",
             GroupPrompt(
@@ -123,17 +127,22 @@ class ContributionTrial(Trial):
     @classmethod
     def score_round(cls, trials: List["ContributionTrial"], node: SyncGroupNode):
         """Share the multiplied pot between the members who played the round."""
-        node.var.contributions = contributions(trials)
-        node.var.pot = sum(node.var.contributions.values())
-        node.var.share = MULTIPLIER * node.var.pot / len(trials)
+        contributions = _contributions_by_player(trials)
+        pot = sum(contributions.values())
+        multiplied_pot = MULTIPLIER * pot
+        share = multiplied_pot / len(trials)
+        node.var.contributions = contributions
+        node.var.pot = pot
+        node.var.multiplied_pot = multiplied_pot
+        node.var.share = share
         for trial in trials:
             # An answer of None means the player ran out of time.
-            trial.var.payoff = ENDOWMENT - (trial.answer or 0) + node.var.share
+            trial.var.payoff = ENDOWMENT - (trial.answer or 0) + share
 
     @classmethod
     def cancel_round(cls, trials: List["ContributionTrial"], node: SyncGroupNode):
         """Record the contributions of a round cancelled while its last member waited."""
-        node.var.contributions = contributions(trials)
+        node.var.contributions = _contributions_by_player(trials)
 
     def score_answer(self, answer, definition):
         if self.var.has("payoff"):
@@ -162,7 +171,7 @@ class ContributionTrial(Trial):
             "results",
             GroupPrompt(
                 f"The group put {node.var.pot} tokens in the pot, which became "
-                f"{MULTIPLIER * node.var.pot:g} and was shared between "
+                f"{node.var.multiplied_pot:g} and was shared between "
                 f"{len(node.var.contributions)} players: {node.var.share:g} tokens "
                 f"each. {you}, so you earned {self.var.payoff:g} tokens this round.",
                 participant=participant,
@@ -176,7 +185,7 @@ class ContributionTrial(Trial):
         )
 
 
-def contributions(trials):
+def _contributions_by_player(trials):
     """Return each player's tokens in the pot, keyed by participant ID as a string."""
     return {str(t.participant_id): t.answer or 0 for t in trials}
 
@@ -207,7 +216,11 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per round, from the trials, and one per group per round, from the nodes."""
+        """Return one row per player per round, from the trials, and one per group per round, from the nodes.
+
+        Every trial gets a row, including one whose player left or whose
+        round was cancelled; ``played`` says whether the round was scored.
+        """
         trials = ContributionTrial.query.order_by(
             ContributionTrial.sync_group_round, ContributionTrial.id
         )
@@ -238,6 +251,7 @@ class Exp(psynet.experiment.Experiment):
                     "contributions": n.var.get("contributions"),
                     # None if the round was cancelled.
                     "pot": n.var.get("pot"),
+                    "multiplied_pot": n.var.get("multiplied_pot"),
                     "share": n.var.get("share"),
                 }
                 for n in groups

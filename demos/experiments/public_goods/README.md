@@ -4,8 +4,10 @@ A repeated public goods game in groups of three. Each round, every member
 privately puts some of their tokens in a group pot, within a time limit; the
 pot is multiplied and shared between the members who played the round, and
 everyone sees the group's contributions and what they earned, paid as a
-bonus. The game carries on when a member returns the study or stops
-responding, sharing the pot between fewer players, until only one is left.
+bonus. A member who runs out of time puts nothing in but keeps their tokens
+and their share. The game carries on when a member returns the study or stops
+responding, sharing the pot between fewer players, until only one is left; a
+member who leaves this way earns nothing for that round.
 Nobody is failed for someone else leaving: the last player, a player who was
 away too long, and a participant for whom no group forms are each told why
 the game ended for them.

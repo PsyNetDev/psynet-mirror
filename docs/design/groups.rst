@@ -307,9 +307,10 @@ In ``demos/experiments/public_goods``, a group of three plays three rounds.
 Each round, every player privately puts some of their tokens in a shared pot,
 within a time limit; the pot grows by half and is shared between the players
 of that round, who then see everyone's contributions and what they earned,
-paid as a bonus. A player who runs out of time puts nothing in. A player who
-returns the study or stops responding leaves the group, and the other two
-carry on and share the pot between them. When only one player is left, the
+paid as a bonus. A player who runs out of time puts nothing in, but keeps
+their tokens and their share. A player who returns the study or stops
+responding leaves the group and earns nothing for that round, and the other
+two carry on and share the pot between them. When only one player is left, the
 game ends: that round is cancelled and they keep their tokens for it. Nobody is failed because others left;
 the last player, a player who comes back after being removed, and a
 participant for whom no group formed each see why the game ended for them.
