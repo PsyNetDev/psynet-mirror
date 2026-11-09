@@ -489,6 +489,53 @@ def test_an_open_round_doesnt_wait_for_a_member_who_left_the_module(
 
 
 @in_consents_experiment
+def test_a_late_joiner_doesnt_wait_before_their_first_cue_for_a_member_who_left_the_module(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    leaver, newcomer = _working_participants(exp, 2)
+    module = Module("rounds", InfoPage("Hi", time_estimate=1))
+    for participant in [*cohort, leaver, newcomer]:
+        participant.start_module(module)
+    for participant in cohort:
+        _cue_round(exp, participant, 0)
+    pair.add_participant(leaver)
+    pair.add_participant(newcomer)
+    # The leaver's loop is empty, so they finish the module without cueing.
+    leaver.end_module(module)
+
+    ready = GroupBarrier("ready", group_type="pair")
+    _arrive(exp, ready, [newcomer])
+    assert not ready._participant_is_waiting(newcomer)
+
+
+@pytest.mark.parametrize("cued_before", [False, True])
+@in_consents_experiment
+def test_a_barrier_outside_cued_rounds_waits_for_every_member(
+    in_experiment_directory, db_session, cued_before
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    if cued_before:
+        game = Module("game", InfoPage("Hi", time_estimate=1))
+        for participant in cohort:
+            participant.start_module(game)
+            _cue_round(exp, participant, 0)
+            participant.end_module(game)
+    survey = Module("survey", InfoPage("Bye", time_estimate=1))
+    for participant in cohort:
+        participant.start_module(survey)
+
+    barrier = GroupBarrier("survey_sync", group_type="pair")
+    _arrive(exp, barrier, cohort[:1])
+    assert barrier._participant_is_waiting(cohort[0])
+    _arrive(exp, barrier, cohort[1:])
+    assert not any(barrier._participant_is_waiting(p) for p in cohort)
+
+
+@in_consents_experiment
 def test_rounds_named_out_of_order_release_their_barriers(
     in_experiment_directory, db_session
 ):
@@ -717,19 +764,26 @@ def test_a_barrier_repeated_in_a_round_waits_for_everyone_each_time(
     assert step._participant_is_waiting(cohort[0])
 
 
-@pytest.mark.parametrize("n_rounds", [1, 2])
+@pytest.mark.parametrize("n_rounds, skipper", [(1, False), (2, False), (2, True)])
 @in_consents_experiment
-def test_cueing_a_played_round_again_raises(
-    in_experiment_directory, db_session, n_rounds
+def test_cueing_a_played_or_skipped_round_again_raises(
+    in_experiment_directory, db_session, n_rounds, skipper
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    (newcomer,) = _working_participants(exp, 1)
+    players = cohort
     for i in range(n_rounds):
-        for participant in cohort:
+        for participant in players:
             _cue_round(exp, participant, i)
-        _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+        _arrive(exp, GroupBarrier("submitted", group_type="pair"), players)
+        if skipper and i == 0:
+            pair.add_participant(newcomer)
+            assert _cue_round(exp, newcomer, 0) is None
+            players = [*cohort, newcomer]
     with pytest.raises(RuntimeError, match="its own module id"):
-        _cue_round(exp, cohort[0], 0)
+        _cue_round(exp, players[-1], 0)
 
 
 @in_consents_experiment
