@@ -252,7 +252,7 @@ class Exp(psynet.experiment.Experiment):
             ],
             "group_round": [
                 {
-                    "question": n.sync_group_round,
+                    "question": n.definition["question"],
                     "group_id": n.sync_group_id,
                     "node_id": n.id,
                     # The estimates that arrived in time; None if no member
