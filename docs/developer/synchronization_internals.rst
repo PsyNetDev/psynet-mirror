@@ -54,10 +54,12 @@ change its sync group, for example when that participant fails or leaves. So
 code holding a sync group row must never wait for *another* participant's
 row:
 
-- Group dissolution locks the other members' rows with ``SKIP LOCKED``. A
-  member whose own request holds their row is left out, the group is marked
-  ``dissolving``, and the barrier poller finishes the dissolution once that
-  request commits.
+- Group dissolution locks the members' rows with ``SKIP LOCKED`` and is all
+  or nothing. If a member's own request holds their row, nobody is removed:
+  the group is marked ``dissolving`` and the barrier poller tries the whole
+  dissolution again on each sweep, so ``on_dissolve`` runs once, with every
+  member waiting at the barrier. A group back at its quorum by then is no
+  longer dissolved.
 - A between-barrier timeout with ``"fail"`` also skips busy late members;
   they are still late at the barrier's next check. ``"leave_group"`` only changes the
   group's links, so it does not lock the member's row.
@@ -69,7 +71,8 @@ row:
   group is skipped for the next candidate.
 
 Two members failing at the same moment therefore do not deadlock: each
-fails itself and whoever else is free, and the poller completes the rest.
+fails itself, and the second request to reach the group, or else the
+poller, dissolves it.
 The rule does not order rows of *different* sync groups, so participants in
 several groups at once, failing together, can still deadlock, in which case
 PostgreSQL aborts one of the transactions.
