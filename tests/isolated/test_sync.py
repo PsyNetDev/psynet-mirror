@@ -7485,13 +7485,15 @@ def test_a_closed_join_criterion_doesnt_stop_top_ups(
         below_quorum="continue_without_group",
     )
     barrier = GroupBarrier(id_="game_starts", group_type="team")
-    quitter, waiter = [new_participant(exp) for _ in range(2)]
-    for p in (quitter, waiter):
+    quitter, waiter, newcomer = [new_participant(exp) for _ in range(3)]
+    for p in (quitter, waiter, newcomer):
         p.status = "working"
     group = grouper._make_group([quitter, waiter], initial_group_size=2)
     db_session.commit()
 
     quitter.fail("quit")
+    grouper._join_existing_groups(newcomer)
+    assert not newcomer.in_sync_group("team")
     assert group.accepts_top_ups
     assert barrier.choose_who_to_release([waiter]) == []
     assert waiter.in_sync_group("team")
