@@ -106,12 +106,22 @@ which the others then join. This needs a barrier in each
 round, such as the one in ``show_trial`` below, so that no member ends a
 round before the others have cued it.
 
-Every trial in a round gets the definition of the round's first cue, so a
-definition must not depend on the player's own position in the loop, as in
-``logic=lambda i: OfferTrial.cue({"block": i})``. A late joiner, or a pair
-that the regrouper forms from players at different rounds, would then cue a
-different definition for the same round and get a ``ValueError``. Use a
-function taking ``round`` or ``group`` instead, such as
+So a trial has two round counters. ``sync_group_round`` counts the group's
+rounds, and is ``None`` on a trial played without a group. Use it for what
+the group shares, such as what a round shows and the group's rows in the
+export. ``trial.position`` counts the player's own cued trials in the
+module, grouped or not. Use it for the player's own sequence, such as the
+round in a per-player export when groups change every round. The two agree
+only in a fixed group that every member joined before the loop.
+
+Every trial in a round gets the definition of the round's first cue. A
+definition can come from the player's own position in the loop, as in
+``logic=lambda i: OfferTrial.cue({"block": i})``, only if every member
+reaches each round at the same position: a fixed group whose top-ups stop
+before the loop, with no regrouper. Otherwise a late joiner, or a pair that
+the regrouper forms from players at different rounds, would cue a different
+definition for the same round and get a ``ValueError``. Use a function
+taking ``round`` or ``group`` instead, such as
 ``OfferTrial.cue(lambda round: {"block": round})``.
 
 Classes cued in the same open round share its node and definition: if the

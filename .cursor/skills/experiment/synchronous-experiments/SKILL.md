@@ -222,9 +222,10 @@ Module("game", for_loop(
   (`accumulate_answers = True` for several answer pages, which makes it a
   dict from the start), and `score_answer`, `show_feedback` and
   `get_basic_data` read the trial and `self.node.var`. `node.all_trials`
-  keeps the trials of players who left during the round, and each cued
-  trial's `position` counts the player's earlier cued trials in the module,
-  so exports need no round counter of their own.
+  keeps the trials of players who left during the round. Exports need no
+  round counter of their own: `sync_group_round` counts the group's rounds,
+  for what the group shares, and `position` counts the player's own cued
+  trials in the module, grouped or not.
 - Put `leave_group(group_type)` after a player's last round so that the
   rest of the group, and any `Regrouper`, stops waiting for them.
 - Use `self.sync_group_role` for role-specific pages, and put the cue in a

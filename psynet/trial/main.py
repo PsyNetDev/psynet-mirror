@@ -1240,8 +1240,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           from ``trial.answer``: ``None`` there means the page ran out of
           time. With several answer pages before a barrier, set
           :attr:`accumulate_answers` to get them all.
-        - A grouped cue's definition must not depend on the player's own
-          position in a loop; pass a function taking ``round`` or ``group``.
+        - A grouped cue's definition can depend on the player's own position
+          in a loop only if every member reaches each round at the same
+          position, as in a fixed group whose top-ups stop before the loop;
+          otherwise pass a function taking ``round`` or ``group``.
         - A participant who is in no group of that type gets an ungrouped
           trial on the module's default node, so put the cue in a
           :func:`~psynet.timeline.conditional` on
@@ -1456,9 +1458,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 f"{group.id} already has the definition {node.definition!r}. "
                 "All trials in a group's round share the definition of its first "
                 "cue, whatever their class or role, so the definition must not "
-                "depend on the player's own position in a loop, which differs "
-                "for late joiners and in rooms mixing players from different "
-                "rounds, nor differ between the classes or roles cued in one "
+                "depend on the player's own position in a loop unless every "
+                "member reaches each round at the same position (late joiners "
+                "and rooms mixing players from different rounds don't), nor "
+                "differ between the classes or roles cued in one "
                 "round. Pass the same dict, or a function taking round or group, "
                 "which is only called for the round's first cue; put "
                 "role-specific content in the definition keyed by role, or derive "
