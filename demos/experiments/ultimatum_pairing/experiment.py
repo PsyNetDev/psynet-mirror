@@ -43,7 +43,6 @@ from psynet.sync import (
     Regrouper,
     SimpleGrouper,
     SyncGroup,
-    only_in_group,
 )
 from psynet.timeline import (
     CodeBlock,
@@ -97,21 +96,22 @@ def get_timeline():
                 keep_playing,
                 join(
                     pairing,
-                    only_in_group(
-                        "pair",
-                        OfferTrial.cue({"endowment": ENDOWMENT}),
-                        # Without a cohort the game is over and the ended-early
-                        # page explains why, but a player removed for being
-                        # away, who left the cohort too, is told about the round.
-                        otherwise=conditional(
-                            "explain_round",
-                            lambda participant: (
+                    join(OfferTrial.cue({"endowment": ENDOWMENT}), stop_if=left_pair),
+                    # Without a cohort the game is over and the ended-early
+                    # page explains why, but a player who sat out, or who was
+                    # removed for being away and left the cohort too, is told
+                    # about the round.
+                    conditional(
+                        "explain_round",
+                        lambda participant: (
+                            left_pair(participant)
+                            and (
                                 cohort_of(participant) is not None
                                 or participant.sync_group_removal_reason("pair")
                                 == "late"
-                            ),
-                            PageMaker(not_playing, time_estimate=5),
+                            )
                         ),
+                        PageMaker(not_playing, time_estimate=5),
                     ),
                 ),
                 expected_repetitions=N_ROUNDS,
@@ -124,6 +124,10 @@ def get_timeline():
             PageMaker(ended_early_page, time_estimate=5),
         ),
     )
+
+
+def left_pair(participant):
+    return not participant.in_sync_group("pair")
 
 
 def cohort_of(participant):
