@@ -4111,19 +4111,18 @@ class SyncGroup(SQLBase, SQLMixin):
 
             - ``None`` (default), ``"left_experiment"``, ``"waited_too_long"`` or
               ``"group_dissolved"``: "(dropped out)", or "(left)" once they
-              have failed or finished the experiment.
+              have failed, left or completed the experiment.
             - ``"late"``: "(removed)", for a member a barrier removed for
               being late (``late_action="leave_group"``), or "(left)" once
-              they have failed or left the experiment.
-            - ``"moved_on"``: not shown, unless the page shows their answer,
-              for a member who left at a :class:`Regrouper`, for their next
-              group or to sit the round out. A pair a :class:`SimpleGrouper`
+              they have failed, left or completed the experiment.
+            - ``"moved_on"``: for a member who left at a :class:`Regrouper`,
+              for their next group or to sit the round out. A pair a :class:`SimpleGrouper`
               formed isn't dissolved, failing the partner, when the first
               member reaches a :class:`Regrouper`.
             - ``"finished"``: "(finished)", for a member who has played their
-              part, such as a player leaving a cohort after their last round;
-              "(left)" once they have failed, but not when they have only
-              left the experiment.
+              part, such as a player leaving a cohort after their last round,
+              even if they then left or completed the experiment; "(left)"
+              once they have failed.
               The members finishing their own last rounds aren't told that too
               few remained.
 
