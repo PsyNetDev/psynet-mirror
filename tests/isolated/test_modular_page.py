@@ -557,6 +557,7 @@ _CONSENTS = pytest.mark.parametrize(
         (CheckboxControl(["a", "b"]), ["a", "c"]),
         (CheckboxControl(["a"]), "a"),
         (CheckboxControl(["a"], force_selection=True), None),
+        (DropdownControl(["a"], force_selection=True), None),
     ],
 )
 def test_option_controls_reject_answers_outside_their_choices(submit, control, answer):

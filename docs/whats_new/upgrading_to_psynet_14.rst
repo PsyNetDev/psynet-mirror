@@ -490,7 +490,8 @@ templates that changes the database.
   ``PushButtonControl([1, 2, 3])``, and compare their answers to numbers:
   ``answer == 3``, not ``answer == "3"``. ``int(answer)`` keeps working.
   Fixed bot answers, from ``bot_response`` or a ``get_bot_response`` method
-  that returns a plain value, are saved as given, so give them as numbers
+  that returns a plain value, are not converted, and an answer that is not
+  one of the choices is rejected (see the next item), so give them as numbers
   too: ``bot_response=3``, not ``bot_response="3"``.
 * These controls now reject an answer that is not one of their ``choices``.
   Search for ``def format_answer`` on these controls and on pages that use

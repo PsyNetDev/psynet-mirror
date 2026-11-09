@@ -1305,7 +1305,7 @@ class DropdownControl(OptionControl):
 
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
-        if self.force_selection and response.answer == "":
+        if self.force_selection and response.answer in ("", None):
             return FailedValidation(_p("validation", "You need to select an answer!"))
         return None
 
