@@ -282,6 +282,11 @@ def test_alternating_trial_classes_advance_the_round(
         ("VoteTrial", 1),
     ]
 
+    # Different classes cued by different players in an open round share it.
+    PairTrial.cue({"target": 1})[0].consume(exp, cohort[0])
+    VoteTrial.cue({"target": 1})[0].consume(exp, cohort[1])
+    assert cohort[0].current_trial.node is cohort[1].current_trial.node
+
 
 @in_consents_experiment
 def test_an_explicit_round_lets_two_classes_share_a_node(

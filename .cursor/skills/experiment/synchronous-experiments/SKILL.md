@@ -206,12 +206,9 @@ class PickTrial(Trial):
     @classmethod
     def score_room(cls, trials, node):
         # String keys, since node.var is stored as JSON.
-        picks = {str(t.participant_id): t.participant.var.choice for t in trials}
-        choices = {p: n for p, n in picks.items() if n is not None}
-        winner = lowest_unique(choices) if len(choices) > 1 else None
-        node.var.winning_number = winner  # the room's result
+        node.var.choices = {str(t.participant_id): t.participant.var.choice for t in trials}
         for trial in trials:  # each player's result
-            trial.var.won = winner is not None and picks[str(trial.participant_id)] == winner
+            trial.var.choice = trial.participant.var.choice
 
 # The Module gives the nodes a module_id to find them by when exporting.
 Module("game", for_loop(

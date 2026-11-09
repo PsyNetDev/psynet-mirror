@@ -208,10 +208,12 @@ comes back, the next split waits for its deadline. A late player who comes
 back is told that they were away, and their game ends.
 
 The cohort's grouper sets ``below_quorum="continue_without_group"``. In this
-demo it never takes effect: the cohort accepts top-ups, so it is never
-dissolved, and ``keep_playing`` (below) ends the game once fewer than two
-players are left. It makes the recipe safe to copy into a cohort without
-top-ups, where removing a late player would dissolve the cohort if that left
+demo it never takes effect: the cohort accepts top-ups and the demo never
+stops them, so the cohort isn't dissolved here, and ``keep_playing`` (below)
+ends the game once fewer than two players are left. It makes the recipe
+safe to copy into a cohort without top-ups, or one that stops them (with
+``stop_top_ups``, ``GroupBarrier(stop_top_ups=True)`` or ``top_up_wait``),
+where removing a late player would dissolve the cohort if that left
 it below its quorum, and the default ``below_quorum="fail"`` would fail the
 players who were on time (see :ref:`groups_below_min_size`).
 
@@ -288,9 +290,10 @@ too often, has left the cohort, or their cohort is down to one player:
    :pyobject: keep_playing
 
 Players who finish leave the cohort, so that the regrouper doesn't wait for
-them in later rounds. This cohort accepts top-ups, so it is never dissolved,
-and ``reason="finished"`` here only shows them as "(finished)". It keeps the
-recipe safe to copy into a cohort without top-ups, where any other reason
+them in later rounds. This cohort accepts top-ups and the demo never stops
+them, so the cohort isn't dissolved here, and ``reason="finished"`` only
+shows them as "(finished)". It keeps the recipe safe to copy into a cohort
+without top-ups, or one that stops them, where any other reason
 would dissolve the cohort if that left it below its quorum while the last
 players finish their rounds (see :ref:`groups_below_min_size`):
 

@@ -4310,6 +4310,8 @@ class SyncGroupNode(GenericTrialNode):
         if trials.filter_by(participant_id=participant.id).first() is not None:
             return False
         members = [p.id for p in group.active_participants if p.id != participant.id]
+        if not members:
+            return False
         return (
             trials.filter(
                 Trial.participant_id.in_(members),
