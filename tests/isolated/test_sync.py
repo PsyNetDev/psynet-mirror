@@ -17,6 +17,7 @@ from flask import Flask
 from sqlalchemy import Column, String, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.inspection import inspect as sa_inspect
+from sqlalchemy.orm import Session
 
 from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.barrier_spec import (
@@ -48,6 +49,7 @@ from psynet.sync import (
     BarrierInstance,
     GroupBarrier,
     ParticipantLinkBarrier,
+    ParticipantLinkSyncGroup,
     Regrouper,
     SimpleGrouper,
     SimpleSyncGroup,
@@ -7565,6 +7567,45 @@ def test_game_starts_waits_while_a_newcomer_is_joining(
         assert game_starts.choose_who_to_release(starters) == []
     assert group.accepts_top_ups
     assert set(game_starts.choose_who_to_release(starters)) == set(starters)
+    assert not group.accepts_top_ups
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_game_starts_counts_a_newcomer_who_joined_in_another_request(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper, game_starts = _lobby_recipe()
+    *starters, newcomer, peeked = [new_participant(exp) for _ in range(4)]
+    for p in (*starters, newcomer, peeked):
+        p.status = "working"
+    group = grouper._make_group(starters, initial_group_size=4)
+    db_session.commit()
+
+    def join_in_another_request(participant):
+        with Session(bind=db.engine) as other:
+            other.add(
+                ParticipantLinkSyncGroup(
+                    participant_id=participant.id,
+                    sync_group_id=group.id,
+                    active=True,
+                    arrival_time=timenow(),
+                )
+            )
+            other.commit()
+
+    assert len(group.active_participants) == 2
+    join_in_another_request(newcomer)
+    assert game_starts.choose_who_to_release(starters) == []
+    assert group.accepts_top_ups
+
+    assert len(group.active_participants) == 3
+    join_in_another_request(peeked)
+    assert not game_starts.would_release([*starters, newcomer])
+    released = game_starts.choose_who_to_release([*starters, newcomer, peeked])
+    assert set(released) == {*starters, newcomer, peeked}
     assert not group.accepts_top_ups
 
 

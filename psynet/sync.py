@@ -1471,6 +1471,8 @@ def _lock_group_to_stop_top_ups(group) -> bool:
     and its stopping top-ups. A row another request holds is skipped rather
     than waited for, because the release may then wait for other locks, such
     as a round's advisory lock; the next barrier check tries again.
+    ``populate_existing`` also reloads the group's member links, so the count
+    includes newcomers who joined in other requests.
     """
     locked = (
         SimpleSyncGroup.query.filter_by(id=group.id)
@@ -1478,10 +1480,7 @@ def _lock_group_to_stop_top_ups(group) -> bool:
         .populate_existing()
         .first()
     )
-    if locked is None:
-        return False
-    db.session.expire(locked, ["participant_links"])
-    return True
+    return locked is not None
 
 
 def _validate_group_timeouts(max_wait_action, late_after, late_action, prefix=""):
@@ -1951,11 +1950,7 @@ class GroupBarrier(Barrier):
         groups = self.get_waiting_groups(waiting_participants)
 
         for group in groups.values():
-            if (
-                self.stop_top_ups
-                and getattr(group, "accepts_top_ups", False)
-                and not _lock_group_to_stop_top_ups(group)
-            ):
+            if self._skips_busy_group(group):
                 continue
             if not _lock_round(group):
                 continue
@@ -2035,6 +2030,10 @@ class GroupBarrier(Barrier):
         """
         waiting_ids = {participant.id for participant in waiting_participants}
         for group in self.get_waiting_groups(waiting_participants).values():
+            if self.stop_top_ups and getattr(group, "accepts_top_ups", False):
+                # A peek takes no lock, but still counts newcomers who have
+                # joined since this session loaded the group.
+                db.session.expire(group, ["participant_links"])
             late_ids = {
                 participant.id
                 for participant in self._late_between_barriers(group, waiting_ids)
@@ -2053,8 +2052,22 @@ class GroupBarrier(Barrier):
 
     def check_waiting_participants(self, waiting_participants: List[Participant]):
         for group in self.get_waiting_groups(waiting_participants).values():
+            if self._skips_busy_group(group):
+                continue
             group.check_numbers()
             self._timeout_participants_between_barriers(group, waiting_participants)
+
+    def _skips_busy_group(self, group) -> bool:
+        """Return whether this check must leave ``group`` alone because a newcomer may be joining it.
+
+        Only a ``stop_top_ups`` barrier on a group that accepts top-ups locks
+        the group; see :func:`_lock_group_to_stop_top_ups`.
+        """
+        return (
+            self.stop_top_ups
+            and getattr(group, "accepts_top_ups", False)
+            and not _lock_group_to_stop_top_ups(group)
+        )
 
     def get_waiting_groups(self, waiting_participants: List[Participant]):
         groups = {
@@ -2796,7 +2809,6 @@ class SimpleGrouper(Grouper):
             )
             if group is None or not group.active or not group.accepts_top_ups:
                 continue
-            db.session.expire(group, ["participant_links"])
             n_members = len(group.active_participants)
             group.n_active_participants = n_members
             if n_members == 0 or (
