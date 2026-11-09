@@ -30,7 +30,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `demos/experiments/sync_quorum`, and
   `demos/experiments/gibbs_within_sync`; for games played in rounds, also
   `demos/experiments/ultimatum_pairing` and
-  `demos/experiments/lowest_unique_number`.
+  `demos/experiments/lowest_unique_number`; for taking turns,
+  `demos/experiments/story_chain`.
 
 ## Choose the synchronization model
 
@@ -85,8 +86,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   neither callback, so
   check their cued trial's `sync_group_outcome == "group_dissolved"` in a
   step after the barrier if they need a result too.
-- Sort `sync_group.participants` by participant ID before deterministic role
-  assignment; PsyNet does not guarantee the stored order.
+- For deterministic roles or turn order, use `psynet.sync.group_seats(group)`
+  (seats in join order, stable while the group exists), as in
+  `story_chain`; PsyNet does not guarantee the order of
+  `sync_group.participants`.
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries
   such as submit, rate, reveal, score, or bonus computation.
 - Read partners' answers from what `on_release` stored on the trial or node
