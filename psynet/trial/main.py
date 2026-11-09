@@ -1304,9 +1304,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             ``participant.current_trial is not None``. Rounds are ordered by
             when the group first plays them, not by number. A module whose
             cues pass ``round`` runs once per participant, so give each run
-            of it its own module id; cueing a round again after a later one,
-            even one the participant skipped, or a trial class again in the
-            same round, raises an error. Only
+            of it its own module id: its cues raise an error if the
+            participant has run the module before. Cueing a round again
+            after a later one, even one the participant skipped, or a trial
+            class again in the same round, also raises an error. Only
             for a trial class that sets :attr:`sync_group_type`, and not with a
             regrouper, whose groups mix players at different loop positions.
             For a participant without a group, ``round`` doesn't select a
@@ -4394,11 +4395,12 @@ class SyncGroupNode(GenericTrialNode):
         counted from 0, which the others then join.
         With ``round_number``, it is the group's node for that round, or
         ``None`` if it is no longer open and the participant isn't playing it,
-        as when the group finished it without them. Naming a round the
-        participant played, or one before a round they played or skipped,
-        as when the module runs again, raises a ``RuntimeError`` (see
-        :meth:`_named_round`): the group's nodes for the module are reused,
-        so the round would count as played or skipped already.
+        as when the group finished it without them. Naming a round when
+        the participant has run this module before raises a
+        ``RuntimeError``, because the group's nodes for the module would be
+        reused; so does naming a round in which they already have a trial of
+        ``trial_class``, or one before a round they played or skipped (see
+        :meth:`_named_round`).
         ``trial_class`` is the class of the cued trial. A new node's
         definition is ``make_definition(round_number)``. Either way, the
         participant's link to ``group`` records the round as the one they
@@ -4426,6 +4428,14 @@ class SyncGroupNode(GenericTrialNode):
             else:
                 round_number = newest.sync_group_round + 1
         else:
+            if len(participant.module_states.get(module_id, [])) > 1:
+                raise RuntimeError(
+                    f"Participant {participant.id} cued round {round_number} of "
+                    f"'{group.group_type}' group {group.id} in module "
+                    f"'{module_id}' again: the participant has run this module "
+                    "before. A module whose cues pass round= can run only once "
+                    "per participant; give each run of it its own module id."
+                )
             node = (
                 nodes.filter_by(sync_group_round=round_number)
                 .populate_existing()
@@ -4446,9 +4456,9 @@ class SyncGroupNode(GenericTrialNode):
     def _named_round(cls, node, group, participant, trial_class):
         """Return ``node``, a round named by ``round=``, or ``None`` if the participant skips it.
 
-        Raises a ``RuntimeError`` if the module runs again: the participant
-        has a trial of ``trial_class`` on the round they are playing, or
-        their stored round is one played after it, whether they played or
+        Raises a ``RuntimeError`` if the participant has a trial of
+        ``trial_class`` on the round they are playing, or their stored round
+        in this module is one played after it, whether they played or
         skipped either. So a skip never moves their stored round back.
         """
         link = _member_link(group, participant)
@@ -4468,9 +4478,8 @@ class SyncGroupNode(GenericTrialNode):
                 f"Participant {participant.id} cued {trial_class.__name__} for "
                 f"round {node.sync_group_round} of '{group.group_type}' group "
                 f"{group.id} again in module '{node.module_id}', after it or a "
-                "later round. A module whose cues pass round= can run only "
-                "once per participant, with one trial of each class in a "
-                "round; give each run of it its own module id."
+                "later round. A round takes one trial of each class, and "
+                "can't be cued after a round played after it."
             )
         if playing:
             # Another trial class cued in the round the participant is playing.

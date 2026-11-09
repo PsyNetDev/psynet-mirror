@@ -4563,8 +4563,10 @@ def _still_in_module(participant, module_id):
 
     A barrier waits for such members only while this holds. It doesn't once
     they have finished the module and not started it again, as when their
-    loop ended earlier or a conditional skipped it, reading their
-    ``ModuleState``; a member who hasn't started it yet may still come.
+    loop ended earlier or a conditional inside the module skipped the loop,
+    reading their ``ModuleState``. A member who hasn't started it yet may
+    still come, so one whose timeline skips the whole module is waited for
+    until the barrier's ``late_after`` or ``max_wait`` applies.
     """
     states = participant.module_states.get(module_id, [])
     return not states or not all(state.finished for state in states)

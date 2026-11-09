@@ -125,9 +125,10 @@ the start of each iteration, waits for every member only if the group
 hasn't cued a round in the module yet. Once it has, it waits only for the
 members who haven't cued one there either, are still in the module and
 haven't passed it yet, so the late joiner moves on to their cue and joins
-the open round or skips the closed one. A release of only such members catching up, late joiners
-or skippers, isn't the group's pass: ``on_release`` doesn't run, and it
-doesn't count for ``left`` or ``late_after``.
+the open round or skips the closed one. A release of only such members
+catching up, late joiners or skippers, isn't the group's pass:
+``on_release`` doesn't run, and it doesn't count for ``left`` or
+``late_after``.
 
 So a trial has two round counters. ``sync_group_round`` counts the group's
 rounds, and is ``None`` on a trial played without a group. Use it for what
@@ -195,8 +196,9 @@ pass ``round=`` with a
 regrouper: its groups mix players at different loop positions, whose trials
 would be split across rounds. A module whose cues pass ``round=`` runs once
 per participant, because a group's rounds belong to the module id: give
-each run its own module id. Cueing a round again after a later one, even
-one the participant skipped, or a trial class again in the same round,
+each run its own module id. Its cues raise an error if the participant has
+run the module before. Cueing a round again after a later one, even one
+the participant skipped, or a trial class again in the same round, also
 raises an error.
 
 Classes cued in the same open round share its node and definition: if the
