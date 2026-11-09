@@ -218,9 +218,9 @@ Module("game", for_loop(
 ```
 
 - Keep a `GroupBarrier` in every round, inside `show_trial` after the
-  answer page, so members stay in step. A trial ends at the end of
-  `show_trial`, so with the barrier outside it a slow member can find the
-  round finished by a fast teammate and move to the next one. For how
+  answer page, so members stay in step. A cued round closes only when its
+  barrier releases the group; a round without one never closes, and a
+  latecomer can join it after the others have finished. For how
   `cue` numbers rounds and the definition rules, follow the guide above.
 - When a fixed group plays a loop of rounds, pass the loop value as
   `round=` (`Trial.cue({"question": i}, round=i)`): late joiners then skip

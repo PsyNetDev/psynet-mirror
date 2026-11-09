@@ -92,9 +92,8 @@ find them by when exporting.
 ``cue`` numbers each group's rounds by itself, from 0:
 
 - A cue joins the group's newest node in the module while that round is
-  open and the player has no trial on it. A round is open until one of its
-  barriers releases the group, or until every other current member's trial
-  on it has ended.
+  open and the player has no trial on it. A round closes when one of its
+  barriers releases the group, and only then.
 - Otherwise it starts the group's next round.
 
 So every pair here, new each round, plays round 0, while a fixed group cued
@@ -102,13 +101,11 @@ in a loop plays rounds 0, 1, 2 and so on, whichever trial classes it cues.
 A member who joins it late joins its current round only until any barrier
 of that round releases the group. After that, even while the others are
 still on a page after the barrier, the newcomer starts the next round,
-which the others then join. This needs a barrier in each round, inside
-``show_trial`` after the answer page, as in the one below, so that no
-member ends a round before the others have cued it. A trial ends at the
-end of ``show_trial``, so with the barrier outside it (for example in
-``show_feedback`` or after the cue), a slow member could find the round
-finished by a fast teammate and start or skip to the next one, even in a
-group without newcomers when it passes ``round=``.
+which the others then join. So put a ``GroupBarrier`` in each round,
+inside ``show_trial`` after the answer page, as in the one below: it
+keeps the members in step, and its release closes the round. A round
+without one never closes, so a latecomer can join it after the others
+have finished.
 
 Each member's group membership records the round they last cued or
 skipped. A barrier that members reach in or after a round (in the trial,
@@ -154,7 +151,7 @@ value as ``round=``:
 Each iteration is then the group's round of that number, whoever cues it
 first, so its definition can come from the loop. A member who joins late
 skips the rounds that the group finished without them: rounds where they
-have no trial and that are no longer open. They play the rest, and the
+have no trial and whose barrier has released the group. They play the rest, and the
 barriers of a round they skipped don't wait for them. A skipped
 round shows nothing and earns no time credit, but the progress bar moves on
 as if it had been played. A skipped cue leaves ``participant.current_trial``

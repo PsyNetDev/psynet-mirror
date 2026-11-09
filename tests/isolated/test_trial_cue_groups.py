@@ -398,10 +398,6 @@ def test_an_explicit_round_skips_a_round_the_group_finished_without_the_player(
     assert alone.sync_group_id is None and alone.definition == {"target": 2}
 
 
-def _complete(exp, participant):
-    PairTrial._finalize_trial().consume(exp, participant)
-
-
 def _cue_round(exp, participant, i):
     PairTrial.cue({"target": i}, round=i)[0].consume(exp, participant)
     return participant.current_trial
@@ -442,7 +438,7 @@ def test_a_skipper_doesnt_hold_up_the_round_s_later_barrier(
 
 
 @in_consents_experiment
-def test_a_feedback_barrier_after_the_round_ended_doesnt_wait_for_a_newcomer(
+def test_a_closed_round_s_later_barrier_doesnt_wait_for_a_newcomer_yet_to_cue(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
@@ -450,30 +446,14 @@ def test_a_feedback_barrier_after_the_round_ended_doesnt_wait_for_a_newcomer(
     pair = cohort[0].active_sync_groups["pair"]
     for participant in cohort:
         _cue_round(exp, participant, 0)
-    for participant in cohort:
-        _complete(exp, participant)
-    # The newcomer hasn't cued yet, and will skip the round, which has ended.
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    # The newcomer hasn't cued yet, and will skip the round, which has closed.
     (newcomer,) = _working_participants(exp, 1)
     pair.add_participant(newcomer)
 
     feedback = GroupBarrier("feedback", group_type="pair")
     _arrive(exp, feedback, cohort)
     assert not any(feedback._participant_is_waiting(p) for p in cohort)
-
-
-@in_consents_experiment
-def test_a_round_closes_when_its_last_unfinished_trial_fails(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    cohort, _ = _paired(exp)
-    for participant in cohort:
-        _cue_round(exp, participant, 0)
-    node = cohort[0].current_trial.node
-    _complete(exp, cohort[0])
-    assert not node.sync_group_closed
-    cohort[1].current_trial.fail()
-    assert node.sync_group_closed
 
 
 @in_consents_experiment
@@ -504,8 +484,7 @@ def test_a_skipped_cue_moves_on_to_the_next_page(
     pair = cohort[0].active_sync_groups["pair"]
     for participant in cohort:
         PairTrial.cue({}, round=0)[0].consume(exp, participant)
-    for participant in cohort:
-        _complete(exp, participant)
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
     (newcomer,) = _working_participants(exp, 1)
     pair.add_participant(newcomer)
     after = InfoPage("After the round", time_estimate=5)
@@ -572,11 +551,8 @@ def test_a_late_joiner_joins_an_open_round_or_starts_the_next(
         logic[0].consume(exp, participant)
     pair.add_participant(early)
     logic[0].consume(exp, early)
-    # Round 0 ends: one trial completes, one fails, and a member with an
-    # unfinished trial leaves.
-    _complete(exp, cohort[0])
-    cohort[1].current_trial.fail()
-    pair.remove_participant(early)
+    # Round 0 closes when its barrier releases the group.
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), [*cohort, early])
     pair.add_participant(between)
     for participant in [between, *cohort]:
         logic[0].consume(exp, participant)

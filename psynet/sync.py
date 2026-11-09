@@ -4180,10 +4180,7 @@ class SyncGroup(SQLBase, SQLMixin):
             raise ValueError(
                 f"reason must be one of {REMOVAL_REASONS}, got {reason!r}."
             )
-        from .trial.main import SyncGroupNode, _close_round_if_finished
-
         _forget_active_sync_group(participant)
-        rounds = []
         for link in self.participant_links:
             is_member = (
                 link.participant is participant or link.participant_id == participant.id
@@ -4194,12 +4191,7 @@ class SyncGroup(SQLBase, SQLMixin):
                 link.removal_time = timenow()
                 if reason == "late":
                     link.removed_on_page = participant.page_uuid
-                if link.round_node_id is not None and not link.skipped_round:
-                    rounds.append(link.round_node_id)
         self.check_numbers()
-        for node_id in rounds:
-            # Their trial may have been the round's last unfinished one.
-            _close_round_if_finished(db.session.get(SyncGroupNode, node_id))
         _notify_membership_change(self)
         if self.n_active_participants == 0 and not getattr(
             self, "accepts_top_ups", False
