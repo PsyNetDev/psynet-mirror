@@ -57,13 +57,12 @@ Barrier checks and participant requests take their locks in this order:
 2. Participant rows. A barrier check locks the waiters' barrier links and
    rows with ``NOWAIT``; a participant's own request locks their own row,
    waiting for it.
-3. The sync group row, ``FOR NO KEY UPDATE``. Barrier checks,
+3. The sync group row, ``FOR NO KEY UPDATE``. Joins inside barrier checks,
    :func:`~psynet.sync.check_sync_groups` and the poller's retry of a
-   dissolution use ``SKIP LOCKED``, except that a
-   :class:`~psynet.sync.GroupBarrier` check takes the row of each waiting
-   group that accepts top-ups with ``NOWAIT``, so that a busy group defers
-   the check. A newcomer's own request waits up to a second for an open
-   group (see below). A member who leaves or fails changes the group
+   dissolution use ``SKIP LOCKED``. A :class:`~psynet.sync.GroupBarrier`
+   check takes the row of each waiting group that accepts top-ups with
+   ``NOWAIT``, so that a busy group defers the check. A newcomer's own
+   request waits up to a second for an open group (see below). A member who leaves or fails changes the group
    with an ``UPDATE``, which waits up to ``timeline_lock_timeout_seconds``.
 4. The advisory lock of a cued round. Barriers only try it and defer if it
    is busy. A cue waits for it, but takes only a ``KEY SHARE`` lock on the
@@ -107,9 +106,10 @@ busy, the newcomer's own request waits up to a second for the best one,
 instead of waiting at the grouper for the barrier poller. That wait can't
 deadlock: the newcomer has no link in the group yet, so whoever holds the
 group's row has no reason to lock the newcomer's. Joins inside barrier
-checks don't wait. The poller can still make one, because skipping the
-waiters it released runs their timelines on to the grouper, so it can wait
-up to a second per waiter outside its 0.2-second budget.
+checks don't wait. The poller can still make a join that waits: after a
+check, it moves the waiters it released on through their timelines, and a
+waiter who reaches a grouper joins as their own request would. So it can
+wait up to a second per waiter, outside its 0.2-second budget.
 
 A barrier check that finds a waiter or a group busy is rolled back and
 deferred: the last arrival retries it once, and the poller retries it in
