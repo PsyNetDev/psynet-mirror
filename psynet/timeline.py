@@ -3391,7 +3391,7 @@ class Response(_Response):
         """Whether this answer arrived after the participant's group went on without them.
 
         It is ``True`` when a barrier removed the participant from their group
-        for being late (``late_action="leave_group"`` or ``"leave_all_groups"``) while they were on this
+        for being late (``late_after``, with any ``late_action``) while they were on this
         page, whether the group carried on or was dissolved. The group didn't
         use the answer, so a move in a game, for example, usually shouldn't
         count.

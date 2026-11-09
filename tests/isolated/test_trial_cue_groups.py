@@ -11,6 +11,7 @@ import pytest
 from dallinger import db
 from sqlalchemy import text
 
+from psynet.db import _set_transaction_lock_timeout
 from psynet.experiment import get_experiment
 from psynet.page import InfoPage
 from psynet.participant import Participant
@@ -961,3 +962,49 @@ def test_the_outcome_records_why_a_player_left_the_round(
     assert removed.current_trial.sync_group_outcome == outcome
     if getattr(remove, "fails", False):
         assert removed.failed and removed.sync_group_removal_reason("main") == "late"
+
+
+@in_consents_experiment
+def test_late_action_fail_waits_for_a_busy_late_member_then_fails_both(
+    in_experiment_directory, db_session
+):
+    """Nobody is failed while one late member's own request holds their row."""
+    exp = get_experiment()
+    (stayer, *late), group = _sync_group_of(exp, db_session, 3)
+    group.below_quorum = "continue_without_group"
+    barrier = GroupBarrier("late", group_type="main", late_after=5, late_action="fail")
+    _arrive(exp, barrier, [stayer])
+    _backdate_group(group, seconds=10)
+    db.session.commit()
+    ids = [p.id for p in late]
+
+    with db.engine.connect() as busy_request, busy_request.begin():
+        busy_request.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": ids[1]},
+        )
+        _set_transaction_lock_timeout(1)
+        barrier.check_waiting_participants([stayer])
+        db.session.commit()
+        assert not Participant.query.get(ids[0]).failed
+
+    barrier.check_waiting_participants([stayer])
+    db.session.commit()
+    for participant_id in ids:
+        participant = Participant.query.get(participant_id)
+        assert participant.failed
+        assert participant.sync_group_removal_reason("main") == "late"
+
+
+@in_consents_experiment
+def test_late_action_fail_leaves_other_groups_as_left_experiment(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    (stayer, late), _ = _paired(exp)
+    barrier = GroupBarrier("late", group_type="pair", late_after=5, late_action="fail")
+    _arrive(exp, barrier, [stayer])
+    _backdate_group(stayer.active_sync_groups["pair"], seconds=10)
+    barrier.check_waiting_participants([stayer])
+    assert late.sync_group_removal_reason("pair") == "late"
+    assert late.sync_group_removal_reason("cohort") == "left_experiment"

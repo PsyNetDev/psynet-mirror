@@ -2233,10 +2233,13 @@ class GroupBarrier(Barrier):
                 continue
             scope = _barrier_scope(group, waiting_participants, self.id)
             late = self._late_between_barriers(group, waiting_ids, scope.waited_for)
-            if self.late_action == "fail":
-                # A late member whose own request holds their row is
-                # still late on the next check.
-                late = _lock_free_participants(late)
+            if self.late_action == "fail" and late:
+                # All or nothing, as in dissolving: a late member whose own
+                # request holds their row would otherwise stay behind in a
+                # group that dissolves without them. All are late next check.
+                late = _lock_all_participants(late)
+                if late is None:
+                    continue
             if late:
                 removals.append((group, late, len(group.active_participants)))
         self._remove_late_participants(removals)
@@ -2294,7 +2297,7 @@ class GroupBarrier(Barrier):
                         participant.id,
                         left_group.id,
                     )
-                    SyncGroup.remove_participant(left_group, participant, reason=reason)
+                    left_group._remove_without_quorum_check(participant, reason)
                     left.setdefault(left_group.id, (left_group, []))[1].append(
                         participant
                     )
@@ -4367,6 +4370,10 @@ class SyncGroup(SQLBase, SQLMixin):
             ``"finished"`` and ``"moved_on"`` don't dissolve the group; other
             reasons can. See :ref:`groups_below_min_size` for the full rule.
         """
+        self._remove_without_quorum_check(participant, reason)
+
+    def _remove_without_quorum_check(self, participant, reason=None):
+        """Remove ``participant`` as :meth:`remove_participant` does, but never dissolve the group below its quorum."""
         if reason not in REMOVAL_REASONS:
             raise ValueError(
                 f"reason must be one of {REMOVAL_REASONS}, got {reason!r}."
@@ -4440,9 +4447,7 @@ class SyncGroup(SQLBase, SQLMixin):
                 action = self._below_quorum_action(participant)
                 if action == "fail":
                     participant.fail("sync group below minimum size")
-                SyncGroup.remove_participant(
-                    self, participant, reason="group_dissolved"
-                )
+                self._remove_without_quorum_check(participant, "group_dissolved")
                 if action == "continue_without_group":
                     _tell_group_ended(participant, group_size)
             self.check_numbers()

@@ -783,7 +783,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         """Return whether the participant is in an active group of ``group_type``.
 
         This becomes ``False`` once they leave the group, for example after a
-        barrier's ``late_action="leave_group"`` or ``"leave_all_groups"``, or when
+        barrier removes them for being late (with any ``late_action``), or when
         their group is dissolved.
         """
         return group_type in self.active_sync_groups
