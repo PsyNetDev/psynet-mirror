@@ -3345,7 +3345,7 @@ class Response(_Response):
         """Whether this answer arrived after the participant's group went on without them.
 
         It is ``True`` when a barrier removed the participant from their group
-        for being late (``late_action="leave_group"``) while they were on this
+        for being late (``late_action="leave_group"`` or ``"leave_all_groups"``) while they were on this
         page, whether the group carried on or was dissolved. The group didn't
         use the answer, so a move in a game, for example, usually shouldn't
         count.
@@ -3399,7 +3399,9 @@ def join(*args, stop_if: Optional[Callable] = None):
         If given, it is checked before each argument, and once it returns
         ``True`` the participant skips the remaining arguments. Each
         argument runs whole once started, so pass ``join(...)`` as one
-        argument for steps that must not be separated. For example,
+        argument for steps that must not be separated. A list or tuple is
+        one argument too: unpack it, as in ``join(*steps, stop_if=...)``,
+        to check between its elements. For example,
         ``join(chat_page, barrier, outcome_page, stop_if=left_pair)``
         skips the rest of a round once the participant has left their pair.
         Use :func:`for_loop` with ``stop_if`` to stop a loop, and a
