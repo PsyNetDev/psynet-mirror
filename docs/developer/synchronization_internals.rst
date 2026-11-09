@@ -67,8 +67,17 @@ row:
   foreign-key check on ``leader_id`` locks the new leader's row.
 - Barrier checks lock waiters with ``NOWAIT`` and defer if one is busy.
 - Joining an open group (``join_existing_groups=True``) locks the group row
-  with ``SKIP LOCKED`` and re-counts its members under that lock; a busy
-  group is skipped for the next candidate.
+  and re-counts its members under that lock; a busy group is skipped for
+  the next candidate. If every open group is busy, the newcomer's own
+  request waits up to a second for the best one, which is safe because the
+  holder of a group row never waits for the newcomer's row, rather than
+  leaving the newcomer at the grouper for the barrier poller. Joins inside
+  barrier checks don't wait.
+- A :class:`~psynet.sync.GroupBarrier` check locks the row of each waiting
+  group that accepts top-ups with ``SKIP LOCKED`` before deciding, and
+  reloads its members, so a newcomer joins either before the check counts
+  them or after it commits. A busy group defers the whole check to the
+  next one.
 
 Two members failing at the same moment therefore do not deadlock: each
 fails itself, and the second request to reach the group, or else the

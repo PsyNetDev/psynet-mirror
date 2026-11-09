@@ -922,6 +922,57 @@ def test_join_skips_a_group_that_another_request_is_changing(
         assert joiner.active_sync_groups["top_up"].id == free.id
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_newcomer_waits_briefly_for_a_busy_group_instead_of_the_poller(
+    in_experiment_directory, db_session
+):
+    """Reaching the grouper, a newcomer joins a group another request holds once it commits."""
+    exp = get_experiment()
+    _members, group = _sync_group_of(exp, db_session, 2, group_type="top_up")
+    group.accepts_top_ups = True
+    group.max_group_size = 4
+    prompt, slow = _working_participants(exp, 2)
+    grouper = SimpleGrouper(
+        group_type="top_up",
+        initial_group_size=2,
+        max_group_size=4,
+        join_existing_groups=True,
+    )
+
+    def hold_group_row(seconds):
+        other = db.engine.connect()
+        transaction = other.begin()
+        other.execute(
+            text("SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"),
+            {"id": group.id},
+        )
+
+        def finish():
+            transaction.commit()
+            other.close()
+
+        timer = threading.Timer(seconds, finish)
+        timer.start()
+        return timer
+
+    lock_timeout = "SELECT current_setting('lock_timeout')"
+    _set_transaction_lock_timeout(5)
+    timer = hold_group_row(0.2)
+    grouper._join_on_arrival(prompt)
+    timer.join()
+    assert prompt.in_sync_group("top_up")
+    assert db_session.execute(text(lock_timeout)).scalar() == "5s"
+    db_session.commit()
+
+    timer = hold_group_row(3)
+    grouper._join_on_arrival(slow)
+    assert not slow.in_sync_group("top_up")
+    db_session.commit()
+    timer.join()
+
+
 @pytest.mark.parametrize("request_kind", ["response", "timeline"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
@@ -7779,76 +7830,91 @@ def test_latecomers_fill_a_team_until_it_passes_game_starts(
     assert lone.in_sync_group("team") and below_quorum.accepts_top_ups
 
 
+@pytest.mark.parametrize("stop_top_ups", [False, True])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_game_starts_waits_while_a_newcomer_is_joining(
-    in_experiment_directory, db_session
+def test_group_barrier_counts_a_newcomer_joining_in_another_request(
+    in_experiment_directory, db_session, stop_top_ups
 ):
-    """A ``stop_top_ups`` barrier skips a group whose row a joiner holds, until the next check."""
+    """A barrier check on a group that accepts top-ups waits out a join in progress, then counts the newcomer."""
     exp = get_experiment()
-    grouper, game_starts = _lobby_recipe()
-    *starters, slow = [new_participant(exp) for _ in range(3)]
-    for p in (*starters, slow):
-        p.status = "working"
+    grouper = SimpleGrouper(
+        "team", initial_group_size=4, quorum=2, join_existing_groups=True
+    )
+    game_starts = GroupBarrier(
+        id_="game_starts", group_type="team", stop_top_ups=stop_top_ups
+    )
+    *starters, newcomer, peeked = _working_participants(exp, 4)
     group = grouper._make_group(starters, initial_group_size=4)
-    grouper._join_existing_groups(slow)
-    for link in slow.sync_group_links:
-        link.arrival_time -= timedelta(seconds=121)
     db_session.commit()
+    assert len(group.active_participants) == 2
 
-    with db.engine.connect() as joiner, joiner.begin():
+    def still_waiting():
+        db_session.expire_all()
+        return [p for p in starters if not game_starts.can_participant_exit(p)]
+
+    def poll_barriers():
+        try:
+            check_barriers()
+        finally:
+            db.session.remove()
+
+    for participant in starters:
+        _arrive_at_group_barrier(exp, game_starts, participant)
+    db_session.commit()
+    _take_pending_barrier_checks()
+    with Session(bind=db.engine) as joiner:
         joiner.execute(
             text("SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"),
             {"id": group.id},
         )
-        game_starts.check_waiting_participants(starters)
-        assert slow.in_sync_group("team")
-        assert game_starts.choose_who_to_release(starters) == []
-    assert group.accepts_top_ups
-    game_starts.check_waiting_participants(starters)
-    assert slow.sync_group_removal_reason("team") == "late"
-    assert set(game_starts.choose_who_to_release(starters)) == set(starters)
-    assert not group.accepts_top_ups
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
-)
-def test_game_starts_counts_a_newcomer_who_joined_in_another_request(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    grouper, game_starts = _lobby_recipe()
-    *starters, newcomer, peeked = [new_participant(exp) for _ in range(4)]
-    for p in (*starters, newcomer, peeked):
-        p.status = "working"
-    group = grouper._make_group(starters, initial_group_size=4)
-    db_session.commit()
-
-    def join_in_another_request(participant):
-        with Session(bind=db.engine) as other:
-            other.add(
-                ParticipantLinkSyncGroup(
-                    participant_id=participant.id,
-                    sync_group_id=group.id,
-                    active=True,
-                    arrival_time=timenow(),
-                )
+        joiner.add(
+            ParticipantLinkSyncGroup(
+                participant_id=newcomer.id,
+                sync_group_id=group.id,
+                active=True,
+                arrival_time=timenow(),
             )
-            other.commit()
+        )
+        joiner.flush()
+        poller = threading.Thread(target=poll_barriers)
+        poller.start()
+        # Commit the join while the check runs, or once it has finished.
+        deadline = time.monotonic() + 10
+        while poller.is_alive() and time.monotonic() < deadline:
+            blocked = db_session.execute(
+                text("SELECT count(*) FROM pg_locks WHERE NOT granted")
+            ).scalar()
+            db_session.rollback()
+            if blocked:
+                break
+            time.sleep(0.05)
+        joiner.commit()
+    poller.join(30)
+    assert still_waiting() == starters
 
-    assert len(group.active_participants) == 2
-    join_in_another_request(newcomer)
-    assert game_starts.choose_who_to_release(starters) == []
-    assert group.accepts_top_ups
+    check_barriers()
+    assert still_waiting() == starters
+    assert newcomer.in_sync_group("team") and group.accepts_top_ups
 
-    assert len(group.active_participants) == 3
-    join_in_another_request(peeked)
+    # A peek, which takes no lock, also counts a newcomer who joined meanwhile.
+    _arrive_at_group_barrier(exp, game_starts, newcomer)
+    with Session(bind=db.engine) as other:
+        other.add(
+            ParticipantLinkSyncGroup(
+                participant_id=peeked.id,
+                sync_group_id=group.id,
+                active=True,
+                arrival_time=timenow(),
+            )
+        )
+        other.commit()
     assert not game_starts.would_release([*starters, newcomer])
-    released = game_starts.choose_who_to_release([*starters, newcomer, peeked])
-    assert set(released) == {*starters, newcomer, peeked}
-    assert not group.accepts_top_ups
+    _arrive_at_group_barrier(exp, game_starts, peeked)
+    _commit_barrier_arrivals()
+    assert still_waiting() == []
+    assert group.accepts_top_ups != stop_top_ups
 
 
 @pytest.mark.parametrize(

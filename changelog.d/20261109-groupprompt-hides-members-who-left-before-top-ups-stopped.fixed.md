@@ -1,0 +1,1 @@
+Fixed `GroupPrompt` showing members who left a group that accepted top-ups, for example during its instructions, as "(left)" once top-ups stopped. Only members who leave after top-ups stop are now shown. Groups record when that happened in the new `top_ups_stopped_at` column, which the sync-groups dashboard also shows.

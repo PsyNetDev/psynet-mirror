@@ -306,6 +306,34 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_members_who_left_the_lobby_stay_hidden_once_top_ups_stop(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    viewer, quitter, late = _working_participants(exp, 3)
+    group = SimpleSyncGroup(
+        group_type="team",
+        initial_group_size=3,
+        min_group_size=1,
+        accepts_top_ups=True,
+        below_quorum="continue_without_group",
+    )
+    db_session.add(group)
+    for member in (viewer, quitter, late):
+        group.add_participant(member)
+    group.remove_participant(quitter)
+    group.stop_top_ups()
+    group.remove_participant(late, reason="late")
+    db_session.flush()
+
+    html = GroupPrompt(group=group, participant=viewer, names="anonymous").group_html
+    assert html.count("psynet-group-member--left") == 1
+    assert ">Your partner (removed)<" in html
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_a_removed_partner_stays_in_the_viewers_subgroup(
     in_experiment_directory, db_session
 ):

@@ -247,6 +247,7 @@ def _simple_group_fields(group):
             "max_group_size": None,
             "initial_group_size": None,
             "accepts_top_ups": None,
+            "top_ups_stopped_at": None,
         }
 
     return {
@@ -254,6 +255,7 @@ def _simple_group_fields(group):
         "max_group_size": group.max_group_size,
         "initial_group_size": group.initial_group_size,
         "accepts_top_ups": group.accepts_top_ups,
+        "top_ups_stopped_at": group.top_ups_stopped_at,
     }
 
 

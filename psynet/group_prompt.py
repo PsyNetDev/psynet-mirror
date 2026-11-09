@@ -111,7 +111,8 @@ class GroupPrompt(Prompt):
         time), keep their seat after moving on to their next group; ``None``
         shows no bubble. Members without an entry get no bubble either, and
         are omitted once they have moved on. A group that accepts top-ups
-        shows no members who left, even with an entry.
+        shows no members who left, even with an entry, nor, once it stops
+        accepting them, members who left before then.
     highlight
         Optional ``{participant_id: style}``. ``"winner"`` and
         ``"duplicate"`` have built-in styles; any other style becomes the
@@ -384,10 +385,11 @@ class GroupPrompt(Prompt):
         """Return former members who dropped out, and those who moved on whose answer the page shows.
 
         Groups that take top-ups are open-ended, like a lobby, so their
-        leavers are not shown.
+        leavers are not shown, nor, once top-ups stop, those who left before.
         """
         if getattr(self.group, "accepts_top_ups", False):
             return []
+        stopped_at = getattr(self.group, "top_ups_stopped_at", None)
         active_ids = {p.id for p in self.group.active_participants}
         left = {}
         reasons = self._removal_reasons()
@@ -395,7 +397,12 @@ class GroupPrompt(Prompt):
         for link in self.group.participant_links:
             member = link.participant
             if (
-                member.id in active_ids
+                (
+                    stopped_at is not None
+                    and link.removal_time is not None
+                    and link.removal_time < stopped_at
+                )
+                or member.id in active_ids
                 or member.id == self.participant.id
                 or (reasons.get(member.id) == "moved_on" and member.id not in moved_on)
             ):
