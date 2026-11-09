@@ -265,9 +265,23 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     assert "(left)" not in html()
     group.accepts_top_ups = False
     late.status = "working"
+    # The first label that applies wins: failed, finished, left, removed.
+    group.add_participant(late)
+    group.remove_participant(late, reason="finished")
+    db_session.flush()
+    late.status = "returned"
+    assert ">Your partner (finished)<" in html()
+    late.status = "working"
+    group.add_participant(late)
+    group.remove_participant(late, reason="late")
+    db_session.flush()
+    late.failed = True
+    assert ">Your partner (left)<" in html()
+    late.failed = False
     for reason, label in [
         (None, "(dropped out)"),
         ("group_dissolved", "(dropped out)"),
+        ("finished", "(finished)"),
         ("moved_on", None),
     ]:
         group.add_participant(late)
