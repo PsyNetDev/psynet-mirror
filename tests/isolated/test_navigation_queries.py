@@ -22,7 +22,7 @@ from psynet.exit import (
     PaymentState,
 )
 from psynet.experiment import Experiment, get_experiment
-from psynet.participant import Participant, _load_participant_for_update
+from psynet.participant import Participant, _lock_and_load_participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sqlalchemy_profiling import assert_query_count
 from psynet.timeline import ModuleState
@@ -134,9 +134,9 @@ def test_locked_request_query_keeps_relationships_unloaded(
     # ``Query.get()``, so assert this construct keeps them. The two
     # statements are the row lock, then the load.
     with assert_query_count(min_queries=2, max_queries=2):
-        participant = _load_participant_for_update(
-            experiment._participant_request_query(), Participant.id == participant_id
-        ).get(participant_id)
+        participant = _lock_and_load_participant(
+            experiment._participant_request_query(), participant_id
+        )
 
     unloaded = inspect(participant).unloaded
     assert {"module_state", "_module_states", "active_barriers"} <= unloaded
@@ -163,6 +163,15 @@ def test_locked_unique_id_request_query_keeps_relationships_unloaded(
         assert participant.module_state.module_id == "navigation"
 
 
+def _load_for_dashboard_sync_group_action(participant_id):
+    from psynet.dashboard.sync_groups import _get_active_sync_group_participant_link
+
+    # The participant is in no sync group, so the helper raises after its load.
+    with pytest.raises(ValueError, match="not currently active"):
+        _get_active_sync_group_participant_link(participant_id, sync_group_id=1)
+    return db.session.get(Participant, participant_id)
+
+
 @pytest.mark.parametrize(
     "load_locked",
     [
@@ -176,8 +185,11 @@ def test_locked_unique_id_request_query_keeps_relationships_unloaded(
                 participant_id, for_update=True
             )
         ),
+        lambda experiment, unique_id, participant_id: (
+            _load_for_dashboard_sync_group_action(participant_id)
+        ),
     ],
-    ids=["request_query", "public_getter"],
+    ids=["request_query", "public_getter", "dashboard_sync_group_action"],
 )
 def test_a_locked_request_that_waited_reads_the_trial_the_lock_holder_wrote(
     db_session, participant_with_module_state, load_locked

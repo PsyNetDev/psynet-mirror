@@ -129,6 +129,7 @@ from .participant import (
     NO_BONUS_ATTEMPT_RESULT,
     Participant,
     _load_participant_for_update,
+    _lock_and_load_participant,
     bonus_is_settled,
     bonus_needs_review,
     bonus_transfer_already_claimed,
@@ -4205,9 +4206,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if timeline_hold_resume:
             participant = query.populate_existing().get(participant_id)
         else:
-            participant = _load_participant_for_update(
-                query, Participant.id == participant_id
-            ).get(participant_id)
+            participant = _lock_and_load_participant(query, participant_id)
         if participant is None:
             return ResponseResult(
                 payload={"submission": "rejected"},
@@ -4242,11 +4241,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 still_waiting = self._unready_hold_resume_result(participant, page_uuid)
                 if still_waiting is not None:
                     return still_waiting
-                participant = _load_participant_for_update(
-                    self._participant_request_query(),
-                    Participant.id == participant_id,
-                    nowait=True,
-                ).get(participant_id)
+                participant = _lock_and_load_participant(
+                    self._participant_request_query(), participant_id, nowait=True
+                )
             from .media_upload import _expire_participant_recordings
 
             _expire_participant_recordings(participant.id)
@@ -6574,9 +6571,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if at_page_maker_start or cls._pending_redirect_replaces_open_page(participant):
             # get_current_page will move the cursor, so take the row lock. Routine
             # polls stay unlocked so they don't block barrier checks' NOWAIT locks.
-            participant = _load_participant_for_update(
-                Bot.query, Participant.id == participant_id
-            ).get(participant_id)
+            participant = _lock_and_load_participant(Bot.query, participant_id)
         experiment = get_experiment()
 
         status = {"status": participant.status}
@@ -6692,11 +6687,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         hooks before redirecting to the exit page.
         """
         participant_id = participant.id
-        locked = (
-            Participant.query.populate_existing()
-            .with_for_update(of=Participant)
-            .get(participant_id)
-        )
+        locked = _lock_and_load_participant(Participant.query, participant_id)
         if locked is None or locked.end_time is not None:
             return
         locked.end_time = datetime.now()
@@ -7310,9 +7301,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         from .sync import _take_pending_barrier_checks
 
         cls._reapply_timeline_lock_timeout()
-        locked = _load_participant_for_update(
-            experiment._participant_request_query(), Participant.id == participant.id
-        ).get(participant.id)
+        locked = _lock_and_load_participant(
+            experiment._participant_request_query(), participant.id
+        )
         if locked is None:
             raise RuntimeError(
                 f"Participant {participant.id} disappeared before timeline hold fallback."
@@ -7352,9 +7343,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         db.session.expire_all()
         cls._reapply_timeline_lock_timeout()
-        participant = _load_participant_for_update(
-            experiment._participant_request_query(), Participant.id == participant_id
-        ).get(participant_id)
+        participant = _lock_and_load_participant(
+            experiment._participant_request_query(), participant_id
+        )
         if participant is None:
             raise RuntimeError(
                 f"Participant {participant_id} disappeared after {disappeared_after}."
@@ -7596,7 +7587,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         The log line is at INFO only for slow requests (see ``_SLOW_REQUEST_MS``).
 
-        ``lock`` is the participant ``FOR UPDATE`` load. ``page`` is
+        ``lock`` is the participant ``FOR UPDATE`` on the bare row plus the
+        participant load that follows it (two statements). ``page`` is
         ``get_current_page`` through the first commit. ``barriers`` is hold
         skip plus last-arrival checks. ``render`` is the HTML or JSON body.
         Unclosed phases are omitted rather than reported as zero.

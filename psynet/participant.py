@@ -1229,10 +1229,36 @@ def get_participant(participant_id: int, for_update: bool = False) -> Participan
     return query.one()
 
 
+def _lock_and_load_participant(query, participant_id, *, nowait=False):
+    """Lock participant ``participant_id`` and load it fresh through ``query``.
+
+    The by-id form of :func:`_load_participant_for_update`; see there for why
+    the lock comes first.
+
+    Parameters
+    ----------
+    query :
+        Unfiltered participant query, such as ``Participant.query``.
+    participant_id :
+        ID of the participant to lock.
+    nowait :
+        As in :func:`_load_participant_for_update`.
+
+    Returns
+    -------
+    Participant or None
+        The locked participant, or ``None`` if ``query`` has no such row.
+    """
+    return _load_participant_for_update(
+        query, Participant.id == participant_id, nowait=nowait
+    ).get(participant_id)
+
+
 def _load_participant_for_update(query, criterion, *, nowait=False):
     """Return ``query`` set to lock its participant row and reload it fresh.
 
-    Use this for every locking participant load. ``Participant.query`` joins
+    Use this, or :func:`_lock_and_load_participant` for loads by id, for every
+    locking participant load. ``Participant.query`` joins
     ``_current_trial``, and under READ COMMITTED a statement that waited for
     a row lock re-reads only the rows it locks; the trial it joins still
     comes from before the wait. A barrier release writes the waiters' trials

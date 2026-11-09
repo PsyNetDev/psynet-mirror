@@ -94,7 +94,7 @@ from .participant import (
     BONUS_STATUS_UNCONFIRMED,
     NO_BONUS_ATTEMPT_RESULT,
     Participant,
-    _load_participant_for_update,
+    _lock_and_load_participant,
     bonus_is_settled,
     bonus_needs_review,
     bonus_transfer_already_claimed,
@@ -223,19 +223,24 @@ def _latest_participant_for_worker_id(worker_id, for_update=False):
     """Return the most recent participant with this worker id, or ``None``."""
     if not worker_id:
         return None
-    query = Participant.query.filter_by(worker_id=worker_id).order_by(
-        Participant.id.desc()
-    )
-    if for_update:
-        latest_id = (
-            select(func.max(Participant.id))
-            .where(Participant.worker_id == worker_id)
-            .scalar_subquery()
+    if not for_update:
+        return (
+            Participant.query.filter_by(worker_id=worker_id)
+            .order_by(Participant.id.desc())
+            .first()
         )
-        query = _load_participant_for_update(
-            query.filter(Participant.id == latest_id), Participant.id == latest_id
-        )
-    return query.first()
+    locked_id = db.session.execute(
+        select(Participant.id)
+        .where(Participant.worker_id == worker_id)
+        .order_by(Participant.id.desc())
+        .limit(1)
+        .with_for_update()
+    ).scalar()
+    if locked_id is None:
+        return None
+    # This transaction already holds the row, so NOWAIT cannot fail and the
+    # helper skips a second lock.
+    return _lock_and_load_participant(Participant.query, locked_id, nowait=True)
 
 
 def _prolific_error_status(error: ProlificServiceException):

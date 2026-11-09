@@ -42,6 +42,7 @@ from threading import Event, Thread
 from types import SimpleNamespace
 
 from dallinger import db
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import (
     BadRequest,
@@ -621,9 +622,11 @@ def _resolve_recording(recording_id, *, output=None, error=None):
         return None
     # Match response handling's lock order. Disk I/O happens before these locks.
     if identity.participant_id is not None:
-        Participant.query.filter_by(id=identity.participant_id).with_for_update(
-            of=Participant
-        ).populate_existing().one()
+        db.session.execute(
+            select(Participant.id)
+            .where(Participant.id == identity.participant_id)
+            .with_for_update()
+        )
     trial = None
     if identity.trial_id is not None:
         trial = (

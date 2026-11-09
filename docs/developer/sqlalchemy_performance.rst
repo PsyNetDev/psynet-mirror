@@ -74,7 +74,8 @@ statement that waited for a row lock re-reads only the rows it locks, so a
 single ``with_for_update(of=Participant)`` load that queued behind a barrier
 release would join the trial as it was before the release. Blocking
 participant loads therefore go through
-``psynet.participant._load_participant_for_update``, which locks the bare row
+``psynet.participant._load_participant_for_update`` (or its by-id form
+``_lock_and_load_participant``), which locks the bare row
 in a statement of its own and then runs the ``FOR UPDATE`` load with
 ``populate_existing``. That costs one extra statement per locked load. Loads
 that use ``NOWAIT`` never wait, so the helper skips the extra lock for them.
