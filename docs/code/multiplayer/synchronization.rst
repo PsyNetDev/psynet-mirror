@@ -508,12 +508,17 @@ whichever group is left when a pair ends.
 
 GroupPrompt shows the group as it is now:
 
-- A member who left stays in their seat, faded, with the reason:
-  "(left)" if they failed or left the experiment; "(finished)" if they left
-  after playing their part (``reason="finished"``), which wins over leaving
-  the experiment but not over failing; "(removed)" if a barrier removed
-  them from the group for being late, or "(left)" once they have failed or
-  left the experiment; and "(dropped out)" otherwise.
+- A member who left stays in their seat, faded, with the first of these
+  labels that applies:
+
+  1. "(left)" if they failed;
+  2. "(finished)" if they left after playing their part
+     (``reason="finished"``), even if they then left or completed the
+     experiment;
+  3. "(left)" if they left or completed the experiment;
+  4. "(removed)" if a barrier removed them from the group for being late;
+  5. "(dropped out)" otherwise.
+
 - A member who moved on to another group, such as next round's pair at a
   :class:`~psynet.sync.Regrouper`, is no longer shown, except on a results
   page (one with ``answers``) that shows their answer.
