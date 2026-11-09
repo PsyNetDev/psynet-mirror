@@ -427,15 +427,19 @@ Finalize window (same check, then relock the last arriver)
 ----------------------------------------------------------
 
 The check, plus two ``lock_timeout`` SETs and the relock: a participant
-``FOR UPDATE`` without ``NOWAIT`` (its lazy collections load only if the next
-page reads them). Grand total: ``23``. Profiler commits: ``4`` (check + extra
-connection + queued + relock).
+``FOR UPDATE`` without ``NOWAIT`` on the bare row, then the participant load
+with its joined ``_current_trial`` (its lazy collections load only if the next
+page reads them). The lock comes first, in a statement of its own: under
+READ COMMITTED a statement that waited for a row lock re-reads only the rows
+it locks, so a load that queued behind a release would join the trial as it
+was before the release. Grand total: ``24``. Profiler commits: ``4`` (check +
+extra connection + queued + relock).
 The check commit is on ``_evaluate_held_instance``; the
 relock commit is on ``Experiment._relock_arriver_after_barrier_check``.
 The budget's ``finalize_commits`` count includes
 ``_attempt_queued_barrier_checks`` (the queued-check commit) and
 ``_relock_arriver_after_barrier_check``.
-Waiter-join ``NOWAIT`` stays 1. Relock ``FOR UPDATE`` stays 1.
+Waiter-join ``NOWAIT`` stays 1. Relock ``FOR UPDATE`` stays 2.
 
 Arrival notice (recipient already loaded, *N* - 1 waiters)
 ----------------------------------------------------------

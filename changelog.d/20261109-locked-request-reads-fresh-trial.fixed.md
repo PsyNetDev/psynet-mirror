@@ -1,0 +1,1 @@
+Fixed participant requests that waited for another request's lock on the participant (for example a barrier release) reading the participant's current trial as it was before that request committed, which could skip a results page or score a synchronized round as 0.

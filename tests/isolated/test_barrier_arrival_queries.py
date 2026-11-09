@@ -50,7 +50,7 @@ pytestmark = [
 # Precise snapshot of the current ORM path, profiled from a cold session.
 # Check = 20 (18 plus extra-connection lock_timeout, ORM lock_timeout).
 # Last-arrival no longer skip-after-commits partners.
-# Finalize = check + 3 overhead statements.
+# Finalize = check + 4 overhead statements.
 # Statement-by-statement analysis:
 # docs/developer/sqlalchemy_performance.rst ("Barrier last-arrival SQL budgets").
 # Lower counts are an improvement: update these constants and that section.
@@ -58,7 +58,7 @@ pytestmark = [
 # executemany statement per table, so UPDATE *statement* count stays 1.
 _CHECK_BASE_QUERIES = 20
 _SKIP_QUERIES_PER_WAITER = 0
-_FINALIZE_OVERHEAD_QUERIES = 3
+_FINALIZE_OVERHEAD_QUERIES = 4
 
 
 def _statement_count(profiler, pattern):
@@ -336,8 +336,9 @@ def _finalize_expected(n):
             "queries": expected["queries"] + _FINALIZE_OVERHEAD_QUERIES,
             "commits": expected["commits"] + 2,
             "finalize_commits": 2,
-            "for_update": expected["for_update"] + 1,
-            "relock_for_update": 1,
+            # The relock locks the row, then loads it with its trial.
+            "for_update": expected["for_update"] + 2,
+            "relock_for_update": 2,
             "lock_timeout": expected["lock_timeout"] + 2,
         }
     )

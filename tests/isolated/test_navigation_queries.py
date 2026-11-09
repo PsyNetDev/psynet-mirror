@@ -1,6 +1,8 @@
 import io
 import json
 import re
+import threading
+import time
 import uuid
 from types import SimpleNamespace
 from urllib.parse import urlencode
@@ -9,7 +11,7 @@ import pytest
 import sqlalchemy
 from dallinger import db
 from flask import Flask
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from werkzeug.test import EnvironBuilder
 
 from psynet.exit import (
@@ -150,7 +152,8 @@ def test_locked_unique_id_request_query_keeps_relationships_unloaded(
 ):
     """Cover the locking unique-id load used by ``/timeline``."""
     experiment = get_experiment()
-    with assert_query_count(min_queries=1, max_queries=1):
+    # The row lock, then the load.
+    with assert_query_count(min_queries=2, max_queries=2):
         participant = experiment._get_request_participant_from_unique_id(
             participant_with_module_state, for_update=True
         )
@@ -160,6 +163,70 @@ def test_locked_unique_id_request_query_keeps_relationships_unloaded(
 
     with assert_query_count(min_queries=1, max_queries=1):
         assert participant.module_state.module_id == "navigation"
+
+
+def test_a_locked_request_that_waited_reads_the_trial_the_lock_holder_wrote(
+    db_session, participant_with_module_state
+):
+    # A barrier release locks the waiters and writes their trials. A request
+    # that waits for one of those rows must then read the trial as written.
+    from test_finalize_pending_trials import (
+        _add_complete_unfinalized_trial,
+        _chain_trial_maker,
+        _create_network,
+    )
+
+    experiment = get_experiment()
+    participant = experiment._get_request_participant_from_unique_id(
+        participant_with_module_state
+    )
+    network = _create_network(_chain_trial_maker(), experiment)
+    participant.current_trial = _add_complete_unfinalized_trial(
+        network.head, participant
+    )
+    participant_id = participant.id
+    db.session.commit()
+    locked = threading.Event()
+    errors = []
+
+    def write_trial():
+        try:
+            holder = (
+                Participant.query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
+            holder.current_trial.score = 3
+            holder.current_trial.var.payoff = 3
+            db.session.flush()
+            backend_pid = db.session.execute(text("SELECT pg_backend_pid()")).scalar()
+            locked.set()
+            while not db.session.execute(
+                text(
+                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity "
+                    "WHERE :pid = ANY(pg_blocking_pids(pid)))"
+                ),
+                {"pid": backend_pid},
+            ).scalar():
+                time.sleep(0.01)
+            db.session.commit()
+        except Exception as err:  # noqa: BLE001 - reported by the assertion below
+            errors.append(err)
+            locked.set()
+        finally:
+            db.session.remove()
+
+    writer = threading.Thread(target=write_trial)
+    writer.start()
+    assert locked.wait(timeout=10)
+    db.session.expire_all()
+    participant = experiment._get_request_participant_from_unique_id(
+        participant_with_module_state, for_update=True
+    )
+    writer.join(timeout=10)
+    assert errors == []
+    trial = participant.current_trial
+    assert (trial.score, trial.var.get("payoff")) == (3, 3)
 
 
 def test_public_participant_getter_retains_eager_relationships_when_detached(
@@ -250,8 +317,9 @@ def test_timeline_handler_skips_unused_participant_relationships(
     with _timeline_request(unique_id):
         # Write/commit/read-only render plus SET LOCAL lock_timeout. The table
         # assertions below are the unused-relationship regression check.
-        # One extra statement is the arrival-websocket membership EXISTS.
-        with assert_query_count(min_queries=1, max_queries=7) as profiler:
+        # Extra statements are the participant row lock, taken before the
+        # load, and the arrival-websocket membership EXISTS.
+        with assert_query_count(min_queries=1, max_queries=8) as profiler:
             second = experiment.route_timeline()
     assert second.status_code == 200
     assert json.loads(second.get_data())["attributes"]["unique_id"] == unique_id
@@ -288,8 +356,9 @@ def test_response_handler_skips_unused_participant_relationships(
     db.session.remove()
 
     with _response_request(payload):
-        # Includes arrival-websocket membership and expired-recording checks.
-        with assert_query_count(max_queries=14) as profiler:
+        # Includes the participant row lock taken before the locked load,
+        # and arrival-websocket membership and expired-recording checks.
+        with assert_query_count(max_queries=15) as profiler:
             result = experiment.route_response()
     assert result.status_code == 200
     body = json.loads(result.get_data())

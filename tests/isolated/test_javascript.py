@@ -495,6 +495,7 @@ def test_process_response_reraises_transient_lock_errors(monkeypatch):
 
     from psynet.experiment import Experiment
 
+    monkeypatch.setattr("psynet.experiment._lock_participant_row", lambda _: None)
     orig = SimpleNamespace(pgcode="55P03")
     err = sqlalchemy.exc.OperationalError("stmt", {}, orig)
     handled = {}

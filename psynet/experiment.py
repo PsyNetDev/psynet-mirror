@@ -307,6 +307,26 @@ def error_response(*args, **kwargs):
         return dallinger_error_response(*args, **kwargs)
 
 
+def _lock_participant_row(participant_criterion):
+    """Take ``FOR UPDATE`` on one participant row, in a statement of its own.
+
+    Call this before a locking participant query that eager-loads
+    ``_current_trial``. Under READ COMMITTED, a statement that waited for a
+    row lock re-reads only the rows it locks; the trial it joins still comes
+    from before the wait. A barrier release writes the waiters' trials while
+    it holds their rows, so a request that queued behind it would otherwise
+    see their trials as they were before the release.
+
+    Parameters
+    ----------
+    participant_criterion :
+        SQLAlchemy criterion selecting one participant row.
+    """
+    db.session.execute(
+        select(Participant.id).where(participant_criterion).with_for_update()
+    )
+
+
 def _recording_receipts(payload):
     """Return the upload receipts an approved recording submission must deliver."""
     return {
@@ -4204,6 +4224,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if timeline_hold_resume:
             participant = query.populate_existing().get(participant_id)
         else:
+            _lock_participant_row(Participant.id == participant_id)
             participant = (
                 query.with_for_update(of=Participant)
                 .populate_existing()
@@ -5552,6 +5573,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         query = cls._participant_request_query().filter_by(unique_id=unique_id)
         if for_update:
+            _lock_participant_row(Participant.unique_id == unique_id)
             query = query.with_for_update(of=Participant).populate_existing()
         return query.one()
 
@@ -7306,6 +7328,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         from .sync import _take_pending_barrier_checks
 
         cls._reapply_timeline_lock_timeout()
+        _lock_participant_row(Participant.id == participant.id)
         locked = (
             experiment._participant_request_query()
             .with_for_update(of=Participant)
@@ -7351,6 +7374,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         db.session.expire_all()
         cls._reapply_timeline_lock_timeout()
+        _lock_participant_row(Participant.id == participant_id)
         participant = (
             experiment._participant_request_query()
             .with_for_update(of=Participant)

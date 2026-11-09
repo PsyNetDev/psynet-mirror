@@ -37,6 +37,8 @@ def test_download_export_accepts_the_legacy_positional_order(args, expected_depl
 
 
 def test_experiment_passes_client_ip_to_legacy_page_response_override(monkeypatch):
+    monkeypatch.setattr("psynet.experiment._lock_participant_row", lambda _: None)
+
     class ResponseReached(Exception):
         pass
 

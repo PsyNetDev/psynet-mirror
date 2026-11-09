@@ -684,6 +684,7 @@ def test_advance_past_ready_holds_settles_on_a_wait_after_the_last_skip(monkeypa
 
 def test_finalize_pending_hold_without_checks_relocks_the_participant(monkeypatch):
     """A ready hold on GET /timeline must not advance without FOR UPDATE."""
+    monkeypatch.setattr("psynet.experiment._lock_participant_row", lambda _: None)
     participant = SimpleNamespace(id=42)
     hold = SimpleNamespace(
         is_timeline_hold=True,
@@ -728,6 +729,7 @@ def test_finalize_pending_hold_without_checks_relocks_the_participant(monkeypatc
 
 def test_finalize_pending_ready_hold_does_not_prepare_before_relock(monkeypatch):
     """Timeout side effects must not run until GET /timeline holds FOR UPDATE."""
+    monkeypatch.setattr("psynet.experiment._lock_participant_row", lambda _: None)
     order = []
     hold = SimpleNamespace(
         is_timeline_hold=True,
@@ -901,6 +903,7 @@ def test_finalize_pending_hold_without_is_ready_does_not_prepare(monkeypatch):
 
 def test_finalize_pending_prepares_the_page_after_skipping_a_ready_hold(monkeypatch):
     """GET /timeline must pre_render the page that will be shown after a skip."""
+    monkeypatch.setattr("psynet.experiment._lock_participant_row", lambda _: None)
     participant = SimpleNamespace(id=42)
     nxt = SimpleNamespace(
         is_timeline_hold=False,
@@ -991,6 +994,7 @@ def test_finalize_pending_stale_hold_uses_the_live_cursor(monkeypatch):
 
 def test_finalize_pending_ready_hold_commits_before_arrival_checks(monkeypatch):
     """Skipping a ready hold must drop FOR UPDATE before stacked last-arrival checks."""
+    monkeypatch.setattr("psynet.experiment._lock_participant_row", lambda _: None)
     take_calls = []
 
     def take():
