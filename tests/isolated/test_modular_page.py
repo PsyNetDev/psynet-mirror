@@ -615,6 +615,11 @@ def test_page_validation_cannot_accept_answers_outside_the_choices(submit, make_
     assert submit(make_page(), "GB") == "approved"
 
 
+@_CONSENTS
+def test_country_page_requires_an_answer(submit):
+    assert submit(CountryOfBirth(), None) == "rejected"
+
+
 def test_option_controls_reject_choices_with_the_same_text():
     with pytest.raises(ValueError, match="same text"):
         RadioButtonControl([1, "1"])
