@@ -1737,7 +1737,9 @@ class NumberControl(Control):
     and a ``float`` otherwise, for browsers and default bots alike.
     The browser submits the typed text, which :meth:`format_answer` converts;
     text that is not a number, including a decimal comma such as ``1,5``,
-    fails validation.
+    fails validation. Because the answer is a number, the typed text is lost:
+    ``02139`` is saved as ``2139``. Use :class:`TextControl` for codes such as
+    postcodes or IDs where the exact text matters.
 
     Parameters
     ----------
@@ -1768,16 +1770,19 @@ class NumberControl(Control):
     def format_answer(self, raw_answer, **kwargs):
         """Return the answer as an ``int`` if it is a whole number, otherwise a ``float``.
 
-        An answer that is not a finite number is returned unchanged, so that
-        :meth:`validate` can reject it.
+        Only text is converted. Anything else, and text that is not a finite
+        number (including digits grouped with ``_`` such as ``1_000``), is
+        returned unchanged, so that :meth:`validate` can reject it.
         """
+        if not isinstance(raw_answer, str) or "_" in raw_answer:
+            return raw_answer
         try:
-            return int(raw_answer.strip())
-        except (AttributeError, ValueError):
+            return int(raw_answer)
+        except ValueError:
             pass
         try:
             number = float(raw_answer)
-        except (TypeError, ValueError):
+        except ValueError:
             return raw_answer
         if not math.isfinite(number):
             return raw_answer
@@ -2879,7 +2884,9 @@ class SliderControl(Control):
             )
         else:
             candidates = self.snap_values
-        return BotResponse(raw_answer=float(random.choice(candidates)))
+        value = float(random.choice(candidates))
+        # The browser sends the value as JSON, which writes whole numbers as ints.
+        return BotResponse(raw_answer=int(value) if value.is_integer() else value)
 
 
 EXTENSIONS = {

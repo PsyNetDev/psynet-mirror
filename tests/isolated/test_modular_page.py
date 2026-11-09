@@ -10,13 +10,17 @@ from psynet.bot import Bot, BotResponse
 from psynet.db import transaction
 from psynet.demography.general import CountryOfBirth, MotherTongue
 from psynet.experiment import get_experiment
+from psynet.graphics import Circle, Frame, GraphicControl
 from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     AudioMeterControl,
     CheckboxControl,
     Control,
     DropdownControl,
+    FrameSliderControl,
     KeyboardPushButtonControl,
     ModularPage,
+    MonitorControl,
+    MultiRatingControl,
     MusicNotationPrompt,
     NumberControl,
     Prompt,
@@ -24,6 +28,7 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     RadioButtonControl,
     RatingControl,
     RatingScale,
+    SliderControl,
     TextControl,
     TimedPushButtonControl,
 )
@@ -510,6 +515,9 @@ def test_option_controls_save_the_choice_the_browser_names(control, raw_answer, 
         ("nan", "nan"),
         ("inf", "inf"),
         ("12345678901234567890", 12345678901234567890),
+        ("02139", 2139),
+        ("1_000", "1_000"),
+        (True, True),
     ],
 )
 def test_number_control_saves_numbers(raw_answer, answer):
@@ -518,7 +526,7 @@ def test_number_control_saves_numbers(raw_answer, answer):
     saved = control.format_answer(raw_answer)
     assert saved == answer and type(saved) is type(answer)
     failed = control.validate(SimpleNamespace(answer=saved)) is not None
-    assert failed == isinstance(answer, str)
+    assert failed == isinstance(answer, (str, bool))
 
 
 @pytest.mark.parametrize(
@@ -668,20 +676,51 @@ class _ShoutingPage(ModularPage):
         return raw_answer.upper()
 
 
+def _graphic(**kwargs):
+    circle = Circle("dot", 50, 50, radius=5, click_to_answer=True)
+    return GraphicControl(
+        dimensions=[100, 100], frames=[Frame([circle], duration=1)], **kwargs
+    )
+
+
 @_CONSENTS
 @pytest.mark.parametrize(
-    "page, is_expected",
+    "control, is_expected",
     [
-        (ModularPage("test", "Hi!", NumberControl(), time_estimate=1), _is_int),
-        (ModularPage("test", "Hi!", RatingControl(5), time_estimate=1), _is_int),
-        (_ShoutingPage("test", "Hi!", TextControl(), time_estimate=1), str.isupper),
+        (NumberControl(), _is_int),
+        (RatingControl(5), _is_int),
+        (SliderControl(1, 1, 3, snap_values=[1, 2, 3]), _is_int),
+        (
+            MultiRatingControl(RatingScale("a", 3, required=False)),
+            lambda answer: answer.keys() == {"a"} and answer["a"] in {1, 2, 3, None},
+        ),
+        (_graphic(), lambda answer: answer["clicked_object"] == "dot"),
+        (
+            _graphic(auto_advance_after=1),
+            lambda answer: (
+                answer == {"clicked_object": None, "click_coordinates": None}
+            ),
+        ),
+        (MonitorControl(), lambda answer: "currentScreen" in answer),
+        (
+            FrameSliderControl(url="x.mp4", file_type="mp4", width="1", height="1"),
+            lambda answer: 0 <= answer <= 1,
+        ),
     ],
 )
 def test_default_bot_answers_are_formatted_like_browser_answers(
-    submit, page, is_expected
+    submit, control, is_expected
 ):
+    page = ModularPage("test", "Hi!", control, time_estimate=1)
     assert submit(page) == "approved"
     assert is_expected(Response.query.one().answer)
+
+
+@_CONSENTS
+def test_default_bot_answers_go_through_page_format_answer(submit):
+    page = _ShoutingPage("test", "Hi!", TextControl(), time_estimate=1)
+    assert submit(page) == "approved"
+    assert Response.query.one().answer.isupper()
 
 
 @_CONSENTS

@@ -785,7 +785,9 @@ class GraphicControl(GraphicMixin, Control):
 
     def get_bot_response(self, experiment, bot, page, prompt):
         if self.auto_advance_after is not None:
-            return None
+            return BotResponse(
+                raw_answer={"clicked_object": None, "click_coordinates": None}
+            )
         else:
             clickable_objects = [
                 obj

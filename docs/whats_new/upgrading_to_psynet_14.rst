@@ -508,7 +508,25 @@ templates that changes the database.
   keeps working. Default bots save numbers too. A fixed bot answer, from
   ``bot_response`` or a ``get_bot_response`` method that returns a plain
   value, is saved as given, so give it as a number: ``bot_response=25``,
-  not ``bot_response="25"``, which now fails validation.
+  not ``bot_response="25"``, which now fails validation. The typed text is
+  lost (``02139`` is saved as ``2139``), so use ``TextControl`` for codes such
+  as postcodes or IDs where the exact text matters. Text with ``_``, such as
+  ``1_000``, fails validation.
+* Default bot answers now go through the page's ``format_answer``, as
+  participants' answers do. Search for ``def format_answer`` on pages that
+  bots answer without ``bot_response``, and check that it accepts what the
+  browser sends. For example, a ``TextControl`` page whose ``format_answer``
+  returns ``int(raw_answer)`` used to be skipped for bots, but now fails on the
+  default answer ``"Hello, I am a bot!"``: pass ``bot_response=`` with a
+  suitable answer, or let ``format_answer`` accept the default.
+* The built-in ``get_bot_response`` methods of ``NumberControl``,
+  ``TextControl``, ``MonitorControl``, ``SliderControl``,
+  ``FrameSliderControl``, ``MultiRatingControl`` (and so ``RatingControl``)
+  and ``GraphicControl`` now return a ``BotResponse`` holding the browser's
+  raw answer, rather than a plain value. Search for ``get_bot_response`` in
+  subclasses of these controls: code that calls ``super().get_bot_response(...)``
+  should read ``.raw_answer`` from the result (for example
+  ``int(super().get_bot_response(...).raw_answer)`` for ``NumberControl``).
 * ``LanguageVocabularyTrial`` answers are now screen positions (``"1"`` to
   ``"4"``) rather than ``"correct"``. A custom subclass that compares an
   answer with ``"correct"`` should compare it with
