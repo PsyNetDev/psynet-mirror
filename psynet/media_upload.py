@@ -626,7 +626,7 @@ def _resolve_recording(recording_id, *, output=None, error=None):
             select(Participant.id)
             .where(Participant.id == identity.participant_id)
             .with_for_update()
-        )
+        ).all()
     trial = None
     if identity.trial_id is not None:
         trial = (

@@ -25,6 +25,7 @@ from psynet.experiment import Experiment, get_experiment
 from psynet.participant import Participant, _lock_and_load_participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sqlalchemy_profiling import assert_query_count
+from psynet.sync import SimpleGrouper, SimpleSyncGroup
 from psynet.timeline import ModuleState
 
 pytestmark = [
@@ -163,33 +164,36 @@ def test_locked_unique_id_request_query_keeps_relationships_unloaded(
         assert participant.module_state.module_id == "navigation"
 
 
-def _load_for_dashboard_sync_group_action(participant_id):
+def _load_for_dashboard_sync_group_action(experiment, p):
     from psynet.dashboard.sync_groups import _get_active_sync_group_participant_link
 
-    # The participant is in no sync group, so the helper raises after its load.
-    with pytest.raises(ValueError, match="not currently active"):
-        _get_active_sync_group_participant_link(participant_id, sync_group_id=1)
-    return db.session.get(Participant, participant_id)
+    return _get_active_sync_group_participant_link(p.id, p.sync_group_id)[0]
 
 
 @pytest.mark.parametrize(
     "load_locked",
     [
-        lambda experiment, unique_id, participant_id: (
-            experiment._get_request_participant_from_unique_id(
-                unique_id, for_update=True
-            )
+        lambda experiment, p: experiment._get_request_participant_from_unique_id(
+            p.unique_id, for_update=True
         ),
-        lambda experiment, unique_id, participant_id: (
-            experiment.get_participant_from_participant_id(
-                participant_id, for_update=True
-            )
+        lambda experiment, p: experiment.get_participant_from_participant_id(
+            p.id, for_update=True
         ),
-        lambda experiment, unique_id, participant_id: (
-            _load_for_dashboard_sync_group_action(participant_id)
+        lambda experiment, p: experiment.get_participant_from_worker_id(
+            p.worker_id, for_update=True
         ),
+        _load_for_dashboard_sync_group_action,
+        lambda experiment, p: SimpleGrouper(
+            group_type="waitlist", initial_group_size=2
+        ).get_waiting_participants(for_update=True)[0],
     ],
-    ids=["request_query", "public_getter", "dashboard_sync_group_action"],
+    ids=[
+        "request_query",
+        "public_getter",
+        "worker_id_getter",
+        "dashboard_sync_group_action",
+        "barrier_waiters",
+    ],
 )
 def test_a_locked_request_that_waited_reads_the_trial_the_lock_holder_wrote(
     db_session, participant_with_module_state, load_locked
@@ -210,8 +214,27 @@ def test_a_locked_request_that_waited_reads_the_trial_the_lock_holder_wrote(
     participant.current_trial = _add_complete_unfinalized_trial(
         network.head, participant
     )
-    participant_id = participant.id
+    group = SimpleSyncGroup(
+        group_type="main",
+        initial_group_size=1,
+        max_group_size=1,
+        min_group_size=1,
+        n_active_participants=1,
+        accepts_top_ups=False,
+    )
+    db.session.add(group)
+    group.add_participant(participant)
+    SimpleGrouper(group_type="waitlist", initial_group_size=2).receive_participant(
+        participant
+    )
     db.session.commit()
+    participant_id = participant.id
+    ids = SimpleNamespace(
+        id=participant_id,
+        unique_id=participant.unique_id,
+        worker_id=participant.worker_id,
+        sync_group_id=group.id,
+    )
     locked = threading.Event()
     errors = []
 
@@ -251,7 +274,8 @@ def test_a_locked_request_that_waited_reads_the_trial_the_lock_holder_wrote(
     writer.start()
     assert locked.wait(timeout=10)
     db.session.expire_all()
-    participant = load_locked(experiment, participant_with_module_state, participant_id)
+    participant = load_locked(experiment, ids)
+    assert participant.id == participant_id
     writer.join(timeout=10)
     assert not writer.is_alive()
     assert errors == []

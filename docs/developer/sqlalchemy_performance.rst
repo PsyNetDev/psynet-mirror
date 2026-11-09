@@ -66,21 +66,30 @@ detached and should retain their established eager-loading behavior.
 Barrier last-arrival checks are the opposite problem: one request locks many
 waiters. See :ref:`barrier-arrival-sql-budgets`.
 
+.. _sqlalchemy-lock-participant-row-first:
+
 Lock the participant row before loading it
 ------------------------------------------
 
-Every participant query joins ``_current_trial``. Under READ COMMITTED, a
-statement that waited for a row lock re-reads only the rows it locks, so a
-single ``with_for_update(of=Participant)`` load that queued behind a barrier
-release would join the trial as it was before the release. Blocking
-participant loads therefore go through
+An ORM load of ``Participant`` (including a join to it, as in the barrier
+waiter query) joins ``_current_trial``, which is ``lazy="joined"``. Under
+READ COMMITTED, a statement that waited for a row lock re-reads only the
+rows it locks, so a single ``with_for_update(of=Participant)`` load that
+queued behind a barrier release would join the trial as it was before the
+release. Blocking participant loads in PsyNet therefore go through
 ``psynet.participant._load_participant_for_update`` (or its by-id form
-``_lock_and_load_participant``), which locks the bare row
-in a statement of its own and then runs the ``FOR UPDATE`` load with
-``populate_existing``. That costs one extra statement per locked load. Loads
-that use ``NOWAIT`` never wait, so the helper skips the extra lock for them.
-The public getters (``get_participant_from_*`` and
-``psynet.participant.get_participant`` with ``for_update=True``) use it too.
+``_lock_and_load_participant``). The helper first locks the bare row with a
+``select(Participant.id)`` statement, which joins nothing, and then runs the
+``FOR UPDATE`` load with ``populate_existing``. That costs one extra
+statement per locked load. Loads that use ``NOWAIT`` never wait, so the
+helper skips the extra lock for them. The public getters
+(``get_participant_from_*`` and ``psynet.participant.get_participant`` with
+``for_update=True``) use it too. The barrier waiter query
+(``psynet.sync._get_waiting_participants``) follows the same pattern when a
+caller passes ``for_update=True`` to ``get_waiting_participants``: it locks
+the link and participant ids in a bare statement, then loads those links
+with ``NOWAIT``. Barrier checks already lock waiters with ``NOWAIT``, so they
+take no extra statement.
 
 Filter before ORM hydration
 ---------------------------
