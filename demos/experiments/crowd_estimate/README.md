@@ -13,7 +13,7 @@ Good reference for a `SimpleGrouper` with `start_short_after`, top-ups
 (`GroupBarrier(stop_top_ups=True)`), `top_up_wait` for a group waiting for a
 replacement, and `only_in_group(..., otherwise=...)` for participants
 without a group. Each question is one cued trial per player
-(`Trial.cue(..., round=...)` with `sync_group_type`): the group's estimates
+(`Trial.cue(...)` on a trial class with `sync_group_type`): the group's estimates
 and median are saved once on the node its members' trials share, and a
 player without a group gets an ungrouped trial that asks only for their
 estimate. `get_basic_data` exports the answers from the trials, including

@@ -105,13 +105,20 @@ def get_timeline():
             for_loop(
                 label="questions",
                 iterate_over=range(len(QUESTIONS)),
-                logic=lambda question: EstimateTrial.cue(
-                    {"question": question}, round=question
-                ),
+                logic=cue_question,
                 time_estimate_per_iteration=EstimateTrial.time_estimate,
                 expected_repetitions=len(QUESTIONS),
             ),
         ),
+    )
+
+
+def cue_question(question):
+    """Cue the group's next question, or this loop's question for a player alone."""
+    return EstimateTrial.cue(
+        # A group's round is the same for all its members; a player without a
+        # group has no round.
+        lambda round: {"question": question if round is None else round}
     )
 
 

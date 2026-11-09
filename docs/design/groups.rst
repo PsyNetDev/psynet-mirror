@@ -244,15 +244,16 @@ first member has waited long enough, and then **tops it up**: latecomers join
 a group that has a free place instead of waiting for a new one. Top-ups
 stop when the game starts, because a latecomer who missed the first round
 couldn't catch up; from then on, latecomers wait for a new group. A group
-that falls below its quorum before the game starts waits a little while for
-a latecomer to replace the member who left, and otherwise ends.
+that falls below its quorum before the game starts can wait a little while
+for a latecomer to replace the member who left (see
+:ref:`groups_below_min_size` for when a group ends).
 
 In ``demos/experiments/crowd_estimate``, groups of up to four play a
 wisdom-of-crowds game; a group of three may start after a short wait. For
 each of two questions, every member estimates the answer, a barrier shares
 the group's median, and members see everyone's estimate and may revise their
 own. A group needs three members, because the median of two estimates is
-just their mean: a group that falls below three ends. Nobody is failed for
+just their mean, so the group's quorum is three. Nobody is failed for
 waiting or for what another player did: a participant who finds no group,
 whose group ends, or who was removed for being late answers the remaining
 questions alone.
