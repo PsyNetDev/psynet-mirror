@@ -898,6 +898,19 @@ def _deployment_mode():
     return deployment_info.read("mode")
 
 
+def is_test_or_debug_run():
+    """
+    Return whether PsyNet runs under pytest, in debug mode or from a source folder.
+
+    Debug mode includes ``psynet debug local`` and ``psynet test local``.
+    Code that downgrades an unexpected error to a warning in deployments can
+    re-raise it here instead, where a logged warning would go unnoticed.
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    return _deployment_mode() in (None, "debug")
+
+
 def _tolerate_missing_translation(namespace):
     """
     Return whether a missing catalog entry should be downgraded to a warning.
@@ -911,9 +924,7 @@ def _tolerate_missing_translation(namespace):
         return False
     if is_release_branch():
         return False
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        return True
-    return _deployment_mode() in (None, "debug")
+    return is_test_or_debug_run()
 
 
 def check_translation_is_available(message, context, locale, namespace):

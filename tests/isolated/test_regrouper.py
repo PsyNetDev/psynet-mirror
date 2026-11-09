@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from dallinger import db
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from psynet import sync, timeline_hold
@@ -153,19 +154,30 @@ def test_regrouper_countdown_and_form_groups_check_use_the_whole_pool(
 
 
 @in_consents_experiment
-def test_regrouper_countdown_tolerates_a_concurrent_release(
-    in_experiment_directory, db_session, monkeypatch
+@pytest.mark.parametrize(
+    "make_barrier",
+    [
+        lambda: Regrouper(
+            "pair", group_size=2, deadline=30, content="Next round in {SECONDS} s"
+        ),
+        lambda: SimpleGrouper(
+            "lobby",
+            initial_group_size=4,
+            min_group_size=2,
+            start_short_after=10,
+            content="Starting in {SECONDS} s",
+        ),
+    ],
+    ids=["Regrouper", "SimpleGrouper"],
+)
+def test_countdown_is_unknown_after_a_concurrent_release(
+    in_experiment_directory, db_session, monkeypatch, make_barrier
 ):
     exp = get_experiment()
-    pairs = Regrouper(
-        "pair",
-        group_size=2,
-        deadline=30,
-        release_left_over=True,
-        content="Next round in {SECONDS} s",
-    )
-    (participant,) = _working_participants(exp, 1)
-    _arrive(exp, pairs, [participant])
+    barrier = make_barrier()
+    participants = _working_participants(exp, 3)
+    _arrive(exp, barrier, participants)
+    participant = participants[0]
     populate = sync._populate_active_barriers
 
     def release_by_another_request(waiters):
@@ -181,23 +193,55 @@ def test_regrouper_countdown_tolerates_a_concurrent_release(
         populate(waiters)
 
     monkeypatch.setattr(sync, "_populate_active_barriers", release_by_another_request)
-    assert pairs.expected_release_time(participant) is None
-    assert 'countdown">…<' in pairs.waiting_logic.overlay_html(participant)
+    assert barrier.expected_release_time(participant) is None
+    assert 'countdown">…<' in barrier.waiting_logic.overlay_html(participant)
 
 
-def _broken_estimate(participant):
-    raise KeyError("pair_regrouper")
+def _pairs_with_failing_estimate(monkeypatch, error):
+    def estimate(participant):
+        raise error
+
+    pairs = Regrouper("pair", group_size=2, deadline=30, content="Next in {SECONDS} s")
+    monkeypatch.setattr(pairs, "expected_release_time", estimate)
+    (participant,) = _working_participants(get_experiment(), 1)
+    return pairs, participant
+
+
+def _run_as_sandbox_deployment(monkeypatch):
+    # pytest sets this again before each test phase, so unset it in the test body.
+    monkeypatch.delenv("PYTEST_CURRENT_TEST")
+    monkeypatch.setattr("psynet.utils._deployment_mode", lambda: "sandbox")
 
 
 @in_consents_experiment
-def test_a_failing_release_estimate_shows_an_unknown_countdown(
-    in_experiment_directory, db_session, monkeypatch
+def test_a_failing_release_estimate_shows_an_unknown_countdown_when_deployed(
+    in_experiment_directory, db_session, monkeypatch, caplog
 ):
-    exp = get_experiment()
-    pairs = Regrouper("pair", group_size=2, deadline=30, content="Next in {SECONDS} s")
-    (participant,) = _working_participants(exp, 1)
-    monkeypatch.setattr(pairs, "expected_release_time", _broken_estimate)
+    pairs, participant = _pairs_with_failing_estimate(
+        monkeypatch, KeyError("pair_regrouper")
+    )
+    _run_as_sandbox_deployment(monkeypatch)
     assert 'countdown">…<' in pairs.waiting_logic.overlay_html(participant)
+    assert "Could not estimate when barrier 'pair_regrouper'" in caplog.text
+
+
+@in_consents_experiment
+@pytest.mark.parametrize(
+    "error, deployed",
+    [
+        (KeyError("pair_regrouper"), False),
+        (OperationalError("SELECT 1", {}, Exception("connection lost")), True),
+    ],
+    ids=["other error in tests", "database error when deployed"],
+)
+def test_a_failing_release_estimate_raises(
+    in_experiment_directory, db_session, monkeypatch, error, deployed
+):
+    pairs, participant = _pairs_with_failing_estimate(monkeypatch, error)
+    if deployed:
+        _run_as_sandbox_deployment(monkeypatch)
+    with pytest.raises(type(error)):
+        pairs.waiting_logic.overlay_html(participant)
 
 
 def _lobby_message(seconds_left):

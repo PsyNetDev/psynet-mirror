@@ -171,6 +171,7 @@ from psynet.utils import (
     call_if_callable,
     get_config,
     get_logger,
+    is_test_or_debug_run,
 )
 
 logger = get_logger()
@@ -749,9 +750,11 @@ class _BarrierHoldPage(_TimelineHoldPage):
     def _expected_release_time(self, participant):
         """Return the barrier's release estimate, or ``None`` if it cannot be computed.
 
-        The estimate only feeds the waiting message, so a failure shows an
-        unknown countdown instead of failing the participant. Database errors
-        still propagate, because they abort the transaction.
+        The estimate only feeds the waiting message, so in sandbox and live
+        deployments a failure shows an unknown countdown instead of failing
+        the participant. Tests and debug runs re-raise it so the bug is seen.
+        Errors that leave the transaction unusable always propagate:
+        database errors, and any error raised during an automatic flush.
         """
         if participant is None:
             return None
@@ -760,6 +763,8 @@ class _BarrierHoldPage(_TimelineHoldPage):
         except SQLAlchemyError:
             raise
         except Exception:
+            if not db.session.is_active or is_test_or_debug_run():
+                raise
             logger.warning(
                 "Could not estimate when barrier '%s' releases participant %s; "
                 "showing an unknown countdown.",
@@ -2327,7 +2332,13 @@ class SimpleGrouper(Grouper):
             participant
         ):
             return None
-        return self._short_start_time(self.get_waiting_participants(participant))
+        # Listing the waiters refreshes ``participant.active_barriers``, so a
+        # release committed by another request since the check above leaves
+        # the participant out of the list.
+        waiting_participants = self.get_waiting_participants(participant)
+        if participant not in waiting_participants:
+            return None
+        return self._short_start_time(waiting_participants)
 
     @property
     def _countdown_key(self):
@@ -2607,25 +2618,22 @@ class Regrouper(Grouper):
         """Return when this participant's pool will be split at the latest, in epoch seconds."""
         if self.id not in participant.active_barriers:
             return None
-        within_group = self._within_group(participant)
-        if self.within is not None and within_group is None:
-            return None
         if self.clock_period is None and self.deadline is None:
             return None
         # Listing the waiters refreshes ``participant.active_barriers``, so a
         # release committed by another request since the check above leaves
         # the participant out of every pool.
-        pool = next(
+        within_group, pool = next(
             (
-                members
-                for _, members in self._pools(
+                (group, members)
+                for group, members in self._pools(
                     self.get_waiting_participants(participant)
                 )
                 if participant in members
             ),
-            None,
+            (None, None),
         )
-        if pool is None:
+        if pool is None or (self.within is not None and within_group is None):
             return None
         if len(pool) < self._smallest_pool_to_split(within_group, pool):
             return None
