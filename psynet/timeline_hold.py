@@ -17,6 +17,7 @@ participant row lock, but they do not share that lock protocol. The page
 lifecycle developer docs describe the resume protocol.
 """
 
+import time
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -41,6 +42,7 @@ from psynet.db import _SessionQueue, forbid_commits
 from psynet.timeline import Page, get_template
 from psynet.utils import (
     call_function_with_context,
+    call_if_callable,
     finalize_template_value,
     get_logger,
     get_translator,
@@ -178,24 +180,46 @@ def _queue_arrival_update(participant_id, *, hold_message=None, notice=None):
         )
 
 
+def _queue_countdown_update(participant_id, release_time, *, hold_message=None):
+    """Queue a new ``{SECONDS}`` countdown target (epoch seconds, or ``None``) after the next commit.
+
+    ``hold_message`` is the hold copy re-rendered for the new target, for
+    ``content`` functions whose text depends on it.
+    """
+    release_in_ms = (
+        None if release_time is None else round((release_time - time.time()) * 1000)
+    )
+    try:
+        _pending_wakes.get()[f"countdown:{participant_id}"] = {
+            "participant_id": participant_id,
+            "reason": "countdown",
+            "hold_message": hold_message,
+            "release_in_ms": release_in_ms,
+        }
+    except Exception:
+        logger.warning(
+            "Failed to queue a countdown update for participant %s.",
+            participant_id,
+            exc_info=True,
+        )
+
+
 def default_group_barrier_arrival_message(
     *, kind, waiting_count, group_size, **_kwargs
 ):
     """Return default GroupBarrier arrival copy for one recipient.
 
-    Pair holds keep the title only. Larger groups report how many members are
-    not ready yet. Notices tell people still on an earlier page that partners
-    are already waiting.
+    Notices tell people still on an earlier page that partners are already
+    waiting, and ``"removed"`` tells someone who was too slow that their group
+    went on without them.
     """
     _p = get_translator(context=True)
-    remaining = max(group_size - waiting_count, 0)
-    if kind == "hold":
-        if group_size <= 2 or remaining == 0:
-            return None
-        return _p("timeline_hold", "{REMAINING} of {TOTAL} not ready yet").format(
-            REMAINING=remaining,
-            TOTAL=group_size,
-        )
+    if kind == "removed":
+        if group_size <= 2:
+            return _p(
+                "timeline_hold", "Your partner went on without you. Please continue."
+            )
+        return _p("timeline_hold", "Your group went on without you. Please continue.")
     if group_size == 2:
         return _p("timeline_hold", "Your partner is ready.")
     return _p("timeline_hold", "{ARRIVED}/{TOTAL} of your group are ready.").format(
@@ -204,12 +228,40 @@ def default_group_barrier_arrival_message(
     )
 
 
+def default_hold_progress(waiting_count, group_size):
+    """Return the waiting indicator's progress line, or ``None`` for pairs and full groups."""
+    remaining = max(group_size - waiting_count, 0)
+    if group_size <= 2 or remaining == 0:
+        return None
+    _p = get_translator(context=True)
+    return _p("timeline_hold", "{REMAINING} of {TOTAL} not ready yet").format(
+        REMAINING=remaining,
+        TOTAL=group_size,
+    )
+
+
+class HoldMessage:
+    """A waiting message that sets its own progress line; see :func:`psynet.sync.hold_message`."""
+
+    def __init__(self, title, progress=None):
+        self.title = title
+        self.progress = progress
+
+    def __str__(self):
+        return " ".join(str(part) for part in (self.title, self.progress) if part)
+
+
 def compose_hold_overlay_html(title, progress_text=None):
     """Join a hold title with an optional progress line as ``Markup``.
+
+    A :class:`HoldMessage` title brings its own progress line, which replaces
+    ``progress_text``.
 
     Plain strings are escaped; trusted ``Markup`` and dominate tags are kept as
     HTML, as in page templates.
     """
+    if isinstance(title, HoldMessage):
+        title, progress_text = title.title, title.progress
     html = Markup('<span class="psynet-timeline-hold-title">{}</span>').format(
         "" if title is None else finalize_template_value(title)
     )
@@ -462,12 +514,8 @@ class _TimelineHoldPage(Page):
         super().consume(experiment, participant)
         now = timenow()
         # Resolve a participant-specific budget once; polls use the saved deadline.
-        max_wait_time = (
-            call_function_with_context(
-                self.max_wait_time, participant=participant, experiment=experiment
-            )
-            if callable(self.max_wait_time)
-            else self.max_wait_time
+        max_wait_time = call_if_callable(
+            self.max_wait_time, participant=participant, experiment=experiment
         )
         deadline_at = (
             None if max_wait_time is None else now + timedelta(seconds=max_wait_time)
