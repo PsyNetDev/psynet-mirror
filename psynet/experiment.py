@@ -128,6 +128,7 @@ from .participant import (
     BONUS_STATUS_UNCONFIRMED,
     NO_BONUS_ATTEMPT_RESULT,
     Participant,
+    _load_participant_for_update,
     bonus_is_settled,
     bonus_needs_review,
     bonus_transfer_already_claimed,
@@ -305,26 +306,6 @@ def error_response(*args, **kwargs):
 
     with disable_logger():
         return dallinger_error_response(*args, **kwargs)
-
-
-def _lock_participant_row(participant_criterion):
-    """Take ``FOR UPDATE`` on one participant row, in a statement of its own.
-
-    Call this before a locking participant query that eager-loads
-    ``_current_trial``. Under READ COMMITTED, a statement that waited for a
-    row lock re-reads only the rows it locks; the trial it joins still comes
-    from before the wait. A barrier release writes the waiters' trials while
-    it holds their rows, so a request that queued behind it would otherwise
-    see their trials as they were before the release.
-
-    Parameters
-    ----------
-    participant_criterion :
-        SQLAlchemy criterion selecting one participant row.
-    """
-    db.session.execute(
-        select(Participant.id).where(participant_criterion).with_for_update()
-    )
 
 
 def _recording_receipts(payload):
@@ -4224,12 +4205,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if timeline_hold_resume:
             participant = query.populate_existing().get(participant_id)
         else:
-            _lock_participant_row(Participant.id == participant_id)
-            participant = (
-                query.with_for_update(of=Participant)
-                .populate_existing()
-                .get(participant_id)
-            )
+            participant = _load_participant_for_update(
+                query, Participant.id == participant_id
+            ).get(participant_id)
         if participant is None:
             return ResponseResult(
                 payload={"submission": "rejected"},
@@ -4264,12 +4242,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 still_waiting = self._unready_hold_resume_result(participant, page_uuid)
                 if still_waiting is not None:
                     return still_waiting
-                participant = (
-                    self._participant_request_query()
-                    .with_for_update(of=Participant, nowait=True)
-                    .populate_existing()
-                    .get(participant_id)
-                )
+                participant = _load_participant_for_update(
+                    self._participant_request_query(),
+                    Participant.id == participant_id,
+                    nowait=True,
+                ).get(participant_id)
             from .media_upload import _expire_participant_recordings
 
             _expire_participant_recordings(participant.id)
@@ -5573,8 +5550,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         query = cls._participant_request_query().filter_by(unique_id=unique_id)
         if for_update:
-            _lock_participant_row(Participant.unique_id == unique_id)
-            query = query.with_for_update(of=Participant).populate_existing()
+            query = _load_participant_for_update(
+                query, Participant.unique_id == unique_id
+            )
         return query.one()
 
     @classmethod
@@ -5603,7 +5581,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         query = Participant.query.filter_by(assignment_id=assignment_id)
         if for_update:
-            query = query.with_for_update(of=Participant).populate_existing()
+            query = _load_participant_for_update(
+                query, Participant.assignment_id == assignment_id
+            )
         return query.one()
 
     @classmethod
@@ -5634,7 +5614,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         participant_id = int(participant_id)
         query = Participant.query.filter_by(id=participant_id)
         if for_update:
-            query = query.with_for_update(of=Participant).populate_existing()
+            query = _load_participant_for_update(
+                query, Participant.id == participant_id
+            )
         return query.one()
 
     @classmethod
@@ -5693,7 +5675,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         query = Participant.query.filter_by(unique_id=unique_id)
         if for_update:
-            query = query.with_for_update(of=Participant).populate_existing()
+            query = _load_participant_for_update(
+                query, Participant.unique_id == unique_id
+            )
         return query.one()
 
     @experiment_route("/google3580fca13e19b596.html")
@@ -6590,11 +6574,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if at_page_maker_start or cls._pending_redirect_replaces_open_page(participant):
             # get_current_page will move the cursor, so take the row lock. Routine
             # polls stay unlocked so they don't block barrier checks' NOWAIT locks.
-            participant = (
-                Bot.query.with_for_update(of=Participant)
-                .populate_existing()
-                .get(participant_id)
-            )
+            participant = _load_participant_for_update(
+                Bot.query, Participant.id == participant_id
+            ).get(participant_id)
         experiment = get_experiment()
 
         status = {"status": participant.status}
@@ -7328,13 +7310,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         from .sync import _take_pending_barrier_checks
 
         cls._reapply_timeline_lock_timeout()
-        _lock_participant_row(Participant.id == participant.id)
-        locked = (
-            experiment._participant_request_query()
-            .with_for_update(of=Participant)
-            .populate_existing()
-            .get(participant.id)
-        )
+        locked = _load_participant_for_update(
+            experiment._participant_request_query(), Participant.id == participant.id
+        ).get(participant.id)
         if locked is None:
             raise RuntimeError(
                 f"Participant {participant.id} disappeared before timeline hold fallback."
@@ -7374,13 +7352,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         db.session.expire_all()
         cls._reapply_timeline_lock_timeout()
-        _lock_participant_row(Participant.id == participant_id)
-        participant = (
-            experiment._participant_request_query()
-            .with_for_update(of=Participant)
-            .populate_existing()
-            .get(participant_id)
-        )
+        participant = _load_participant_for_update(
+            experiment._participant_request_query(), Participant.id == participant_id
+        ).get(participant_id)
         if participant is None:
             raise RuntimeError(
                 f"Participant {participant_id} disappeared after {disappeared_after}."

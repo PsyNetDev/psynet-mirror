@@ -325,7 +325,7 @@ def _check_expected(n):
 
 
 def _finalize_expected(n):
-    """Return the finalize-window snapshot: check plus six overhead statements.
+    """Return the finalize-window snapshot: check plus four overhead statements.
 
     See docs/developer/sqlalchemy_performance.rst (Barrier last-arrival SQL
     budgets). Update both places if an improvement lowers these counts.

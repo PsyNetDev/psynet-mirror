@@ -22,7 +22,7 @@ from psynet.exit import (
     PaymentState,
 )
 from psynet.experiment import Experiment, get_experiment
-from psynet.participant import Participant
+from psynet.participant import Participant, _load_participant_for_update
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sqlalchemy_profiling import assert_query_count
 from psynet.timeline import ModuleState
@@ -131,14 +131,12 @@ def test_locked_request_query_keeps_relationships_unloaded(
 
     # ``process_response`` combines the request query with row locking and
     # ``populate_existing()``. Loader options are not always honored by
-    # ``Query.get()``, so assert this construct keeps them.
-    with assert_query_count(min_queries=1, max_queries=1):
-        participant = (
-            experiment._participant_request_query()
-            .with_for_update(of=Participant)
-            .populate_existing()
-            .get(participant_id)
-        )
+    # ``Query.get()``, so assert this construct keeps them. The two
+    # statements are the row lock, then the load.
+    with assert_query_count(min_queries=2, max_queries=2):
+        participant = _load_participant_for_update(
+            experiment._participant_request_query(), Participant.id == participant_id
+        ).get(participant_id)
 
     unloaded = inspect(participant).unloaded
     assert {"module_state", "_module_states", "active_barriers"} <= unloaded
@@ -165,8 +163,24 @@ def test_locked_unique_id_request_query_keeps_relationships_unloaded(
         assert participant.module_state.module_id == "navigation"
 
 
+@pytest.mark.parametrize(
+    "load_locked",
+    [
+        lambda experiment, unique_id, participant_id: (
+            experiment._get_request_participant_from_unique_id(
+                unique_id, for_update=True
+            )
+        ),
+        lambda experiment, unique_id, participant_id: (
+            experiment.get_participant_from_participant_id(
+                participant_id, for_update=True
+            )
+        ),
+    ],
+    ids=["request_query", "public_getter"],
+)
 def test_a_locked_request_that_waited_reads_the_trial_the_lock_holder_wrote(
-    db_session, participant_with_module_state
+    db_session, participant_with_module_state, load_locked
 ):
     # A barrier release locks the waiters and writes their trials. A request
     # that waits for one of those rows must then read the trial as written.
@@ -201,6 +215,7 @@ def test_a_locked_request_that_waited_reads_the_trial_the_lock_holder_wrote(
             db.session.flush()
             backend_pid = db.session.execute(text("SELECT pg_backend_pid()")).scalar()
             locked.set()
+            deadline = time.monotonic() + 10
             while not db.session.execute(
                 text(
                     "SELECT EXISTS (SELECT 1 FROM pg_stat_activity "
@@ -208,6 +223,10 @@ def test_a_locked_request_that_waited_reads_the_trial_the_lock_holder_wrote(
                 ),
                 {"pid": backend_pid},
             ).scalar():
+                if time.monotonic() > deadline:
+                    errors.append(TimeoutError("the locked load never waited"))
+                    db.session.rollback()
+                    return
                 time.sleep(0.01)
             db.session.commit()
         except Exception as err:  # noqa: BLE001 - reported by the assertion below
@@ -220,10 +239,9 @@ def test_a_locked_request_that_waited_reads_the_trial_the_lock_holder_wrote(
     writer.start()
     assert locked.wait(timeout=10)
     db.session.expire_all()
-    participant = experiment._get_request_participant_from_unique_id(
-        participant_with_module_state, for_update=True
-    )
+    participant = load_locked(experiment, participant_with_module_state, participant_id)
     writer.join(timeout=10)
+    assert not writer.is_alive()
     assert errors == []
     trial = participant.current_trial
     assert (trial.score, trial.var.get("payoff")) == (3, 3)
@@ -246,6 +264,27 @@ def test_public_participant_getter_retains_eager_relationships_when_detached(
             "navigation"
         ]
         assert participant.active_barriers == {}
+
+
+def test_locked_worker_id_getter_returns_the_latest_repeat_participant(db_session):
+    experiment = get_experiment()
+    worker_id = str(uuid.uuid4())
+    participants = [
+        Participant(
+            experiment=experiment,
+            recruiter_id="hotair",
+            worker_id=worker_id,
+            hit_id=str(uuid.uuid4()),
+            assignment_id=str(uuid.uuid4()),
+            mode="debug",
+        )
+        for _ in range(2)
+    ]
+    db.session.add_all(participants)
+    db.session.commit()
+
+    locked = experiment.get_participant_from_worker_id(worker_id, for_update=True)
+    assert locked.id == max(participant.id for participant in participants)
 
 
 @pytest.fixture

@@ -570,7 +570,6 @@ def test_fatal_response_failure_returns_json_and_prepares_tracked_recovery():
     experiment.timeline.get_current_elt.return_value = event
 
     with (
-        patch("psynet.experiment._lock_participant_row"),
         patch("psynet.experiment.get_translator", return_value=lambda *args: args[-1]),
         patch(
             "psynet.experiment.error_response", return_value="json error"

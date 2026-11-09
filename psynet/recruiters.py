@@ -76,7 +76,7 @@ from dallinger.recruiters import (
 )
 from dallinger.utils import get_base_url
 from markupsafe import Markup
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, select
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 from sqlalchemy.sql import func
@@ -94,6 +94,7 @@ from .participant import (
     BONUS_STATUS_UNCONFIRMED,
     NO_BONUS_ATTEMPT_RESULT,
     Participant,
+    _load_participant_for_update,
     bonus_is_settled,
     bonus_needs_review,
     bonus_transfer_already_claimed,
@@ -226,7 +227,14 @@ def _latest_participant_for_worker_id(worker_id, for_update=False):
         Participant.id.desc()
     )
     if for_update:
-        query = query.with_for_update(of=Participant).populate_existing()
+        latest_id = (
+            select(func.max(Participant.id))
+            .where(Participant.worker_id == worker_id)
+            .scalar_subquery()
+        )
+        query = _load_participant_for_update(
+            query.filter(Participant.id == latest_id), Participant.id == latest_id
+        )
     return query.first()
 
 

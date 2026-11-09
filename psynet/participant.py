@@ -29,6 +29,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     desc,
+    select,
 )
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import relationship
@@ -1201,8 +1202,9 @@ def get_participant(participant_id: int, for_update: bool = False) -> Participan
     """
     Returns the participant with a given ID.
     Warning: we recommend just using SQLAlchemy directly instead of using this function.
-    When doing so, use ``with_for_update().populate_existing()`` if you plan to update
-    this Participant object, that way the database row will be locked appropriately.
+    If you plan to update this Participant object, pass ``for_update=True``
+    here instead: a plain ``with_for_update()`` query that waits for the lock
+    can join the participant's current trial as it was before the wait.
 
     Parameters
     ----------
@@ -1223,8 +1225,40 @@ def get_participant(participant_id: int, for_update: bool = False) -> Participan
     """
     query = Participant.query.filter_by(id=participant_id)
     if for_update:
-        query = query.with_for_update(of=Participant).populate_existing()
+        query = _load_participant_for_update(query, Participant.id == participant_id)
     return query.one()
+
+
+def _load_participant_for_update(query, criterion, *, nowait=False):
+    """Return ``query`` set to lock its participant row and reload it fresh.
+
+    Use this for every locking participant load. ``Participant.query`` joins
+    ``_current_trial``, and under READ COMMITTED a statement that waited for
+    a row lock re-reads only the rows it locks; the trial it joins still
+    comes from before the wait. A barrier release writes the waiters' trials
+    while it holds their rows, so a load that queued behind it would see
+    those trials as they were before the release. Unless ``nowait`` is set,
+    this therefore first locks the bare row in a statement of its own, so
+    the load itself never waits.
+
+    Parameters
+    ----------
+    query :
+        Participant query, already filtered to the row(s) it will return.
+    criterion :
+        SQLAlchemy criterion selecting the same participant row(s).
+    nowait :
+        Fail at once with ``LockNotAvailable`` instead of waiting. A load
+        that cannot wait cannot read stale rows, so it skips the extra lock.
+
+    Returns
+    -------
+    sqlalchemy.orm.Query
+        ``query`` with ``FOR UPDATE OF participant`` and ``populate_existing``.
+    """
+    if not nowait:
+        query.session.execute(select(Participant.id).where(criterion).with_for_update())
+    return query.with_for_update(of=Participant, nowait=nowait).populate_existing()
 
 
 class DriverStopped(Exception):
