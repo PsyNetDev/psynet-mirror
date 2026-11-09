@@ -69,7 +69,7 @@ def get_timeline():
                 for_loop(
                     label="rounds",
                     iterate_over=range(N_ROUNDS),
-                    logic=play_round,
+                    logic=lambda _: play_round(),
                     time_estimate_per_iteration=ContributionTrial.time_estimate,
                     expected_repetitions=N_ROUNDS,
                 ),
@@ -80,7 +80,7 @@ def get_timeline():
     )
 
 
-def play_round(number):
+def play_round():
     """Play one round, unless the player has left the group.
 
     ``only_in_group`` would check the group before each step of the trial and
@@ -90,7 +90,7 @@ def play_round(number):
     return conditional(
         "in_team",
         lambda participant: participant.in_sync_group(GROUP),
-        ContributionTrial.cue({}, round=number),
+        ContributionTrial.cue({}),
     )
 
 
