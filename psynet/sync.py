@@ -1556,8 +1556,7 @@ class GroupBarrier(Barrier):
     """
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
     have reached the Barrier. It also checks the group against its ``quorum``: a group below it
-    can't proceed, and waits for newcomers or is dissolved as described in
-    :meth:`SyncGroup.remove_participant`.
+    can't proceed, and waits for newcomers or is dissolved (see :ref:`groups_below_min_size`).
 
     After the arrival write commits, the same request evaluates the barrier in
     a short transaction so partners are released without waiting for the 0.5 s
@@ -1612,7 +1611,7 @@ class GroupBarrier(Barrier):
         ``on_arrival_message`` for larger groups), and a :class:`~psynet.group_prompt.GroupPrompt` marks them
         "(dropped out)". It is the waiting member who leaves, not the absent ones; to move on
         without slow members, use ``late_after`` and ``late_action`` instead. If that takes
-        the group below its quorum, see :meth:`SyncGroup.remove_participant` for whether it
+        the group below its quorum, see :ref:`groups_below_min_size` for whether it
         is dissolved.
 
     late_after
@@ -2284,7 +2283,7 @@ class Grouper(Barrier):
                     "timeline_hold",
                     "We couldn't find a partner for you in time. Please continue.",
                 )
-                if group_size == 2
+                if _is_pair(group_size)
                 else _p(
                     "timeline_hold",
                     "We couldn't form a group for you in time. Please continue.",
@@ -2420,8 +2419,7 @@ class SimpleGrouper(Grouper):
     quorum
         How many active members a group needs to keep going. A group whose
         members fail or leave until it has fewer than this is below quorum; it
-        then waits for newcomers or is dissolved, as described in
-        :meth:`SyncGroup.remove_participant`.
+        then waits for newcomers or is dissolved (see :ref:`groups_below_min_size`).
         Defaults to ``start_short_with`` if given, and otherwise to
         ``initial_group_size``, so that a group needs all its members; for
         groups of three or more, leaving it out warns. Must be at most
@@ -2447,11 +2445,11 @@ class SimpleGrouper(Grouper):
         if the participant should be allowed to join the group, and ``False`` otherwise.
         To be used in conjunction with ``join_existing_groups=True``. Returning ``False``
         only turns that newcomer away; it doesn't stop top-ups, so use ``top_up_wait`` or
-        :meth:`SimpleSyncGroup.stop_top_ups` too (see :meth:`SyncGroup.remove_participant`).
+        :meth:`SimpleSyncGroup.stop_top_ups` too (see :ref:`groups_below_min_size`).
 
     below_quorum
         What happens to the members left when a group is dissolved below its ``quorum``
-        (for when that happens, see :meth:`SyncGroup.remove_participant`; while a group
+        (for when that happens, see :ref:`groups_below_min_size`; while a group
         accepts top-ups, it never is). The member whose departure caused it is handled by their own
         cause instead (a barrier's ``max_wait_action`` or ``late_action``, or their
         failure). ``"fail"`` (default) fails them, telling them "Too few members of your
@@ -4100,31 +4098,16 @@ class SyncGroup(SQLBase, SQLMixin):
               being late (``late_action="leave_group"``).
             - ``"moved_on"``: not shown, unless the page shows their answer,
               for a member who left at a :class:`Regrouper`, for their next
-              group or to sit the round out, so a pair a :class:`SimpleGrouper`
+              group or to sit the round out. A pair a :class:`SimpleGrouper`
               formed isn't dissolved, failing the partner, when the first
               member reaches a :class:`Regrouper`.
             - ``"finished"``: "(finished)", for a member who has played their
-              part, such as a player leaving a cohort after their last round,
-              so the members finishing their own last rounds aren't told that
-              too few remained.
+              part, such as a player leaving a cohort after their last round.
+              The members finishing their own last rounds aren't told that too
+              few remained.
 
-            **When a group is dissolved.** This is the one place that states
-            the rule; other docs point here. Removals for ``"finished"`` and
-            ``"moved_on"`` never dissolve the group. Other reasons dissolve a
-            group below its quorum, but only once it no longer accepts top-ups.
-            A group accepts top-ups if its :class:`SimpleGrouper` has
-            ``join_existing_groups=True``, until
-            :meth:`SimpleSyncGroup.stop_top_ups`, a :class:`GroupBarrier` with
-            ``stop_top_ups=True``, or the grouper's ``top_up_wait`` stops them;
-            a ``join_criterion`` that returns ``False`` only turns that
-            newcomer away. A group below its quorum that still accepts top-ups
-            is never dissolved: its barriers wait for a newcomer, until their
-            ``max_wait_time`` or, with ``late_after``, without a limit. Once it
-            no longer accepts top-ups, its next :class:`GroupBarrier`
-            dissolves it whatever the reason, so a removal that kept it can
-            still end it there. When a group is dissolved, its grouper's
-            ``below_quorum`` decides for each member left. Groups made by a
-            :class:`Regrouper` are never dissolved.
+            ``"finished"`` and ``"moved_on"`` don't dissolve the group; other
+            reasons can. See :ref:`groups_below_min_size` for the full rule.
         """
         if reason not in REMOVAL_REASONS:
             raise ValueError(
@@ -4272,7 +4255,7 @@ class SimpleSyncGroup(SyncGroup):
         For a group formed with ``join_existing_groups=True``, for example once
         the game has started and a newcomer couldn't catch up. From then on it
         is treated as a group without top-ups (see
-        :meth:`SyncGroup.remove_participant`); a group already below its
+        :ref:`groups_below_min_size`); a group already below its
         quorum is dissolved now. To stop top-ups when the
         group passes a barrier, pass ``stop_top_ups=True`` to that
         :class:`GroupBarrier`::
@@ -5101,10 +5084,15 @@ def _reconstructed_arrival_barrier(link, reconstructed):
     return barrier
 
 
+def _is_pair(group_size) -> bool:
+    """Return whether notices for a group of ``group_size`` should speak of a partner."""
+    return group_size is not None and group_size <= 2
+
+
 def _tell_group_ended(participant, group_size):
     """Tell a member who carries on alone after their group dissolved, on their next page."""
     _p = get_translator(context=True)
-    if group_size <= 2:
+    if _is_pair(group_size):
         text = _p(
             "timeline_hold",
             "Your partner is no longer in your group. Please continue.",

@@ -71,6 +71,11 @@ the same round:
         player_rounds["participant_id"] != player_rounds["partner_id"]
     ]
 
+``answer`` is ``None`` for a player who timed out. In the
+``rock_paper_scissors`` demo, the move actually played, including the random
+one given to a player who timed out, is in each trial's vars (``result``),
+as its basic data shows (see :ref:`basic_data_groups`).
+
 Group details such as ``group_type`` are in the ``sync_group`` table, and
 each member's role and removal reason in ``participant_link_sync_group``.
 For cued trials, the group's results are in the ``node`` table, whose

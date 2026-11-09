@@ -118,15 +118,18 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `every` period.
 - For a lobby that should not wait forever for a full group, use
   `SimpleGrouper(start_short_after=..., quorum=...)`; a short start forms a
-  group of at least the quorum (`start_short_with` overrides that). Add
-  `join_existing_groups=True` to let latecomers fill it up, then pass
-  `stop_top_ups=True` to the `GroupBarrier` after which newcomers can no
-  longer catch up, such as the one that starts the game, and `top_up_wait=seconds`
-  to the grouper. Read "Groups below quorum" in
-  `code/multiplayer/synchronization` for what top-ups change when a member
-  drops out. To let
-  participants who find no group carry on alone instead of being failed,
-  pass the grouper `max_wait_action="continue_without_group"`.
+  group of at least the quorum (`start_short_with` overrides that). To let
+  latecomers fill it up until the game starts:
+
+  ```python
+  SimpleGrouper("team", ..., join_existing_groups=True, top_up_wait=30)
+  GroupBarrier(id_="game_starts", group_type="team", stop_top_ups=True)
+  ```
+
+  Read "Groups below quorum" in `code/multiplayer/synchronization` for what
+  top-ups change when a member drops out. To let participants who find no
+  group carry on alone instead of being failed, pass the grouper
+  `max_wait_action="continue_without_group"`.
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
   needs a group: stop a rounds loop with it in the `while_loop` condition,
   and give a synchronized trial maker a solo alternative, for example
@@ -223,7 +226,12 @@ class PickTrial(Trial):
 # The Module gives the nodes a module_id to find them by when exporting.
 Module("game", for_loop(
     label="rounds", iterate_over=range(N_ROUNDS), time_estimate_per_iteration=20,
-    logic=join(Regrouper("room", ...), PickTrial.cue({"numbers": NUMBERS})),
+    logic=join(
+        Regrouper("room", ...),
+        # Players the regrouper left out see a page instead of a trial.
+        only_in_group("room", PickTrial.cue({"numbers": NUMBERS}),
+                      otherwise=InfoPage("You skip this round.", time_estimate=5)),
+    ),
 ))
 ```
 
