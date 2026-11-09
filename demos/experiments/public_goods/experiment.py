@@ -14,8 +14,8 @@ player's contribution and payoff are on their trial, which pays the bonus.
 - A player who returns the study, or closes the page and so is late for the
   end of a round (``LATE_AFTER``), leaves the group. The others carry on
   while at least two remain, sharing the pot between fewer players.
-- When one player remains, the group dissolves. If they were waiting for the
-  round's results, the round is cancelled and they keep their tokens for it.
+- When one player remains, the group dissolves, the round is cancelled and
+  they keep their tokens for it.
 - Nobody is failed because others left: the last player, a player who comes
   back after being removed, and a participant for whom no group forms within
   ``GROUPING_WAIT`` are each told why the game ended for them.
@@ -38,7 +38,8 @@ ENDOWMENT = 10
 MULTIPLIER = 1.5
 TOKEN_VALUE = 0.02
 # Short so that the bot test runs quickly; with real participants, allow about
-# 30, 60 and 300 seconds.
+# 30, 60 and 300 seconds. LATE_AFTER also covers reading the previous round's
+# results, which has no time limit.
 DECISION_SECONDS = 10
 LATE_AFTER = 15
 GROUPING_WAIT = 20
@@ -142,15 +143,18 @@ class ContributionTrial(Trial):
 
     @classmethod
     def cancel_round(cls, trials: List["ContributionTrial"], node: SyncGroupNode):
-        """Cancel the round for the last member left, who keeps their tokens."""
+        """Record the contributions of a round cancelled while its last member waited."""
         node.var.contributions = contributions(trials)
-        for trial in trials:
-            trial.var.contribution = trial.participant.var.contribution
-            trial.var.payoff = ENDOWMENT
 
     def score_answer(self, answer, definition):
-        # A player removed for being late has no payoff for that round.
-        return self.var.get("payoff", 0)
+        if self.var.has("payoff"):
+            return self.var.payoff
+        # The group dissolved during the round, whether or not the last member
+        # was already waiting at the barrier, so they keep their tokens. A
+        # player removed for being late earns nothing for the round.
+        if self.participant.sync_group_removal_reason(GROUP) == "group_dissolved":
+            return ENDOWMENT
+        return 0
 
     def compute_performance_reward(self, score):
         return TOKEN_VALUE * score
@@ -228,9 +232,12 @@ class Exp(psynet.experiment.Experiment):
                     "group_id": t.sync_group_id,
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
-                    # None if the player ran out of time, missing if they left.
+                    # Only for rounds with results; None there means the
+                    # player ran out of time.
                     "contribution": t.var.get("contribution"),
-                    "payoff": t.var.get("payoff"),
+                    "played": t.var.has("payoff"),
+                    # None if the player returned the study during the round.
+                    "payoff": t.score,
                     "bonus": t.performance_reward,
                 }
                 for t in trials
@@ -249,18 +256,19 @@ class Exp(psynet.experiment.Experiment):
             ],
         }
 
-    test_n_bots = 7
+    test_n_bots = 10
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
         self._test_full_game(bots[:3])
         self._test_dropouts(*bots[3:6])
         self._test_no_group(bots[6])
+        self._test_others_leave_before_contributing(*bots[7:10])
 
         data = self.get_basic_data()
         # The full game's group, then the dropouts' group, whose last round
         # was cancelled with only the stayer's 5 tokens in.
-        groups = data["group_round"]
+        groups = [g for g in data["group_round"] if g["contributions"] is not None]
         assert [(g["round"], g["pot"]) for g in groups] == [
             (0, 18),
             (0, 18),
@@ -347,6 +355,20 @@ class Exp(psynet.experiment.Experiment):
         text = bot.current_page_text
         assert text == "Without a group, there is no game to play.", text
         bot.run_to_completion()
+
+    def _test_others_leave_before_contributing(self, quitter_1, quitter_2, stayer):
+        # The group dissolves before the stayer reaches the barrier, so the
+        # round is cancelled without on_dissolve; they still keep their tokens.
+        _start([quitter_1, quitter_2, stayer])
+        quitter_1.drop_out()
+        quitter_2.drop_out()
+        stayer.take_page(response=3)
+        advance_past_wait_pages([stayer])
+        text = stayer.current_page_text
+        assert text == (
+            "Too few players remained, so the game ended early. Your bonus is $0.20."
+        ), text
+        stayer.run_to_completion()
 
 
 def _start(bots):

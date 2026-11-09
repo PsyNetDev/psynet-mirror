@@ -307,8 +307,7 @@ of that round, who then see everyone's contributions and what they earned,
 paid as a bonus. A player who runs out of time puts nothing in. A player who
 returns the study or stops responding leaves the group, and the other two
 carry on and share the pot between them. When only one player is left, the
-game ends: if they were waiting for the round's results, that round is
-cancelled and they keep their tokens. Nobody is failed because others left;
+game ends: that round is cancelled and they keep their tokens for it. Nobody is failed because others left;
 the last player, a player who comes back after being removed, and a
 participant for whom no group formed each see why the game ended for them.
 Each round is one trial per player that pays that round's bonus, so the data

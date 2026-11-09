@@ -151,11 +151,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   Check `regrouper.sat_out(participant)` there to tell a sit-out from a
   player removed for being late, as `not_playing` in `ultimatum_pairing` does.
   `public_goods` uses `otherwise=` in a team game that plays on with fewer
-  members, down to its quorum, with `on_dissolve` for the last round.
-  `only_in_group` also skips the end of a cued trial, where it is scored and
-  paid, for a player who leaves partway. When that player must still be
-  paid for the round, as when `on_dissolve` cancels it, put the rounds in a
-  loop or `Module` and check the group once per round instead, as
+  members, down to its quorum, and pays the last member for the round in
+  which the group dissolves. `only_in_group` also skips the end of a cued
+  trial, where it is scored and paid, for a player who leaves partway. When
+  that player must still be paid, pass `only_in_group` the rounds' loop,
+  which is one step (see above), and check the group once per round, as
   `public_goods` does in `play_round`.
 - In a `Regrouper` game the player whose partner left stays in the pair, so
   they play the round out and see its outcome, as in `ultimatum_pairing`;

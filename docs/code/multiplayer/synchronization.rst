@@ -317,8 +317,8 @@ still score the last question for those who answered it:
 
 ``on_dissolve`` can also do something other than ``on_release``. In the
 ``public_goods`` demo, a group of three plays on with two, so the group
-dissolves when one player is left; the round that player was waiting for is
-cancelled, and they keep their tokens:
+dissolves when one player is left and the round is cancelled. Its
+``on_dissolve`` records the contributions of the round for the export:
 
 .. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
    :pyobject: ContributionTrial.cancel_round
@@ -328,6 +328,12 @@ the group dissolves get neither callback: they pass the barrier without
 waiting. If they need a result too, give them one in a step after the
 barrier, for example when
 ``participant.sync_group_removal_reason("team") == "group_dissolved"``.
+``public_goods`` pays the last player for the cancelled round in
+``score_answer``, at the end of their trial, whether or not they were
+waiting at the barrier:
+
+.. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
+   :pyobject: ContributionTrial.score_answer
 
 The barrier ``id_`` identifies one waiting point. Barriers with the same ID
 share a waiting pool, so give barriers with different ``on_release``
@@ -962,10 +968,10 @@ For the rest of the timeline:
   A trial added with :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` is
   several steps, so for a player who leaves partway, ``only_in_group`` also
   skips the end of the trial, where it is scored and paid. In
-  ``public_goods`` the last player must still be paid for the round that
-  ``on_dissolve`` cancels, so the rounds are in a
-  :class:`~psynet.timeline.Module`, which is one step, and the group is
-  checked once per round:
+  ``public_goods`` the last player must still be paid for the round in
+  which the group dissolves, so ``only_in_group`` gets the rounds in a loop
+  (here inside the ``game`` :class:`~psynet.timeline.Module`), which is one
+  step, and the group is checked once per round:
 
   .. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
      :pyobject: play_round
