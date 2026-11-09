@@ -655,10 +655,20 @@ A trial maker with ``sync_group_type`` gives the whole group the same trials.
 Each group has a randomly chosen leader. PsyNet assigns the leader's next node
 as if the leader were taking the trial maker alone, and the other members get
 trials on the same node. Members copy the leader's participant group and
-block order. If the leader leaves, another member becomes leader (see
+block order, including the leader's position in the block order. If the
+leader leaves, another member becomes leader (see
 :meth:`~psynet.sync.SyncGroup.check_leader`); a newcomer who becomes leader
 before starting the trial maker copies these from the members already in it,
 so the group keeps them, but still gets their own within-participant chains.
+
+Members only copy from someone in the same run of the trial maker: in a
+loop that repeats it, a member's state from a previous run doesn't count.
+At the start of each run, members wait for a member, normally the leader,
+to start the run; after that, anyone who arrives copies from them. If no
+member who is still in the group starts the run, as when the leader's loop
+ended earlier, the wait ends at ``sync_group_max_wait_time`` with
+``sync_group_max_wait_action``.
+
 The start of every trial is synchronized; add
 :class:`~psynet.sync.GroupBarrier` elements inside the trial, as in
 ``show_trial`` above, to synchronize other points. Each trial records the

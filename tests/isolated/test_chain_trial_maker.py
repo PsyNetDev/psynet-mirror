@@ -331,6 +331,21 @@ def _init_barrier(trial_maker):
     return barrier
 
 
+def _tm_state(initialized=False, finished=False, participant_group=None, **kwargs):
+    """Return a stub trial maker state."""
+    state = SimpleNamespace(
+        trial_maker_initialized=initialized,
+        finished=finished,
+        early_exited=False,
+        participant_group=participant_group,
+        **kwargs,
+    )
+    state.set_block_position = lambda position: setattr(
+        state, "block_position", position
+    )
+    return state
+
+
 def test_sync_trial_maker_init_barrier_lets_members_through_once_the_leader_is_initialized():
     trial_maker = make_trial_maker(sync_group_type="sync")
     barrier = _init_barrier(trial_maker)
@@ -345,54 +360,62 @@ def test_sync_trial_maker_init_barrier_lets_members_through_once_the_leader_is_i
             active_sync_groups={"sync": group},
         )
 
-    def initialize(participant):
-        initialized = SimpleNamespace(trial_maker_initialized=True)
-        participant.module_states = {trial_maker.id: [initialized]}
+    def start_run(participant, initialized=False):
+        for state in participant.module_states.get(trial_maker.id, []):
+            state.finished = True
+        participant.module_states.setdefault(trial_maker.id, []).append(
+            _tm_state(initialized)
+        )
 
     leader, follower = member(), member()
     group.leader, group.active_participants = leader, [leader, follower]
     assert not barrier._passes_straight_through(follower)
-    initialize(leader)
-    initialize(follower)
+    start_run(leader, initialized=True)
+    start_run(follower, initialized=True)
     assert barrier._passes_straight_through(member())
 
-    # The leader leaves and a newcomer is promoted: they initialize alone as
-    # leader, while a newcomer who would copy them waits.
+    # In the loop's next run, the leader's previous run doesn't count.
+    start_run(follower)
+    leader.module_states[trial_maker.id][-1].finished = True
+    assert not barrier._passes_straight_through(follower)
+    start_run(leader, initialized=True)
+    assert barrier._passes_straight_through(follower)
+
+    # The leader leaves and a newcomer is promoted: they and other newcomers
+    # pass, copying the members already in this run.
     new_leader, newcomer = member(), member()
     group.leader = new_leader
     group.active_participants = [follower, new_leader, newcomer]
+    follower.module_states[trial_maker.id][-1].trial_maker_initialized = True
     assert barrier._passes_straight_through(new_leader)
-    assert not barrier._passes_straight_through(newcomer)
-    initialize(new_leader)
     assert barrier._passes_straight_through(newcomer)
 
 
-def test_follower_copies_leader_state_after_leader_moved_on():
-    trial_maker = make_trial_maker(sync_group_type="main")
-    leader_state = SimpleNamespace(
-        participant_group="B", block_order=["X", "Y"], block_position=1
+@pytest.mark.parametrize("leader_finished", [False, True])
+def test_follower_copies_this_run_s_group_choices(leader_finished):
+    trial_maker = make_trial_maker(
+        sync_group_type="main", choose_participant_group=lambda participant: "A"
     )
+    choices = dict(block_order=["X", "Y"], block_position=1)
+    # The leader is in a later page, or their state is from the loop's last run.
     leader = SimpleNamespace(
-        module_state=None, module_states={trial_maker.id: [leader_state]}
+        module_states={
+            trial_maker.id: [
+                _tm_state(True, leader_finished, **choices, participant_group="B")
+            ]
+        }
     )
-    state = SimpleNamespace(participant_group=None)
-    state.set_block_position = lambda position: setattr(
-        state, "block_position", position
-    )
+    state = _tm_state()
     follower = SimpleNamespace(
-        id=2,
-        module_state=state,
-        select_module=lambda module_id: None,
-        active_sync_groups={"main": SimpleNamespace(id=1, leader=leader)},
+        id=2, module_state=state, module_states={trial_maker.id: [state]}
     )
+    follower.select_module = lambda module_id: None
+    group = SimpleNamespace(id=1, leader=leader, active_participants=[leader, follower])
+    follower.active_sync_groups = {"main": group}
 
-    trial_maker.init_participant(experiment=None, participant=follower)
+    trial_maker.init_participant_group(experiment=None, participant=follower)
 
-    assert (state.participant_group, state.block_order, state.block_position) == (
-        "B",
-        ["X", "Y"],
-        1,
-    )
+    assert state.participant_group == ("A" if leader_finished else "B")
 
 
 WITHIN_CHAINS = dict(
@@ -403,7 +426,10 @@ WITHIN_CHAINS = dict(
 )
 
 
-def test_promoted_leader_copies_the_group_s_choices_and_creates_its_own_networks():
+@pytest.mark.parametrize("follower_finished", [False, True])
+def test_promoted_leader_copies_the_group_s_choices_and_creates_its_own_networks(
+    follower_finished,
+):
     class WithinTrialMaker(ChainTrialMaker):
         def create_networks_within(self, experiment, participant):
             group = participant.module_state.participant_group
@@ -418,17 +444,12 @@ def test_promoted_leader_copies_the_group_s_choices_and_creates_its_own_networks
         block_order="listed",
         **WITHIN_CHAINS,
     )
-    follower_state = SimpleNamespace(
-        trial_maker_initialized=True,
-        participant_group="B",
-        block_order=["Y", "X"],
-        block_position=1,
+    # A follower's state from the loop's last run doesn't count.
+    follower_state = _tm_state(
+        True, follower_finished, "B", block_order=["Y", "X"], block_position=1
     )
     follower = SimpleNamespace(module_states={trial_maker.id: [follower_state]})
-    state = SimpleNamespace(participant_group=None, trial_maker_initialized=False)
-    state.set_block_position = lambda position: setattr(
-        state, "block_position", position
-    )
+    state = _tm_state()
     # The old leader left, and the newcomer was promoted after the group passed.
     new_leader = SimpleNamespace(
         id=3, module_state=state, module_states={trial_maker.id: [state]}
@@ -440,12 +461,11 @@ def test_promoted_leader_copies_the_group_s_choices_and_creates_its_own_networks
 
     trial_maker.init_participant(experiment=None, participant=new_leader)
 
+    expected = ("A", ["X", "Y"], 0) if follower_finished else ("B", ["Y", "X"], 1)
     assert (state.participant_group, state.block_order, state.block_position) == (
-        "B",
-        ["Y", "X"],
-        1,
+        expected
     )
-    assert [n.participant_group for n in new_leader.networks] == ["B", "B"]
+    assert {n.participant_group for n in new_leader.networks} == {expected[0]}
 
 
 @pytest.mark.parametrize("chain_kwargs", [WITHIN_CHAINS, {}])

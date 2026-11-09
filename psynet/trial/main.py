@@ -1784,38 +1784,59 @@ Index(
 )
 
 
-def _initialized_in(participant, trial_maker_id) -> bool:
-    """Return whether the participant's latest run of the trial maker has initialized them."""
+def _latest_state(participant, trial_maker_id):
+    """Return the participant's state for their current run of the trial maker, or ``None``.
+
+    That is their latest state for it, unless they have finished or left
+    that run, as between the runs of a loop or after leaving the trial
+    maker.
+    """
     try:
         state = participant.module_states[trial_maker_id][-1]
     except (KeyError, IndexError):
-        return False
-    return state.trial_maker_initialized
+        return None
+    if state.finished or state.early_exited:
+        return None
+    return state
+
+
+def _initialized_in(participant, trial_maker_id) -> bool:
+    """Return whether the participant's current run of the trial maker has initialized them."""
+    state = _latest_state(participant, trial_maker_id)
+    return state is not None and state.trial_maker_initialized
 
 
 def _initialized_member_state(group, trial_maker_id, exclude=None):
-    """Return the trial maker state of an initialized active member of ``group``, or ``None``.
+    """Return the current-run trial maker state of an initialized active member of ``group``, or ``None``.
 
-    Skips the member ``exclude``.
+    Prefers the leader's. Skips the member ``exclude``.
     """
-    for member in group.active_participants:
+    for member in _leader_first(group):
         if member != exclude and _initialized_in(member, trial_maker_id):
-            return member.module_states[trial_maker_id][-1]
+            return _latest_state(member, trial_maker_id)
     return None
+
+
+def _leader_first(group):
+    """Return ``group``'s active members, its leader first."""
+    leader = group.leader
+    others = [p for p in group.active_participants if p != leader]
+    return others if leader is None else [leader, *others]
 
 
 class _InitParticipantBarrier(GroupBarrier):
     """The barrier at which a synchronized trial maker initializes its group, leader first.
 
-    Members wait here until the leader is initialized in this run of the
-    trial maker. After that, anyone who arrives passes straight through and
-    initializes alone, including a newcomer who arrived while the group's
-    release was committing. A newcomer promoted to leader after the group
-    passed (see :meth:`~psynet.sync.SyncGroup.check_leader`) also passes,
-    and initializes as leader, copying the group's choices from an
-    initialized member (see :meth:`TrialMaker.init_participant_group`);
-    followers who arrive before that wait for them, as followers copy the
-    leader's state.
+    Members wait here until a member of the group, normally the leader, is
+    initialized in this run of the trial maker; a state from a previous run
+    of a loop doesn't count. After that, anyone who arrives passes straight
+    through and initializes alone, copying the group's choices (see
+    :meth:`TrialMaker.init_participant_group`), including a newcomer who
+    arrived while the group's release was committing or who was promoted
+    to leader after the group passed (see
+    :meth:`~psynet.sync.SyncGroup.check_leader`). If no member is in this
+    run yet, as when the leader's loop ended earlier, the barrier's usual
+    rules apply, ending with its ``max_wait_time``.
     """
 
     _lets_newcomers_through = True
@@ -1830,13 +1851,8 @@ class _InitParticipantBarrier(GroupBarrier):
         self.trial_maker_id = trial_maker.id
 
     def _lets_through(self, group, participant) -> bool:
-        leader = group.leader
-        if leader is None:
-            return False
-        if _initialized_in(leader, self.trial_maker_id):
-            return True
         return (
-            participant == leader
+            group.leader is not None
             and _initialized_member_state(group, self.trial_maker_id) is not None
         )
 
@@ -2319,10 +2335,14 @@ class TrialMaker(Module):
         return _initialized_in(participant, self.id)
 
     def _init_participants_in_sync_group(self, group: SyncGroup, experiment):
-        if not self._is_initialized(group.leader):
-            self.init_participant(experiment, group.leader)
-        for participant in group.active_participants:
-            if participant != group.leader and not self._is_initialized(participant):
+        """Initialize the group's members in this run, leader first.
+
+        Skips members who aren't in a run of the trial maker, such as a
+        leader whose loop ended earlier.
+        """
+        for participant in _leader_first(group):
+            state = _latest_state(participant, self.id)
+            if state is not None and not state.trial_maker_initialized:
                 self.init_participant(experiment, participant)
 
     @property
@@ -2667,26 +2687,22 @@ class TrialMaker(Module):
             return None
         return participant.active_sync_groups.get(self.sync_group_type)
 
-    def _leader_state(self, sync_group):
-        """Return the group leader's state for this trial maker.
-
-        The leader may already be in a later module, so this reads their state
-        for this trial maker rather than their current module state.
-        """
-        return sync_group.leader.module_states[self.id][-1]
-
     def _group_choices_state(self, participant):
         """Return the state to copy the group's choices from, or ``None`` to make them.
 
         A follower copies the leader's. A leader makes them, unless they were
         promoted after other members initialized: then they copy those
-        members', so the whole group keeps the same choices.
+        members', so the whole group keeps the same choices. Only states
+        from the members' current run of the trial maker count, not one
+        from a previous run of a loop; if the leader has none, a follower
+        copies another member's, or makes the choices if no member has one.
+        The source may be in a later page than ``participant``, so this
+        reads their state for this trial maker rather than their current
+        module state.
         """
         sync_group = self._active_sync_group(participant)
         if sync_group is None:
             return None
-        if participant != sync_group.leader:
-            return self._leader_state(sync_group)
         return _initialized_member_state(sync_group, self.id, exclude=participant)
 
     def init_participant_group(self, experiment, participant):
@@ -2702,8 +2718,8 @@ class TrialMaker(Module):
         source = self._group_choices_state(participant)
         if source is not None:
             logger.info(
-                f"participant = {participant.id} copies their sync group's "
-                "participant group"
+                f"participant = {participant.id} copies the participant group "
+                f"of sync_group id = {self._active_sync_group(participant).id}"
             )
             participant_group = source.participant_group
         else:

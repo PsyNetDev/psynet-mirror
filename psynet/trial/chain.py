@@ -1958,8 +1958,9 @@ class ChainTrialMaker(NetworkTrialMaker):
             # so they need no networks or block order.
             return
         is_follower = participant != sync_group.leader if sync_group else False
+        source = self._group_choices_state(participant)
 
-        if not is_follower:
+        if not is_follower or source is None:
             if self.chain_type == "within":
                 networks = self.create_networks_within(experiment, participant)
                 rows = [(n.block, n.participant_group) for n in networks]
@@ -1983,7 +1984,6 @@ class ChainTrialMaker(NetworkTrialMaker):
                     )
             self.check_participant_groups({group for _, group in rows})
 
-        source = self._group_choices_state(participant)
         if source is None:
             # Blocks are in network creation order, which "listed" block orders follow.
             blocks = list(dict.fromkeys(block for block, _ in rows))

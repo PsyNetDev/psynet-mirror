@@ -754,6 +754,27 @@ def test_the_hold_counts_show_the_viewer_s_own_round(
     assert counts(newcomer) == {"waiting_count": 1, "group_size": 3}
 
 
+@in_consents_experiment
+def test_the_hold_counts_put_a_newcomer_without_a_round_in_the_cohort_s_visit(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    (newcomer,) = _working_participants(exp, 1)
+    for participant in cohort:
+        _cue_round(exp, participant, 0)
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    pair.add_participant(newcomer)
+    revealed = GroupBarrier("revealed", group_type="pair")
+    _arrive(exp, revealed, [newcomer, cohort[0]])
+
+    # The release waits for cohort[1] and takes the newcomer along.
+    expected = {"waiting_count": 2, "group_size": 3}
+    assert revealed._hold_message_counts(newcomer) == expected
+    assert revealed._hold_message_counts(cohort[0]) == expected
+
+
 _releases = []
 
 

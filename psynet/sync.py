@@ -2020,6 +2020,8 @@ class GroupBarrier(Barrier):
 
         Counts ``participant``'s own visit: members waiting here in another
         round, as when a newcomer is a round ahead, are at another visit.
+        A waiting member without a stored round joins the visit the release
+        would take them along with, that of the earliest waiting round.
         """
         group = (
             None
@@ -2029,13 +2031,17 @@ class GroupBarrier(Barrier):
         if group is None:
             return {"waiting_count": None, "group_size": None}
         links = _active_links(group)
-        node = _barrier_round(group, [participant], links)
-        waiting = [
-            m
-            for m in group.active_participants
-            if self._participant_is_waiting(m)
-            and _barrier_round(group, [m], links) is node
+        all_waiting = [
+            m for m in group.active_participants if self._participant_is_waiting(m)
         ]
+        default = _barrier_round(group, all_waiting, links)
+
+        def visit(member):
+            return _barrier_round(group, [member], links) or default
+
+        node = visit(participant)
+        node_id = None if node is None else node.id
+        waiting = [m for m in all_waiting if getattr(visit(m), "id", None) == node_id]
         scope = _barrier_scope(group, waiting, self.id, node)
         waiting_ids = {m.id for m in waiting}
         counted = {m.id for m in scope.waited_for} | {
