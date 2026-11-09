@@ -920,9 +920,10 @@ class Control(JavaScriptContributor):
         For more sophisticated treatment, the function can return a
         ``BotResponse`` object which contains other parameters
         such as ``blobs`` and ``metadata``.
-        PsyNet's built-in controls return ``BotResponse(raw_answer=...)`` with
+        PsyNet's built-in answer controls return ``BotResponse(raw_answer=...)`` with
         what the browser would submit, so that bot answers pass through the same
         ``format_answer`` methods as browser answers and are saved with the same type and shape.
+        Controls without a meaningful answer, such as :class:`NullControl`, return the answer directly.
         """
         raise NotImplementedError(
             f"The get_bot_response method for class {self.__class__.__name__} has yet to be implemented."
@@ -1103,6 +1104,13 @@ def _as_python_value(x):
         # Keeps the printed digits: np.float32(0.1).item() is 0.10000000149011612.
         return float(str(x))
     return x.item() if isinstance(x, np.generic) else x
+
+
+def _as_json_number(x):
+    """Return a whole-number float as an ``int``, as the browser's ``JSON.stringify`` writes it."""
+    if isinstance(x, float) and x.is_integer():
+        return int(x)
+    return x
 
 
 class CheckboxControl(OptionControl):
@@ -2884,9 +2892,7 @@ class SliderControl(Control):
             )
         else:
             candidates = self.snap_values
-        value = float(random.choice(candidates))
-        # The browser sends the value as JSON, which writes whole numbers as ints.
-        return BotResponse(raw_answer=int(value) if value.is_integer() else value)
+        return BotResponse(raw_answer=_as_json_number(float(random.choice(candidates))))
 
 
 EXTENSIONS = {
@@ -4776,7 +4782,9 @@ class MultiRatingControl(SurveyJSControl):
     def get_bot_response(self, experiment, bot, page, prompt):
         """Answer each scale, as the SurveyJS results text that the browser submits."""
         results = {
-            scale.name: scale.get_bot_response(experiment, bot, page, prompt)
+            scale.name: _as_json_number(
+                scale.get_bot_response(experiment, bot, page, prompt)
+            )
             for scale in self.scales
         }
         return BotResponse(raw_answer=json.dumps(results))

@@ -510,6 +510,8 @@ def test_option_controls_save_the_choice_the_browser_names(control, raw_answer, 
         ("78.5", 78.5),
         ("100", 100),
         ("-3", -3),
+        ("2.0", 2),
+        ("100.00", 100),
         ("abc", "abc"),
         ("", ""),
         ("nan", "nan"),
@@ -676,6 +678,12 @@ class _ShoutingPage(ModularPage):
         return raw_answer.upper()
 
 
+class _TextOnlyPage(ModularPage):
+    def format_answer(self, raw_answer, **kwargs):
+        assert isinstance(raw_answer, str), "The browser submits text."
+        return super().format_answer(raw_answer, **kwargs)
+
+
 def _graphic(**kwargs):
     circle = Circle("dot", 50, 50, radius=5, click_to_answer=True)
     return GraphicControl(
@@ -689,6 +697,7 @@ def _graphic(**kwargs):
     [
         (NumberControl(), _is_int),
         (RatingControl(5), _is_int),
+        (RatingControl({"low": 0.0, "high": 1.0}), _is_int),
         (SliderControl(1, 1, 3, snap_values=[1, 2, 3]), _is_int),
         (
             MultiRatingControl(RatingScale("a", 3, required=False)),
@@ -717,10 +726,19 @@ def test_default_bot_answers_are_formatted_like_browser_answers(
 
 
 @_CONSENTS
-def test_default_bot_answers_go_through_page_format_answer(submit):
-    page = _ShoutingPage("test", "Hi!", TextControl(), time_estimate=1)
+@pytest.mark.parametrize(
+    "page_class, control, is_expected",
+    [
+        (_ShoutingPage, TextControl(), str.isupper),
+        (_TextOnlyPage, NumberControl(), _is_int),
+    ],
+)
+def test_default_bot_answers_go_through_page_format_answer(
+    submit, page_class, control, is_expected
+):
+    page = page_class("test", "Hi!", control, time_estimate=1)
     assert submit(page) == "approved"
-    assert Response.query.one().answer.isupper()
+    assert is_expected(Response.query.one().answer)
 
 
 @_CONSENTS

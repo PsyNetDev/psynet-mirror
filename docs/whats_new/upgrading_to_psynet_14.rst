@@ -511,7 +511,10 @@ templates that changes the database.
   not ``bot_response="25"``, which now fails validation. The typed text is
   lost (``02139`` is saved as ``2139``), so use ``TextControl`` for codes such
   as postcodes or IDs where the exact text matters. Text with ``_``, such as
-  ``1_000``, fails validation.
+  ``1_000``, fails validation. A ``NumberControl`` page that overrides
+  ``format_answer`` must now return a number: call
+  ``super().format_answer(raw_answer, **kwargs)`` or convert the text
+  yourself, since returned text fails validation.
 * Default bot answers now go through the page's ``format_answer``, as
   participants' answers do. Search for ``def format_answer`` on pages that
   bots answer without ``bot_response``, and check that it accepts what the
