@@ -256,8 +256,12 @@ member of the group has reached it. When the last member arrives, the barrier
 calls ``on_release`` for the whole group. In or after a round of cued trials,
 it waits only for the members of that round: not for a late joiner who
 skipped it, a member already in a later round, one who has left the
-round's module, or one who has already passed it (see :ref:`rounds-cued-trials` and
-:ref:`a fixed group's loop <rounds-fixed-group-loop>`). In ``rock_paper_scissors`` the
+round's module, or one who has already passed it. Before a late joiner's
+first cue, once the group has cued a round in the module, it waits only for
+members who haven't cued one there either. A release of only members
+catching up, such as skippers, doesn't call ``on_release`` (see
+:ref:`rounds-cued-trials` and :ref:`a fixed group's loop
+<rounds-fixed-group-loop>`). In ``rock_paper_scissors`` the
 barrier after each choice scores the round and saves each player's result
 on their trial, where ``show_feedback`` reads it:
 
@@ -951,12 +955,14 @@ Keep these in mind:
   That includes a module that runs again, for example in a loop: the team's
   pass in the first run counts for later runs too.
 - Only the team's release counts as a pass, not a member let go after
-  waiting too long, nor a release while a member is in a later cued round
-  of the module: a newcomer who skipped a round can reach a barrier after
-  the loop alone while the others still play (see :ref:`rounds-cued-trials`).
-  The pass still counts after everyone who waited there has left the team.
+  waiting too long, nor a release of only members catching up, such as a
+  newcomer who skipped a round, nor a release while a member who hasn't
+  left the module is in a later cued round of it (see
+  :ref:`rounds-cued-trials`). The pass still counts after everyone who
+  waited there has left the team.
 - ``on_release`` doesn't run for those who pass through, so they must not
-  need any group state it sets up.
+  need any group state it sets up. Their passing isn't the team's pass
+  either: it doesn't count for ``left`` or ``late_after``.
 - A barrier ID used again in another module counts as a new barrier.
 - After a barrier with ``stop_top_ups=True``, nobody can join, so the two
   settings aren't needed together.

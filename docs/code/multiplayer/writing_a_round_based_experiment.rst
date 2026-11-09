@@ -120,10 +120,20 @@ releases, it also releases the round's skippers who are waiting there, so a
 skipper who reaches a barrier after the loop is released with the players,
 or alone if they have already passed it.
 
-These rules use the rounds members have cued or skipped, so they don't cover
-a barrier the group passes once, before the rounds: a newcomer who reaches
-it after the group has gone waits there for members who are further on,
-until the barrier's time-outs remove someone. Give such a barrier
+A barrier before a late joiner's first cue in the module, such as one at
+the start of each iteration, waits for every member only if the group
+hasn't cued a round in the module yet. Once it has, it waits only for the
+members who haven't cued one there either and haven't passed it yet, so
+the late joiner moves on to their cue and joins the open round or skips
+the closed one. A release of only such members catching up, late joiners
+or skippers, isn't the group's pass: ``on_release`` doesn't run, and it
+doesn't count for ``left`` or ``late_after``.
+
+These rules use the rounds members have cued in the barrier's module, so
+they don't cover a barrier in a module where the group cues no rounds, such
+as one before a separate module of rounds: a newcomer who reaches it after
+the group has gone waits there for members who are further on, until the
+barrier's time-outs remove someone. Give such a barrier
 ``pass_newcomers=True`` (see :ref:`sync-newcomers-at-passed-barriers`).
 
 So a trial has two round counters. ``sync_group_round`` counts the group's
@@ -192,8 +202,8 @@ pass ``round=`` with a
 regrouper: its groups mix players at different loop positions, whose trials
 would be split across rounds. A module whose cues pass ``round=`` runs once
 per participant, because a group's rounds belong to the module id: give
-each run its own module id. Cueing a round again after a later one raises
-an error.
+each run its own module id. Cueing a round again after a later one, or a
+trial class again in the same round, raises an error.
 
 Classes cued in the same open round share its node and definition: if the
 members cue different classes, such as an offer trial for the proposer and

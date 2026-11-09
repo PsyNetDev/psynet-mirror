@@ -1303,9 +1303,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             ``participant.current_trial is not None``. Rounds are ordered by
             when the group first plays them, not by number. A module whose
             cues pass ``round`` runs once per participant, so give each run
-            of it its own module id; cueing a round again after a later one
-            raises an error. Only for a
-            trial class that sets :attr:`sync_group_type`, and not with a
+            of it its own module id; cueing a round again after a later one,
+            or a trial class again in the same round, raises an error. Only
+            for a trial class that sets :attr:`sync_group_type`, and not with a
             regrouper, whose groups mix players at different loop positions.
             For a participant without a group, ``round`` doesn't select a
             node: they get an ungrouped trial. See
@@ -1464,7 +1464,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             node = cls.get_default_parent_node(participant, experiment)
             return node, None, make_definition(round_number)
         node = SyncGroupNode.for_cue(
-            group, round_number, participant, experiment, make_definition
+            group, round_number, participant, experiment, make_definition, cls
         )
         if node is None:
             logger.info(
@@ -4377,7 +4377,9 @@ class SyncGroupNode(GenericTrialNode):
         return played.first() is None and not node.sync_group_closed
 
     @classmethod
-    def for_cue(cls, group, round_number, participant, experiment, make_definition):
+    def for_cue(
+        cls, group, round_number, participant, experiment, make_definition, trial_class
+    ):
         """Return the node that ``participant``'s cued trial joins, creating it if needed.
 
         Without ``round_number``, this is the group's newest node in the module
@@ -4390,9 +4392,10 @@ class SyncGroupNode(GenericTrialNode):
         With ``round_number``, it is the group's node for that round, or
         ``None`` if it is no longer open and the participant isn't playing it,
         as when the group finished it without them. Naming a round the
-        participant played once they have cued a round played later, as when
-        the module runs again, raises a ``RuntimeError``: the group's nodes for
-        the module are reused, so the round would count as played already. A new node's
+        participant played, as when the module runs again, raises a
+        ``RuntimeError`` (see :meth:`_named_round`): the group's nodes for
+        the module are reused, so the round would count as played already.
+        ``trial_class`` is the class of the cued trial. A new node's
         definition is ``make_definition(round_number)``. Either way, the
         participant's link to ``group`` records the round as the one they
         last cued or skipped, for :class:`~psynet.sync.GroupBarrier` to tell
@@ -4425,7 +4428,7 @@ class SyncGroupNode(GenericTrialNode):
                 .one_or_none()
             )
             if node is not None:
-                return cls._named_round(node, group, participant)
+                return cls._named_round(node, group, participant, trial_class)
         node = cls(
             module_id, experiment, group, round_number, make_definition(round_number)
         )
@@ -4436,29 +4439,37 @@ class SyncGroupNode(GenericTrialNode):
         return node
 
     @classmethod
-    def _named_round(cls, node, group, participant):
-        """Return ``node``, a round named by ``round=``, or ``None`` if the participant skips it."""
+    def _named_round(cls, node, group, participant, trial_class):
+        """Return ``node``, a round named by ``round=``, or ``None`` if the participant skips it.
+
+        Raises a ``RuntimeError`` if the participant played the round
+        already: they have a trial of ``trial_class`` on it, or of any class
+        once they have cued a round played after it.
+        """
         link = _member_link(group, participant)
-        if link.round_node_id == node.id and not link.skipped_round:
+        stored = link.round_node_id and db.session.get(cls, link.round_node_id)
+        playing = link.round_node_id == node.id and not link.skipped_round
+        played_after = (
+            stored and stored.module_id == node.module_id and stored.id > node.id
+        )
+        again = (playing or played_after) and (
+            (trial_class if playing else Trial)
+            .query.filter_by(node_id=node.id, participant_id=participant.id)
+            .first()
+            is not None
+        )
+        if again:
+            raise RuntimeError(
+                f"Participant {participant.id} cued {trial_class.__name__} for "
+                f"round {node.sync_group_round} of '{group.group_type}' group "
+                f"{group.id} again in module '{node.module_id}', after playing "
+                "it. A module whose cues pass round= can run only once per "
+                "participant, with one trial of each class in a round; give "
+                "each run of it its own module id."
+            )
+        if playing:
             # Another trial class cued in the round the participant is playing.
             return node
-        stored = link.round_node_id and db.session.get(cls, link.round_node_id)
-        if (
-            stored
-            and stored.module_id == node.module_id
-            and stored.id > node.id
-            and Trial.query.filter_by(
-                node_id=node.id, participant_id=participant.id
-            ).first()
-        ):
-            raise RuntimeError(
-                f"Participant {participant.id} cued round {node.sync_group_round} "
-                f"of '{group.group_type}' group {group.id} again in module "
-                f"'{node.module_id}' after cueing round {stored.sync_group_round}, "
-                "which was played after it. A module whose cues pass round= can "
-                "run only once per participant; give each run of it its own "
-                "module id."
-            )
         if not node.sync_group_closed:
             _record_round_position(group, participant, node)
             return node
