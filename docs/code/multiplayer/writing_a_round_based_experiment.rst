@@ -111,9 +111,11 @@ Each member's group membership records the round they last cued or
 skipped. A barrier that members reach in or after a round (in the trial,
 in its feedback, between iterations or after the loop) waits for the
 members who played that round, and for those who haven't reached it yet
-only while it is still open. It doesn't wait for a member who skipped the
-round or is already in a round the group played after it, such as that
-newcomer, nor for one who has already passed it in that round. When it
+only while it is still open and they are still in its module. It doesn't
+wait for a member who skipped the round or is already in a round the group
+played after it, such as that newcomer, for one who has left the module,
+as when their loop ended earlier, nor for one who has already passed it in
+that round. When it
 releases, it also releases the round's skippers who are waiting there, so a
 skipper who reaches a barrier after the loop is released with the players,
 or alone if they have already passed it.
