@@ -748,7 +748,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         ``max_wait_action="leave_group"``), ``"no_group_formed"`` (a grouper
         with ``max_wait_action="continue_without_group"`` found them no group
         in time), ``"group_dissolved"`` (released
-        when the group fell below its quorum, with
+        when the group was dissolved, with
         ``below_quorum="continue_without_group"``), ``"moved_on"`` (a
         :class:`~psynet.sync.Regrouper` took them out of their previous group:
         seen while they wait at the regrouper, and after they sit a round out,
@@ -1230,11 +1230,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         If they are still on the main timeline, they are redirected to
         ``unsuccessful_end``. They are also removed from active sync groups.
-        If that drops a ``SimpleSyncGroup`` below its ``quorum``, the
-        grouper's ``below_quorum`` fails or releases the remaining members
-        immediately, except that a member
-        whose own request is in progress is handled by the barrier poller
-        within about a second. See
+        Whether that dissolves a group left below its ``quorum`` is described
+        in :meth:`~psynet.sync.SyncGroup.remove_participant`. See
         :doc:`/code/trials/participant_and_trial_failure`.
 
         Parameters

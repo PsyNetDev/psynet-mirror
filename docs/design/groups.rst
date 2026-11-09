@@ -80,13 +80,16 @@ limit has run out. By default, participants are credited for the actual time
 they wait, up to the maximum.
 
 When someone leaves, a group that still has its **quorum**, the smallest
-size at which it can go on, carries on. Below it, by default, the group is
-dissolved and its remaining members are failed too. Decide this for every
-grouper (a regrouper's groups are never dissolved): let the others continue
-the experiment without the group (``below_quorum="continue_without_group"``), or have the
-group wait for a newcomer to replace the one who left
-(``join_existing_groups=True``). Failed participants are paid for what they
-completed (see :doc:`/code/participants/payment`).
+size at which it can go on, carries on. Below it, a group that can no longer
+take newcomers is dissolved, and its grouper's ``below_quorum`` decides for
+the members left: by default they are failed too, and with
+``below_quorum="continue_without_group"`` they continue the experiment
+without the group. Decide this for every grouper (a regrouper's groups are
+never dissolved). ``join_existing_groups=True`` lets a newcomer replace the
+one who left, which only postpones that decision until the group stops
+taking newcomers; see :ref:`groups_below_min_size` for the full rule. Failed
+participants are paid for what they completed (see
+:doc:`/code/participants/payment`).
 
 Plan for dropouts: decide whether a round can continue with fewer members,
 whether the remaining members should go on alone or finish early, and how
