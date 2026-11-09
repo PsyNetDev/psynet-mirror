@@ -91,15 +91,17 @@ find them by when exporting.
 
 ``cue`` numbers each group's rounds by itself, from 0:
 
-- A cue joins the group's newest node in the module, unless the player
-  already has a trial on it.
+- A cue joins the group's newest node in the module while that round is
+  open: the player has no trial on it, and some current member's trial on
+  it hasn't ended.
 - Otherwise it starts the group's next round.
 
 So every pair here, new each round, plays round 0, while a fixed group cued
-in a loop plays rounds 0, 1, 2 and so on, whichever trial classes it cues,
-and a member who joins it late joins its current round. This needs a
-barrier in each round, such as the one in ``show_trial`` below, so that no
-member starts the next round before the others have cued this one.
+in a loop plays rounds 0, 1, 2 and so on, whichever trial classes it cues.
+A member who joins it late plays its current round if that is still going,
+or starts the next one, which the others then join. This needs a barrier in
+each round, such as the one in ``show_trial`` below, so that no member ends
+a round before the others have cued it.
 
 Every trial in a round gets the definition of the round's first cue, so a
 definition must not depend on the player's own position in the loop, as in

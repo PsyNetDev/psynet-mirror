@@ -269,23 +269,35 @@ def test_an_explicit_round_lets_two_classes_share_a_node(
 
 
 @in_consents_experiment
-def test_a_late_joiner_joins_the_group_s_current_round(
+def test_a_late_joiner_joins_an_open_round_or_starts_the_next(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
     pair = cohort[0].active_sync_groups["pair"]
-    (late,) = _working_participants(exp, 1)
+    early, between = _working_participants(exp, 2)
     logic = PairTrial.cue({"target": 1})
     for participant in cohort:
         logic[0].consume(exp, participant)
-    pair.add_participant(late)
-    logic[0].consume(exp, late)
+    pair.add_participant(early)
+    logic[0].consume(exp, early)
+    for trial in PairTrial.query:
+        trial.complete = True
+    pair.add_participant(between)
+    for participant in [between, *cohort, early]:
+        logic[0].consume(exp, participant)
     db.session.commit()
 
-    assert {(t.node_id, t.sync_group_round) for t in PairTrial.query} == {
-        (SyncGroupNode.query.one().id, 0)
+    rounds = {t.participant_id: [] for t in PairTrial.query}
+    for t in PairTrial.query.order_by(PairTrial.id):
+        rounds[t.participant_id].append(t.sync_group_round)
+    assert rounds == {
+        cohort[0].id: [0, 1],
+        cohort[1].id: [0, 1],
+        early.id: [0, 1],
+        between.id: [1],
     }
+    assert SyncGroupNode.query.count() == 2
 
 
 @in_consents_experiment
