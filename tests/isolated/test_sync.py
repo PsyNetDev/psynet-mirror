@@ -76,6 +76,7 @@ from psynet.sync import (
     check_sync_groups,
     group_seats,
     hold_message,
+    leave_group,
     pending_arrival_notice_for,
 )
 from psynet.timeline import (
@@ -7118,6 +7119,34 @@ def test_members_who_finish_dont_dissolve_the_group(
     assert last.in_sync_group("main") is not dissolved
     InfoPage("Next").consume(exp, last)
     assert (_removed_from_group_notice(last) is not None) is dissolved
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_leave_group_takes_the_participant_out_as_finished(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    leaver, stayer = [new_participant(exp) for _ in range(2)]
+    group = SimpleSyncGroup(
+        group_type="main", initial_group_size=2, max_group_size=2, min_group_size=2
+    )
+    db_session.add(group)
+    for p in (leaver, stayer):
+        p.status = "working"
+        group.add_participant(p)
+    db_session.commit()
+
+    step = leave_group("main")
+    step.consume(exp, leaver)
+    step.consume(exp, leaver)
+
+    assert not leaver.in_sync_group("main")
+    assert leaver.sync_group_removal_reason("main") == "finished"
+    assert stayer.in_sync_group("main")
+    with pytest.raises(ValueError, match="reason must be one of"):
+        leave_group("main", reason="bored")
 
 
 @pytest.mark.parametrize("below_quorum", ["fail", "continue_without_group"])

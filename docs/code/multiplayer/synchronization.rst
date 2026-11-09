@@ -136,7 +136,10 @@ participant variable when the page is first built.
 
 ``sync_group.participants`` is a read-only list of the group's members; change
 membership with ``sync_group.add_participant(participant)`` and
-``sync_group.remove_participant(participant)``. The list has no guaranteed
+``sync_group.remove_participant(participant)``; in a timeline,
+:func:`leave_group(group_type) <psynet.sync.leave_group>` takes the
+participant out of their group of that type, for example after their last
+round. The list has no guaranteed
 order, so sort by participant ID when you need a stable one, for example to
 assign roles. ``sync_group.leader`` is the group's leader.
 
@@ -298,7 +301,9 @@ the same name that PsyNet passes:
 its previous barrier pass (or since it formed), ordered by participant ID;
 ``participant.sync_group_removal_reason(group_type)`` says why each went, for
 example to tell a player whether their partner returned the study or was too
-slow.
+slow. ``trials`` only covers the members still in the group; on a group's
+node, ``node.all_trials`` lists every trial of the round, including those of
+members who have since left, each with its ``sync_group_role``.
 
 ``on_release`` runs only when the barrier releases the group. A member who
 leaves the group before then, or whose group is dissolved, doesn't get

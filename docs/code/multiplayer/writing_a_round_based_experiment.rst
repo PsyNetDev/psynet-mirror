@@ -79,7 +79,7 @@ maker:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: Module(
-   :end-before: CodeBlock(leave_cohort)
+   :end-before: leave_group("cohort")
    :dedent: 8
 
 The trial class sets ``sync_group_type``, so the trials that a pair's
@@ -232,7 +232,9 @@ their trial, where a page reloaded later still finds them. When a partner
 left or ran out of time, nobody is paid. The ``left`` argument lists the
 members who left the pair this round, and
 ``sync_group_removal_reason`` tells a partner who was too slow apart from
-one who returned the study:
+one who returned the study. ``trials`` only holds the trials of members
+still in the pair, so the players of the round come from ``node.all_trials``,
+which also keeps the trial of a player removed for being away:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: OfferTrial.score_pair
@@ -284,16 +286,15 @@ too often, has left the cohort, or their cohort is down to one player:
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: keep_playing
 
-Players who finish leave the cohort, so that the regrouper doesn't wait for
-them in later rounds. This cohort accepts top-ups and the demo never stops
-them, so the cohort isn't dissolved here, and ``reason="finished"`` only
-shows them as "(finished)". It keeps the recipe safe to copy into a cohort
-without top-ups, or one that stops them, where any other reason
-would dissolve the cohort if that left it below its quorum while the last
-players finish their rounds (see :ref:`groups_below_min_size`):
-
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :pyobject: leave_cohort
+Players who finish leave the cohort with
+:func:`leave_group("cohort") <psynet.sync.leave_group>`, so that the
+regrouper doesn't wait for them in later rounds. It removes them with
+``reason="finished"``, which shows them as "(finished)" and never dissolves
+the cohort. This cohort accepts top-ups and the demo never stops them, so
+another reason wouldn't dissolve it either, but ``"finished"`` keeps the
+recipe safe to copy into a cohort without top-ups, or one that stops them,
+where the last players finishing their rounds could otherwise leave it
+below its quorum (see :ref:`groups_below_min_size`).
 
 Exporting the rounds
 --------------------

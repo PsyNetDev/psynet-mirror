@@ -242,20 +242,15 @@ class Exp(psynet.experiment.Experiment):
     def get_basic_data(cls, context=None, **kwargs):
         """Return one row per player per round, from the trials, and one per room, from the nodes.
 
-        A room can mix players at different rounds, so ``round`` counts each
-        player's own trials from 0. Each room plays one round, so the room
-        table has no round column.
+        A room can mix players at different rounds, so ``round`` is the
+        trial's ``position``, which counts each player's own trials from 0.
+        Each room plays one round, so the room table has no round column.
         """
-        rounds = {}
-        player_rounds = []
-        for t in PickTrial.query.order_by(PickTrial.id):
-            rounds[t.participant_id] = rounds.get(t.participant_id, -1) + 1
-            player_rounds.append((rounds[t.participant_id], t))
         rooms = SyncGroupNode.query.filter_by(module_id="game")
         return {
             "player_round": [
                 {
-                    "round": round_,
+                    "round": t.position,
                     "room_id": t.sync_group_id,
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
@@ -264,7 +259,7 @@ class Exp(psynet.experiment.Experiment):
                     "won": t.var.get("won"),
                     "bonus": t.performance_reward,
                 }
-                for round_, t in player_rounds
+                for t in PickTrial.query.order_by(PickTrial.id)
             ],
             "room": [
                 {

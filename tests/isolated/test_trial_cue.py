@@ -15,6 +15,7 @@ from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
+from psynet.timeline import Module
 from psynet.trial.main import GenericTrialNode, Trial
 
 
@@ -268,6 +269,38 @@ def test_trial_answer_follows_its_pages_until_the_trial_ends(
     trial.failed, trial.complete = False, True
     submit(3)
     assert trial.answer == 1
+
+
+class AccumulatingTrial(CueTrial):
+    accumulate_answers = True
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_cued_trials_number_their_positions_within_each_module(
+    db_session, participant_and_node, monkeypatch
+):
+    experiment, participant, node = participant_and_node
+    monkeypatch.setattr(
+        CueTrial,
+        "get_default_parent_node",
+        classmethod(lambda cls, participant, experiment: node),
+    )
+
+    def cue_in_module(module_id, trial_classes):
+        Module(module_id, CueTrial.cue({})).start(participant)
+        trials = []
+        for trial_class in trial_classes:
+            trial_class.cue({})[0].consume(experiment, participant)
+            trials.append(participant.current_trial)
+        return trials
+
+    first = cue_in_module("first", [CueTrial, AccumulatingTrial, CueTrial])
+    second = cue_in_module("second", [CueTrial])
+    assert [t.position for t in first + second] == [0, 1, 2, 0]
+    assert [t.answer for t in first] == [None, {}, None]
 
 
 def test_cue_creation_context_requires_on_trial_created():

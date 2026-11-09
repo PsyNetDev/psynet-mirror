@@ -219,9 +219,14 @@ Module("game", for_loop(
   `cue` numbers rounds, the definition rules and the rare `round=`, follow
   the guide above.
 - `on_release` reads each member's answer so far from `trial.answer`
-  (`accumulate_answers = True` for several answer pages), and
-  `score_answer`, `show_feedback` and `get_basic_data` read the trial and
-  `self.node.var`.
+  (`accumulate_answers = True` for several answer pages, which makes it a
+  dict from the start), and `score_answer`, `show_feedback` and
+  `get_basic_data` read the trial and `self.node.var`. `node.all_trials`
+  keeps the trials of players who left during the round, and each cued
+  trial's `position` counts the player's earlier cued trials in the module,
+  so exports need no round counter of their own.
+- Put `leave_group(group_type)` after a player's last round so that the
+  rest of the group, and any `Regrouper`, stops waiting for them.
 - Use `self.sync_group_role` for role-specific pages, and put the cue in a
   `conditional` on `participant.in_sync_group(...)`, with a page as the
   other branch, so a player the regrouper sat out gets a page instead of a

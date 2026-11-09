@@ -241,8 +241,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         While the trial's pages are being answered, it holds the answer so far,
         as it would be in ``participant.answer``, so that for example a
         :class:`~psynet.sync.GroupBarrier` inside :meth:`show_trial` can read it
-        in ``on_release``. When the trial ends, it is set to the result of
-        :meth:`format_answer`.
+        in ``on_release``: with :attr:`accumulate_answers`, a dict that starts
+        empty, and otherwise ``None`` until the first page is answered. When
+        the trial ends, it is set to the result of :meth:`format_answer`.
 
     parent_trial_id : int
         If the trial is a repeat trial, this attribute corresponds to the ID
@@ -360,7 +361,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         nullable=True,
         doc=(
             "Zero-based creation position among all trials from this trial maker "
-            "for the participant."
+            "for the participant, or, for trials made by :meth:`Trial.cue`, among "
+            "the participant's cued trials in the same module."
         ),
     )
     # No foreign key, so that creating a trial doesn't wait for a barrier
@@ -616,6 +618,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         self.repeat_trial_index = repeat_trial_index
         self.n_repeat_trials = n_repeat_trials
         self.score = None
+        self.answer = {} if self.accumulate_answers else None
         self.response_id = None
         self.time_taken = None
         self.trial_maker_id = node.trial_maker_id
@@ -1382,6 +1385,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 propagate_failure=False,
                 is_repeat_trial=False,
                 definition=trial_definition,
+                position=_cued_trial_position(participant),
             )
             if group is not None:
                 _record_sync_group(trial, participant, group, node.sync_group_round)
@@ -4246,6 +4250,16 @@ def _record_sync_group(trial, participant, group, round_number=None):
         participant_id=participant.id, sync_group_id=group.id, active=True
     ).one_or_none()
     trial.sync_group_role = None if link is None else link.role
+
+
+def _cued_trial_position(participant):
+    """Return how many trials ``participant`` has already cued in their current module."""
+    module_state = participant.module_state
+    if module_state is None:
+        return None
+    return Trial.query.filter(
+        Trial.participant_id == participant.id, Trial.module_state == module_state
+    ).count()
 
 
 class GenericTrialNetwork(TrialNetwork):

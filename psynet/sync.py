@@ -3891,6 +3891,38 @@ def group_seats(group) -> Dict[int, int]:
     return seats
 
 
+def leave_group(group_type: str, reason: Optional[RemovalReason] = "finished"):
+    """Return a timeline step that takes the participant out of their ``group_type`` group.
+
+    For example, put ``leave_group("cohort")`` after a player's last round,
+    so that cohort members who are still playing, and any
+    :class:`Regrouper` pairing them, don't wait for them. The step does
+    nothing if the participant is in no group of that type.
+
+    Parameters
+    ----------
+    group_type
+        The type of the group to leave.
+    reason
+        Passed to :meth:`SyncGroup.remove_participant`. The default,
+        ``"finished"``, shows the participant as "(finished)" and never
+        dissolves the group, even if they leave it below its quorum.
+
+    Returns
+    -------
+    CodeBlock
+    """
+    if reason not in REMOVAL_REASONS:
+        raise ValueError(f"reason must be one of {REMOVAL_REASONS}, got {reason!r}.")
+
+    def _leave(participant):
+        group = participant.active_sync_groups.get(group_type)
+        if group is not None:
+            group.remove_participant(participant, reason=reason)
+
+    return CodeBlock(_leave)
+
+
 @register_table
 class SyncGroup(SQLBase, SQLMixin):
     """

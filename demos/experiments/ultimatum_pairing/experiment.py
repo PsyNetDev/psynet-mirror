@@ -42,10 +42,9 @@ from psynet.sync import (
     GroupBarrier,
     Regrouper,
     SimpleGrouper,
-    SyncGroup,
+    leave_group,
 )
 from psynet.timeline import (
-    CodeBlock,
     Module,
     PageMaker,
     Timeline,
@@ -112,7 +111,7 @@ def get_timeline():
                 expected_repetitions=N_ROUNDS,
             ),
         ),
-        CodeBlock(leave_cohort),
+        leave_group("cohort"),
         conditional(
             "ended_early",
             ended_early,
@@ -156,13 +155,6 @@ def ended_early_page(participant):
     else:
         text = "Not enough players stayed to keep playing, so the game ended early."
     return InfoPage(text, time_estimate=5)
-
-
-def leave_cohort(participant):
-    """Leave the cohort, so cohort members who are still playing don't wait for you."""
-    cohort = cohort_of(participant)
-    if cohort is not None:
-        cohort.remove_participant(participant, reason="finished")
 
 
 def cohort_accepts_newcomers(group, participant):
@@ -289,7 +281,6 @@ class OfferTrial(Trial):
     @classmethod
     def score_pair(
         cls,
-        group: SyncGroup,
         trials: List["OfferTrial"],
         node: SyncGroupNode,
         left: List[Participant],
@@ -305,9 +296,9 @@ class OfferTrial(Trial):
             result = "timed_out"
         else:
             result = "accepted" if offer >= minimum else "rejected"
-        # From the pair's links, which outlast removal, so an away player is kept.
+        # From all the round's trials, so a player removed for being away is kept.
         node.var.players = {
-            link.role: link.participant_id for link in group.participant_links
+            t.sync_group_role: t.participant_id for t in node.all_trials
         }
         node.var.offer = offer
         node.var.minimum = minimum
