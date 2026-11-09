@@ -195,7 +195,7 @@ class PickTrial(Trial):
 
     def show_trial(self, experiment, participant):
         return join(
-            PageMaker(self.choose_number, time_estimate=5),  # save_answer="choice"
+            self.choose_number(participant),  # save_answer="choice"
             GroupBarrier(id_="round_finished", group_type="room",
                          on_release=self.score_room),
         )
