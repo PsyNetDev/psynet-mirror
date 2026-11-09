@@ -20,7 +20,7 @@ and platform docs when a study is near deployment.
   `on_arrival_message`.
   It checks the group's `quorum` (a group below it waits for top-ups or is
   dissolved; see "Groups below quorum" in the synchronization docs),
-  and accepts `on_release(group, participants, trials, node, leader, left, barrier)`
+  and accepts `on_release(group, participants, trials, node, leader, left, barrier, dissolved)`
   (any subset) for atomic shared updates.
   The `barrier` argument is reconstructed; see
   `docs/code/multiplayer/synchronization.rst` (published at https://psynetdev.gitlab.io/PsyNet/code/multiplayer/synchronization.html) ("Release callbacks").

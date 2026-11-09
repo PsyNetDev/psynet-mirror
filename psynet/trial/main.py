@@ -302,6 +302,16 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         round. Only used by :meth:`cue`; trial
         makers take ``sync_group_type`` as an argument instead.
 
+    solo_time_estimate : numeric or None
+        For a trial class with :attr:`sync_group_type`, the estimated duration
+        of a trial played without a group, such as one cued by a member whose
+        group has ended, when its pages differ from the group's. ``None``
+        (default) means :attr:`time_estimate`. Set :attr:`time_estimate` to the
+        duration in a group: it plans the progress bar and the experiment's
+        duration, for every player. The solo estimate is what a solo trial's
+        time credit is checked against (see :attr:`check_time_credit_received`);
+        the credit itself comes from the pages played, as for any trial.
+
     time_credit_before_trial: float
         Reports the amount of time credit that the participant had before they started the trial (in seconds).
 
@@ -537,6 +547,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     wait_for_feedback = True  # determines whether feedback waits for the trial to be finalized or failed
     accumulate_answers = False
     sync_group_type = None
+    solo_time_estimate = None
 
     # Back-compat alias: older code referred to the creating node as ``origin``.
     @property
@@ -1628,13 +1639,18 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             original_estimate = cls._get_trial_time_estimate(
                 trial_maker=trial.trial_maker
             )
+            attribute = "time_estimate"
+            if cls.sync_group_type is not None:
+                attribute = "solo_time_estimate"
+                if cls.solo_time_estimate is not None:
+                    original_estimate = cls.solo_time_estimate
             actual = trial.time_credit_from_trial
             if actual != original_estimate:
                 logger.info(
                     f"Warning: Trial {trial.id} received an unexpected amount of time credit "
                     f"(expected = {original_estimate} seconds; "
                     f"actual = {actual} seconds). "
-                    f"Consider setting the trial's `time_estimate` parameter to {trial.time_credit_from_trial}."
+                    f"Consider setting the trial's `{attribute}` parameter to {trial.time_credit_from_trial}."
                     "You can disable this warning message by setting `Trial.check_time_credit_received = False`."
                 )
 
@@ -4412,6 +4428,23 @@ class SyncGroupNode(GenericTrialNode):
     def sync_group(self) -> Optional[SyncGroup]:
         """The :class:`~psynet.sync.SyncGroup` whose round this node holds."""
         return db.session.get(SyncGroup, self.sync_group_id)
+
+    def trial_of(self, participant) -> Optional["Trial"]:
+        """Return the participant's trial in this round, or ``None`` if they have none.
+
+        Parameters
+        ----------
+        participant
+            A :class:`~psynet.participant.Participant` or a participant ID.
+            A participant who cued two trial classes in the round gets the
+            one cued first.
+        """
+        participant_id = getattr(participant, "id", participant)
+        return min(
+            (t for t in self.all_trials if t.participant_id == participant_id),
+            key=lambda t: t.id,
+            default=None,
+        )
 
     @staticmethod
     def _round_is_open(node, participant):

@@ -1,0 +1,1 @@
+Added `Trial.solo_time_estimate` for a cued trial with `sync_group_type` that is shorter or longer when played without a group: a solo trial's time credit is checked against it, while `time_estimate` stays the grouped duration that plans the progress bar.

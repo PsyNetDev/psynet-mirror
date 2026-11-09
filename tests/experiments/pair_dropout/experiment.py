@@ -44,7 +44,7 @@ class Exp(psynet.experiment.Experiment):
             late_after=LATE_AFTER,
             late_action="leave_group",
             on_release=_finish_round_1,
-            on_dissolve=_finish_round_1,
+            also_on_dissolve=True,
         ),
         conditional(
             "round_2",
@@ -85,13 +85,14 @@ class Exp(psynet.experiment.Experiment):
 
         advance_past_wait_pages([on_time], timeout=LATE_AFTER + 10)
         self._assert_carries_on_alone(on_time)
-        # Their pair dissolved while they waited, so on_dissolve ended the round
-        # for them; the stayer arrived after their pair had gone.
+        # also_on_dissolve ended the round for on_time, whose pair dissolved
+        # while they waited, and for the stayer when they reached the barrier
+        # after their pair had gone.
         finished = [
             bot.with_participant(lambda p: p.var.get("finished_round_1", False))
             for bot in (on_time, stayer)
         ]
-        assert finished == [True, False]
+        assert finished == [True, True]
 
         assert (
             silent.with_participant(

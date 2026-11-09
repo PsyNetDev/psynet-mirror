@@ -78,13 +78,21 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   (see "Release callbacks"). `on_release` doesn't run
   for members who left before the release or whose group dissolved, so read
   what it stores with `trial.var.get("score")` (or `participant.var.get`),
-  which returns `None` when it isn't set. Pass the same function as `on_dissolve` too when members
-  waiting at the barrier as the group dissolves should still get their
-  result; it is called once, with all of them, because dissolving waits until
-  no member's request is in flight. Members still on an earlier page get
-  neither callback, so
-  check their cued trial's `sync_group_outcome == "group_dissolved"` in a
-  step after the barrier if they need a result too.
+  which returns `None` when it isn't set. Pass `also_on_dissolve=True` when
+  members should still get their result if the group dissolves below its
+  quorum first: `on_release` then also runs, with `dissolved=True`, once
+  for the members waiting at the barrier and once for each member still on
+  an earlier page, when they reach it. Don't add an `on_finalized` or
+  feedback fallback for `"group_dissolved"`; save results per member, since
+  each call has only its own members' `trials`.
+- To read a group's rounds after the game, use `group.round_nodes(module_id)`,
+  `node.trial_of(participant)` and `participant.latest_sync_group(group_type)`
+  (see "Barriers" in `code/multiplayer/synchronization`)
+  instead of querying `SyncGroupNode` or storing the group ID in a
+  participant var.
+- A cued trial with `sync_group_type` can be played alone, for example after
+  the group ends. Set `time_estimate` for the grouped version and
+  `solo_time_estimate` for the solo one when its pages differ.
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries

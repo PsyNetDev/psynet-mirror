@@ -347,6 +347,13 @@ The barrier is inside ``show_trial``, so the trials have not ended yet when
 ``on_release`` runs: ``trial.answer`` holds each member's answer so far,
 which here is their decision, or ``None`` if their page ran out of time.
 
+A pair here never dissolves: the partner who is left is scored alone. In a
+group that can dissolve below its quorum before the barrier releases it,
+such as a fixed team without top-ups, pass ``also_on_dissolve=True`` too, so
+that ``on_release`` also scores the round for the members still in the
+group, with ``dissolved=True``, including those who were still deciding
+(see :ref:`keeping results when a group dissolves <sync-on-dissolve>`).
+
 .. _rounds-explaining-the-outcome:
 
 Explaining the outcome
@@ -430,6 +437,8 @@ Exporting the rounds
 The results stay on the trials and nodes, so ``get_basic_data`` builds one
 table per player per pair from the trials, including each player's
 ``sync_group_outcome``, and one per pair from the nodes.
+To read one group's rounds instead, for example on a page after the game,
+see :ref:`reading a group's rounds <sync-reading-rounds>`.
 Rounds a player sat out have no trial, so a third table counts them with the
 regrouper (see :doc:`/data/basic_data`):
 
@@ -476,7 +485,19 @@ group and round, when the first member's trial creates the node, so the
 whole group plays the same draw. A player who is in no group of that type
 when the trial starts gets an ungrouped trial, with ``sync_group_id`` set to
 ``None``; ``show_trial`` can check ``self.sync_group is None`` to give them
-a solo version.
+a solo version. Set the trial's ``time_estimate`` for the group's version,
+which plans the progress bar for everyone, and, if the solo version is
+shorter or longer, ``solo_time_estimate`` for it, which PsyNet checks a solo
+trial's time credit against (see :class:`~psynet.trial.main.Trial`):
+
+.. code-block:: python
+
+    class EstimateTrial(Trial):
+        sync_group_type = "crowd"
+        # An estimate, then a revised estimate after seeing the group's.
+        time_estimate = 20
+        # Alone, only the estimate.
+        solo_time_estimate = 10
 
 **Fixed roles.** With ``keep_roles=True``, players keep the role they first
 play for the whole game, and newcomers get the role that lets the most

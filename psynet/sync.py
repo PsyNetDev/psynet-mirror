@@ -1730,16 +1730,25 @@ class GroupBarrier(Barrier):
 
         Barriers that share an ``id_`` must pass the same arguments.
 
-    on_dissolve
-        Optional callback invoked when the group dissolves below its quorum
-        while members are waiting at this barrier, before they are removed from
-        the group, so that what they did is not lost. For example, it can score
-        the last question for the members who answered it. It takes the same
-        arguments as ``on_release`` except ``leader`` and ``left``:
-        ``participants`` are the members waiting here, and ``trials`` and
-        ``node`` refer to their current trials. The same serialization rules
-        apply. Dissolving waits until no member's request is in flight, so
-        ``on_dissolve`` is called once, with every member waiting here.
+        It can also take ``dissolved``, which is ``False`` here and ``True``
+        when ``also_on_dissolve`` calls it for a dissolved group.
+
+    also_on_dissolve
+        If ``True``, ``on_release`` also runs, with ``dissolved=True``, when
+        the group dissolves below its quorum before this barrier releases it,
+        so that what the members did is not lost; for example, it can score
+        the last question for the members who answered it. Each member still
+        in the group gets at most one call, from the barrier of this group
+        type that they reach first, if it sets ``also_on_dissolve``: the
+        members waiting at a barrier when the group dissolves get one call
+        together, before they are removed from the group, and each of the
+        others gets their own call when they arrive, with their answers to
+        the pages before it. ``participants`` are the members of that call,
+        and ``trials`` and ``node`` refer to their current trials, so read
+        ``node.all_trials`` for the whole round. ``left`` lists the members
+        who left before the group dissolved, since its previous barrier pass.
+        A member whose current trial is a later round, played alone or in
+        another group, gets no call.
 
     stop_top_ups
         If ``True``, the group stops accepting newcomers once it passes this
@@ -1854,11 +1863,13 @@ class GroupBarrier(Barrier):
         on_arrival_message: Optional[Callable] = None,
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
-        on_dissolve: Optional[Callable] = None,
+        also_on_dissolve: bool = False,
         stop_top_ups: bool = False,
         pass_newcomers: bool = False,
     ):
         _validate_group_timeouts(max_wait_action, late_after, late_action)
+        if also_on_dissolve and on_release is None:
+            raise ValueError("also_on_dissolve=True needs an on_release callback.")
         max_wait_time = _group_max_wait_time(max_wait_time, late_after, default=20)
         super().__init__(
             id_=id_,
@@ -1878,7 +1889,7 @@ class GroupBarrier(Barrier):
         self.notify_arrivals = bool(notify_arrivals)
         self.late_after = late_after
         self.late_action = late_action
-        self.on_dissolve = on_dissolve
+        self.also_on_dissolve = bool(also_on_dissolve)
         self.stop_top_ups = bool(stop_top_ups)
         self.pass_newcomers = bool(pass_newcomers)
 
@@ -1891,9 +1902,14 @@ class GroupBarrier(Barrier):
                 and not self._passes_straight_through(participant)
             ),
             logic_if_true=super().resolve(),
-            logic_if_false=CodeBlock(_forget_time_out),
+            logic_if_false=CodeBlock(self._pass_without_waiting),
             log_chosen_branch=False,
         )
+
+    def _pass_without_waiting(self, participant):
+        """Let a participant this barrier doesn't hold pass, giving a member of a dissolved group their ``also_on_dissolve`` call."""
+        _forget_time_out(participant)
+        _call_on_release_after_dissolving(self, participant)
 
     #: Whether this barrier lets newcomers through without ``pass_newcomers``,
     #: by overriding :meth:`_lets_through`; the load-time warning skips it.
@@ -2166,6 +2182,7 @@ class GroupBarrier(Barrier):
                             participant=group.leader,
                             left=left,
                             barrier=self,
+                            dissolved=False,
                         )
                     except Exception as err:
                         if is_transient_transaction_error(err):
@@ -4427,6 +4444,21 @@ class SyncGroup(SQLBase, SQLMixin):
             key=lambda participant: participant.id,
         )
 
+    def round_nodes(self, module_id: Optional[str] = None) -> list:
+        """Return the group's :class:`~psynet.trial.main.SyncGroupNode` objects, one per cued round, in the order played.
+
+        Parameters
+        ----------
+        module_id
+            Only return the rounds of this module; by default, those of every module.
+        """
+        from .trial.main import SyncGroupNode
+
+        query = SyncGroupNode.query.filter_by(sync_group_id=self.id)
+        if module_id is not None:
+            query = query.filter_by(module_id=module_id)
+        return query.order_by(SyncGroupNode.id).all()
+
     def _dissolve(self):
         """Remove every active member at once, failing them if the group says so.
 
@@ -4916,38 +4948,101 @@ def _round_is_busy(group, node) -> bool:
 
 
 def _run_on_dissolve(group, members):
-    """Call ``on_dissolve`` of each barrier of ``group`` where some of ``members`` are waiting."""
+    """Call ``on_release`` for ``members`` of ``group`` waiting at its barriers with ``also_on_dissolve``.
+
+    Members waiting at none of the group's barriers are marked, so that the
+    first barrier of its type they reach calls it for them instead (see
+    :func:`_call_on_release_after_dissolving`).
+    """
     reconstructed = {}
     waiting = {}
     for participant in members:
-        for link in list(participant.active_barriers.values()):
-            instance = link.barrier_instance
-            if instance is None or instance.group_id != group.id:
-                continue
+        links = [
+            link
+            for link in participant.active_barriers.values()
+            if link.barrier_instance is not None
+            and link.barrier_instance.group_id == group.id
+        ]
+        if not links:
+            for link in group.participant_links:
+                if link.active and link.participant_id == participant.id:
+                    link.dissolution_pending = True
+        for link in links:
             barrier = _reconstructed_arrival_barrier(link, reconstructed)
-            if getattr(barrier, "on_dissolve", None) is None:
+            if not getattr(barrier, "also_on_dissolve", False):
                 continue
             waiting.setdefault(link.barrier_instance_id, (barrier, []))[1].append(
                 participant
             )
     for barrier, participants in waiting.values():
-        trials, node = _group_round_trials(group, participants)
-        try:
-            barrier.on_dissolve(
-                group=group,
-                participants=participants,
-                trials=trials,
-                node=node,
-                barrier=barrier,
-            )
-        except Exception as err:
-            # Dissolving runs in other participants' requests, such as one
-            # returning the study, which must not fail because of this hook.
-            if is_transient_transaction_error(err):
-                raise
-            logger.exception(
-                "Barrier '%s' on_dissolve failed for group %s.", barrier.id, group.id
-            )
+        _call_on_release_for_dissolved(barrier, group, participants)
+
+
+def _call_on_release_after_dissolving(barrier, participant):
+    """Call ``barrier``'s ``on_release`` for a member of a dissolved group reaching it, once.
+
+    Only the first barrier of the group's type that the member reaches after
+    the group dissolved calls it, and not for a current trial in a later
+    round, played alone or in another group.
+    """
+    link = _latest_sync_group_link(participant, barrier.group_type)
+    if link is None or link.active or not link.dissolution_pending:
+        return
+    link.dissolution_pending = False
+    group = link.sync_group
+    trial = participant.current_trial
+    if not barrier.also_on_dissolve or (
+        trial is not None
+        and trial.sync_group_type == group.group_type
+        and trial.sync_group_id != group.id
+    ):
+        return
+    _, node = _group_round_trials(group, [participant])
+    key = _round_lock_key(group, node)
+    if key is not None:
+        # Members arriving at once take turns, each seeing what the others saved.
+        _execute_advisory_xact_lock(db.session, key, wait=True)
+        db.session.refresh(node)
+    _call_on_release_for_dissolved(barrier, group, [participant])
+
+
+def _call_on_release_for_dissolved(barrier, group, participants):
+    """Call ``barrier``'s ``on_release`` with ``dissolved=True`` for ``participants`` of ``group``."""
+    trials, node = _group_round_trials(group, participants)
+    dissolved = {
+        link.participant_id
+        for link in group.participant_links
+        if link.removal_reason == "group_dissolved"
+    }
+    left = [
+        participant
+        for participant in group.members_who_left_since(
+            group.last_barrier_pass_time or group.creation_time
+        )
+        if participant.id not in dissolved
+    ]
+    try:
+        barrier.on_release(
+            group=group,
+            participants=participants,
+            trials=trials,
+            node=node,
+            leader=group.leader,
+            participant=group.leader,
+            left=left,
+            barrier=barrier,
+            dissolved=True,
+        )
+    except Exception as err:
+        # Dissolving runs in other participants' requests, such as one
+        # returning the study, which must not fail because of this hook.
+        if is_transient_transaction_error(err):
+            raise
+        logger.exception(
+            "Barrier '%s' on_release failed for dissolved group %s.",
+            barrier.id,
+            group.id,
+        )
 
 
 def _top_up_wait_over(group) -> bool:
@@ -5259,6 +5354,9 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     # foreign key, as on Trial.sync_group_id.
     round_node_id = Column(Integer)
     skipped_round = Column(Boolean, default=False)
+    # Set when the group dissolved while the member waited at none of its
+    # barriers, until they reach one; see ``GroupBarrier(also_on_dissolve=...)``.
+    dissolution_pending = Column(Boolean, default=False)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
     participant = relationship(

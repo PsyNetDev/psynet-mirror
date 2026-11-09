@@ -57,8 +57,11 @@ row:
 - Group dissolution locks the members' rows with ``SKIP LOCKED`` and is all
   or nothing. If a member's own request holds their row, nobody is removed:
   the group is marked ``dissolving`` and the barrier poller tries the whole
-  dissolution again on each sweep, so ``on_dissolve`` runs once, with every
-  member waiting at the barrier. A group back at its quorum by then is no
+  dissolution again on each sweep, so ``also_on_dissolve`` calls
+  ``on_release`` once, with every member waiting at the barrier. Members
+  waiting at none of the group's barriers are marked on their link
+  (``dissolution_pending``), and the first barrier of the group's type they
+  reach calls it for them, under the round's lock. A group back at its quorum by then is no
   longer dissolved.
 - A between-barrier timeout with ``"fail"`` also skips busy late members;
   they are still late at the barrier's next check. ``"leave_group"`` only changes the

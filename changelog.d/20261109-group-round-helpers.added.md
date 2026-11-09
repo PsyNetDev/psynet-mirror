@@ -1,0 +1,1 @@
+Added `SyncGroup.round_nodes()`, `SyncGroupNode.trial_of(participant)` and `Participant.latest_sync_group(group_type)` for reading a group's cued rounds, for example on a page after the game, without querying `SyncGroupNode` or storing the group ID in a participant variable.

@@ -779,6 +779,21 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         latest = _latest_sync_group_link(self, group_type)
         return None if latest is None else latest.removal_reason
 
+    def latest_sync_group(self, group_type: str) -> Optional["SyncGroup"]:
+        """Return the participant's latest group of ``group_type``, even after they left it.
+
+        Returns ``None`` if they were never in one. Useful on pages after the
+        game, such as a debrief that shows the group's results, where the
+        participant may have left their group or it may have ended::
+
+            group = participant.latest_sync_group("team")
+            rounds = group.round_nodes() if group else []
+        """
+        from .sync import _latest_sync_group_link
+
+        latest = _latest_sync_group_link(self, group_type)
+        return None if latest is None else latest.sync_group
+
     def in_sync_group(self, group_type: str) -> bool:
         """Return whether the participant is in an active group of ``group_type``.
 

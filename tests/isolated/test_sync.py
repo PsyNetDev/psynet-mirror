@@ -1954,6 +1954,19 @@ def _arrive_at_group_barrier(exp, barrier, participant):
         barrier.waiting_logic.consume(exp, participant)
 
 
+def _pass_barrier(exp, barrier, participant):
+    """Run the step that takes a participant the barrier doesn't hold past it."""
+    elts = barrier.resolve()
+    (switch,) = [
+        elt
+        for elt in elts
+        if hasattr(elt, "branch_start_elts") and elt.label.endswith(":in_group")
+    ]
+    skip = elts[elts.index(switch.branch_start_elts[False]) + 1]
+    assert isinstance(skip, CodeBlock)
+    skip.consume(exp, participant)
+
+
 def _commit_barrier_arrivals():
     """Mirror the response route's write and coordination commits."""
     db.session.commit()
@@ -3729,7 +3742,10 @@ def test_dissolution_waits_for_a_busy_member_then_removes_everyone_at_once(
     (waiter, busy, quitter), group = _sync_group_of(exp, db_session, 3)
     group.below_quorum = below_quorum
     barrier = GroupBarrier(
-        id_="dissolve_at_once", group_type="main", on_dissolve=_record_dissolve
+        id_="dissolve_at_once",
+        group_type="main",
+        on_release=_record_dissolve,
+        also_on_dissolve=True,
     )
     for participant in (waiter, busy):
         _arrive_at_group_barrier(exp, barrier, participant)
@@ -7076,15 +7092,7 @@ def test_skipping_a_group_barrier_forgets_a_time_out(
     (kicked,) = _working_participants(exp, 1)
     kicked.timed_out_since_barrier = True
     skipped = GroupBarrier("decided", group_type="pair", late_action="leave_group")
-    elts = skipped.resolve()
-    (switch,) = [
-        elt
-        for elt in elts
-        if hasattr(elt, "branch_start_elts") and elt.label.endswith(":in_group")
-    ]
-    skip = elts[elts.index(switch.branch_start_elts[False]) + 1]
-    assert isinstance(skip, CodeBlock)
-    skip.consume(exp, kicked)
+    _pass_barrier(exp, skipped, kicked)
     grouper = SimpleGrouper("pair", initial_group_size=2)
     _arrive_at_group_barrier(exp, grouper, kicked)
     assert not kicked.active_barriers[grouper.id].ran_out_of_time
@@ -7328,22 +7336,26 @@ def test_removing_a_late_member_dissolves_a_group_without_top_ups(
     assert partner.failed == (below_quorum == "fail")
 
 
-def _score_dissolved(participants, barrier):
+def _score_dissolved(participants, barrier, dissolved):
     for participant in participants:
-        participant.var.scored_at = barrier.id
+        participant.var.scored_at = [barrier.id, dissolved]
 
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_on_dissolve_runs_for_the_members_waiting_at_the_barrier(
+def test_also_on_dissolve_calls_on_release_once_for_each_member(
     in_experiment_directory, db_session
 ):
+    """Waiting members get the call as the group dissolves, the others at the next barrier they reach."""
     exp = get_experiment()
     (waiter, answering, quitter), group = _sync_group_of(exp, db_session, 3)
     group.below_quorum = "continue_without_group"
     barrier = GroupBarrier(
-        id_="question_3", group_type="main", on_dissolve=_score_dissolved
+        id_="question_3",
+        group_type="main",
+        on_release=_score_dissolved,
+        also_on_dissolve=True,
     )
     _arrive_at_group_barrier(exp, barrier, waiter)
     _commit_barrier_arrivals()
@@ -7351,7 +7363,12 @@ def test_on_dissolve_runs_for_the_members_waiting_at_the_barrier(
     quitter.fail("returned")
     db_session.commit()
 
-    assert waiter.var.get("scored_at") == "question_3"
+    assert waiter.var.get("scored_at") == ["question_3", True]
+    assert answering.var.get("scored_at") is None
+    _pass_barrier(exp, barrier, answering)
+    assert answering.var.get("scored_at") == ["question_3", True]
+    answering.var.scored_at = None
+    _pass_barrier(exp, barrier, answering)
     assert answering.var.get("scored_at") is None
 
 

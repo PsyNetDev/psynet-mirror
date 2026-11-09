@@ -26,7 +26,7 @@ _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
 from test_regrouper import _arrive, _cohort_and_pairs  # noqa: E402
-from test_sync import _backdate_group, _sync_group_of  # noqa: E402
+from test_sync import _backdate_group, _pass_barrier, _sync_group_of  # noqa: E402
 from timeline_hold_helpers import _working_participants  # noqa: E402
 
 in_consents_experiment = pytest.mark.parametrize(
@@ -1046,40 +1046,89 @@ class TeamTrial(Trial):
     sync_group_type = "main"
 
     @classmethod
-    def record_dissolve(cls, trials, node):
-        _dissolved.append((trials, node))
+    def record_dissolve(cls, trials, node, dissolved):
+        _dissolved.append((trials, node, dissolved))
 
 
 _dissolved = []
 
 
 @in_consents_experiment
-def test_on_dissolve_gets_the_waiting_members_trials_and_node(
+def test_also_on_dissolve_gives_each_member_their_trial_and_the_round_s_node(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    (waiter, quitter), group = _sync_group_of(exp, db_session, 2)
+    (waiter, answering, quitter), group = _sync_group_of(exp, db_session, 3)
     group.below_quorum = "continue_without_group"
     logic = TeamTrial.cue({})
-    for participant in (waiter, quitter):
+    for participant in (waiter, answering, quitter):
         logic[0].consume(exp, participant)
     db.session.commit()
     _dissolved.clear()
     barrier = GroupBarrier(
-        "team_done", group_type="main", on_dissolve=TeamTrial.record_dissolve
+        "team_done",
+        group_type="main",
+        on_release=TeamTrial.record_dissolve,
+        also_on_dissolve=True,
     )
     _arrive(exp, barrier, [waiter])
 
     quitter.fail("returned")
     db.session.commit()
+    _pass_barrier(exp, barrier, answering)
 
-    ((trials, node),) = _dissolved
-    assert [t.participant_id for t in trials] == [waiter.id]
-    assert node is trials[0].node and isinstance(node, SyncGroupNode)
-    assert [p.current_trial.sync_group_outcome for p in (waiter, quitter)] == [
-        "group_dissolved",
-        "left_experiment",
+    node = waiter.current_trial.node
+    assert isinstance(node, SyncGroupNode)
+    assert _dissolved == [
+        ([waiter.current_trial], node, True),
+        ([answering.current_trial], node, True),
     ]
+    assert [
+        p.current_trial.sync_group_outcome for p in (waiter, answering, quitter)
+    ] == ["group_dissolved", "group_dissolved", "left_experiment"]
+
+
+class TimedTeamTrial(TeamTrial):
+    time_estimate = 20
+    solo_time_estimate = 10
+
+
+@pytest.mark.parametrize("credit, warns", [(10, False), (20, True)])
+@in_consents_experiment
+def test_a_solo_trial_s_time_credit_is_checked_against_solo_time_estimate(
+    in_experiment_directory, db_session, caplog, credit, warns
+):
+    exp = get_experiment()
+    (participant,) = _working_participants(exp, 1)
+    TimedTeamTrial.cue({})[0].consume(exp, participant)
+    with caplog.at_level(logging.INFO):
+        TimedTeamTrial._log_time_credit_before_trial(participant)
+        participant.inc_time_credit(credit)
+        TimedTeamTrial._log_time_credit_after_trial(participant)
+    assert ("`solo_time_estimate` parameter to 20" in caplog.text) == warns
+
+
+@in_consents_experiment
+def test_a_group_s_rounds_and_trials_can_be_read_after_it_ends(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    (first, second), group = _sync_group_of(exp, db_session, 2)
+    logic = TeamTrial.cue({})
+    for _ in range(2):
+        for participant in (first, second):
+            logic[0].consume(exp, participant)
+    db.session.commit()
+    first_trial = first.current_trial
+    group.remove_participant(first, reason="finished")
+
+    nodes = group.round_nodes()
+    assert [n.sync_group_round for n in nodes] == [0, 1]
+    assert nodes[1].trial_of(first) is first_trial
+    assert nodes[1].trial_of(second.id) is second.current_trial
+    assert nodes[0].trial_of(-1) is None
+    assert first.latest_sync_group("main") is group
+    assert first.latest_sync_group("pair") is None
 
 
 def _late_at_barrier(late_action):

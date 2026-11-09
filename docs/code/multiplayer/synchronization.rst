@@ -360,31 +360,62 @@ is on their trial in ``node.all_trials``:
 A member removed before their cue ran has no trial on the node; ``left``
 still lists them.
 
+.. _sync-reading-rounds:
+
+To read a group's rounds later, for example on a page after the game or in
+the export, :meth:`SyncGroup.round_nodes() <psynet.sync.SyncGroup.round_nodes>`
+returns the group's nodes in the order played, and
+:meth:`node.trial_of(participant) <psynet.trial.main.SyncGroupNode.trial_of>`
+returns a member's trial in a round, or ``None``.
+:meth:`participant.latest_sync_group(group_type)
+<psynet.participant.Participant.latest_sync_group>` finds the group on a page
+without a trial, even after the participant has left it or it has ended:
+
+.. code-block:: python
+
+    def debrief(participant):
+        group = participant.latest_sync_group("team")
+        if group is None:
+            return InfoPage("No team formed for you.", time_estimate=5)
+        sentences = [node.var.get("sentence") for node in group.round_nodes("story")]
+        ...
+
+.. _sync-on-dissolve:
+
 ``on_release`` runs only when the barrier releases the group. A member who
 leaves the group before then, or whose group is dissolved, doesn't get
 the results it would have stored, so read them with ``.get``, which returns
 ``None`` when they aren't set: ``trial.var.get("score")`` for results saved on
 the trial, or ``participant.var.get("score")`` when there is no trial.
-If the group dissolves while some members are waiting at the barrier,
-``on_dissolve`` runs for them instead, before they leave the group, with the
-same arguments except ``leader`` and ``left``.
-``participants`` are then the members waiting at the barrier. Dissolving
-waits until no member's request is in flight, usually a second at most, so
-``on_dissolve`` is called once, with every member waiting at the barrier. A
-quiz can therefore still score the last question for those who answered it:
+To keep what the members did when their group dissolves below its quorum,
+pass ``also_on_dissolve=True``: ``on_release`` then also runs for every
+member still in the group, with ``dissolved=True``, at the barrier of that
+group type they reach first. A quiz can therefore still score the last
+question for those who answered it:
 
 .. code-block:: python
 
+    def score_question(participants, trials, dissolved, question):
+        ...
+
     GroupBarrier(id_="question_3", group_type="team",
                  on_release=partial(score_question, question=3),
-                 on_dissolve=partial(score_question, question=3))
+                 also_on_dissolve=True)
 
-Members who are still on an earlier page, such as the question itself, when
-the group dissolves get neither callback: they pass the barrier without
-waiting. If they need a result too, give them one in a step after the
-barrier, for example when their trial's ``sync_group_outcome`` is
-``"group_dissolved"``, as it is for every member still in the group when it
-dissolves, waiting or not (see :ref:`round outcomes <sync-round-outcome>`).
+The members waiting at the barrier when the group dissolves get one call
+together, before they leave the group. Dissolving waits until no member's
+request is in flight, usually a second at most, so that call includes
+every member waiting there. Each member still on an earlier page, such as
+the question itself, gets their own call when they reach the barrier, once
+their answer has arrived. ``participants``, ``trials`` and ``node`` refer to
+the members of the call, so read the whole round from ``node.all_trials``,
+and save results for each member rather than overwrite those of an earlier
+call. ``left`` lists the members who left before the group dissolved. A
+member gets no call if the first barrier of that type they reach has no
+``also_on_dissolve``, or comes in a later round's trial, played alone or in
+another group. Every member still in the group when it
+dissolves, waiting or not, has the trial outcome ``"group_dissolved"`` (see
+:ref:`round outcomes <sync-round-outcome>`).
 
 The barrier ``id_`` identifies one waiting point. Barriers with the same ID
 share a waiting pool, so give barriers with different ``on_release``
