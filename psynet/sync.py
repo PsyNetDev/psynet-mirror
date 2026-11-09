@@ -1462,6 +1462,28 @@ def _group_barrier_outcome(group, members, waiting_ids):
     return "wait"
 
 
+def _lock_group_to_stop_top_ups(group) -> bool:
+    """Lock a group that accepts top-ups and re-count its members, or return ``False`` if it is busy.
+
+    A barrier with ``stop_top_ups=True`` holds the row until it commits, so a
+    newcomer can't join, under the same lock (see
+    ``SimpleGrouper._claim_group_to_join``), between this check's member count
+    and its stopping top-ups. A row another request holds is skipped rather
+    than waited for, because the release may then wait for other locks, such
+    as a round's advisory lock; the next barrier check tries again.
+    """
+    locked = (
+        SimpleSyncGroup.query.filter_by(id=group.id)
+        .with_for_update(of=SimpleSyncGroup, key_share=True, skip_locked=True)
+        .populate_existing()
+        .first()
+    )
+    if locked is None:
+        return False
+    db.session.expire(locked, ["participant_links"])
+    return True
+
+
 def _validate_group_timeouts(max_wait_action, late_after, late_action, prefix=""):
     """Check a GroupBarrier's time-out options, naming them with ``prefix`` (e.g. ``"sync_group_"``)."""
     for name, value in [
@@ -1927,6 +1949,12 @@ class GroupBarrier(Barrier):
         groups = self.get_waiting_groups(waiting_participants)
 
         for group in groups.values():
+            if (
+                self.stop_top_ups
+                and getattr(group, "accepts_top_ups", False)
+                and not _lock_group_to_stop_top_ups(group)
+            ):
+                continue
             group.check_numbers()
             outcome = _group_barrier_outcome(
                 group, group.active_participants, waiting_participant_ids
