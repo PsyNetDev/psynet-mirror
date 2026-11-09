@@ -115,7 +115,12 @@ A round with two phases, such as an offer and a reply, is normally one
 trial class with several pages. If you really need trials of two classes in
 one round, pass the same ``round=`` to both cues, for example the index of
 the surrounding :func:`~psynet.timeline.for_loop`; they then share the
-round's node and its definition.
+round's node and its definition. A round's node isn't per class: if the
+members cue different classes in the same round, such as an offer trial for
+the proposer and a reply trial for the responder, those trials share the
+node and its definition too, so ``round=`` is only needed for phases played
+one after the other. Put role-specific content in the definition, keyed by
+role, or derive it from ``self.sync_group_role``.
 
 :func:`~psynet.sync.only_in_group` runs the trial only for players in a
 pair. Those who sat out, or were removed from their pair partway, see the

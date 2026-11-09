@@ -281,10 +281,13 @@ def test_a_late_joiner_joins_an_open_round_or_starts_the_next(
         logic[0].consume(exp, participant)
     pair.add_participant(early)
     logic[0].consume(exp, early)
-    for trial in PairTrial.query:
-        trial.complete = True
+    # Round 0 ends: one trial completes, one fails, and a member with an
+    # unfinished trial leaves.
+    cohort[0].current_trial.complete = True
+    cohort[1].current_trial.failed = True
+    pair.remove_participant(early)
     pair.add_participant(between)
-    for participant in [between, *cohort, early]:
+    for participant in [between, *cohort]:
         logic[0].consume(exp, participant)
     db.session.commit()
 
@@ -294,7 +297,7 @@ def test_a_late_joiner_joins_an_open_round_or_starts_the_next(
     assert rounds == {
         cohort[0].id: [0, 1],
         cohort[1].id: [0, 1],
-        early.id: [0, 1],
+        early.id: [0],
         between.id: [1],
     }
     assert SyncGroupNode.query.count() == 2

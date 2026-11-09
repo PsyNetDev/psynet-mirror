@@ -1280,7 +1280,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             Rarely needed, since a round with two phases is normally one trial
             class with several pages. The group's round to put this trial in,
             overriding the automatic one, for example to put trials of two
-            classes in one round by passing both the same ``round``. Only for a
+            classes, played one after the other, in one round by passing both
+            the same ``round``. A round's node isn't per class: cues of
+            different classes in the same round, such as one class per role,
+            share its node and definition without ``round``. Only for a
             trial class that sets :attr:`sync_group_type`; every member of the
             group must pass the same value.
 
@@ -1423,11 +1426,14 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 f"round {node.sync_group_round} of '{cls.sync_group_type}' group "
                 f"{group.id} already has the definition {node.definition!r}. "
                 "All trials in a group's round share the definition of its first "
-                "cue, so the definition must not depend on the player's own "
-                "position in a loop, which differs for late joiners and in rooms "
-                "mixing players from different rounds. Pass the same dict, or a "
-                "function taking round or group, which is only called for the "
-                "round's first cue."
+                "cue, whatever their class or role, so the definition must not "
+                "depend on the player's own position in a loop, which differs "
+                "for late joiners and in rooms mixing players from different "
+                "rounds, nor differ between the classes or roles cued in one "
+                "round. Pass the same dict, or a function taking round or group, "
+                "which is only called for the round's first cue; put "
+                "role-specific content in the definition keyed by role, or derive "
+                "it from sync_group_role."
             )
         return node, group, node.definition
 
