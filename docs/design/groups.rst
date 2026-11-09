@@ -252,9 +252,12 @@ those waiting into new groups. It keeps last round's partners apart where
 possible and gives out roles such as proposer and responder in turn. If the
 players don't divide evenly into groups, the player who has played the most
 rounds **sits out** the round; they see a page saying so and play again in a
-later round. A player who is late for a split joins the next one; if no
+later round. A player who is late for a split joins the next one. If no
 further split comes within the regrouper's maximum waiting time, for example
-after the last round, they are failed.
+after the last round, they are failed by default
+(``max_wait_action="fail"``), unless the regrouper lets them continue
+without a group (``max_wait_action="continue_without_group"``), as
+``lowest_unique_number`` does.
 
 A regrouper doesn't split players as soon as two are waiting, because that
 would pair whoever finished at the same moment, often the same people every

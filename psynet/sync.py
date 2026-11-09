@@ -1462,6 +1462,27 @@ def _group_barrier_outcome(group, members, waiting_ids):
     return "wait"
 
 
+def _lock_group_to_stop_top_ups(group) -> bool:
+    """Lock a group that accepts top-ups and re-count its members, or return ``False`` if it is busy.
+
+    A barrier with ``stop_top_ups=True`` holds the row until it commits, so a
+    newcomer can't join, under the same lock (see
+    ``SimpleGrouper._claim_group_to_join``), between this check's member count
+    and its stopping top-ups. A row another request holds is skipped rather
+    than waited for, because the release may then wait for other locks, such
+    as a round's advisory lock; the next barrier check tries again.
+    ``populate_existing`` also reloads the group's member links, so the count
+    includes newcomers who joined in other requests.
+    """
+    locked = (
+        SimpleSyncGroup.query.filter_by(id=group.id)
+        .with_for_update(of=SimpleSyncGroup, key_share=True, skip_locked=True)
+        .populate_existing()
+        .first()
+    )
+    return locked is not None
+
+
 def _validate_group_timeouts(max_wait_action, late_after, late_action, prefix=""):
     """Check a GroupBarrier's time-out options, naming them with ``prefix`` (e.g. ``"sync_group_"``)."""
     for name, value in [
@@ -1557,6 +1578,8 @@ class GroupBarrier(Barrier):
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
     have reached the Barrier. It also checks the group against its ``quorum``: a group below it
     can't proceed, and waits for newcomers or is dissolved (see :ref:`groups_below_min_size`).
+    When the group's members are on one round of cued trials, a release closes that round to
+    newcomers, whose cues then start the next round (see :ref:`rounds-cued-trials`).
 
     After the arrival write commits, the same request evaluates the barrier in
     a short transaction so partners are released without waiting for the 0.5 s
@@ -1608,8 +1631,8 @@ class GroupBarrier(Barrier):
         sends them to the end of the experiment; ``"leave_group"`` removes them from the group, and they carry on with the
         experiment without it (see :ref:`sync-leaving-a-group`).
         Their next page says "Your partner didn't arrive in time. Please continue." in a pair (see
-        ``on_arrival_message`` for larger groups), and a :class:`~psynet.group_prompt.GroupPrompt` marks them
-        "(dropped out)". It is the waiting member who leaves, not the absent ones; to move on
+        ``on_arrival_message`` for larger groups); for how a :class:`~psynet.group_prompt.GroupPrompt`
+        shows them, see :ref:`sync-showing-the-group`. It is the waiting member who leaves, not the absent ones; to move on
         without slow members, use ``late_after`` and ``late_action`` instead. If that takes
         the group below its quorum, see :ref:`groups_below_min_size` for whether it
         is dissolved.
@@ -1631,9 +1654,11 @@ class GroupBarrier(Barrier):
         ``group``, ``participants`` (the group's active members), ``trials``
         (each member's ``current_trial``, in the same order as ``participants``,
         for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
-        ``sync_group_type`` that the barrier is part of), ``node`` (the
+        ``sync_group_type`` that the barrier is part of, and ``None`` for a
+        member with none), ``node`` (the
         group's :class:`~psynet.trial.main.SyncGroupNode` for the round, if
-        all those trials are on it, and otherwise ``None``), ``leader`` (the
+        all those trials are on it, ignoring members with no current trial,
+        and otherwise ``None``), ``leader`` (the
         group's leader), ``participant`` (the same object as ``leader``, kept for
         compatibility), ``left`` (the members who left the group since its
         previous barrier pass, or since it formed; see below) and ``barrier``,
@@ -1678,7 +1703,9 @@ class GroupBarrier(Barrier):
         If ``True``, the group stops accepting newcomers once it passes this
         barrier, as :meth:`SimpleSyncGroup.stop_top_ups` does, for example at
         the barrier that starts a game a latecomer couldn't catch up with.
-        Only affects groups formed with ``join_existing_groups=True``.
+        Only affects groups formed with ``join_existing_groups=True``. A group
+        below its quorum doesn't pass, so it keeps waiting here for a newcomer,
+        up to the grouper's ``top_up_wait``, if set (see :ref:`groups_below_min_size`).
 
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
@@ -1924,6 +1951,10 @@ class GroupBarrier(Barrier):
         groups = self.get_waiting_groups(waiting_participants)
 
         for group in groups.values():
+            if self._skips_busy_group(group):
+                continue
+            if not _lock_round(group):
+                continue
             group.check_numbers()
             outcome = _group_barrier_outcome(
                 group, group.active_participants, waiting_participant_ids
@@ -1953,14 +1984,18 @@ class GroupBarrier(Barrier):
                 if self.stop_top_ups and hasattr(group, "stop_top_ups"):
                     group.stop_top_ups()
 
+                trials = [p.current_trial for p in group.active_participants]
+                node = _shared_node(group, trials)
+                if node is not None:
+                    # Closes the round to newcomers: their cues start the next.
+                    node.sync_group_released = True
                 if self.on_release:
                     try:
-                        trials = [p.current_trial for p in group.active_participants]
                         self.on_release(
                             group=group,
                             participants=group.active_participants,
                             trials=trials,
-                            node=_shared_node(group, trials),
+                            node=node,
                             leader=group.leader,
                             participant=group.leader,
                             left=left,
@@ -1996,6 +2031,13 @@ class GroupBarrier(Barrier):
         """
         waiting_ids = {participant.id for participant in waiting_participants}
         for group in self.get_waiting_groups(waiting_participants).values():
+            if _round_is_busy(group):
+                # choose_who_to_release would defer this group.
+                continue
+            if self.stop_top_ups and getattr(group, "accepts_top_ups", False):
+                # A peek takes no lock, but still counts newcomers who have
+                # joined since this session loaded the group.
+                db.session.expire(group, ["participant_links"])
             late_ids = {
                 participant.id
                 for participant in self._late_between_barriers(group, waiting_ids)
@@ -2014,8 +2056,22 @@ class GroupBarrier(Barrier):
 
     def check_waiting_participants(self, waiting_participants: List[Participant]):
         for group in self.get_waiting_groups(waiting_participants).values():
+            if self._skips_busy_group(group):
+                continue
             group.check_numbers()
             self._timeout_participants_between_barriers(group, waiting_participants)
+
+    def _skips_busy_group(self, group) -> bool:
+        """Return whether this check must leave ``group`` alone because a newcomer may be joining it.
+
+        Only a ``stop_top_ups`` barrier on a group that accepts top-ups locks
+        the group; see :func:`_lock_group_to_stop_top_ups`.
+        """
+        return (
+            self.stop_top_ups
+            and getattr(group, "accepts_top_ups", False)
+            and not _lock_group_to_stop_top_ups(group)
+        )
 
     def get_waiting_groups(self, waiting_participants: List[Participant]):
         groups = {
@@ -2283,7 +2339,7 @@ class Grouper(Barrier):
                     "timeline_hold",
                     "We couldn't find a partner for you in time. Please continue.",
                 )
-                if _is_pair(group_size)
+                if group_size == 2
                 else _p(
                     "timeline_hold",
                     "We couldn't form a group for you in time. Please continue.",
@@ -2444,13 +2500,11 @@ class SimpleGrouper(Grouper):
         A callable that takes ``group`` and ``participant`` as arguments, and returns ``True``
         if the participant should be allowed to join the group, and ``False`` otherwise.
         To be used in conjunction with ``join_existing_groups=True``. Returning ``False``
-        only turns that newcomer away; it doesn't stop top-ups, so use ``top_up_wait`` or
-        :meth:`SimpleSyncGroup.stop_top_ups` too (see :ref:`groups_below_min_size`).
+        only turns that newcomer away (see :ref:`groups_below_min_size`).
 
     below_quorum
         What happens to the members left when a group is dissolved below its ``quorum``
-        (for when that happens, see :ref:`groups_below_min_size`; while a group
-        accepts top-ups, it never is). The member whose departure caused it is handled by their own
+        (for when that happens, see :ref:`groups_below_min_size`). The member whose departure caused it is handled by their own
         cause instead (a barrier's ``max_wait_action`` or ``late_action``, or their
         failure). ``"fail"`` (default) fails them, telling them "Too few members of your
         group remained to continue, so we ended your session." ``"continue_without_group"``
@@ -2465,9 +2519,10 @@ class SimpleGrouper(Grouper):
 
     top_up_wait
         With ``join_existing_groups=True``, how many seconds a group below its
-        ``quorum`` waits for newcomers. Then it stops accepting them, as with
-        :meth:`SimpleSyncGroup.stop_top_ups`. The time counts from when the group fell below its quorum,
-        and runs out when its members are waiting at a barrier of the group.
+        ``quorum`` waits for newcomers. Then the barrier its members are waiting at
+        stops top-ups and dissolves it. The time counts from when the group fell below
+        its quorum. Members who reach that barrier's ``max_wait_time`` first are timed
+        out, so give it a longer one, or ``late_after`` (see :ref:`groups_below_min_size`).
         Default: ``None``, waiting for newcomers without a limit.
 
     start_short_after
@@ -2756,7 +2811,6 @@ class SimpleGrouper(Grouper):
             )
             if group is None or not group.active or not group.accepts_top_ups:
                 continue
-            db.session.expire(group, ["participant_links"])
             n_members = len(group.active_participants)
             group.n_active_participants = n_members
             if n_members == 0 or (
@@ -4088,21 +4142,24 @@ class SyncGroup(SQLBase, SQLMixin):
         reason
             Why they left, stored on their link and returned by
             :meth:`~psynet.participant.Participant.sync_group_removal_reason`.
-            It also sets how :class:`~psynet.group_prompt.GroupPrompt` shows
-            them to the remaining members:
+            It also sets the label :class:`~psynet.group_prompt.GroupPrompt`
+            gives them (for when they are shown at all, see
+            :ref:`sync-showing-the-group`):
 
             - ``None`` (default), ``"left_experiment"``, ``"waited_too_long"`` or
               ``"group_dissolved"``: "(dropped out)", or "(left)" once they
-              have failed or finished the experiment.
+              have failed, left or completed the experiment.
             - ``"late"``: "(removed)", for a member a barrier removed for
-              being late (``late_action="leave_group"``).
-            - ``"moved_on"``: not shown, unless the page shows their answer,
-              for a member who left at a :class:`Regrouper`, for their next
-              group or to sit the round out. A pair a :class:`SimpleGrouper`
+              being late (``late_action="leave_group"``), or "(left)" once
+              they have failed, left or completed the experiment.
+            - ``"moved_on"``: for a member who left at a :class:`Regrouper`,
+              for their next group or to sit the round out. A pair a :class:`SimpleGrouper`
               formed isn't dissolved, failing the partner, when the first
               member reaches a :class:`Regrouper`.
             - ``"finished"``: "(finished)", for a member who has played their
-              part, such as a player leaving a cohort after their last round.
+              part, such as a player leaving a cohort after their last round,
+              even if they then left or completed the experiment; "(left)"
+              once they have failed.
               The members finishing their own last rounds aren't told that too
               few remained.
 
@@ -4256,11 +4313,8 @@ class SimpleSyncGroup(SyncGroup):
         the game has started and a newcomer couldn't catch up. From then on it
         is treated as a group without top-ups (see
         :ref:`groups_below_min_size`); a group already below its
-        quorum is dissolved now. To stop top-ups when the
-        group passes a barrier, pass ``stop_top_ups=True`` to that
-        :class:`GroupBarrier`::
-
-            GroupBarrier(id_="game_starts", group_type="team", stop_top_ups=True)
+        quorum is dissolved now. To stop top-ups when the group passes a
+        barrier instead, pass ``stop_top_ups=True`` to that :class:`GroupBarrier`.
         """
         if not self.accepts_top_ups:
             return
@@ -4284,7 +4338,10 @@ class SimpleSyncGroup(SyncGroup):
 
 
 def _shared_node(group, trials):
-    """Return ``group``'s node that all ``trials`` share, or ``None``."""
+    """Return ``group``'s node that all ``trials`` share, or ``None``.
+
+    Members with no current trial (``None`` in ``trials``) are ignored.
+    """
     from .trial.main import SyncGroupNode
 
     nodes = {trial.node_id: trial.node for trial in trials if trial is not None}
@@ -4294,6 +4351,54 @@ def _shared_node(group, trials):
     if isinstance(node, SyncGroupNode) and node.sync_group_id == group.id:
         return node
     return None
+
+
+def _lock_round(group) -> bool:
+    """Try the lock of the cued round that ``group``'s members share, or return ``False`` if it is busy.
+
+    A release marks that round's node released, so newcomers' cues start the
+    next round. :meth:`~psynet.trial.main.SyncGroupNode.for_cue` holds the
+    same lock while a cue runs, so a busy lock defers the release to the next
+    barrier check, instead of waiting while this request holds waiter rows.
+    The group's members are re-read under the lock, so a cue that committed
+    before it is counted. Groups with no shared cued round need no lock.
+    """
+    key = _round_lock_key(group)
+    if key is None:
+        return True
+    if not _execute_advisory_xact_lock(db.session, key, wait=False):
+        return False
+    db.session.expire(group, ["participant_links"])
+    return True
+
+
+def _round_lock_key(group):
+    """Return the lock key of the cued round ``group``'s members share, or ``None``."""
+    node = _shared_node(group, [p.current_trial for p in group.active_participants])
+    if node is None:
+        return None
+    return f"sync_group_node:{node.module_id}:{group.id}"
+
+
+def _round_is_busy(group) -> bool:
+    """Return whether a cue holds the lock :func:`_lock_round` would try.
+
+    Probes with a session lock released at once, because a peek's savepoint
+    rollback would not release a transaction lock, and holding it until
+    commit would block that round's cues for no reason.
+    """
+    key = _round_lock_key(group)
+    if key is None:
+        return False
+    params = {"key": key}
+    if not db.session.execute(
+        text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"), params
+    ).scalar():
+        return True
+    db.session.execute(
+        text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"), params
+    )
+    return False
 
 
 def _run_on_dissolve(group, members):
@@ -5084,15 +5189,10 @@ def _reconstructed_arrival_barrier(link, reconstructed):
     return barrier
 
 
-def _is_pair(group_size) -> bool:
-    """Return whether notices for a group of ``group_size`` should speak of a partner."""
-    return group_size is not None and group_size <= 2
-
-
 def _tell_group_ended(participant, group_size):
     """Tell a member who carries on alone after their group dissolved, on their next page."""
     _p = get_translator(context=True)
-    if _is_pair(group_size):
+    if group_size <= 2:
         text = _p(
             "timeline_hold",
             "Your partner is no longer in your group. Please continue.",

@@ -17,6 +17,7 @@ from flask import Flask
 from sqlalchemy import Column, String, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.inspection import inspect as sa_inspect
+from sqlalchemy.orm import Session
 
 from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.barrier_spec import (
@@ -48,6 +49,7 @@ from psynet.sync import (
     BarrierInstance,
     GroupBarrier,
     ParticipantLinkBarrier,
+    ParticipantLinkSyncGroup,
     Regrouper,
     SimpleGrouper,
     SimpleSyncGroup,
@@ -7475,6 +7477,185 @@ def test_top_up_wait_limits_how_long_a_group_waits_for_newcomers(
     assert barrier.choose_who_to_release([waiter]) == [waiter]
     assert not waiter.failed and not group.accepts_top_ups
     assert waiter.sync_group_removal_reason("team") == "group_dissolved"
+
+
+def _lobby_recipe():
+    """The grouper and barrier of the "fill a team until the game starts" recipe."""
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=4,
+        quorum=2,
+        start_short_after=60,
+        max_wait_time=120,
+        join_existing_groups=True,
+        top_up_wait=60,
+        below_quorum="continue_without_group",
+    )
+    game_starts = GroupBarrier(
+        id_="game_starts",
+        group_type="team",
+        stop_top_ups=True,
+        late_after=120,
+        late_action="leave_group",
+    )
+    return grouper, game_starts
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_latecomers_fill_a_team_until_it_passes_game_starts(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper, game_starts = _lobby_recipe()
+    assert game_starts.max_wait_time is None
+    first, second, latecomer, too_late = [new_participant(exp) for _ in range(4)]
+    for p in (first, second, latecomer, too_late):
+        p.status = "working"
+    group = grouper._make_group([first, second], initial_group_size=4)
+    db_session.commit()
+
+    grouper._join_existing_groups(latecomer)
+    assert latecomer.in_sync_group("team")
+    assert game_starts.choose_who_to_release([first, second]) == []
+    released = game_starts.choose_who_to_release([first, second, latecomer])
+    assert set(released) == {first, second, latecomer}
+    assert not group.accepts_top_ups
+    grouper._join_existing_groups(too_late)
+    assert not too_late.in_sync_group("team")
+
+    starters = [new_participant(exp) for _ in range(2)]
+    for p in starters:
+        p.status = "working"
+    at_quorum = grouper._make_group(starters, initial_group_size=4)
+    assert set(game_starts.choose_who_to_release(starters)) == set(starters)
+    assert not at_quorum.accepts_top_ups
+
+    *on_time, slow = [new_participant(exp) for _ in range(3)]
+    for p in (*on_time, slow):
+        p.status = "working"
+    grouper._make_group(on_time, initial_group_size=4)
+    grouper._join_existing_groups(slow)
+    for link in slow.sync_group_links:
+        link.arrival_time -= timedelta(seconds=121)
+    game_starts.check_waiting_participants(on_time)
+    assert slow.sync_group_removal_reason("team") == "late"
+    assert set(game_starts.choose_who_to_release(on_time)) == set(on_time)
+
+    lone, slow = [new_participant(exp) for _ in range(2)]
+    for p in (lone, slow):
+        p.status = "working"
+    below_quorum = grouper._make_group([lone, slow], initial_group_size=4)
+    for link in slow.sync_group_links:
+        link.arrival_time -= timedelta(seconds=121)
+    game_starts.check_waiting_participants([lone])
+    assert slow.sync_group_removal_reason("team") == "late"
+    assert game_starts.choose_who_to_release([lone]) == []
+    assert lone.in_sync_group("team") and below_quorum.accepts_top_ups
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_game_starts_waits_while_a_newcomer_is_joining(
+    in_experiment_directory, db_session
+):
+    """A ``stop_top_ups`` barrier skips a group whose row a joiner holds, until the next check."""
+    exp = get_experiment()
+    grouper, game_starts = _lobby_recipe()
+    *starters, slow = [new_participant(exp) for _ in range(3)]
+    for p in (*starters, slow):
+        p.status = "working"
+    group = grouper._make_group(starters, initial_group_size=4)
+    grouper._join_existing_groups(slow)
+    for link in slow.sync_group_links:
+        link.arrival_time -= timedelta(seconds=121)
+    db_session.commit()
+
+    with db.engine.connect() as joiner, joiner.begin():
+        joiner.execute(
+            text("SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"),
+            {"id": group.id},
+        )
+        game_starts.check_waiting_participants(starters)
+        assert slow.in_sync_group("team")
+        assert game_starts.choose_who_to_release(starters) == []
+    assert group.accepts_top_ups
+    game_starts.check_waiting_participants(starters)
+    assert slow.sync_group_removal_reason("team") == "late"
+    assert set(game_starts.choose_who_to_release(starters)) == set(starters)
+    assert not group.accepts_top_ups
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_game_starts_counts_a_newcomer_who_joined_in_another_request(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper, game_starts = _lobby_recipe()
+    *starters, newcomer, peeked = [new_participant(exp) for _ in range(4)]
+    for p in (*starters, newcomer, peeked):
+        p.status = "working"
+    group = grouper._make_group(starters, initial_group_size=4)
+    db_session.commit()
+
+    def join_in_another_request(participant):
+        with Session(bind=db.engine) as other:
+            other.add(
+                ParticipantLinkSyncGroup(
+                    participant_id=participant.id,
+                    sync_group_id=group.id,
+                    active=True,
+                    arrival_time=timenow(),
+                )
+            )
+            other.commit()
+
+    assert len(group.active_participants) == 2
+    join_in_another_request(newcomer)
+    assert game_starts.choose_who_to_release(starters) == []
+    assert group.accepts_top_ups
+
+    assert len(group.active_participants) == 3
+    join_in_another_request(peeked)
+    assert not game_starts.would_release([*starters, newcomer])
+    released = game_starts.choose_who_to_release([*starters, newcomer, peeked])
+    assert set(released) == {*starters, newcomer, peeked}
+    assert not group.accepts_top_ups
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_stop_top_ups_barrier_waits_for_a_team_below_quorum_and_the_method_dissolves_it(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper, game_starts = _lobby_recipe()
+
+    def team_that_lost_a_member():
+        quitter, waiter = [new_participant(exp) for _ in range(2)]
+        for p in (quitter, waiter):
+            p.status = "working"
+        group = grouper._make_group([quitter, waiter], initial_group_size=4)
+        db_session.commit()
+        quitter.fail("quit")
+        return group, waiter
+
+    group, waiter = team_that_lost_a_member()
+    assert game_starts.choose_who_to_release([waiter]) == []
+    assert group.accepts_top_ups and waiter.in_sync_group("team")
+    group.below_quorum_since -= timedelta(seconds=61)
+    assert game_starts.choose_who_to_release([waiter]) == [waiter]
+    assert waiter.sync_group_removal_reason("team") == "group_dissolved"
+
+    group, waiter = team_that_lost_a_member()
+    group.stop_top_ups()
+    assert waiter.sync_group_removal_reason("team") == "group_dissolved"
+    assert not waiter.failed
 
 
 @pytest.mark.parametrize(

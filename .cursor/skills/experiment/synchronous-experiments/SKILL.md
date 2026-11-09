@@ -100,9 +100,6 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `code/multiplayer/writing_a_round_based_experiment`: besides
   `late_action="leave_group"`, you must also `remove_participant` them from
   the `within` group in `on_release`; see the quorum caveat there.
-- Write such a game as one cued trial per player per round, not as pages
-  with round bookkeeping in participant variables; see "Rounds as cued
-  trials" below.
 - A member on a timed page isn't treated as late until its limit plus 10 s,
   so `late_after` need not cover the page (see "Timeouts" in
   `code/multiplayer/synchronization`); the demos use 30 s so that a
@@ -119,17 +116,14 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - For a lobby that should not wait forever for a full group, use
   `SimpleGrouper(start_short_after=..., quorum=...)`; a short start forms a
   group of at least the quorum (`start_short_with` overrides that). To let
-  latecomers fill it up until the game starts:
-
-  ```python
-  SimpleGrouper("team", ..., join_existing_groups=True, top_up_wait=30)
-  GroupBarrier(id_="game_starts", group_type="team", stop_top_ups=True)
-  ```
-
-  Read "Groups below quorum" in `code/multiplayer/synchronization` for what
-  top-ups change when a member drops out. To let participants who find no
-  group carry on alone instead of being failed, pass the grouper
-  `max_wait_action="continue_without_group"`.
+  latecomers join only before the game starts, follow "Letting latecomers
+  join before the game starts" in `code/multiplayer/synchronization`.
+  For a per-person condition (not a join window), such as a chain that is
+  too far along for them to catch up with, pass `join_criterion` (see
+  `join_criterion` under "Forming groups" in
+  `code/multiplayer/synchronization`).
+  To let participants who find no group carry on alone instead of being
+  failed, pass the grouper `max_wait_action="continue_without_group"`.
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
   needs a group: stop a rounds loop with it in the `while_loop` condition,
   and give a synchronized trial maker a solo alternative, for example
@@ -164,10 +158,6 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   who left since the previous barrier, and
   `p.sync_group_removal_reason("pair")` tells the one who stayed whether
   their partner returned the study or was too slow.
-- With `join_existing_groups=True`, also pass a `join_criterion` to turn
-  away newcomers who couldn't catch up, for example to a chain that is nearly
-  finished (it doesn't stop top-ups; pair it with `top_up_wait` or
-  `stop_top_ups`).
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with
   filler work via `trial_maker.custom(...)`, as in `sync_quorum`.
 - For chain or Gibbs designs, distinguish true co-presence from async
@@ -216,12 +206,9 @@ class PickTrial(Trial):
     @classmethod
     def score_room(cls, trials, node):
         # String keys, since node.var is stored as JSON.
-        picks = {str(t.participant_id): t.participant.var.choice for t in trials}
-        choices = {p: n for p, n in picks.items() if n is not None}
-        winner = lowest_unique(choices) if len(choices) > 1 else None
-        node.var.winning_number = winner  # the room's result
+        node.var.choices = {str(t.participant_id): t.participant.var.choice for t in trials}
         for trial in trials:  # each player's result
-            trial.var.won = winner is not None and picks[str(trial.participant_id)] == winner
+            trial.var.choice = trial.participant.var.choice
 
 # The Module gives the nodes a module_id to find them by when exporting.
 Module("game", for_loop(
@@ -235,13 +222,9 @@ Module("game", for_loop(
 ))
 ```
 
-- Leave out `round`; that guide explains how `cue` numbers rounds. Keep a
-  `GroupBarrier` in every round so members stay in step.
-- Don't make the definition depend on the player's own loop position
-  (`lambda i: PickTrial.cue({"block": i})`): late joiners and mixed rooms
-  then clash. Use a definition function taking `round` or `group`.
-- A round with two phases is normally one trial class with several pages;
-  the guide covers the rare `round=` for putting two classes in one round.
+- Keep a `GroupBarrier` in every round so members stay in step. For how
+  `cue` numbers rounds, the definition rules and the rare `round=`, follow
+  the guide above.
 - `trial.answer` is only set when the trial ends, after the barrier, so
   `on_release` reads what `save_answer` stored, while `score_answer`,
   `show_feedback` and `get_basic_data` read the trial and `self.node.var`.
