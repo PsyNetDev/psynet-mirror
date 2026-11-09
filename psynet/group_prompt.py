@@ -20,8 +20,10 @@ Design constraints:
 - Live redraws re-create the prompt on the server from a signed token, so
   only options that can be serialized take part in them; functions and
   ``answers`` fix the display when the page loads.
-- How a member who left is shown depends on the reason given to
-  :meth:`psynet.sync.SyncGroup.remove_participant`.
+- How a member who left is shown depends on why they left (the reason given
+  to :meth:`psynet.sync.SyncGroup.remove_participant`), whether the group
+  still accepts top-ups and whether the page shows their answer (see
+  :ref:`sync-showing-the-group`).
 - The HTML is built on the server; ``static/scripts/group-prompt.js`` only
   updates ticks and dashes, so pages without JavaScript still show the group.
 """
@@ -107,7 +109,8 @@ class GroupPrompt(Prompt):
         Members with an entry, even ``None`` (as for a member who ran out of
         time), keep their seat after moving on to their next group; ``None``
         shows no bubble. Members without an entry get no bubble either, and
-        are omitted once they have moved on.
+        are omitted once they have moved on. A group that accepts top-ups
+        shows no members who left, even with an entry.
     highlight
         Optional ``{participant_id: style}``. ``"winner"`` and
         ``"duplicate"`` have built-in styles; any other style becomes the
