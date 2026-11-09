@@ -165,6 +165,8 @@ then groups of two, and assigns roles at a barrier each time:
 Two groupers of the same type and size share a default ID, and so a waiting
 pool. Give them different ``id_`` values if they should not.
 
+.. _sync-rounds-with-changing-groups:
+
 Rounds with changing groups
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -206,6 +208,11 @@ rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
 :meth:`~psynet.sync.Regrouper.rounds_sat_out`,
 :meth:`~psynet.sync.Regrouper.sat_out` (for the latest round) and, with
 ``roles``, :meth:`~psynet.sync.Regrouper.role`.
+
+When the cohorts take latecomers (``join_existing_groups=True`` on their
+grouper), ``stop_top_ups_after_rounds=n`` lets them join only during a
+cohort's first ``n`` rounds: the split that starts the next round stops the
+cohort's top-ups (see :ref:`groups_below_min_size`).
 
 Play each round as one trial per player, added after the regrouper with
 :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` on a trial class that sets
@@ -827,7 +834,7 @@ Two separate settings decide what happens when someone leaves a group:
     periodic sync-group check (every few seconds), and later arrivals form a
     new one. A ``join_criterion`` that returns ``False`` only turns that
     newcomer away; it doesn't stop top-ups.
-  - Top-ups stop in three ways, and from then on the group is treated as
+  - Top-ups stop in four ways, and from then on the group is treated as
     one without top-ups:
 
     - ``group.stop_top_ups()`` stops them at once; a group already below
@@ -836,6 +843,11 @@ Two separate settings decide what happens when someone leaves a group:
       them when the group passes that barrier, for example after the first
       round, once a newcomer could no longer catch up. A group below its
       quorum doesn't pass, so it keeps waiting there for a newcomer.
+    - ``stop_top_ups_after_rounds=n`` on a :class:`~psynet.sync.Regrouper`
+      that regroups within this group (``within``) stops them when the
+      regrouper starts the group's round after its first ``n``, for
+      example ``1`` to let latecomers join a cohort only during its first
+      round (see :ref:`sync-rounds-with-changing-groups`).
     - The grouper's ``top_up_wait=seconds`` limits that wait: once the
       group has been below its quorum that long, the barrier it is waiting
       at stops top-ups and dissolves it. This only helps members who are
@@ -1069,7 +1081,11 @@ example "(dropped out)", unless the group still accepts top-ups (see
 For the rest of the timeline:
 
 - :class:`~psynet.sync.GroupBarrier`\ s of that group type let them straight
-  through. Pages between the barriers are still shown, so give the steps of
+  through. So does a barrier with ``pass_ungrouped=True`` for anyone in no
+  group of its type, including a participant who was never in one, such as
+  a player a :class:`~psynet.sync.Regrouper` sat out of the first round;
+  without it, such a participant gets an error, which usually means a
+  grouper is missing. Pages between the barriers are still shown, so give the steps of
   a round to :func:`~psynet.timeline.join` with ``stop_if``, which checks
   before each argument and skips the remaining arguments once the
   participant has left. Each argument runs to its end once started, so a

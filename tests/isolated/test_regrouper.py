@@ -449,6 +449,7 @@ def test_every_regrouper_left_over_waits_one_more_tick(
         ({"group_size": 2, "below_quorum": "continue_without_group"}, "never"),
         ({"group_size": 2, "deadline": 0}, "deadline must be positive"),
         ({"group_size": 2, "every": 0}, "every must be positive"),
+        ({"group_size": 2, "stop_top_ups_after_rounds": -1}, "0 or more"),
     ],
 )
 def test_regrouper_checks_its_settings(kwargs, message):
@@ -668,3 +669,41 @@ def test_regrouper_lets_a_player_waiting_alone_carry_on(
 
     assert not player.failed
     assert not player.in_sync_group("room")
+
+
+@in_consents_experiment
+def test_regrouper_stops_top_ups_after_rounds(in_experiment_directory, db_session):
+    exp = get_experiment()
+    cohort_grouper = SimpleGrouper(
+        "cohort", initial_group_size=2, join_existing_groups=True
+    )
+    pairs = Regrouper(
+        "pair", within="cohort", group_size=2, stop_top_ups_after_rounds=1
+    )
+    players = _working_participants(exp, 2)
+    _arrive(exp, cohort_grouper, players)
+    cohort = players[0].active_sync_groups["cohort"]
+
+    _arrive(exp, pairs, players)
+    assert cohort.accepts_top_ups
+    _arrive(exp, pairs, players)
+    assert all("pair" in p.active_sync_groups for p in players)
+    assert not cohort.accepts_top_ups
+
+
+@in_consents_experiment
+def test_group_barrier_can_pass_participants_never_grouped(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    original = exp.timeline
+    exp.timeline = Timeline(
+        GroupBarrier("round_end", group_type="pair", pass_ungrouped=True),
+        ModularPage("after", "Round over", time_estimate=1),
+    )
+    try:
+        (player,) = _working_participants(exp, 1)
+        _json_timeline(exp, player)
+        assert exp.timeline.get_current_elt(exp, player).label == "after"
+    finally:
+        exp.timeline = original

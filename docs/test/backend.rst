@@ -235,6 +235,11 @@ Other helpers ask about a bot's group or act in it:
   each bot while they still wait for each other, as players a
   :class:`~psynet.sync.Regrouper` keeps pairing do: one bot run to the end
   alone would wait at the next barrier for the others.
+- :func:`~psynet.bot.regroup_now` makes a
+  :class:`~psynet.sync.Regrouper` split the bots' pools as its ``deadline``
+  or next ``every`` tick would, then advances them, so the test doesn't
+  wait for it, for example ``regroup_now(bots[:3], pairing)`` to start a
+  round without a fourth player who is still reading their results.
 
 When several groups play in one test, finish one group's story before driving
 the next: a barrier's ``late_after`` clock keeps running for a group while the

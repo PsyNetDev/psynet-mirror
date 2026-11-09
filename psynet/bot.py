@@ -281,6 +281,72 @@ def advance_past_wait_pages(
             time.sleep(0.5)
 
 
+def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 10.0):
+    """Split the bots' pools at a :class:`~psynet.sync.Regrouper` now, then advance them past it.
+
+    A bot test would otherwise wait out the regrouper's ``deadline`` or its
+    next ``every`` tick, for example to test a round that starts without a
+    member who is still reading their results. This moves the bots' arrivals
+    at the regrouper, and the previous splits of their pools, back by one
+    ``deadline`` (or ``every`` period), so the next check splits the pools as
+    the deadline or tick would. Call it again for what happens after a
+    second period, such as a player waiting alone sitting out with
+    ``left_over="sit_out"``.
+
+    Parameters
+    ----------
+    bots : list of BotDriver
+        Bots waiting at the regrouper, and any others to advance with them.
+    regrouper : Regrouper
+        The regrouper from the timeline.
+    timeout : float, optional
+        Passed to :func:`advance_past_wait_pages`.
+
+    Examples
+    --------
+    ::
+
+        for bot in bots[:3]:
+            bot.take_page()  # The fourth player is still reading.
+        regroup_now(bots[:3], pairing)
+    """
+    from datetime import timedelta
+
+    from sqlalchemy import or_
+
+    from .sync import ParticipantLinkBarrier, SyncGroup
+
+    period = regrouper.deadline or regrouper.every
+    if period is None:
+        raise ValueError(
+            f"Regrouper '{regrouper.id}' has no deadline or every, so it splits "
+            "a pool as soon as it is complete; use advance_past_wait_pages."
+        )
+    shift = timedelta(seconds=period)
+    with transaction():
+        visits = ParticipantLinkBarrier.query.filter(
+            ParticipantLinkBarrier.barrier_id == regrouper.id,
+            ParticipantLinkBarrier.participant_id.in_([bot.id for bot in bots]),
+            ParticipantLinkBarrier.released.is_(False),
+        ).all()
+        pools = set()
+        for visit in visits:
+            visit.arrival_time -= shift
+            within_group = regrouper._within_group(visit.participant)
+            pools.add(None if within_group is None else within_group.id)
+        if pools:
+            within_id = SyncGroup.within_group_id
+            in_pools = [within_id.in_(pools - {None})]
+            if None in pools:
+                in_pools.append(within_id.is_(None))
+            previous_splits = SyncGroup.query.filter(
+                SyncGroup.grouper_id == regrouper.id, or_(*in_pools)
+            )
+            for group in previous_splits:
+                group.creation_time -= shift
+    advance_past_wait_pages(bots, timeout=timeout)
+
+
 def run_bots_to_completion(bots: List["BotDriver"], timeout: Optional[float] = 60.0):
     """Take pages for bots in turn until all of them have finished the experiment.
 

@@ -114,7 +114,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   players out sit out the round; with `within`, a player waiting alone first
   waits one more period for cohort members. The default `max_wait_time`
   allows for this; an explicit one must then exceed twice the `deadline` or
-  `every` period.
+  `every` period. To let latecomers join a cohort (`join_existing_groups=True`)
+  only during its first rounds, pass the regrouper
+  `stop_top_ups_after_rounds=n` rather than a `join_criterion`.
 - For a lobby that should not wait forever for a full group, use
   `SimpleGrouper(start_short_after=..., quorum=...)`; a short start forms a
   group of at least the quorum (`start_short_with` overrides that). To let
@@ -143,6 +145,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   grouper or `Regrouper` before the `join`, not among its arguments, or
   everyone not yet grouped skips it. A round that is one cued trial needs
   only a `conditional` (see "Rounds as cued trials").
+- A `GroupBarrier` lets members who left its group through. For anyone who
+  was never in one, such as a player sat out of the first round, pass it
+  `pass_ungrouped=True`; otherwise they get an error.
 - Follow with a `conditional` on the same function for what a member who
   left, or anyone who never had a group, does instead, such as answering the
   rest of the question alone. With a `Regrouper` in the loop, it is also the
@@ -272,8 +277,9 @@ Module("game", for_loop(
   extra bots for late-arrival or top-up paths.
 - Use serial bot tests with `advance_past_wait_pages(bots)` for deterministic
   barrier progression. It polls for up to 10 s; pass a longer `timeout=` when
-  rounds start on a clock or a deadline. Use concurrent bot runs when arrival
-  races matter.
+  rounds start on a clock or a deadline, or call `regroup_now(bots, regrouper)`
+  to split the bots' pools at a `Regrouper` without waiting for its
+  `deadline` or tick. Use concurrent bot runs when arrival races matter.
 - Assert group formation, active group size, role assignment, shared node/trial
   IDs, barrier IDs, `on_release` side effects, and failed/overflow exits.
 - Test each kind of dropout, as described in "Test dropouts" below, and

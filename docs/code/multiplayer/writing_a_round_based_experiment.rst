@@ -21,17 +21,16 @@ Forming cohorts
 
 A :class:`~psynet.sync.SimpleGrouper` forms the cohorts. It starts a cohort
 of four as soon as four players are waiting, or a smaller one after a
-minute (``start_short_after``), and lets latecomers join until the cohort's
-second round starts (``join_existing_groups`` and ``join_criterion``; see
-:class:`~psynet.sync.SimpleGrouper`):
+minute (``start_short_after``), and lets latecomers join a cohort that has
+started (``join_existing_groups``; see :class:`~psynet.sync.SimpleGrouper`):
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: SimpleGrouper(
    :end-before: Module(
    :dedent: 8
 
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :pyobject: cohort_accepts_newcomers
+The regrouper below closes each cohort to latecomers when its second round
+starts (``stop_top_ups_after_rounds``).
 
 Pairing players each round
 --------------------------
@@ -48,11 +47,14 @@ The round starts as soon as the whole cohort (``within``) is waiting, or at
 the ``deadline`` (counted from when the first player is back) without whoever
 isn't back yet, if enough players are waiting to
 form a pair. A player who isn't back by then is still in the cohort, and
-joins the next round.
+joins the next round. The demo's bot test starts such a round with
+:func:`~psynet.bot.regroup_now`, so it doesn't wait for the deadline.
 With ``roles``, each pair has a proposer and a responder, and each player
 alternates between them. Partners from last round are kept apart where
-possible. ``waiting_message`` counts down to the deadline. See
-:class:`~psynet.sync.Regrouper` for these options:
+possible. ``stop_top_ups_after_rounds=OPEN_FOR_ROUNDS`` lets latecomers join
+the cohort only during its first round: the split that starts its second
+round stops the cohort's top-ups. ``waiting_message`` counts down to the
+deadline. See :class:`~psynet.sync.Regrouper` for these options:
 
 .. figure:: ../../_static/images/rounds/next_round.png
    :width: 700
