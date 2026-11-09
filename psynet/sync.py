@@ -4669,7 +4669,8 @@ def _barrier_scope(group, waiting_participants, barrier_id, node) -> _BarrierSco
             if not link.skipped_round:
                 played.add(participant.id)
         else:
-            ahead_node_ids.add(round_node_id)
+            if not _left_module(participant, node.module_id):
+                ahead_node_ids.add(round_node_id)
             continue
         releasable.add(participant.id)
     if behind:

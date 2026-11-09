@@ -676,6 +676,33 @@ def test_a_skipper_s_release_isn_t_a_pass_while_members_are_in_a_later_round(
     assert not game_over._lets_through(pair, newcomer.module_id)
 
 
+@pytest.mark.parametrize("ahead_left", [False, True])
+@in_consents_experiment
+def test_a_group_pass_counts_unless_a_member_still_in_the_module_is_ahead(
+    in_experiment_directory, db_session, ahead_left
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    (newcomer,) = _working_participants(exp, 1)
+    module = Module("rounds", InfoPage("Hi", time_estimate=1))
+    for participant in [*cohort, newcomer]:
+        participant.start_module(module)
+    for participant in cohort:
+        _cue_round(exp, participant, 0)
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    pair.add_participant(newcomer)
+    assert _cue_round(exp, newcomer, 0) is None
+    _cue_round(exp, newcomer, 1)
+    if ahead_left:
+        newcomer.end_module(module)
+    # The players' shorter loop ends after round 0.
+    game_over = GroupBarrier("game_over", group_type="pair", pass_newcomers=True)
+    _arrive(exp, game_over, cohort)
+    assert not any(game_over._participant_is_waiting(p) for p in cohort)
+    assert game_over._lets_through(pair, module.id) is ahead_left
+
+
 @in_consents_experiment
 def test_a_barrier_repeated_in_a_round_waits_for_everyone_each_time(
     in_experiment_directory, db_session
