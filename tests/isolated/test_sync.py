@@ -81,6 +81,7 @@ from psynet.sync import (
 )
 from psynet.timeline import (
     CodeBlock,
+    Module,
     Page,
     PageMaker,
     Response,
@@ -8133,3 +8134,29 @@ def test_a_member_released_on_a_time_out_is_not_a_group_pass(
     db_session.commit()
 
     assert not _skips(game_starts, exp, others[0])
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_pass_counts_in_its_module_including_reruns_of_it(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    game_starts = GroupBarrier("game_starts", group_type="team", pass_newcomers=True)
+    game = Module("game", InfoPage("Game", time_estimate=1))
+    other = Module("other", InfoPage("Other", time_estimate=1))
+    first, *others = members = _working_participants(exp, 3)
+    _team_grouper()._make_group(members, initial_group_size=3)
+    db_session.commit()
+    for member in members:
+        game.start(member)
+        _arrive_at_group_barrier(exp, game_starts, member)
+    _commit_barrier_arrivals()
+
+    game.end(first)
+    other.start(first)
+    assert not _skips(game_starts, exp, first)
+    other.end(first)
+    game.start(first)
+    assert _skips(game_starts, exp, first)

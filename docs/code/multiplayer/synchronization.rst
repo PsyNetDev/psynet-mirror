@@ -959,9 +959,9 @@ When the experiment loads, PsyNet warns about each barrier outside a loop
 that comes after a grouper with ``join_existing_groups=True`` and has neither
 setting, up to the first barrier with ``stop_top_ups=True``. It skips a
 barrier whose ID is also used in a loop, because barriers that share an ID
-share their waiting pool. It also warns
-about ``pass_newcomers=True`` on a barrier in a ``while_loop``. These checks
-can't see barriers in a ``for_loop`` or in ``show_trial``.
+share their waiting pool. It also warns about ``pass_newcomers=True`` on a
+barrier in a ``while_loop``, or one that shares its ID with such a barrier.
+These checks can't see barriers in a ``for_loop`` or in ``show_trial``.
 
 .. _sync-leaving-a-group:
 

@@ -56,7 +56,6 @@ from ..sync import (
     SyncGroup,
     _execute_advisory_xact_lock,
     _group_max_wait_time,
-    _removed_from_group,
     _validate_group_timeouts,
 )
 from ..timeline import (
@@ -1743,6 +1742,39 @@ Index(
 )
 
 
+def _initialized_in(participant, trial_maker_id) -> bool:
+    """Return whether the participant's latest run of the trial maker has initialized them."""
+    try:
+        state = participant.module_states[trial_maker_id][-1]
+    except (KeyError, IndexError):
+        return False
+    return state.trial_maker_initialized
+
+
+class _InitParticipantBarrier(GroupBarrier):
+    """The barrier at which a synchronized trial maker initializes its group, leader first.
+
+    Members wait here until the leader is initialized in this run of the
+    trial maker. After that, anyone who arrives passes straight through and
+    initializes alone, including a newcomer who arrived while the group's
+    release was committing.
+    """
+
+    _lets_newcomers_through = True
+
+    def __init__(self, trial_maker: "TrialMaker"):
+        super().__init__(
+            trial_maker.with_namespace("init_participant"),
+            on_release=trial_maker._init_participants_in_sync_group,
+            **trial_maker._sync_group_barrier_kwargs(),
+        )
+        self.trial_maker_id = trial_maker.id
+
+    def _lets_through(self, group, module_id) -> bool:
+        leader = group.leader
+        return leader is not None and _initialized_in(leader, self.trial_maker_id)
+
+
 class TrialMakerState(ModuleState):
     participant_group = Column(String)
     in_repeat_phase = Column(Boolean)
@@ -2203,23 +2235,10 @@ class TrialMaker(Module):
         )
 
     def _init_participant(self):
-        barrier = GroupBarrier(
-            self.with_namespace("init_participant"),
-            on_release=self._init_participants_in_sync_group,
-            **self._sync_group_barrier_kwargs(),
-        )
-        # Newcomers skip it once the leader is initialized, so it doesn't
-        # need pass_newcomers, which would also skip it when the module reruns.
-        barrier._newcomers_skip_it = True
+        # The barrier makes sure the group's leader is initialized first.
+        barrier = [] if self.sync_group_type is None else _InitParticipantBarrier(self)
         return join(
-            conditional(
-                "init_participant",
-                # If the participant is in a sync group and the leader has not been initialized,
-                # then we put a GroupBarrier to ensure that the leader can be initialized first.
-                self._requires_sync_group_initialization_barrier,
-                logic_if_true=barrier,
-                time_estimate=0.0 if self.sync_group_type is None else 3.0,
-            ),
+            barrier,
             # Everyone else initializes alone, including members released
             # from the barrier by a max-wait time-out, which skips on_release.
             CodeBlock(self._init_if_not_initialized),
@@ -2230,33 +2249,8 @@ class TrialMaker(Module):
         if not self._is_initialized(participant):
             self.init_participant(experiment, participant)
 
-    def _requires_sync_group_initialization_barrier(self, participant):
-        """Return whether the participant should wait for sync-group initialization."""
-        if self.sync_group_type is None:
-            return False
-        if _removed_from_group(participant, self.sync_group_type):
-            # They initialize alone, then skip the rest of the trial maker.
-            return False
-        if self.sync_group_type not in participant.active_sync_groups:
-            participant_id = getattr(participant, "id", "<unknown>")
-            raise RuntimeError(
-                f"Trial maker '{self.id}' expected participant {participant_id} "
-                f"to have an active sync group of type '{self.sync_group_type}' "
-                "during initialization."
-            )
-        return not self._leader_is_initialized(participant)
-
-    def _leader_is_initialized(self, participant):
-        group = participant.active_sync_groups[self.sync_group_type]
-        leader = group.leader
-        return self._is_initialized(leader)
-
     def _is_initialized(self, participant):
-        try:
-            state = participant.module_states[self.id][-1]
-        except (KeyError, IndexError):
-            return False
-        return state.trial_maker_initialized
+        return _initialized_in(participant, self.id)
 
     def _init_participants_in_sync_group(self, group: SyncGroup, experiment):
         if not self._is_initialized(group.leader):

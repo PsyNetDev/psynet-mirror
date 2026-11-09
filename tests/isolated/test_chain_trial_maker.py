@@ -1,12 +1,14 @@
 import inspect
 import sys
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from dallinger import db
 
-from psynet.timeline import ModuleState
+from psynet.sync import SimpleGrouper
+from psynet.timeline import ModuleState, Timeline
 from psynet.trial.chain import ChainNode, ChainTrial, ChainTrialMaker
 from psynet.trial.dense import DenseTrialMaker
 from psynet.trial.main import (
@@ -320,19 +322,25 @@ def test_static_trial_maker_error_mentions_nodes():
         )
 
 
-def test_sync_trial_maker_requires_active_group_for_synced_participant():
-    trial_maker = make_trial_maker(sync_group_type="sync")
-    participant = DummyParticipant()
-    start_switch = next(
-        elt
+def _init_barrier(trial_maker):
+    (barrier,) = {
+        elt.links["barrier"]
         for elt in trial_maker._init_participant()
-        if getattr(elt, "label", None) == "init_participant"
-    )
+        if "barrier" in elt.links
+    }
+    return barrier
 
-    with pytest.raises(RuntimeError, match="active sync group of type 'sync'"):
-        start_switch.get_target(experiment=None, participant=participant)
 
-    assert participant.branch_log == []
+def test_sync_trial_maker_init_barrier_lets_members_through_once_the_leader_is_initialized():
+    trial_maker = make_trial_maker(sync_group_type="sync")
+    barrier = _init_barrier(trial_maker)
+    leader = SimpleNamespace(module_states={})
+    group = SimpleNamespace(leader=leader)
+    assert not barrier._lets_through(group, trial_maker.id)
+
+    initialized = SimpleNamespace(trial_maker_initialized=True)
+    leader.module_states = {trial_maker.id: [initialized]}
+    assert barrier._lets_through(group, trial_maker.id)
 
 
 def test_follower_copies_leader_state_after_leader_moved_on():
@@ -384,8 +392,6 @@ def test_participant_removed_from_their_group_initializes_alone(chain_kwargs):
         select_module=lambda module_id: None,
         module_state=SimpleNamespace(participant_group=None),
     )
-    assert not trial_maker._requires_sync_group_initialization_barrier(kicked)
-
     trial_maker.init_participant(experiment=None, participant=kicked)
 
     assert kicked.module_state.trial_maker_initialized
@@ -421,8 +427,8 @@ def test_participant_whose_group_was_closed_still_needs_a_new_group():
             )
         ],
     )
-    with pytest.raises(RuntimeError, match="expected participant 3"):
-        trial_maker._requires_sync_group_initialization_barrier(closed)
+    with pytest.raises(RuntimeError, match="Participant 3 is not in a sync group"):
+        _init_barrier(trial_maker).waiting_pool_group(closed)
 
 
 def test_trial_position_is_stored_and_continues_through_repeats():
@@ -1409,3 +1415,11 @@ def test_repeats_without_a_trial_limit_name_the_missing_argument():
 def test_sync_group_errors_name_the_trial_maker_options(options, message):
     with pytest.raises(ValueError, match=message):
         make_trial_maker(sync_group_type="main", **options)
+
+
+def test_a_sync_trial_maker_after_a_grouper_with_top_ups_does_not_warn_about_newcomers():
+    grouper = SimpleGrouper("main", initial_group_size=2, join_existing_groups=True)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Timeline(grouper, make_trial_maker(sync_group_type="main"))
+    assert not [w for w in caught if "pass_newcomers" in str(w.message)]

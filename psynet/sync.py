@@ -1861,21 +1861,26 @@ class GroupBarrier(Barrier):
             log_chosen_branch=False,
         )
 
+    #: Whether this barrier lets newcomers through without ``pass_newcomers``,
+    #: by overriding :meth:`_lets_through`; the load-time warning skips it.
+    _lets_newcomers_through = False
+
     def _passes_straight_through(self, participant) -> bool:
-        """Return whether, with ``pass_newcomers``, the participant's group already passed this barrier."""
-        if not self.pass_newcomers:
-            return False
+        """Return whether the participant skips this barrier because their group passed it."""
         group = participant.active_sync_groups.get(self.group_type)
-        return group is not None and self._group_passed(group, participant.module_id)
+        return group is not None and self._lets_through(group, participant.module_id)
 
-    def _group_passed(self, group, module_id) -> bool:
-        """Return whether ``group`` was released from this barrier in module ``module_id``.
+    def _lets_through(self, group, module_id) -> bool:
+        """Return whether members of ``group`` reaching this barrier in module ``module_id`` pass straight through.
 
-        Only a release of the whole group counts (see
+        By default, only with ``pass_newcomers`` once the group has passed
+        here. Only a release of the whole group counts (see
         ``BarrierInstance.group_passed``), not a member released on a time-out.
         The pass is recorded on the visit, so it still counts after every
         member who waited there has left the group or finished the module.
         """
+        if not self.pass_newcomers:
+            return False
         return db.session.query(
             BarrierInstance.query.filter_by(
                 barrier_id=self.id,
@@ -1885,24 +1890,44 @@ class GroupBarrier(Barrier):
             ).exists()
         ).scalar()
 
-    def _groups_that_passed(self, waiting_participants) -> set:
-        """Return the IDs of the waiters' groups that, with ``pass_newcomers``, already passed this barrier.
+    def _waiters_let_through(self, waiting_participants) -> list:
+        """Return the waiters whose group, by :meth:`_lets_through`, no longer waits here.
 
         A newcomer who arrived while their group's release was committing
         can still be waiting here; release checks let them through.
         """
-        passed = set()
-        if not self.pass_newcomers:
-            return passed
+        answers = {}
+        through = []
         for participant in waiting_participants:
             group = participant.active_sync_groups.get(self.group_type)
-            if (
-                group is not None
-                and group.id not in passed
-                and self._group_passed(group, participant.module_id)
-            ):
-                passed.add(group.id)
-        return passed
+            if group is None:
+                continue
+            key = (group.id, participant.module_id)
+            if key not in answers:
+                answers[key] = self._lets_through(group, participant.module_id)
+            if answers[key]:
+                through.append(participant)
+        return through
+
+    def _release_ready_waiters(self, waiting_participants, instance):
+        """Release waiters whose group already passed, then check the rest as usual."""
+        through = self._waiters_let_through(waiting_participants)
+        if through:
+            logger.info(
+                "GroupBarrier '%s': letting through %i participant(s) whose group "
+                "already passed (ids = %s)",
+                self.id,
+                len(through),
+                ", ".join(str(p.id) for p in through),
+            )
+            for participant in through:
+                self.release(participant)
+            _queue_released_hold_waiters(through)
+        through_ids = {p.id for p in through}
+        super()._release_ready_waiters(
+            [p for p in waiting_participants if p.id not in through_ids], instance
+        )
+        return waiting_participants
 
     def waiting_pool_group(self, participant) -> "SyncGroup":
         """Return the participant's group of ``group_type``; its members wait together."""
@@ -2023,16 +2048,8 @@ class GroupBarrier(Barrier):
         waiting_participant_ids = {p.id for p in waiting_participants}
         participants_to_release = []
         groups = self.get_waiting_groups(waiting_participants)
-        passed = self._groups_that_passed(waiting_participants)
 
         for group in groups.values():
-            if group.id in passed:
-                participants_to_release.extend(
-                    participant
-                    for participant in waiting_participants
-                    if participant.active_sync_groups[self.group_type].id == group.id
-                )
-                continue
             if self._skips_busy_group(group):
                 continue
             node = _barrier_round(group, waiting_participants)
@@ -2121,7 +2138,7 @@ class GroupBarrier(Barrier):
         recounted rather than read from ``n_active_participants``.
         """
         waiting_ids = {participant.id for participant in waiting_participants}
-        if self._groups_that_passed(waiting_participants):
+        if self._waiters_let_through(waiting_participants):
             return True
         for group in self.get_waiting_groups(waiting_participants).values():
             node = _barrier_round(group, waiting_participants)
@@ -2156,9 +2173,8 @@ class GroupBarrier(Barrier):
     def check_waiting_participants(self, waiting_participants: List[Participant]):
         waiting_ids = {p.id for p in waiting_participants}
         removals = []
-        passed = self._groups_that_passed(waiting_participants)
         for group in self.get_waiting_groups(waiting_participants).values():
-            if group.id in passed or self._skips_busy_group(group):
+            if self._skips_busy_group(group):
                 continue
             group.check_numbers()
             if self.late_after is None:
@@ -4035,20 +4051,17 @@ def warn_if_newcomers_can_strand_group(barriers):
             continue
         if in_loop and barrier.pass_newcomers:
             warn_from_caller(
-                f"GroupBarrier '{barrier.id}' has pass_newcomers=True but is in a loop, "
-                "so after its first pass everyone would skip it. Use pass_newcomers "
-                "only for a barrier the group passes once.",
+                f"GroupBarrier '{barrier.id}' has pass_newcomers=True but is in a "
+                "loop, or shares its ID with one, so after its first pass everyone "
+                "would skip it. Use pass_newcomers only for a barrier the group "
+                "passes once.",
                 UserWarning,
             )
         if barrier.group_type not in open_types:
             continue
         if barrier.stop_top_ups:
             open_types.discard(barrier.group_type)
-        elif not (
-            in_loop
-            or barrier.pass_newcomers
-            or getattr(barrier, "_newcomers_skip_it", False)
-        ):
+        elif not (in_loop or barrier.pass_newcomers or barrier._lets_newcomers_through):
             warn_from_caller(
                 f"GroupBarrier '{barrier.id}' comes after a grouper with "
                 "join_existing_groups=True, so a newcomer can reach it after their "
