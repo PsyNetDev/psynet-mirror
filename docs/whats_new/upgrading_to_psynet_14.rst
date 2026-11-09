@@ -523,7 +523,10 @@ templates that changes the database.
   ``format_answer`` returns ``int(raw_answer)`` used to be skipped for bots,
   but now fails on the default answer ``"Hello, I am a bot!"``: pass
   ``bot_response=`` with a suitable answer, or let ``format_answer`` accept
-  the default.
+  the default. Whole-number floats in any ``BotResponse(raw_answer=...)``,
+  including your own, are now submitted as ints, as the browser's JSON
+  does: a rating scale given as ``{"low": 0.0, "high": 1.0}`` saves ``1``,
+  not ``1.0``.
 * The built-in ``get_bot_response`` methods of ``NumberControl``,
   ``TextControl``, ``MonitorControl``, ``SliderControl``,
   ``FrameSliderControl``, ``MultiRatingControl`` (and so ``RatingControl``)

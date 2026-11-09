@@ -472,6 +472,16 @@ def test_unset_and_explicit_none_bot_responses():
     assert response.__json__() == {"answer": None, "metadata": {}, "blobs": {}}
 
 
+def test_bot_raw_answers_are_sent_like_browser_json():
+    """Whole-number floats in raw answers become ints, as in the browser's JSON."""
+    raw = {"flag": True, "values": (1.0, 1.5, [2.0, False]), "nested": {"x": 0.0}}
+    sent = BotResponse(raw_answer=raw).__json__()["raw_answer"]
+    assert sent == {"flag": True, "values": [1, 1.5, [2, False]], "nested": {"x": 0}}
+    assert [type(x) for x in sent["values"][:2]] == [int, float]
+    assert type(sent["flag"]) is bool and type(sent["nested"]["x"]) is int
+    assert type(BotResponse(answer=1.0).__json__()["answer"]) is float
+
+
 @pytest.mark.parametrize(
     "control, expected",
     [
