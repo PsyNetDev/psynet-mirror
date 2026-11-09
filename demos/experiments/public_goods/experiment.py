@@ -125,7 +125,9 @@ class ContributionTrial(Trial):
                 participant=participant,
                 group=self.sync_group,
             ),
-            PushButtonControl(choices=list(range(ENDOWMENT + 1))),
+            PushButtonControl(
+                choices=list(range(ENDOWMENT + 1)), arrange_vertically=False
+            ),
             time_limit=DECISION_SECONDS,
             time_estimate=DECISION_SECONDS,
         )
@@ -155,11 +157,14 @@ class ContributionTrial(Trial):
         outcome = self.sync_group_outcome
         if outcome == "stayed":
             return self.var.payoff
-        # The last player keeps their tokens for the cancelled round, whether
-        # or not they were already waiting at the barrier.
         if outcome == "group_dissolved":
+            # The last player keeps their tokens for the cancelled round,
+            # whether or not they were already waiting at the barrier.
             return ENDOWMENT
-        # Removed for being late.
+        if outcome == "late":
+            return 0
+        # Removed from the dashboard ("removed"). A player who returns the
+        # study ("left_experiment") is never scored: their trial doesn't finish.
         return 0
 
     def compute_performance_reward(self, score):
@@ -170,7 +175,9 @@ class ContributionTrial(Trial):
 
     def show_feedback(self, experiment, participant):
         node = self.node
-        n_left = sum(t.sync_group_outcome != "stayed" for t in node.all_trials)
+        n_left = sum(
+            t.sync_group_outcome not in (None, "stayed") for t in node.all_trials
+        )
         if n_left == 0:
             left = ""
         elif n_left == 1:
@@ -224,8 +231,11 @@ def game_ended_early(participant):
         return InfoPage("Without a group, there is no game to play.", time_estimate=5)
     if reason == "late":
         text = "You were away for too long, so the game went on without you."
-    else:
+    elif reason == "group_dissolved":
         text = "Too few players remained, so the game ended early."
+    else:
+        # Removed from the dashboard, which records no reason.
+        text = "The game ended early for you."
     return InfoPage(f"{text} {bonus_text(participant)}", time_estimate=5)
 
 
@@ -294,38 +304,45 @@ class Exp(psynet.experiment.Experiment):
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
         self._test_full_game(bots[:3])
-        self._test_dropouts(*bots[3:6])
+        self._test_late_players(*bots[3:6])
         self._test_no_group(bots[6])
         self._test_others_leave_before_contributing(*bots[7:10])
 
         data = self.get_basic_data()
-        # The full game's team, then the dropouts' team, whose last round
-        # was cancelled with only the stayer's 5 tokens in.
+        # The full game's team, then the late players' team, whose last
+        # round was cancelled with only the stayer's 5 tokens in.
         teams = [t for t in data["team_round"] if t["contributions"] is not None]
         assert [(t["round"], t["pot"]) for t in teams] == [
             (0, 18),
             (0, 18),
             (1, 12),
-            (1, 14),
+            (1, 4),
             (2, 12),
             (2, None),
         ], teams
         assert teams[-1]["contributions"] == {str(bots[5].id): 5}, teams[-1]
 
         rows = data["player_round"]
-        # Silent was removed for being late before cueing their third round.
+        # Only a player who returned the study leaves their trial incomplete.
         left = {
-            (r["participant_id"], r["round"]): r["outcome"]
+            (r["participant_id"], r["round"]): (r["outcome"], r["complete"], r["bonus"])
             for r in rows
             if r["outcome"] != "stayed"
         }
         assert left == {
-            (bots[3].id, 1): "left_experiment",
-            (bots[5].id, 2): "group_dissolved",
-            (bots[7].id, 0): "left_experiment",
-            (bots[8].id, 0): "left_experiment",
-            (bots[9].id, 0): "group_dissolved",
+            (bots[3].id, 2): ("late", True, 0),
+            (bots[4].id, 1): ("late", True, 0),
+            (bots[5].id, 2): ("group_dissolved", True, ENDOWMENT * TOKEN_VALUE),
+            (bots[7].id, 0): ("left_experiment", False, None),
+            (bots[8].id, 0): ("left_experiment", False, None),
+            (bots[9].id, 0): ("group_dissolved", True, ENDOWMENT * TOKEN_VALUE),
         }, left
+        timed_out = [
+            (r["participant_id"], r["round"], r["complete"])
+            for r in rows
+            if r["outcome"] == "stayed" and r["contribution"] is None
+        ]
+        assert timed_out == [(bots[2].id, 1, True), (bots[5].id, 1, True)], timed_out
         for bot in bots:
             paid = sum(r["bonus"] or 0 for r in rows if r["participant_id"] == bot.id)
             reward = bot.with_participant(lambda p: p.performance_reward)
@@ -354,47 +371,40 @@ class Exp(psynet.experiment.Experiment):
         assert text == "The game is over. Your bonus is $0.90.", text
         run_bots_to_completion(bots)
 
-    def _test_dropouts(self, quitter, silent, stayer):
-        _start([quitter, silent, stayer])
-        _play([quitter, silent, stayer], [3, 6, 9])
-        _see_results([quitter, silent, stayer])
+    def _test_late_players(self, late_3, late_2, stayer):
+        _start([late_3, late_2, stayer])
+        _play([late_3, late_2, stayer], [3, 6, 9])
+        _see_results([late_3, late_2, stayer])
 
-        # Round 2: the quitter returns the study; the other two carry on.
-        silent.take_page(response=4)
-        stayer.take_page(response=10)
-        quitter.drop_out()
-        advance_past_wait_pages([silent, stayer])
-        text = stayer.current_page_text
-        assert text.startswith("One player left during the round."), text
-        assert "shared between 2 players: 10.5 tokens each" in text, text
-
-        # Round 3: silent stops responding and is removed for being late,
-        # which dissolves the group while the stayer waits for the results.
-        stayer.take_page()
-        stayer.take_page(response=5)
+        # Round 2: late_2 stays on the contribution page and is removed for
+        # being late; the other two carry on.
+        late_3.take_page(response=4)
+        stayer.run_out_of_time()
         # While waiting, the waiting screen shows the stayer's contribution.
         advance_past_wait_pages([stayer], stop_at="round_finished")
-        assert "You put in 5 tokens." in stayer.current_page_text
+        text = stayer.current_page_text
+        assert "You ran out of time, so you put in nothing." in text, text
+        advance_past_wait_pages([late_3, stayer], timeout=LATE_AFTER + 15)
+        text = stayer.current_page_text
+        assert text.startswith("One player left during the round."), text
+        assert "shared between 2 players: 3 tokens each" in text, text
+        _check_late(late_2, "group", "$0.26")  # 13 tokens, and none for round 2
+
+        # Round 3: late_3 is late too, which dissolves the group while the
+        # stayer waits for the results.
+        _see_results([late_3, stayer])
+        stayer.take_page(response=5)
         advance_past_wait_pages([stayer], timeout=LATE_AFTER + 15)
         assert stayer.current_notice == (
             "Too few members of your group remained. Please continue."
         ), stayer.current_notice
-        text = stayer.current_page_text  # 10 + 10.5, and 10 for the cancelled round
+        text = stayer.current_page_text  # 10 + 13, and 10 for the cancelled round
         assert text == (
-            "Too few players remained, so the game ended early. Your bonus is $0.61."
+            "Too few players remained, so the game ended early. Your bonus is $0.66."
         ), text
-
-        # Only the stayer was left when silent was removed, hence "partner".
-        assert silent.current_notice == (
-            "Your partner went on without you. Please continue."
-        ), silent.current_notice
-        silent.take_page()
-        text = silent.current_page_text  # 13 + 16.5 tokens
-        assert text == (
-            "You were away for too long, so the game went on without you. "
-            "Your bonus is $0.59."
-        ), text
-        run_bots_to_completion([silent, stayer])
+        # Only the stayer was left when late_3 was removed, hence "partner".
+        _check_late(late_3, "partner", "$0.50")  # 16 + 9 tokens
+        run_bots_to_completion([late_2, late_3, stayer])
 
     def _test_no_group(self, bot):
         bot.take_page()
@@ -432,6 +442,18 @@ def _play(bots, contributions):
     for bot, tokens in zip(bots, contributions):
         bot.take_page(response=tokens)
     advance_past_wait_pages(bots)
+
+
+def _check_late(bot, went_on, bonus):
+    """Check what a player removed for being late sees on and after their contribution page."""
+    notice = bot.current_notice
+    assert notice == f"Your {went_on} went on without you. Please continue.", notice
+    bot.take_page()
+    text = bot.current_page_text
+    assert text == (
+        "You were away for too long, so the game went on without you. "
+        f"Your bonus is {bonus}."
+    ), text
 
 
 def _see_results(bots):

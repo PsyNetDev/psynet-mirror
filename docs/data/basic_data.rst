@@ -116,7 +116,14 @@ The trial pays its round's payoff as a bonus through ``score_answer`` and
 their trials' ``performance_reward``, and the export and the payments agree.
 Its ``player_round`` table also gives each trial's ``sync_group_outcome``,
 which says whether the player stayed to the end of the round or why they
-left it (see :ref:`round outcomes <sync-round-outcome>`).
+left it (see :ref:`round outcomes <sync-round-outcome>`). Its
+``team_round`` table reads the node of each team and round:
+
+.. literalinclude:: ../../demos/experiments/public_goods/experiment.py
+   :start-at: "team_round": [
+   :end-at: for n in teams
+   :dedent: 12
+   :append: ],
 
 Group membership, for groups formed by a grouper (see
 :doc:`/code/multiplayer/synchronization`), is stored in two tables:

@@ -1048,7 +1048,7 @@ group forms, carries on without the group:
    :dedent: 8
 
 Each round is one trial per player, cued with the loop value as ``round=``
-(see :ref:`rounds-fixed-group-loop`), which ends at a barrier that removes
+(see :ref:`a fixed group's loop <rounds-fixed-group-loop>`), which ends at a barrier that removes
 late players and scores the round for those who played it:
 
 .. literalinclude:: ../../../demos/experiments/public_goods/experiment.py

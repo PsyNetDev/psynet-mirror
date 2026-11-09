@@ -29,8 +29,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `demos/experiments/rock_paper_scissors`,
   `demos/experiments/sync_quorum`, and
   `demos/experiments/gibbs_within_sync`; for games played in rounds, also
-  `demos/experiments/ultimatum_pairing` and
-  `demos/experiments/lowest_unique_number`.
+  `demos/experiments/ultimatum_pairing`,
+  `demos/experiments/lowest_unique_number` and, for a fixed team that plays
+  on when members leave, `demos/experiments/public_goods`.
 
 ## Choose the synchronization model
 

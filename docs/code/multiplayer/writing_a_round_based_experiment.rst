@@ -354,6 +354,16 @@ a solo version.
 play for the whole game, and newcomers get the role that lets the most
 waiting players play.
 
+**A fixed team that plays on with dropouts.** The ``public_goods`` demo
+forms teams of three once, with a :class:`~psynet.sync.SimpleGrouper` and
+``quorum=2``, and plays its rounds as a loop of cued trials with the loop
+value as ``round=`` (see :ref:`a fixed group's loop <rounds-fixed-group-loop>`). Its barrier
+removes a late player with ``late_action="leave_group"``, the others share
+the pot between fewer players, and ``score_answer`` pays each player by
+their trial's ``sync_group_outcome`` (see
+:ref:`round outcomes <sync-round-outcome>`), including the last player of
+a team that dissolves.
+
 **Turns one after the other.** In games such as a trust game, the investor
 decides before the trustee. With cued trials, the role pages and the
 barriers between turns all go in the ``show_trial`` of one trial class. Put
