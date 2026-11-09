@@ -84,10 +84,9 @@ async function assertFeedbackPlayback(page) {
 
 test("static_audio demo", { tag: "@both" }, async ({ page, context, browserName }) => {
   test.fail(
-    browserName !== "chromium",
+    browserName === "webkit",
     "Found with Dallinger#10095: WebKit cannot decode the participant's " +
-      "recording (EncodingError) and stays on the imitation prompt; " +
-      "Firefox never enables Next on the volume calibration page."
+      "recording (EncodingError) and stays on the imitation prompt."
   );
   const absDir = path.resolve("demos/experiments/static_audio");
   await withExperiment(page, context, absDir, async (experimentPage) => {

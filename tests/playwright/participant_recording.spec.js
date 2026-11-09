@@ -55,9 +55,9 @@ test("participant recording helper writes an MP4 with audio", { tag: "@both" }, 
   browserName
 }, testInfo) => {
   test.fail(
-    browserName !== "chromium",
-    "Found with Dallinger#10095: on Firefox and WebKit, the volume " +
-      "calibration page never enables Next."
+    browserName === "webkit",
+    "Found with Dallinger#10095: on WebKit, the volume calibration page " +
+      "never enables Next."
   );
   const absDir = path.resolve("demos/experiments/static_audio");
   const outPath = testInfo.outputPath("participant.mp4");
