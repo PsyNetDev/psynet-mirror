@@ -3803,8 +3803,10 @@ def only_in_group(group_type: str, *steps, otherwise=None):
     straight through; this covers the pages between barriers.
 
     Lists and ``join(...)`` are split into their steps, but a barrier,
-    ``conditional`` or loop is one step, checked when the participant reaches
-    it, so a loop passed to ``only_in_group`` runs to its end. For rounds,
+    ``conditional``, loop or ``Trial.cue(...)`` is one step, checked when the
+    participant reaches it. So a cued trial runs to its end, where it is
+    scored and paid, even if the participant leaves the group partway, and a
+    loop passed to ``only_in_group`` runs to its end too. For rounds,
     pass a list of the rounds' steps instead::
 
         only_in_group("pair", [round_steps(number) for number in range(N_ROUNDS)])
