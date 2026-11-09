@@ -515,21 +515,34 @@ templates that changes the database.
   ``format_answer`` must now return a number: call
   ``super().format_answer(raw_answer, **kwargs)`` or convert the text
   yourself, since returned text fails validation.
-* Default bot answers now go through the page's ``format_answer``, as
-  participants' answers do. Search for ``def format_answer`` on pages that
-  bots answer without ``bot_response``, and check that it accepts what the
-  browser sends. For example, a ``TextControl`` page whose ``format_answer``
-  returns ``int(raw_answer)`` used to be skipped for bots, but now fails on the
-  default answer ``"Hello, I am a bot!"``: pass ``bot_response=`` with a
-  suitable answer, or let ``format_answer`` accept the default.
+* Default bot answers now go through the page's or control's
+  ``format_answer``, as participants' answers do. Search for
+  ``def format_answer`` on pages that bots answer without ``bot_response``
+  and on subclasses of the controls listed in the next item, and check that
+  it accepts what the browser sends. For example, a ``TextControl`` page whose
+  ``format_answer`` returns ``int(raw_answer)`` used to be skipped for bots,
+  but now fails on the default answer ``"Hello, I am a bot!"``: pass
+  ``bot_response=`` with a suitable answer, or let ``format_answer`` accept
+  the default.
 * The built-in ``get_bot_response`` methods of ``NumberControl``,
   ``TextControl``, ``MonitorControl``, ``SliderControl``,
   ``FrameSliderControl``, ``MultiRatingControl`` (and so ``RatingControl``)
   and ``GraphicControl`` now return a ``BotResponse`` holding the browser's
   raw answer, rather than a plain value. Search for ``get_bot_response`` in
   subclasses of these controls: code that calls ``super().get_bot_response(...)``
-  should read ``.raw_answer`` from the result (for example
-  ``int(super().get_bot_response(...).raw_answer)`` for ``NumberControl``).
+  should read ``.raw_answer`` from the result. This is the browser's text for
+  ``NumberControl`` (``"57"``) and SurveyJS JSON text for ``MultiRatingControl``
+  and ``RatingControl`` (``json.loads(raw_answer)`` gives
+  ``{"rating": 3}``). Return ``BotResponse(raw_answer=...)`` in the same form,
+  so that the answer still goes through ``format_answer``; a plain return
+  value is saved as given. For example:
+
+  .. code-block:: python
+
+      class OneMoreNumberControl(NumberControl):
+          def get_bot_response(self, experiment, bot, page, prompt):
+              response = super().get_bot_response(experiment, bot, page, prompt)
+              return BotResponse(raw_answer=str(int(response.raw_answer) + 1))
 * ``LanguageVocabularyTrial`` answers are now screen positions (``"1"`` to
   ``"4"``) rather than ``"correct"``. A custom subclass that compares an
   answer with ``"correct"`` should compare it with

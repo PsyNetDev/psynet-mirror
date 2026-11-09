@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import numpy as np
@@ -577,13 +578,15 @@ def submit(db_session, monkeypatch):
             bot_response = page.call__get_bot_response(experiment, bot)
         else:
             bot_response = BotResponse(answer=answer)
+        # Real bots receive the response as JSON from /participant_status and post it back.
+        data = json.loads(bot_response.to_json())
         with transaction():
             result = experiment.process_response(
                 participant_id=bot.id,
-                raw_answer=bot_response.raw_answer,
-                answer=bot_response.answer,
+                raw_answer=data.get("raw_answer", NoArgumentProvided),
+                answer=data.get("answer", NoArgumentProvided),
                 blobs={},
-                metadata={"time_taken": 0, **bot_response.metadata},
+                metadata={"time_taken": 0, **data["metadata"]},
                 page_uuid=bot.page_uuid,
                 client_ip_address="127.0.0.1",
             )
@@ -866,6 +869,14 @@ def test_push_button_renders_only_valid_attributes():
 
     _Parser().feed(str(macros.push_button(button)))
     assert attributes == ["type", "class", "id", "style", "disabled"]
+
+
+def test_optional_rating_scale_bot_leaves_values_unchanged():
+    scale = RatingScale("rating", 3, required=False)
+    values = list(scale.values)
+    for _ in range(2):
+        scale.get_bot_response(experiment=None, bot=None, page=None, prompt=None)
+    assert scale.values == values
 
 
 def test_rating_scale_keeps_buttons_on_narrow_screens():

@@ -29,7 +29,7 @@ from markupsafe import Markup
 
 from .asset import _PERSONAL_ARG_REMOVED, Asset, LocalStorage, _reject_personal_arg
 from .background_recording import VideoRecordConfig  # noqa: F401
-from .bot import BotResponse
+from .bot import BotResponse, _as_browser_json
 from .chatroom import ChatRoom  # noqa: F401
 from .javascript_hooks import JavaScriptContributor
 from .static_resources import package_static_url
@@ -1104,13 +1104,6 @@ def _as_python_value(x):
         # Keeps the printed digits: np.float32(0.1).item() is 0.10000000149011612.
         return float(str(x))
     return x.item() if isinstance(x, np.generic) else x
-
-
-def _as_json_number(x):
-    """Return a whole-number float as an ``int``, as the browser's ``JSON.stringify`` writes it."""
-    if isinstance(x, float) and x.is_integer():
-        return int(x)
-    return x
 
 
 class CheckboxControl(OptionControl):
@@ -2892,7 +2885,7 @@ class SliderControl(Control):
             )
         else:
             candidates = self.snap_values
-        return BotResponse(raw_answer=_as_json_number(float(random.choice(candidates))))
+        return BotResponse(raw_answer=float(random.choice(candidates)))
 
 
 EXTENSIONS = {
@@ -4782,12 +4775,10 @@ class MultiRatingControl(SurveyJSControl):
     def get_bot_response(self, experiment, bot, page, prompt):
         """Answer each scale, as the SurveyJS results text that the browser submits."""
         results = {
-            scale.name: _as_json_number(
-                scale.get_bot_response(experiment, bot, page, prompt)
-            )
+            scale.name: scale.get_bot_response(experiment, bot, page, prompt)
             for scale in self.scales
         }
-        return BotResponse(raw_answer=json.dumps(results))
+        return BotResponse(raw_answer=json.dumps(_as_browser_json(results)))
 
     def format_answer(self, raw_answer, **kwargs):
         answer = super().format_answer(raw_answer, **kwargs)
