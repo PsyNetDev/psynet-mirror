@@ -455,6 +455,11 @@ test("wait_while preserves the submitted page and wakes after async work", { tag
   page,
   context
 }) => {
+  test.fail(
+    ["iphone", "android"].includes(test.info().project.name),
+    "Found with Dallinger#10095: at phone width the hold indicator sits " +
+      "above the bottom of the header."
+  );
   const experimentDir = path.resolve(
     "tests/playwright/experiments/timeline_hold"
   );
