@@ -1736,7 +1736,10 @@ class GroupBarrier(Barrier):
         first. That includes a module run again, for example in a loop: the
         group's pass in the module's first run counts for later runs too, but a
         barrier ID used in another module starts afresh. Only the group's
-        release counts as a pass, not a member released on a time-out.
+        release counts as a pass, not a member released on a time-out, nor a
+        release while a member is in a later cued round of the module, such as
+        a newcomer who skipped a round reaching the barrier after the loop
+        while the others still play (see :ref:`rounds-cued-trials`).
         ``on_release`` doesn't run for those who pass through, so any group
         state it sets up must not be needed by them. Redundant with
         ``stop_top_ups=True``, after which nobody can join.
@@ -1880,7 +1883,7 @@ class GroupBarrier(Barrier):
         """Return whether members of ``group`` reaching this barrier in module ``module_id`` pass straight through.
 
         By default, only with ``pass_newcomers`` once the group has passed
-        here. Only a release of the whole group counts (see
+        here. Only the group's release counts (see
         ``BarrierInstance.group_passed``), not a member released on a time-out.
         The pass is recorded on the visit, so it still counts after every
         member who waited there has left the group or finished the module.
@@ -2095,10 +2098,11 @@ class GroupBarrier(Barrier):
                     p for p in scope.releasable if p.id in waiting_participant_ids
                 ]
                 participants_to_release.extend(released)
-                for participant in released:
-                    link = participant.active_barriers.get(self.id)
-                    if link is not None:
-                        link.barrier_instance.group_passed = True
+                if not scope.members_ahead:
+                    for participant in released:
+                        link = participant.active_barriers.get(self.id)
+                        if link is not None:
+                            link.barrier_instance.group_passed = True
 
                 left = group.members_who_left_since(
                     group.last_barrier_pass_time or group.creation_time
@@ -4537,12 +4541,15 @@ class _BarrierScope(NamedTuple):
     #: Members a release takes along if they are waiting: all but those in a
     #: round the group played after the visit's round.
     releasable: List[Participant]
+    #: Whether a member's stored round is later than the visit's round in
+    #: the same module, so a release doesn't count as the group's pass.
+    members_ahead: bool = False
 
     def without(self, participant_ids) -> "_BarrierScope":
         """Return this scope without the members whose ids are in ``participant_ids``."""
-        return _BarrierScope(
-            [p for p in self.waited_for if p.id not in participant_ids],
-            [p for p in self.releasable if p.id not in participant_ids],
+        return self._replace(
+            waited_for=[p for p in self.waited_for if p.id not in participant_ids],
+            releasable=[p for p in self.releasable if p.id not in participant_ids],
         )
 
 
@@ -4587,15 +4594,17 @@ def _barrier_scope(group, waiting_participants, barrier_id) -> _BarrierScope:
     has closed they will skip it. It doesn't wait for members who skipped
     the round or are in a round played after it, nor for members who
     already passed this visit (see :func:`_members_past_visit`). A visit
-    that belongs to no round waits for every member. Costs at most two
+    that belongs to no round waits for every member. Costs at most three
     queries.
     """
+    from .trial.main import SyncGroupNode
+
     members = group.active_participants
     links = _active_links(group)
     node = _barrier_round(group, waiting_participants, links)
     if node is None:
         return _BarrierScope(members, members)
-    played, behind, releasable = set(), set(), set()
+    played, behind, releasable, ahead_node_ids = set(), set(), set(), set()
     for participant in members:
         link = links.get(participant.id)
         round_node_id = None if link is None else link.round_node_id
@@ -4605,15 +4614,26 @@ def _barrier_scope(group, waiting_participants, barrier_id) -> _BarrierScope:
             if not link.skipped_round:
                 played.add(participant.id)
         else:
+            ahead_node_ids.add(round_node_id)
             continue
         releasable.add(participant.id)
     if behind:
         db.session.refresh(node, ["sync_group_closed"])
     if behind and not node.sync_group_closed:
         played |= behind
+    members_ahead = (
+        bool(ahead_node_ids)
+        and db.session.query(
+            SyncGroupNode.query.filter(
+                SyncGroupNode.id.in_(ahead_node_ids),
+                SyncGroupNode.module_id == node.module_id,
+            ).exists()
+        ).scalar()
+    )
     scope = _BarrierScope(
         [p for p in members if p.id in played],
         [p for p in members if p.id in releasable],
+        members_ahead,
     )
     return scope.without(
         _members_past_visit(barrier_id, node, waiting_participants, links)
@@ -4880,8 +4900,9 @@ class BarrierInstance(SQLBase, SQLMixin):
     announced_release_time = Column(Float)
     # The participant's module when the visit opened; see ``group_passed``.
     module_id = Column(String)
-    # The whole group was released here, as opposed to members released on a
-    # time-out; ``GroupBarrier(pass_newcomers=True)`` lets later arrivals through.
+    # The group's release here passed it, as opposed to members released on a
+    # time-out or while others were in a later round of the module;
+    # ``GroupBarrier(pass_newcomers=True)`` lets later arrivals through.
     group_passed = Column(Boolean, default=False)
 
     definition = relationship("BarrierDefinition", back_populates="instances")

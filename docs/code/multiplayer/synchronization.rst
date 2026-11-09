@@ -951,8 +951,10 @@ Keep these in mind:
   That includes a module that runs again, for example in a loop: the team's
   pass in the first run counts for later runs too.
 - Only the team's release counts as a pass, not a member let go after
-  waiting too long. The pass still counts after everyone who waited there
-  has left the team.
+  waiting too long, nor a release while a member is in a later cued round
+  of the module: a newcomer who skipped a round can reach a barrier after
+  the loop alone while the others still play (see :ref:`rounds-cued-trials`).
+  The pass still counts after everyone who waited there has left the team.
 - ``on_release`` doesn't run for those who pass through, so they must not
   need any group state it sets up.
 - A barrier ID used again in another module counts as a new barrier.

@@ -120,7 +120,8 @@ or alone if they have already passed it.
 
 These rules use the rounds members have cued or skipped, so they don't cover
 a barrier the group passes once, before the rounds: a newcomer who reaches
-it after the group has gone waits there for good. Give such a barrier
+it after the group has gone waits there for members who are further on,
+until the barrier's time-outs remove someone. Give such a barrier
 ``pass_newcomers=True`` (see :ref:`sync-newcomers-at-passed-barriers`).
 
 So a trial has two round counters. ``sync_group_round`` counts the group's

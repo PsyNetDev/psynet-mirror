@@ -572,6 +572,28 @@ def test_a_skipper_doesnt_wait_for_players_who_passed_a_later_barrier(
 
 
 @in_consents_experiment
+def test_a_skipper_s_release_isn_t_a_pass_while_members_are_in_a_later_round(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    for participant in cohort:
+        _cue_round(exp, participant, 0)
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    for participant in cohort:
+        _cue_round(exp, participant, 1)
+    (newcomer,) = _working_participants(exp, 1)
+    pair.add_participant(newcomer)
+    # The newcomer's shorter loop ends while the players are still in round 1.
+    assert _cue_round(exp, newcomer, 0) is None
+    game_over = GroupBarrier("game_over", group_type="pair", pass_newcomers=True)
+    _arrive(exp, game_over, [newcomer])
+    assert not game_over._participant_is_waiting(newcomer)
+    assert not game_over._lets_through(pair, newcomer.module_id)
+
+
+@in_consents_experiment
 def test_a_barrier_repeated_in_a_round_waits_for_everyone_each_time(
     in_experiment_directory, db_session
 ):
