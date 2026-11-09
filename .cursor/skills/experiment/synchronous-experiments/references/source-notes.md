@@ -59,7 +59,7 @@ and platform docs when a study is near deployment.
   barriers after creation and rating, partner state read from
   `participant.sync_group.participants`, and shared output written in
   `on_release`.
-- `rock_paper_scissors` shows dyadic synchronized static trials, barriers inside
+- `rock_paper_scissors` shows a fixed pair playing cued trials, barriers inside
   `show_trial`, server-side scoring in `on_release`, and a `ChatRoom` scoped to
   `self.sync_group.id` for communication after the round.
 - `sync_quorum` shows a waiting-room/quorum pattern where participants complete

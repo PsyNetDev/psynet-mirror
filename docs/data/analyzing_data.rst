@@ -60,7 +60,7 @@ the same round:
 .. code:: python
 
     trials = load_export_table("export.zip", "trial")
-    trials = trials[(trials["trial_maker_id"] == "rock_paper_scissors") & ~trials["failed"]]
+    trials = trials[trials["sync_group_id"].notna() & ~trials["failed"]]
 
     round_ = ["sync_group_id", "sync_group_round"]
     partners = trials[round_ + ["participant_id", "answer"]].rename(
@@ -72,8 +72,7 @@ the same round:
     ]
 
 A player who timed out has no answer of their own: in the
-``rock_paper_scissors`` demo, whose trials accumulate answers, their
-``answer`` is ``{"choose_action": None}``. The move actually played,
+``rock_paper_scissors`` demo their ``answer`` is ``None``. The move actually played,
 including the random one given to a player who timed out, is in each
 trial's vars (``result``), as the demo's basic data shows (see
 :ref:`basic_data_groups`).

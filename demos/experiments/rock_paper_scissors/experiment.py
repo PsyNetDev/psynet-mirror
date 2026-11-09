@@ -9,8 +9,8 @@ from psynet.chatroom import ChatRoom, EnableChatrooms
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.sync import GroupBarrier, SimpleGrouper
-from psynet.timeline import Timeline, join
-from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
+from psynet.timeline import Module, Timeline, for_loop, join
+from psynet.trial.main import Trial
 
 GROUP = "rock_paper_scissors"
 PARTNER_WAIT_SECONDS = 300
@@ -29,18 +29,14 @@ def get_timeline():
             waiting_message="Waiting for your partner",
             max_wait_time=PARTNER_WAIT_SECONDS,
         ),
-        StaticTrialMaker(
-            id_="rock_paper_scissors",
-            trial_class=RockPaperScissorsTrial,
-            # A single node: every round is the same game, so each pair
-            # revisits it for three rounds.
-            nodes=[StaticNode(definition={"game": "rock_paper_scissors"})],
-            allow_repeated_nodes=True,
-            expected_trials_per_participant=N_ROUNDS,
-            max_trials_per_participant=N_ROUNDS,
-            sync_group_type=GROUP,
-            sync_group_waiting_message="Waiting for your partner",
-            sync_group_max_wait_time=PARTNER_WAIT_SECONDS,
+        Module(
+            "game",
+            for_loop(
+                label="rounds",
+                iterate_over=range(N_ROUNDS),
+                logic=RockPaperScissorsTrial.cue({}),
+                time_estimate_per_iteration=RockPaperScissorsTrial.time_estimate,
+            ),
         ),
     )
 
@@ -52,9 +48,9 @@ def score(action, partner_action):
     return 1 if BEATS[action] == partner_action else -1
 
 
-class RockPaperScissorsTrial(StaticTrial):
+class RockPaperScissorsTrial(Trial):
+    sync_group_type = GROUP
     time_estimate = 35
-    accumulate_answers = True
 
     def show_trial(self, experiment, participant):
         return join(

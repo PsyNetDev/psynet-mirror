@@ -120,8 +120,7 @@ Group membership, for groups formed by a grouper (see
     and the reason in ``removal_reason``.
     ``creation_time`` is when the participant joined.
 
-In a static trial maker, groups can share nodes and networks: in the
-``rock_paper_scissors`` demo every pair plays on the same node. Networks of
+In a static trial maker, groups can share nodes and networks. Networks of
 within-chain trial makers with ``sync_group_type`` record the group in
 ``network.sync_group_id``.
 

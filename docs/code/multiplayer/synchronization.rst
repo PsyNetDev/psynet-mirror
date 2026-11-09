@@ -264,11 +264,10 @@ on their trial, where ``show_feedback`` reads it:
 :class:`~psynet.trial.main.SyncGroupNode` for the round if those trials are
 on it, ignoring members with no current trial, and otherwise ``None``),
 ``leader`` and ``barrier`` (``participant`` is the leader too, kept for
-compatibility). In ``rock_paper_scissors`` every pair plays on the same
-node, which is not a group's node, so ``node`` is ``None`` and the results
-go on the trials. Cued trials share a node per group and round, so there a
-``@classmethod`` on the trial class can also save the
-group's results in ``node.var`` (see :ref:`rounds-cued-trials`). Results on
+compatibility). Cued trials, as in ``rock_paper_scissors``, share a node per
+group and round, so a ``@classmethod`` on the trial class can also save the
+group's results in ``node.var`` (see :ref:`rounds-cued-trials`). A trial
+maker's nodes are not a group's nodes, so there ``node`` is ``None``. Results on
 the trial or node stay in the export for every round, while a participant
 variable keeps only the latest. ``on_release`` must be a module-level
 function, a static or class method, or a method bound to a trial maker or a

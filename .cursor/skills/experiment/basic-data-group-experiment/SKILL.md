@@ -50,7 +50,7 @@ def get_basic_data(cls, context=None, **kwargs):
 
 Start from the `get_basic_data` of the demo closest to the design:
 
-- `rock_paper_scissors`: a fixed pair playing a trial maker.
+- `rock_paper_scissors`: a fixed pair playing cued trials.
 - `ultimatum_pairing`: pairs that change every round, with a table per
   pair from the nodes (see "Games with a regrouper" in `data/basic_data`).
 - `lowest_unique_number`: rooms that each play one round. Its `round`

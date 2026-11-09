@@ -376,7 +376,7 @@ group as a ``{role: participant}`` dict. See
 :class:`~psynet.sync.Regrouper` for this and the other settings.
 
 **A trial maker.** A trial maker with ``sync_group_type``, as in the
-``rock_paper_scissors`` demo, gives a group's members their trials
+``create_rate_sync`` demo, gives a group's members their trials
 together and numbers the group's rounds from 0 in ``sync_group_round``.
 Cued trials suit games whose groups change every round, or whose rounds are
 a plain loop in the timeline.
