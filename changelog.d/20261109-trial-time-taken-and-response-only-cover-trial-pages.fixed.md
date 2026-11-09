@@ -1,0 +1,1 @@
+`Trial.time_taken` and `Trial.response` now cover only the trial's own pages: `time_taken` sums the times of its accepted pages, and `response` is the response of its last page. Previously they also counted submissions rejected by validation, feedback pages and pages shown after the trial until the next one started.
