@@ -1935,6 +1935,14 @@ class Page(Elt):
             return list(self.background_recording.sources)
         return []
 
+    def _reject_impossible_answer(self, answer):
+        """Return a :class:`FailedValidation` for an answer the page cannot produce.
+
+        The experiment runs this check on every submitted response before
+        :meth:`validate`, so overriding :meth:`validate` does not skip it.
+        """
+        return None
+
     def _accept_response(self, resp, experiment, participant):
         """Save an answer that passed validation and run ``on_complete``."""
         if self.save_answer:

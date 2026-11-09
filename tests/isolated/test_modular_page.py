@@ -6,11 +6,16 @@ from flask import Flask
 from jinja2 import DictLoader
 from markupsafe import Markup
 
+from psynet.bot import Bot
+from psynet.db import transaction
+from psynet.demography.general import CountryOfBirth, MotherTongue
+from psynet.experiment import get_experiment
 from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     AudioMeterControl,
     CheckboxControl,
     Control,
     DropdownControl,
+    KeyboardPushButtonControl,
     ModularPage,
     MusicNotationPrompt,
     Prompt,
@@ -19,6 +24,10 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     RatingScale,
     TimedPushButtonControl,
 )
+from psynet.page import InfoPage
+from psynet.pytest_psynet import path_to_test_experiment
+from psynet.redis import redis_vars
+from psynet.timeline import Timeline
 
 # from importlib import resources
 
@@ -497,6 +506,119 @@ def test_option_controls_save_numpy_choices_as_python_values(
     saved = control.format_answer(raw_answer)
     assert saved == answer and type(saved) is type(answer)
     assert str(control.labels[-1]) == raw_answer
+
+
+class _NoGreenControl(PushButtonControl):
+    def validate(self, response, **kwargs):
+        return "No green!" if response.answer == "green" else None
+
+
+@pytest.fixture
+def submit(db_session, monkeypatch):
+    """Have a bot submit the formatted answer ``answer`` and return the outcome."""
+    experiment = get_experiment()
+    redis_vars.set("launch_finished", True)
+
+    def _submit(page, answer):
+        timeline = Timeline(page, InfoPage("Done", time_estimate=1))
+        monkeypatch.setattr(experiment, "timeline", timeline)
+        bot = Bot()
+        with transaction():
+            result = experiment.process_response(
+                participant_id=bot.id,
+                raw_answer=None,
+                answer=answer,
+                blobs={},
+                metadata={"time_taken": 0},
+                page_uuid=bot.page_uuid,
+                client_ip_address="127.0.0.1",
+            )
+        return result.payload["submission"]
+
+    return _submit
+
+
+_CONSENTS = pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+
+
+@_CONSENTS
+@pytest.mark.parametrize(
+    "control, answer",
+    [
+        (PushButtonControl([0, 10]), 11),
+        (PushButtonControl([1, 2]), "1"),
+        (PushButtonControl([1]), True),
+        (KeyboardPushButtonControl(["a"], keys=["KeyA"]), "b"),
+        (_NoGreenControl(["red"]), "blue"),
+        (DropdownControl(["a"]), "b"),
+        (RadioButtonControl(["a"]), "free text"),
+        (CheckboxControl(["a", "b"]), ["a", "c"]),
+        (CheckboxControl(["a"]), "a"),
+        (CheckboxControl(["a"], force_selection=True), None),
+        (DropdownControl(["a"], force_selection=True), None),
+    ],
+)
+def test_option_controls_reject_answers_outside_their_choices(submit, control, answer):
+    page = ModularPage("test", "Hi!", control, time_estimate=1)
+    assert submit(page, answer) == "rejected"
+
+
+@_CONSENTS
+def test_rejecting_an_answer_outside_the_choices_logs_a_warning(submit, caplog):
+    page = ModularPage("pick", "Hi!", PushButtonControl(["a", "b"]), time_estimate=1)
+    submit(page, "c")
+    [record] = [r for r in caplog.records if "restrict_to_choices" in r.getMessage()]
+    assert record.levelname == "WARNING"
+    assert all(s in record.getMessage() for s in ["'pick'", "'c'", "['a', 'b']"])
+
+
+@_CONSENTS
+@pytest.mark.parametrize(
+    "control, answer",
+    [
+        (PushButtonControl([1, 2]), 2),
+        (PushButtonControl([1, 2]), None),
+        (DropdownControl(["a"], force_selection=False), ""),
+        (CheckboxControl(["a", "b"]), ["b"]),
+        (CheckboxControl(["a"]), []),
+        (RadioButtonControl(["a"], show_free_text_option=True), "free text"),
+        (PushButtonControl([0, 10], restrict_to_choices=False), 11),
+        (TimedPushButtonControl(["A"]), [{"eventType": "trialStart"}]),
+    ],
+)
+def test_option_controls_accept_their_choices_and_empty_answers(
+    submit, control, answer
+):
+    page = ModularPage("test", "Hi!", control, time_estimate=1)
+    assert submit(page, answer) == "approved"
+
+
+@_CONSENTS
+@pytest.mark.parametrize(
+    "make_page",
+    [
+        # CountryOfBirth overrides ModularPage.validate without calling super().
+        CountryOfBirth,
+        lambda: ModularPage(
+            "test",
+            "Hi!",
+            DropdownControl(["GB", "US"]),
+            validate=lambda answer: None,
+            time_estimate=1,
+        ),
+    ],
+)
+def test_page_validation_cannot_accept_answers_outside_the_choices(submit, make_page):
+    assert submit(make_page(), "XX") == "rejected"
+    assert submit(make_page(), "GB") == "approved"
+
+
+@_CONSENTS
+@pytest.mark.parametrize("page_class", [CountryOfBirth, MotherTongue])
+def test_demography_dropdown_pages_require_an_answer(submit, page_class):
+    assert submit(page_class(), None) == "rejected"
 
 
 def test_option_controls_reject_choices_with_the_same_text():
