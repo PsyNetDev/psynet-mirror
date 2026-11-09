@@ -128,11 +128,13 @@ a fixed group without top-ups and no regrouper: a late joiner, or a group
 mixing players at different positions, would otherwise land on an old
 round's node or a node of their own.
 
-``join(..., stop_if=left_pair)`` runs the trial only for players in a
-pair. Once started, the trial runs to its end, where it is scored, even if
-the player is removed from their pair partway. Those who sat out, or were
-removed, then see the ``conditional`` page after it (see
-:ref:`rounds-sitting-out`).
+The ``conditional`` decides once, before the trial: a player in a pair gets
+the trial, and one who sat out gets a page instead (see
+:ref:`rounds-sitting-out`). Once started, the trial runs to its end, where
+it is scored, even if the player is removed from their pair partway, so
+its feedback covers every outcome of the round. A round that is one cued
+trial needs no more than this; ``join(..., stop_if=...)`` is for rounds of
+several steps.
 
 The trial's ``show_trial`` is the decision page followed by a
 :class:`~psynet.sync.GroupBarrier` for the pair:
@@ -222,8 +224,8 @@ the cohort if that left it below its quorum, and the default
 ``below_quorum="fail"`` would fail the players who were on time.
 
 A player removed from their pair finishes the trial: its later group
-barriers let them straight through. The ``conditional`` after the trial then
-shows them ``not_playing``.
+barriers let them straight through, and its feedback tells them they were
+away.
 
 Scoring the round
 -----------------
@@ -270,15 +272,10 @@ Sitting out
 With three players in a cohort, one of them has no partner. The player who has
 played the most rounds sits the round out; with ``left_over="sit_out"``
 they move on without a pair instead of waiting (see
-:class:`~psynet.sync.Regrouper`), so ``stop_if`` skips their trial that
-round and the ``conditional`` after it shows them a page. A player who was paired
-but removed from the pair before submitting their decision is told that they were
-away instead. They have left the cohort too, so the ``explain_round``
-condition in the timeline above also checks
-``participant.sync_group_removal_reason("pair")``:
-
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :pyobject: not_playing
+:class:`~psynet.sync.Regrouper`), so the ``conditional`` gives them a page
+instead of a trial that round. A player who was paired but removed from the
+pair before submitting their decision has a trial, and the first check in
+``show_feedback`` above tells them that they were away.
 
 .. figure:: ../../_static/images/rounds/sit_out.png
    :width: 600
@@ -334,8 +331,8 @@ own trials as their round:
 A player left with nobody to play with, for example a latecomer whose
 last round comes after everyone else has finished, waits at the regrouper
 for up to a minute. Then ``max_wait_action="continue_without_group"`` lets
-them carry on without a room, and ``stop_if`` skips the round, with a short
-page from the ``conditional`` after it, rather than failing them.
+them carry on without a room, and the ``conditional`` shows them a short
+page instead of the round, rather than failing them.
 
 Each player picks a number, and the room sees who has picked, who ran out
 of time and who is still deciding:

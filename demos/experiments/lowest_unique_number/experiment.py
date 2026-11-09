@@ -22,7 +22,7 @@ Missing a round doesn't fail anyone. A player left with nobody to play
 with, for example one who comes back after the others' last round has
 started, waits at the regrouper for up to ``MAX_WAIT_SECONDS``, then skips
 that round with a short message (``max_wait_action="continue_without_group"``
-and ``stop_if``) instead of being failed.
+and a ``conditional``) instead of being failed.
 
 To keep the same people together across rounds, form cohorts first and
 regroup within them (``Regrouper("room", within="cohort", ...)``); see the
@@ -78,11 +78,11 @@ def get_timeline():
                         max_wait_time=MAX_WAIT_SECONDS,
                         max_wait_action="continue_without_group",
                     ),
-                    join(PickTrial.cue({"numbers": NUMBERS}), stop_if=left_room),
                     conditional(
-                        "not_playing",
-                        left_room,
-                        PageMaker(not_playing, time_estimate=5),
+                        "in_room",
+                        lambda participant: participant.in_sync_group("room"),
+                        PickTrial.cue({"numbers": NUMBERS}),
+                        InfoPage(NO_ROOM_TEXT, time_estimate=5),
                     ),
                 ),
                 time_estimate_per_iteration=PickTrial.time_estimate + 5,
@@ -93,20 +93,7 @@ def get_timeline():
 
 
 AWAY_TEXT = "You were away for too long, so you missed this round."
-
-
-def left_room(participant):
-    return not participant.in_sync_group("room")
-
-
-def not_playing(participant):
-    """Explain why a player in no room this round doesn't play it."""
-    if participant.sync_group_removal_reason("room") == "late":
-        # Taken out of their room mid-round by the barrier's late_after.
-        text = AWAY_TEXT
-    else:
-        text = "Nobody else was left to play this round with, so you skip it."
-    return InfoPage(text, time_estimate=5)
+NO_ROOM_TEXT = "Nobody else was left to play this round with, so you skip it."
 
 
 def lowest_unique(choices: dict):
@@ -185,9 +172,9 @@ class PickTrial(Trial):
 
     def show_feedback(self, experiment, participant):
         if not self.var.has("won"):
-            # Taken out of the room before it scored them: the not_playing
-            # page after the trial explains.
-            return None
+            # Taken out of the room mid-round by the barrier's late_after,
+            # before it scored them.
+            return InfoPage(AWAY_TEXT, time_estimate=5)
         if self.answer is None:
             return InfoPage(
                 "You ran out of time, so you missed this round.", time_estimate=5
