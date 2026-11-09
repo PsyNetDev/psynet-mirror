@@ -1,0 +1,1 @@
+A member failed by `GroupBarrier(late_action="fail")` now leaves the barrier's group with the reason `"late"` before being failed, as with the other `late_action` values, so `participant.sync_group_removal_reason()` returns `"late"` for that group instead of `"left_experiment"`.

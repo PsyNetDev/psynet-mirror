@@ -393,15 +393,18 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         String,
         doc=(
             "How the group's round ended for this player, for a trial made by "
-            ':meth:`Trial.cue` on a :class:`SyncGroupNode`: ``"released"`` '
-            "once a :class:`~psynet.sync.GroupBarrier` releases the group with "
-            "the trial on the round's node, or why the player left the group "
-            "before the trial's pages (``show_trial``) ended, one of the "
-            "reasons of :meth:`~psynet.sync.SyncGroup.remove_participant`, "
-            'such as ``"late"``, ``"left_experiment"`` or '
-            '``"group_dissolved"``, or ``"removed"`` without a reason. '
-            "Leaving replaces a release by an earlier barrier of the round. "
-            "``None`` while nothing has happened yet, and for ungrouped trials."
+            ":meth:`Trial.cue` on a :class:`SyncGroupNode`, one of "
+            ':data:`~psynet.sync.SyncGroupOutcome`: ``"released"`` '
+            "once a :class:`~psynet.sync.GroupBarrier` releases the group while "
+            "this is the player's current trial, or why the player left the "
+            "group, one of the reasons of "
+            ":meth:`~psynet.sync.SyncGroup.remove_participant`, such as "
+            '``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or '
+            '``"removed"`` without a reason. The first of these is kept, '
+            "except that leaving before :attr:`complete` is set replaces a "
+            'release, and ``"moved_on"`` or ``"finished"`` after it is set '
+            "stores nothing. ``None`` while nothing has happened yet, and for "
+            "ungrouped trials."
         ),
     )
     definition = Column(PythonObject)
@@ -410,7 +413,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Boolean,
         doc=(
             "Whether the trial has been completed (i.e. received a response from the "
-            "participant). The user should not typically change this directly."
+            "participant). It is set once all of :meth:`show_trial`'s pages have "
+            "ended, before :meth:`show_feedback`. The user should not typically "
+            "change this directly."
         ),
     )
 
@@ -1268,8 +1273,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           Once started, the trial runs to its end even if they leave the
           group, so :meth:`show_feedback` can explain every outcome.
         - :attr:`sync_group_outcome` records how the round ended for the
-          player: ``"released"`` by a barrier, or why they left the group
-          before the trial's pages ended. A partner's is on their trial in
+          player: ``"released"`` by a barrier, or why they left the group.
+          A partner's is on their trial in
           ``self.node.all_trials``.
 
         Parameters
