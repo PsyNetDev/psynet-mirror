@@ -1721,8 +1721,9 @@ class GroupBarrier(Barrier):
         arguments as ``on_release`` except ``leader`` and ``left``:
         ``participants`` are the members waiting here, and ``trials`` and
         ``node`` refer to their current trials. The same serialization rules
-        apply. Dissolving waits until no member's request is in flight, so
-        ``on_dissolve`` is called once, with every member waiting here.
+        apply. Dissolving waits for any member who is in the middle of another
+        request, so ``on_dissolve`` is called once, with every member waiting
+        here.
 
     stop_top_ups
         If ``True``, the group stops accepting newcomers once it passes this
@@ -2094,7 +2095,8 @@ class GroupBarrier(Barrier):
             if outcome == "dissolve":
                 # The group can never reach its quorum, so remove everyone
                 # and release whoever is waiting here, after the grouper's
-                # below_quorum has failed or released each of them.
+                # below_quorum has failed or released each of them (or
+                # nobody yet, if a member is busy; see _dissolve).
                 group.accepts_top_ups = False
                 participants_to_release.extend(
                     participant
@@ -2310,17 +2312,18 @@ class GroupBarrier(Barrier):
         had_others = group.n_active_participants > 0
         if hasattr(group, "dissolve_if_below_quorum"):
             group.dissolve_if_below_quorum()
-        dissolved = group.n_active_participants == 0 or group.dissolving
+        dissolves = group.n_active_participants == 0 or group.dissolving
         if (
             had_others
-            and dissolved
+            and dissolves
             and getattr(group, "below_quorum", None) != "continue_without_group"
         ):
             logger.warning(
-                "GroupBarrier '%s': removing late members %s dissolved group %s, "
-                "so its below_quorum may have failed its other members while the "
-                "late ones carry on. Set below_quorum='continue_without_group' on "
-                "the grouper to let them carry on too.",
+                "GroupBarrier '%s': removing late members %s dissolves group %s "
+                "(now, or once its members' requests finish), so its below_quorum "
+                "may fail its other members while the late ones carry on. Set "
+                "below_quorum='continue_without_group' on the grouper to let them "
+                "carry on too.",
                 self.id,
                 [p.id for p in late],
                 group.id,
@@ -2710,8 +2713,8 @@ class SimpleGrouper(Grouper):
         example from how many rounds they played. It is called while the group is being
         dissolved, so base the decision on the participant, not on who else is still in
         ``group``; if it raises or returns anything else, the error is logged and the member
-        is failed. A member whose own request is in progress is handled within
-        about a second by the barrier poller instead.
+        is failed. See :ref:`groups_below_min_size` for when the group is
+        dissolved.
 
     top_up_wait
         With ``join_existing_groups=True``, how many seconds a group below its
@@ -4186,8 +4189,8 @@ class SyncGroup(SQLBase, SQLMixin):
     end_time = Column(DateTime)
     last_barrier_pass_time = Column(DateTime, nullable=True)
     leader_id = Column(Integer, ForeignKey("participant.id"))
-    # Dissolution started but skipped members whose rows were busy; the
-    # barrier poller finishes it.
+    # Dissolution is queued because a member's row was busy; nobody has been
+    # removed yet, and the barrier poller dissolves the group all at once.
     dissolving = Column(Boolean, default=False)
     # The grouper that formed the group, and for a Regrouper with ``within``,
     # the group it regrouped within.
@@ -4364,8 +4367,8 @@ class SyncGroup(SQLBase, SQLMixin):
             )
         _forget_active_sync_group(participant)
         for link in self.participant_links:
-            is_member = (
-                link.participant is participant or link.participant_id == participant.id
+            is_member = link.participant_id == participant.id or (
+                link.participant_id is None and link.participant is participant
             )
             if is_member and link.active:
                 link.active = False
@@ -4513,7 +4516,7 @@ class SimpleSyncGroup(SyncGroup):
         the game has started and a newcomer couldn't catch up. From then on it
         is treated as a group without top-ups (see
         :ref:`groups_below_min_size`); a group already below its
-        quorum is dissolved now. To stop top-ups when the group passes a
+        quorum is dissolved, usually at once. To stop top-ups when the group passes a
         barrier instead, pass ``stop_top_ups=True`` to that :class:`GroupBarrier`.
         """
         if not self.accepts_top_ups:
@@ -4912,12 +4915,16 @@ def _lock_free_participants(participants):
 def _lock_all_participants(participants):
     """Lock every participant's row without waiting, or return ``None`` if another transaction holds one.
 
-    Like :func:`_lock_free_participants`, but all or nothing. The rows it did
-    lock stay locked until this transaction ends.
+    Like :func:`_lock_free_participants`, but all or nothing. The locks are
+    taken in a savepoint, rolled back if any row was skipped, so the free
+    members' requests are not held up until this transaction ends. Opening
+    the savepoint flushes pending changes, so rolling it back keeps them.
     """
-    locked = _skip_locked_participant_ids(participants)
-    if any(participant.id not in locked for participant in participants):
-        return None
+    with db.session.begin_nested() as savepoint:
+        locked = _skip_locked_participant_ids(participants)
+        if any(participant.id not in locked for participant in participants):
+            savepoint.rollback()
+            return None
     return _still_working(participants)
 
 
