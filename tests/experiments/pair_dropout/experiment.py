@@ -12,10 +12,14 @@ import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages, run_bots_to_completion
 from psynet.consent import MainConsent
 from psynet.page import InfoPage
-from psynet.sync import GroupBarrier, SimpleGrouper, only_in_group
-from psynet.timeline import Timeline
+from psynet.sync import GroupBarrier, SimpleGrouper
+from psynet.timeline import Timeline, conditional
 
 LATE_AFTER = 5
+
+
+def _in_pair(participant):
+    return participant.in_sync_group("pair")
 
 
 def _finish_round_1(participants):
@@ -42,14 +46,17 @@ class Exp(psynet.experiment.Experiment):
             on_release=_finish_round_1,
             on_dissolve=_finish_round_1,
         ),
-        only_in_group(
-            "pair",
+        conditional(
+            "round_2",
+            _in_pair,
             InfoPage("Round 2 with your partner.", time_estimate=5),
-            otherwise=InfoPage("Round 2 on your own.", time_estimate=5),
+            InfoPage("Round 2 on your own.", time_estimate=5),
         ),
         GroupBarrier(id_="round_2", group_type="pair"),
-        only_in_group(
-            "pair", InfoPage("Thanks for playing together.", time_estimate=5)
+        conditional(
+            "thanks",
+            _in_pair,
+            InfoPage("Thanks for playing together.", time_estimate=5),
         ),
         InfoPage("Done.", time_estimate=5),
     )

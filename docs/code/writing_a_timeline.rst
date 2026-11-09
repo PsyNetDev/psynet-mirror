@@ -173,6 +173,30 @@ score is above 5, with feedback that depends on the score:
    :dedent: 8
    :append: ),
 
+To stop early, pass ``stop_if``, a function of ``participant`` and/or
+``experiment``. ``for_loop`` checks it before each iteration, and
+:func:`~psynet.timeline.join` checks it before each of its arguments; once
+it returns ``True``, the participant skips the rest. Neither interrupts an
+iteration or argument that has started, so wrap steps that belong together
+in their own ``join``. To show something to the participants who stopped,
+follow with a ``conditional``:
+
+.. code-block:: python
+
+    def left_pair(participant):
+        return not participant.in_sync_group("pair")
+
+    join(
+        for_loop(
+            label="rounds",
+            iterate_over=lambda: range(5),
+            logic=lambda n: join(choice_page(n), outcome_page(n)),
+            time_estimate_per_iteration=20,
+            stop_if=left_pair,
+        ),
+        conditional("explain", left_pair, InfoPage("Your partner left.")),
+    )
+
 Organizing a long timeline
 --------------------------
 

@@ -19,11 +19,14 @@ class Exp(psynet.experiment.Experiment):
         InfoPage("Round 1.", time_estimate=5),
         GroupBarrier(id_="round_1", group_type="pair",
                      late_after=LATE_AFTER, late_action="leave_group"),
-        only_in_group(
-            "pair",
-            InfoPage("Round 2 with your partner.", time_estimate=5),
-            GroupBarrier(id_="round_2", group_type="pair"),
-            otherwise=InfoPage("Round 2 on your own.", time_estimate=5),
+        conditional(
+            "round_2",
+            lambda participant: participant.in_sync_group("pair"),
+            join(
+                InfoPage("Round 2 with your partner.", time_estimate=5),
+                GroupBarrier(id_="round_2", group_type="pair"),
+            ),
+            InfoPage("Round 2 on your own.", time_estimate=5),
         ),
         InfoPage("Done.", time_estimate=5),
     )

@@ -22,7 +22,7 @@ Missing a round doesn't fail anyone. A player left with nobody to play
 with, for example one who comes back after the others' last round has
 started, waits at the regrouper for up to ``MAX_WAIT_SECONDS``, then skips
 that round with a short message (``max_wait_action="continue_without_group"``
-and ``only_in_group``) instead of being failed.
+and ``stop_if``) instead of being failed.
 
 To keep the same people together across rounds, form cohorts first and
 regroup within them (``Regrouper("room", within="cohort", ...)``); see the
@@ -37,8 +37,8 @@ from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
-from psynet.sync import GroupBarrier, Regrouper, only_in_group
-from psynet.timeline import Module, PageMaker, Timeline, for_loop, join
+from psynet.sync import GroupBarrier, Regrouper
+from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop, join
 from psynet.trial.main import SyncGroupNode, Trial
 
 ROUND_SECONDS = 10
@@ -78,10 +78,11 @@ def get_timeline():
                         max_wait_time=MAX_WAIT_SECONDS,
                         max_wait_action="continue_without_group",
                     ),
-                    only_in_group(
-                        "room",
-                        PickTrial.cue({"numbers": NUMBERS}),
-                        otherwise=PageMaker(not_playing, time_estimate=5),
+                    join(PickTrial.cue({"numbers": NUMBERS}), stop_if=left_room),
+                    conditional(
+                        "not_playing",
+                        left_room,
+                        PageMaker(not_playing, time_estimate=5),
                     ),
                 ),
                 time_estimate_per_iteration=PickTrial.time_estimate + 5,
@@ -92,6 +93,10 @@ def get_timeline():
 
 
 AWAY_TEXT = "You were away for too long, so you missed this round."
+
+
+def left_room(participant):
+    return not participant.in_sync_group("room")
 
 
 def not_playing(participant):
@@ -180,10 +185,9 @@ class PickTrial(Trial):
 
     def show_feedback(self, experiment, participant):
         if not self.var.has("won"):
-            # Not expected: only_in_group skips this page for players taken
-            # out of the room before it scored them. Kept so that an unscored
-            # trial shows the away message rather than failing.
-            return InfoPage(AWAY_TEXT, time_estimate=5)
+            # Taken out of the room before it scored them: the not_playing
+            # page after the trial explains.
+            return None
         if self.answer is None:
             return InfoPage(
                 "You ran out of time, so you missed this round.", time_estimate=5
