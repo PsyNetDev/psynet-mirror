@@ -1,4 +1,6 @@
+import sys
 import threading
+import types
 from unittest.mock import Mock
 
 import pytest
@@ -67,3 +69,16 @@ def test_dashboard_sessions_share_one_login_across_experiments_and_threads(
     assert first is second
     assert other_thread[0] is not first
     assert other_thread[0].cookies["session"] == "logged-in"
+
+
+def test_clean_sys_modules_removes_the_directory_name_alias(monkeypatch):
+    from psynet.command_line import clean_sys_modules
+
+    package = types.ModuleType("dallinger_experiment")
+    monkeypatch.setitem(sys.modules, "dallinger_experiment", package)
+    monkeypatch.setitem(sys.modules, "timeline", package)
+
+    clean_sys_modules()
+
+    assert "dallinger_experiment" not in sys.modules
+    assert "timeline" not in sys.modules
