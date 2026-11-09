@@ -1217,12 +1217,16 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         :class:`SyncGroupNode`, so the group's results for that round can go in
         ``trial.node.var``. Rounds advance by themselves:
 
-        - A cue joins the group's newest node in the module, unless the
-          participant already has a trial on it.
-        - Otherwise it starts the group's next round, counted from 0.
+        - A cue joins the group's newest node in the module while that round
+          is open: the participant has no trial on it, and some current
+          member's trial on it hasn't ended.
+        - Otherwise it starts the group's next round, counted from 0. So a
+          member who joins late plays the current round if it is still
+          going, or starts the next one, which the others then join.
         - Put a :class:`~psynet.sync.GroupBarrier` in each round, for example
-          in :meth:`show_trial`, so that no member starts the next round
-          before the others have cued this one. ``trial.answer`` is only set
+          in :meth:`show_trial`, so that no member ends a round before the
+          others have cued it; a member who cued after the others had all
+          ended it would start the next round instead. ``trial.answer`` is only set
           when the trial ends, after that barrier, so its ``on_release`` reads
           what the pages stored (``save_answer`` puts it in
           ``participant.var``); :meth:`show_feedback`, :meth:`score_answer`
@@ -1273,12 +1277,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             to the participant-facing trial definition.
 
         round :
-            Rarely needed: the group's round to put this trial in, overriding
-            the automatic one. Only for a trial class that sets
-            :attr:`sync_group_type`; every member of the group must pass the
-            same value. A round with two phases is normally one trial class
-            with several pages; to put trials of two classes in one round,
-            pass both the same ``round``.
+            Rarely needed, since a round with two phases is normally one trial
+            class with several pages. The group's round to put this trial in,
+            overriding the automatic one, for example to put trials of two
+            classes in one round by passing both the same ``round``. Only for a
+            trial class that sets :attr:`sync_group_type`; every member of the
+            group must pass the same value.
 
         Examples
         --------
@@ -4286,13 +4290,33 @@ class SyncGroupNode(GenericTrialNode):
         """The :class:`~psynet.sync.SyncGroup` whose round this node holds."""
         return db.session.get(SyncGroup, self.sync_group_id)
 
+    @staticmethod
+    def _round_is_open(node, group, participant):
+        """Whether ``participant``'s cue should join ``node``, the group's newest round."""
+        trials = Trial.query.filter_by(node_id=node.id)
+        if trials.filter_by(participant_id=participant.id).first() is not None:
+            return False
+        members = [p.id for p in group.active_participants if p.id != participant.id]
+        return (
+            trials.filter(
+                Trial.participant_id.in_(members),
+                Trial.complete.is_not(True),
+                Trial.failed.is_not(True),
+            ).first()
+            is not None
+        )
+
     @classmethod
     def for_cue(cls, group, round_number, participant, experiment, make_definition):
         """Return the node that ``participant``'s cued trial joins, creating it if needed.
 
-        Without ``round_number``, this is the group's newest node in the module,
-        unless the participant already has a trial on it; then the group moves
-        on to a new node for the next round, counted from 0.
+        Without ``round_number``, this is the group's newest node in the module
+        while that round is open: the participant has no trial on it, and some
+        current member's trial on it hasn't ended yet. Otherwise the group
+        moves on to a new node for the next round, counted from 0, which the
+        others then join. A trial ends when it gets its answer
+        (``trial.complete``); trials of players who have left the group don't
+        keep a round open.
         With ``round_number``, it is the group's node for that round. A new node's
         definition is ``make_definition(round_number)``.
 
@@ -4307,12 +4331,7 @@ class SyncGroupNode(GenericTrialNode):
             newest = nodes.order_by(cls.sync_group_round.desc()).first()
             if newest is None:
                 round_number = 0
-            elif (
-                Trial.query.filter_by(
-                    node_id=newest.id, participant_id=participant.id
-                ).first()
-                is None
-            ):
+            elif cls._round_is_open(newest, group, participant):
                 return newest
             else:
                 round_number = newest.sync_group_round + 1
