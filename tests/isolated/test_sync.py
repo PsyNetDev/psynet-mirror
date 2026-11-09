@@ -7536,6 +7536,17 @@ def test_latecomers_fill_a_team_until_it_passes_game_starts(
     assert slow.sync_group_removal_reason("team") == "late"
     assert set(game_starts.choose_who_to_release(on_time)) == set(on_time)
 
+    lone, slow = [new_participant(exp) for _ in range(2)]
+    for p in (lone, slow):
+        p.status = "working"
+    below_quorum = grouper._make_group([lone, slow], initial_group_size=4)
+    for link in slow.sync_group_links:
+        link.arrival_time -= timedelta(seconds=121)
+    game_starts.check_waiting_participants([lone])
+    assert slow.sync_group_removal_reason("team") == "late"
+    assert game_starts.choose_who_to_release([lone]) == []
+    assert lone.in_sync_group("team") and below_quorum.accepts_top_ups
+
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True

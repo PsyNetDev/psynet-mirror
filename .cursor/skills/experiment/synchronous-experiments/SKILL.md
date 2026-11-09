@@ -139,10 +139,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   they play the round out and see its outcome, as in `ultimatum_pairing`;
   only the player removed for being late is out of the pair, and gets their
   own page there.
-- With `join_existing_groups=True`, if newcomers must not join a group they
+- With `join_existing_groups=True`, if a newcomer must not join a group they
   couldn't catch up with (for example a nearly finished chain), pass
-  `join_criterion=...`; it turns that newcomer away but doesn't stop the
-  group waiting for others; see "Groups below quorum" in
+  `join_criterion`; see "Groups below quorum" in
   `code/multiplayer/synchronization`.
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with
   filler work via `trial_maker.custom(...)`, as in `sync_quorum`.
