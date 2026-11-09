@@ -1653,8 +1653,9 @@ class GroupBarrier(Barrier):
         Optional callback invoked when the barrier releases the group. It may take
         ``group``, ``participants`` (the group's active members), ``trials``
         (each member's ``current_trial``, in the same order as ``participants``,
-        ``None`` for a member with none, for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
-        ``sync_group_type`` that the barrier is part of), ``node`` (the
+        for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
+        ``sync_group_type`` that the barrier is part of, and ``None`` for a
+        member with none), ``node`` (the
         group's :class:`~psynet.trial.main.SyncGroupNode` for the round, if
         all those trials are on it, ignoring members with no current trial,
         and otherwise ``None``), ``leader`` (the

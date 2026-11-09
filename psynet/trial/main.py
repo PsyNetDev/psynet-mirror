@@ -1271,11 +1271,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             to the participant-facing trial definition.
 
         round :
-            Rarely needed, since a round with two phases is normally one trial
-            class with several pages, and cues of different classes while a
-            round is open, such as one class per role, share its node and
-            definition without ``round``. The group's round to put this trial
-            in, overriding the automatic one, for phases of one round played
+            The group's round to put this trial in, overriding the automatic
+            one. Rarely needed, since a round with two phases is normally one
+            trial class with several pages, and cues of different classes while
+            a round is open, such as one class per role, share its node and
+            definition without ``round``. Use it for phases of one round played
             one after the other by trials of different classes (pass both the
             same non-negative integer). Only for a trial class that sets
             :attr:`sync_group_type`, and only safe when every member is sure
@@ -4351,9 +4351,13 @@ class SyncGroupNode(GenericTrialNode):
         """
         module_id = participant.module_id
         _lock_until_commit(f"sync_group_node:{module_id}:{group.id}")
+        # Re-read under the lock what another request may have just committed.
+        db.session.expire(group, ["participant_links"])
         nodes = cls.query.filter_by(module_id=module_id, sync_group_id=group.id)
         if round_number is None:
-            newest = nodes.order_by(cls.sync_group_round.desc()).first()
+            newest = (
+                nodes.order_by(cls.sync_group_round.desc()).populate_existing().first()
+            )
             if newest is None:
                 round_number = 0
             elif cls._round_is_open(newest, group, participant):
