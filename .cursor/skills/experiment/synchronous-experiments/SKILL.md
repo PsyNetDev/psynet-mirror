@@ -232,7 +232,8 @@ Module("game", for_loop(
   continue alone. A skipped cue leaves `participant.current_trial` as
   `None`, so guard later steps of the iteration that read it with a
   `conditional` on `participant.current_trial is not None`. Don't pass
-  `round=` with a regrouper.
+  `round=` with a regrouper, and give each run of such a module its own
+  module id.
 - `on_release` reads each member's answer so far from `trial.answer`
   (`accumulate_answers = True` for several answer pages, which makes it a
   dict from the start), and `score_answer`, `show_feedback` and
