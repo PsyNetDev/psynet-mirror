@@ -401,8 +401,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             ":meth:`~psynet.sync.SyncGroup.remove_participant`, such as "
             '``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or '
             '``"removed"`` without a reason. The first of these is kept, '
-            "except that leaving before :attr:`complete` is set replaces a "
-            'release, and ``"moved_on"`` or ``"finished"`` after it is set '
+            "except that leaving before :attr:`complete` is set replaces "
+            '``"stayed"``, and ``"moved_on"`` or ``"finished"`` after it is set '
             "stores nothing. ``None`` while nothing has happened yet, and for "
             "ungrouped trials."
         ),

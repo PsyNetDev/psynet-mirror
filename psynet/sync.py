@@ -2209,8 +2209,10 @@ class GroupBarrier(Barrier):
             scope = _barrier_scope(group, waiting_participants)
             late = self._late_between_barriers(group, waiting_ids, scope.waited_for)
             if self.late_action == "fail":
-                self._fail_late_participants(late)
-            elif late:
+                # A late member whose own request holds their row is
+                # still late on the next check.
+                late = _lock_free_participants(late)
+            if late:
                 removals.append((group, late, len(group.active_participants)))
         self._remove_late_participants(removals)
 
@@ -2236,58 +2238,52 @@ class GroupBarrier(Barrier):
         }
         return groups
 
-    def _fail_late_participants(self, late: List[Participant]):
-        """Fail group members who are late reaching this barrier.
-
-        They leave this barrier's group as ``"late"`` first, and their other
-        groups as ``"left_experiment"`` when they fail. A late member whose
-        own request holds their row is not failed now; they are still late
-        on the next check.
-        """
-        for participant in _lock_free_participants(late):
-            logger.info(
-                "GroupBarrier '%s': failing participant %s (timeout between barriers)",
-                self.id,
-                participant.id,
-            )
-            group = participant.active_sync_groups.get(self.group_type)
-            if group is not None:
-                group.remove_participant(participant, reason="late")
-            participant.fail("timeout between barriers")
-
     def _remove_late_participants(self, removals):
         """Remove late members from their groups, then dissolve the groups left below quorum.
 
         ``removals`` holds ``(group, late, group_size)`` for each group of this
         barrier with late members, ``group_size`` counted before the removal.
-        With ``late_action="leave_all_groups"`` late members also leave their
-        other groups, such as a cohort. Every late member leaves every group
-        before any quorum is checked, so a group dissolving cannot fail a late
-        member who was about to leave it too.
+        Late members leave this barrier's group as ``"late"``. With
+        ``late_action="leave_all_groups"`` they also leave their other groups,
+        such as a cohort, as ``"late"``; with ``late_action="fail"`` they
+        leave them as ``"left_experiment"`` and are then failed. Every late
+        member leaves every group, and is failed, before any quorum is
+        checked, so a group dissolving cannot dissolve or fail a late member
+        who was about to leave it too.
         """
+        fail = self.late_action == "fail"
         left = {}
         for group, late, _ in removals:
             for participant in late:
-                groups = [group]
-                if self.late_action == "leave_all_groups":
+                groups = [(group, "late")]
+                if self.late_action != "leave_group":
                     groups += [
-                        other
+                        (other, "left_experiment" if fail else "late")
                         for other in participant.active_sync_groups.values()
                         if other.id != group.id
                     ]
-                for left_group in groups:
+                for left_group, reason in groups:
                     logger.info(
                         "GroupBarrier '%s': removing participant %s from group %s (timeout between barriers)",
                         self.id,
                         participant.id,
                         left_group.id,
                     )
-                    SyncGroup.remove_participant(left_group, participant, reason="late")
+                    SyncGroup.remove_participant(left_group, participant, reason=reason)
                     left.setdefault(left_group.id, (left_group, []))[1].append(
                         participant
                     )
+                if fail:
+                    logger.info(
+                        "GroupBarrier '%s': failing participant %s (timeout between barriers)",
+                        self.id,
+                        participant.id,
+                    )
+                    participant.fail("timeout between barriers")
         for left_group, leavers in left.values():
             self._dissolve_after_late_removal(left_group, leavers)
+        if fail:
+            return
         for group, late, group_size in removals:
             for participant in late:
                 self._tell_removed_participant(participant, group, group_size)
@@ -2299,7 +2295,8 @@ class GroupBarrier(Barrier):
             group.dissolve_if_below_quorum()
         dissolved = group.n_active_participants == 0 or group.dissolving
         if (
-            had_others
+            self.late_action != "fail"
+            and had_others
             and dissolved
             and getattr(group, "below_quorum", None) != "continue_without_group"
         ):
@@ -4527,7 +4524,7 @@ class SimpleSyncGroup(SyncGroup):
 def _record_leaving_the_round(group, participant, reason):
     """Set ``sync_group_outcome`` of the participant's current cued trial in ``group``.
 
-    Leaving before the trial's pages end replaces a release; after they end,
+    Leaving before the trial's pages end replaces ``"stayed"``; after they end,
     only a trial without an outcome records it, and moving on or finishing
     never does.
     """

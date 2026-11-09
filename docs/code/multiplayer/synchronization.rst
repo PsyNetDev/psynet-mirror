@@ -313,7 +313,9 @@ and exports can read it rather than work it out from the player's groups
 later:
 
 - ``"stayed"``: a group barrier released the group while this was the
-  player's current trial on the round's node;
+  player's current trial on the round's node. A barrier after the trial,
+  between rounds or after the loop also stores it, as long as the trial is
+  still the player's current trial and has no outcome yet;
 - why the player left the group: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
   ``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or
