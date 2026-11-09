@@ -102,12 +102,17 @@ in a loop plays rounds 0, 1, 2 and so on, whichever trial classes it cues.
 A member who joins it late joins its current round only until any barrier
 of that round releases the group. After that, even while the others are
 still on a page after the barrier, the newcomer starts the next round,
-which the others then join. This needs a barrier in each
-round, such as the one in ``show_trial`` below, so that no member ends a
-round before the others have cued it. A round's later barriers don't wait
-for a member who is already in a later round, such as that newcomer: a
-barrier in a cued round waits only for the members in that round, in an
-earlier one, or in none yet.
+which the others then join. This needs a barrier in each round, inside
+``show_trial`` after the answer page, as in the one below, so that no
+member ends a round before the others have cued it. A trial ends at the
+end of ``show_trial``, so with the barrier outside it (for example in
+``show_feedback`` or after the cue), a slow member could find the round
+finished by a fast teammate and start or skip to the next one, even in a
+group without newcomers when it passes ``round=``. A round's later
+barriers don't wait for a member who is already in a round the group
+played after it, such as that newcomer: a barrier where a waiting member's
+current trial is on one of the group's rounds waits only for the members
+in that round, in an earlier one, or in none yet.
 
 So a trial has two round counters. ``sync_group_round`` counts the group's
 rounds, and is ``None`` on a trial played without a group. Use it for what
@@ -147,8 +152,31 @@ skips the rounds that the group finished without them: rounds where they
 have no trial and that are no longer open. They play the rest, and the
 barriers of a round they skipped don't wait for them. A skipped
 round shows nothing and earns no time credit, but the progress bar moves on
-as if it had been played. A member who leaves the group plays the remaining
-iterations alone, with the same loop values. Don't pass ``round=`` with a
+as if it had been played. A skipped cue leaves ``participant.current_trial``
+as ``None``, so code after the cue in the same iteration that reads the
+trial, such as a page showing ``participant.current_trial.answer``, should
+check for it first:
+
+.. code-block:: python
+
+    logic=lambda i: join(
+        EstimateTrial.cue({"question": i}, round=i),
+        conditional(
+            "played_round",
+            lambda participant: participant.current_trial is not None,
+            PageMaker(
+                lambda participant: InfoPage(
+                    f"You answered {participant.current_trial.answer}."
+                ),
+                time_estimate=5,
+            ),
+        ),
+    )
+
+A member who leaves the group plays the remaining
+iterations alone, with the same loop values. Rounds are ordered by when
+the group first plays them, so the loop values needn't increase. Don't
+pass ``round=`` with a
 regrouper: its groups mix players at different loop positions, whose trials
 would be split across rounds.
 

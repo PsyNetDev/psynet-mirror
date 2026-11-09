@@ -399,6 +399,25 @@ def test_an_explicit_round_skips_a_round_the_group_finished_without_the_player(
 
 
 @in_consents_experiment
+def test_rounds_named_out_of_order_release_their_barriers(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    for i in [1, 0]:
+        for participant in cohort:
+            PairTrial.cue({"target": i}, round=i)[0].consume(exp, participant)
+        barrier = GroupBarrier(
+            f"answered_{i}", group_type="pair", on_release=PairTrial.score_pair
+        )
+        _arrive(exp, barrier, cohort)
+        assert not any(barrier._participant_is_waiting(p) for p in cohort)
+        node = cohort[0].current_trial.node
+        assert node.sync_group_round == i
+        assert sorted(node.var.players) == [p.id for p in cohort]
+
+
+@in_consents_experiment
 def test_a_skipped_cue_moves_on_to_the_next_page(
     in_experiment_directory, db_session, monkeypatch
 ):

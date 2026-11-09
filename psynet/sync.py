@@ -1456,7 +1456,7 @@ def _group_barrier_outcome(group, members, waiting_ids, waited_for):
     if len(members) < group.min_group_size:
         waits_for_top_ups = group.accepts_top_ups and not _top_up_wait_over(group)
         return "wait" if waits_for_top_ups else "dissolve"
-    if all(participant.id in waiting_ids for participant in waited_for):
+    if waited_for and all(participant.id in waiting_ids for participant in waited_for):
         return "release"
     return "wait"
 
@@ -1659,7 +1659,10 @@ class GroupBarrier(Barrier):
 
     on_release
         Optional callback invoked when the barrier releases the group. It may take
-        ``group``, ``participants`` (the group's active members), ``trials``
+        ``group``, ``participants`` (the group's active members, except, at
+        a barrier where a waiting member's current trial is on one of the
+        group's rounds, members already in a round the group played after
+        it, who aren't waited for either), ``trials``
         (each member's ``current_trial``, in the same order as ``participants``,
         for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
         ``sync_group_type`` that the barrier is part of, and ``None`` for a
@@ -1667,7 +1670,8 @@ class GroupBarrier(Barrier):
         group's :class:`~psynet.trial.main.SyncGroupNode` for the round, if
         all those trials are on it, ignoring members with no current trial,
         and otherwise ``None``), ``leader`` (the
-        group's leader), ``participant`` (the same object as ``leader``, kept for
+        group's leader, who may be one of those members missing from
+        ``participants``), ``participant`` (the same object as ``leader``, kept for
         compatibility), ``left`` (the members who left the group since its
         previous barrier pass, or since it formed; see below) and ``barrier``,
         the reconstructed registry object for this
@@ -4361,11 +4365,14 @@ def _shared_node(group, trials):
 def _barrier_round(group, waiting_participants):
     """Return the cued round of ``group`` that a barrier's visit belongs to, as its node, or ``None``.
 
-    The visit is inside a cued round when a member waiting there has a
-    current trial on one of ``group``'s
-    :class:`~psynet.trial.main.SyncGroupNode`; if waiting members are on
-    several rounds, the earliest. Otherwise it is the node all members'
-    current trials share, if any, as before rounds could be skipped.
+    The visit belongs to a round when a member waiting there has a current
+    trial on one of ``group``'s :class:`~psynet.trial.main.SyncGroupNode`,
+    which includes barriers after that trial has ended, such as in its
+    feedback or between iterations. If waiting members are on several
+    rounds, it is the earliest one played: nodes are created in play order,
+    so by ``id``, not by ``sync_group_round``, which ``round=`` may give in
+    any order. Otherwise it is the node all members' current trials share,
+    if any.
     """
     from .trial.main import SyncGroupNode
 
@@ -4381,17 +4388,18 @@ def _barrier_round(group, waiting_participants):
         if isinstance(node, SyncGroupNode) and node.sync_group_id == group.id
     ]
     if nodes:
-        return min(nodes, key=lambda node: node.sync_group_round)
+        return min(nodes, key=lambda node: node.id)
     return _shared_node(group, [p.current_trial for p in group.active_participants])
 
 
 def _members_in_round(group, node) -> List[Participant]:
     """Return the active members of ``group`` that a barrier in round ``node`` waits for.
 
-    A member who has a trial on a later round of the group in the same
-    module, because they skipped this round with ``round=`` or started the
-    next one, is not waited for. Members on this round, on an earlier one or
-    on none yet are. One query; all members when ``node`` is ``None``.
+    A member who has a trial on a round of the group played after this one
+    (a node created later, in the same module), because they skipped this
+    round with ``round=`` or started the next one, is not waited for, unless
+    their current trial is on ``node``. Members on this round, on an earlier
+    one or on none yet are. One query; all members when ``node`` is ``None``.
     """
     from .trial.main import SyncGroupNode, Trial
 
@@ -4405,12 +4413,17 @@ def _members_in_round(group, node) -> List[Participant]:
         .filter(
             SyncGroupNode.sync_group_id == group.id,
             SyncGroupNode.module_id == node.module_id,
-            SyncGroupNode.sync_group_round > node.sync_group_round,
+            SyncGroupNode.id > node.id,
             Trial.participant_id.in_([p.id for p in members]),
         )
         .distinct()
     }
-    return [p for p in members if p.id not in later]
+    return [
+        p
+        for p in members
+        if p.id not in later
+        or (p.current_trial is not None and p.current_trial.node_id == node.id)
+    ]
 
 
 def _lock_round(group, node) -> bool:
