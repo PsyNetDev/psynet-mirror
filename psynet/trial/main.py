@@ -320,7 +320,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         keeps the time of the pages answered so far, and of any the participant
         answers afterwards. Pages submitted after the participant fails, such as
         the unsuccessful-end page, are not included.
-        Bots report each page's ``time_estimate``.
+        Bots report each page's ``time_estimate``. A page that reports no time,
+        such as ``UnityPage``, adds nothing, so a trial whose pages are all of
+        that kind keeps ``None``.
         Equals ``None`` until the participant submits a trial page.
     """
 
