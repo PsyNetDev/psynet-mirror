@@ -440,6 +440,9 @@ _active_experiment_directory = None
 def reset_sys_modules():
     """Unimport experiment modules before each test outside an experiment directory.
 
+    Outside an experiment directory it also clears Dallinger's
+    ``TEST_EXPERIMENT_UID*`` modules, as Dallinger's fixture does.
+
     This replaces Dallinger's fixture of the same name, which unimports them
     before every test. Inside :func:`in_experiment_directory` the class-scoped
     fixtures have already imported the experiment and hold its classes, so
