@@ -2436,7 +2436,10 @@ class SimpleGrouper(Grouper):
     join_criterion
         A callable that takes ``group`` and ``participant`` as arguments, and returns ``True``
         if the participant should be allowed to join the group, and ``False`` otherwise.
-        To be used in conjunction with ``join_existing_groups=True``.
+        To be used in conjunction with ``join_existing_groups=True``. Returning ``False``
+        doesn't stop top-ups: the group still accepts them, so it is never dissolved and
+        ``below_quorum`` never applies. Use :meth:`SimpleSyncGroup.stop_top_ups` or
+        ``top_up_wait`` for that.
 
     below_quorum
         What happens to the members left in a group that falls below ``quorum``, which is
