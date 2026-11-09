@@ -363,7 +363,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         doc=(
             "Zero-based creation position among all trials from this trial maker "
             "for the participant, or, for trials made by :meth:`Trial.cue`, among "
-            "the participant's cued trials in the same module."
+            "the participant's trials in the same module."
         ),
     )
     # No foreign key, so that creating a trial doesn't wait for a barrier
@@ -1245,7 +1245,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           grouped cue's definition must not depend on the player's own
           position in a loop; pass a function taking ``round`` or ``group``.
         - Each cued trial's ``position`` counts the participant's earlier
-          cued trials in the current module from 0, grouped or not.
+          trials in the current module from 0, grouped or not; it is
+          ``None`` outside a module.
         - A participant who is in no group of that type gets an ungrouped
           trial on the module's default node, so put the cue in a
           :func:`~psynet.timeline.conditional` on
@@ -4266,7 +4267,7 @@ def _record_sync_group(trial, participant, group, round_number=None):
 
 
 def _cued_trial_position(participant):
-    """Return how many trials ``participant`` has already cued in their current module."""
+    """Return how many trials ``participant`` already has in their current module."""
     module_state = participant.module_state
     if module_state is None:
         return None

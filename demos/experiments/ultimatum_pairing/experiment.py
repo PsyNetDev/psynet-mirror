@@ -384,6 +384,8 @@ class Exp(psynet.experiment.Experiment):
                     "pair_id": t.sync_group_id,
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
+                    # The player's own round; pairs change every round.
+                    "round": t.position,
                     "role": t.sync_group_role,
                     # False while the trial runs or if the player left it; the
                     # decision is then the answer so far.
