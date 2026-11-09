@@ -131,9 +131,21 @@ passes this check; where a control has ``force_selection``, that decides whether
 to accept it. A radio button control with ``show_free_text_option=True`` accepts
 any text. If the saved answer is something other than a choice, for example
 because the control or the page overrides ``format_answer`` to wrap the choice
-in a dictionary, pass ``restrict_to_choices=False`` to the control.
+in a dictionary, pass ``restrict_to_choices=False`` to the control, or set the
+class attribute ``restrict_to_choices = False`` on your control subclass.
 ``TimedPushButtonControl`` does this for you. See
 :class:`~psynet.modular_page.OptionControl`.
+
+The experiment builds the page again when the response arrives, re-running a
+:class:`~psynet.timeline.PageMaker` function or a trial's ``show_trial``, and
+checks the answer against the choices of that new page. The choices must
+therefore be the same each time the page is built. If you pick them at random,
+for example with ``random.sample``, pick them once and reuse them: choose them in
+the trial's ``finalize_definition``, store them in ``participant.var``, or seed
+the random generator. Otherwise the participant's click can be rejected with
+"You need to select an answer!"; the server log then shows a warning with the
+page label, the answer and the choices. If the choices cannot be kept stable,
+pass ``restrict_to_choices=False``.
 
 To validate a response, subclass the control and implement ``validate``. The
 method returns ``None`` to accept the response, or a message for the

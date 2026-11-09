@@ -181,6 +181,9 @@ the two:
 
 
     class TimedRatingControl(KeyboardPushButtonControl):
+        # The saved answer is a dictionary, not one of the choices.
+        restrict_to_choices = False
+
         def format_answer(self, raw_answer, **kwargs):
             event_log = kwargs["metadata"].get("event_log", [])
             return {"rating": int(raw_answer), "rt_ms": reaction_time_ms(event_log)}
@@ -202,10 +205,7 @@ the two:
             prevent_control_submit=True,
         ),
         control=TimedRatingControl(
-            choices=["1", "2", "3"],
-            keys=["Digit1", "Digit2", "Digit3"],
-            # The saved answer is a dictionary, not one of the choices.
-            restrict_to_choices=False,
+            choices=["1", "2", "3"], keys=["Digit1", "Digit2", "Digit3"]
         ),
         time_estimate=5,
     )

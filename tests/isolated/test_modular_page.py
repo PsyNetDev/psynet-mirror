@@ -1,13 +1,12 @@
-import uuid
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from dallinger import db
 from flask import Flask
 from jinja2 import DictLoader
 from markupsafe import Markup
 
+from psynet.bot import Bot
 from psynet.db import transaction
 from psynet.demography.general import CountryOfBirth
 from psynet.experiment import get_experiment
@@ -16,6 +15,7 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     CheckboxControl,
     Control,
     DropdownControl,
+    KeyboardPushButtonControl,
     ModularPage,
     MusicNotationPrompt,
     Prompt,
@@ -25,8 +25,8 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     TimedPushButtonControl,
 )
 from psynet.page import InfoPage
-from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
+from psynet.redis import redis_vars
 from psynet.timeline import Timeline
 
 # from importlib import resources
@@ -515,31 +515,22 @@ class _NoGreenControl(PushButtonControl):
 
 @pytest.fixture
 def submit(db_session, monkeypatch):
-    """Submit a response whose formatted answer is ``answer`` and return its outcome."""
+    """Have a bot submit the formatted answer ``answer`` and return the outcome."""
     experiment = get_experiment()
+    redis_vars.set("launch_finished", True)
 
     def _submit(page, answer):
-        monkeypatch.setattr(page, "format_answer", lambda raw_answer, **_: raw_answer)
         timeline = Timeline(page, InfoPage("Done", time_estimate=1))
         monkeypatch.setattr(experiment, "timeline", timeline)
-        participant = Participant(
-            experiment=experiment,
-            recruiter_id="hotair",
-            worker_id=str(uuid.uuid4()),
-            hit_id="hit",
-            assignment_id=str(uuid.uuid4()),
-            mode="debug",
-        )
-        db.session.add(participant)
-        timeline.advance_page(experiment, participant)
-        db.session.commit()
+        bot = Bot()
         with transaction():
             result = experiment.process_response(
-                participant_id=participant.id,
-                raw_answer=answer,
+                participant_id=bot.id,
+                raw_answer=None,
+                answer=answer,
                 blobs={},
                 metadata={"time_taken": 0},
-                page_uuid=participant.page_uuid,
+                page_uuid=bot.page_uuid,
                 client_ip_address="127.0.0.1",
             )
         return result.payload["submission"]
@@ -559,6 +550,7 @@ _CONSENTS = pytest.mark.parametrize(
         (PushButtonControl([0, 10]), 11),
         (PushButtonControl([1, 2]), "1"),
         (PushButtonControl([1]), True),
+        (KeyboardPushButtonControl(["a"], keys=["KeyA"]), "b"),
         (_NoGreenControl(["red"]), "blue"),
         (DropdownControl(["a"]), "b"),
         (RadioButtonControl(["a"]), "free text"),
@@ -570,6 +562,15 @@ _CONSENTS = pytest.mark.parametrize(
 def test_option_controls_reject_answers_outside_their_choices(submit, control, answer):
     page = ModularPage("test", "Hi!", control, time_estimate=1)
     assert submit(page, answer) == "rejected"
+
+
+@_CONSENTS
+def test_rejecting_an_answer_outside_the_choices_logs_a_warning(submit, caplog):
+    page = ModularPage("pick", "Hi!", PushButtonControl(["a", "b"]), time_estimate=1)
+    submit(page, "c")
+    [record] = [r for r in caplog.records if "restrict_to_choices" in r.getMessage()]
+    assert record.levelname == "WARNING"
+    assert all(s in record.getMessage() for s in ["'pick'", "'c'", "['a', 'b']"])
 
 
 @_CONSENTS

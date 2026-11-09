@@ -492,6 +492,15 @@ templates that changes the database.
   Fixed bot answers, from ``bot_response`` or a ``get_bot_response`` method
   that returns a plain value, are saved as given, so give them as numbers
   too: ``bot_response=3``, not ``bot_response="3"``.
+* These controls now reject an answer that is not one of their ``choices``.
+  Search for ``def format_answer`` on these controls and on pages that use
+  them; if it saves something other than a choice, such as a dictionary with a
+  reaction time, set ``restrict_to_choices = False`` on the control class or
+  pass ``restrict_to_choices=False``. Also search for ``random.`` in
+  ``PageMaker`` functions and ``show_trial``: the page is built again when the
+  response arrives, so random choices must be picked once (for example in
+  ``finalize_definition`` or ``participant.var``) or seeded. See
+  :class:`~psynet.modular_page.OptionControl`.
 * ``LanguageVocabularyTrial`` answers are now screen positions (``"1"`` to
   ``"4"``) rather than ``"correct"``. A custom subclass that compares an
   answer with ``"correct"`` should compare it with
