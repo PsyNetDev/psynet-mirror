@@ -11,6 +11,7 @@ completion hooks or navigation run; rejected answers must not create upload slot
 
 import json
 import math
+import numbers
 import os
 import random
 import shutil
@@ -1653,6 +1654,10 @@ class NumberControl(Control):
         :meth:`validate` can reject it.
         """
         try:
+            return int(raw_answer.strip())
+        except (AttributeError, ValueError):
+            pass
+        try:
             number = float(raw_answer)
         except (TypeError, ValueError):
             return raw_answer
@@ -1661,8 +1666,14 @@ class NumberControl(Control):
         return int(number) if number.is_integer() else number
 
     def validate(self, response, **kwargs):
+        """Accept a finite real number, including NumPy numbers; reject strings and booleans."""
         _p = get_translator(context=True)
-        if not isinstance(response.answer, (int, float)):
+        answer = response.answer
+        if not (
+            isinstance(answer, numbers.Real)
+            and not isinstance(answer, bool)
+            and math.isfinite(answer)
+        ):
             return FailedValidation(_p("validation", "You need to provide a number!"))
         return None
 

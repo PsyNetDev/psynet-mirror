@@ -120,7 +120,8 @@ keeping its type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``, and
 :class:`~psynet.modular_page.TimedPushButtonControl` is the exception; it saves
 the timing of each button press. The browser submits choices as text, so a
 control whose choices share the same text, such as ``1`` and ``"1"``, raises
-``ValueError``.
+``ValueError``. :class:`~psynet.modular_page.NumberControl` saves an ``int``
+for a whole number such as ``100`` and a ``float`` otherwise.
 
 To validate a response, subclass the control and implement ``validate``. The
 method returns ``None`` to accept the response, or a message for the

@@ -492,6 +492,11 @@ templates that changes the database.
   Fixed bot answers, from ``bot_response`` or a ``get_bot_response`` method
   that returns a plain value, are saved as given, so give them as numbers
   too: ``bot_response=3``, not ``bot_response="3"``.
+* ``NumberControl`` now saves a number (``78.5`` or ``100``), not the
+  browser's text. Search for ``NumberControl`` and compare its answers to
+  numbers: ``answer == 100``, not ``answer == "100"``. ``float(answer)``
+  keeps working. Give its bot answers as numbers too: ``bot_response=25``,
+  not ``bot_response="25"``, which now fails validation.
 * ``LanguageVocabularyTrial`` answers are now screen positions (``"1"`` to
   ``"4"``) rather than ``"correct"``. A custom subclass that compares an
   answer with ``"correct"`` should compare it with

@@ -1,3 +1,4 @@
+import numbers
 from typing import Optional
 
 from psynet.modular_page import (
@@ -205,7 +206,11 @@ class Age(ModularPage):
             + " "
             + _p("age", "Your answer was: '{AGE}'").format(AGE=answer)
         )
-        if not isinstance(answer, int) or not 0 < answer < 120:
+        if not (
+            isinstance(answer, numbers.Integral)
+            and not isinstance(answer, bool)
+            and 0 < answer < 120
+        ):
             return FailedValidation(error_msg)
         return None
 
