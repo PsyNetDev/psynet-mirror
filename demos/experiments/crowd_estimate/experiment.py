@@ -113,12 +113,8 @@ def get_timeline():
             for_loop(
                 label="questions",
                 iterate_over=range(len(QUESTIONS)),
-                # Trial.cue warns against a grouped definition taken from the
-                # loop position. It is safe here because top-ups stop when the
-                # game starts, so a group's members reach each question
-                # together and cue the same definition. A function of
-                # ``round`` can't replace it: players without a group cue
-                # ungrouped trials, which get ``round=None``.
+                # Top-ups stop when the game starts, so a group's members reach
+                # each question together and can take it from the loop.
                 logic=lambda question: EstimateTrial.cue({"question": question}),
                 time_estimate_per_iteration=EstimateTrial.time_estimate,
                 expected_repetitions=len(QUESTIONS),
