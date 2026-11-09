@@ -168,9 +168,7 @@ class EstimateTrial(Trial):
     @classmethod
     def share_median(cls, trials: List["EstimateTrial"], node: SyncGroupNode):
         """Save the group's estimates on the node, with their median if there are enough."""
-        # on_dissolve can run a second time for a member whose request was
-        # busy, so add to the estimates saved by an earlier call.
-        estimates = dict(node.var.get("estimates") or {})
+        estimates = {}
         for t in trials:
             # trial.answer collects the trial's answers so far, and is None
             # before the first. Browsers submit numbers as strings, and running
