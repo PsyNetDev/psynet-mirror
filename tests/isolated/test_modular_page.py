@@ -19,6 +19,7 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     RatingScale,
     TimedPushButtonControl,
 )
+from psynet.timeline import FailedValidation
 
 # from importlib import resources
 
@@ -497,6 +498,47 @@ def test_option_controls_save_numpy_choices_as_python_values(
     saved = control.format_answer(raw_answer)
     assert saved == answer and type(saved) is type(answer)
     assert str(control.labels[-1]) == raw_answer
+
+
+class _NoGreenControl(PushButtonControl):
+    def validate(self, response, **kwargs):
+        return "No green!" if response.answer == "green" else None
+
+
+@pytest.mark.parametrize(
+    "control, answer",
+    [
+        (PushButtonControl([0, 10]), 11),
+        (PushButtonControl([1, 2]), "1"),
+        (PushButtonControl([1]), True),
+        (_NoGreenControl(["red"]), "blue"),
+        (DropdownControl(["a"]), "b"),
+        (RadioButtonControl(["a"]), "free text"),
+        (CheckboxControl(["a", "b"]), ["a", "c"]),
+        (CheckboxControl(["a"]), "a"),
+    ],
+)
+def test_option_controls_reject_answers_outside_their_choices(control, answer):
+    page = ModularPage("test", "Hi!", control)
+    assert isinstance(page.validate(SimpleNamespace(answer=answer)), FailedValidation)
+
+
+@pytest.mark.parametrize(
+    "control, answer",
+    [
+        (PushButtonControl([1, 2]), 2),
+        (PushButtonControl([1, 2]), None),
+        (DropdownControl(["a"], force_selection=False), ""),
+        (CheckboxControl(["a", "b"]), ["b"]),
+        (CheckboxControl(["a"]), []),
+        (RadioButtonControl(["a"], show_free_text_option=True), "free text"),
+        (PushButtonControl([0, 10], restrict_to_choices=False), 11),
+        (TimedPushButtonControl(["A"]), [{"eventType": "trialStart"}]),
+    ],
+)
+def test_option_controls_accept_their_choices_and_empty_answers(control, answer):
+    page = ModularPage("test", "Hi!", control)
+    assert page.validate(SimpleNamespace(answer=answer)) is None
 
 
 def test_option_controls_reject_choices_with_the_same_text():

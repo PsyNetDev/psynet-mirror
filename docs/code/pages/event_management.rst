@@ -202,7 +202,10 @@ the two:
             prevent_control_submit=True,
         ),
         control=TimedRatingControl(
-            choices=["1", "2", "3"], keys=["Digit1", "Digit2", "Digit3"]
+            choices=["1", "2", "3"],
+            keys=["Digit1", "Digit2", "Digit3"],
+            # The saved answer is a dictionary, not one of the choices.
+            restrict_to_choices=False,
         ),
         time_estimate=5,
     )
