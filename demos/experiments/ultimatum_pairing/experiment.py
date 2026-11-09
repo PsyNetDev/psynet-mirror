@@ -33,7 +33,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper, only_in_group
+from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper
 from psynet.timeline import (
     CodeBlock,
     PageMaker,
@@ -114,15 +114,9 @@ def keep_playing(participant):
     )
 
 
-def score_round(group, participants: List[Participant]):
+def score_round(participants: List[Participant]):
     """Pay out the round, or note who ran out of time or left."""
     if len(participants) < 2:
-        # A partner removed for being late has probably closed their page, so
-        # they leave the cohort too, and the rest of it doesn't wait for them.
-        for link in group.participant_links:
-            cohort = cohort_of(link.participant)
-            if link.removal_reason == "late" and cohort is not None:
-                cohort.remove_participant(link.participant, reason="late")
         participants[0].var.outcome = "Your partner left, so nobody was paid."
         participants[0].var.decisions = None
         return
@@ -248,11 +242,14 @@ pairing = Regrouper(
 )
 
 
+def left_pair(participant):
+    return not participant.in_sync_group("pair")
+
+
 def play_round():
     return join(
         pairing,
-        only_in_group(
-            "pair",
+        join(
             PageMaker(decision_page, time_estimate=10),
             GroupBarrier(
                 id_="round_finished",
@@ -262,22 +259,28 @@ def play_round():
                 # A player is taken out 30 s after the round starts (long
                 # enough for a background tab to notice), but not while their
                 # answer to the timed decision page may still be on its way.
+                # They have probably closed their page, so they leave the
+                # cohort too, and the next split doesn't wait for them.
                 late_after=30,
-                late_action="leave_group",
+                late_action="leave_all_groups",
                 on_release=score_round,
             ),
             PageMaker(show_outcome, time_estimate=5),
-            # Without a cohort the game is over and the ended-early page
-            # explains why, but a player removed for being away, who left the
-            # cohort too, is told about the round.
-            otherwise=conditional(
-                "explain_round",
-                lambda participant: (
+            stop_if=left_pair,
+        ),
+        # Without a cohort the game is over and the ended-early page explains
+        # why, but a player who sat out, or who was removed for being away
+        # and left the cohort too, is told about the round.
+        conditional(
+            "explain_round",
+            lambda participant: (
+                left_pair(participant)
+                and (
                     cohort_of(participant) is not None
                     or participant.sync_group_removal_reason("pair") == "late"
-                ),
-                PageMaker(not_playing, time_estimate=5),
+                )
             ),
+            PageMaker(not_playing, time_estimate=5),
         ),
     )
 

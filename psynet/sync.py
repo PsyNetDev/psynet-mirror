@@ -54,8 +54,8 @@ When a participant reaches a barrier, ``Barrier.receive_participant``:
 A scheduled task in ``Experiment._check_barriers`` calls ``check_barriers`` in
 this module. That loop:
 
-- Finishes dissolving sync groups whose dissolution skipped members who were
-  busy in their own request (see ``SyncGroup._dissolve``).
+- Dissolves sync groups whose dissolution waited because a member was busy
+  in their own request (see ``SyncGroup._dissolve``).
 - Applies ``max_wait_time`` to waiters whose hold or waiting-page deadline has
   passed. Their own request normally does this, so waiters who left would
   otherwise stay.
@@ -170,10 +170,7 @@ from psynet.timeline import (
     TIME_LIMIT_GRACE_SECONDS,
     CodeBlock,
     EltCollection,
-    _EndConstruct,
     _is_timeline_hold,
-    _split_into_steps,
-    _StartConstruct,
     conditional,
     join,
 )
@@ -1083,7 +1080,7 @@ class Barrier(EltCollection):
         return bool(waiting_participants)
 
     def resolve(self):
-        from psynet.timeline import join, while_loop
+        from psynet.timeline import while_loop
 
         if not self._shows_countdown():
             _reject_countdown(
@@ -1124,7 +1121,7 @@ class Barrier(EltCollection):
             # the participant back to it.
             if elt is not leave:
                 elt.links.setdefault("barrier", self)
-        return join(_StartConstruct(), elts, _EndConstruct())
+        return elts
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Release the participant's active barrier link after a max-wait timeout."""
@@ -1483,17 +1480,23 @@ def _lock_group_to_stop_top_ups(group) -> bool:
     return locked is not None
 
 
+#: What a :class:`GroupBarrier` does with a member who is late reaching it; see ``late_action``.
+LateAction = Literal["fail", "leave_group", "leave_all_groups"]
+
+
 def _validate_group_timeouts(max_wait_action, late_after, late_action, prefix=""):
     """Check a GroupBarrier's time-out options, naming them with ``prefix`` (e.g. ``"sync_group_"``)."""
-    for name, value in [
-        ("max_wait_action", max_wait_action),
-        ("late_action", late_action),
+    for name, value, allowed in [
+        ("max_wait_action", max_wait_action, ("fail", "leave_group")),
+        ("late_action", late_action, get_args(LateAction)),
     ]:
         name = prefix + name
         if value == "kick":
             raise ValueError(f"{name}='kick' was renamed {name}='leave_group'.")
-        if value not in ("fail", "leave_group"):
-            raise ValueError(f"{name} must be 'fail' or 'leave_group', got {value!r}.")
+        if value not in allowed:
+            raise ValueError(
+                f"{name} must be one of {', '.join(map(repr, allowed))}, got {value!r}."
+            )
     if late_after is not None and late_after <= 0:
         raise ValueError(f"{prefix}late_after must be positive.")
     if late_after is not None and max_wait_action != "fail":
@@ -1645,7 +1648,10 @@ class GroupBarrier(Barrier):
     late_action
         What happens to a member who is later than ``late_after``: ``"fail"`` (default) fails them and sends
         them to the end of the experiment; ``"leave_group"`` removes them from the group, so the rest can go on
-        without them (see :ref:`sync-leaving-a-group` for what the removed member sees).
+        without them (see :ref:`sync-leaving-a-group` for what the removed member sees);
+        ``"leave_all_groups"`` also removes them from their other groups, such as the cohort a pair was
+        formed in, so those groups don't wait for them either. A group that this leaves below its quorum
+        dissolves as its ``below_quorum`` says, so with ``"fail"`` one late member can fail a whole cohort.
 
     on_release
         Optional callback invoked when the barrier releases the group. It may take
@@ -1674,9 +1680,9 @@ class GroupBarrier(Barrier):
         the group, so that what they did is not lost. For example, it can score
         the last question for the members who answered it. It takes the same
         arguments as ``on_release`` except ``leader``: ``participants`` are
-        the members waiting here. The same serialization rules apply. A waiting member whose own request
-        is busy at that moment is handled once it finishes, in a second call
-        with just them.
+        the members waiting here. The same serialization rules apply.
+        Dissolving waits until no member's request is in flight, so
+        ``on_dissolve`` is called once, with every member waiting here.
 
     stop_top_ups
         If ``True``, the group stops accepting newcomers once it passes this
@@ -1764,7 +1770,7 @@ class GroupBarrier(Barrier):
         *,
         max_wait_action: Literal["fail", "leave_group"] = "fail",
         late_after: Optional[float] = None,
-        late_action: Literal["fail", "leave_group"] = "fail",
+        late_action: LateAction = "fail",
         expected_wait=None,
         waiting_message=None,
         notify_arrivals: bool = True,
@@ -2018,11 +2024,18 @@ class GroupBarrier(Barrier):
         )
 
     def check_waiting_participants(self, waiting_participants: List[Participant]):
+        waiting_ids = {p.id for p in waiting_participants}
+        removals = []
         for group in self.get_waiting_groups(waiting_participants).values():
             if self._skips_busy_group(group):
                 continue
             group.check_numbers()
-            self._timeout_participants_between_barriers(group, waiting_participants)
+            late = self._late_between_barriers(group, waiting_ids)
+            if self.late_action == "fail":
+                self._fail_late_participants(late)
+            elif late:
+                removals.append((group, late, len(group.active_participants)))
+        self._remove_late_participants(removals)
 
     def _skips_busy_group(self, group) -> bool:
         """Return whether this check must leave ``group`` alone because a newcomer may be joining it.
@@ -2046,56 +2059,77 @@ class GroupBarrier(Barrier):
         }
         return groups
 
-    def _timeout_participants_between_barriers(
-        self, group: "SyncGroup", waiting_participants: List[Participant]
-    ):
-        """Remove or fail group members who are late reaching this barrier.
+    def _fail_late_participants(self, late: List[Participant]):
+        """Fail group members who are late reaching this barrier.
 
         A late member whose own request holds their row is not failed now;
         they are still late on the next check.
         """
-        waiting_participant_ids = {p.id for p in waiting_participants}
-        late = self._late_between_barriers(group, waiting_participant_ids)
-        if self.late_action == "fail":
-            late = _lock_free_participants(late)
-        group_size = len(group.active_participants)
-        if self.late_action == "leave_group":
-            for participant in late:
-                logger.info(
-                    "GroupBarrier '%s': removing participant %s from group %s (timeout between barriers)",
-                    self.id,
-                    participant.id,
-                    group.id,
-                )
-                SyncGroup.remove_participant(group, participant, reason="late")
-            if late and hasattr(group, "dissolve_if_below_quorum"):
-                group.dissolve_if_below_quorum()
-            dissolved = group.n_active_participants == 0 or group.dissolving
-            if (
-                dissolved
-                and late
-                and getattr(group, "below_quorum", None) != "continue_without_group"
-            ):
-                logger.warning(
-                    "GroupBarrier '%s': removing late members %s dissolved group %s, "
-                    "so its below_quorum may have failed the members who were on "
-                    "time while the late ones carry on. Set "
-                    "below_quorum='continue_without_group' on the grouper to let them carry on "
-                    "too.",
-                    self.id,
-                    [p.id for p in late],
-                    group.id,
-                )
-            for participant in late:
-                self._tell_removed_participant(participant, group, group_size)
-            return
-        for participant in late:
+        for participant in _lock_free_participants(late):
             logger.info(
                 "GroupBarrier '%s': failing participant %s (timeout between barriers)",
                 self.id,
                 participant.id,
             )
             participant.fail("timeout between barriers")
+
+    def _remove_late_participants(self, removals):
+        """Remove late members from their groups, then dissolve the groups left below quorum.
+
+        ``removals`` holds ``(group, late, group_size)`` for each group of this
+        barrier with late members, ``group_size`` counted before the removal.
+        With ``late_action="leave_all_groups"`` late members also leave their
+        other groups, such as a cohort. Every late member leaves every group
+        before any quorum is checked, so a group dissolving cannot fail a late
+        member who was about to leave it too.
+        """
+        left = {}
+        for group, late, _ in removals:
+            for participant in late:
+                groups = [group]
+                if self.late_action == "leave_all_groups":
+                    groups += [
+                        other
+                        for other in participant.active_sync_groups.values()
+                        if other.id != group.id
+                    ]
+                for left_group in groups:
+                    logger.info(
+                        "GroupBarrier '%s': removing participant %s from group %s (timeout between barriers)",
+                        self.id,
+                        participant.id,
+                        left_group.id,
+                    )
+                    SyncGroup.remove_participant(left_group, participant, reason="late")
+                    left.setdefault(left_group.id, (left_group, []))[1].append(
+                        participant
+                    )
+        for left_group, leavers in left.values():
+            self._dissolve_after_late_removal(left_group, leavers)
+        for group, late, group_size in removals:
+            for participant in late:
+                self._tell_removed_participant(participant, group, group_size)
+
+    def _dissolve_after_late_removal(self, group, late):
+        """Dissolve ``group`` if losing ``late`` left it below quorum, warning if that may fail the rest."""
+        had_others = group.n_active_participants > 0
+        if hasattr(group, "dissolve_if_below_quorum"):
+            group.dissolve_if_below_quorum()
+        dissolved = group.n_active_participants == 0 or group.dissolving
+        if (
+            had_others
+            and dissolved
+            and getattr(group, "below_quorum", None) != "continue_without_group"
+        ):
+            logger.warning(
+                "GroupBarrier '%s': removing late members %s dissolved group %s, "
+                "so its below_quorum may have failed its other members while the "
+                "late ones carry on. Set below_quorum='continue_without_group' on "
+                "the grouper to let them carry on too.",
+                self.id,
+                [p.id for p in late],
+                group.id,
+            )
 
     def _tell_removed_participant(self, participant, group, group_size, kind="removed"):
         """Show a removed participant a notice that they left their group.
@@ -2693,7 +2727,6 @@ class SimpleGrouper(Grouper):
         from .timeline import conditional, join
 
         return join(
-            _StartConstruct(),
             CodeBlock(self._join_existing_groups),
             conditional(
                 "joined_an_existing_group",
@@ -2703,7 +2736,6 @@ class SimpleGrouper(Grouper):
                 logic_if_true=[],
                 logic_if_false=super().resolve(),
             ),
-            _EndConstruct(),
         )
 
     def _find_group_to_join(self, participant: Participant):
@@ -3756,112 +3788,15 @@ class _RegroupHistory(NamedTuple):
     role_counts: Dict[int, Dict[str, int]]
 
 
-def only_in_group(group_type: str, *steps, otherwise=None):
-    """Run each of ``steps`` only while the participant is in a group of ``group_type``.
-
-    The group is checked before each step, so a participant who leaves the
-    group partway, for example because their partner returned the study,
-    skips the rest of the steps rather than seeing pages that only make sense
-    with a partner. A :class:`GroupBarrier` already lets such a participant
-    straight through; this covers the pages between barriers.
-
-    Lists and ``join(...)`` are split into their steps, but a barrier,
-    ``conditional`` or loop is one step, checked when the participant reaches
-    it, so a loop passed to ``only_in_group`` runs to its end. For rounds,
-    pass a list of the rounds' steps instead::
-
-        only_in_group("pair", [round_steps(number) for number in range(N_ROUNDS)])
-
-    or put ``only_in_group`` inside the loop, as in
-    ``for_loop(..., logic=only_in_group("pair", round_steps()))``. The steps
-    are for participants already in the group, so put the grouper or
-    :class:`Regrouper` that forms it before the block. Inside the block, the
-    grouper would be skipped by everyone not yet in a group: at the start that
-    is everyone, and later it is anyone who sat out a round, who would then
-    never be grouped again.
-    Put a :class:`GroupCloser` after the block: it takes everyone out of the
-    group, so the steps after it and ``otherwise`` would treat them all as
-    having left. When pairs change every round, regroup inside the
-    loop, as in ``for_loop(..., logic=join(Regrouper(...),
-    only_in_group("pair", round_steps(), otherwise=sitting_out)))``. The
-    ``otherwise`` page is for anyone not in a pair by the end of the round:
-    sat out by the regrouper, or removed partway for being late. Without it,
-    they skip the round with no page.
-
-    Parameters
-    ----------
-    group_type
-        The group type to check, as in ``participant.in_sync_group(group_type)``.
-    steps
-        Timeline elements or lists of elements, each one step.
-    otherwise
-        Optional timeline elements to run after the steps for a participant
-        who is not in a group of ``group_type`` by then: one who left partway,
-        and one who was never in such a group. A participant who left partway
-        may have answered some of the steps already, so check what they still
-        need, for example with ``participant.var.get(...)``.
-
-    Examples
-    --------
-    One round of a trust game, where a participant who loses their partner
-    skips straight to whatever follows the round::
-
-        only_in_group(
-            "pair",
-            PageMaker(chat_page, time_estimate=60),
-            GroupBarrier(id_="chat_done", group_type="pair"),
-            PageMaker(outcome_page, time_estimate=10),
-        )
-
-    One question of a group estimation game, which a participant without a
-    group answers alone. Build each question's steps in a function, so that
-    the lambda sees that question rather than the last one of a loop::
-
-        def question_steps(question):
-            return only_in_group(
-                "team",
-                estimate_page(question),
-                GroupBarrier(id_=f"estimates_{question}", group_type="team",
-                             on_release=share_median),
-                revised_estimate_page(question),
-                otherwise=PageMaker(
-                    lambda participant: (
-                        estimate_page(question)
-                        if participant.var.get(f"estimate_{question}") is None
-                        else InfoPage("Your group has ended. Let's move on.")
-                    ),
-                    time_estimate=10,
-                ),
-            )
-    """
-    group_steps = [
-        conditional(
-            f"only_in_group:{group_type}",
-            lambda participant: participant.in_sync_group(group_type),
-            step,
-            log_chosen_branch=False,
-        )
-        for step in _split_into_steps(*steps)
-    ]
-    if otherwise is not None:
-        group_steps.append(
-            conditional(
-                f"only_in_group:{group_type}:otherwise",
-                lambda participant: not participant.in_sync_group(group_type),
-                otherwise,
-                log_chosen_branch=False,
-            )
-        )
-    return join(*group_steps)
-
-
 def warn_if_late_removal_fails_group(barriers):
     """Warn if removing one late member would fail the members who were on time.
 
     That happens when a :class:`GroupBarrier` has ``late_action="leave_group"``
     and a :class:`SimpleGrouper` of its group type has ``below_quorum="fail"``
     and a ``quorum`` that the loss of one member can break, as in a pair or a
-    group that started short. A grouper with ``join_existing_groups=True``
+    group that started short. With ``late_action="leave_all_groups"`` such a
+    grouper of any group type counts, such as one forming the cohort that a
+    :class:`Regrouper` splits into pairs. A grouper with ``join_existing_groups=True``
     only counts once its groups can stop taking newcomers, through a barrier
     with ``stop_top_ups=True`` or a ``top_up_wait``, because until then the
     group can top up instead.
@@ -3897,28 +3832,35 @@ def warn_if_late_removal_fails_group(barriers):
         if not (
             isinstance(barrier, GroupBarrier)
             and barrier.late_after is not None
-            and barrier.late_action == "leave_group"
+            and barrier.late_action in ("leave_group", "leave_all_groups")
         ):
             continue
-        grouper = fragile_groupers.get(barrier.group_type)
-        if grouper is None:
-            continue
-        warn_from_caller(
-            f"GroupBarrier '{barrier.id}' removes late members, but grouper "
-            f"'{grouper.id}' fails the members left behind when that leaves the "
-            "group below its quorum"
-            + (
-                " (after top_up_wait, if no newcomer joins)"
-                if grouper.top_up_wait is not None
-                and grouper.group_type not in frozen_types
-                else ""
+        if barrier.late_action == "leave_all_groups":
+            groupers = list(fragile_groupers.values())
+        else:
+            groupers = [fragile_groupers.get(barrier.group_type)]
+        for grouper in filter(None, groupers):
+            warn_from_caller(
+                f"GroupBarrier '{barrier.id}' removes late members"
+                + (
+                    " from all their groups"
+                    if barrier.late_action == "leave_all_groups"
+                    else ""
+                )
+                + f", but grouper '{grouper.id}' fails the members left behind "
+                "when that leaves the group below its quorum"
+                + (
+                    " (after top_up_wait, if no newcomer joins)"
+                    if grouper.top_up_wait is not None
+                    and grouper.group_type not in frozen_types
+                    else ""
+                )
+                + ". So a single late member fails everyone who "
+                "was on time, while the late one carries on. Pass "
+                "below_quorum='continue_without_group' to the grouper to let everyone carry on, "
+                "or late_action='fail' to end the session for the whole group.",
+                UserWarning,
             )
-            + ". So a single late member fails everyone who "
-            "was on time, while the late one carries on. Pass "
-            "below_quorum='continue_without_group' to the grouper to let everyone carry on, "
-            "or late_action='fail' to end the session for the whole group.",
-            UserWarning,
-        )
 
 
 def group_seats(group) -> Dict[int, int]:
@@ -4124,7 +4066,7 @@ class SyncGroup(SQLBase, SQLMixin):
               ``"group_dissolved"``: "(dropped out)", or "(left)" once they
               have failed, left or completed the experiment.
             - ``"late"``: "(removed)", for a member a barrier removed for
-              being late (``late_action="leave_group"``), or "(left)" once
+              being late (``late_action="leave_group"`` or ``"leave_all_groups"``), or "(left)" once
               they have failed, left or completed the experiment.
             - ``"moved_on"``: for a member who left at a :class:`Regrouper`,
               for their next group or to sit the round out. A pair a :class:`SimpleGrouper`
@@ -4164,23 +4106,31 @@ class SyncGroup(SQLBase, SQLMixin):
             self.check_leader()
 
     def _dissolve(self):
-        """Remove every active member, failing them if the group says so.
+        """Remove every active member at once, failing them if the group says so.
 
-        Other members' rows are locked without waiting. A member whose own
-        request holds their row is skipped and the group is marked
-        ``dissolving``, so the barrier poller finishes the job once that
-        request commits. Waiting here could deadlock with that member's
-        request, which holds their row and then needs this group's row.
+        Members' rows are locked without waiting; rows this transaction
+        already holds, such as the requester's own, count as free. If another
+        request holds any member's row, nobody is removed: the group is marked
+        ``dissolving`` and the barrier poller tries again on its next pass.
+        Waiting here could deadlock with that member's request, which holds
+        their row and then needs this group's row.
 
         Returns
         -------
         list of Participant
-            The members removed now.
+            The members removed, or an empty list if the dissolution waits.
         """
         self._dissolving_below_quorum = True
         try:
-            remaining = list(self.active_participants)
-            removed = _lock_free_participants(remaining)
+            removed = _lock_all_participants(list(self.active_participants))
+            if removed is None:
+                if not self.dissolving:
+                    logger.debug(
+                        "Dissolving sync group %s waits for a member's request.",
+                        self.id,
+                    )
+                self.dissolving = True
+                return []
             _run_on_dissolve(self, removed)
             group_size = len(group_seats(self))
             for participant in removed:
@@ -4193,7 +4143,7 @@ class SyncGroup(SQLBase, SQLMixin):
                 if action == "continue_without_group":
                     _tell_group_ended(participant, group_size)
             self.check_numbers()
-            self.dissolving = len(removed) < len(remaining)
+            self.dissolving = False
             if self.n_active_participants == 0:
                 self.close()
         finally:
@@ -4282,8 +4232,8 @@ class SimpleSyncGroup(SyncGroup):
     def dissolve_if_below_quorum(self):
         """Dissolve a group without top-ups that fell below its quorum.
 
-        Members who are busy in another request are handled shortly after
-        by the barrier poller; see :meth:`SyncGroup._dissolve`.
+        If a member is busy in another request, the barrier poller dissolves
+        the group shortly after instead; see :meth:`SyncGroup._dissolve`.
         """
         if (
             getattr(self, "_dissolving_below_quorum", False)
@@ -4341,10 +4291,28 @@ def _lock_free_participants(participants):
     The returned participants are refreshed, and any who failed or left
     meanwhile are dropped.
     """
+    locked = _skip_locked_participant_ids(participants)
+    return _still_working([p for p in participants if p.id in locked])
+
+
+def _lock_all_participants(participants):
+    """Lock every participant's row without waiting, or return ``None`` if another transaction holds one.
+
+    Like :func:`_lock_free_participants`, but all or nothing. The rows it did
+    lock stay locked until this transaction ends.
+    """
+    locked = _skip_locked_participant_ids(participants)
+    if any(participant.id not in locked for participant in participants):
+        return None
+    return _still_working(participants)
+
+
+def _skip_locked_participant_ids(participants):
+    """Lock participants' rows with ``SKIP LOCKED`` and return the ids locked."""
     if not participants:
-        return []
+        return set()
     ids = sorted({participant.id for participant in participants})
-    locked = set(
+    return set(
         db.session.execute(
             select(Participant.id)
             .where(Participant.id.in_(ids))
@@ -4352,14 +4320,16 @@ def _lock_free_participants(participants):
             .with_for_update(skip_locked=True)
         ).scalars()
     )
-    free = []
+
+
+def _still_working(participants):
+    """Refresh locked participants and drop any who failed or left meanwhile."""
+    working = []
     for participant in participants:
-        if participant.id not in locked:
-            continue
         db.session.refresh(participant, ["failed", "status", "page_uuid"])
         if not participant.failed and participant.status == "working":
-            free.append(participant)
-    return free
+            working.append(participant)
+    return working
 
 
 def _insert_values_from_state(record) -> dict:
@@ -5375,13 +5345,13 @@ def _process_barrier_instance(instance_id, *, retry=False):
 
 
 def _finish_dissolving_groups():
-    """Remove or fail members that a group dissolution had to skip.
+    """Try again to dissolve groups whose dissolution waited for a busy member.
 
     Each group is handled in its own transaction. A group another request
-    holds, and members still busy, are left for the next sweep. Group and
-    member rows are taken without waiting; other lock waits while failing a
-    member, for example on their trials, are bounded by
-    ``timeline_lock_timeout_seconds``.
+    holds, or with a member still busy, is left for the next sweep. A group
+    back at its quorum by then is no longer dissolved. Group and member rows
+    are taken without waiting; other lock waits while failing a member, for
+    example on their trials, are bounded by ``timeline_lock_timeout_seconds``.
     """
     with Session(bind=db.engine) as session:
         group_ids = [
@@ -5402,7 +5372,12 @@ def _finish_dissolving_groups():
                 .first()
             )
             if group is not None and group.active and group.dissolving:
-                group._dissolve()
+                group.check_numbers()
+                quorum = getattr(group, "min_group_size", None) or 0
+                if 0 < quorum <= group.n_active_participants:
+                    group.dissolving = False
+                else:
+                    group._dissolve()
             db.session.commit()
         except Exception as err:
             db.session.rollback()
@@ -5447,7 +5422,7 @@ def check_barriers():
     publishes unpublished until that walk returns. Each visit still commits
     before the next check so a locked waiter cannot poison sibling checks.
 
-    Each sweep first finishes group dissolutions that skipped busy members
+    Each sweep first retries group dissolutions that waited for busy members
     and times out overdue waiters, then checks visits, least
     recently checked first, with new or changed ones given a head start. Each
     of the two steps stops starting new work after

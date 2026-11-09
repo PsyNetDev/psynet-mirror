@@ -50,7 +50,6 @@ from psynet.sync import (
     GroupBarrier,
     ParticipantLinkBarrier,
     ParticipantLinkSyncGroup,
-    Regrouper,
     SimpleGrouper,
     SimpleSyncGroup,
     SyncGroup,
@@ -77,21 +76,14 @@ from psynet.sync import (
     check_sync_groups,
     group_seats,
     hold_message,
-    only_in_group,
     pending_arrival_notice_for,
 )
 from psynet.timeline import (
-    AsyncCodeBlock,
     CodeBlock,
     Page,
     PageMaker,
-    ReactiveGoTo,
     Response,
     Timeline,
-    _EndConstruct,
-    _split_into_steps,
-    for_loop,
-    join,
 )
 from psynet.timeline_hold import (
     TimelineHoldRecord,
@@ -3708,34 +3700,74 @@ def test_waiting_page_timeout_applies_on_the_next_request(
         exp.timeline = original_timeline
 
 
+_dissolve_calls = []
+
+
+def _record_dissolve(participants):
+    _dissolve_calls.append(sorted(p.id for p in participants))
+
+
+@pytest.mark.parametrize("below_quorum", ["fail", "continue_without_group"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_dissolution_leaves_a_busy_member_to_the_poller(
-    in_experiment_directory, db_session
+def test_dissolution_waits_for_a_busy_member_then_removes_everyone_at_once(
+    in_experiment_directory, db_session, below_quorum
 ):
-    """A partner busy in their own request is failed by the next poll, not waited for."""
+    """Nobody leaves while a member's own request holds their row; the poll then dissolves the rest in one go."""
     exp = get_experiment()
-    leaving, busy = _pair_sync_group(exp, db_session)[0]
-    busy_id, group_id = busy.id, busy.sync_group.id
+    (waiter, busy, quitter), group = _sync_group_of(exp, db_session, 3)
+    group.below_quorum = below_quorum
+    barrier = GroupBarrier(
+        id_="dissolve_at_once", group_type="main", on_dissolve=_record_dissolve
+    )
+    for participant in (waiter, busy):
+        _arrive_at_group_barrier(exp, barrier, participant)
+    _commit_barrier_arrivals()
+    ids, group_id = sorted([waiter.id, busy.id]), group.id
+    _dissolve_calls.clear()
 
     with db.engine.connect() as busy_request, busy_request.begin():
         busy_request.execute(
             text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
-            {"id": busy_id},
+            {"id": busy.id},
         )
         _set_transaction_lock_timeout(1)
-        leaving.fail("left")
+        quitter.fail("returned")
         db.session.commit()
-    assert not Participant.query.get(busy_id).failed
+        check_barriers()
+        db.session.expire_all()
+        assert Participant.query.get(waiter.id).in_sync_group("main")
+        assert _dissolve_calls == []
 
     check_barriers()
 
     db.session.expire_all()
-    assert Participant.query.get(busy_id).failure_tags == [
-        "sync group below minimum size"
-    ]
+    assert _dissolve_calls == [ids]
+    for participant_id in ids:
+        participant = Participant.query.get(participant_id)
+        assert not participant.in_sync_group("main")
+        assert participant.failed == (below_quorum == "fail")
     assert SyncGroup.query.get(group_id).active is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_member_whose_own_request_dissolves_the_group_is_removed_at_once(
+    in_experiment_directory, db_session
+):
+    """The requester's own row lock doesn't hold up the dissolution it triggers."""
+    exp = get_experiment()
+    (stayer, late), group = _pair_sync_group(exp, db_session)
+    group.below_quorum = "continue_without_group"
+    db_session.commit()
+    Participant.query.with_for_update(of=Participant).populate_existing().get(stayer.id)
+
+    group.remove_participant(late, reason="late")
+
+    assert not stayer.in_sync_group("main")
+    assert not group.active and not group.dissolving
 
 
 @pytest.mark.parametrize(
@@ -6743,6 +6775,122 @@ def test_group_barrier_late_after_removes_missing_participants(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_late_action_leave_all_groups_also_leaves_the_cohort(
+    in_experiment_directory, db_session
+):
+    """A member late for their pair also leaves the cohort, so the cohort doesn't wait for them."""
+    exp = get_experiment()
+    barrier = GroupBarrier(
+        id_="round", group_type="pair", late_after=5, late_action="leave_all_groups"
+    )
+    late, on_time, other = [new_participant(exp) for _ in range(3)]
+    groups = {}
+    for group_type, members in [
+        ("cohort", [late, on_time, other]),
+        ("pair", [late, on_time]),
+    ]:
+        group = SimpleSyncGroup(
+            group_type=group_type,
+            initial_group_size=len(members),
+            max_group_size=len(members),
+            min_group_size=1,
+            n_active_participants=len(members),
+            accepts_top_ups=False,
+            below_quorum="continue_without_group",
+        )
+        db_session.add(group)
+        for p in members:
+            p.status = "working"
+            group.add_participant(p)
+        _backdate_group(group, seconds=10)
+        groups[group_type] = group
+    db_session.commit()
+
+    barrier.check_waiting_participants([on_time])
+    db_session.commit()
+
+    assert late not in groups["pair"].active_participants
+    assert set(groups["cohort"].active_participants) == {on_time, other}
+    assert late.sync_group_removal_reason("cohort") == "late"
+    assert not late.active_sync_groups
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+@pytest.mark.parametrize("both_pairs_late", [False, True])
+def test_late_member_leaving_all_groups_can_fail_the_cohort_with_a_warning(
+    in_experiment_directory, db_session, caplog, both_pairs_late
+):
+    """Leaving a cohort at full quorum fails its other members, but never another late member."""
+    exp = get_experiment()
+    barrier = GroupBarrier(
+        id_="round", group_type="pair", late_after=5, late_action="leave_all_groups"
+    )
+    late_a, on_time_a, b1, b2 = [new_participant(exp) for _ in range(4)]
+    for group_type, members, below_quorum in [
+        ("cohort", [late_a, on_time_a, b1, b2], "fail"),
+        ("pair", [late_a, on_time_a], "continue_without_group"),
+        ("pair", [b1, b2], "continue_without_group"),
+    ]:
+        group = SimpleSyncGroup(
+            group_type=group_type,
+            initial_group_size=len(members),
+            max_group_size=len(members),
+            min_group_size=len(members) if group_type == "cohort" else 1,
+            accepts_top_ups=False,
+            below_quorum=below_quorum,
+        )
+        db_session.add(group)
+        for p in members:
+            p.status = "working"
+            group.add_participant(p)
+        _backdate_group(group, seconds=10)
+    db_session.commit()
+
+    waiting = [on_time_a, b2] if both_pairs_late else [on_time_a, b1, b2]
+    with caplog.at_level("WARNING", logger="psynet"):
+        barrier.check_waiting_participants(waiting)
+    db_session.commit()
+
+    late = [late_a, b1] if both_pairs_late else [late_a]
+    assert all(not p.failed for p in late)
+    assert all(p.sync_group_removal_reason("cohort") == "late" for p in late)
+    assert all(p.failed for p in waiting)
+    assert "below_quorum='continue_without_group'" in caplog.text
+
+
+@pytest.mark.parametrize("late_action", ["leave_group", "leave_all_groups"])
+def test_timeline_warns_when_leaving_all_groups_would_fail_the_cohort(late_action):
+    def make_timeline():
+        return Timeline(
+            SimpleGrouper("cohort", initial_group_size=4, quorum=4),
+            SimpleGrouper(
+                "pair",
+                initial_group_size=2,
+                quorum=1,
+                below_quorum="continue_without_group",
+            ),
+            GroupBarrier(
+                id_="round", group_type="pair", late_after=30, late_action=late_action
+            ),
+            InfoPage("Done", time_estimate=1),
+        )
+
+    if late_action == "leave_all_groups":
+        with pytest.warns(
+            UserWarning, match="from all their groups, but grouper 'cohort"
+        ):
+            make_timeline()
+    else:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            make_timeline()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 @pytest.mark.parametrize("passed_a_barrier", [False, True])
 def test_late_after_counts_from_joining_the_group(
     in_experiment_directory, db_session, passed_a_barrier
@@ -7802,94 +7950,3 @@ def test_group_barrier_max_wait_leave_group_releases_barrier_link(
     )
     InfoPage("After").consume(exp, participant)
     assert _removed_from_group_notice(participant) is None
-
-
-def _labels_reached(elts, participant):
-    """Walk ``elts`` as the timeline would, returning the labels of the pages shown."""
-    elts, i, labels = join(elts), 0, []
-    while i < len(elts):
-        elt = elts[i]
-        if isinstance(elt, ReactiveGoTo):
-            target = elt.get_target(experiment=None, participant=participant)
-            i = next(j for j, other in enumerate(elts) if other is target)
-            continue
-        if isinstance(elt, Page):
-            labels.append(elt.label)
-        i += 1
-    return labels
-
-
-@pytest.mark.parametrize(
-    "in_group, expected", [(True, ["play", "outcome"]), (False, ["alone"])]
-)
-def test_only_in_group_runs_otherwise_for_participants_out_of_the_group(
-    in_group, expected
-):
-    elts = only_in_group(
-        "pair",
-        InfoPage("Play", label="play", time_estimate=1),
-        InfoPage("Outcome", label="outcome", time_estimate=1),
-        otherwise=InfoPage("Alone", label="alone", time_estimate=1),
-    )
-    participant = SimpleNamespace(
-        module_state=None, in_sync_group=lambda group_type: in_group
-    )
-    assert _labels_reached(elts, participant) == expected
-
-
-def _do_nothing(participant):
-    return None
-
-
-@pytest.mark.parametrize(
-    "make_construct",
-    [
-        lambda: GroupBarrier(id_="round_done", group_type="pair"),
-        lambda: SimpleGrouper("pair", initial_group_size=2, quorum=2),
-        lambda: Regrouper("pair", group_size=2, every=30),
-        lambda: AsyncCodeBlock(_do_nothing, expected_wait=5),
-        lambda: for_loop(
-            label="rounds",
-            iterate_over=range(2),
-            logic=lambda number: InfoPage(f"Round {number}"),
-            time_estimate_per_iteration=1,
-        ),
-    ],
-)
-def test_split_into_steps_keeps_each_construct_whole(make_construct):
-    page = InfoPage("Hello", time_estimate=1)
-    assert len(_split_into_steps(join(page, make_construct(), page))) == 3
-
-
-def test_split_into_steps_rejects_an_unmatched_end():
-    with pytest.raises(ValueError, match="Unmatched end"):
-        _split_into_steps(_EndConstruct())
-
-
-def test_only_in_group_skips_the_rounds_after_the_participant_leaves():
-    def round_steps(number):
-        return join(
-            InfoPage("Choose", label=f"choose_{number}", time_estimate=1),
-            InfoPage("Outcome", label=f"outcome_{number}", time_estimate=1),
-        )
-
-    checks = iter([True, False, False, False])
-    participant = SimpleNamespace(
-        module_state=None, in_sync_group=lambda group_type: next(checks)
-    )
-    elts = only_in_group("pair", [round_steps(number) for number in range(2)])
-    assert _labels_reached(elts, participant) == ["choose_0"]
-
-
-def test_only_in_group_skips_the_steps_after_the_participant_leaves():
-    checks = iter([True, False, False])
-    participant = SimpleNamespace(
-        module_state=None, in_sync_group=lambda group_type: next(checks)
-    )
-    elts = only_in_group(
-        "pair",
-        InfoPage("Round 1", label="round_1", time_estimate=1),
-        InfoPage("Round 2", label="round_2", time_estimate=1),
-        otherwise=InfoPage("Alone", label="alone", time_estimate=1),
-    )
-    assert _labels_reached(elts, participant) == ["round_1", "alone"]

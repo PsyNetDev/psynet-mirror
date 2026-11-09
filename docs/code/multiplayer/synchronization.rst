@@ -292,8 +292,10 @@ the results it would have stored, so read them with
 If the group dissolves while some members are waiting at the barrier,
 ``on_dissolve`` runs for them instead, before they leave the group, with the
 same arguments except ``leader``.
-``participants`` are then the members waiting at the barrier, so a quiz can
-still score the last question for those who answered it:
+``participants`` are then the members waiting at the barrier. Dissolving
+waits until no member's request is in flight, usually a second at most, so
+``on_dissolve`` is called once, with every member waiting at the barrier. A
+quiz can therefore still score the last question for those who answered it:
 
 .. code-block:: python
 
@@ -597,8 +599,8 @@ decisions each one needs. These settings carry them out:
   the next (see `Rounds with changing groups`_). One who stops responding
   partway through a round is removed from their group by
   ``late_action="leave_group"``, but stays in the ``within`` group, so the
-  next split waits for them until its deadline; :ref:`rounds-slow-players`
-  shows how to take them out of it too.
+  next split waits for them until its deadline; ``late_action="leave_all_groups"``
+  takes them out of both (see :ref:`rounds-slow-players`).
 
 Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
 
@@ -641,8 +643,9 @@ the maximum waiting time:
     :class:`~psynet.sync.GroupBarrier` yet: a member who hasn't reached the
     barrier within ``late_after`` seconds of the group's previous barrier
     pass, or of joining the group if that is later, is late, and is handled
-    by ``late_action``: ``"fail"`` (default) fails them, and ``"leave_group"``
-    removes them from the group. Members who arrive on time wait for the
+    by ``late_action``: ``"fail"`` (default) fails them, ``"leave_group"``
+    removes them from the group, and ``"leave_all_groups"`` removes them from
+    all their groups, such as the cohort a pair was formed in. Members who arrive on time wait for the
     others until they arrive or are late, so they need no ``max_wait_time``
     of their own.
 
@@ -782,14 +785,18 @@ settings together decide both fates:
    * - waited too long, ``max_wait_action="leave_group"``
      - leaver carries on alone, absent partner failed
      - both carry on alone
-   * - was late, ``late_action="leave_group"``
+   * - was late, ``late_action="leave_group"`` or ``"leave_all_groups"``
      - late member carries on alone, partner who was on time failed
      - both carry on alone
 
 The last row is rarely what a pair wants, so PsyNet warns about it when the
 experiment loads, and logs a warning when it happens. To let the partner who was on time carry on, set
 ``below_quorum="continue_without_group"``; ``late_action="fail"`` instead ends the
-session for both.
+session for both. With ``late_action="leave_all_groups"`` the same applies to
+the late member's other groups: a cohort without top-ups that one departure
+takes below its quorum fails all its other members, including those in other
+pairs, unless its grouper has ``below_quorum="continue_without_group"``. PsyNet
+warns about this too.
 
 For example, a group of four that may start with two after a minute, and
 whose members carry on when others are slow or leave, combines these
@@ -905,48 +912,58 @@ example "(dropped out)", unless the group still accepts top-ups (see
 For the rest of the timeline:
 
 - :class:`~psynet.sync.GroupBarrier`\ s of that group type let them straight
-  through. Pages between the barriers are still shown, so wrap the steps of
-  a round in :func:`~psynet.sync.only_in_group`, which skips each step once
-  the participant is out of the group. Its ``otherwise=`` runs for them
-  afterwards instead, for example to answer a question alone if they never
-  answered it with the group. Build each question's steps in a function, so
-  that the lambda sees that question rather than the last one of a loop:
+  through. Pages between the barriers are still shown, so give the steps of
+  a round to :func:`~psynet.timeline.join` with ``stop_if``, which checks
+  before each argument and skips the remaining arguments once the
+  participant has left. Each argument runs to its end once started, so a
+  page, barrier or cued trial is never cut short, and a trial is still
+  scored and paid. To end a game's rounds, give the loop the same
+  ``stop_if``: :func:`~psynet.timeline.for_loop` checks it before each
+  iteration. Show something to the participants who left with a
+  ``conditional`` afterwards, for example to answer a question alone if
+  they never answered it with the group. Build each question's steps in a
+  function, so that the lambda sees that question rather than the last one
+  of a loop:
 
   .. code-block:: python
 
+      def left_team(participant):
+          return not participant.in_sync_group("team")
+
       def question_steps(question):
-          return only_in_group(
-              "team",
-              estimate_page(question),
-              GroupBarrier(id_=f"estimates_{question}", group_type="team",
-                           on_release=share_median),
-              revised_estimate_page(question),
-              otherwise=PageMaker(
-                  lambda participant: (
-                      estimate_page(question)
-                      if participant.var.get(f"estimate_{question}") is None
-                      else InfoPage("Your group has ended. Let's move on.")
+          return join(
+              join(
+                  estimate_page(question),
+                  GroupBarrier(id_=f"estimates_{question}", group_type="team",
+                               on_release=share_median),
+                  revised_estimate_page(question),
+                  stop_if=left_team,
+              ),
+              conditional(
+                  f"alone_{question}",
+                  left_team,
+                  PageMaker(
+                      lambda participant: (
+                          estimate_page(question)
+                          if participant.var.get(f"estimate_{question}") is None
+                          else InfoPage("Your group has ended. Let's move on.")
+                      ),
+                      time_estimate=10,
                   ),
-                  time_estimate=10,
               ),
           )
 
-  Lists and ``join(...)`` are split into their steps, but a barrier,
-  ``conditional`` or loop is one step, checked when the participant reaches
-  it, so a loop passed to ``only_in_group`` runs to its end. For rounds,
-  pass a list of the rounds' steps, as in
-  ``only_in_group("pair", [round_steps(n) for n in range(N_ROUNDS)])``, or
-  put ``only_in_group`` inside the loop's ``logic``. The steps are for
-  participants already in the group, so the grouper or
-  :class:`~psynet.sync.Regrouper` that forms it goes before
-  ``only_in_group``, never among its steps. There it would be skipped by
-  everyone not yet in a group: at the start that is everyone, and later it is
-  anyone who sat out a round, who would then never be grouped again. When
-  pairs change every round, use ``for_loop(..., logic=join(Regrouper(...), only_in_group("pair",
-  round_steps(), otherwise=sitting_out)))``, where ``sitting_out`` is a page
-  for anyone not in a pair by the end of the round: sat out by the
-  regrouper, or removed partway for being late. Without ``otherwise`` they
-  skip the round with no page.
+  Put the grouper or :class:`~psynet.sync.Regrouper` that forms the group
+  before the ``join``, not among its arguments: it would be skipped by
+  everyone not yet in a group, at the start everyone and later anyone who sat
+  out a round, who would then never be grouped again. When pairs change
+  every round, use ``for_loop(..., logic=join(Regrouper(...),
+  join(decision_page, round_barrier, outcome_page, stop_if=left_pair),
+  conditional("sat_out", left_pair, sitting_out)))``, where ``sitting_out``
+  is a page for anyone not in a pair by the end of the round: sat out by the
+  regrouper, or removed partway for being late. Pass the steps themselves
+  to the ``join``, not ``*`` the result of another ``join``, which is
+  already a flat list of elements.
 - Trial makers synchronized on that group type give them no more trials.
   A member who leaves before finishing any trial of such a trial maker,
   including one who is out of the group when it starts, skips the rest of

@@ -268,6 +268,12 @@ def _status_is_timeline_hold(status):
     return bool(page.get("is_timeline_hold"))
 
 
+def _status_is_waiting(status):
+    """Return whether cached driver status is a waiting page or a timeline hold."""
+    page = (status or {}).get("page") or {}
+    return bool(page.get("is_wait_page") or page.get("is_timeline_hold"))
+
+
 def _retry_busy_http(send, sleep=time.sleep):
     """Call ``send`` and retry structured busy 503 and stale-timeline 409.
 
@@ -744,7 +750,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         Returns ``None`` if they are still in such a group or were never in
         one. Otherwise returns ``"late"`` (removed by a barrier's
-        ``late_action="leave_group"``), ``"waited_too_long"`` (by its
+        ``late_action="leave_group"`` or ``"leave_all_groups"``), ``"waited_too_long"`` (by its
         ``max_wait_action="leave_group"``), ``"no_group_formed"`` (a grouper
         with ``max_wait_action="continue_without_group"`` found them no group
         in time), ``"group_dissolved"`` (released
@@ -782,7 +788,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         """Return whether the participant is in an active group of ``group_type``.
 
         This becomes ``False`` once they leave the group, for example after a
-        barrier's ``late_action="leave_group"`` or when their group is dissolved.
+        barrier's ``late_action="leave_group"`` or ``"leave_all_groups"``, or when
+        their group is dissolved.
         """
         return group_type in self.active_sync_groups
 
@@ -1466,6 +1473,15 @@ class ParticipantDriver:
     def current_page_label(self):
         """Label of the current page, or ``None`` once the participant has left."""
         return self._current_page.get("label")
+
+    @property
+    def is_waiting(self):
+        """Whether the current page is a waiting page, such as one at a barrier.
+
+        Like the other ``current_page_*`` properties, this reads the status as
+        of the last :meth:`take_page` or :meth:`refresh_status`.
+        """
+        return _status_is_waiting(self.status)
 
     @property
     def current_page_text(self):
