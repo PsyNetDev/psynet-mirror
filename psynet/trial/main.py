@@ -1215,29 +1215,22 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
         If the trial class sets :attr:`sync_group_type`, the trial is played with
         the participant's group of that type: the trials that the group's
-        members cue in one module and round hang off one shared
-        :class:`SyncGroupNode`, so the group's results for that round can go in
-        ``trial.node.var``. Rounds advance by themselves:
+        members cue in one module and round share one :class:`SyncGroupNode`,
+        whose ``var`` holds the group's results for the round. ``cue`` numbers
+        each group's rounds from 0 by itself, and each trial records
+        ``sync_group_id``, ``sync_group_role`` and ``sync_group_round``; see
+        :ref:`rounds-cued-trials` for the rules. In short:
 
-        - A cue joins the group's newest node in the module while that round
-          is open: the participant has no trial on it, and some current
-          member's trial on it hasn't ended.
-        - Otherwise it starts the group's next round, counted from 0. So a
-          member who joins late plays the current round if it is still
-          going, or starts the next one, which the others then join.
         - Put a :class:`~psynet.sync.GroupBarrier` in each round, for example
-          in :meth:`show_trial`, so that no member ends a round before the
-          others have cued it; a member who cued after the others had all
-          ended it would start the next round instead. ``trial.answer`` is only set
-          when the trial ends, after that barrier, so its ``on_release`` reads
-          what the pages stored (``save_answer`` puts it in
-          ``participant.var``); :meth:`show_feedback`, :meth:`score_answer`
-          and exports can read ``trial.answer``.
-
-        Each trial records ``sync_group_id``, ``sync_group_role`` and
-        ``sync_group_round``. A participant who is in no group of that type
-        when the trial starts gets an ungrouped trial on the module's default
-        node.
+          in :meth:`show_trial`, so that members stay in step.
+        - ``trial.answer`` is only set when the trial ends, after that barrier,
+          so its ``on_release`` reads what the pages saved with
+          ``save_answer``.
+        - A grouped cue's definition must not depend on the player's own
+          position in a loop; pass a function taking ``round`` or ``group``.
+        - A participant who is in no group of that type gets an ungrouped
+          trial on the module's default node, so wrap the cue in
+          :func:`~psynet.sync.only_in_group` if its pages need the group.
 
         Parameters
         ----------
@@ -1253,12 +1246,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             :attr:`sync_group_type`, the round's first cue sets the node's
             definition, which every trial in the round gets: a function is only
             called then, with ``participant`` set to that first member, and a
-            later cue with a different ``dict`` raises a ``ValueError``. So a
-            grouped cue's definition must not depend on the player's own
-            position in a loop, as in ``lambda i: PickTrial.cue({"block": i})``:
-            a late joiner, or a room that a Regrouper fills with players from
-            different rounds, would then cue a different definition for the
-            same round. Pass a function taking ``round`` or ``group`` instead.
+            later cue with a different ``dict`` raises a ``ValueError``.
             Otherwise a function is called for each trial, with ``group=None``.
 
         assets :
@@ -1279,15 +1267,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             to the participant-facing trial definition.
 
         round :
-            Rarely needed, since a round with two phases is normally one trial
-            class with several pages. The group's round to put this trial in,
-            overriding the automatic one, for example to put trials of two
-            classes, played one after the other, in one round by passing both
-            the same ``round``. A round's node isn't per class: cues of
-            different classes in the same round, such as one class per role,
-            share its node and definition without ``round``. Only for a
-            trial class that sets :attr:`sync_group_type`; every member of the
-            group must pass the same value.
+            Rarely needed: the group's round to put this trial in, overriding
+            the automatic one, only for phases of one round played one after
+            the other by trials of different classes (pass both the same
+            ``round``). A round with two phases is normally one trial class
+            with several pages, and cues of different classes while a round is
+            open, such as one class per role, share its node and definition
+            without ``round``. Only for a trial class that sets
+            :attr:`sync_group_type`; every member of the group must pass the
+            same value.
 
         Examples
         --------
@@ -1296,10 +1284,17 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
             class PickTrial(Trial):
                 sync_group_type = "room"
+                time_estimate = 15
 
                 def show_trial(self, experiment, participant):
                     return join(
-                        PickPage(),  # save_answer="pick"
+                        ModularPage(
+                            "pick",
+                            "Pick a number.",
+                            PushButtonControl([1, 2, 3, 4, 5]),
+                            save_answer="pick",
+                            time_estimate=5,
+                        ),
                         GroupBarrier(
                             id_="round_finished",
                             group_type="room",
@@ -1311,9 +1306,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 def score_room(cls, trials, node):
                     node.var.picks = [t.participant.var.pick for t in trials]
 
-            # A fixed room plays rounds 0, 1 and 2, and a room re-formed by a
-            # Regrouper every round plays round 0. The Module gives the nodes a
-            # module_id, for example to find them by when exporting.
+            # A fixed room plays rounds 0, 1 and 2. The Module gives the nodes
+            # a module_id, for example to find them by when exporting.
             join(
                 SimpleGrouper("room", initial_group_size=4),
                 Module(
@@ -1321,8 +1315,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                     for_loop(
                         label="rounds",
                         iterate_over=range(3),
-                        logic=PickTrial.cue(
-                            lambda group: {"target": random.randint(1, 5)}
+                        logic=only_in_group(
+                            "room",
+                            PickTrial.cue({"numbers": [1, 2, 3, 4, 5]}),
+                            otherwise=InfoPage("Your room has ended.", time_estimate=5),
                         ),
                         time_estimate_per_iteration=20,
                     ),
