@@ -2349,13 +2349,16 @@
     // Browsers keep an AudioContext suspended until the participant interacts
     // with the document. Firefox and Chrome then allow resume() at any time;
     // Safari only inside the click handler itself, so a resume() that does not
-    // settle quickly is treated as refused.
+    // settle quickly is treated as refused. After the participant's click,
+    // audio is allowed but can take a few seconds to start (for example while
+    // the audio output opens), so that wait is longer.
     const AUDIO_RESUME_WAIT_MS = 500;
+    const AUDIO_RESUME_AFTER_CLICK_WAIT_MS = 10000;
 
-    let waitForResume = function (resumed) {
+    let waitForResume = function (resumed, waitMs) {
       return Promise.race([
         resumed.catch(() => {}),
-        new Promise((resolve) => setTimeout(resolve, AUDIO_RESUME_WAIT_MS)),
+        new Promise((resolve) => setTimeout(resolve, waitMs)),
       ]);
     };
 
@@ -2372,7 +2375,7 @@
           }
           modal.css("display", "none");
           $("#js-psych").trigger("focus");
-          await waitForResume(resumed);
+          await waitForResume(resumed, AUDIO_RESUME_AFTER_CLICK_WAIT_MS);
           resolve();
         });
       });
@@ -2385,7 +2388,7 @@
         return;
       }
       if (navigator.userActivation?.hasBeenActive !== false) {
-        await waitForResume(context.resume());
+        await waitForResume(context.resume(), AUDIO_RESUME_WAIT_MS);
       }
       // Ask again if the browser still refuses after a click.
       while (context.state === "suspended") {
