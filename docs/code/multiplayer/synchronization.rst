@@ -444,7 +444,10 @@ role (it can also take ``seconds_left``; see :ref:`countdown messages <sync-coun
     GroupBarrier(id_="decided", group_type="pair", waiting_message=waiting_text)
 
 A ``waiting_message`` function on a group barrier can also take ``waiting_count`` and
-``group_size`` (both ``None`` if the participant has no group); return
+``group_size`` (both ``None`` if the participant has no group). They count
+the participant's own visit, so a newcomer already in the next
+:ref:`cued round <rounds-cued-trials>` doesn't see the count of members still
+waiting here in the previous one. Return
 :func:`~psynet.sync.hold_message` from it to write the second line yourself,
 or to leave it out:
 
@@ -638,7 +641,12 @@ Trial makers
 A trial maker with ``sync_group_type`` gives the whole group the same trials.
 Each group has a randomly chosen leader. PsyNet assigns the leader's next node
 as if the leader were taking the trial maker alone, and the other members get
-trials on the same node. The start of every trial is synchronized; add
+trials on the same node. Members copy the leader's participant group and
+block order. If the leader leaves, another member becomes leader (see
+:meth:`~psynet.sync.SyncGroup.check_leader`); a newcomer who becomes leader
+before starting the trial maker copies these from the members already in it,
+so the group keeps them, but still gets their own within-participant chains.
+The start of every trial is synchronized; add
 :class:`~psynet.sync.GroupBarrier` elements inside the trial, as in
 ``show_trial`` above, to synchronize other points. Each trial records the
 group, the member's role and the group's round, counted from 0, in

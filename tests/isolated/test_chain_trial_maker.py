@@ -403,6 +403,51 @@ WITHIN_CHAINS = dict(
 )
 
 
+def test_promoted_leader_copies_the_group_s_choices_and_creates_its_own_networks():
+    class WithinTrialMaker(ChainTrialMaker):
+        def create_networks_within(self, experiment, participant):
+            group = participant.module_state.participant_group
+            networks = [SimpleNamespace(block=b, participant_group=group) for b in "XY"]
+            participant.networks = networks
+            return networks
+
+    trial_maker = make_trial_maker(
+        WithinTrialMaker,
+        sync_group_type="main",
+        choose_participant_group=lambda participant: "A",
+        block_order="listed",
+        **WITHIN_CHAINS,
+    )
+    follower_state = SimpleNamespace(
+        trial_maker_initialized=True,
+        participant_group="B",
+        block_order=["Y", "X"],
+        block_position=1,
+    )
+    follower = SimpleNamespace(module_states={trial_maker.id: [follower_state]})
+    state = SimpleNamespace(participant_group=None, trial_maker_initialized=False)
+    state.set_block_position = lambda position: setattr(
+        state, "block_position", position
+    )
+    # The old leader left, and the newcomer was promoted after the group passed.
+    new_leader = SimpleNamespace(
+        id=3, module_state=state, module_states={trial_maker.id: [state]}
+    )
+    new_leader.select_module = lambda module_id: None
+    group = SimpleNamespace(id=1, leader=new_leader)
+    group.active_participants = [new_leader, follower]
+    new_leader.active_sync_groups = {"main": group}
+
+    trial_maker.init_participant(experiment=None, participant=new_leader)
+
+    assert (state.participant_group, state.block_order, state.block_position) == (
+        "B",
+        ["Y", "X"],
+        1,
+    )
+    assert [n.participant_group for n in new_leader.networks] == ["B", "B"]
+
+
 @pytest.mark.parametrize("chain_kwargs", [WITHIN_CHAINS, {}])
 def test_participant_removed_from_their_group_initializes_alone(chain_kwargs):
     trial_maker = make_trial_maker(sync_group_type="main", **chain_kwargs)

@@ -1,0 +1,1 @@
+Fixed a newcomer who became their group's leader before starting a synchronized trial maker choosing a new participant group and block order, different from the ones the other members copied from the previous leader; they now copy them from a member who has already started the trial maker, and still get their own within-participant chains.

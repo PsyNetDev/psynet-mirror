@@ -2010,7 +2010,11 @@ class GroupBarrier(Barrier):
         return default_hold_progress(**counts)
 
     def _hold_message_counts(self, participant):
-        """Return ``waiting_count`` and ``group_size``, both ``None`` without a group."""
+        """Return ``waiting_count`` and ``group_size``, both ``None`` without a group.
+
+        Counts ``participant``'s own visit: members waiting here in another
+        round, as when a newcomer is a round ahead, are at another visit.
+        """
         group = (
             None
             if participant is None
@@ -2018,10 +2022,15 @@ class GroupBarrier(Barrier):
         )
         if group is None:
             return {"waiting_count": None, "group_size": None}
+        links = _active_links(group)
+        node = _barrier_round(group, [participant], links)
         waiting = [
-            m for m in group.active_participants if self._participant_is_waiting(m)
+            m
+            for m in group.active_participants
+            if self._participant_is_waiting(m)
+            and _barrier_round(group, [m], links) is node
         ]
-        scope = _barrier_scope(group, waiting, self.id, _barrier_round(group, waiting))
+        scope = _barrier_scope(group, waiting, self.id, node)
         waiting_ids = {m.id for m in waiting}
         counted = {m.id for m in scope.waited_for} | {
             m.id for m in scope.releasable if m.id in waiting_ids

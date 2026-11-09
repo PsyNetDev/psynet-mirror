@@ -1983,13 +1983,14 @@ class ChainTrialMaker(NetworkTrialMaker):
                     )
             self.check_participant_groups({group for _, group in rows})
 
+        source = self._group_choices_state(participant)
+        if source is None:
             # Blocks are in network creation order, which "listed" block orders follow.
             blocks = list(dict.fromkeys(block for block, _ in rows))
             self.init_block_order(experiment, participant, blocks)
         else:
-            leader_state = self._leader_state(sync_group)
-            participant.module_state.block_order = leader_state.block_order
-            participant.module_state.set_block_position(leader_state.block_position)
+            participant.module_state.block_order = source.block_order
+            participant.module_state.set_block_position(source.block_position)
 
     def init_block_order(self, experiment, participant, blocks):
         """Choose and store the participant's block order.

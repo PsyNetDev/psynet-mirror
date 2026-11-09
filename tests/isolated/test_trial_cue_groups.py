@@ -704,6 +704,29 @@ def test_a_member_in_the_next_round_doesnt_hold_up_this_round_s_later_barrier(
     assert newcomer.active_barriers["submitted"].released is False
 
 
+@in_consents_experiment
+def test_the_hold_counts_show_the_viewer_s_own_round(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    (newcomer,) = _working_participants(exp, 1)
+    for participant in cohort:
+        _cue_round(exp, participant, 0)
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    pair.add_participant(newcomer)
+    _cue_round(exp, newcomer, 0)  # skipped
+    _cue_round(exp, newcomer, 1)
+    revealed = GroupBarrier("revealed", group_type="pair")
+    _arrive(exp, revealed, [newcomer, cohort[0]])
+
+    counts = revealed._hold_message_counts
+    assert counts(cohort[0]) == {"waiting_count": 1, "group_size": 2}
+    # In round 1, the newcomer waits alone for all three.
+    assert counts(newcomer) == {"waiting_count": 1, "group_size": 3}
+
+
 _releases = []
 
 

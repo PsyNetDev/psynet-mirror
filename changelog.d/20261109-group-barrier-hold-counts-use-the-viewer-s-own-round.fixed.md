@@ -1,0 +1,1 @@
+Fixed a `GroupBarrier`'s waiting counts (`waiting_count` and `group_size`, and the "not ready yet" line) showing a member who was already in a later cued round the count of members still waiting at the same barrier in an earlier round; each member now sees the count for their own round.
