@@ -276,7 +276,7 @@ on their trial, where ``show_feedback`` reads it:
 ``trials`` (each member's current trial, in the same order as
 ``participants``; its ``answer`` holds the answer so far), ``node`` (see
 below), ``leader`` and ``barrier`` (``participant`` is the leader too, kept
-for compatibility).
+for compatibility; for a dissolved group, see :ref:`also_on_dissolve <sync-on-dissolve>`).
 
 .. _sync-barrier-node:
 
@@ -339,8 +339,8 @@ later:
   player's current trial on the round's node. A barrier after the trial,
   between rounds or after the loop also stores it, as long as the trial is
   still the player's current trial and has no outcome yet, but a barrier
-  of a later module before its first cue (where ``node`` is ``None``) does
-  not. Members released with another current trial, such as a newcomer's
+  of a later module, or of a later run of the same module, before its
+  first cue (where ``node`` is ``None``) does not. Members released with another current trial, such as a newcomer's
   practice trial, don't stop it, and get nothing, as do members who
   skipped the round;
 - why the player left the group: a reason of
@@ -357,8 +357,8 @@ ended. Two things differ: leaving before they have ended replaces
 ``"stayed"`` from an earlier barrier of the round, and moving on
 (``"moved_on"``, for example at the next round's regrouper) or finishing
 (``"finished"``) after they have ended stores nothing. Nor does leaving the
-group once the player is in a later module, for example by failing a
-questionnaire there. A partner's outcome is on their trial in
+group once the player is in a later module or a later run of the same
+module, for example by failing a questionnaire there. A partner's outcome is on their trial in
 ``node.all_trials``:
 
 .. code-block:: python
@@ -408,7 +408,8 @@ pass ``also_on_dissolve=True``: ``on_release`` then also runs, with
 dissolves and, if the grouper sets
 ``below_quorum="continue_without_group"`` (or a function returning it), for
 each member who carries on without the group, at the next barrier with
-``also_on_dissolve`` of that group type they reach in the same module.
+``also_on_dissolve`` of that group type they reach in the same run of the
+module (not in a later run, as in a loop around the module).
 Under the default ``below_quorum="fail"``, the members who aren't waiting
 at such a barrier are failed and get no call. A quiz can therefore still
 score the last question for those who answered it:

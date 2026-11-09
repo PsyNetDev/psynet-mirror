@@ -61,9 +61,9 @@ row:
   ``on_release`` once, with every member waiting at the barrier. Members
   who continue without a group and aren't waiting at a barrier with
   ``also_on_dissolve`` are marked on their link (``dissolution_pending``,
-  with ``dissolution_module_id`` and ``dissolution_round_node_id``), and the
+  with ``dissolution_module_state_id`` and ``dissolution_round_node_id``), and the
   next barrier with ``also_on_dissolve`` of the group's type they reach in
-  that module calls it for them, under the round's lock. A group back at its quorum by then is no
+  that run of the module (the same ``ModuleState``) calls it for them, under the round's lock. A group back at its quorum by then is no
   longer dissolved.
 - A between-barrier timeout with ``"fail"`` also skips busy late members;
   they are still late at the barrier's next check. ``"leave_group"`` only changes the

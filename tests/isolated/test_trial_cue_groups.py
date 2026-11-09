@@ -169,7 +169,7 @@ def test_each_trial_records_how_its_round_ended_for_the_player(
 
 
 @in_consents_experiment
-def test_cue_without_a_definition_uses_make_definition(
+def test_cue_without_a_definition_defaults_to_an_empty_dict(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
@@ -435,6 +435,47 @@ def test_a_barrier_before_a_module_s_first_cue_gets_no_round(
     assert [t.sync_group_outcome for t in first_trials] == [None, None]
     assert not first_trials[0].node.sync_group_closed
     # Leaving the group in a later module doesn't record on the earlier round.
+    cohort[1].fail("questionnaire attention check")
+    assert [t.sync_group_outcome for t in first_trials] == [None, None]
+
+
+def _start_a_second_run(exp):
+    """Play a round of module ``game``, then start ``game`` again, as in a loop around it."""
+    cohort, _ = _paired(exp)
+    game = Module("game", InfoPage("Hi", time_estimate=1))
+    for participant in cohort:
+        participant.start_module(game)
+        PairTrial.cue({})[0].consume(exp, participant)
+    for participant in cohort:
+        participant.end_module(game)
+        participant.start_module(game)
+    return cohort, [p.current_trial for p in cohort]
+
+
+@in_consents_experiment
+def test_a_barrier_before_a_later_run_s_first_cue_gets_no_round(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, first_trials = _start_a_second_run(exp)
+    _released.clear()
+    barrier = GroupBarrier(
+        "second_run_start", group_type="pair", on_release=PairTrial.record_release
+    )
+    _arrive(exp, barrier, cohort)
+
+    ((_, _, node),) = _released
+    assert node is None
+    assert [t.sync_group_outcome for t in first_trials] == [None, None]
+    assert not first_trials[0].node.sync_group_closed
+
+
+@in_consents_experiment
+def test_leaving_in_a_later_run_does_not_record_on_the_earlier_round(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, first_trials = _start_a_second_run(exp)
     cohort[1].fail("questionnaire attention check")
     assert [t.sync_group_outcome for t in first_trials] == [None, None]
 
@@ -1148,6 +1189,12 @@ def _join_a_new_team(exp, participant):
     TeamTrial.cue({})[0].consume(exp, participant)
 
 
+def _start_game_again(exp, participant):
+    game = Module("game", InfoPage("Hi", time_estimate=1))
+    participant.end_module(game)
+    participant.start_module(game)
+
+
 @pytest.mark.parametrize(
     "before_barrier",
     [
@@ -1156,8 +1203,9 @@ def _join_a_new_team(exp, participant):
         lambda exp, p: p.start_module(
             Module("debrief", InfoPage("Hi", time_estimate=1))
         ),
+        _start_game_again,
     ],
-    ids=["solo_round", "new_group", "other_module"],
+    ids=["solo_round", "new_group", "other_module", "later_run"],
 )
 @in_consents_experiment
 def test_a_late_also_on_dissolve_call_is_only_for_the_dissolved_round(
@@ -1318,8 +1366,11 @@ def test_the_outcome_records_why_a_player_left_the_round(
     removed = remove(exp, group, stayer, leaver)
     db.session.commit()
     assert removed.current_trial.sync_group_outcome == outcome
+    assert removed.failed == fails
     if fails:
-        assert removed.failed and removed.sync_group_removal_reason("main") == outcome
+        assert removed.sync_group_removal_reason("main") == outcome
+    for other_leaver in members[1:-1]:
+        assert other_leaver.current_trial.sync_group_outcome == outcome
 
 
 @in_consents_experiment

@@ -1695,7 +1695,8 @@ class GroupBarrier(Barrier):
         it affects ``trials``), ``leader`` (the
         group's leader, who may be missing from ``participants``),
         ``participant`` (the same object as ``leader``, kept for
-        compatibility), ``left`` (the members who left the group since its
+        compatibility; for a dissolved group, see ``also_on_dissolve``
+        below), ``left`` (the members who left the group since its
         previous barrier pass, or since it formed; see below) and ``barrier``,
         the reconstructed registry object for this
         visit (scalar presentation and notification settings, not wait pages).
@@ -1743,7 +1744,8 @@ class GroupBarrier(Barrier):
         call only if they carry on without a group, with
         ``below_quorum="continue_without_group"`` (or a function returning
         it): each gets their own call at the next barrier of this group type
-        with ``also_on_dissolve`` that they reach in the same module, with
+        with ``also_on_dissolve`` that they reach in the same run of the
+        module (not in a later run, as in a loop around the module), with
         their answers to the pages before it; barriers without it, such as
         one they were waiting at when the group dissolved, don't use the
         call up.
@@ -2000,12 +2002,12 @@ class GroupBarrier(Barrier):
         member_link = _active_links(group).get(participant.id)
         if member_link is not None:
             visit = participant.active_barriers[self.id]
-            visit.round_node_id = member_link.round_node_id
+            visit.round_node_id = _round_this_run(member_link, participant)
             trial = participant.current_trial
             visit.in_round_trial = (
                 trial is not None
-                and member_link.round_node_id is not None
-                and trial.node_id == member_link.round_node_id
+                and visit.round_node_id is not None
+                and trial.node_id == visit.round_node_id
                 and not trial.complete
             )
 
@@ -4620,8 +4622,9 @@ def _record_leaving_the_round(group, participant, reason):
 
     Leaving before the trial's pages end replaces ``"stayed"``; after they end,
     only a trial without an outcome records it, and moving on or finishing
-    never does. A trial from an earlier module records nothing, as a barrier
-    in a later module belongs to no round of it.
+    never does. A trial from an earlier module, or an earlier run of the
+    same module (another ``ModuleState``), records nothing, as leaving in a
+    later module or run belongs to no round of it.
     """
     from .trial.main import SyncGroupNode
 
@@ -4630,7 +4633,7 @@ def _record_leaving_the_round(group, participant, reason):
         trial is None
         or trial.sync_group_id != group.id
         or not isinstance(trial.node, SyncGroupNode)
-        or not _in_current_module(trial.node, participant)
+        or trial.module_state is not participant.module_state
     ):
         return
     if trial.complete and (
@@ -4696,8 +4699,8 @@ def _barrier_round(group, waiting_participants, links=None):
 
     Each member's link stores the round they last cued or skipped (see
     :meth:`~psynet.trial.main.SyncGroupNode.for_cue`). The visit belongs to
-    the earliest of the waiting members' stored rounds in their current
-    module, so also a barrier after the round, such as in its feedback,
+    the earliest of the waiting members' stored rounds in this run of their
+    module (see :func:`_round_this_run`), so also a barrier after the round, such as in its feedback,
     between iterations or after the loop. Rounds are ordered by node ``id``,
     which is play order, as ``round=`` may name them in any order.
     """
@@ -4707,18 +4710,46 @@ def _barrier_round(group, waiting_participants, links=None):
         links = _active_links(group)
     nodes = []
     for participant in waiting_participants:
-        link = links.get(participant.id)
-        if link is None or link.round_node_id is None:
+        round_node_id = _round_this_run(links.get(participant.id), participant)
+        if round_node_id is None:
             continue
-        node = db.session.get(SyncGroupNode, link.round_node_id)
-        if node is not None and _in_current_module(node, participant):
+        node = db.session.get(SyncGroupNode, round_node_id)
+        if node is not None:
             nodes.append(node)
     return min(nodes, key=lambda node: node.id, default=None)
 
 
-def _in_current_module(node, participant):
-    """Return whether the round ``node`` belongs to ``participant``'s current module."""
-    return node.module_id == participant.module_id
+def _round_this_run(link, participant):
+    """Return the round id that ``link`` stores, if ``participant`` cued or skipped it in this run of their module.
+
+    A run is one ``ModuleState``. A round from an earlier module, or from an
+    earlier run of the same module, as in a loop around the module or a
+    looped trial maker, gives ``None``, as if the member had cued no round
+    yet.
+    """
+    if link is None or link.round_module_state_id != _module_state_id(participant):
+        return None
+    return link.round_node_id
+
+
+def _module_state_id(participant):
+    """Return the id of ``participant``'s current ``ModuleState`` (their run of the module), or ``None`` outside a module."""
+    state = participant.module_state
+    if state is None:
+        return None
+    if state.id is None:
+        db.session.flush()
+    return state.id
+
+
+def _in_latest_run(link, participant, module_id):
+    """Return whether ``link``'s stored round is from ``participant``'s latest run of module ``module_id``.
+
+    Unlike :func:`_round_this_run`, this holds for a member who has finished
+    that run, but not for one who has started the module again.
+    """
+    states = participant.module_states.get(module_id, [])
+    return bool(states) and states[-1].id == link.round_module_state_id
 
 
 def _barrier_scope(group, waiting_participants, barrier_id, node) -> _BarrierScope:
@@ -4734,11 +4765,13 @@ def _barrier_scope(group, waiting_participants, barrier_id, node) -> _BarrierSco
     already passed this visit (see :func:`_members_past_visit`).
 
     A visit with no round comes before the waiting members' first cue in
-    their module. If no member has cued a round in that module, as in a
-    group that never uses :meth:`~psynet.trial.main.Trial.cue`, it waits for
-    every member. Otherwise the group has started its rounds, so the visit
-    is a late joiner catching up: it waits only for the members who haven't
-    cued a round in the module either, are still in it (see
+    this run of their module (see :func:`_round_this_run`). If no member
+    has cued a round in their latest run of that module (see
+    :func:`_in_latest_run`), as in a group that never
+    uses :meth:`~psynet.trial.main.Trial.cue`, it waits for every member.
+    Otherwise the group has started its rounds, so the visit is a late
+    joiner catching up: it waits only for the members who haven't cued a
+    round in it either, are still in it (see
     :func:`_still_in_module`, as for members behind a round) and haven't
     passed this visit yet.
 
@@ -4812,12 +4845,17 @@ def _scope_before_rounds(group, waiting_participants, barrier_id, links):
     members = group.active_participants
     module_ids = {p.module_id for p in waiting_participants if p.id in links}
     in_rounds = set()
-    for participant_id, link in links.items():
-        if link.round_node_id is None:
+    for participant in members:
+        link = links.get(participant.id)
+        if link is None or link.round_node_id is None:
             continue
         node = db.session.get(SyncGroupNode, link.round_node_id)
-        if node is not None and node.module_id in module_ids:
-            in_rounds.add(participant_id)
+        if (
+            node is not None
+            and node.module_id in module_ids
+            and _in_latest_run(link, participant, node.module_id)
+        ):
+            in_rounds.add(participant.id)
     if not in_rounds:
         return _BarrierScope(members, members, members)
     behind = [
@@ -4964,8 +5002,8 @@ def _run_on_dissolve(group, members, continuing):
 
     The members in ``continuing`` (ids of those who carry on without a
     group) who are not waiting at such a barrier are marked, with their
-    module and the round they are in now, so that the next barrier with
-    ``also_on_dissolve`` of the group's type they reach in that module calls
+    run of their module and the round they are in now, so that the next barrier with
+    ``also_on_dissolve`` of the group's type they reach in that run calls
     it for them instead (see :func:`_call_on_release_after_dissolving`).
     Runs before the members are removed, as rounds are read from their
     active links.
@@ -4989,7 +5027,7 @@ def _run_on_dissolve(group, members, continuing):
         if not called and participant.id in continuing and group_link is not None:
             node = _barrier_round(group, [participant], group_links)
             group_link.dissolution_pending = True
-            group_link.dissolution_module_id = participant.module_id
+            group_link.dissolution_module_state_id = _module_state_id(participant)
             group_link.dissolution_round_node_id = None if node is None else node.id
     for barrier, participants in waiting.values():
         node = _barrier_round(group, participants, group_links)
@@ -5000,8 +5038,8 @@ def _call_on_release_after_dissolving(barrier, participant):
     """Call ``barrier``'s ``on_release`` for a member of a dissolved group reaching it, once.
 
     Only a barrier with ``also_on_dissolve`` of the group's type calls it, in
-    the module the member was in when the group dissolved; other barriers
-    leave it for a later one. A current trial in a later round, played alone
+    the run of the module (``ModuleState``) the member was in when the group
+    dissolved; other barriers leave it for a later one. A current trial in a later round, played alone
     or in another group, uses the call up without making it. ``node`` is the
     member's round stored when the group dissolved.
     """
@@ -5013,7 +5051,7 @@ def _call_on_release_after_dissolving(barrier, participant):
         or link.active
         or not link.dissolution_pending
         or not barrier.also_on_dissolve
-        or link.dissolution_module_id != participant.module_id
+        or link.dissolution_module_state_id != _module_state_id(participant)
     ):
         return
     link.dissolution_pending = False
@@ -5401,16 +5439,20 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     # GroupBarrier uses it to tell whom a round's barrier waits for. No
     # foreign key, as on Trial.sync_group_id.
     round_node_id = Column(Integer)
+    # The member's ModuleState when they cued or skipped that round, so a
+    # later run of the same module (a new ModuleState) has no stored round
+    # yet; see ``_round_this_run``.
+    round_module_state_id = Column(Integer)
     skipped_round = Column(Boolean, default=False)
     # Set when the group dissolved while the member, who carries on without a
     # group, waited at none of its barriers with ``also_on_dissolve``, until
-    # they reach one in ``dissolution_module_id``, the module they were in
-    # then; see ``GroupBarrier(also_on_dissolve=...)``.
+    # they reach one in ``dissolution_module_state_id``, the ModuleState (run
+    # of a module) they were in then; see ``GroupBarrier(also_on_dissolve=...)``.
     dissolution_pending = Column(Boolean, default=False)
-    dissolution_module_id = Column(String)
+    dissolution_module_state_id = Column(Integer)
     # The member's round (a SyncGroupNode id, see ``_barrier_round``) when the
     # group dissolved, which that call gets as ``node``; ``None`` before the
-    # group's first cue in the member's module.
+    # group's first cue in that run of the member's module.
     dissolution_round_node_id = Column(Integer)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
@@ -5448,8 +5490,8 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     # A Regrouper with ``keep_roles`` gave a newcomer this role for the
     # coming split; it is kept once they play it.
     role = Column(String)
-    # At a GroupBarrier, the member's cued round when they arrived
-    # (``ParticipantLinkSyncGroup.round_node_id``), so a later visit can
+    # At a GroupBarrier, the member's cued round in this run of their module
+    # when they arrived (``_round_this_run``), so a later visit can
     # tell who already passed it in that round; see ``_barrier_scope``.
     round_node_id = Column(Integer)
     # The visit happened inside the member's trial of that round (before the

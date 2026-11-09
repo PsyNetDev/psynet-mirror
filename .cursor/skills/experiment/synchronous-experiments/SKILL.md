@@ -83,7 +83,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   quorum first: `on_release` then also runs, with `dissolved=True`, once
   for the members waiting at the barrier. The others get a call only with
   `below_quorum="continue_without_group"`, each when they reach the next
-  `also_on_dissolve` barrier of that group type in the module; under the
+  `also_on_dissolve` barrier of that group type in the same run of the
+  module; under the
   default `"fail"` they are failed instead. Don't add an `on_finalized` or
   feedback fallback for `"group_dissolved"`; save results per member, since
   each call has only its own members' `trials`.

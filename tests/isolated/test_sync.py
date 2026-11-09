@@ -7336,9 +7336,10 @@ def test_removing_a_late_member_dissolves_a_group_without_top_ups(
     assert partner.failed == (below_quorum == "fail")
 
 
-def _score_dissolved(participants, barrier, dissolved):
-    for participant in participants:
-        participant.var.scored_at = [barrier.id, dissolved]
+def _score_dissolved(participants, barrier, dissolved, leader, participant):
+    assert leader is None and participant is participants[0]
+    for member in participants:
+        member.var.scored_at = [barrier.id, dissolved]
 
 
 @pytest.mark.parametrize("below_quorum", ["continue_without_group", "fail"])
