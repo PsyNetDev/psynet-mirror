@@ -1681,8 +1681,9 @@ class GroupBarrier(Barrier):
         the last question for the members who answered it. It takes the same
         arguments as ``on_release`` except ``leader``: ``participants`` are
         the members waiting here. The same serialization rules apply.
-        Dissolving waits until no other member's request is in flight, so
-        ``on_dissolve`` is called once, with every member waiting here.
+        Dissolving waits for any member who is in the middle of another
+        request, so ``on_dissolve`` is called once, with every member
+        waiting here.
 
     stop_top_ups
         If ``True``, the group stops accepting newcomers once it passes this
@@ -4293,16 +4294,11 @@ def _lock_all_participants(participants):
     members' requests are not held up until this transaction ends. Opening
     the savepoint flushes pending changes, so rolling it back keeps them.
     """
-    savepoint = db.session.begin_nested()
-    try:
+    with db.session.begin_nested() as savepoint:
         locked = _skip_locked_participant_ids(participants)
-    except BaseException:
-        savepoint.rollback()
-        raise
-    if any(participant.id not in locked for participant in participants):
-        savepoint.rollback()
-        return None
-    savepoint.commit()
+        if any(participant.id not in locked for participant in participants):
+            savepoint.rollback()
+            return None
     return _still_working(participants)
 
 
