@@ -7516,6 +7516,13 @@ def test_latecomers_fill_a_team_until_it_passes_game_starts(
     grouper._join_existing_groups(too_late)
     assert not too_late.in_sync_group("team")
 
+    starters = [new_participant(exp) for _ in range(2)]
+    for p in starters:
+        p.status = "working"
+    alone = grouper._make_group(starters, initial_group_size=4)
+    assert set(game_starts.choose_who_to_release(starters)) == set(starters)
+    assert not alone.accepts_top_ups
+
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True

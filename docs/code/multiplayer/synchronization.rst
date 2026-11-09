@@ -794,14 +794,14 @@ The grouper leaves out ``join_existing_groups``, so a team that falls below
 its quorum is dissolved rather than waiting for a replacement (see
 `Groups below quorum`_). To let latecomers join a team only before its game
 starts, pass ``join_existing_groups=True`` and stop top-ups at the barrier
-that starts the game. Latecomers can join only while the team is on the
-pages between the grouper and that barrier, such as its instructions: the
-team passes the barrier as soon as its current members reach it, which ends
-top-ups. ``top_up_wait`` stops a team that falls below its quorum before then
-from waiting for a newcomer who may never come; ``late_after`` on the barrier
-removes its default 20-second wait limit, which would otherwise time the
-members out first. Each latecomer can hold the team at the barrier for up to
-``late_after`` after joining, before being removed as late:
+that starts the game. Latecomers can join until every member already in the
+team has reached that barrier; then the team passes it, which ends top-ups.
+The barrier waits for anyone who joined before then, for up to
+``late_after`` after they joined, before removing them as late, so the pages
+before it, such as instructions, are the join window. ``top_up_wait`` stops a
+team that falls below its quorum before then from waiting for a newcomer who
+may never come; ``late_after`` also removes the barrier's default 20-second
+wait limit, which would otherwise time the members out first:
 
 .. code-block:: python
 
