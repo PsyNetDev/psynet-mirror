@@ -4060,6 +4060,9 @@ class ModuleState(SQLBase, SQLMixin):
     started = Column(Boolean, default=False)
     finished = Column(Boolean, default=False)
     early_exited = Column(Boolean, default=False)
+    #: Counts the participant's visits to the module, from 1, as when a loop
+    #: repeats it.
+    run_index = Column(Integer)
 
     asset_links = relationship(
         "AssetModuleState",

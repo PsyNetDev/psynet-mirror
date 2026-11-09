@@ -410,6 +410,22 @@ def test_each_module_numbers_a_group_s_rounds_from_0(
 
 
 @in_consents_experiment
+def test_module_states_count_the_participant_s_runs_of_the_module(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    (participant,) = _working_participants(exp, 1)
+    looped = Module("looped", InfoPage("Hi", time_estimate=1))
+    for _ in range(2):
+        participant.start_module(looped)
+        participant.end_module(looped)
+    participant.start_module(Module("other", InfoPage("Hi", time_estimate=1)))
+
+    assert [s.run_index for s in participant.module_states["looped"]] == [1, 2]
+    assert participant.module_state.run_index == 1
+
+
+@in_consents_experiment
 def test_a_barrier_before_a_module_s_first_cue_gets_no_round(
     in_experiment_directory, db_session
 ):
@@ -439,14 +455,17 @@ def test_a_barrier_before_a_module_s_first_cue_gets_no_round(
     assert [t.sync_group_outcome for t in first_trials] == [None, None]
 
 
-def _start_a_second_run(exp):
-    """Play a round of module ``game``, then start ``game`` again, as in a loop around it."""
+def _start_a_second_run(exp, restarting=2):
+    """Play a round of module ``game``, then start ``game`` again, as in a loop around it.
+
+    Only the first ``restarting`` members start the second run.
+    """
     cohort, _ = _paired(exp)
     game = Module("game", InfoPage("Hi", time_estimate=1))
     for participant in cohort:
         participant.start_module(game)
         PairTrial.cue({})[0].consume(exp, participant)
-    for participant in cohort:
+    for participant in cohort[:restarting]:
         participant.end_module(game)
         participant.start_module(game)
     return cohort, [p.current_trial for p in cohort]
@@ -468,6 +487,23 @@ def test_a_barrier_before_a_later_run_s_first_cue_gets_no_round(
     assert node is None
     assert [t.sync_group_outcome for t in first_trials] == [None, None]
     assert not first_trials[0].node.sync_group_closed
+
+
+@in_consents_experiment
+def test_a_barrier_before_a_later_run_s_first_cue_waits_for_a_partner_still_in_the_earlier_run(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _start_a_second_run(exp, restarting=1)
+    barrier = GroupBarrier("second_run_start", group_type="pair")
+    _arrive(exp, barrier, cohort[:1])
+    assert barrier._participant_is_waiting(cohort[0])
+
+    game = Module("game", InfoPage("Hi", time_estimate=1))
+    cohort[1].end_module(game)
+    cohort[1].start_module(game)
+    _arrive(exp, barrier, cohort[1:])
+    assert not any(barrier._participant_is_waiting(p) for p in cohort)
 
 
 @in_consents_experiment

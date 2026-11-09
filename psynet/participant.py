@@ -878,7 +878,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
     def start_module(self, module: "Module"):
         self.check_module_not_already_started(module)
+        run_index = len(self.module_states.get(module.id, [])) + 1
         state = module.state_class(module, self)
+        state.run_index = run_index
         state.start()
         self.module_state = state
 

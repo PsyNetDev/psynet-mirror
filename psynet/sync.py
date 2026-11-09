@@ -1600,8 +1600,8 @@ class GroupBarrier(Barrier):
     In or after a round of :meth:`~psynet.trial.main.Trial.cue`, it waits only for the members
     of that round, not for those who skipped it, are in a later round or have already passed it
     (see :ref:`rounds-cued-trials` and :ref:`a fixed group's loop <rounds-fixed-group-loop>`).
-    Before a late joiner's first cue, once the group has cued a round in the module, it waits
-    only for members who haven't cued one there either.
+    Before a late joiner's first cue, once the group has cued a round in this run of the module,
+    it waits only for members who haven't cued one there either.
     When the trials of the members it releases are all on one cued round's node, the release
     closes that round to newcomers, whose cues then start the next round.
 
@@ -1691,7 +1691,7 @@ class GroupBarrier(Barrier):
         ``sync_group_type`` that the barrier is part of), ``node`` (the
         group's :class:`~psynet.trial.main.SyncGroupNode` for the round the
         barrier is in or after, or ``None`` before the group's first cue in
-        the module; see :ref:`the barrier's node <sync-barrier-node>` for how it is chosen and how
+        this run of the module; see :ref:`the barrier's node <sync-barrier-node>` for how it is chosen and how
         it affects ``trials``), ``leader`` (the
         group's leader, who may be missing from ``participants``),
         ``participant`` (the same object as ``leader``, kept for
@@ -4684,14 +4684,23 @@ def _round_this_run(link, participant):
     return link.round_node_id
 
 
-def _in_latest_run(link, participant, module_id):
-    """Return whether ``link``'s stored round is from ``participant``'s latest run of module ``module_id``.
+def _round_run_index(link, participant, module_id):
+    """Return the ``run_index`` of ``participant``'s run of module ``module_id`` in which they cued or skipped ``link``'s stored round.
 
-    Unlike :func:`_round_this_run`, this holds for a member who has finished
-    that run, but not for one who has started the module again.
+    Unlike :func:`_round_this_run`, this compares runs across members, who
+    may be in different runs of a looped module. ``0`` if the round's
+    ``ModuleState`` isn't one of theirs for the module.
     """
-    states = participant.module_states.get(module_id, [])
-    return bool(states) and states[-1].id == link.round_module_state_id
+    for state in participant.module_states.get(module_id, []):
+        if state.id == link.round_module_state_id:
+            return state.run_index or 0
+    return 0
+
+
+def _current_run_index(participant):
+    """Return the ``run_index`` of ``participant``'s current module run, ``0`` outside a module."""
+    state = participant.module_state
+    return 0 if state is None else state.run_index or 0
 
 
 def _barrier_scope(group, waiting_participants, barrier_id, node) -> _BarrierScope:
@@ -4708,12 +4717,12 @@ def _barrier_scope(group, waiting_participants, barrier_id, node) -> _BarrierSco
 
     A visit with no round comes before the waiting members' first cue in
     this run of their module (see :func:`_round_this_run`). If no member
-    has cued a round in their latest run of that module (see
-    :func:`_in_latest_run`), as in a group that never
-    uses :meth:`~psynet.trial.main.Trial.cue`, it waits for every member.
-    Otherwise the group has started its rounds, so the visit is a late
-    joiner catching up: it waits only for the members who haven't cued a
-    round in it either, are still in it (see
+    has cued a round in that module, in the waiting members' run of it or a
+    later one (see :func:`_round_run_index`), as in a group that never uses
+    :meth:`~psynet.trial.main.Trial.cue` or at the start of a loop's next
+    run, it waits for every member. Otherwise the group has started its
+    rounds, so the visit is a late joiner catching up: it waits only for the
+    members who haven't cued such a round either, are still in it (see
     :func:`_still_in_module`, as for members behind a round) and haven't
     passed this visit yet.
 
@@ -4785,7 +4794,14 @@ def _scope_before_rounds(group, waiting_participants, barrier_id, links):
     from .trial.main import SyncGroupNode
 
     members = group.active_participants
-    module_ids = {p.module_id for p in waiting_participants if p.id in links}
+    # The earliest run of each module that a waiting member is in; a round
+    # cued in an earlier run of a looped module doesn't count.
+    visit_runs = {}
+    for participant in waiting_participants:
+        if participant.id in links:
+            run = _current_run_index(participant)
+            module_id = participant.module_id
+            visit_runs[module_id] = min(run, visit_runs.get(module_id, run))
     in_rounds = set()
     for participant in members:
         link = links.get(participant.id)
@@ -4794,8 +4810,9 @@ def _scope_before_rounds(group, waiting_participants, barrier_id, links):
         node = db.session.get(SyncGroupNode, link.round_node_id)
         if (
             node is not None
-            and node.module_id in module_ids
-            and _in_latest_run(link, participant, node.module_id)
+            and node.module_id in visit_runs
+            and _round_run_index(link, participant, node.module_id)
+            >= visit_runs[node.module_id]
         ):
             in_rounds.add(participant.id)
     if not in_rounds:
@@ -4804,7 +4821,7 @@ def _scope_before_rounds(group, waiting_participants, barrier_id, links):
         p
         for p in members
         if p.id not in in_rounds
-        and any(_still_in_module(p, module_id) for module_id in module_ids)
+        and any(_still_in_module(p, module_id) for module_id in visit_runs)
     ]
     waiting = [p.id for p in waiting_participants if p.id in links]
     # A catch-up: no players, so its release does no group bookkeeping.
