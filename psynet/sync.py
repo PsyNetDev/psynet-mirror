@@ -1679,7 +1679,8 @@ class GroupBarrier(Barrier):
         while members are waiting at this barrier, before they are removed from
         the group, so that what they did is not lost. For example, it can score
         the last question for the members who answered it. It takes the same
-        arguments as ``on_release`` except ``leader``: ``participants`` are
+        arguments as ``on_release`` except ``leader`` and ``participant``:
+        ``participants`` are
         the members waiting here. The same serialization rules apply.
         Dissolving waits for any member who is in the middle of another
         request, so ``on_dissolve`` is called once, with every member
@@ -4211,7 +4212,7 @@ class SimpleSyncGroup(SyncGroup):
         the game has started and a newcomer couldn't catch up. From then on it
         is treated as a group without top-ups (see
         :ref:`groups_below_min_size`); a group already below its
-        quorum is dissolved now. To stop top-ups when the group passes a
+        quorum is dissolved, usually at once. To stop top-ups when the group passes a
         barrier instead, pass ``stop_top_ups=True`` to that :class:`GroupBarrier`.
         """
         if not self.accepts_top_ups:

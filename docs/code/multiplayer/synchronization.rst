@@ -278,7 +278,7 @@ the results it would have stored, so read them with
 ``participant.var.get("score")``, which returns ``None`` when it isn't set.
 If the group dissolves while some members are waiting at the barrier,
 ``on_dissolve`` runs for them instead, before they leave the group, with the
-same arguments except ``leader``.
+same arguments except ``leader`` and ``participant``.
 ``participants`` are then the members waiting at the barrier. Dissolving
 waits for any member who is in the middle of another request, usually a
 second or two once that request finishes, so ``on_dissolve`` is called once, with every member waiting at the barrier. A
@@ -706,9 +706,9 @@ Two separate settings decide what happens when someone leaves a group:
 
 - **The member who leaves** is handled by why they left: a barrier's
   ``max_wait_action`` (they waited too long for the others) or
-    ``late_action`` (the others waited too long for them), each ``"fail"``,
-  ``"leave_group"`` or ``"leave_all_groups"``, or their own failure, for example when they return
-  the study.
+  ``late_action`` (the others waited too long for them), each ``"fail"``,
+  ``"leave_group"`` or ``"leave_all_groups"``, or their own failure, for
+  example when they return the study.
 - **The members left behind** carry on as before while the group still has
   its ``quorum``. Below it, what happens depends on whether the group
   accepts top-ups:

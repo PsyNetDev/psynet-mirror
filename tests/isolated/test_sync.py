@@ -3774,6 +3774,10 @@ def test_a_deferred_dissolution_leaves_free_members_rows_unlocked(
     assert not Participant.query.get(quitter.id).in_sync_group("main")
     assert Participant.query.get(free.id).in_sync_group("main")
 
+    check_barriers()
+    db.session.expire_all()
+    assert not Participant.query.get(free.id).in_sync_group("main")
+
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
