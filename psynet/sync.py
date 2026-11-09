@@ -65,10 +65,10 @@ this module. That loop:
   connection, leaving definition and instance metadata available to arrival
   requests. That extra transaction stays open until this poller's
   skip-after-commit finishes.
-- Locks waiters with ``FOR UPDATE NOWAIT`` and groups a waiter would top up
-  with ``SKIP LOCKED``. If a waiter is already locked (for example by
-  ``POST /response``), it skips that barrier this tick, and a locked top-up
-  group is passed over for the next candidate, instead of blocking the poller.
+- Locks waiters, and their groups that accept top-ups, with ``NOWAIT``. If a
+  waiter or top-up group is already locked (for example by
+  ``POST /response`` or a newcomer joining), it skips that barrier this tick
+  instead of blocking the poller.
 - Evaluates the barrier's release hooks in an isolated transaction, then
   skips waiters **this poller** released, one row at a time, after that commit.
 - Logs and skips failures per barrier so one bad barrier does not stall others.
@@ -86,9 +86,9 @@ arrival transaction commits, the response route evaluates the barrier in a
 short coordination transaction before rendering. That lets a ``Grouper`` form
 groups and a ``GroupBarrier`` release the group without waiting for the poller.
 Last-arrival does not skip partner timeline cursors after that commit; partners
-leave on overlay wake (or this poller, if it won the release). Waiter rows stay
-``NOWAIT`` and top-up group rows ``SKIP LOCKED`` during the check so a locked
-partner or group cannot stall that request for ``lock_timeout``.
+leave on overlay wake (or this poller, if it won the release). Waiter and
+top-up group rows stay ``NOWAIT`` during the check so a locked partner or group
+cannot stall that request for ``lock_timeout``.
 
 Callable attributes on barriers (e.g., ``on_release``) persist through
 :mod:`psynet.barrier_spec` so each ``BarrierInstance`` keeps stable release
