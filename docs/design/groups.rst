@@ -223,7 +223,7 @@ turn; a member who leaves plays no more turns, and the next member in seat
 order writes in their place. The last one left goes on to the story so far.
 
 .. figure:: ../_static/images/design/groups/story_chain.svg
-   :alt: A grouper forms groups of three. Then, for each turn, the writer adds a sentence while the others wait at a barrier, which shows them the new sentence. Finally everyone rates the story.
+   :alt: A grouper forms groups of three. Then, for each turn, the writer adds a sentence while the others wait at a barrier that shows them the story so far. Finally everyone rates the story.
 
 In ``demos/experiments/gibbs_within_sync``, a group of three shares a chain of
 stimuli. The leader's next stimulus is chosen as if they were taking the

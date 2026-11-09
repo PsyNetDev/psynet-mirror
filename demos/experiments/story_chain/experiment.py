@@ -119,7 +119,7 @@ def choose_writer(group, turn: int) -> int:
     """Return the ID of the member in seat ``turn % GROUP_SIZE``, or in the next seat still in the group."""
     seats = group_seats(group)
     by_seat = sorted(seats, key=seats.get)
-    start = turn % len(by_seat)
+    start = turn % GROUP_SIZE
     present = {participant.id for participant in group.participants}
     return next(pid for pid in by_seat[start:] + by_seat[:start] if pid in present)
 
@@ -330,25 +330,39 @@ class Exp(psynet.experiment.Experiment):
             ],
         }
 
-    test_n_bots = 10
+    test_n_bots = 13
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        full_group, lost_group, short_group = bots[:3], bots[3:6], bots[6:9]
-        (loner,) = bots[9:]
+        full_group, lost_group, late_group, short_group = (
+            bots[:3],
+            bots[3:6],
+            bots[6:9],
+            bots[9:12],
+        )
+        (loner,) = bots[12:]
         self._test_full_story(full_group)
         self._test_group_dissolving_while_writing(lost_group)
+        self._test_late_writer(late_group)
         self._test_shrinking_group(short_group, loner)
 
         advance_past_wait_pages([loner], timeout=GROUPER_WAIT + 10)
         assert loner.current_page_text == NO_GROUP_TEXT, loner.current_page_text
         run_bots_to_completion([bot for bot in bots if not bot.failed])
 
-        players = {
-            row["participant_id"]: row for row in self.get_basic_data()["player"]
-        }
-        assert players[loner.id]["removal_reason"] == "no_group_formed"
-        assert players[loner.id]["group_id"] is None
+        assert self._removal_reasons([loner]) == ["no_group_formed"]
+        assert self._player(loner)["group_id"] is None
+
+    def _player(self, bot: BotDriver) -> dict:
+        """Return the bot's row of the ``player`` table."""
+        return next(
+            row
+            for row in self.get_basic_data()["player"]
+            if row["participant_id"] == bot.id
+        )
+
+    def _removal_reasons(self, bots: List[BotDriver]) -> list:
+        return [self._player(bot)["removal_reason"] for bot in bots]
 
     def _turns(self, bot: BotDriver):
         """Return the writer, sentence and writer outcome of each turn of the bot's group."""
@@ -389,8 +403,9 @@ class Exp(psynet.experiment.Experiment):
         ]
 
     def _test_group_dissolving_while_writing(self, bots: List[BotDriver]):
-        # Both others return the study while the first writes, so nobody waits
-        # at the barrier and the writer's own trial saves the sentence.
+        # Both others wait at the barrier and then return the study while the
+        # first writes, so no remaining member is waiting there, on_dissolve
+        # doesn't run, and the writer's own trial saves the sentence.
         first, second, third = _seated(bots)
         second.drop_out()
         third.drop_out()
@@ -401,6 +416,34 @@ class Exp(psynet.experiment.Experiment):
         assert self._turns(first) == [
             (first.id, "Once upon a time.", "group_dissolved")
         ]
+        assert self._removal_reasons([first, second, third]) == [
+            "group_dissolved",
+            "left_experiment",
+            "left_experiment",
+        ]
+
+    def _test_late_writer(self, bots: List[BotDriver]):
+        # The first writer goes silent, so the barrier takes them out and the
+        # other two go on without them. The second waits there until then,
+        # and then writes the next turn.
+        first, second, third = _seated(bots)
+        advance_past_wait_pages([second], timeout=LATE_AFTER + 20)
+        assert second.current_page_label == "write", second.current_page_text
+        second.take_page(response="A fox ran.")
+        advance_past_wait_pages([second, third], stop_at=TURN_BARRIER)
+        assert (
+            first.current_notice == "Your group went on without you. Please continue."
+        )
+        first.take_page(response="Too late.")
+        advance_past_wait_pages([first])
+        text = first.current_page_text
+        assert f"{EARLY_END_INTROS['late']} A fox ran. How" in text, text
+        assert self._turns(first)[:2] == [
+            (first.id, None, "late"),
+            (second.id, "A fox ran.", "stayed"),
+        ]
+        assert self._removal_reasons([first]) == ["late"]
+        run_bots_to_completion([second, third])
 
     def _test_shrinking_group(self, bots: List[BotDriver], loner: BotDriver):
         first, second, third = _seated(bots)
@@ -440,4 +483,9 @@ class Exp(psynet.experiment.Experiment):
             (first.id, "It was hungry.", "stayed"),
             (third.id, "It ate the moon.", "stayed"),
             (third.id, "The end.", "group_dissolved"),
+        ]
+        assert self._removal_reasons([first, second, third]) == [
+            "late",
+            "left_experiment",
+            "group_dissolved",
         ]
