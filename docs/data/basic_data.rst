@@ -100,7 +100,11 @@ round 0. The group's trials with the same
 the group ends. Cued trials of one group and round also share a
 :class:`~psynet.trial.main.SyncGroupNode`, which can hold the group's results;
 the ``lowest_unique_number`` demo builds a table per player and round and
-one per room from them (see :ref:`rounds-one-trial-per-player`).
+one per room from them (see :ref:`rounds-one-trial-per-player`). The
+``crowd_estimate`` demo does the same for a fixed group that plays one round
+per question; a player who answered on their own has a row with an empty
+``crowd_id``, and its ``outcome`` column, from ``trial.sync_group_outcome``,
+says how the round ended for each player.
 
 Group membership, for groups formed by a grouper (see
 :doc:`/code/multiplayer/synchronization`), is stored in two tables:

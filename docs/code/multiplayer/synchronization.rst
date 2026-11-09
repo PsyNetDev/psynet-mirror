@@ -1195,11 +1195,16 @@ For the rest of the timeline:
   for that: a participant who is out of the group when the trial starts
   gets an ungrouped trial, so ``show_trial`` can give them the solo version
   of the round. In the ``crowd_estimate`` demo, they give their estimate
-  without the group's median, and a member whose estimate is not in the
-  median is told so:
+  without the group's median:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
      :pyobject: EstimateTrial.show_trial
+
+  A member removed as late on a trial that has already started keeps its
+  grouped pages. The page after the barrier is built only once the round has
+  been scored, so it reads the stored ``median`` on the node and the
+  trial's ``in_median``, and tells a member whose estimate missed the median
+  that there is nothing to revise:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
      :pyobject: EstimateTrial.revise_page

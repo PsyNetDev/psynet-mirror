@@ -26,8 +26,10 @@ Dropout decisions
 - Each estimate has a time limit of ``ANSWER_SECONDS``; a player who runs
   out of time gives none.
 - A member who stops responding is removed, so nobody waits for them: at
-  the start of the game ``LATE_AFTER`` seconds after the group formed, and
-  during it ``LATE_AFTER`` seconds after their page's time limit.
+  the start of the game ``LATE_AFTER`` seconds after they joined the group,
+  and during a question ``LATE_AFTER`` seconds after the group's previous
+  barrier, but not before their current page's time limit plus 10 seconds
+  (see "Timeouts" in ``docs/code/multiplayer/synchronization.rst``).
 - A group that falls below three once the game has started ends.
 - A median needs three estimates. When fewer arrive, because players ran
   out of time or the group ended while they waited for it, the group's
@@ -117,8 +119,8 @@ def get_timeline():
                 logic=lambda question: EstimateTrial.cue(
                     {"question": question}, round=question
                 ),
-                time_estimate_per_iteration=EstimateTrial.time_estimate,
-                expected_repetitions=len(QUESTIONS),
+                # An estimate and a revised estimate; alone, only the estimate.
+                time_estimate_per_iteration=2 * ANSWER_SECONDS,
             ),
         ),
     )
@@ -130,16 +132,17 @@ def left_group(participant):
 
 class EstimateTrial(Trial):
     sync_group_type = GROUP
-    time_estimate = 2 * ANSWER_SECONDS
+    # Alone, a trial is one estimate; in a group, its pages add a revised one.
+    time_estimate = ANSWER_SECONDS
     # The trial's answer holds both the estimate and the revised estimate.
     accumulate_answers = True
 
     def show_trial(self, experiment, participant):
         if self.sync_group is None:
             # Alone, the estimate is the whole trial.
-            return self.estimate_page(time_estimate=self.time_estimate)
+            return self.estimate_page()
         return join(
-            self.estimate_page(time_estimate=ANSWER_SECONDS),
+            self.estimate_page(),
             GroupBarrier(
                 id_="estimates",
                 group_type=GROUP,
@@ -157,13 +160,17 @@ class EstimateTrial(Trial):
     def question(self):
         return QUESTIONS[self.definition["question"]]
 
-    def estimate_page(self, time_estimate):
+    def estimate_page(self):
+        prompt = self.question
+        if self.sync_group is None:
+            # Also tells a member removed from the group partway through.
+            prompt = f"You're answering on your own. {prompt}"
         return ModularPage(
             "estimate",
-            self.question,
+            prompt,
             NumberControl(),
             time_limit=ANSWER_SECONDS,
-            time_estimate=time_estimate,
+            time_estimate=ANSWER_SECONDS,
         )
 
     @classmethod
@@ -172,7 +179,7 @@ class EstimateTrial(Trial):
         estimates = {}
         for t in trials:
             # The answer so far; running out of time saves None.
-            estimate = _number(t.answer.get("estimate"))
+            estimate = _number(t, "estimate")
             if estimate is not None:
                 estimates[str(t.participant_id)] = estimate
         node.var.estimates = estimates
@@ -213,11 +220,12 @@ class EstimateTrial(Trial):
         )
 
 
-def _number(answer):
-    """Return a ``NumberControl`` answer as a float, or None if there is none.
+def _number(trial, page):
+    """Return the trial's ``NumberControl`` answer on ``page`` as a float, or None if there is none.
 
     Browsers submit the number as a string, while bots submit a number.
     """
+    answer = (trial.answer or {}).get(page)
     return None if answer is None else float(answer)
 
 
@@ -245,15 +253,16 @@ class Exp(psynet.experiment.Experiment):
                     "question": t.definition["question"],
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
-                    # "stayed" if the player stayed to the end of the round,
-                    # "late" if they were taken out for being away; None alone.
+                    # How the round ended for the player: "stayed" to the
+                    # end, or why they left, such as "late" or
+                    # "group_dissolved"; None alone.
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or left first.
-                    "estimate": _number(t.answer.get("estimate")),
+                    "estimate": _number(t, "estimate"),
                     # Whether the estimate counted towards the group's median;
                     # None for an answer given alone or a group without one.
                     "in_median": t.var.get("in_median"),
-                    "revised": _number(t.answer.get("revised")),
+                    "revised": _number(t, "revised"),
                 }
                 for t in trials
             ],
@@ -386,8 +395,11 @@ class Exp(psynet.experiment.Experiment):
             (r["participant_id"], r["question"]): r for r in data["player_round"]
         }
         for bot in players:
-            revised = [answers[(bot.id, question)]["revised"] for question in (0, 1)]
-            assert revised == [250, 1300], revised
+            rows = [answers[(bot.id, question)] for question in (0, 1)]
+            assert [(r["outcome"], r["in_median"], r["revised"]) for r in rows] == [
+                ("stayed", True, 250),
+                ("stayed", True, 1300),
+            ], rows
         # The silent member was removed as late and answered the first question
         # after its time limit, so their trial saved no estimate and it missed
         # the median.
@@ -401,7 +413,9 @@ class Exp(psynet.experiment.Experiment):
         # The group that ended had no median to count towards, and the member
         # who left still has a row.
         for bot in group_c:
-            assert answers[(bot.id, 0)]["in_median"] is None, answers[(bot.id, 0)]
+            row = answers[(bot.id, 0)]
+            outcome = "left_experiment" if bot is quitter_c else "group_dissolved"
+            assert (row["outcome"], row["in_median"]) == (outcome, None), row
         assert answers[(quitter_c.id, 0)]["estimate"] is None
         # Answers given alone have no revision.
         alone = (

@@ -348,7 +348,9 @@ group and round, when the first member's trial creates the node, so the
 whole group plays the same draw. A player who is in no group of that type
 when the trial starts gets an ungrouped trial, with ``sync_group_id`` set to
 ``None``; ``show_trial`` can check ``self.sync_group is None`` to give them
-a solo version.
+a solo version. The ``crowd_estimate`` demo does this in a fixed group's
+loop of questions, cued with ``round=question``, and exports each round's
+``sync_group_outcome`` for each player.
 
 **Fixed roles.** With ``keep_roles=True``, players keep the role they first
 play for the whole game, and newcomers get the role that lets the most

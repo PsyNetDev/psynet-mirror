@@ -243,7 +243,7 @@ a group that has a free place instead of waiting for a new one. Top-ups
 can stop when the game starts, so that every member plays every round;
 from then on, latecomers wait for a new group. Alternatively, a group can
 keep taking latecomers during the game, who skip the rounds it has already
-finished (see :ref:`rounds-fixed-group-loop`). A group
+finished (see :ref:`a fixed group's loop <rounds-fixed-group-loop>`). A group
 that falls below its quorum before the game starts can wait a little while
 for a latecomer to replace the member who left (see
 :ref:`groups_below_min_size` for when a group ends).
