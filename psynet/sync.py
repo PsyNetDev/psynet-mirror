@@ -4080,8 +4080,8 @@ class SyncGroup(SQLBase, SQLMixin):
             )
         _forget_active_sync_group(participant)
         for link in self.participant_links:
-            is_member = (
-                link.participant is participant or link.participant_id == participant.id
+            is_member = link.participant_id == participant.id or (
+                link.participant_id is None and link.participant is participant
             )
             if is_member and link.active:
                 link.active = False
