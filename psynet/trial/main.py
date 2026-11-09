@@ -4471,7 +4471,9 @@ class SyncGroupNode(GenericTrialNode):
         counted from 0, which the others then join.
         With ``round_number``, it is the group's node for that round, or
         ``None`` if it is no longer open and the participant isn't playing it,
-        as when the group finished it without them. Naming a round when
+        as when the group finished it without them, or if they have a trial
+        of ``trial_class`` on it from before they left and rejoined the
+        group. Naming a round when
         the participant has run this module before raises a
         ``RuntimeError``, because the group's nodes for the module would be
         reused; so does naming a round in which they already have a trial of
@@ -4536,6 +4538,9 @@ class SyncGroupNode(GenericTrialNode):
         ``trial_class`` on the round they are playing, or their stored round
         in this module is one played after it, whether they played or
         skipped either. So a skip never moves their stored round back.
+        A member who left and rejoined the group has no stored round, so
+        they skip a round in which they already have a trial of
+        ``trial_class``, like a closed round.
         """
         link = _member_link(group, participant)
         stored = link.round_node_id and db.session.get(cls, link.round_node_id)
@@ -4543,13 +4548,13 @@ class SyncGroupNode(GenericTrialNode):
         played_after = (
             stored and stored.module_id == node.module_id and stored.id > node.id
         )
-        if played_after or (
-            playing
-            and trial_class.query.filter_by(
+        has_trial = (
+            trial_class.query.filter_by(
                 node_id=node.id, participant_id=participant.id
             ).first()
             is not None
-        ):
+        )
+        if played_after or (playing and has_trial):
             raise RuntimeError(
                 f"Participant {participant.id} cued {trial_class.__name__} for "
                 f"round {node.sync_group_round} of '{group.group_type}' group "
@@ -4560,7 +4565,7 @@ class SyncGroupNode(GenericTrialNode):
         if playing:
             # Another trial class cued in the round the participant is playing.
             return node
-        if not node.sync_group_closed:
+        if not node.sync_group_closed and not has_trial:
             _record_round_position(group, participant, node)
             return node
         _record_round_position(group, participant, node, skipped=True)

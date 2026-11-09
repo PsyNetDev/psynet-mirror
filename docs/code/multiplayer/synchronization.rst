@@ -274,17 +274,26 @@ on their trial, where ``show_feedback`` reads it:
 
 ``on_release`` can take any of the arguments ``group``, ``participants``,
 ``trials`` (each member's current trial, in the same order as
-``participants``, or ``None`` for a member with none; its ``answer`` holds
-the answer so far), ``node`` (the group's
-:class:`~psynet.trial.main.SyncGroupNode` for the round if the members'
-trials on the group's nodes all share one, and otherwise ``None``;
-when it is set, ``trials`` holds ``None`` for a member whose trial is not on
-it, such as a newcomer released at a feedback barrier during a practice
-trial),
-``leader`` and ``barrier`` (``participant`` is the leader too, kept for
-compatibility). In ``rock_paper_scissors`` every pair plays on the same
-node, which is not a group's node, so ``node`` is ``None`` and the results
-go on the trials. Cued trials share a node per group and round, so there a
+``participants``; its ``answer`` holds the answer so far), ``node`` (see
+below), ``leader`` and ``barrier`` (``participant`` is the leader too, kept
+for compatibility).
+
+``node`` is the group's :class:`~psynet.trial.main.SyncGroupNode` for the
+round the barrier is in or after: the earliest of the rounds the waiting
+members stored when they last cued (or skipped) one in their current
+module, not a node worked out from their trials. It is ``None``
+before the group's first cue in the module, including at a barrier at the
+start of a module after another module's rounds, and in a group that never
+uses :meth:`~psynet.trial.main.Trial.cue`. When ``node`` is set, ``trials``
+holds ``None`` for a member whose current trial is not on it, such as a
+newcomer released at a feedback barrier during a practice trial; when it is
+``None``, ``trials`` holds each member's current trial whatever its node,
+which can be a trial of an earlier module, or ``None`` for a member with
+none. At a barrier in the round's trial pages (``show_trial``) every member
+it releases is playing on the node, so ``trials`` has no ``None`` there.
+In ``rock_paper_scissors`` the trial maker gives every pair the same node,
+which is not a group's node, so ``node`` is ``None`` and the results go on
+the trials. Cued trials share a node per group and round, so there a
 ``@classmethod`` on the trial class can also save the
 group's results in ``node.var`` (see :ref:`rounds-cued-trials`). Results on
 the trial or node stay in the export for every round, while a participant
@@ -327,9 +336,11 @@ later:
 - ``"stayed"``: a group barrier released the group while this was the
   player's current trial on the round's node. A barrier after the trial,
   between rounds or after the loop also stores it, as long as the trial is
-  still the player's current trial and has no outcome yet. Members released
-  with another current trial, such as a newcomer's practice trial, don't
-  stop it, and get nothing, as do members who skipped the round;
+  still the player's current trial and has no outcome yet, but a barrier
+  of a later module before its first cue (where ``node`` is ``None``) does
+  not. Members released with another current trial, such as a newcomer's
+  practice trial, don't stop it, and get nothing, as do members who
+  skipped the round;
 - why the player left the group: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
   ``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or
@@ -407,10 +418,12 @@ together, before they leave the group. Dissolving waits until no member's
 request is in flight, usually a second at most, so that call includes
 every member waiting there. Each member still on an earlier page, such as
 the question itself, gets their own call when they reach the barrier, once
-their answer has arrived. ``participants``, ``trials`` and ``node`` refer to
-the members of the call, so read the whole round from ``node.all_trials``,
-and save results for each member rather than overwrite those of an earlier
-call. ``left`` lists the members who left before the group dissolved. A
+their answer has arrived. ``participants`` are the members of the call,
+and ``node`` and ``trials`` follow the same rule as for a release, from the
+members' stored rounds when the group dissolved, so a late call still
+refers to the round the group dissolved in. Read the whole round from
+``node.all_trials``, and save results for each member rather than overwrite
+those of an earlier call. ``left`` lists the members who left before the group dissolved. A
 member gets no call if the first barrier of that type they reach has no
 ``also_on_dissolve``, or comes in a later round's trial, played alone or in
 another group. Every member still in the group when it
