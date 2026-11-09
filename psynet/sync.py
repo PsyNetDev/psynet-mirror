@@ -130,7 +130,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    and_,
     func,
     or_,
     select,
@@ -171,7 +170,6 @@ from psynet.timeline import (
     TIME_LIMIT_GRACE_SECONDS,
     CodeBlock,
     EltCollection,
-    ModuleState,
     _is_timeline_hold,
     conditional,
     join,
@@ -1729,7 +1727,11 @@ class GroupBarrier(Barrier):
         formed with ``join_existing_groups=True`` (see :ref:`sync-newcomers-at-passed-barriers`).
         Don't use it for a barrier the group passes repeatedly, in a loop or built
         in ``show_trial``: newcomers, and members, would skip every pass after the
-        first. ``on_release`` doesn't run for those who pass through, so any group
+        first. That includes a module run again, for example in a loop: the
+        group's pass in the module's first run counts for later runs too, but a
+        barrier ID used in another module starts afresh. Only the group's
+        release counts as a pass, not a member released on a time-out.
+        ``on_release`` doesn't run for those who pass through, so any group
         state it sets up must not be needed by them. Redundant with
         ``stop_top_ups=True``, after which nobody can join.
 
@@ -1869,40 +1871,19 @@ class GroupBarrier(Barrier):
     def _group_passed(self, group, module_id) -> bool:
         """Return whether ``group`` was released from this barrier in module ``module_id``.
 
-        A visit counts once it released someone who is still in the group: a
-        member released after waiting too long has left it. It must also have
-        been during that member's current run of the module, so a barrier ID
-        reused in another module, or in a module run again, starts afresh.
+        Only a release of the whole group counts (see
+        ``BarrierInstance.group_passed``), not a member released on a time-out.
+        The pass is recorded on the visit, so it still counts after every
+        member who waited there has left the group or finished the module.
         """
-        link = ParticipantLinkBarrier
-        query = (
-            db.session.query(link.id)
-            .join(BarrierInstance, BarrierInstance.id == link.barrier_instance_id)
-            .join(
-                ParticipantLinkSyncGroup,
-                and_(
-                    ParticipantLinkSyncGroup.participant_id == link.participant_id,
-                    ParticipantLinkSyncGroup.sync_group_id == group.id,
-                    ParticipantLinkSyncGroup.active,
-                ),
-            )
-            .filter(
-                BarrierInstance.barrier_id == self.id,
-                BarrierInstance.group_id == group.id,
-                link.released,
-            )
-        )
-        if module_id is not None:
-            query = query.join(
-                ModuleState,
-                and_(
-                    ModuleState.participant_id == link.participant_id,
-                    ModuleState.module_id == module_id,
-                    ModuleState.time_finished.is_(None),
-                    ModuleState.time_started <= link.arrival_time,
-                ),
-            )
-        return db.session.query(query.exists()).scalar()
+        return db.session.query(
+            BarrierInstance.query.filter_by(
+                barrier_id=self.id,
+                group_id=group.id,
+                module_id=module_id,
+                group_passed=True,
+            ).exists()
+        ).scalar()
 
     def _groups_that_passed(self, waiting_participants) -> set:
         """Return the IDs of the waiters' groups that, with ``pass_newcomers``, already passed this barrier.
@@ -2049,7 +2030,7 @@ class GroupBarrier(Barrier):
                 participants_to_release.extend(
                     participant
                     for participant in waiting_participants
-                    if participant.active_sync_groups.get(self.group_type) is group
+                    if participant.active_sync_groups[self.group_type].id == group.id
                 )
                 continue
             if self._skips_busy_group(group):
@@ -2076,6 +2057,10 @@ class GroupBarrier(Barrier):
             elif outcome == "release":
                 group.check_leader()
                 participants_to_release.extend(waited_for)
+                for participant in waited_for:
+                    link = participant.active_barriers.get(self.id)
+                    if link is not None:
+                        link.barrier_instance.group_passed = True
 
                 left = group.members_who_left_since(
                     group.last_barrier_pass_time or group.creation_time
@@ -4026,8 +4011,9 @@ def warn_if_newcomers_can_strand_group(barriers):
     the group waits for them at its next barrier. A barrier needs
     ``pass_newcomers=True`` or ``stop_top_ups=True`` to prevent that; once a
     barrier stops top-ups, later barriers of that group type can't see
-    newcomers. Barriers in a loop are skipped, because ``pass_newcomers``
-    doesn't suit them, and setting it there gets a warning of its own.
+    newcomers. Barriers in a loop, or sharing an ID with one, are skipped,
+    because ``pass_newcomers`` doesn't suit them, and setting it there gets
+    a warning of its own.
 
     Parameters
     ----------
@@ -4036,8 +4022,13 @@ def warn_if_newcomers_can_strand_group(barriers):
         created inside a trial, such as in ``Trial.show_trial``, or in a
         ``for_loop``, are not visible here.
     """
+    barriers = list(barriers)
+    # Barriers sharing an ID share waiting pools, so one ID used in a loop is
+    # passed repeatedly wherever it appears.
+    looped_ids = {barrier.id for barrier, in_loop in barriers if in_loop}
     open_types = set()
     for barrier, in_loop in barriers:
+        in_loop = barrier.id in looped_ids
         if isinstance(barrier, SimpleGrouper) and barrier.join_existing_groups:
             open_types.add(barrier.group_type)
         if not isinstance(barrier, GroupBarrier):
@@ -4053,7 +4044,11 @@ def warn_if_newcomers_can_strand_group(barriers):
             continue
         if barrier.stop_top_ups:
             open_types.discard(barrier.group_type)
-        elif not in_loop and not barrier.pass_newcomers:
+        elif not (
+            in_loop
+            or barrier.pass_newcomers
+            or getattr(barrier, "_newcomers_skip_it", False)
+        ):
             warn_from_caller(
                 f"GroupBarrier '{barrier.id}' comes after a grouper with "
                 "join_existing_groups=True, so a newcomer can reach it after their "
@@ -4774,6 +4769,11 @@ class BarrierInstance(SQLBase, SQLMixin):
     # The release time last sent to this pool's waiters, in epoch seconds
     # (see ``SimpleGrouper(start_short_after=...)``).
     announced_release_time = Column(Float)
+    # The participant's module when the visit opened; see ``group_passed``.
+    module_id = Column(String)
+    # The whole group was released here, as opposed to members released on a
+    # time-out; ``GroupBarrier(pass_newcomers=True)`` lets later arrivals through.
+    group_passed = Column(Boolean, default=False)
 
     definition = relationship("BarrierDefinition", back_populates="instances")
     group = relationship("SyncGroup")
@@ -4832,6 +4832,7 @@ class BarrierInstance(SQLBase, SQLMixin):
             active=True,
             spec=spec,
             behavior_hash=behavior_hash,
+            module_id=participant.module_id,
         )
         # Partial unique indexes make a SAVEPOINT-plus-IntegrityError insert
         # show up as extra profiler commits. ON CONFLICT DO NOTHING reuses the

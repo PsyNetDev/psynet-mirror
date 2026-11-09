@@ -2991,7 +2991,7 @@ class Timeline:
         self.check_group_policies()
 
     def check_group_policies(self):
-        """Warn about grouper and barrier settings that fail members who were on time."""
+        """Warn about grouper and barrier settings that fail members who were on time, or strand newcomers."""
         from .sync import (
             warn_if_late_removal_fails_group,
             warn_if_newcomers_can_strand_group,
@@ -3005,31 +3005,25 @@ class Timeline:
     def _barriers_in_order(self):
         """Yield ``(barrier, in_loop)`` once per barrier, in timeline order.
 
-        ``in_loop`` says whether the barrier is inside a ``while_loop`` within
-        its innermost module, not counting a barrier's own waiting loop. A
-        ``for_loop`` builds its logic when the participant reaches it, so
-        barriers in one aren't yielded.
+        ``in_loop`` says whether the barrier is inside a ``while_loop``, not
+        counting a barrier's own waiting loop. A ``for_loop`` builds its logic
+        when the participant reaches it, so barriers in one aren't yielded.
         """
         from .sync import Barrier
 
         seen = set()
         for branch_elts in self.elts.values():
-            # Open loops in each enclosing module, innermost last.
-            depths = [0]
+            depth = 0
             for elt in branch_elts:
                 barrier = elt if isinstance(elt, Barrier) else elt.links.get("barrier")
                 if isinstance(barrier, Barrier):
                     if id(barrier) not in seen:
                         seen.add(id(barrier))
-                        yield barrier, depths[-1] > 0
-                elif isinstance(elt, StartModule):
-                    depths.append(0)
-                elif isinstance(elt, EndModule) and len(depths) > 1:
-                    depths.pop()
+                        yield barrier, depth > 0
                 elif isinstance(elt, StartWhile):
-                    depths[-1] += 1
+                    depth += 1
                 elif isinstance(elt, EndWhile):
-                    depths[-1] -= 1
+                    depth -= 1
 
     def _barriers(self):
         """Yield the barrier behind each timeline element that has one."""

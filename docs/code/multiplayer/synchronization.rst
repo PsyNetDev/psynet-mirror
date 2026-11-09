@@ -944,16 +944,22 @@ Keep these in mind:
 
 - Don't use it for a barrier the team passes repeatedly, in a loop or in
   ``show_trial``. Everyone would skip that barrier after its first pass.
+  That includes a module that runs again, for example in a loop: the team's
+  pass in the first run counts for later runs too.
+- Only the team's release counts as a pass, not a member let go after
+  waiting too long. The pass still counts after everyone who waited there
+  has left the team.
 - ``on_release`` doesn't run for those who pass through, so they must not
   need any group state it sets up.
-- A barrier ID used again in another module, or in a module run again,
-  counts as a new barrier.
+- A barrier ID used again in another module counts as a new barrier.
 - After a barrier with ``stop_top_ups=True``, nobody can join, so the two
   settings aren't needed together.
 
 When the experiment loads, PsyNet warns about each barrier outside a loop
 that comes after a grouper with ``join_existing_groups=True`` and has neither
-setting, up to the first barrier with ``stop_top_ups=True``. It also warns
+setting, up to the first barrier with ``stop_top_ups=True``. It skips a
+barrier whose ID is also used in a loop, because barriers that share an ID
+share their waiting pool. It also warns
 about ``pass_newcomers=True`` on a barrier in a ``while_loop``. These checks
 can't see barriers in a ``for_loop`` or in ``show_trial``.
 

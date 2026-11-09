@@ -7229,6 +7229,9 @@ def test_timeline_warns_about_barriers_newcomers_can_reach_after_their_group():
     # Later barriers can't see newcomers once top-ups stop, and loops are skipped.
     assert warned_barriers(GroupBarrier("end", "team"), stop_top_ups=True) == []
     assert warned_barriers(rounds(), pass_newcomers=True) == []
+    # The same ID in a loop shares its waiting pool.
+    first = GroupBarrier(id_="round", group_type="team")
+    assert warned_barriers(first, rounds(), pass_newcomers=True) == []
     assert warned_barriers(rounds(pass_newcomers=True), stop_top_ups=True) == ["round"]
 
 
@@ -8011,28 +8014,42 @@ def test_on_release_is_told_who_left_since_the_last_barrier(
     ]
 
 
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
-)
-def test_a_newcomer_at_a_barrier_the_group_passed_does_not_strand_the_group(
-    in_experiment_directory, db_session
-):
-    """A newcomer still waiting at a barrier their group passed before they joined is let through."""
-    exp = get_experiment()
-    grouper = SimpleGrouper(
+def _team_grouper():
+    return SimpleGrouper(
         "team",
         initial_group_size=3,
-        max_group_size=4,
+        max_group_size=5,
         quorum=2,
         join_existing_groups=True,
         below_quorum="continue_without_group",
     )
+
+
+def _skips(barrier, exp, participant):
+    """Return whether the timeline sends ``participant`` past ``barrier`` without waiting."""
+    (switch,) = [
+        elt
+        for elt in barrier.resolve()
+        if hasattr(elt, "branch_start_elts") and elt.label.endswith(":in_group")
+    ]
+    return switch.get_target(exp, participant) is switch.branch_start_elts[False]
+
+
+@pytest.mark.parametrize("pass_newcomers", [False, True])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_newcomer_at_a_barrier_the_group_passed_strands_the_group_unless_it_passes_newcomers(
+    in_experiment_directory, db_session, pass_newcomers
+):
+    exp = get_experiment()
+    grouper = _team_grouper()
     game_starts = GroupBarrier(
         id_="game_starts",
         group_type="team",
         late_after=30,
         late_action="leave_group",
-        pass_newcomers=True,
+        pass_newcomers=pass_newcomers,
     )
     each_round = GroupBarrier(
         id_="estimates", group_type="team", late_after=30, late_action="leave_group"
@@ -8043,7 +8060,6 @@ def test_a_newcomer_at_a_barrier_the_group_passed_does_not_strand_the_group(
     for member in members:
         _arrive_at_group_barrier(exp, game_starts, member)
     _commit_barrier_arrivals()
-    assert all(game_starts.can_participant_exit(m) for m in members)
 
     # A minute into the game, the members wait at a round's barrier as a newcomer joins.
     _backdate_group(group, seconds=60)
@@ -8051,18 +8067,69 @@ def test_a_newcomer_at_a_barrier_the_group_passed_does_not_strand_the_group(
         _arrive_at_group_barrier(exp, each_round, member)
     (newcomer,) = _working_participants(exp, 1)
     grouper._join_existing_groups(newcomer)
-    (switch,) = [
-        elt
-        for elt in game_starts.resolve()
-        if hasattr(elt, "branch_start_elts") and elt.label.endswith(":in_group")
-    ]
-    assert switch.get_target(exp, newcomer) is switch.branch_start_elts[False]
+    assert _skips(game_starts, exp, newcomer) == pass_newcomers
 
-    # One whose arrival raced the group's release waits, until the next check.
+    # The newcomer waits, as one whose arrival raced the group's release does.
     _arrive_at_group_barrier(exp, game_starts, newcomer)
     _commit_barrier_arrivals()
     check_barriers()
     db.session.expire_all()
 
-    assert set(group.active_participants) == {*members, newcomer}
-    assert game_starts.can_participant_exit(newcomer)
+    kept_everyone = set(group.active_participants) == {*members, newcomer}
+    assert kept_everyone == pass_newcomers
+    assert game_starts.can_participant_exit(newcomer) == pass_newcomers
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_newcomers_pass_after_everyone_who_waited_has_left(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper = _team_grouper()
+    game_starts = GroupBarrier("game_starts", group_type="team", pass_newcomers=True)
+    members = _working_participants(exp, 3)
+    group = grouper._make_group(members, initial_group_size=3)
+    db_session.commit()
+    for member in members:
+        _arrive_at_group_barrier(exp, game_starts, member)
+    _commit_barrier_arrivals()
+    (skipper,) = _working_participants(exp, 1)
+    grouper._join_existing_groups(skipper)
+    for member in members:
+        group.remove_participant(member, reason="left_experiment")
+    (newcomer,) = _working_participants(exp, 1)
+    grouper._join_existing_groups(newcomer)
+    db_session.commit()
+
+    assert _skips(game_starts, exp, newcomer)
+    # Another group hasn't passed it.
+    other = grouper._make_group(_working_participants(exp, 3), initial_group_size=3)
+    db_session.commit()
+    assert not _skips(game_starts, exp, other.active_participants[0])
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_member_released_on_a_time_out_is_not_a_group_pass(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper = _team_grouper()
+    game_starts = GroupBarrier(
+        "game_starts",
+        group_type="team",
+        max_wait_action="leave_group",
+        pass_newcomers=True,
+    )
+    impatient, *others = _working_participants(exp, 3)
+    grouper._make_group([impatient, *others], initial_group_size=3)
+    db_session.commit()
+    _arrive_at_group_barrier(exp, game_starts, impatient)
+    _commit_barrier_arrivals()
+    game_starts.handle_max_wait_timeout(impatient)
+    db_session.commit()
+
+    assert not _skips(game_starts, exp, others[0])

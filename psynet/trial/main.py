@@ -2203,20 +2203,21 @@ class TrialMaker(Module):
         )
 
     def _init_participant(self):
+        barrier = GroupBarrier(
+            self.with_namespace("init_participant"),
+            on_release=self._init_participants_in_sync_group,
+            **self._sync_group_barrier_kwargs(),
+        )
+        # Newcomers skip it once the leader is initialized, so it doesn't
+        # need pass_newcomers, which would also skip it when the module reruns.
+        barrier._newcomers_skip_it = True
         return join(
             conditional(
                 "init_participant",
                 # If the participant is in a sync group and the leader has not been initialized,
                 # then we put a GroupBarrier to ensure that the leader can be initialized first.
                 self._requires_sync_group_initialization_barrier,
-                # A newcomer who arrives as the group is released passes
-                # through, and initializes alone below.
-                logic_if_true=GroupBarrier(
-                    self.with_namespace("init_participant"),
-                    on_release=self._init_participants_in_sync_group,
-                    pass_newcomers=True,
-                    **self._sync_group_barrier_kwargs(),
-                ),
+                logic_if_true=barrier,
                 time_estimate=0.0 if self.sync_group_type is None else 3.0,
             ),
             # Everyone else initializes alone, including members released
