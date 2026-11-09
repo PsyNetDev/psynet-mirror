@@ -139,10 +139,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   they play the round out and see its outcome, as in `ultimatum_pairing`;
   only the player removed for being late is out of the pair, and gets their
   own page there.
-- With `join_existing_groups=True`, also pass a `join_criterion` to turn
-  away newcomers who couldn't catch up, for example to a chain that is nearly
-  finished (it doesn't stop top-ups; pair it with `top_up_wait` or
-  `stop_top_ups`).
+- With `join_existing_groups=True`, if newcomers must not join a group they
+  couldn't catch up with (for example a nearly finished chain), pass
+  `join_criterion=...`; it only turns that person away (see the
+  synchronization docs).
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with
   filler work via `trial_maker.custom(...)`, as in `sync_quorum`.
 - For chain or Gibbs designs, distinguish true co-presence from async
