@@ -267,7 +267,7 @@ class Exp(psynet.experiment.Experiment):
                     # False while the trial runs or if the player left it; the
                     # choice is then the answer so far.
                     "complete": t.complete,
-                    # "released" if the player stayed to the end of the round,
+                    # "stayed" if the player stayed to the end of the round,
                     # "late" if they were taken out for being away.
                     "outcome": t.sync_group_outcome,
                     "choice": t.answer,
@@ -327,7 +327,7 @@ class Exp(psynet.experiment.Experiment):
             (sorted(r["choices"].values()), r["result"], r["winning_number"])
             for r in data["room"]
         ] == [([1, 2], "won", 1), ([3, 3, 4], "won", 4)], data["room"]
-        assert {r["outcome"] for r in data["player_round"]} == {"released"}
+        assert {r["outcome"] for r in data["player_round"]} == {"stayed"}
         # Players cue their trials in their own order, so compare sorted rows.
         assert sorted(
             ((r["round"], r["choice"], r["bonus"]) for r in data["player_round"]),

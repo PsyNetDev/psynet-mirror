@@ -24,7 +24,7 @@ _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
 from test_regrouper import _arrive, _cohort_and_pairs  # noqa: E402
-from test_sync import _sync_group_of  # noqa: E402
+from test_sync import _backdate_group, _sync_group_of  # noqa: E402
 from timeline_hold_helpers import _working_participants  # noqa: E402
 
 in_consents_experiment = pytest.mark.parametrize(
@@ -150,11 +150,11 @@ def test_each_trial_records_how_its_round_ended_for_the_player(
     # Leaving before the trial's pages end replaces an earlier barrier's release.
     pair.remove_participant(leaver, reason="late")
     _arrive(exp, GroupBarrier("answered", group_type="pair"), [stayer])
-    assert [p.current_trial.sync_group_outcome for p in cohort] == ["released", "late"]
+    assert [p.current_trial.sync_group_outcome for p in cohort] == ["stayed", "late"]
 
     stayer.current_trial.complete = True
     pair.remove_participant(stayer, reason="finished")
-    assert stayer.current_trial.sync_group_outcome == "released"
+    assert stayer.current_trial.sync_group_outcome == "stayed"
     PairTrial.cue()[0].consume(exp, stayer)
     assert stayer.current_trial.definition == {}
     assert stayer.current_trial.sync_group_outcome is None
@@ -730,3 +730,67 @@ def test_on_dissolve_gets_the_waiting_members_trials_and_node(
         "group_dissolved",
         "left_experiment",
     ]
+
+
+def _late_at_barrier(late_action):
+    def remove(exp, group, stayer, leaver):
+        barrier = GroupBarrier(
+            "late", group_type="main", late_after=5, late_action=late_action
+        )
+        _arrive(exp, barrier, [stayer])
+        _backdate_group(group, seconds=10)
+        barrier.check_waiting_participants([stayer])
+        return leaver
+
+    return remove
+
+
+def _waited_too_long(exp, group, stayer, leaver):
+    barrier = GroupBarrier("wait", group_type="main", max_wait_action="leave_group")
+    _arrive(exp, barrier, [stayer])
+    barrier.handle_max_wait_timeout(stayer)
+    return stayer
+
+
+def _removed_without_reason(exp, group, stayer, leaver):
+    group.remove_participant(leaver)
+    return leaver
+
+
+def _dissolved_before_the_barrier(exp, group, stayer, leaver):
+    leaver.fail("returned")
+    return stayer
+
+
+def _late_after_the_trial_s_pages(exp, group, stayer, leaver):
+    leaver.current_trial.complete = True
+    group.remove_participant(leaver, reason="late")
+    return leaver
+
+
+@pytest.mark.parametrize(
+    "remove, outcome",
+    [
+        (_late_at_barrier("fail"), "late"),
+        (_late_at_barrier("leave_group"), "late"),
+        (_waited_too_long, "waited_too_long"),
+        (_removed_without_reason, "removed"),
+        (_dissolved_before_the_barrier, "group_dissolved"),
+        (_late_after_the_trial_s_pages, "late"),
+    ],
+    ids=["fail", "leave_group", "max_wait", "no_reason", "dissolved", "complete"],
+)
+@in_consents_experiment
+def test_the_outcome_records_why_a_player_left_the_round(
+    in_experiment_directory, db_session, remove, outcome
+):
+    exp = get_experiment()
+    (stayer, leaver), group = _sync_group_of(exp, db_session, 2)
+    group.below_quorum = "continue_without_group"
+    for participant in (stayer, leaver):
+        TeamTrial.cue()[0].consume(exp, participant)
+    db.session.commit()
+
+    removed = remove(exp, group, stayer, leaver)
+    db.session.commit()
+    assert removed.current_trial.sync_group_outcome == outcome

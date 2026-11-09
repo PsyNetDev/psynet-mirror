@@ -398,7 +398,7 @@ class Exp(psynet.experiment.Experiment):
                     # False while the trial runs or if the player left it; the
                     # decision is then the answer so far.
                     "complete": t.complete,
-                    # "released" if the player stayed to the end of the round,
+                    # "stayed" if the player stayed to the end of the round,
                     # "late" if they were taken out for being away.
                     "outcome": t.sync_group_outcome,
                     # None if the player was away and never sent a decision.
@@ -489,10 +489,10 @@ class Exp(psynet.experiment.Experiment):
             (5, 3, "accepted")
         ] * 3, pairs
         away_rows = [r for r in data["player_round"] if r["pair_id"] in away]
-        assert sorted(r["outcome"] for r in away_rows) == ["late", "released"]
+        assert sorted(r["outcome"] for r in away_rows) == ["late", "stayed"]
         rows = [r for r in data["player_round"] if r["pair_id"] not in away]
         assert len(rows) == 6
-        assert all(row["outcome"] == "released" for row in rows), rows
+        assert all(row["outcome"] == "stayed" for row in rows), rows
         assert all(
             (row["decision"], row["coins"])
             == {"proposer": (5, 5), "responder": (3, 5)}[row["role"]]

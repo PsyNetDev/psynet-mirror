@@ -1535,6 +1535,7 @@ def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
     return None
 
 
+#: Why a member left a group, see :meth:`SyncGroup.remove_participant`.
 RemovalReason = Literal[
     "left_experiment",
     "late",
@@ -1544,6 +1545,10 @@ RemovalReason = Literal[
     "finished",
 ]
 REMOVAL_REASONS = (None, *get_args(RemovalReason))
+#: Values of :attr:`~psynet.trial.main.Trial.sync_group_outcome` other than
+#: ``None``: ``"stayed"`` once a barrier releases the group with the player
+#: in it, a :data:`RemovalReason`, or ``"removed"`` for a removal without one.
+SyncGroupOutcome = Literal["stayed", "removed", RemovalReason]
 # Reasons for leaving that don't dissolve a group below its quorum.
 _KEEPS_GROUP_REASONS = ("finished", "moved_on")
 
@@ -1661,8 +1666,11 @@ class GroupBarrier(Barrier):
         them to the end of the experiment; ``"leave_group"`` removes them from the group, so the rest can go on
         without them (see :ref:`sync-leaving-a-group` for what the removed member sees);
         ``"leave_all_groups"`` also removes them from their other groups, such as the cohort a pair was
-        formed in, so those groups don't wait for them either. A group that this leaves below its quorum
-        dissolves as its ``below_quorum`` says, so with ``"fail"`` one late member can fail a whole cohort.
+        formed in, so those groups don't wait for them either. With every action the member leaves this
+        barrier's group with the reason ``"late"`` (with ``"fail"``, before they are failed), which their
+        trial's :attr:`~psynet.trial.main.Trial.sync_group_outcome` records. A group that this leaves below
+        its quorum dissolves as its ``below_quorum`` says, so with ``"fail"`` one late member can fail a whole
+        cohort.
 
     on_release
         Optional callback invoked when the barrier releases the group. It may take
@@ -2113,7 +2121,7 @@ class GroupBarrier(Barrier):
                     node.sync_group_closed = True
                     for trial in trials:
                         if trial is not None and trial.sync_group_outcome is None:
-                            trial.sync_group_outcome = "released"
+                            trial.sync_group_outcome = "stayed"
                 if self.on_release:
                     try:
                         self.on_release(
@@ -2231,8 +2239,10 @@ class GroupBarrier(Barrier):
     def _fail_late_participants(self, late: List[Participant]):
         """Fail group members who are late reaching this barrier.
 
-        A late member whose own request holds their row is not failed now;
-        they are still late on the next check.
+        They leave this barrier's group as ``"late"`` first, and their other
+        groups as ``"left_experiment"`` when they fail. A late member whose
+        own request holds their row is not failed now; they are still late
+        on the next check.
         """
         for participant in _lock_free_participants(late):
             logger.info(
@@ -2240,6 +2250,9 @@ class GroupBarrier(Barrier):
                 self.id,
                 participant.id,
             )
+            group = participant.active_sync_groups.get(self.group_type)
+            if group is not None:
+                group.remove_participant(participant, reason="late")
             participant.fail("timeout between barriers")
 
     def _remove_late_participants(self, removals):
@@ -4315,7 +4328,7 @@ class SyncGroup(SQLBase, SQLMixin):
               ``"group_dissolved"``: "(dropped out)", or "(left)" once they
               have failed, left or completed the experiment.
             - ``"late"``: "(removed)", for a member a barrier removed for
-              being late (``late_action="leave_group"`` or ``"leave_all_groups"``), or "(left)" once
+              being late (with any ``late_action``), or "(left)" once
               they have failed, left or completed the experiment.
             - ``"moved_on"``: for a member who left at a :class:`Regrouper`,
               for their next group or to sit the round out. A pair a :class:`SimpleGrouper`
@@ -4512,15 +4525,23 @@ class SimpleSyncGroup(SyncGroup):
 
 
 def _record_leaving_the_round(group, participant, reason):
-    """Set ``sync_group_outcome`` of the participant's cued trial in a round of ``group`` whose pages are running."""
+    """Set ``sync_group_outcome`` of the participant's current cued trial in ``group``.
+
+    Leaving before the trial's pages end replaces a release; after they end,
+    only a trial without an outcome records it, and moving on or finishing
+    never does.
+    """
     from .trial.main import SyncGroupNode
 
     trial = participant.current_trial
     if (
         trial is None
-        or trial.complete
         or trial.sync_group_id != group.id
         or not isinstance(trial.node, SyncGroupNode)
+    ):
+        return
+    if trial.complete and (
+        trial.sync_group_outcome is not None or reason in _KEEPS_GROUP_REASONS
     ):
         return
     trial.sync_group_outcome = reason or "removed"

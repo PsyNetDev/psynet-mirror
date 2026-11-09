@@ -249,7 +249,7 @@ Module("game", for_loop(
   trial. A started trial runs to its end even if the player leaves the
   group, so its `show_feedback` explains every outcome, including being
   removed for lateness. Read how the round ended for each player from
-  `trial.sync_group_outcome` (`"released"`, or why they left, such as
+  `trial.sync_group_outcome` (`"stayed"`, or why they left, such as
   `"late"`), a partner's from their trial in `self.node.all_trials`, rather
   than from current group membership. A barrier's `waiting_screen` can take
   `trial` and `node` to show the round's state.

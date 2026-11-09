@@ -431,26 +431,32 @@ Each trial on a group's node records how the round ended for its player in
 and exports can read it rather than work it out from the player's groups
 later:
 
-- ``"released"``: a group barrier released the group with this trial on the
-  round's node;
-- why the player left the group before the trial's pages (``show_trial``)
-  ended: a reason of :meth:`~psynet.sync.SyncGroup.remove_participant`, for
-  example ``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or
-  ``"removed"`` if none was given. This replaces ``"released"`` from an
-  earlier barrier of the same round;
+- ``"stayed"``: a group barrier released the group while this was the
+  player's current trial on the round's node;
+- why the player left the group: a reason of
+  :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
+  ``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or
+  ``"removed"`` if none was given (the values are listed in
+  :data:`~psynet.sync.SyncGroupOutcome`);
 - ``None`` before either happens, and for a trial played without a group.
 
-Leaving after the trial's pages have ended, for example at the next round's
-regrouper, doesn't change it. A partner's outcome is on their trial in
-``node.all_trials``:
+The first of these to happen is stored, even after the trial's pages
+(``show_trial``) have ended, for example at a barrier in ``show_feedback``.
+:attr:`~psynet.trial.main.Trial.complete` says whether those pages have
+ended. Two things differ: leaving before they have ended replaces
+``"stayed"`` from an earlier barrier of the round, and moving on
+(``"moved_on"``, for example at the next round's regrouper) or finishing
+(``"finished"``) after they have ended stores nothing. A partner's outcome
+is on their trial in ``node.all_trials``:
 
 .. code-block:: python
 
     def show_feedback(self, experiment, participant):
         if self.sync_group_outcome == "late":
             return InfoPage("You were away for too long, so you missed this round.")
+        partners = [trial for trial in self.node.all_trials if trial.id != self.id]
         partner_left = any(
-            trial.sync_group_outcome != "released" for trial in self.node.all_trials
+            trial.sync_group_outcome not in (None, "stayed") for trial in partners
         )
         ...
 
@@ -829,7 +835,11 @@ the maximum waiting time:
     pass, or of joining the group if that is later, is late, and is handled
     by ``late_action``: ``"fail"`` (default) fails them, ``"leave_group"``
     removes them from the group, and ``"leave_all_groups"`` removes them from
-    all their groups, such as the cohort a pair was formed in. Members who arrive on time wait for the
+    all their groups, such as the cohort a pair was formed in. Whichever
+    action it is, the late member leaves the barrier's group with the
+    reason ``"late"``, so ``participant.sync_group_removal_reason`` and their
+    trial's ``sync_group_outcome`` say ``"late"`` even when they are failed.
+    Members who arrive on time wait for the
     others until they arrive or are late, so they need no ``max_wait_time``
     of their own.
 
@@ -1229,8 +1239,9 @@ For the rest of the timeline:
   they are waiting there or sitting the round out),
   ``"finished"`` or ``"left_experiment"`` (they failed or returned the study).
   A cued trial they were playing in that group keeps the reason in
-  ``sync_group_outcome`` (see :ref:`sync-round-outcome`), even after they
-  join another group.
+  ``sync_group_outcome``, even after they join another group, unless the
+  trial's pages had already ended with an outcome stored (see
+  :ref:`sync-round-outcome` for the rule).
 - An answer submitted on the page where a member was removed for being late
   has ``response.too_late_for_group`` set, so analysis can leave it out.
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only
