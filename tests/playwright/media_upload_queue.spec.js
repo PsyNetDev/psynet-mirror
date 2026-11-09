@@ -33,7 +33,11 @@ test.describe("Document-owned media upload queue @both", () => {
     });
   });
 
-  test("keeps bytes after page content changes and does not wait for delivery", async ({ page }) => {
+  test("keeps bytes after page content changes and does not wait for delivery", async ({ page, browserName }) => {
+    test.fail(
+      browserName === "webkit",
+      "Found with Dallinger#10095: WebKit gives Playwright no body for the queued upload request."
+    );
     let upload;
     await page.route("**/media-upload/first", (route) => { upload = route; });
     await page.evaluate(() => {

@@ -38,7 +38,8 @@ test("camera video survives changes in microphone requirements @both", async ({p
   expect(result).toEqual({sameVideo:true,silent:true,microphoneStopped:true,videoRequests:1,microphoneRequests:1});
 });
 
-test("answer capture after background capture restores the camera's settings @both", async ({page}) => {
+test("answer capture after background capture restores the camera's settings @both", async ({page, browserName}) => {
+  test.fail(browserName === "firefox", "Found with Dallinger#10095: Firefox keeps the camera's frame rate above the 15 fps background limit.");
   await page.route("https://capture.test/", route => route.fulfill({contentType:"text/html",body:"<main>Capture</main>"}));
   await page.route("https://capture.test/recording-capture.js", route => route.fulfill({
     contentType:"text/javascript",path:path.resolve("psynet/resources/scripts/recording-capture.js"),

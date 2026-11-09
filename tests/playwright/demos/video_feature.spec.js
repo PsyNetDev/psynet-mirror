@@ -120,7 +120,12 @@ async function expectVideoPromptReady(page, timeout = PROMPT_TIMEOUT_MS) {
     .toMatchObject({ hasSource: true, hasDuration: true });
 }
 
-test("video feature demo", { tag: ["@both", "@media"] }, async ({ page, context }) => {
+test("video feature demo", { tag: ["@both", "@media"] }, async ({ page, context, browserName }) => {
+  test.fail(
+    browserName === "firefox",
+    "Found with Dallinger#10095: the recorded video prompt stays hidden " +
+      "(\"Video not found\") after the asynchronous recording upload."
+  );
   const absDir = path.resolve("demos/features/video");
   await withExperiment(page, context, absDir, async (experimentPage) => {
     const submitTracker = startResponseSubmitTracker(experimentPage);

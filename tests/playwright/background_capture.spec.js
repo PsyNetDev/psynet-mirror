@@ -191,7 +191,8 @@ test.describe("Shared recording capture @both @media", () => {
   });
 
   for (const source of ["camera", "screen"]) {
-    test(`background and answer clips share ${source} tracks and play independently`, async ({page}) => {
+    test(`background and answer clips share ${source} tracks and play independently`, async ({page, browserName}) => {
+      test.fail(browserName === "firefox" && source === "camera", "Found with Dallinger#10095: Firefox keeps the camera's frame rate above the 15 fps background limit.");
       await page.evaluate(async source => {
         const {BackgroundRecorder} = await import("/background-recording.js");
         window.capture = new BackgroundRecorder();
