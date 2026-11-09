@@ -1244,6 +1244,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           in a loop only if every member reaches each round at the same
           position, as in a fixed group whose top-ups stop before the loop;
           otherwise pass a function taking ``round`` or ``group``.
+        - Each cued trial's ``position`` counts the participant's earlier
+          cued trials in the current module from 0, grouped or not.
         - A participant who is in no group of that type gets an ungrouped
           trial on the module's default node, so put the cue in a
           :func:`~psynet.timeline.conditional` on

@@ -3916,7 +3916,7 @@ def group_seats(group) -> Dict[int, int]:
     return seats
 
 
-def leave_group(group_type: str, reason: Optional[RemovalReason] = "finished"):
+def leave_group(group_type: str, reason: RemovalReason = "finished"):
     """Return a timeline step that takes the participant out of their ``group_type`` group.
 
     For example, put ``leave_group("cohort")`` after a player's last round,
@@ -3937,8 +3937,10 @@ def leave_group(group_type: str, reason: Optional[RemovalReason] = "finished"):
     -------
     CodeBlock
     """
-    if reason not in REMOVAL_REASONS:
-        raise ValueError(f"reason must be one of {REMOVAL_REASONS}, got {reason!r}.")
+    if reason not in get_args(RemovalReason):
+        raise ValueError(
+            f"reason must be one of {get_args(RemovalReason)}, got {reason!r}."
+        )
 
     def _leave(participant):
         group = participant.active_sync_groups.get(group_type)
