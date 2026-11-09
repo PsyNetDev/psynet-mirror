@@ -904,6 +904,59 @@ At ``game_starts``, as at ``round_finished`` above, ``late_after`` counts
 from when each member joined the team or from its previous barrier pass, so
 make it cover any untimed pages before the barrier as well.
 
+.. _sync-newcomers-at-passed-barriers:
+
+Letting latecomers join during the game
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A team that keeps accepting newcomers after its game starts needs one more
+setting. A newcomer goes through the pages the team went through before
+they joined, including the barriers the team has already passed, such as
+``game_starts``. Without the setting, the newcomer waits at such a barrier
+for members who are further on, while the team waits for the newcomer at its
+next barrier. With ``late_after``, the newcomer's barrier then removes the
+members who were on time as late.
+
+Pass ``pass_newcomers=True`` to a barrier that the team passes only once, such
+as one before the game's rounds. Anyone who reaches it after the team has
+passed it goes straight through, without waiting:
+
+.. code-block:: python
+
+    SimpleGrouper(
+        group_type="team",
+        initial_group_size=4,
+        quorum=2,
+        join_existing_groups=True,
+        below_quorum="continue_without_group",
+    )
+    InfoPage("Read the rules of the game...", time_estimate=60)
+    GroupBarrier(
+        id_="game_starts",
+        group_type="team",
+        pass_newcomers=True,
+        late_after=120,
+        late_action="leave_group",
+    )
+    # ... the game's rounds, each ending at its own barrier.
+
+Keep these in mind:
+
+- Don't use it for a barrier the team passes repeatedly, in a loop or in
+  ``show_trial``. Everyone would skip that barrier after its first pass.
+- ``on_release`` doesn't run for those who pass through, so they must not
+  need any group state it sets up.
+- A barrier ID used again in another module, or in a module run again,
+  counts as a new barrier.
+- After a barrier with ``stop_top_ups=True``, nobody can join, so the two
+  settings aren't needed together.
+
+When the experiment loads, PsyNet warns about each barrier outside a loop
+that comes after a grouper with ``join_existing_groups=True`` and has neither
+setting, up to the first barrier with ``stop_top_ups=True``. It also warns
+about ``pass_newcomers=True`` on a barrier in a ``while_loop``. These checks
+can't see barriers in a ``for_loop`` or in ``show_trial``.
+
 .. _sync-leaving-a-group:
 
 After leaving a group

@@ -120,6 +120,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   group of at least the quorum (`start_short_with` overrides that). To let
   latecomers join only before the game starts, follow "Letting latecomers
   join before the game starts" in `code/multiplayer/synchronization`.
+  If groups keep taking newcomers after that, pass `pass_newcomers=True` to
+  each `GroupBarrier` the group passes once, so a newcomer doesn't wait there
+  for members further on (see "Letting latecomers join during the game").
+  Never set it on a barrier in a loop or in `show_trial`.
   For a per-person condition (not a join window), such as a chain that is
   too far along for them to catch up with, pass `join_criterion` (see
   `join_criterion` under "Forming groups" in

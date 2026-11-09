@@ -85,6 +85,7 @@ from psynet.timeline import (
     PageMaker,
     Response,
     Timeline,
+    while_loop,
 )
 from psynet.timeline_hold import (
     TimelineHoldRecord,
@@ -7192,13 +7193,43 @@ def test_timeline_warns_about_late_members_once_top_ups_stop(stop_top_ups, top_u
             InfoPage("Done", time_estimate=1),
         )
 
-    if stop_top_ups or top_up_wait:
-        with pytest.warns(UserWarning, match="single late member fails everyone"):
-            make_timeline()
-    else:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            make_timeline()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        make_timeline()
+    warned = any("single late member fails everyone" in str(w.message) for w in caught)
+    assert warned == bool(stop_top_ups or top_up_wait)
+
+
+def test_timeline_warns_about_barriers_newcomers_can_reach_after_their_group():
+    def make_timeline(*rounds, **start):
+        return Timeline(
+            SimpleGrouper("team", initial_group_size=2, join_existing_groups=True),
+            GroupBarrier(id_="start", group_type="team", **start),
+            *rounds,
+            InfoPage("Done", time_estimate=1),
+        )
+
+    def warned_barriers(*rounds, **start):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            make_timeline(*rounds, **start)
+        return [
+            str(w.message).split("'")[1]
+            for w in caught
+            if "join_existing_groups=True" in str(w.message)
+            or "in a loop" in str(w.message)
+        ]
+
+    def rounds(**options):
+        barrier = GroupBarrier(id_="round", group_type="team", **options)
+        return while_loop("rounds", lambda: True, barrier, expected_repetitions=2)
+
+    assert warned_barriers() == ["start"]
+    assert warned_barriers(pass_newcomers=True) == []
+    # Later barriers can't see newcomers once top-ups stop, and loops are skipped.
+    assert warned_barriers(GroupBarrier("end", "team"), stop_top_ups=True) == []
+    assert warned_barriers(rounds(), pass_newcomers=True) == []
+    assert warned_barriers(rounds(pass_newcomers=True), stop_top_ups=True) == ["round"]
 
 
 @pytest.mark.parametrize(
@@ -7977,3 +8008,60 @@ def test_on_release_is_told_who_left_since_the_last_barrier(
         [(late.id, "late"), (quitter.id, "left_experiment")],
         [],
     ]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_newcomer_at_a_barrier_the_group_passed_does_not_strand_the_group(
+    in_experiment_directory, db_session
+):
+    """A newcomer still waiting at a barrier their group passed before they joined is let through."""
+    exp = get_experiment()
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=3,
+        max_group_size=4,
+        quorum=2,
+        join_existing_groups=True,
+        below_quorum="continue_without_group",
+    )
+    game_starts = GroupBarrier(
+        id_="game_starts",
+        group_type="team",
+        late_after=30,
+        late_action="leave_group",
+        pass_newcomers=True,
+    )
+    each_round = GroupBarrier(
+        id_="estimates", group_type="team", late_after=30, late_action="leave_group"
+    )
+    members = _working_participants(exp, 3)
+    group = grouper._make_group(members, initial_group_size=3)
+    db_session.commit()
+    for member in members:
+        _arrive_at_group_barrier(exp, game_starts, member)
+    _commit_barrier_arrivals()
+    assert all(game_starts.can_participant_exit(m) for m in members)
+
+    # A minute into the game, the members wait at a round's barrier as a newcomer joins.
+    _backdate_group(group, seconds=60)
+    for member in members:
+        _arrive_at_group_barrier(exp, each_round, member)
+    (newcomer,) = _working_participants(exp, 1)
+    grouper._join_existing_groups(newcomer)
+    (switch,) = [
+        elt
+        for elt in game_starts.resolve()
+        if hasattr(elt, "branch_start_elts") and elt.label.endswith(":in_group")
+    ]
+    assert switch.get_target(exp, newcomer) is switch.branch_start_elts[False]
+
+    # One whose arrival raced the group's release waits, until the next check.
+    _arrive_at_group_barrier(exp, game_starts, newcomer)
+    _commit_barrier_arrivals()
+    check_barriers()
+    db.session.expire_all()
+
+    assert set(group.active_participants) == {*members, newcomer}
+    assert game_starts.can_participant_exit(newcomer)

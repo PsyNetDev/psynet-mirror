@@ -130,6 +130,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    and_,
     func,
     or_,
     select,
@@ -170,6 +171,7 @@ from psynet.timeline import (
     TIME_LIMIT_GRACE_SECONDS,
     CodeBlock,
     EltCollection,
+    ModuleState,
     _is_timeline_hold,
     conditional,
     join,
@@ -1713,6 +1715,18 @@ class GroupBarrier(Barrier):
         below its quorum doesn't pass, so it keeps waiting here for a newcomer,
         up to the grouper's ``top_up_wait``, if set (see :ref:`groups_below_min_size`).
 
+    pass_newcomers
+        If ``True``, anyone who reaches this barrier after their group has passed it,
+        such as a newcomer who joined the group later, passes straight through
+        instead of waiting for members who are further on. Use it for a barrier
+        the group passes once, such as one before the game's rounds, in a group
+        formed with ``join_existing_groups=True`` (see :ref:`sync-newcomers-at-passed-barriers`).
+        Don't use it for a barrier the group passes repeatedly, in a loop or built
+        in ``show_trial``: newcomers, and members, would skip every pass after the
+        first. ``on_release`` doesn't run for those who pass through, so any group
+        state it sets up must not be needed by them. Redundant with
+        ``stop_top_ups=True``, after which nobody can join.
+
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
         holds credit actual visible waiting time up to ``max_wait_time``.
@@ -1800,6 +1814,7 @@ class GroupBarrier(Barrier):
         waiting_screen=None,
         on_dissolve: Optional[Callable] = None,
         stop_top_ups: bool = False,
+        pass_newcomers: bool = False,
     ):
         _validate_group_timeouts(max_wait_action, late_after, late_action)
         max_wait_time = _group_max_wait_time(max_wait_time, late_after, default=20)
@@ -1823,6 +1838,7 @@ class GroupBarrier(Barrier):
         self.late_action = late_action
         self.on_dissolve = on_dissolve
         self.stop_top_ups = bool(stop_top_ups)
+        self.pass_newcomers = bool(pass_newcomers)
 
     def resolve(self):
         group_type = self.group_type
@@ -1830,11 +1846,76 @@ class GroupBarrier(Barrier):
             f"barrier:{self.id}:in_group",
             condition=lambda participant: (
                 not _removed_from_group(participant, group_type)
+                and not self._passes_straight_through(participant)
             ),
             logic_if_true=super().resolve(),
             logic_if_false=CodeBlock(_forget_time_out),
             log_chosen_branch=False,
         )
+
+    def _passes_straight_through(self, participant) -> bool:
+        """Return whether, with ``pass_newcomers``, the participant's group already passed this barrier."""
+        if not self.pass_newcomers:
+            return False
+        group = participant.active_sync_groups.get(self.group_type)
+        return group is not None and self._group_passed(group, participant.module_id)
+
+    def _group_passed(self, group, module_id) -> bool:
+        """Return whether ``group`` was released from this barrier in module ``module_id``.
+
+        A visit counts once it released someone who is still in the group: a
+        member released after waiting too long has left it. It must also have
+        been during that member's current run of the module, so a barrier ID
+        reused in another module, or in a module run again, starts afresh.
+        """
+        link = ParticipantLinkBarrier
+        query = (
+            db.session.query(link.id)
+            .join(BarrierInstance, BarrierInstance.id == link.barrier_instance_id)
+            .join(
+                ParticipantLinkSyncGroup,
+                and_(
+                    ParticipantLinkSyncGroup.participant_id == link.participant_id,
+                    ParticipantLinkSyncGroup.sync_group_id == group.id,
+                    ParticipantLinkSyncGroup.active,
+                ),
+            )
+            .filter(
+                BarrierInstance.barrier_id == self.id,
+                BarrierInstance.group_id == group.id,
+                link.released,
+            )
+        )
+        if module_id is not None:
+            query = query.join(
+                ModuleState,
+                and_(
+                    ModuleState.participant_id == link.participant_id,
+                    ModuleState.module_id == module_id,
+                    ModuleState.time_finished.is_(None),
+                    ModuleState.time_started <= link.arrival_time,
+                ),
+            )
+        return db.session.query(query.exists()).scalar()
+
+    def _groups_that_passed(self, waiting_participants) -> set:
+        """Return the IDs of the waiters' groups that, with ``pass_newcomers``, already passed this barrier.
+
+        A newcomer who arrived while their group's release was committing
+        can still be waiting here; release checks let them through.
+        """
+        passed = set()
+        if not self.pass_newcomers:
+            return passed
+        for participant in waiting_participants:
+            group = participant.active_sync_groups.get(self.group_type)
+            if (
+                group is not None
+                and group.id not in passed
+                and self._group_passed(group, participant.module_id)
+            ):
+                passed.add(group.id)
+        return passed
 
     def waiting_pool_group(self, participant) -> "SyncGroup":
         """Return the participant's group of ``group_type``; its members wait together."""
@@ -1955,8 +2036,16 @@ class GroupBarrier(Barrier):
         waiting_participant_ids = {p.id for p in waiting_participants}
         participants_to_release = []
         groups = self.get_waiting_groups(waiting_participants)
+        passed = self._groups_that_passed(waiting_participants)
 
         for group in groups.values():
+            if group.id in passed:
+                participants_to_release.extend(
+                    participant
+                    for participant in waiting_participants
+                    if participant.active_sync_groups.get(self.group_type) is group
+                )
+                continue
             if self._skips_busy_group(group):
                 continue
             if not _lock_round(group):
@@ -2036,6 +2125,8 @@ class GroupBarrier(Barrier):
         recounted rather than read from ``n_active_participants``.
         """
         waiting_ids = {participant.id for participant in waiting_participants}
+        if self._groups_that_passed(waiting_participants):
+            return True
         for group in self.get_waiting_groups(waiting_participants).values():
             if _round_is_busy(group):
                 # choose_who_to_release would defer this group.
@@ -2063,8 +2154,9 @@ class GroupBarrier(Barrier):
     def check_waiting_participants(self, waiting_participants: List[Participant]):
         waiting_ids = {p.id for p in waiting_participants}
         removals = []
+        passed = self._groups_that_passed(waiting_participants)
         for group in self.get_waiting_groups(waiting_participants).values():
-            if self._skips_busy_group(group):
+            if group.id in passed or self._skips_busy_group(group):
                 continue
             group.check_numbers()
             late = self._late_between_barriers(group, waiting_ids)
@@ -3896,6 +3988,53 @@ def warn_if_late_removal_fails_group(barriers):
                 "was on time, while the late one carries on. Pass "
                 "below_quorum='continue_without_group' to the grouper to let everyone carry on, "
                 "or late_action='fail' to end the session for the whole group.",
+                UserWarning,
+            )
+
+
+def warn_if_newcomers_can_strand_group(barriers):
+    """Warn about group barriers that a newcomer can reach after their group passed it.
+
+    After a :class:`SimpleGrouper` with ``join_existing_groups=True``, a
+    newcomer who reaches a :class:`GroupBarrier` that their group passed
+    before they joined waits there for members who are further on, while
+    the group waits for them at its next barrier. A barrier needs
+    ``pass_newcomers=True`` or ``stop_top_ups=True`` to prevent that; once a
+    barrier stops top-ups, later barriers of that group type can't see
+    newcomers. Barriers in a loop are skipped, because ``pass_newcomers``
+    doesn't suit them, and setting it there gets a warning of its own.
+
+    Parameters
+    ----------
+    barriers : iterable of tuple
+        ``(barrier, in_loop)`` for each barrier, in timeline order. Barriers
+        created inside a trial, such as in ``Trial.show_trial``, or in a
+        ``for_loop``, are not visible here.
+    """
+    open_types = set()
+    for barrier, in_loop in barriers:
+        if isinstance(barrier, SimpleGrouper) and barrier.join_existing_groups:
+            open_types.add(barrier.group_type)
+        if not isinstance(barrier, GroupBarrier):
+            continue
+        if in_loop and barrier.pass_newcomers:
+            warn_from_caller(
+                f"GroupBarrier '{barrier.id}' has pass_newcomers=True but is in a loop, "
+                "so after its first pass everyone would skip it. Use pass_newcomers "
+                "only for a barrier the group passes once.",
+                UserWarning,
+            )
+        if barrier.group_type not in open_types:
+            continue
+        if barrier.stop_top_ups:
+            open_types.discard(barrier.group_type)
+        elif not in_loop and not barrier.pass_newcomers:
+            warn_from_caller(
+                f"GroupBarrier '{barrier.id}' comes after a grouper with "
+                "join_existing_groups=True, so a newcomer can reach it after their "
+                "group passed it, and wait there for members who are further on. "
+                "Pass pass_newcomers=True to let them through, or stop_top_ups=True "
+                "to stop newcomers joining once the group passes it.",
                 UserWarning,
             )
 

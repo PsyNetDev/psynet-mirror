@@ -104,7 +104,11 @@ of that round releases the group. After that, even while the others are
 still on a page after the barrier, the newcomer starts the next round,
 which the others then join. This needs a barrier in each
 round, such as the one in ``show_trial`` below, so that no member ends a
-round before the others have cued it.
+round before the others have cued it. In a round with several barriers, a
+newcomer who joins between them holds up the round's later barriers, which
+wait for every member, so such a round can't take newcomers yet. A barrier
+the group passes once, before the rounds, needs
+``pass_newcomers=True`` (see :ref:`sync-newcomers-at-passed-barriers`).
 
 So a trial has two round counters. ``sync_group_round`` counts the group's
 rounds, and is ``None`` on a trial played without a group. Use it for what
