@@ -265,7 +265,8 @@ on their trial, where ``show_feedback`` reads it:
 
 ``on_release`` can take any of the arguments ``group``, ``participants``,
 ``trials`` (each member's current trial, in the same order as
-``participants``, or ``None`` for a member with none), ``node`` (the group's
+``participants``, or ``None`` for a member with none; its ``answer`` holds
+the answer so far), ``node`` (the group's
 :class:`~psynet.trial.main.SyncGroupNode` for the round if those trials are
 on it, ignoring members with no current trial, and otherwise ``None``),
 ``leader`` and ``barrier`` (``participant`` is the leader too, kept for

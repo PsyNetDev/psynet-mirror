@@ -161,7 +161,6 @@ class EstimateTrial(Trial):
             "estimate",
             self.question,
             NumberControl(),
-            save_answer="estimate",
             time_limit=ANSWER_SECONDS,
             time_estimate=time_estimate,
         )
@@ -169,11 +168,16 @@ class EstimateTrial(Trial):
     @classmethod
     def share_median(cls, trials: List["EstimateTrial"], node: SyncGroupNode):
         """Save the group's estimates on the node, with their median if there are enough."""
-        # Browsers submit numbers as strings, and running out of time saves None.
+        # trial.answer collects the trial's answers so far, and is None before
+        # the first. Browsers submit numbers as strings, and running out of
+        # time saves None.
+        answers = {
+            str(t.participant_id): (t.answer or {}).get("estimate") for t in trials
+        }
         node.var.estimates = {
-            str(t.participant_id): float(t.participant.var.estimate)
-            for t in trials
-            if t.participant.var.get("estimate") not in (None, "")
+            pid: float(estimate)
+            for pid, estimate in answers.items()
+            if estimate not in (None, "")
         }
         if len(node.var.estimates) >= QUORUM:
             node.var.median = statistics.median(node.var.estimates.values())

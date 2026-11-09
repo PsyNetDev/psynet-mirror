@@ -195,17 +195,16 @@ class PickTrial(Trial):
 
     def show_trial(self, experiment, participant):
         return join(
-            self.choose_number(participant),  # save_answer="choice"
+            self.choose_number(participant),
             GroupBarrier(id_="round_finished", group_type="room",
                          on_release=self.score_room),
         )
 
     @classmethod
     def score_room(cls, trials, node):
+        # trial.answer holds each player's answer so far (None: timed out).
         # String keys, since node.var is stored as JSON.
-        node.var.choices = {str(t.participant_id): t.participant.var.choice for t in trials}
-        for trial in trials:  # each player's result
-            trial.var.choice = trial.participant.var.choice
+        node.var.choices = {str(t.participant_id): t.answer for t in trials}
 
 # The Module gives the nodes a module_id to find them by when exporting.
 Module("game", for_loop(
@@ -223,9 +222,10 @@ Module("game", for_loop(
 - Keep a `GroupBarrier` in every round so members stay in step. For how
   `cue` numbers rounds, the definition rules and the rare `round=`, follow
   the guide above.
-- `trial.answer` is only set when the trial ends, after the barrier, so
-  `on_release` reads what `save_answer` stored, while `score_answer`,
-  `show_feedback` and `get_basic_data` read the trial and `self.node.var`.
+- `on_release` reads each member's answer so far from `trial.answer`
+  (`accumulate_answers = True` for several answer pages), and
+  `score_answer`, `show_feedback` and `get_basic_data` read the trial and
+  `self.node.var`.
 - Use `self.sync_group_role` for role-specific pages. With a `Regrouper`,
   put the cue in a `conditional` on `participant.in_sync_group(...)`, with a
   page as the other branch, so a player it sat out gets a page instead of a

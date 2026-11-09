@@ -144,7 +144,6 @@ class PickTrial(Trial):
             PushButtonControl(
                 choices=self.definition["numbers"], arrange_vertically=False
             ),
-            save_answer="choice",
             time_limit=CHOICE_SECONDS,
             time_estimate=5,
         )
@@ -153,12 +152,10 @@ class PickTrial(Trial):
     def score_room(cls, trials: List["PickTrial"], node: SyncGroupNode):
         """Save the room's choices and winning number on the node, and whether each player won on their trial.
 
-        The trials' answers are only saved once the trials end, after this
-        barrier, so the choices are read from ``participant.var``. Players who
-        ran out of time have no choice and miss the round. Nobody wins when
+        Players who ran out of time have no choice and miss the round. Nobody wins when
         only one player chose.
         """
-        picks = {str(t.participant_id): t.participant.var.choice for t in trials}
+        picks = {str(t.participant_id): t.answer for t in trials}
         choices = {pid: n for pid, n in picks.items() if n is not None}
         winner = lowest_unique(choices) if len(choices) > 1 else None
         node.var.choices = choices
@@ -214,10 +211,11 @@ class PickTrial(Trial):
 
 def your_pick(participant):
     """Replace the number buttons with the player's pick while the rest of the room chooses."""
-    if participant.var.choice is None:
+    choice = participant.current_trial.answer
+    if choice is None:
         text = "You ran out of time, so you'll miss this round."
     else:
-        text = f"You picked {participant.var.choice}."
+        text = f"You picked {choice}."
     # Ticks appear as the others choose.
     return GroupPrompt(text, participant=participant, group_type="room")
 
