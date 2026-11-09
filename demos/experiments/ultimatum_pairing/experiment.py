@@ -96,22 +96,17 @@ def get_timeline():
                 keep_playing,
                 join(
                     pairing,
-                    join(OfferTrial.cue({"endowment": ENDOWMENT}), stop_if=left_pair),
-                    # Without a cohort the game is over and the ended-early
-                    # page explains why, but a player who sat out, or who was
-                    # removed for being away and left the cohort too, is told
-                    # about the round.
                     conditional(
-                        "explain_round",
-                        lambda participant: (
-                            left_pair(participant)
-                            and (
-                                cohort_of(participant) is not None
-                                or participant.sync_group_removal_reason("pair")
-                                == "late"
-                            )
+                        "paired",
+                        in_pair,
+                        OfferTrial.cue({"endowment": ENDOWMENT}),
+                        # Without a cohort the game is over and the ended-early
+                        # page explains why.
+                        conditional(
+                            "sat_out",
+                            lambda participant: cohort_of(participant) is not None,
+                            InfoPage(SIT_OUT_TEXT, time_estimate=5),
                         ),
-                        PageMaker(not_playing, time_estimate=5),
                     ),
                 ),
                 expected_repetitions=N_ROUNDS,
@@ -126,8 +121,8 @@ def get_timeline():
     )
 
 
-def left_pair(participant):
-    return not participant.in_sync_group("pair")
+def in_pair(participant):
+    return participant.in_sync_group("pair")
 
 
 def cohort_of(participant):
@@ -218,16 +213,10 @@ def waiting_for_partner(participant):
 AWAY_TEXT = "You were away for too long, so you got no coins this round."
 
 
-def not_playing(participant):
-    if pairing.sat_out(participant):
-        text = (
-            "You sit out this round without a partner. If you sit out "
-            f"{MAX_SIT_OUTS} rounds, the game ends early for you."
-        )
-    else:
-        # Removed from this round's pair for being away too long.
-        text = AWAY_TEXT
-    return InfoPage(text, time_estimate=5)
+SIT_OUT_TEXT = (
+    "You sit out this round without a partner. If you sit out "
+    f"{MAX_SIT_OUTS} rounds, the game ends early for you."
+)
 
 
 pairing = Regrouper(
@@ -340,10 +329,9 @@ class OfferTrial(Trial):
             trial.var.coins = coins.get(role, 0)
 
     def show_feedback(self, experiment, participant):
-        if left_pair(participant):
-            # Removed for being away: the not_playing page after the trial
-            # explains.
-            return None
+        if not in_pair(participant):
+            # Removed from the pair for being away too long.
+            return InfoPage(AWAY_TEXT, time_estimate=5)
         result, offer = self.node.var.result, self.node.var.offer
         if result == "timed_out" and self.answer is None:
             return InfoPage("You ran out of time, so nobody was paid.", time_estimate=5)
