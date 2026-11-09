@@ -81,7 +81,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   what it stores with `trial.var.get("score")` (or `participant.var.get`),
   which returns `None` when it isn't set. Pass the same function as `on_dissolve` too when members
   waiting at the barrier as the group dissolves should still get their
-  result; members still on an earlier page then get neither callback, so
+  result; it is called once, with all of them, because dissolving waits until
+  no member's request is in flight. Members still on an earlier page get
+  neither callback, so
   check `participant.sync_group_removal_reason(...)` in a step after the
   barrier if they need a result too.
 - Sort `sync_group.participants` by participant ID before deterministic role
