@@ -8,7 +8,7 @@ from dallinger import db
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from psynet import timeline_hold
+from psynet import sync, timeline_hold
 from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
 from psynet.pytest_psynet import path_to_test_experiment
@@ -150,6 +150,54 @@ def test_regrouper_countdown_and_form_groups_check_use_the_whole_pool(
     _backdate_arrivals(pairs, [first], 20)
     with pytest.raises(ValueError, match="two groups"):
         pairs.choose_who_to_release([first, later])
+
+
+@in_consents_experiment
+def test_regrouper_countdown_tolerates_a_concurrent_release(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    pairs = Regrouper(
+        "pair",
+        group_size=2,
+        deadline=30,
+        release_left_over=True,
+        content="Next round in {SECONDS} s",
+    )
+    (participant,) = _working_participants(exp, 1)
+    _arrive(exp, pairs, [participant])
+    populate = sync._populate_active_barriers
+
+    def release_by_another_request(waiters):
+        with Session(bind=db.engine) as other_request:
+            other_request.execute(
+                text(
+                    "UPDATE participant_link_barrier SET released = true "
+                    "WHERE participant_id = :id"
+                ),
+                {"id": participant.id},
+            )
+            other_request.commit()
+        populate(waiters)
+
+    monkeypatch.setattr(sync, "_populate_active_barriers", release_by_another_request)
+    assert pairs.expected_release_time(participant) is None
+    assert 'countdown">…<' in pairs.waiting_logic.overlay_html(participant)
+
+
+def _broken_estimate(participant):
+    raise KeyError("pair_regrouper")
+
+
+@in_consents_experiment
+def test_a_failing_release_estimate_shows_an_unknown_countdown(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    pairs = Regrouper("pair", group_size=2, deadline=30, content="Next in {SECONDS} s")
+    (participant,) = _working_participants(exp, 1)
+    monkeypatch.setattr(pairs, "expected_release_time", _broken_estimate)
+    assert 'countdown">…<' in pairs.waiting_logic.overlay_html(participant)
 
 
 def _lobby_message(seconds_left):

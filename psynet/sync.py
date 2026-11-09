@@ -123,6 +123,7 @@ from sqlalchemy import (
 )
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import (
     Session,
     backref,
@@ -714,11 +715,7 @@ class _BarrierHoldPage(_TimelineHoldPage):
         if self._is_silent_for(participant):
             return compose_hold_overlay_html("", None)
         if release_time is NoArgumentProvided:
-            release_time = (
-                None
-                if participant is None
-                else self.barrier.expected_release_time(participant)
-            )
+            release_time = self._expected_release_time(participant)
         remaining_ms = (
             None if release_time is None else round((release_time - time.time()) * 1000)
         )
@@ -748,6 +745,29 @@ class _BarrierHoldPage(_TimelineHoldPage):
                 '<span class="visually-hidden">{}</span>'
             ).format(remaining_ms, seconds, seconds)
         return Markup(html.replace("{SECONDS}", countdown))
+
+    def _expected_release_time(self, participant):
+        """Return the barrier's release estimate, or ``None`` if it cannot be computed.
+
+        The estimate only feeds the waiting message, so a failure shows an
+        unknown countdown instead of failing the participant. Database errors
+        still propagate, because they abort the transaction.
+        """
+        if participant is None:
+            return None
+        try:
+            return self.barrier.expected_release_time(participant)
+        except SQLAlchemyError:
+            raise
+        except Exception:
+            logger.warning(
+                "Could not estimate when barrier '%s' releases participant %s; "
+                "showing an unknown countdown.",
+                self.barrier_id,
+                participant.id,
+                exc_info=True,
+            )
+            return None
 
     def prepare_to_resume(self, participant):
         if (
@@ -2592,6 +2612,9 @@ class Regrouper(Grouper):
             return None
         if self.clock_period is None and self.deadline is None:
             return None
+        # Listing the waiters refreshes ``participant.active_barriers``, so a
+        # release committed by another request since the check above leaves
+        # the participant out of every pool.
         pool = next(
             (
                 members
@@ -2600,8 +2623,10 @@ class Regrouper(Grouper):
                 )
                 if participant in members
             ),
-            [participant],
+            None,
         )
+        if pool is None:
+            return None
         if len(pool) < self._smallest_pool_to_split(within_group, pool):
             return None
         if self.clock_period is None:

@@ -1,0 +1,1 @@
+Fixed an intermittent server error that failed a participant waiting at a `Regrouper` when another request released them while their `{SECONDS}` countdown was being computed. Barrier waiting messages now show an unknown countdown, with a warning in the log, if the release estimate cannot be computed.
