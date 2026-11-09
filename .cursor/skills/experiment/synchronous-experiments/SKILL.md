@@ -113,6 +113,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   group of at least the quorum (`start_short_with` overrides that). To let
   latecomers join only before the game starts, follow "Letting latecomers
   join before the game starts" in `code/multiplayer/synchronization`.
+  For a condition on each newcomer instead, such as a chain that is too far
+  along for them to catch up with, pass `join_criterion` (see
+  `join_criterion` under "Forming groups" in
+  `code/multiplayer/synchronization`).
   To let participants who find no group carry on alone instead of being
   failed, pass the grouper `max_wait_action="continue_without_group"`.
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
@@ -142,10 +146,6 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   who left since the previous barrier, and
   `p.sync_group_removal_reason("pair")` tells the one who stayed whether
   their partner returned the study or was too slow.
-- With `join_existing_groups=True`, if a newcomer must not join a group they
-  couldn't catch up with (for example a nearly finished chain), pass
-  `join_criterion`; see "Groups below quorum" in
-  `code/multiplayer/synchronization`.
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with
   filler work via `trial_maker.custom(...)`, as in `sync_quorum`.
 - For chain or Gibbs designs, distinguish true co-presence from async
