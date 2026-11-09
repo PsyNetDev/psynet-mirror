@@ -943,8 +943,13 @@ class Barrier(EltCollection):
         waits: a prompt, text or HTML (shown without a Next button), or a
         :class:`~psynet.modular_page.ModularPage` that nothing submits, for
         example with ``NullControl(show_next_button=False)``. Pass a
-        module-level function ``waiting_screen(participant)`` to show each
-        participant their own screen. It runs on each request (a page load
+        module-level function to show each participant their own screen. It
+        may take ``participant``, ``trial`` (their ``current_trial``, or
+        ``None``) and ``node`` (that trial's
+        :class:`~psynet.trial.main.SyncGroupNode`, or ``None`` if it is on
+        another kind of node), for example
+        ``waiting_screen(trial, node)`` to show the player's answer and the
+        round's state. It runs on each request (a page load
         or a check for the release), sometimes more than once, so base it on
         the participant's state
         rather than on chance. Returning ``None`` keeps the current page, as
@@ -2097,6 +2102,9 @@ class GroupBarrier(Barrier):
                 if node is not None:
                     # Closes the round to newcomers: their cues start the next.
                     node.sync_group_released = True
+                    for trial in trials:
+                        if trial is not None and trial.sync_group_outcome is None:
+                            trial.sync_group_outcome = "released"
                 if self.on_release:
                     try:
                         self.on_release(
@@ -4329,6 +4337,7 @@ class SyncGroup(SQLBase, SQLMixin):
                 link.removal_time = timenow()
                 if reason == "late":
                     link.removed_on_page = participant.page_uuid
+                _record_leaving_the_round(self, participant, reason)
         self.check_numbers()
         _notify_membership_change(self)
         if self.n_active_participants == 0 and not getattr(
@@ -4491,6 +4500,21 @@ class SimpleSyncGroup(SyncGroup):
         ):
             return
         self._dissolve()
+
+
+def _record_leaving_the_round(group, participant, reason):
+    """Set ``sync_group_outcome`` of the participant's cued trial in a round of ``group`` whose pages are running."""
+    from .trial.main import SyncGroupNode
+
+    trial = participant.current_trial
+    if (
+        trial is None
+        or trial.complete
+        or trial.sync_group_id != group.id
+        or not isinstance(trial.node, SyncGroupNode)
+    ):
+        return
+    trial.sync_group_outcome = reason or "removed"
 
 
 def _shared_node(group, trials):

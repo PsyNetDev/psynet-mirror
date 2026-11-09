@@ -85,7 +85,9 @@ maker:
 The trial class sets ``sync_group_type``, so the trials that a pair's
 members cue in a round share one :class:`~psynet.trial.main.SyncGroupNode`.
 Each trial records the pair (``sync_group_id``), the player's role
-(``sync_group_role``) and the pair's round (``sync_group_round``), and keeps
+(``sync_group_role``), the pair's round (``sync_group_round``) and how the
+round ended for the player (``sync_group_outcome``, see
+:ref:`rounds-explaining-the-outcome`), and keeps
 them after the pair ends. The ``Module`` gives the nodes a ``module_id`` to
 find them by when exporting.
 
@@ -132,7 +134,9 @@ a definition taken from the player's own position in the loop, as in
 the regrouper forms from players at different rounds would cue two
 definitions for one round and get a ``ValueError``. Use a function taking
 ``round`` or ``group`` instead, such as
-``OfferTrial.cue(lambda round: {"block": round})``.
+``OfferTrial.cue(lambda round: {"block": round})``. A round with no content
+of its own needs no definition: ``OfferTrial.cue()`` gives every trial
+``{}``.
 
 .. _rounds-fixed-group-loop:
 
@@ -293,7 +297,7 @@ the cohort if that left it below its quorum, and the default
 
 A player removed from their pair finishes the trial: its later group
 barriers let them straight through, and its feedback tells them they were
-away.
+away, because their trial's ``sync_group_outcome`` is ``"late"``.
 
 Scoring the round
 -----------------
@@ -316,9 +320,24 @@ which also keeps the trial of a player removed for being away:
 The barrier is inside ``show_trial``, so the trials have not ended yet when
 ``on_release`` runs: ``trial.answer`` holds each member's answer so far,
 which here is their decision, or ``None`` if their page ran out of time.
-The trial ends after the barrier, so its feedback can read the
-player's own answer (``self.answer``) and what ``on_release`` saved.
-``outcome`` turns them into one key of ``OUTCOME_TEXTS``:
+
+.. _rounds-explaining-the-outcome:
+
+Explaining the outcome
+----------------------
+
+The trial ends after the barrier, so its feedback can read what was stored
+during the round rather than work it out from the player's groups:
+
+- ``self.sync_group_outcome`` says how the round ended for this player:
+  ``"released"`` once the barrier released the pair with them in it, or why
+  they left the pair before then, here ``"late"`` for a player taken out for
+  being away (see :ref:`sync-round-outcome` for every value);
+- ``self.answer`` is their own decision, ``None`` if they ran out of time;
+- ``self.node.var`` holds what ``on_release`` saved for the pair.
+
+A partner's outcome is on their trial in ``self.node.all_trials``.
+``outcome`` turns these into one key of ``OUTCOME_TEXTS``:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: OfferTrial.outcome
@@ -383,7 +402,8 @@ Exporting the rounds
 --------------------
 
 The results stay on the trials and nodes, so ``get_basic_data`` builds one
-table per player per pair from the trials and one per pair from the nodes.
+table per player per pair from the trials, including each player's
+``sync_group_outcome``, and one per pair from the nodes.
 Rounds a player sat out have no trial, so a third table counts them with the
 regrouper (see :doc:`/data/basic_data`):
 
@@ -418,6 +438,11 @@ of time and who is still deciding:
 .. figure:: ../../_static/images/rounds/dash.png
    :width: 700
    :alt: A room of five: three players with a tick, one with a grey dash, and one still deciding
+
+The barrier's ``on_release`` applies the winning rule once and saves the
+room's result in ``node.var.result`` (``"won"``, ``"no_unique_number"`` or
+``"one_choice"``), so the feedback and the export read it rather than apply
+the rule again.
 
 **A draw per group.** ``definition`` can also be a function, for example
 ``lambda group: {"target": random.choice(TARGETS)}``. It is called once per

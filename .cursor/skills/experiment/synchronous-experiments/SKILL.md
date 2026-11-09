@@ -83,8 +83,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   result; it is called once, with all of them, because dissolving waits until
   no member's request is in flight. Members still on an earlier page get
   neither callback, so
-  check `participant.sync_group_removal_reason(...)` in a step after the
-  barrier if they need a result too.
+  check their cued trial's `sync_group_outcome == "group_dissolved"` in a
+  step after the barrier if they need a result too.
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries
@@ -248,7 +248,11 @@ Module("game", for_loop(
   other branch, so a player the regrouper sat out gets a page instead of a
   trial. A started trial runs to its end even if the player leaves the
   group, so its `show_feedback` explains every outcome, including being
-  removed for lateness.
+  removed for lateness. Read how the round ended for each player from
+  `trial.sync_group_outcome` (`"released"`, or why they left, such as
+  `"late"`), a partner's from their trial in `self.node.all_trials`, rather
+  than from current group membership. A barrier's `waiting_screen` can take
+  `trial` and `node` to show the round's state.
 
 ## Recruitment and platform design
 

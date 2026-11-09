@@ -305,6 +305,39 @@ slow. ``trials`` only covers the members still in the group; on a group's
 node, ``node.all_trials`` lists every trial of the round, including those of
 members who have since left, each with its ``sync_group_role``.
 
+.. _sync-round-outcome:
+
+Each trial on a group's node records how the round ended for its player in
+:attr:`~psynet.trial.main.Trial.sync_group_outcome`, so that feedback pages
+and exports can read it rather than work it out from the player's groups
+later:
+
+- ``"released"``: a group barrier released the group with this trial on the
+  round's node;
+- why the player left the group before the trial's pages (``show_trial``)
+  ended: a reason of :meth:`~psynet.sync.SyncGroup.remove_participant`, for
+  example ``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or
+  ``"removed"`` if none was given. This replaces ``"released"`` from an
+  earlier barrier of the same round;
+- ``None`` before either happens, and for a trial played without a group.
+
+Leaving after the trial's pages have ended, for example at the next round's
+regrouper, doesn't change it. A partner's outcome is on their trial in
+``node.all_trials``:
+
+.. code-block:: python
+
+    def show_feedback(self, experiment, participant):
+        if self.sync_group_outcome == "late":
+            return InfoPage("You were away for too long, so you missed this round.")
+        partner_left = any(
+            trial.sync_group_outcome != "released" for trial in self.node.all_trials
+        )
+        ...
+
+A member removed before their cue ran has no trial on the node; ``left``
+still lists them.
+
 ``on_release`` runs only when the barrier releases the group. A member who
 leaves the group before then, or whose group is dissolved, doesn't get
 the results it would have stored, so read them with ``.get``, which returns
@@ -327,8 +360,9 @@ quiz can therefore still score the last question for those who answered it:
 Members who are still on an earlier page, such as the question itself, when
 the group dissolves get neither callback: they pass the barrier without
 waiting. If they need a result too, give them one in a step after the
-barrier, for example when
-``participant.sync_group_removal_reason("team") == "group_dissolved"``.
+barrier, for example when their trial's ``sync_group_outcome`` is
+``"group_dissolved"``, as it is for every member still in the group when it
+dissolves, waiting or not (see :ref:`sync-round-outcome`).
 
 The barrier ``id_`` identifies one waiting point. Barriers with the same ID
 share a waiting pool, so give barriers with different ``on_release``
@@ -410,8 +444,12 @@ them something to do, such as filler trials, pass ``waiting_logic``
 instead. A waiting screen can be text,
 a prompt, or a :class:`~psynet.modular_page.ModularPage` without a Next
 button (``NullControl(show_next_button=False)``), or a module-level
-function of the participant that returns one of these, or ``None`` to keep
-the last page. The participant can't submit a waiting screen, so a page
+function that returns one of these, or ``None`` to keep
+the last page. The function can take ``participant``, ``trial``, the
+participant's current trial, and ``node``, that trial's
+:class:`~psynet.trial.main.SyncGroupNode` (``None`` on another kind of node),
+asking for them by name as ``on_release`` does.
+The participant can't submit a waiting screen, so a page
 with a Next button, push buttons or ``auto_advance`` raises an error; use
 a control that doesn't submit, such as ``NullControl``. Groupers and :func:`~psynet.page.wait_while` take ``waiting_screen`` too,
 for example to replace the instructions while a cohort forms. A barrier
@@ -419,16 +457,16 @@ without a waiting screen (or one whose function returns ``None``) that
 follows another barrier's waiting screen shows a plain waiting page, since
 the last page is no longer on screen. In the following example, the barrier
 is inside a trial's ``show_trial``, and the participant's own choice, read
-from their current trial's answer so far, replaces the buttons they chose
+from their trial's answer so far, replaces the buttons they chose
 it with.
 ``show_progress=False`` hides the answer ticks, which are of little use
 in a pair, where the partner's arrival releases the barrier at once:
 
 .. code-block:: python
 
-    def your_choice(participant):
+    def your_choice(participant, trial):
         return GroupPrompt(
-            f"You offer {participant.current_trial.answer} coins.",
+            f"You offer {trial.answer} coins.",
             participant=participant,
             group_type="pair",
             show_progress=False,
@@ -1071,6 +1109,9 @@ For the rest of the timeline:
   :class:`~psynet.sync.Regrouper` took them out of their previous group, and
   they are waiting there or sitting the round out),
   ``"finished"`` or ``"left_experiment"`` (they failed or returned the study).
+  A cued trial they were playing in that group keeps the reason in
+  ``sync_group_outcome`` (see :ref:`sync-round-outcome`), even after they
+  join another group.
 - An answer submitted on the page where a member was removed for being late
   has ``response.too_late_for_group`` set, so analysis can leave it out.
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only
