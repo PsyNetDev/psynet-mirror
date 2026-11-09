@@ -7553,10 +7553,13 @@ def test_game_starts_waits_while_a_newcomer_is_joining(
     """A ``stop_top_ups`` barrier skips a group whose row a joiner holds, until the next check."""
     exp = get_experiment()
     grouper, game_starts = _lobby_recipe()
-    starters = [new_participant(exp) for _ in range(2)]
-    for p in starters:
+    *starters, slow = [new_participant(exp) for _ in range(3)]
+    for p in (*starters, slow):
         p.status = "working"
     group = grouper._make_group(starters, initial_group_size=4)
+    grouper._join_existing_groups(slow)
+    for link in slow.sync_group_links:
+        link.arrival_time -= timedelta(seconds=121)
     db_session.commit()
 
     with db.engine.connect() as joiner, joiner.begin():
@@ -7564,8 +7567,12 @@ def test_game_starts_waits_while_a_newcomer_is_joining(
             text("SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"),
             {"id": group.id},
         )
+        game_starts.check_waiting_participants(starters)
+        assert slow.in_sync_group("team")
         assert game_starts.choose_who_to_release(starters) == []
     assert group.accepts_top_ups
+    game_starts.check_waiting_participants(starters)
+    assert slow.sync_group_removal_reason("team") == "late"
     assert set(game_starts.choose_who_to_release(starters)) == set(starters)
     assert not group.accepts_top_ups
 
@@ -7617,16 +7624,24 @@ def test_stop_top_ups_barrier_waits_for_a_team_below_quorum_and_the_method_disso
 ):
     exp = get_experiment()
     grouper, game_starts = _lobby_recipe()
-    quitter, waiter = [new_participant(exp) for _ in range(2)]
-    for p in (quitter, waiter):
-        p.status = "working"
-    group = grouper._make_group([quitter, waiter], initial_group_size=4)
-    db_session.commit()
 
-    quitter.fail("quit")
+    def team_that_lost_a_member():
+        quitter, waiter = [new_participant(exp) for _ in range(2)]
+        for p in (quitter, waiter):
+            p.status = "working"
+        group = grouper._make_group([quitter, waiter], initial_group_size=4)
+        db_session.commit()
+        quitter.fail("quit")
+        return group, waiter
+
+    group, waiter = team_that_lost_a_member()
     assert game_starts.choose_who_to_release([waiter]) == []
     assert group.accepts_top_ups and waiter.in_sync_group("team")
+    group.below_quorum_since -= timedelta(seconds=61)
+    assert game_starts.choose_who_to_release([waiter]) == [waiter]
+    assert waiter.sync_group_removal_reason("team") == "group_dissolved"
 
+    group, waiter = team_that_lost_a_member()
     group.stop_top_ups()
     assert waiter.sync_group_removal_reason("team") == "group_dissolved"
     assert not waiter.failed

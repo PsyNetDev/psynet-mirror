@@ -1694,8 +1694,8 @@ class GroupBarrier(Barrier):
         barrier, as :meth:`SimpleSyncGroup.stop_top_ups` does, for example at
         the barrier that starts a game a latecomer couldn't catch up with.
         Only affects groups formed with ``join_existing_groups=True``. A group
-        below its quorum doesn't pass, so it keeps waiting here for a newcomer
-        (see :ref:`groups_below_min_size`).
+        below its quorum doesn't pass, so it keeps waiting here for a newcomer,
+        up to the grouper's ``top_up_wait`` (see :ref:`groups_below_min_size`).
 
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
@@ -2483,8 +2483,7 @@ class SimpleGrouper(Grouper):
 
     below_quorum
         What happens to the members left when a group is dissolved below its ``quorum``
-        (for when that happens, see :ref:`groups_below_min_size`; while a group
-        accepts top-ups, it never is). The member whose departure caused it is handled by their own
+        (for when that happens, see :ref:`groups_below_min_size`). The member whose departure caused it is handled by their own
         cause instead (a barrier's ``max_wait_action`` or ``late_action``, or their
         failure). ``"fail"`` (default) fails them, telling them "Too few members of your
         group remained to continue, so we ended your session." ``"continue_without_group"``
