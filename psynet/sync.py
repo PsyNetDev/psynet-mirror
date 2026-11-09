@@ -1885,13 +1885,13 @@ class GroupBarrier(Barrier):
     def _passes_straight_through(self, participant) -> bool:
         """Return whether the participant skips this barrier because their group passed it."""
         group = participant.active_sync_groups.get(self.group_type)
-        return group is not None and self._lets_through(group, participant.module_id)
+        return group is not None and self._lets_through(group, participant)
 
-    def _lets_through(self, group, module_id) -> bool:
-        """Return whether members of ``group`` reaching this barrier in module ``module_id`` pass straight through.
+    def _lets_through(self, group, participant) -> bool:
+        """Return whether ``participant``, a member of ``group`` reaching this barrier, passes straight through.
 
         By default, only with ``pass_newcomers`` once the group has passed
-        here. Only the group's release counts (see
+        here in the participant's module. Only the group's release counts (see
         ``BarrierInstance.group_passed``), not a member released on a time-out.
         The pass is recorded on the visit, so it still counts after every
         member who waited there has left the group or finished the module.
@@ -1902,29 +1902,18 @@ class GroupBarrier(Barrier):
             BarrierInstance.query.filter_by(
                 barrier_id=self.id,
                 group_id=group.id,
-                module_id=module_id,
+                module_id=participant.module_id,
                 group_passed=True,
             ).exists()
         ).scalar()
 
     def _waiters_let_through(self, waiting_participants) -> list:
-        """Return the waiters whose group, by :meth:`_lets_through`, no longer waits here.
+        """Return the waiters who, by :meth:`_lets_through`, no longer wait here.
 
         A newcomer who arrived while their group's release was committing
         can still be waiting here; release checks let them through.
         """
-        answers = {}
-        through = []
-        for participant in waiting_participants:
-            group = participant.active_sync_groups.get(self.group_type)
-            if group is None:
-                continue
-            key = (group.id, participant.module_id)
-            if key not in answers:
-                answers[key] = self._lets_through(group, participant.module_id)
-            if answers[key]:
-                through.append(participant)
-        return through
+        return [p for p in waiting_participants if self._passes_straight_through(p)]
 
     def _release_ready_waiters(self, waiting_participants, instance):
         """Release waiters whose group already passed, then check the rest as usual."""
@@ -4645,8 +4634,9 @@ def _barrier_scope(group, waiting_participants, barrier_id, node) -> _BarrierSco
     :func:`_still_in_module`, as for members behind a round) and haven't
     passed this visit yet.
 
-    The scope's ``members_ahead`` says whether a member is in a later round
-    of the module, so the group's pass doesn't count for ``pass_newcomers``.
+    The scope's ``members_ahead`` says whether a member still in the module
+    is in a later round of it, so the group's pass doesn't count for
+    ``pass_newcomers``.
 
     Reads the members' stored rounds' nodes, which the session usually
     holds already, and makes one query for this barrier's past visits, plus,
@@ -4671,7 +4661,7 @@ def _barrier_scope(group, waiting_participants, barrier_id, node) -> _BarrierSco
             if not link.skipped_round:
                 played.add(participant.id)
         else:
-            if not _left_module(participant, node.module_id):
+            if _still_in_module(participant, node.module_id):
                 ahead_node_ids.add(round_node_id)
             continue
         releasable.add(participant.id)
@@ -4736,12 +4726,13 @@ def _scope_before_rounds(group, waiting_participants, barrier_id, links):
 
 
 def _still_in_module(participant, module_id):
-    """Return whether a member behind the group's rounds in module ``module_id`` may still cue there.
+    """Return whether a member may still cue a round in module ``module_id``.
 
-    A barrier waits for such members only while this holds. It doesn't once
-    they have finished the module and not started it again, as when their
-    loop ended earlier or a conditional skipped it, reading their
-    ``ModuleState``; a member who hasn't started it yet may still come.
+    A barrier waits for members behind the group's rounds, and counts
+    members ahead of them against ``pass_newcomers``, only while this holds.
+    It doesn't once they have finished the module and not started it again,
+    as when their loop ended earlier or a conditional skipped it, reading
+    their ``ModuleState``; a member who hasn't started it yet may still come.
     """
     states = participant.module_states.get(module_id, [])
     return not states or not all(state.finished for state in states)

@@ -334,13 +334,37 @@ def _init_barrier(trial_maker):
 def test_sync_trial_maker_init_barrier_lets_members_through_once_the_leader_is_initialized():
     trial_maker = make_trial_maker(sync_group_type="sync")
     barrier = _init_barrier(trial_maker)
-    leader = SimpleNamespace(module_states={})
-    group = SimpleNamespace(leader=leader)
-    assert not barrier._lets_through(group, trial_maker.id)
+    group = SimpleNamespace()
+    ids = iter(range(100))
 
-    initialized = SimpleNamespace(trial_maker_initialized=True)
-    leader.module_states = {trial_maker.id: [initialized]}
-    assert barrier._lets_through(group, trial_maker.id)
+    def member():
+        return SimpleNamespace(
+            id=next(ids),
+            module_states={},
+            module_id=trial_maker.id,
+            active_sync_groups={"sync": group},
+        )
+
+    def initialize(participant):
+        initialized = SimpleNamespace(trial_maker_initialized=True)
+        participant.module_states = {trial_maker.id: [initialized]}
+
+    leader, follower = member(), member()
+    group.leader, group.active_participants = leader, [leader, follower]
+    assert not barrier._passes_straight_through(follower)
+    initialize(leader)
+    initialize(follower)
+    assert barrier._passes_straight_through(member())
+
+    # The leader leaves and a newcomer is promoted: they initialize alone as
+    # leader, while a newcomer who would copy them waits.
+    new_leader, newcomer = member(), member()
+    group.leader = new_leader
+    group.active_participants = [follower, new_leader, newcomer]
+    assert barrier._passes_straight_through(new_leader)
+    assert not barrier._passes_straight_through(newcomer)
+    initialize(new_leader)
+    assert barrier._passes_straight_through(newcomer)
 
 
 def test_follower_copies_leader_state_after_leader_moved_on():

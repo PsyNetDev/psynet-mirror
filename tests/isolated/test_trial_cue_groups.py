@@ -720,7 +720,7 @@ def test_a_skipper_s_release_isn_t_a_pass_while_members_are_in_a_later_round(
     game_over = GroupBarrier("game_over", group_type="pair", pass_newcomers=True)
     _arrive(exp, game_over, [newcomer])
     assert not game_over._participant_is_waiting(newcomer)
-    assert not game_over._lets_through(pair, newcomer.module_id)
+    assert not game_over._lets_through(pair, newcomer)
 
 
 @pytest.mark.parametrize("ahead_left", [False, True])
@@ -747,7 +747,7 @@ def test_a_group_pass_counts_unless_a_member_still_in_the_module_is_ahead(
     game_over = GroupBarrier("game_over", group_type="pair", pass_newcomers=True)
     _arrive(exp, game_over, cohort)
     assert not any(game_over._participant_is_waiting(p) for p in cohort)
-    assert game_over._lets_through(pair, module.id) is ahead_left
+    assert game_over._lets_through(pair, cohort[0]) is ahead_left
 
 
 @in_consents_experiment

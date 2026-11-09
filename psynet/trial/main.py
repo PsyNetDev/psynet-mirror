@@ -1763,7 +1763,10 @@ class _InitParticipantBarrier(GroupBarrier):
     Members wait here until the leader is initialized in this run of the
     trial maker. After that, anyone who arrives passes straight through and
     initializes alone, including a newcomer who arrived while the group's
-    release was committing.
+    release was committing. A newcomer promoted to leader after the group
+    passed (see :meth:`~psynet.sync.SyncGroup.check_leader`) also passes,
+    and initializes as leader; followers who arrive before that wait for
+    them, as followers copy the leader's state.
     """
 
     _lets_newcomers_through = True
@@ -1772,13 +1775,20 @@ class _InitParticipantBarrier(GroupBarrier):
         super().__init__(
             trial_maker.with_namespace("init_participant"),
             on_release=trial_maker._init_participants_in_sync_group,
+            expected_wait=3.0,
             **trial_maker._sync_group_barrier_kwargs(),
         )
         self.trial_maker_id = trial_maker.id
 
-    def _lets_through(self, group, module_id) -> bool:
+    def _lets_through(self, group, participant) -> bool:
         leader = group.leader
-        return leader is not None and _initialized_in(leader, self.trial_maker_id)
+        if leader is None:
+            return False
+        if _initialized_in(leader, self.trial_maker_id):
+            return True
+        return participant == leader and any(
+            _initialized_in(p, self.trial_maker_id) for p in group.active_participants
+        )
 
 
 class TrialMakerState(ModuleState):
