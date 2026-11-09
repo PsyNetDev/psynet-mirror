@@ -1556,8 +1556,8 @@ class GroupBarrier(Barrier):
     """
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
     have reached the Barrier. It also checks the group against its ``quorum``: a group below it
-    can't proceed. If the group accepts top-ups, the barrier waits for new participants to join; otherwise
-    the group is dissolved, and the grouper's ``below_quorum`` decides what happens to its members.
+    can't proceed, and waits for newcomers or is dissolved as described in
+    :meth:`SyncGroup.remove_participant`.
 
     After the arrival write commits, the same request evaluates the barrier in
     a short transaction so partners are released without waiting for the 0.5 s
@@ -1612,8 +1612,8 @@ class GroupBarrier(Barrier):
         ``on_arrival_message`` for larger groups), and a :class:`~psynet.group_prompt.GroupPrompt` marks them
         "(dropped out)". It is the waiting member who leaves, not the absent ones; to move on
         without slow members, use ``late_after`` and ``late_action`` instead. If that takes
-        the group below its quorum, as in a SimpleGrouper pair, the group dissolves, and the grouper's
-        ``below_quorum`` decides what happens to the others.
+        the group below its quorum, see :meth:`SyncGroup.remove_participant` for whether it
+        is dissolved.
 
     late_after
         Acts on members who haven't reached this barrier yet: the longest each may take to reach it, in seconds,
@@ -2410,9 +2410,9 @@ class SimpleGrouper(Grouper):
 
     quorum
         How many active members a group needs to keep going. A group whose
-        members fail or leave until it has fewer than this is below quorum:
-        while it accepts newcomers (``join_existing_groups=True``) its barriers
-        wait for them, and otherwise it is dissolved (see ``below_quorum``).
+        members fail or leave until it has fewer than this is below quorum; it
+        then waits for newcomers or is dissolved, as described in
+        :meth:`SyncGroup.remove_participant`.
         Defaults to ``start_short_with`` if given, and otherwise to
         ``initial_group_size``, so that a group needs all its members; for
         groups of three or more, leaving it out warns. Must be at most
@@ -2437,13 +2437,13 @@ class SimpleGrouper(Grouper):
         A callable that takes ``group`` and ``participant`` as arguments, and returns ``True``
         if the participant should be allowed to join the group, and ``False`` otherwise.
         To be used in conjunction with ``join_existing_groups=True``. Returning ``False``
-        only turns that newcomer away: the group still accepts top-ups, so below its quorum
-        its barriers keep waiting for one; use ``top_up_wait`` or
-        :meth:`SimpleSyncGroup.stop_top_ups` so it can stop.
+        only turns that newcomer away; it doesn't stop top-ups, so use ``top_up_wait`` or
+        :meth:`SimpleSyncGroup.stop_top_ups` too (see :meth:`SyncGroup.remove_participant`).
 
     below_quorum
-        What happens to the members left in a group that falls below ``quorum``, which is
-        then dissolved at once. The member whose departure caused it is handled by their own
+        What happens to the members left when a group is dissolved below its ``quorum``
+        (for when that happens, see :meth:`SyncGroup.remove_participant`; while a group
+        accepts top-ups, it never is). The member whose departure caused it is handled by their own
         cause instead (a barrier's ``max_wait_action`` or ``late_action``, or their
         failure). ``"fail"`` (default) fails them, telling them "Too few members of your
         group remained to continue, so we ended your session." ``"continue_without_group"``
@@ -2453,16 +2453,13 @@ class SimpleGrouper(Grouper):
         example from how many rounds they played. It is called while the group is being
         dissolved, so base the decision on the participant, not on who else is still in
         ``group``; if it raises or returns anything else, the error is logged and the member
-        is failed. With ``join_existing_groups=True`` it applies once the group stops
-        accepting newcomers (see :meth:`SimpleSyncGroup.stop_top_ups` and
-        ``top_up_wait``). A member whose own request is in progress is handled within
+        is failed. A member whose own request is in progress is handled within
         about a second by the barrier poller instead.
 
     top_up_wait
         With ``join_existing_groups=True``, how many seconds a group below its
         ``quorum`` waits for newcomers. Then it stops accepting them, as with
-        :meth:`SimpleSyncGroup.stop_top_ups`, and ``below_quorum`` applies to the
-        members left. The time counts from when the group fell below its quorum,
+        :meth:`SimpleSyncGroup.stop_top_ups`. The time counts from when the group fell below its quorum,
         and runs out when its members are waiting at a barrier of the group.
         Default: ``None``, waiting for newcomers without a limit.
 
@@ -4102,16 +4099,23 @@ class SyncGroup(SQLBase, SQLMixin):
               so the members finishing their own last rounds aren't told that
               too few remained.
 
-            Removals for ``"finished"`` and ``"moved_on"`` never dissolve the
-            group. Other reasons dissolve a group below its quorum, but only
-            once it no longer accepts top-ups (after
+            **When a group is dissolved.** This is the one place that states
+            the rule; other docs point here. Removals for ``"finished"`` and
+            ``"moved_on"`` never dissolve the group. Other reasons dissolve a
+            group below its quorum, but only once it no longer accepts top-ups.
+            A group accepts top-ups if its :class:`SimpleGrouper` has
+            ``join_existing_groups=True``, until
             :meth:`SimpleSyncGroup.stop_top_ups`, a :class:`GroupBarrier` with
-            ``stop_top_ups=True``, or the grouper's ``top_up_wait``). A group
-            below its quorum that still accepts top-ups is never dissolved: its
-            barriers wait for a newcomer, until their ``max_wait_time`` or,
-            with ``late_after``, without a limit. Once it no longer accepts
-            top-ups, its next :class:`GroupBarrier` dissolves it whatever the
-            reason, so a removal that kept it can still end it there.
+            ``stop_top_ups=True``, or the grouper's ``top_up_wait`` stops them;
+            a ``join_criterion`` that returns ``False`` only turns that
+            newcomer away. A group below its quorum that still accepts top-ups
+            is never dissolved: its barriers wait for a newcomer, until their
+            ``max_wait_time`` or, with ``late_after``, without a limit. Once it
+            no longer accepts top-ups, its next :class:`GroupBarrier`
+            dissolves it whatever the reason, so a removal that kept it can
+            still end it there. When a group is dissolved, its grouper's
+            ``below_quorum`` decides for each member left. Groups made by a
+            :class:`Regrouper` are never dissolved.
         """
         if reason not in REMOVAL_REASONS:
             raise ValueError(
@@ -4257,10 +4261,10 @@ class SimpleSyncGroup(SyncGroup):
         """Stop newcomers joining this group, so that it no longer waits for them.
 
         For a group formed with ``join_existing_groups=True``, for example once
-        the game has started and a newcomer couldn't catch up. From then on a
-        group below its quorum is dissolved like any group without top-ups,
-        and the grouper's ``below_quorum`` decides for its members; a group
-        already below its quorum is dissolved now. To stop top-ups when the
+        the game has started and a newcomer couldn't catch up. From then on it
+        is treated as a group without top-ups (see
+        :meth:`SyncGroup.remove_participant`); a group already below its
+        quorum is dissolved now. To stop top-ups when the
         group passes a barrier, pass ``stop_top_ups=True`` to that
         :class:`GroupBarrier`::
 

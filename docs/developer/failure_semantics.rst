@@ -73,12 +73,12 @@ Sync groups
 ~~~~~~~~~~~
 
 Removing a failed participant can drop a
-:class:`~psynet.sync.SimpleSyncGroup` below its ``quorum`` (stored as ``min_group_size``). If the group
-does not accept top-ups, it is dissolved at once: the remaining members are
-removed, and failed when the grouper's ``below_quorum`` says so. A
-barrier applies the same rule if it finds a group below its quorum. A group
-that accepts top-ups waits for newcomers instead, but closes once it has no
-active members left, whether they failed, were removed or finished.
+:class:`~psynet.sync.SimpleSyncGroup` below its ``quorum`` (stored as
+``min_group_size``). Whether that dissolves the group, and what happens to
+its other members, is described in
+:meth:`~psynet.sync.SyncGroup.remove_participant` and
+:ref:`groups_below_min_size`. A group that accepts top-ups closes once it
+has no active members left, whether they failed, were removed or finished.
 
 Recruiter exit events
 ---------------------
