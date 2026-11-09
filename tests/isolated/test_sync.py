@@ -6742,6 +6742,49 @@ def test_group_barrier_late_after_removes_missing_participants(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_late_action_leave_all_groups_also_leaves_the_cohort(
+    in_experiment_directory, db_session
+):
+    """A member late for their pair also leaves the cohort, so the cohort doesn't wait for them."""
+    exp = get_experiment()
+    barrier = GroupBarrier(
+        id_="round", group_type="pair", late_after=5, late_action="leave_all_groups"
+    )
+    late, on_time, other = [new_participant(exp) for _ in range(3)]
+    groups = {}
+    for group_type, members in [
+        ("cohort", [late, on_time, other]),
+        ("pair", [late, on_time]),
+    ]:
+        group = SimpleSyncGroup(
+            group_type=group_type,
+            initial_group_size=len(members),
+            max_group_size=len(members),
+            min_group_size=1,
+            n_active_participants=len(members),
+            accepts_top_ups=False,
+            below_quorum="continue_without_group",
+        )
+        db_session.add(group)
+        for p in members:
+            p.status = "working"
+            group.add_participant(p)
+        _backdate_group(group, seconds=10)
+        groups[group_type] = group
+    db_session.commit()
+
+    barrier.check_waiting_participants([on_time])
+    db_session.commit()
+
+    assert late not in groups["pair"].active_participants
+    assert set(groups["cohort"].active_participants) == {on_time, other}
+    assert late.sync_group_removal_reason("cohort") == "late"
+    assert not late.active_sync_groups
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 @pytest.mark.parametrize("passed_a_barrier", [False, True])
 def test_late_after_counts_from_joining_the_group(
     in_experiment_directory, db_session, passed_a_barrier
