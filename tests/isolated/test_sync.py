@@ -7500,6 +7500,7 @@ def test_latecomers_fill_a_team_until_it_passes_game_starts(
 ):
     exp = get_experiment()
     grouper, game_starts = _lobby_recipe()
+    assert game_starts.max_wait_time is None
     first, second, latecomer, too_late = [new_participant(exp) for _ in range(4)]
     for p in (first, second, latecomer, too_late):
         p.status = "working"

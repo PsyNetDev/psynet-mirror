@@ -700,9 +700,7 @@ described under :ref:`groups_below_min_size` below.
 Groups below quorum
 ~~~~~~~~~~~~~~~~~~~
 
-This section is the one place that states when a group is dissolved; other
-pages and docstrings point here. Two separate settings decide what happens
-when someone leaves a group:
+Two separate settings decide what happens when someone leaves a group:
 
 - **The member who leaves** is handled by why they left: a barrier's
   ``max_wait_action`` (they waited too long for the others) or
@@ -815,7 +813,8 @@ team passes the barrier as soon as its current members reach it, which ends
 top-ups. ``top_up_wait`` stops a team that falls below its quorum before then
 from waiting for a newcomer who may never come; ``late_after`` on the barrier
 removes its default 20-second wait limit, which would otherwise time the
-members out first:
+members out first. Each latecomer can hold the team at the barrier for up to
+``late_after`` after joining, before being removed as late:
 
 .. code-block:: python
 
@@ -838,9 +837,9 @@ members out first:
         late_action="leave_group",
     )
 
-At both barriers, ``late_after`` counts from when each member joined the
-team or from its previous barrier pass, so make it cover any untimed pages
-before the barrier as well.
+At ``game_starts``, as at ``round_finished`` above, ``late_after`` counts
+from when each member joined the team or from its previous barrier pass, so
+make it cover any untimed pages before the barrier as well.
 
 The ``sync_quorum`` demo lets participants into part of the timeline only
 while at least three are present. Its grouper has no maximum size and accepts
