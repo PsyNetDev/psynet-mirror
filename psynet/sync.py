@@ -1685,7 +1685,7 @@ class GroupBarrier(Barrier):
         active members, except, at a barrier in or after a round of
         :meth:`~psynet.trial.main.Trial.cue`, members it didn't wait for who
         aren't waiting here, such as a late joiner who skipped the round,
-        and members already in a round the group played after it),         ``trials``
+        and members already in a round the group played after it), ``trials``
         (each member's ``current_trial``, in the same order as ``participants``,
         for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
         ``sync_group_type`` that the barrier is part of), ``node`` (the
