@@ -229,7 +229,7 @@ Module("game", for_loop(
   `get_basic_data` read the trial and `self.node.var`. `node.all_trials`
   keeps the trials of players who left during the round. Exports need no
   round counter of their own: `sync_group_round` counts the group's rounds,
-  for what the group shares, and `position` counts the player's own cued
+  for what the group shares, and `position` counts the player's own
   trials in the module, grouped or not.
 - Put `leave_group(group_type)` after a player's last round so that the
   rest of the group, and any `Regrouper`, stops waiting for them.

@@ -112,7 +112,7 @@ earlier one, or in none yet.
 So a trial has two round counters. ``sync_group_round`` counts the group's
 rounds, and is ``None`` on a trial played without a group. Use it for what
 the group shares, such as what a round shows and the group's rows in the
-export. ``trial.position`` counts the player's own cued trials in the
+export. ``trial.position`` counts the player's own trials in the
 module, grouped or not. Use it for the player's own sequence, such as the
 round in a per-player export when groups change every round. The two agree
 only in a fixed group that every member joined before the loop. In a fixed
