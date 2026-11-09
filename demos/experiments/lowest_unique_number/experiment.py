@@ -6,18 +6,23 @@ number, and the lowest number that nobody else in the room picked wins
 ``WIN_BONUS``.
 
 Each round is one cued ``PickTrial`` per player. Because the trial class has
-``sync_group_type = "room"``, the trials of a room's players in one round share
-a node: the room's results go in ``trial.node.var`` and each player's in
-``trial.var``, and ``get_basic_data`` reads both back.
+``sync_group_type = "room"``, the trials of a room's players share a node: the
+room's results go in ``trial.node.var`` and each player's in ``trial.var``, and
+``get_basic_data`` reads both back. The regrouper forms new rooms every round,
+so every room plays only its round 0. A room can mix players at different
+rounds of the game, for example a latecomer playing their first round with
+others playing their second, so the export numbers each player's own rounds.
 
 The choice page has a ``time_limit`` of ``CHOICE_SECONDS``. A player who
 doesn't choose in time misses the round and joins the next one, so the rest
 of the room isn't held up. A player who leaves the page, for example by
 closing the tab, is removed from their room 30 s after the room forms, or
 10 s after the time limit if that is later.
-Missing a round doesn't fail anyone. A player who comes back after the
-others' last round has started waits alone, though, and is failed once they
-reach the regrouper's ``max_wait_time`` (300 s by default), as at any barrier.
+Missing a round doesn't fail anyone. A player left with nobody to play
+with, for example one who comes back after the others' last round has
+started, waits at the regrouper for up to ``MAX_WAIT_SECONDS``, then skips
+that round with a short message (``max_wait_action="continue_without_group"``
+and ``only_in_group``) instead of being failed.
 
 To keep the same people together across rounds, form cohorts first and
 regroup within them (``Regrouper("room", within="cohort", ...)``); see the
@@ -32,7 +37,7 @@ from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
-from psynet.sync import GroupBarrier, Regrouper
+from psynet.sync import GroupBarrier, Regrouper, only_in_group
 from psynet.timeline import Module, PageMaker, Timeline, for_loop, join
 from psynet.trial.main import SyncGroupNode, Trial
 
@@ -43,6 +48,9 @@ N_ROUNDS = 2
 NUMBERS = [1, 2, 3, 4, 5]
 WIN_BONUS = 0.10
 WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + 20
+# Longer than the others can take to finish a round (the choice page plus the
+# barrier's late_after) and reach the next split.
+MAX_WAIT_SECONDS = 60
 
 
 def get_timeline():
@@ -57,7 +65,7 @@ def get_timeline():
             for_loop(
                 label="rounds",
                 iterate_over=range(N_ROUNDS),
-                logic=lambda number: join(
+                logic=join(
                     Regrouper(
                         "room",
                         group_size=ROOM_SIZE,
@@ -65,8 +73,18 @@ def get_timeline():
                         every=ROUND_SECONDS,
                         waiting_message=round_message,
                         waiting_screen="Getting the next round ready.",
+                        max_wait_time=MAX_WAIT_SECONDS,
+                        max_wait_action="continue_without_group",
                     ),
-                    PickTrial.cue({"numbers": NUMBERS}, round=number),
+                    only_in_group(
+                        "room",
+                        PickTrial.cue({"numbers": NUMBERS}),
+                        otherwise=InfoPage(
+                            "Nobody else was left to play this round with, so "
+                            "you skip it.",
+                            time_estimate=5,
+                        ),
+                    ),
                 ),
                 time_estimate_per_iteration=PickTrial.time_estimate + 5,
                 expected_repetitions=N_ROUNDS,
@@ -218,13 +236,23 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per round, from the trials, and one per room per round, from the nodes."""
-        trials = PickTrial.query.filter(PickTrial.sync_group_id.isnot(None))
+        """Return one row per player per round, from the trials, and one per room, from the nodes.
+
+        A room can mix players at different rounds, so ``round`` counts each
+        player's own trials from 0. Each room plays one round, so the room
+        table has no round column.
+        """
+        rounds = {}
+        player_rounds = []
+        for t in PickTrial.query.order_by(PickTrial.id):
+            round_ = rounds[t.participant_id] = rounds.get(t.participant_id, -1) + 1
+            if t.sync_group_id is not None:
+                player_rounds.append((round_, t))
         rooms = SyncGroupNode.query.filter_by(module_id="game")
         return {
             "player_round": [
                 {
-                    "round": t.sync_group_round,
+                    "round": round_,
                     "room_id": t.sync_group_id,
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
@@ -233,19 +261,16 @@ class Exp(psynet.experiment.Experiment):
                     "won": t.var.get("won"),
                     "bonus": t.performance_reward,
                 }
-                for t in trials.order_by(PickTrial.sync_group_round, PickTrial.id)
+                for round_, t in player_rounds
             ],
-            "room_round": [
+            "room": [
                 {
-                    "round": n.sync_group_round,
                     "room_id": n.sync_group_id,
                     "node_id": n.id,
                     "choices": n.var.get("choices"),
                     "winning_number": n.var.get("winning_number"),
                 }
-                for n in rooms.order_by(
-                    SyncGroupNode.sync_group_round, SyncGroupNode.id
-                )
+                for n in rooms.order_by(SyncGroupNode.id)
             ],
         }
 
@@ -283,9 +308,8 @@ class Exp(psynet.experiment.Experiment):
 
         data = self.get_basic_data()
         assert [
-            (r["round"], sorted(r["choices"].values()), r["winning_number"])
-            for r in data["room_round"]
-        ] == [(0, [1, 2], 1), (1, [3, 3, 4], 4)], data["room_round"]
+            (sorted(r["choices"].values()), r["winning_number"]) for r in data["room"]
+        ] == [([1, 2], 1), ([3, 3, 4], 4)], data["room"]
         # Players cue their trials in their own order, so compare sorted rows.
         assert sorted(
             ((r["round"], r["choice"], r["bonus"]) for r in data["player_round"]),

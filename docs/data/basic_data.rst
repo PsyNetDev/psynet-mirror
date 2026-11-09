@@ -93,15 +93,14 @@ class sets ``sync_group_type``, record the group the participant was in when
 the trial was created, in ``trial.sync_group_id``, and their role in it, if
 a :class:`~psynet.sync.Regrouper` gave one, in ``trial.sync_group_role``.
 ``trial.sync_group_round`` says which of the group's rounds the trial belongs
-to: a trial maker numbers them from 0, shared by a member who joined the group
-late, and a cued trial stores the ``round`` passed to
-:meth:`~psynet.trial.main.Trial.cue`, or ``None`` if the group plays a
-single round and ``round`` was left out. The group's trials with the same
+to, counted from 0 and shared by a member who joined the group late; a group
+re-formed every round, as by a :class:`~psynet.sync.Regrouper`, plays only
+round 0. The group's trials with the same
 ``sync_group_id`` and ``sync_group_round`` are one round. All three stay after
 the group ends. Cued trials of one group and round also share a
 :class:`~psynet.trial.main.SyncGroupNode`, which can hold the group's results;
 the ``lowest_unique_number`` demo builds a table per player and round and
-one per room and round from them (see :ref:`rounds-cued-trials`).
+one per room from them (see :ref:`rounds-cued-trials`).
 
 Group membership, for groups formed by a grouper (see
 :doc:`/code/multiplayer/synchronization`), is stored in two tables:
@@ -152,15 +151,16 @@ time, because that action is in no answer:
 .. literalinclude:: ../../demos/experiments/rock_paper_scissors/experiment.py
    :pyobject: Exp.get_basic_data
 
-For one pair playing three rounds, this returns:
+For one pair playing three rounds, in which participant 2 timed out in
+round 1, this returns:
 
 .. code-block:: text
 
     group_id  round  participant_id  trial_id  action    timed_out  partner_id  partner_action  partner_timed_out  score
     1         0      1               1         rock      False      2           paper           False              -1
     1         0      2               2         paper     False      1           rock            False              1
-    1         1      1               3         scissors  False      2           paper           False              1
-    1         1      2               4         paper     False      1           scissors        False              -1
+    1         1      1               3         scissors  False      2           paper           True               1
+    1         1      2               4         paper     True       1           scissors        False              -1
     1         2      1               5         scissors  False      2           scissors        False              0
     1         2      2               6         scissors  False      1           scissors        False              0
 

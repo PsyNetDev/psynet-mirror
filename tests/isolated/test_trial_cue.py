@@ -205,6 +205,39 @@ def test_cue_asset_callback_failure_rolls_back_trial_and_assets(
     assert Asset.query.count() == assets_before
 
 
+class RewardTrial(CueTrial):
+    def score_answer(self, answer, definition):
+        assert self.participant is not None
+        return 1
+
+    def compute_performance_reward(self, score):
+        return 0.5 * score
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_a_trial_ending_in_the_request_that_cued_it_can_pay_its_participant(
+    db_session,
+    participant_and_node,
+    monkeypatch,
+):
+    experiment, participant, node = participant_and_node
+    monkeypatch.setattr(
+        RewardTrial,
+        "get_default_parent_node",
+        classmethod(lambda cls, participant, experiment: node),
+    )
+
+    # The trial may end before anything flushes it to the database.
+    with db.session.no_autoflush:
+        RewardTrial.cue(definition={})[0].consume(experiment, participant)
+        participant.current_trial.on_finalized()
+
+    assert participant.performance_reward == 0.5
+
+
 def test_cue_creation_context_requires_on_trial_created():
     with pytest.raises(
         ValueError, match="creation_context requires an on_trial_created callback"

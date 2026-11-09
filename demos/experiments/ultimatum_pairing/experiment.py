@@ -24,7 +24,7 @@ pair's offer and result go in ``trial.node.var`` and each player's coins in
 
 A player who doesn't answer within ``DECISION_SECONDS`` gets nothing that
 round, and nor does their partner. A player who closes their page is taken
-out of their pair so their partner isn't held up. A player who misses a
+out of their pair and cohort, so nobody waits for them. A player who misses a
 round joins the next one, and nobody is failed for being slow. Players
 finish after ``N_ROUNDS`` rounds in a pair, or early, with an explanation,
 after sitting out ``MAX_SIT_OUTS`` rounds or if their cohort falls apart.
@@ -38,7 +38,13 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper, only_in_group
+from psynet.sync import (
+    GroupBarrier,
+    Regrouper,
+    SimpleGrouper,
+    SyncGroup,
+    only_in_group,
+)
 from psynet.timeline import (
     CodeBlock,
     Module,
@@ -80,6 +86,9 @@ def get_timeline():
             waiting_message=lobby_message,
             waiting_screen=forming_cohort,
             max_wait_time=300,
+            # No effect here, since the cohort accepts top-ups; it keeps the
+            # recipe copy-safe ("Moving slow players on" in the guide).
+            below_quorum="continue_without_group",
         ),
         Module(
             "game",
@@ -90,14 +99,17 @@ def get_timeline():
                     pairing,
                     only_in_group(
                         "pair",
-                        # Every pair is new and plays a single round, so the
-                        # cue needs no round number.
                         OfferTrial.cue({"endowment": ENDOWMENT}),
-                        # Without a cohort the game is over; the ended-early
-                        # page explains why.
+                        # Without a cohort the game is over and the ended-early
+                        # page explains why, but a player removed for being
+                        # away, who left the cohort too, is told about the round.
                         otherwise=conditional(
-                            "in_cohort",
-                            lambda participant: cohort_of(participant) is not None,
+                            "explain_round",
+                            lambda participant: (
+                                cohort_of(participant) is not None
+                                or participant.sync_group_removal_reason("pair")
+                                == "late"
+                            ),
                             PageMaker(not_playing, time_estimate=5),
                         ),
                     ),
@@ -140,6 +152,8 @@ def ended_early_page(participant):
             f"You sat out {MAX_SIT_OUTS} rounds without a partner, "
             "so the game ended early for you."
         )
+    elif participant.sync_group_removal_reason("cohort") == "late":
+        text = "You were away for too long, so the game ended early for you."
     else:
         text = "Not enough players stayed to keep playing, so the game ended early."
     return InfoPage(text, time_estimate=5)
@@ -202,7 +216,10 @@ AWAY_TEXT = "You were away for too long, so you got no coins this round."
 
 def not_playing(participant):
     if pairing.sat_out(participant):
-        text = "You sit out this round. It doesn't count towards your rounds."
+        text = (
+            "You sit out this round without a partner. If you sit out "
+            f"{MAX_SIT_OUTS} rounds, the game ends early for you."
+        )
     else:
         # Removed from this round's pair for being away too long.
         text = AWAY_TEXT
@@ -266,7 +283,9 @@ class OfferTrial(Trial):
             GroupPrompt(
                 prompt, participant=participant, group_type="pair", names="anonymous"
             ),
-            PushButtonControl(choices=list(range(endowment + 1))),
+            PushButtonControl(
+                choices=list(range(endowment + 1)), arrange_vertically=False
+            ),
             save_answer="decision",
             time_limit=DECISION_SECONDS,
             time_estimate=10,
@@ -274,7 +293,11 @@ class OfferTrial(Trial):
 
     @classmethod
     def score_pair(
-        cls, trials: List["OfferTrial"], node: SyncGroupNode, left: List[Participant]
+        cls,
+        group: SyncGroup,
+        trials: List["OfferTrial"],
+        node: SyncGroupNode,
+        left: List[Participant],
     ):
         """Save the pair's offer and result on the node, and each player's coins on their trial.
 
@@ -285,13 +308,22 @@ class OfferTrial(Trial):
         decisions = {role: t.participant.var.decision for role, t in by_role.items()}
         offer, minimum = decisions.get("proposer"), decisions.get("responder")
         if len(trials) < 2:
-            away = any(p.sync_group_removal_reason("pair") == "late" for p in left)
+            away = [p for p in left if p.sync_group_removal_reason("pair") == "late"]
+            # An away partner has probably closed their page, so they leave the
+            # cohort too, and the rest of it doesn't wait for them.
+            for partner in away:
+                cohort = cohort_of(partner)
+                if cohort is not None:
+                    cohort.remove_participant(partner, reason="late")
             result = "partner_away" if away else "partner_left"
         elif offer is None or minimum is None:
             result = "timed_out"
         else:
             result = "accepted" if offer >= minimum else "rejected"
-        node.var.players = {role: t.participant_id for role, t in by_role.items()}
+        # From the pair's links, which outlast removal, so an away player is kept.
+        node.var.players = {
+            link.role: link.participant_id for link in group.participant_links
+        }
         node.var.offer = offer
         node.var.minimum = minimum
         node.var.result = result
@@ -414,12 +446,22 @@ class Exp(psynet.experiment.Experiment):
         assert not _cohort_accepts_newcomers(bots[0])
         sitting_out = [b for b in others if "sit out" in b.current_page_text]
         assert len(sitting_out) == 1
-        _play([b for b in others if b not in sitting_out])
+        # One of the pair closes their page. Once late, they leave the pair and
+        # the cohort, so the rest of the cohort doesn't wait for them.
+        stayer, leaver = [b for b in others if b not in sitting_out]
+        _play([stayer])
+        assert "Your partner was away" in stayer.current_page_text
+        assert leaver.with_participant(lambda p: cohort_of(p) is None)
+        # The leaver comes back later. Rounds count the pairs a player joined,
+        # so this pair was their second round and the game didn't end early.
+        for text in [AWAY_TEXT, "That's the end"]:
+            leaver.take_page()
+            assert text in leaver.current_page_text
 
-        # The pair has played its two rounds. The lingerer wasn't failed, and
+        # The stayer has been in two pairs. The lingerer wasn't failed, and
         # the sit-out didn't count, so those two play a final round together.
-        # The cohort stays closed to latecomers after the pair has left it.
-        for bot in bots:
+        # The cohort stays closed to latecomers after the stayer has left it.
+        for bot in [stayer, *sitting_out, bots[3]]:
             bot.take_page()
         last_pair = [sitting_out[0], bots[3]]
         advance_past_wait_pages(last_pair, timeout=WAIT_TIMEOUT)
@@ -433,15 +475,17 @@ class Exp(psynet.experiment.Experiment):
             assert "That's the end" in bot.current_page_text
             assert bot.current_notice is None
 
-        # Two pairs in round 1, then one pair in each of rounds 2 and 3, each
-        # with one proposer (5) and one responder (3).
+        # Two pairs in round 1, then one pair in each of rounds 2 and 3. The
+        # pairs that both played have one proposer (5) and one responder (3).
         data = self.get_basic_data()
-        pairs = data["pair"]
+        away = [p["pair_id"] for p in data["pair"] if p["result"] == "partner_away"]
+        assert len(away) == 1, data["pair"]
+        pairs = [p for p in data["pair"] if p["pair_id"] not in away]
         assert [(p["offer"], p["minimum"], p["result"]) for p in pairs] == [
             (5, 3, "accepted")
-        ] * 4, pairs
-        rows = data["player_pair"]
-        assert len(rows) == 8
+        ] * 3, pairs
+        rows = [r for r in data["player_pair"] if r["pair_id"] not in away]
+        assert len(rows) == 6
         assert all(
             (row["decision"], row["coins"])
             == {"proposer": (5, 5), "responder": (3, 5)}[row["role"]]

@@ -105,6 +105,27 @@ def test_regrouper_pairs_within_cohorts_and_does_not_wait_for_absent_members(
 
 
 @in_consents_experiment
+def test_regrouper_waits_for_a_late_member_until_they_leave_the_within_group(
+    in_experiment_directory, db_session
+):
+    """A member removed late from their pair holds up the next split while still in the cohort."""
+    exp = get_experiment()
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=4, quorum=2)
+    pairs = Regrouper("pair", within="cohort", group_size=2, deadline=30)
+    cohort = _working_participants(exp, 4)
+    _arrive(exp, cohort_grouper, cohort)
+    _arrive(exp, pairs, cohort)
+    late, present = cohort[3], cohort[:3]
+    late.active_sync_groups["pair"].remove_participant(late, reason="late")
+
+    _arrive(exp, pairs, present)
+    assert _waiting(pairs, present) == present
+
+    late.active_sync_groups["cohort"].remove_participant(late, reason="late")
+    assert len(pairs.choose_who_to_release(present)) == 2
+
+
+@in_consents_experiment
 def test_regrouper_can_avoid_everyone_met_before(in_experiment_directory, db_session):
     exp = get_experiment()
     cohort_grouper = SimpleGrouper("cohort", initial_group_size=4)
@@ -625,3 +646,25 @@ def test_regrouper_keep_roles_balances_newcomers(in_experiment_directory, db_ses
     assert pairs.role(newcomer) != pairs.role(sitter)
     assert all("pair" in p.active_sync_groups for p in cohort + [newcomer])
     assert pairs.rounds_played(sitter) == 1
+
+
+@in_consents_experiment
+def test_regrouper_lets_a_player_waiting_alone_carry_on(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    regrouper = Regrouper(
+        "room",
+        group_size=8,
+        smallest_group=2,
+        every=10,
+        max_wait_time=60,
+        max_wait_action="continue_without_group",
+    )
+    (player,) = _working_participants(exp, 1)
+    _arrive(exp, regrouper, [player])
+    regrouper.handle_max_wait_timeout(player)
+    db_session.commit()
+
+    assert not player.failed
+    assert not player.in_sync_group("room")
