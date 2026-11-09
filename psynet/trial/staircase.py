@@ -4,6 +4,7 @@ from typing import Callable, Literal, Optional, Type, Union
 from sqlalchemy import Boolean, Column, Float, Integer, String
 
 from ..field import PythonObject
+from ..sync import LateAction
 from ..utils import NoArgumentProvided, get_args
 from .chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
 
@@ -221,7 +222,7 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
         sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
-        sync_group_late_action: Literal["fail", "leave_group"] = "fail",
+        sync_group_late_action: LateAction = "fail",
         sync_group_waiting_message=None,
     ):
         self.max_reversals_per_chain = max_reversals_per_chain
