@@ -1,0 +1,1 @@
+A sync group that dissolves below its `quorum` now removes all its members at once. If one of them is in the middle of a request at that moment, nobody is removed until the background barrier check tries again, usually within a second, so `GroupBarrier(on_dissolve=...)` is called once, with every member waiting at the barrier.
