@@ -1296,7 +1296,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             the participant has no trial in that round and it is no longer
             open, the group finished it without them: the cue is skipped,
             with no trial and no pages, and the round's later barriers don't
-            wait for them. Only for a trial class that sets
+            wait for them. ``participant.current_trial`` is then ``None``, so
+            guard later steps that read it, for example with a
+            :func:`~psynet.timeline.conditional` on
+            ``participant.current_trial is not None``. Rounds are ordered by
+            when the group first plays them, not by number. Only for a trial
+            class that sets
             :attr:`sync_group_type`, and not with a regrouper, whose groups
             mix players at different loop positions. Ignored for a
             participant without a group. See
