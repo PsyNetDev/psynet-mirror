@@ -1244,6 +1244,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           ``round``, so that a definition can come from the loop. Otherwise a
           grouped cue's definition must not depend on the player's own
           position in a loop; pass a function taking ``round`` or ``group``.
+        - Each cued trial's ``position`` counts the participant's earlier
+          cued trials in the current module from 0, grouped or not.
         - A participant who is in no group of that type gets an ungrouped
           trial on the module's default node, so put the cue in a
           :func:`~psynet.timeline.conditional` on

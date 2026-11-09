@@ -168,7 +168,8 @@ page saying the game ended early:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: round_status
- Once started, the trial runs to its end, where
+
+Once started, the trial runs to its end, where
 it is scored, even if the player is removed from their pair partway, so
 its feedback covers every outcome of the round. A round that is one cued
 trial needs no more than this; ``join(..., stop_if=...)`` is for rounds of

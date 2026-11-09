@@ -241,8 +241,9 @@ class Exp(psynet.experiment.Experiment):
     def get_basic_data(cls, context=None, **kwargs):
         """Return one row per player per round, from the trials, and one per room, from the nodes.
 
-        Each room plays one round, so ``round`` is the player's own count,
-        the trial's ``position``, and the room table has no round column.
+        A room can mix players at different rounds of the game, so ``round``
+        is the player's own count, the trial's ``position``. Each room plays
+        one round, so the room table has no round column.
         """
         rooms = SyncGroupNode.query.filter_by(module_id="game")
         return {
