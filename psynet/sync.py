@@ -1482,15 +1482,17 @@ def _lock_group_to_stop_top_ups(group) -> bool:
 
 def _validate_group_timeouts(max_wait_action, late_after, late_action, prefix=""):
     """Check a GroupBarrier's time-out options, naming them with ``prefix`` (e.g. ``"sync_group_"``)."""
-    for name, value in [
-        ("max_wait_action", max_wait_action),
-        ("late_action", late_action),
+    for name, value, allowed in [
+        ("max_wait_action", max_wait_action, ("fail", "leave_group")),
+        ("late_action", late_action, ("fail", "leave_group", "leave_all_groups")),
     ]:
         name = prefix + name
         if value == "kick":
             raise ValueError(f"{name}='kick' was renamed {name}='leave_group'.")
-        if value not in ("fail", "leave_group"):
-            raise ValueError(f"{name} must be 'fail' or 'leave_group', got {value!r}.")
+        if value not in allowed:
+            raise ValueError(
+                f"{name} must be one of {', '.join(map(repr, allowed))}, got {value!r}."
+            )
     if late_after is not None and late_after <= 0:
         raise ValueError(f"{prefix}late_after must be positive.")
     if late_after is not None and max_wait_action != "fail":
@@ -1644,7 +1646,9 @@ class GroupBarrier(Barrier):
     late_action
         What happens to a member who is later than ``late_after``: ``"fail"`` (default) fails them and sends
         them to the end of the experiment; ``"leave_group"`` removes them from the group, so the rest can go on
-        without them (see :ref:`sync-leaving-a-group` for what the removed member sees).
+        without them (see :ref:`sync-leaving-a-group` for what the removed member sees);
+        ``"leave_all_groups"`` also removes them from their other groups, such as the cohort a pair was
+        formed in, so those groups don't wait for them either.
 
     on_release
         Optional callback invoked when the barrier releases the group. It may take
@@ -1782,7 +1786,7 @@ class GroupBarrier(Barrier):
         *,
         max_wait_action: Literal["fail", "leave_group"] = "fail",
         late_after: Optional[float] = None,
-        late_action: Literal["fail", "leave_group"] = "fail",
+        late_action: Literal["fail", "leave_group", "leave_all_groups"] = "fail",
         expected_wait=None,
         waiting_message=None,
         notify_arrivals: bool = True,
@@ -2093,7 +2097,7 @@ class GroupBarrier(Barrier):
         if self.late_action == "fail":
             late = _lock_free_participants(late)
         group_size = len(group.active_participants)
-        if self.late_action == "leave_group":
+        if self.late_action in ("leave_group", "leave_all_groups"):
             for participant in late:
                 logger.info(
                     "GroupBarrier '%s': removing participant %s from group %s (timeout between barriers)",
@@ -2102,6 +2106,8 @@ class GroupBarrier(Barrier):
                     group.id,
                 )
                 SyncGroup.remove_participant(group, participant, reason="late")
+                if self.late_action == "leave_all_groups":
+                    self._remove_from_other_groups(participant, group)
             if late and hasattr(group, "dissolve_if_below_quorum"):
                 group.dissolve_if_below_quorum()
             dissolved = group.n_active_participants == 0 or group.dissolving
@@ -2130,6 +2136,21 @@ class GroupBarrier(Barrier):
                 participant.id,
             )
             participant.fail("timeout between barriers")
+
+    def _remove_from_other_groups(self, participant, group):
+        """Remove a late participant from their groups other than ``group``."""
+        for other in list(participant.active_sync_groups.values()):
+            if other.id == group.id:
+                continue
+            logger.info(
+                "GroupBarrier '%s': removing participant %s from group %s too (late_action='leave_all_groups')",
+                self.id,
+                participant.id,
+                other.id,
+            )
+            SyncGroup.remove_participant(other, participant, reason="late")
+            if hasattr(other, "dissolve_if_below_quorum"):
+                other.dissolve_if_below_quorum()
 
     def _tell_removed_participant(self, participant, group, group_size, kind="removed"):
         """Show a removed participant a notice that they left their group.
@@ -3830,7 +3851,7 @@ def warn_if_late_removal_fails_group(barriers):
         if not (
             isinstance(barrier, GroupBarrier)
             and barrier.late_after is not None
-            and barrier.late_action == "leave_group"
+            and barrier.late_action in ("leave_group", "leave_all_groups")
         ):
             continue
         grouper = fragile_groupers.get(barrier.group_type)
@@ -4046,7 +4067,7 @@ class SyncGroup(SQLBase, SQLMixin):
               ``"group_dissolved"``: "(dropped out)", or "(left)" once they
               have failed, left or completed the experiment.
             - ``"late"``: "(removed)", for a member a barrier removed for
-              being late (``late_action="leave_group"``), or "(left)" once
+              being late (``late_action="leave_group"`` or ``"leave_all_groups"``), or "(left)" once
               they have failed, left or completed the experiment.
             - ``"moved_on"``: for a member who left at a :class:`Regrouper`,
               for their next group or to sit the round out. A pair a :class:`SimpleGrouper`
