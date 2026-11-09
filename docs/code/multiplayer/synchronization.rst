@@ -1094,11 +1094,7 @@ example "(dropped out)", unless the group still accepts top-ups (see
 For the rest of the timeline:
 
 - :class:`~psynet.sync.GroupBarrier`\ s of that group type let them straight
-  through. So does a barrier with ``pass_ungrouped=True`` for anyone in no
-  group of its type, including a participant who was never in one, such as
-  a player a :class:`~psynet.sync.Regrouper` sat out of the first round;
-  without it, such a participant gets an error, which usually means a
-  grouper is missing. Pages between the barriers are still shown, so give the steps of
+  through. Pages between the barriers are still shown, so give the steps of
   a round to :func:`~psynet.timeline.join` with ``stop_if``, which checks
   before each argument and skips the remaining arguments once the
   participant has left. Each argument runs to its end once started, so a

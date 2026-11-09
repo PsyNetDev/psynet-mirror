@@ -1,22 +1,23 @@
 import sys
 import time
-from datetime import timedelta
 from pathlib import Path
 
 import pytest
 from dallinger import db
+from dallinger.models import timenow
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from psynet import sync, timeline_hold
+from psynet.bot import _backdate_arrivals, _backdate_last_split
 from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     GroupBarrier,
+    ParticipantLinkSyncGroup,
     Regrouper,
     SimpleGrouper,
-    SyncGroup,
     _latest_tick,
 )
 from psynet.timeline import Timeline
@@ -43,18 +44,6 @@ def _arrive(exp, barrier, participants):
 
 def _waiting(barrier, participants):
     return [p for p in participants if barrier._participant_is_waiting(p)]
-
-
-def _backdate_arrivals(barrier, participants, seconds):
-    for participant in participants:
-        participant.active_barriers[barrier.id].arrival_time -= timedelta(
-            seconds=seconds
-        )
-
-
-def _backdate_splits(regrouper, seconds):
-    for group in SyncGroup.query.filter_by(grouper_id=regrouper.id):
-        group.creation_time -= timedelta(seconds=seconds)
 
 
 @in_consents_experiment
@@ -90,7 +79,7 @@ def test_regrouper_pairs_within_cohorts_and_does_not_wait_for_absent_members(
     _arrive(exp, pairs, present)
     assert all("pair" not in p.active_sync_groups for p in present)
     assert _waiting(pairs, present) == present
-    _backdate_splits(pairs, 31)
+    _backdate_last_split(pairs, cohort[0].active_sync_groups["cohort"], 31)
     _backdate_arrivals(pairs, present, 31)
 
     released = pairs.choose_who_to_release(present)
@@ -390,7 +379,7 @@ def test_regrouper_left_over_waits_for_cohort_still_in_the_round(
 
     # The pair's round runs past the deadline; the odd one out, back first,
     # keeps waiting for them instead of sitting out again.
-    _backdate_splits(pairs, 40)
+    _backdate_last_split(pairs, cohort[0].active_sync_groups["cohort"], 40)
     _arrive(exp, pairs, [odd_one_out])
     _backdate_arrivals(pairs, [odd_one_out], 16)
     assert pairs.choose_who_to_release([odd_one_out]) == []
@@ -430,7 +419,7 @@ def test_every_regrouper_left_over_waits_one_more_tick(
     _backdate_arrivals(pairs, cohort[:2], 16)
     _arrive(exp, pairs, cohort[2:])
     assert _waiting(pairs, cohort) == cohort[2:]
-    _backdate_splits(pairs, 32)
+    _backdate_last_split(pairs, cohort[0].active_sync_groups["cohort"], 32)
 
     # The pair is still playing: held through one tick, released at the next.
     since_tick = time.time() - _latest_tick(time.time(), 15)
@@ -449,12 +438,19 @@ def test_every_regrouper_left_over_waits_one_more_tick(
         ({"group_size": 2, "below_quorum": "continue_without_group"}, "never"),
         ({"group_size": 2, "deadline": 0}, "deadline must be positive"),
         ({"group_size": 2, "every": 0}, "every must be positive"),
-        ({"group_size": 2, "stop_top_ups_after_rounds": -1}, "0 or more"),
+        *[
+            ({"group_size": 2, "stop_top_ups_after_rounds": value}, "whole number")
+            for value in (-1, 1.5, "1", True)
+        ],
+        (
+            {"group_size": 2, "within": None, "stop_top_ups_after_rounds": 1},
+            "needs within",
+        ),
     ],
 )
 def test_regrouper_checks_its_settings(kwargs, message):
     with pytest.raises((TypeError, ValueError), match=message):
-        Regrouper("pair", within="cohort", **kwargs)
+        Regrouper("pair", **{"within": "cohort", **kwargs})
 
 
 def test_regrouper_max_wait_time_outlasts_a_lone_wait():
@@ -671,39 +667,69 @@ def test_regrouper_lets_a_player_waiting_alone_carry_on(
     assert not player.in_sync_group("room")
 
 
-@in_consents_experiment
-def test_regrouper_stops_top_ups_after_rounds(in_experiment_directory, db_session):
-    exp = get_experiment()
+def _open_cohorts(stop_top_ups_after_rounds):
     cohort_grouper = SimpleGrouper(
-        "cohort", initial_group_size=2, join_existing_groups=True
+        "cohort",
+        initial_group_size=2,
+        quorum=2,
+        max_group_size=4,
+        join_existing_groups=True,
     )
     pairs = Regrouper(
-        "pair", within="cohort", group_size=2, stop_top_ups_after_rounds=1
+        "pair",
+        within="cohort",
+        group_size=2,
+        stop_top_ups_after_rounds=stop_top_ups_after_rounds,
     )
-    players = _working_participants(exp, 2)
-    _arrive(exp, cohort_grouper, players)
-    cohort = players[0].active_sync_groups["cohort"]
+    return cohort_grouper, pairs
 
-    _arrive(exp, pairs, players)
-    assert cohort.accepts_top_ups
-    _arrive(exp, pairs, players)
-    assert all("pair" in p.active_sync_groups for p in players)
+
+@pytest.mark.parametrize("open_for_rounds", [0, 1])
+@in_consents_experiment
+def test_regrouper_stops_top_ups_after_rounds(
+    in_experiment_directory, db_session, open_for_rounds
+):
+    exp = get_experiment()
+    cohort_grouper, pairs = _open_cohorts(open_for_rounds)
+    *starters, latecomer, too_late = _working_participants(exp, 4)
+    _arrive(exp, cohort_grouper, starters)
+    cohort = starters[0].active_sync_groups["cohort"]
+
+    _arrive(exp, pairs, starters)
+    if open_for_rounds:
+        _arrive(exp, cohort_grouper, [latecomer])
+        assert latecomer.in_sync_group("cohort")
+        _arrive(exp, pairs, [*starters, latecomer])
     assert not cohort.accepts_top_ups
+    _arrive(exp, cohort_grouper, [too_late])
+    assert not too_late.in_sync_group("cohort")
 
 
 @in_consents_experiment
-def test_group_barrier_can_pass_participants_never_grouped(
+def test_closing_split_counts_a_newcomer_who_joined_in_another_request(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    original = exp.timeline
-    exp.timeline = Timeline(
-        GroupBarrier("round_end", group_type="pair", pass_ungrouped=True),
-        ModularPage("after", "Round over", time_estimate=1),
-    )
-    try:
-        (player,) = _working_participants(exp, 1)
-        _json_timeline(exp, player)
-        assert exp.timeline.get_current_elt(exp, player).label == "after"
-    finally:
-        exp.timeline = original
+    cohort_grouper, pairs = _open_cohorts(1)
+    *starters, newcomer = _working_participants(exp, 3)
+    _arrive(exp, cohort_grouper, starters)
+    cohort = starters[0].active_sync_groups["cohort"]
+    _arrive(exp, pairs, starters)
+    for participant in starters:
+        pairs.receive_participant(participant)
+    db_session.commit()
+    assert len(cohort.active_participants) == 2
+
+    with Session(bind=db.engine) as other:
+        other.add(
+            ParticipantLinkSyncGroup(
+                participant_id=newcomer.id,
+                sync_group_id=cohort.id,
+                active=True,
+                arrival_time=timenow(),
+            )
+        )
+        other.commit()
+
+    assert pairs.choose_who_to_release(starters) == []
+    assert cohort.accepts_top_ups

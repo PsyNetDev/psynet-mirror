@@ -1616,8 +1616,7 @@ class GroupBarrier(Barrier):
     A participant who was removed from their group of ``group_type``, for example by a timeout with ``"leave_group"``,
     and is in no other group of that type passes straight through, as does one whose grouper let them
     continue without a group (``max_wait_action="continue_without_group"``). Any other participant who
-    was never in such a group gets an error, which usually means a grouper is missing from the timeline,
-    unless the barrier has ``pass_ungrouped=True``.
+    was never in such a group gets an error, which usually means a grouper is missing from the timeline.
 
     Parameters
     ----------
@@ -1776,14 +1775,6 @@ class GroupBarrier(Barrier):
         count as the group's pass for ``left`` or ``late_after``. Redundant with
         ``stop_top_ups=True``, after which nobody can join.
 
-    pass_ungrouped
-        If ``True``, anyone in no group of ``group_type`` passes straight
-        through, even if they were never in one, for example a player a
-        :class:`Regrouper` sat out of the first round or released without a
-        ``within`` group. By default only participants who left such a group,
-        or whose grouper let them continue without one, pass; anyone else
-        gets an error, because it usually means a grouper is missing.
-
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
         holds credit actual visible waiting time up to ``max_wait_time``.
@@ -1872,7 +1863,6 @@ class GroupBarrier(Barrier):
         on_dissolve: Optional[Callable] = None,
         stop_top_ups: bool = False,
         pass_newcomers: bool = False,
-        pass_ungrouped: bool = False,
     ):
         _validate_group_timeouts(max_wait_action, late_after, late_action)
         max_wait_time = _group_max_wait_time(max_wait_time, late_after, default=20)
@@ -1897,18 +1887,13 @@ class GroupBarrier(Barrier):
         self.on_dissolve = on_dissolve
         self.stop_top_ups = bool(stop_top_ups)
         self.pass_newcomers = bool(pass_newcomers)
-        self.pass_ungrouped = bool(pass_ungrouped)
 
     def resolve(self):
         group_type = self.group_type
-        pass_ungrouped = self.pass_ungrouped
         return conditional(
             f"barrier:{self.id}:in_group",
             condition=lambda participant: (
                 not _removed_from_group(participant, group_type)
-                and not (
-                    pass_ungrouped and group_type not in participant.active_sync_groups
-                )
                 and not self._passes_straight_through(participant)
             ),
             logic_if_true=super().resolve(),
@@ -3363,6 +3348,11 @@ class Regrouper(Grouper):
         when its first round starts. ``None`` (default) leaves top-ups to the
         grouper and the barriers. Needs ``within``.
 
+        A round a member sits out (``left_over="sit_out"``) or misses doesn't
+        count towards their rounds played, so the cohort closes at the first
+        split that forms a group while a member who has played this many
+        rounds is waiting.
+
     max_wait_time
         Longest a participant waits at the regrouper before ``max_wait_action``
         applies: being failed by default, or carrying on without a group with
@@ -3405,8 +3395,14 @@ class Regrouper(Grouper):
         if stop_top_ups_after_rounds is not None:
             if within is None:
                 raise ValueError("stop_top_ups_after_rounds needs within.")
-            if stop_top_ups_after_rounds < 0:
-                raise ValueError("stop_top_ups_after_rounds must be 0 or more.")
+            if (
+                isinstance(stop_top_ups_after_rounds, bool)
+                or not isinstance(stop_top_ups_after_rounds, int)
+                or stop_top_ups_after_rounds < 0
+            ):
+                raise ValueError(
+                    "stop_top_ups_after_rounds must be a whole number, 0 or more."
+                )
         if roles is not None:
             if len(set(roles)) != len(roles):
                 raise ValueError("Pass distinct role names.")
@@ -3810,19 +3806,32 @@ class Regrouper(Grouper):
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
         released = []
-        for within_group, members in self._pools(waiting_participants):
+        for within_group, pool in self._pools(waiting_participants):
             if self.within is not None and within_group is None:
-                released += members
+                released += pool
                 continue
-            if not self._pool_is_ready(within_group, members):
+            members = self._members_to_split(within_group, pool)
+            if members is None:
                 continue
-            if self.every is not None:
-                members = self._waiting_at_tick(members, time.time())
             stop_top_ups = self._ends_join_window(within_group, members)
-            if stop_top_ups and not _lock_group_to_stop_top_ups(within_group):
-                continue
+            if stop_top_ups:
+                if not _lock_group_to_stop_top_ups(within_group):
+                    continue
+                # The lock reloads the cohort's members, so a newcomer who
+                # joined in another request now keeps a complete pool waiting.
+                members = self._members_to_split(within_group, pool)
+                if members is None:
+                    continue
             released += self._split(within_group, members, stop_top_ups=stop_top_ups)
         return released
+
+    def _members_to_split(self, within_group, pool) -> Optional[List[Participant]]:
+        """Return the members of a ready pool to split now, or ``None`` if it isn't ready."""
+        if not self._pool_is_ready(within_group, pool):
+            return None
+        if self.every is not None:
+            return self._waiting_at_tick(pool, time.time())
+        return pool
 
     def _ends_join_window(self, within_group, members) -> bool:
         """Return whether splitting ``members`` starts a round after ``stop_top_ups_after_rounds``."""
@@ -3830,10 +3839,8 @@ class Regrouper(Grouper):
             within_group, "accepts_top_ups", False
         ):
             return False
-        rounds = Counter(
-            link.participant_id for link in self._links([m.id for m in members])
-        )
-        return max(rounds.values(), default=0) >= self.stop_top_ups_after_rounds
+        rounds = max((self.rounds_played(m) for m in members), default=0)
+        return rounds >= self.stop_top_ups_after_rounds
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         return any(
@@ -3931,18 +3938,21 @@ class Regrouper(Grouper):
 
     def _last_split(self, within_group) -> Optional[float]:
         """Return when this regrouper last formed groups in this pool, in epoch seconds."""
-        within_id = None if within_group is None else within_group.id
         latest = (
             db.session.query(func.max(SyncGroup.creation_time))
-            .filter(
-                SyncGroup.grouper_id == self.id,
-                SyncGroup.within_group_id.is_(None)
-                if within_id is None
-                else SyncGroup.within_group_id == within_id,
-            )
+            .filter(*self._pool_splits(within_group))
             .scalar()
         )
         return None if latest is None else latest.timestamp()
+
+    def _pool_splits(self, within_group) -> list:
+        """Return the filter criteria for the groups this regrouper formed in this pool."""
+        return [
+            SyncGroup.grouper_id == self.id,
+            SyncGroup.within_group_id.is_(None)
+            if within_group is None
+            else SyncGroup.within_group_id == within_group.id,
+        ]
 
     def _split(self, within_group, members, stop_top_ups=False):
         """Form this pool's groups and return the participants to release.

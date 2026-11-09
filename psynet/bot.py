@@ -2,10 +2,12 @@ import json
 import time
 import uuid
 import warnings
+from datetime import timedelta
 from functools import cached_property
 from typing import List, Optional, Sequence, Union
 
 from dallinger import db
+from sqlalchemy import func
 
 from psynet.db import transaction
 
@@ -287,7 +289,7 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
     A bot test would otherwise wait out the regrouper's ``deadline`` or its
     next ``every`` tick, for example to test a round that starts without a
     member who is still reading their results. This moves the bots' arrivals
-    at the regrouper, and the previous splits of their pools, back by one
+    at the regrouper, and the latest split of their pools, back by one
     ``deadline`` (or ``every`` period), so the next check splits the pools as
     the deadline or tick would. Call it again for what happens after a
     second period, such as a player waiting alone sitting out with
@@ -310,41 +312,49 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
             bot.take_page()  # The fourth player is still reading.
         regroup_now(bots[:3], pairing)
     """
-    from datetime import timedelta
-
-    from sqlalchemy import or_
-
-    from .sync import ParticipantLinkBarrier, SyncGroup
-
     period = regrouper.deadline or regrouper.every
     if period is None:
         raise ValueError(
             f"Regrouper '{regrouper.id}' has no deadline or every, so it splits "
             "a pool as soon as it is complete; use advance_past_wait_pages."
         )
-    shift = timedelta(seconds=period)
     with transaction():
-        visits = ParticipantLinkBarrier.query.filter(
-            ParticipantLinkBarrier.barrier_id == regrouper.id,
-            ParticipantLinkBarrier.participant_id.in_([bot.id for bot in bots]),
-            ParticipantLinkBarrier.released.is_(False),
-        ).all()
-        pools = set()
-        for visit in visits:
-            visit.arrival_time -= shift
-            within_group = regrouper._within_group(visit.participant)
-            pools.add(None if within_group is None else within_group.id)
-        if pools:
-            within_id = SyncGroup.within_group_id
-            in_pools = [within_id.in_(pools - {None})]
-            if None in pools:
-                in_pools.append(within_id.is_(None))
-            previous_splits = SyncGroup.query.filter(
-                SyncGroup.grouper_id == regrouper.id, or_(*in_pools)
-            )
-            for group in previous_splits:
-                group.creation_time -= shift
+        participants = [Participant.query.get(bot.id) for bot in bots]
+        waiting = [p for p in participants if regrouper.id in p.active_barriers]
+        if not waiting:
+            raise ValueError(f"None of the bots is waiting at '{regrouper.id}'.")
+        _backdate_arrivals(regrouper, waiting, period)
+        for within_group in {regrouper._within_group(p) for p in waiting}:
+            _backdate_last_split(regrouper, within_group, period)
     advance_past_wait_pages(bots, timeout=timeout)
+
+
+def _backdate_arrivals(barrier, participants, seconds):
+    """Move the participants' current arrivals at ``barrier`` back by ``seconds``."""
+    for participant in participants:
+        participant.active_barriers[barrier.id].arrival_time -= timedelta(
+            seconds=seconds
+        )
+
+
+def _backdate_last_split(regrouper, within_group, seconds):
+    """Move a :class:`~psynet.sync.Regrouper` pool's latest split back by ``seconds``.
+
+    Only the groups formed within ``seconds`` of the latest one move, which
+    is enough to move the pool's last split time back by ``seconds``.
+    """
+    from .sync import SyncGroup
+
+    criteria = regrouper._pool_splits(within_group)
+    latest = (
+        db.session.query(func.max(SyncGroup.creation_time)).filter(*criteria).scalar()
+    )
+    if latest is None:
+        return
+    shift = timedelta(seconds=seconds)
+    recent = SyncGroup.query.filter(*criteria, SyncGroup.creation_time > latest - shift)
+    for group in recent:
+        group.creation_time -= shift
 
 
 def run_bots_to_completion(bots: List["BotDriver"], timeout: Optional[float] = 60.0):

@@ -145,9 +145,6 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   grouper or `Regrouper` before the `join`, not among its arguments, or
   everyone not yet grouped skips it. A round that is one cued trial needs
   only a `conditional` (see "Rounds as cued trials").
-- A `GroupBarrier` lets members who left its group through. For anyone who
-  was never in one, such as a player sat out of the first round, pass it
-  `pass_ungrouped=True`; otherwise they get an error.
 - Follow with a `conditional` on the same function for what a member who
   left, or anyone who never had a group, does instead, such as answering the
   rest of the question alone. With a `Regrouper` in the loop, it is also the
