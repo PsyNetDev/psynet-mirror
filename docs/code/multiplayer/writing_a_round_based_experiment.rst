@@ -21,17 +21,22 @@ Forming cohorts
 
 A :class:`~psynet.sync.SimpleGrouper` forms the cohorts. It starts a cohort
 of four as soon as four players are waiting, or a smaller one after a
-minute (``start_short_after``), and lets latecomers join until the cohort's
-second round starts (``join_existing_groups`` and ``join_criterion``; see
-:class:`~psynet.sync.SimpleGrouper`):
+minute (``start_short_after``), and lets latecomers join the cohort
+(``join_existing_groups``; see :class:`~psynet.sync.SimpleGrouper`):
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: SimpleGrouper(
    :end-before: Module(
    :dedent: 8
 
+A latecomer who joined after the first rounds couldn't catch up, so a
+:class:`~psynet.timeline.CodeBlock` at the start of each round closes the
+cohort once one of its players reaches the second round. It calls
+:meth:`~psynet.sync.SimpleSyncGroup.stop_top_ups`, after which nobody can
+join:
+
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :pyobject: cohort_accepts_newcomers
+   :pyobject: stop_newcomers
 
 Pairing players each round
 --------------------------
@@ -61,14 +66,13 @@ possible. ``waiting_message`` counts down to the deadline. See
 The regrouper keeps the round's bookkeeping, so the game doesn't need to
 store it in participant variables:
 
-- ``pairing.role(participant)`` is ``"proposer"`` or ``"responder"``;
 - ``pairing.rounds_played(participant)`` counts the pairs the player has
   joined, including one whose partner left or that they were removed from;
-- ``pairing.rounds_sat_out(participant)`` counts the rounds they sat out,
-  and ``pairing.sat_out(participant)`` says whether they sat out the
-  latest one.
+- ``pairing.rounds_sat_out(participant)`` counts the rounds they sat out.
 
-.. _rounds-cued-trials:
+Each player's role in the round is on their trial, as ``sync_group_role``
+(below). :class:`~psynet.sync.Regrouper` lists its other methods, such as
+``sat_out`` and ``role``.
 
 One trial per player per round
 ------------------------------
@@ -89,112 +93,12 @@ Each trial records the pair (``sync_group_id``), the player's role
 them after the pair ends. The ``Module`` gives the nodes a ``module_id`` to
 find them by when exporting.
 
-``cue`` numbers each group's rounds by itself, from 0:
-
-- A cue joins the group's newest node in the module while that round is
-  open and the player has no trial on it. A round is open until one of its
-  barriers releases the group, or until every other current member's trial
-  on it has ended.
-- Otherwise it starts the group's next round.
-
-So every pair here, new each round, plays round 0, while a fixed group cued
-in a loop plays rounds 0, 1, 2 and so on, whichever trial classes it cues.
-A member who joins it late joins its current round only until any barrier
-of that round releases the group. After that, even while the others are
-still on a page after the barrier, the newcomer starts the next round,
-which the others then join. This needs a barrier in each round, inside
-``show_trial`` after the answer page, as in the one below, so that no
-member ends a round before the others have cued it. A trial ends at the
-end of ``show_trial``, so with the barrier outside it (for example in
-``show_feedback`` or after the cue), a slow member could find the round
-finished by a fast teammate and start or skip to the next one, even in a
-group without newcomers when it passes ``round=``. A round's later
-barriers don't wait for a member who is already in a round the group
-played after it, such as that newcomer: a barrier where a waiting member's
-current trial is on one of the group's rounds waits only for the members
-in that round, in an earlier one, or in none yet. A barrier the group
-passes once, before the rounds, needs ``pass_newcomers=True`` (see
-:ref:`sync-newcomers-at-passed-barriers`).
-
-So a trial has two round counters. ``sync_group_round`` counts the group's
-rounds, and is ``None`` on a trial played without a group. Use it for what
-the group shares, such as what a round shows and the group's rows in the
-export. ``trial.position`` counts the player's own trials in the
-module, grouped or not. Use it for the player's own sequence, such as the
-round in a per-player export when groups change every round. The two agree
-only in a fixed group that every member joined before the loop. In a fixed
-group's loop with ``round=`` (below), ``sync_group_round`` is the loop
-value.
-
-Every trial in a round gets the definition of the round's first cue. Here,
-a definition taken from the player's own position in the loop, as in
-``logic=lambda i: OfferTrial.cue({"block": i})``, would fail: a pair that
-the regrouper forms from players at different rounds would cue two
-definitions for one round and get a ``ValueError``. Use a function taking
-``round`` or ``group`` instead, such as
-``OfferTrial.cue(lambda round: {"block": round})``.
-
-.. _rounds-fixed-group-loop:
-
-A fixed group that plays a loop of rounds together should pass the loop
-value as ``round=``:
-
-.. code-block:: python
-
-    for_loop(
-        label="questions",
-        iterate_over=range(len(QUESTIONS)),
-        logic=lambda i: EstimateTrial.cue({"question": i}, round=i),
-        time_estimate_per_iteration=EstimateTrial.time_estimate,
-    )
-
-Each iteration is then the group's round of that number, whoever cues it
-first, so its definition can come from the loop. A member who joins late
-skips the rounds that the group finished without them: rounds where they
-have no trial and that are no longer open. They play the rest, and the
-barriers of a round they skipped don't wait for them. A skipped
-round shows nothing and earns no time credit, but the progress bar moves on
-as if it had been played. A skipped cue leaves ``participant.current_trial``
-as ``None``, so code after the cue in the same iteration that reads the
-trial, such as a page showing ``participant.current_trial.answer``, should
-check for it first:
-
-.. code-block:: python
-
-    logic=lambda i: join(
-        EstimateTrial.cue({"question": i}, round=i),
-        conditional(
-            "played_round",
-            lambda participant: participant.current_trial is not None,
-            PageMaker(
-                lambda participant: InfoPage(
-                    f"You answered {participant.current_trial.answer}."
-                ),
-                time_estimate=5,
-            ),
-        ),
-    )
-
-A member who leaves the group plays the remaining
-iterations alone, with the same loop values. Rounds are ordered by when
-the group first plays them, so the loop values needn't increase. Don't
-pass ``round=`` with a
-regrouper: its groups mix players at different loop positions, whose trials
-would be split across rounds.
-
-Classes cued in the same open round share its node and definition: if the
-members cue different classes, such as an offer trial for the proposer and
-a reply trial for the responder, their trials share the node. Put
-role-specific content in the definition, keyed by role, or derive it from
-``self.sync_group_role``. A round with two phases, such as an offer and a
-reply, is normally one trial class with several pages. Only phases played
-one after the other by trials of two classes need ``round=``, because the
-second cue would otherwise start the next round, the player already having
-a trial on the round's node. Pass both cues the same ``round=``, such as
-the loop value in a fixed group's loop. A member with a trial in the round
-joins it even after its barrier has released the group, while a late
-joiner without one skips the whole round, both phases, and the second
-phase's barriers don't wait for them.
+``cue`` numbers each group's rounds from 0, so every pair here, new each
+round, plays round 0, and a definition must not depend on the player's own
+position in the loop. :ref:`rounds-cued-trials` explains when a cue joins a
+round, a trial's two round counters (``sync_group_round`` and
+``position``), a fixed group's loop with ``round=``, and several trial
+classes in one round.
 
 The ``switch`` decides once, before the trial: a player in a pair gets
 the trial, one who sat out gets a page instead (see
@@ -245,9 +149,13 @@ Moving slow players on
 
 The barrier after the decision page waits for
 both partners. A player who hasn't reached it within ``late_after`` seconds
-of the round's start is late, and with ``late_action="leave_group"`` is removed
-from the pair, so that their partner carries on alone (see
-:class:`~psynet.sync.GroupBarrier` for both options). A player on a page
+of the round's start is late. A late player has usually closed their page,
+so with ``late_action="leave_all_groups"`` they are removed from the pair and
+from the cohort: their partner carries on alone, and the next split doesn't
+wait for them. The narrower ``late_action="leave_group"`` removes them from
+the pair only, so the next split would wait for them until its deadline
+(see :class:`~psynet.sync.GroupBarrier` and :ref:`sync-leaving-a-group`).
+A player on a page
 with a time limit is not late before that limit has run out and an answer
 sent at the deadline has had 10 seconds to arrive, so the late limit need
 not be longer than the page's time limit.
@@ -273,23 +181,15 @@ results, count towards it: give them a time limit too, or make
 partner went on without you. Please continue." on the progress bar (pass
 ``on_arrival_message`` to the barrier to change it).
 
-With ``late_action="leave_group"`` a late player would leave the pair only
-(see :ref:`sync-leaving-a-group`), so they would still be in the cohort, and
-the next split would wait for them until its deadline. A late player has
-usually closed their page, so the demo uses ``late_action="leave_all_groups"``,
-which takes them out of the cohort too. The barrier checks for late players
-only while their partner waits at it, so if neither partner comes back, the
-next split waits for its deadline. A late player who comes back is told that
-they were away, and their game ends.
+The barrier checks for late players only while their partner waits at it,
+so if neither partner comes back, the next split waits for its deadline. A
+late player who comes back is told that they were away, and their game ends.
 
-The cohort's grouper sets ``below_quorum="continue_without_group"``. In this
-demo it never takes effect: the cohort accepts top-ups and the demo never
-stops them, so the cohort isn't dissolved here, and ``keep_playing`` (below)
-ends the game once fewer than two players are left. It makes the recipe
-safe to copy into a cohort without top-ups, or one whose top-ups stop (see
-:ref:`groups_below_min_size`), where removing a late player would dissolve
-the cohort if that left it below its quorum, and the default
-``below_quorum="fail"`` would fail the players who were on time.
+Once the cohort has stopped top-ups, removing a late player dissolves it if
+that leaves it below its quorum (see :ref:`groups_below_min_size`). The
+default ``below_quorum="fail"`` would then fail the players who were on
+time, so the cohort's grouper sets ``below_quorum="continue_without_group"``,
+and they carry on without the cohort, which ends their game.
 
 A player removed from their pair finishes the trial: its later group
 barriers let them straight through, and its feedback tells them they were
@@ -301,7 +201,7 @@ Scoring the round
 The barrier's ``on_release`` scores the pair once both have arrived, or once
 the one who is left has. It takes ``trials``, the members' trials, and
 ``node``, the node they share, so a ``@classmethod`` on the trial class can
-save the pair's offer and result on the node and each player's coins on
+save the pair's players, offer and result on the node and each player's coins on
 their trial, where a page reloaded later still finds them. When a partner
 left or ran out of time, nobody is paid. The ``left`` argument lists the
 members who left the pair this round, and
@@ -373,17 +273,15 @@ Players who finish leave the cohort with
 :func:`leave_group("cohort") <psynet.sync.leave_group>`, so that the
 regrouper doesn't wait for them in later rounds. It removes them with
 ``reason="finished"``, which shows them as "(finished)" and never dissolves
-the cohort. This cohort accepts top-ups and the demo never stops them, so
-another reason wouldn't dissolve it either, but ``"finished"`` keeps the
-recipe safe to copy into a cohort without top-ups, or one that stops them,
-where the last players finishing their rounds could otherwise leave it
-below its quorum (see :ref:`groups_below_min_size`).
+the cohort, so players who finish first don't dissolve the closed cohort
+while others are still playing.
 
 Exporting the rounds
 --------------------
 
-The results stay on the trials and nodes, so ``get_basic_data`` builds one
-table per player per pair from the trials and one per pair from the nodes.
+The results stay on the trials and nodes, so ``get_basic_data`` builds a
+table with one row per player and round from the trials, and one with a row
+per pair from the nodes.
 Rounds a player sat out have no trial, so a third table counts them with the
 regrouper (see :doc:`/data/basic_data`):
 

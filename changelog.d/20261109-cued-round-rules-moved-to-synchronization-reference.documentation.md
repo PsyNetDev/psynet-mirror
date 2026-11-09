@@ -1,0 +1,1 @@
+Moved the rules for rounds of cued trials (when a cue joins a round, `sync_group_round` versus `position`, `round=` in a fixed group's loop, and several trial classes in one round) from the round-based tutorial into a new "Rounds of cued trials" section of "Groups and barriers in detail", and made the tutorial follow the `ultimatum_pairing` demo more closely.

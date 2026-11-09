@@ -6,7 +6,6 @@ from markupsafe import Markup
 
 import psynet.experiment
 from psynet.bot import Bot, BotDriver, advance_past_wait_pages
-from psynet.experiment import get_trial_maker
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, Prompt, SliderControl
 from psynet.page import InfoPage
@@ -14,10 +13,9 @@ from psynet.participant import Participant
 from psynet.sync import SimpleGrouper, SyncGroup
 from psynet.timeline import Timeline, join
 from psynet.trial.gibbs import GibbsNode, GibbsTrial, GibbsTrialMaker
-from psynet.utils import as_plain_text, get_logger
+from psynet.utils import as_plain_text
 
-logger = get_logger()
-
+GROUP = "gibbs"
 TARGETS = ["tree", "rock", "carrot", "banana"]
 COLORS = ["red", "green", "blue"]
 
@@ -32,7 +30,6 @@ class ColorSliderPage(ModularPage):
         reverse_scale: bool,
         directional: bool,
         time_estimate=None,
-        **kwargs,
     ):
         assert 0 <= selected_idx < len(COLORS)
         self.selected_idx = selected_idx
@@ -43,9 +40,6 @@ class ColorSliderPage(ModularPage):
         not_selected_colors = [COLORS[i] for i in not_selected_idxs]
         not_selected_values = [starting_values[i] for i in not_selected_idxs]
         hidden_inputs = dict(zip(not_selected_colors, not_selected_values))
-        kwargs["template_arg"] = {
-            "hidden_inputs": hidden_inputs,
-        }
         super().__init__(
             label,
             prompt,
@@ -137,8 +131,8 @@ class CustomNode(GibbsNode):
 
 trial_maker = GibbsTrialMaker(
     id_="gibbs_demo",
-    start_nodes=lambda: [CustomNode(context={"target": random.sample(TARGETS, 1)[0]})],
-    sync_group_type="gibbs",
+    start_nodes=lambda: [CustomNode(context={"target": random.choice(TARGETS)})],
+    sync_group_type=GROUP,
     trial_class=CustomTrial,
     node_class=CustomNode,
     chain_type="within",
@@ -158,22 +152,14 @@ trial_maker = GibbsTrialMaker(
 
 
 def is_group_joinable(group: SyncGroup, participant: Participant):
-    trial_maker_id = "gibbs_demo"
-
+    """Let a newcomer join while the group's leader has more than one trial left."""
     leader = group.leader
-    leader_still_in_trial_maker = leader.module_id == trial_maker_id
-    if not leader_still_in_trial_maker:
+    if leader.module_id != trial_maker.id:
         return False
-
-    leader_n_trials_in_trial_maker = len(
-        [t for t in leader.all_trials if t.trial_maker_id == trial_maker_id]
+    n_trials_left = trial_maker.max_trials_per_participant - len(
+        trial_maker.get_participant_trials(leader)
     )
-    leader_n_trials_left = (
-        get_trial_maker(trial_maker_id).max_trials_per_participant
-        - leader_n_trials_in_trial_maker
-    )
-
-    return leader_n_trials_left > 1
+    return n_trials_left > 1
 
 
 class Exp(psynet.experiment.Experiment):
@@ -182,7 +168,7 @@ class Exp(psynet.experiment.Experiment):
     timeline = Timeline(
         InfoPage("Welcome to the experiment!", time_estimate=5),
         SimpleGrouper(
-            group_type="gibbs",
+            group_type=GROUP,
             initial_group_size=3,
             quorum=3,
             join_existing_groups=True,
@@ -286,16 +272,3 @@ class Exp(psynet.experiment.Experiment):
             page = bot.get_current_page()
             text = as_plain_text(page.prompt.text)
             assert "That's the end!" in text
-
-    # Uncomment the following to run bots in the background of the experiment.
-    # @staticmethod
-    # @scheduled_task("interval", seconds=1.0, max_instances=1)
-    # def bot_launcher():
-    #     from psynet.experiment import get_experiment, is_experiment_launched
-
-    #     n_bots = Bot.query.filter_by(status="working").count()
-    #     if is_experiment_launched() and n_bots < 3:  # allow only fixed number of bots
-    #         WorkerAsyncJob(
-    #             function=get_experiment().run_bot, arguments={"time_factor": 0.9}
-    #         ).enqueue()
-    #         db.session.commit()

@@ -245,6 +245,122 @@ few seconds of the time becoming known:
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: round_message
 
+.. _rounds-cued-trials:
+
+Rounds of cued trials
+~~~~~~~~~~~~~~~~~~~~~
+
+This section is the reference for rounds played as one cued trial per
+player, on a trial class that sets ``sync_group_type``, whether the groups
+are fixed or formed anew each round. ``cue`` numbers each group's rounds by
+itself, from 0:
+
+- A cue joins the group's newest node in the module while that round is
+  open and the player has no trial on it. A round is open until one of its
+  barriers releases the group, or until every other current member's trial
+  on it has ended.
+- Otherwise it starts the group's next round.
+
+So a group formed anew each round, such as a pair made by a
+:class:`~psynet.sync.Regrouper`, plays only round 0, while a fixed group cued
+in a loop plays rounds 0, 1, 2 and so on, whichever trial classes it cues.
+A member who joins it late joins its current round only until any barrier
+of that round releases the group. After that, even while the others are
+still on a page after the barrier, the newcomer starts the next round,
+which the others then join. This needs a barrier in each round, inside
+``show_trial`` after the answer page, so that no
+member ends a round before the others have cued it. A trial ends at the
+end of ``show_trial``, so with the barrier outside it (for example in
+``show_feedback`` or after the cue), a slow member could find the round
+finished by a fast teammate and start or skip to the next one, even in a
+group without newcomers when it passes ``round=``. A round's later
+barriers don't wait for a member who is already in a round the group
+played after it, such as that newcomer: a barrier where a waiting member's
+current trial is on one of the group's rounds waits only for the members
+in that round, in an earlier one, or in none yet. A barrier the group
+passes once, before the rounds, needs ``pass_newcomers=True`` (see
+:ref:`sync-newcomers-at-passed-barriers`).
+
+So a trial has two round counters. ``sync_group_round`` counts the group's
+rounds, and is ``None`` on a trial played without a group. Use it for what
+the group shares, such as what a round shows and the group's rows in the
+export. ``trial.position`` counts the player's own trials in the
+module, grouped or not. Use it for the player's own sequence, such as the
+round in a per-player export when groups change every round. The two agree
+only in a fixed group that every member joined before the loop. In a fixed
+group's loop with ``round=`` (below), ``sync_group_round`` is the loop
+value.
+
+Every trial in a round gets the definition of the round's first cue. With
+a regrouper, a definition taken from the player's own position in the loop,
+as in ``logic=lambda i: OfferTrial.cue({"block": i})``, would fail: a pair that
+the regrouper forms from players at different rounds would cue two
+definitions for one round and get a ``ValueError``. Use a function taking
+``round`` or ``group`` instead, such as
+``OfferTrial.cue(lambda round: {"block": round})``.
+
+.. _rounds-fixed-group-loop:
+
+A fixed group that plays a loop of rounds together should pass the loop
+value as ``round=``:
+
+.. code-block:: python
+
+    for_loop(
+        label="questions",
+        iterate_over=range(len(QUESTIONS)),
+        logic=lambda i: EstimateTrial.cue({"question": i}, round=i),
+        time_estimate_per_iteration=EstimateTrial.time_estimate,
+    )
+
+Each iteration is then the group's round of that number, whoever cues it
+first, so its definition can come from the loop. A member who joins late
+skips the rounds that the group finished without them: rounds where they
+have no trial and that are no longer open. They play the rest, and the
+barriers of a round they skipped don't wait for them. A skipped
+round shows nothing and earns no time credit, but the progress bar moves on
+as if it had been played. A skipped cue leaves ``participant.current_trial``
+as ``None``, so code after the cue in the same iteration that reads the
+trial, such as a page showing ``participant.current_trial.answer``, should
+check for it first:
+
+.. code-block:: python
+
+    logic=lambda i: join(
+        EstimateTrial.cue({"question": i}, round=i),
+        conditional(
+            "played_round",
+            lambda participant: participant.current_trial is not None,
+            PageMaker(
+                lambda participant: InfoPage(
+                    f"You answered {participant.current_trial.answer}."
+                ),
+                time_estimate=5,
+            ),
+        ),
+    )
+
+A member who leaves the group plays the remaining
+iterations alone, with the same loop values. Rounds are ordered by when
+the group first plays them, so the loop values needn't increase. Don't
+pass ``round=`` with a
+regrouper: its groups mix players at different loop positions, whose trials
+would be split across rounds.
+
+Classes cued in the same open round share its node and definition: if the
+members cue different classes, such as an offer trial for the proposer and
+a reply trial for the responder, their trials share the node. Put
+role-specific content in the definition, keyed by role, or derive it from
+``self.sync_group_role``. A round with two phases, such as an offer and a
+reply, is normally one trial class with several pages. Only phases played
+one after the other by trials of two classes need ``round=``, because the
+second cue would otherwise start the next round, the player already having
+a trial on the round's node. Pass both cues the same ``round=``, such as
+the loop value in a fixed group's loop. A member with a trial in the round
+joins it even after its barrier has released the group, while a late
+joiner without one skips the whole round, both phases, and the second
+phase's barriers don't wait for them.
+
 Keeping a group in step
 -----------------------
 
