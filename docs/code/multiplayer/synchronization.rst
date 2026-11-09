@@ -278,11 +278,11 @@ the results it would have stored, so read them with
 ``participant.var.get("score")``, which returns ``None`` when it isn't set.
 If the group dissolves while some members are waiting at the barrier,
 ``on_dissolve`` runs for them instead, before they leave the group, with the
-same arguments except ``leader`` and ``participant``.
-``participants`` are then the members waiting at the barrier. Dissolving
-waits for any member who is in the middle of another request, usually a
-second or two once that request finishes, so ``on_dissolve`` is called once, with every member waiting at the barrier. A
-quiz can therefore still score the last question for those who answered it:
+same arguments except ``leader`` and ``participant``. ``participants`` are
+then the members waiting at the barrier. Dissolving waits for any member who
+is in the middle of another request, usually a second or two once that
+request finishes, so ``on_dissolve`` is called once, with every member
+waiting at the barrier. A quiz can therefore still score the last question for those who answered it:
 
 .. code-block:: python
 
