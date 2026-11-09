@@ -271,8 +271,11 @@ on their trial, where ``show_feedback`` reads it:
 ``trials`` (each member's current trial, in the same order as
 ``participants``, or ``None`` for a member with none; its ``answer`` holds
 the answer so far), ``node`` (the group's
-:class:`~psynet.trial.main.SyncGroupNode` for the round if those trials are
-on it, ignoring members with no current trial, and otherwise ``None``),
+:class:`~psynet.trial.main.SyncGroupNode` for the round if the members'
+trials on the group's nodes all share one, and otherwise ``None``;
+when it is set, ``trials`` holds ``None`` for a member whose trial is not on
+it, such as a newcomer released at a feedback barrier during a practice
+trial),
 ``leader`` and ``barrier`` (``participant`` is the leader too, kept for
 compatibility). In ``rock_paper_scissors`` every pair plays on the same
 node, which is not a group's node, so ``node`` is ``None`` and the results

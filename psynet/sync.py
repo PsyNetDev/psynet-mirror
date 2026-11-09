@@ -1689,8 +1689,10 @@ class GroupBarrier(Barrier):
         ``sync_group_type`` that the barrier is part of, and ``None`` for a
         member with none), ``node`` (the
         group's :class:`~psynet.trial.main.SyncGroupNode` for the round, if
-        all those trials are on it, ignoring members with no current trial,
-        and otherwise ``None``), ``leader`` (the
+        the members' trials on the group's nodes all share one, and
+        otherwise ``None``; when it is set, ``trials`` holds ``None`` for a
+        member whose trial is not on it, such as a newcomer released at a
+        feedback barrier during a practice trial), ``leader`` (the
         group's leader, who may be missing from ``participants``),
         ``participant`` (the same object as ``leader``, kept for
         compatibility), ``left`` (the members who left the group since its
@@ -2143,17 +2145,12 @@ class GroupBarrier(Barrier):
                 if self.stop_top_ups and hasattr(group, "stop_top_ups"):
                     group.stop_top_ups()
 
-                trials = [p.current_trial for p in released]
-                node = _shared_node(group, trials)
+                trials, node = _group_round_trials(group, released)
                 if node is not None:
                     # Closes the round to newcomers: their cues start the next.
                     node.sync_group_closed = True
                     for trial in trials:
-                        if (
-                            trial is not None
-                            and trial.node_id == node.id
-                            and trial.sync_group_outcome is None
-                        ):
+                        if trial is not None and trial.sync_group_outcome is None:
                             trial.sync_group_outcome = "stayed"
                 if self.on_release:
                     try:
@@ -4586,15 +4583,18 @@ def _record_leaving_the_round(group, participant, reason):
     trial.sync_group_outcome = reason or "removed"
 
 
-def _shared_node(group, trials):
-    """Return ``group``'s :class:`SyncGroupNode` that its ``trials`` share, or ``None``.
+def _group_round_trials(group, participants):
+    """Return the ``trials`` and ``node`` that barrier callbacks of ``group`` get for ``participants``.
 
-    Trials of other groups or off a ``SyncGroupNode``, such as a newcomer's
-    practice trial, and ``None`` for members with no current trial, are
-    ignored.
+    ``node`` is ``group``'s :class:`SyncGroupNode` that the participants'
+    current trials share, ignoring trials of other groups or off a
+    ``SyncGroupNode``, such as a newcomer's practice trial. ``trials`` holds
+    each participant's current trial, or ``None`` if they have none or, when
+    there is a ``node``, if their trial is not on it.
     """
     from .trial.main import SyncGroupNode
 
+    trials = [p.current_trial for p in participants]
     nodes = {
         trial.node_id: trial.node
         for trial in trials
@@ -4603,8 +4603,9 @@ def _shared_node(group, trials):
         and trial.node.sync_group_id == group.id
     }
     if len(nodes) != 1:
-        return None
-    return next(iter(nodes.values()))
+        return trials, None
+    node = next(iter(nodes.values()))
+    return [t if t is not None and t.node_id == node.id else None for t in trials], node
 
 
 class _BarrierScope(NamedTuple):
@@ -4851,13 +4852,13 @@ def _run_on_dissolve(group, members):
                 participant
             )
     for barrier, participants in waiting.values():
-        trials = [p.current_trial for p in participants]
+        trials, node = _group_round_trials(group, participants)
         try:
             barrier.on_dissolve(
                 group=group,
                 participants=participants,
                 trials=trials,
-                node=_shared_node(group, trials),
+                node=node,
                 barrier=barrier,
             )
         except Exception as err:

@@ -62,6 +62,13 @@ class PairTrial(Trial):
         for trial in trials:
             trial.var.scored = True
 
+    @classmethod
+    def record_release(cls, participants, trials, node):
+        _released.append((participants, trials, node))
+
+
+_released = []
+
 
 def _paired(exp):
     cohort, pairs = _cohort_and_pairs(exp, 2)
@@ -238,8 +245,19 @@ def test_a_feedback_barrier_closes_the_round_despite_a_newcomer_s_other_trial(
     (newcomer,) = _working_participants(exp, 1)
     SoloTrial.cue({})[0].consume(exp, newcomer)
     pair.add_participant(newcomer)
-    _arrive(exp, GroupBarrier("feedback", group_type="pair"), [*cohort, newcomer])
+    _released.clear()
+    barrier = GroupBarrier(
+        "feedback", group_type="pair", on_release=PairTrial.record_release
+    )
+    _arrive(exp, barrier, [*cohort, newcomer])
 
+    ((participants, trials, node),) = _released
+    node_of = {p.id: p.current_trial.node for p in cohort}
+    assert node is node_of[cohort[0].id] is node_of[cohort[1].id]
+    assert {p.id: t for p, t in zip(participants, trials)} == {
+        **{p.id: p.current_trial for p in cohort},
+        newcomer.id: None,
+    }
     assert cohort[0].current_trial.node.sync_group_closed
     assert [p.current_trial.sync_group_outcome for p in [*cohort, newcomer]] == [
         "stayed",
