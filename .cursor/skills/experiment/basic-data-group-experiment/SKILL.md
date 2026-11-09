@@ -33,7 +33,7 @@ become one cued trial per player per round. Use these columns rather than
 matching timestamps across tables.
 
 - Trials of a trial maker with `sync_group_type`, and cued trials whose
-  class sets `sync_group_type` (`Trial.cue(..., round=number)`), have
+  class sets `sync_group_type` (`Trial.cue(...)`), have
   `sync_group_id`, `sync_group_role` and `sync_group_round`. A group's
   trials with the same `sync_group_id` and `sync_group_round` are one round,
   including a latecomer's. Don't match rounds by `position`, which counts
