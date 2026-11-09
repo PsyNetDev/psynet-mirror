@@ -113,7 +113,9 @@ def get_timeline():
             for_loop(
                 label="questions",
                 iterate_over=range(len(QUESTIONS)),
-                logic=cue_question,
+                # Top-ups stop when the game starts, so a group's members all
+                # reach each question together and cue the same definition.
+                logic=lambda question: EstimateTrial.cue({"question": question}),
                 time_estimate_per_iteration=EstimateTrial.time_estimate,
                 expected_repetitions=len(QUESTIONS),
             ),
@@ -123,17 +125,6 @@ def get_timeline():
 
 def left_group(participant):
     return not participant.in_sync_group(GROUP)
-
-
-def cue_question(question):
-    """Cue the group's next question, or this loop's question for a player alone."""
-
-    def question_for_round(round):
-        # A group's round is the same for all its members; a player without a
-        # group has no round.
-        return {"question": question if round is None else round}
-
-    return EstimateTrial.cue(question_for_round)
 
 
 class EstimateTrial(Trial):
