@@ -141,8 +141,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   own page there.
 - With `join_existing_groups=True`, if newcomers must not join a group they
   couldn't catch up with (for example a nearly finished chain), pass
-  `join_criterion=...`; it only turns that person away (see the
-  synchronization docs).
+  `join_criterion=...`; it turns that newcomer away but doesn't stop the
+  group waiting for others; see "Groups below quorum" in
+  `code/multiplayer/synchronization`.
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with
   filler work via `trial_maker.custom(...)`, as in `sync_quorum`.
 - For chain or Gibbs designs, distinguish true co-presence from async
