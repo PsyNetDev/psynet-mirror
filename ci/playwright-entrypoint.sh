@@ -11,7 +11,8 @@
 # with its log rather than leave the browser waiting for a display.
 set -eu
 pulseaudio --daemonize --exit-idle-time=-1 --log-target=stderr --log-level=error \
-    --load="module-null-sink sink_name=null" 2>/dev/null || true
+    --load="module-null-sink sink_name=null" ||
+    echo "PulseAudio did not start, so audio may stay suspended in Firefox." >&2
 
 if [ "${HEADLESS:-TRUE}" = false ] && [ -z "${DISPLAY:-}" ]; then
     Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &

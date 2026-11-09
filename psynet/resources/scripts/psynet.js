@@ -532,6 +532,9 @@
       psynet.pageLoaded = false;
       psynet.nextPagePending = false;
       psynet.media.audioRequired = false;
+      // A sound dialog left open by the previous page belongs to it.
+      $("#resume-modal").css("display", "none");
+      $("#resume-button").off("click");
       psynet.clearStageResponseHandler();
       psynet.response.staged = {
         rawAnswer: null,
@@ -2326,10 +2329,11 @@
       psynet.media.audioContext = context;
     };
 
-    // Page code that plays or records audio through psynet.media.audioContext
-    // calls this before trialConstruct, so psynet.media.init() makes sure audio
-    // can start. Pages that preload audio need no call. resetPageState clears
-    // the flag between pages.
+    // Page code that plays or records audio without an audio media request
+    // (through psynet.media.audioContext, Tone.js or an unmuted <video>) calls
+    // this before trialConstruct, so psynet.media.init() makes sure audio can
+    // start. Pages that preload audio need no call. resetPageState clears the
+    // flag between pages.
     psynet.media.audioRequired = false;
     psynet.media.requireAudio = function () {
       psynet.media.audioRequired = true;
@@ -2348,16 +2352,27 @@
     // settle quickly is treated as refused.
     const AUDIO_RESUME_WAIT_MS = 500;
 
+    let waitForResume = function (resumed) {
+      return Promise.race([
+        resumed.catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, AUDIO_RESUME_WAIT_MS)),
+      ]);
+    };
+
     let askUserToEnableAudio = function () {
       return new Promise((resolve) => {
         let modal = $("#resume-modal");
         modal.css("display", "block");
         $("#resume-button").one("click", async function () {
           // resume() must run synchronously inside the click for Safari.
+          // Tone.js keeps its own AudioContext, so resume that one too.
           let resumed = psynet.media.audioContext.resume();
+          if (window.Tone) {
+            Tone.start().catch(() => {});
+          }
           modal.css("display", "none");
           $("#js-psych").trigger("focus");
-          await resumed;
+          await waitForResume(resumed);
           resolve();
         });
       });
@@ -2370,12 +2385,10 @@
         return;
       }
       if (navigator.userActivation?.hasBeenActive !== false) {
-        await Promise.race([
-          context.resume(),
-          new Promise((resolve) => setTimeout(resolve, AUDIO_RESUME_WAIT_MS)),
-        ]);
+        await waitForResume(context.resume());
       }
-      if (context.state === "suspended") {
+      // Ask again if the browser still refuses after a click.
+      while (context.state === "suspended") {
         psynet.log.info(
           "The browser blocked audio until the participant clicks; " +
             "asking them to enable sound.",

@@ -150,6 +150,10 @@
         let videoPlayer = document.getElementById('prompt');
         videoPlayer.muted = muted;
         videoPlayer.controls = controls;
+        if (!muted) {
+            // Browsers block an unmuted video until the participant clicks.
+            psynet.media.requireAudio();
+        }
 
         let hideVideo = function() {
             videoPlayer.style.visibility = "hidden";
@@ -284,6 +288,7 @@
         let jsSynthState = psynet.getJsSynthState();
         jsSynthState.stimulus = stimulus;
         jsSynthState.options = options;
+        psynet.media.requireAudio();
 
         jsSynthState.defaultParams = { // Default parameters to use if not otherwise specified by backend.
             "attack": 0.2, // Attack phase duration in seconds

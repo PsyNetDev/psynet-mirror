@@ -153,6 +153,17 @@ triggers to the same event. :class:`~psynet.modular_page.AudioPrompt` makes
    :pyobject: AudioPrompt.update_events
    :dedent: 4
 
+Browsers keep audio suspended until the participant clicks on the page. On a
+page that preloads audio as a media request, PsyNet asks the participant to
+turn on sound when needed. A custom component that plays or records sound in
+another way, for example through ``psynet.media.audioContext``, Tone.js or an
+unmuted ``<video>``, should declare it in its page script, before
+``trialConstruct``:
+
+.. code-block:: javascript
+
+    psynet.media.requireAudio();
+
 Measuring reaction time
 -----------------------
 

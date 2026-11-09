@@ -1,6 +1,7 @@
 from markupsafe import Markup
 
 import psynet.experiment
+from psynet.js_synth import JSSynth, Note
 from psynet.modular_page import AudioPrompt, ModularPage
 from psynet.page import InfoPage
 from psynet.timeline import Timeline
@@ -19,6 +20,18 @@ class Exp(psynet.experiment.Experiment):
             AudioPrompt(
                 "static/silence.wav",
                 Markup('<p id="audio-page">This page plays audio.</p>'),
+            ),
+            time_estimate=1,
+        ),
+        InfoPage(
+            Markup('<p id="no-audio-again">This page has no audio either.</p>'),
+            time_estimate=1,
+        ),
+        ModularPage(
+            "synth_page",
+            JSSynth(
+                Markup('<p id="synth-page">This page plays a synthesized note.</p>'),
+                [Note(60, duration=0.2)],
             ),
             time_estimate=1,
         ),

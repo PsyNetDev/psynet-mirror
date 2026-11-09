@@ -35,6 +35,18 @@ async function refuseAudioUntilAllowed(context) {
   });
 }
 
+async function enableAudio(page) {
+  await page.evaluate(() => {
+    window.__allowAudio = true;
+  });
+  await page.locator("#resume-button").click();
+  await waitForTimelinePageReady(page, STEP_TIMEOUT_MS);
+  await expect(page.locator("#resume-modal")).toBeHidden();
+  expect(await page.evaluate(() => window.psynet.media.audioContext.state)).toBe(
+    "running"
+  );
+}
+
 test(
   "asks to turn on sound only on audio pages the browser blocks",
   { tag: "@both" },
@@ -59,15 +71,29 @@ test(
       const enableButton = experimentPage.locator("#resume-button");
       await expect(enableButton).toBeVisible({ timeout: STEP_TIMEOUT_MS });
 
-      await experimentPage.evaluate(() => {
-        window.__allowAudio = true;
-      });
+      // A click the browser still refuses brings the dialog back.
       await enableButton.click();
+      await expect(enableButton).toBeVisible({ timeout: STEP_TIMEOUT_MS });
+      await enableAudio(experimentPage);
+
+      // The next page without audio does not ask, even if audio is blocked.
+      await experimentPage.evaluate(() => {
+        window.__allowAudio = false;
+      });
+      await clickNextAndWait(experimentPage);
+      await expect(experimentPage.locator("#no-audio-again")).toBeVisible({
+        timeout: STEP_TIMEOUT_MS,
+      });
       await waitForTimelinePageReady(experimentPage, STEP_TIMEOUT_MS);
       await expect(experimentPage.locator("#resume-modal")).toBeHidden();
-      expect(
-        await experimentPage.evaluate(() => window.psynet.media.audioContext.state)
-      ).toBe("running");
+
+      // JSSynth plays through Tone.js and declares that it needs audio.
+      await clickNextAndWait(experimentPage);
+      await expect(experimentPage.locator("#synth-page")).toBeVisible({
+        timeout: STEP_TIMEOUT_MS,
+      });
+      await expect(enableButton).toBeVisible({ timeout: STEP_TIMEOUT_MS });
+      await enableAudio(experimentPage);
       await assertNoBackendError(experimentPage);
     });
   }
