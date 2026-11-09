@@ -60,7 +60,7 @@ the grouper has a ``waiting_screen`` (see below).
     A function of ``group`` and ``participant`` that returns whether the
     participant may join that group. Only used with
     ``join_existing_groups=True``. Returning ``False`` only turns that
-    newcomer away; it doesn't stop top-ups (see `Groups below quorum`_).
+    newcomer away (see `Groups below quorum`_).
 
 ``start_short_after`` (default: ``None``)
     Seconds after which a smaller group may start. Once the longest-waiting
@@ -408,6 +408,8 @@ in a pair, where the partner's arrival releases the barrier at once:
         waiting_message="Waiting for your partner…",
         waiting_screen=your_choice,
     )
+
+.. _sync-showing-the-group:
 
 Showing the group
 ~~~~~~~~~~~~~~~~~
@@ -883,7 +885,8 @@ the notice appears on their next page.
 Members who stay in the group get no notice when someone leaves; members
 whose group ended under them are told on their next page. A
 :class:`~psynet.group_prompt.GroupPrompt` marks the member who left, for
-example "(dropped out)", and the barriers stop waiting for them.
+example "(dropped out)", unless the group still accepts top-ups (see
+:ref:`sync-showing-the-group`), and the barriers stop waiting for them.
 
 For the rest of the timeline:
 
