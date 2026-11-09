@@ -141,8 +141,8 @@ The experiment builds the page again when the response arrives, re-running a
 checks the answer against the choices of that new page. The choices must
 therefore be the same each time the page is built. If you pick them at random,
 for example with ``random.sample``, pick them once and reuse them: choose them in
-the trial's ``finalize_definition``, store them in ``participant.var``, or seed
-the random generator. Otherwise the participant's click can be rejected with
+the trial's ``finalize_definition``, or store them in ``participant.var``.
+Otherwise the participant's click can be rejected with
 "You need to select an answer!"; the server log then shows a warning with the
 page label, the answer and the choices. If the choices cannot be kept stable,
 pass ``restrict_to_choices=False``.

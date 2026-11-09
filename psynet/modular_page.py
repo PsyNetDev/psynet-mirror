@@ -966,7 +966,7 @@ class OptionControl(Control):
     and checks the answer against the choices of that new page.
     So the choices must be the same each time the page is built:
     choose random choices once, for example in ``finalize_definition``,
-    store them in ``participant.var``, or seed the random generator.
+    or store them in ``participant.var``.
     Otherwise a genuine click can be rejected; if you cannot keep the choices stable,
     pass ``restrict_to_choices=False``.
 
