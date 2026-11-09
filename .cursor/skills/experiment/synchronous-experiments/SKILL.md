@@ -118,8 +118,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   group of at least the quorum (`start_short_with` overrides that). To let
   latecomers join only before the game starts, follow "Letting latecomers
   join before the game starts" in `code/multiplayer/synchronization`.
-  For a condition on each newcomer instead, such as a chain that is too far
-  along for them to catch up with, pass `join_criterion` (see
+  For a per-person condition (not a join window), such as a chain that is
+  too far along for them to catch up with, pass `join_criterion` (see
   `join_criterion` under "Forming groups" in
   `code/multiplayer/synchronization`).
   To let participants who find no group carry on alone instead of being
