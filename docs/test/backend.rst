@@ -32,7 +32,11 @@ How bots answer
 ---------------
 
 By default, a bot gives a valid answer to each page, such as a random choice
-from the options or a number in the allowed range. The ``bot_response``
+from the options or a number in the allowed range. PsyNet's built-in controls
+submit these default answers as the browser would, so they pass through the
+page's and the control's ``format_answer`` and are saved with the same type as
+a participant's answer: a ``NumberControl`` bot answer is a number, and a
+``RatingControl`` bot answer is the rating itself. The ``bot_response``
 argument of a page or control overrides this, either with a fixed value or with a
 function called each time a bot reaches the page. The function can take any
 of these arguments, which PsyNet passes by name: ``bot`` (the

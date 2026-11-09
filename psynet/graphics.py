@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from jinja2.utils import htmlsafe_json_dumps
 
+from .bot import BotResponse
 from .modular_page import Control, ModularPage, Prompt
 from .timeline import MediaSpec
 from .utils import is_valid_html5_id
@@ -797,7 +798,9 @@ class GraphicControl(GraphicMixin, Control):
                 coord = [obj.x, obj.y]
             except AttributeError:
                 coord = [random.randint(0, span) for span in self.dimensions]
-            return {"clicked_object": obj.id, "click_coordinates": coord}
+            return BotResponse(
+                raw_answer={"clicked_object": obj.id, "click_coordinates": coord}
+            )
 
         # html = (
         #         super().visualize_response(answer, response, trial) +

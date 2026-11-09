@@ -6,7 +6,7 @@ from flask import Flask
 from jinja2 import DictLoader
 from markupsafe import Markup
 
-from psynet.bot import Bot
+from psynet.bot import Bot, BotResponse
 from psynet.db import transaction
 from psynet.demography.general import CountryOfBirth, MotherTongue
 from psynet.experiment import get_experiment
@@ -22,13 +22,16 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     Prompt,
     PushButtonControl,
     RadioButtonControl,
+    RatingControl,
     RatingScale,
+    TextControl,
     TimedPushButtonControl,
 )
 from psynet.page import InfoPage
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.redis import redis_vars
-from psynet.timeline import Timeline
+from psynet.timeline import Response, Timeline
+from psynet.utils import NoArgumentProvided
 
 # from importlib import resources
 
@@ -524,7 +527,7 @@ def test_number_control_saves_numbers(raw_answer, answer):
     + [(float("nan"), False), (float("inf"), False)],
 )
 def test_number_control_validates_bot_answers(answer, valid):
-    """Bot answers skip ``format_answer``, so they must already be finite numbers."""
+    """Fixed bot answers skip ``format_answer``, so they must already be finite numbers."""
     failed = NumberControl().validate(SimpleNamespace(answer=answer)) is not None
     assert failed != valid
 
@@ -549,21 +552,28 @@ class _NoGreenControl(PushButtonControl):
 
 @pytest.fixture
 def submit(db_session, monkeypatch):
-    """Have a bot submit the formatted answer ``answer`` and return the outcome."""
+    """Have a bot submit the formatted answer ``answer`` and return the outcome.
+
+    Without ``answer``, the bot submits the page's default bot response.
+    """
     experiment = get_experiment()
     redis_vars.set("launch_finished", True)
 
-    def _submit(page, answer):
+    def _submit(page, answer=NoArgumentProvided):
         timeline = Timeline(page, InfoPage("Done", time_estimate=1))
         monkeypatch.setattr(experiment, "timeline", timeline)
         bot = Bot()
+        if answer is NoArgumentProvided:
+            bot_response = page.call__get_bot_response(experiment, bot)
+        else:
+            bot_response = BotResponse(answer=answer)
         with transaction():
             result = experiment.process_response(
                 participant_id=bot.id,
-                raw_answer=None,
-                answer=answer,
+                raw_answer=bot_response.raw_answer,
+                answer=bot_response.answer,
                 blobs={},
-                metadata={"time_taken": 0},
+                metadata={"time_taken": 0, **bot_response.metadata},
                 page_uuid=bot.page_uuid,
                 client_ip_address="127.0.0.1",
             )
@@ -647,6 +657,31 @@ def test_option_controls_accept_their_choices_and_empty_answers(
 def test_page_validation_cannot_accept_answers_outside_the_choices(submit, make_page):
     assert submit(make_page(), "XX") == "rejected"
     assert submit(make_page(), "GB") == "approved"
+
+
+def _is_int(answer):
+    return type(answer) is int
+
+
+class _ShoutingPage(ModularPage):
+    def format_answer(self, raw_answer, **kwargs):
+        return raw_answer.upper()
+
+
+@_CONSENTS
+@pytest.mark.parametrize(
+    "page, is_expected",
+    [
+        (ModularPage("test", "Hi!", NumberControl(), time_estimate=1), _is_int),
+        (ModularPage("test", "Hi!", RatingControl(5), time_estimate=1), _is_int),
+        (_ShoutingPage("test", "Hi!", TextControl(), time_estimate=1), str.isupper),
+    ],
+)
+def test_default_bot_answers_are_formatted_like_browser_answers(
+    submit, page, is_expected
+):
+    assert submit(page) == "approved"
+    assert is_expected(Response.query.one().answer)
 
 
 @_CONSENTS
