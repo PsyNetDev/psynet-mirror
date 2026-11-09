@@ -15,7 +15,7 @@ from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import GroupBarrier
-from psynet.timeline import Module
+from psynet.timeline import Module, Timeline
 from psynet.trial.chain import ChainNode
 from psynet.trial.main import GenericTrialNetwork, SyncGroupNode, Trial
 from psynet.trial.static import StaticNode, StaticTrialMaker
@@ -24,7 +24,7 @@ _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
 from test_regrouper import _arrive, _cohort_and_pairs  # noqa: E402
-from test_sync import _sync_group_of  # noqa: E402
+from test_sync import _backdate_group, _sync_group_of  # noqa: E402
 from timeline_hold_helpers import _working_participants  # noqa: E402
 
 in_consents_experiment = pytest.mark.parametrize(
@@ -137,6 +137,51 @@ def test_group_barrier_passes_the_members_trials_to_on_release(
 
 
 @in_consents_experiment
+def test_each_trial_records_how_its_round_ended_for_the_player(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    stayer, leaver = cohort
+    pair = stayer.active_sync_groups["pair"]
+    for participant in cohort:
+        PairTrial.cue(round=0)[0].consume(exp, participant)
+    _arrive(exp, GroupBarrier("offered", group_type="pair"), cohort)
+    # Leaving before the trial's pages end replaces an earlier barrier's release.
+    pair.remove_participant(leaver, reason="late")
+    _arrive(exp, GroupBarrier("answered", group_type="pair"), [stayer])
+    assert [p.current_trial.sync_group_outcome for p in cohort] == ["stayed", "late"]
+
+    stayer.current_trial.complete = True
+    pair.remove_participant(stayer, reason="finished")
+    assert stayer.current_trial.sync_group_outcome == "stayed"
+    PairTrial.cue()[0].consume(exp, stayer)
+    assert stayer.current_trial.definition == {}
+    assert stayer.current_trial.sync_group_outcome is None
+
+
+@in_consents_experiment
+def test_a_waiting_screen_gets_the_trial_and_its_node(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    PairTrial.cue()[0].consume(exp, cohort[0])
+    hold = GroupBarrier(
+        "answered", group_type="pair", waiting_screen=_trial_and_node_screen
+    ).waiting_logic
+
+    trial = cohort[0].current_trial
+    screen = hold.waiting_screen_page(cohort[0])
+    assert screen.prompt.text == f"Trial {trial.id} on node {trial.node.id}"
+    assert hold.waiting_screen_page(cohort[1]).prompt.text == "Trial None on node None"
+
+
+def _trial_and_node_screen(trial, node):
+    return f"Trial {getattr(trial, 'id', None)} on node {getattr(node, 'id', None)}"
+
+
+@in_consents_experiment
 def test_only_ungrouped_trials_check_their_time_credit(
     in_experiment_directory, db_session, caplog
 ):
@@ -198,11 +243,11 @@ def test_a_release_waits_for_a_cue_holding_the_round_lock(
         )
         assert not barrier.would_release(cohort)
         assert barrier.choose_who_to_release(cohort) == []
-    assert not node.sync_group_released
+    assert not node.sync_group_closed
     assert barrier.would_release(cohort)
     released = barrier.choose_who_to_release(cohort)
     assert {p.id for p in released} == {p.id for p in cohort}
-    assert node.sync_group_released
+    assert node.sync_group_closed
 
 
 def _cue_in_parallel(exp, logic, participants):
@@ -370,6 +415,175 @@ def test_an_explicit_round_lets_two_classes_share_a_node(
 
 
 @in_consents_experiment
+def test_an_explicit_round_skips_a_round_the_group_finished_without_the_player(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    (newcomer,) = _working_participants(exp, 1)
+
+    def cue(participant, i):
+        PairTrial.cue({"target": i}, round=i)[0].consume(exp, participant)
+        return participant.current_trial
+
+    for participant in cohort:
+        cue(participant, 0)
+    _arrive(exp, GroupBarrier("answered", group_type="pair"), cohort)
+    for participant in cohort:
+        cue(participant, 1)
+    pair.add_participant(newcomer)
+
+    assert cue(newcomer, 0) is None
+    joined = cue(newcomer, 1)
+    assert joined.node is cohort[0].current_trial.node
+    assert joined.definition == {"target": 1}
+    pair.remove_participant(cohort[1])
+    alone = cue(cohort[1], 2)
+    assert alone.sync_group_id is None and alone.definition == {"target": 2}
+
+
+def _cue_round(exp, participant, i):
+    PairTrial.cue({"target": i}, round=i)[0].consume(exp, participant)
+    return participant.current_trial
+
+
+@pytest.mark.parametrize("n_rounds", [1, 2])
+@in_consents_experiment
+def test_a_skipper_doesnt_hold_up_the_round_s_later_barrier(
+    in_experiment_directory, db_session, n_rounds
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    (newcomer,) = _working_participants(exp, 1)
+    for i in range(n_rounds):
+        for participant in cohort:
+            _cue_round(exp, participant, i)
+        _arrive(exp, GroupBarrier(f"submitted_{i}", group_type="pair"), cohort)
+    pair.add_participant(newcomer)
+    for i in range(n_rounds):
+        # The newcomer skips every round, the last one too, and cues no other.
+        assert _cue_round(exp, newcomer, i) is None
+
+    revealed = GroupBarrier(
+        "revealed", group_type="pair", on_release=PairTrial.score_pair
+    )
+    _arrive(exp, revealed, cohort)
+    assert not any(revealed._participant_is_waiting(p) for p in cohort)
+    assert sorted(cohort[0].current_trial.node.var.players) == [p.id for p in cohort]
+
+    # A barrier the skipper reaches too, such as after the loop, waits for
+    # the players and then releases everyone.
+    after_loop = GroupBarrier("after_loop", group_type="pair")
+    _arrive(exp, after_loop, [newcomer])
+    assert after_loop._participant_is_waiting(newcomer)
+    _arrive(exp, after_loop, cohort)
+    assert not any(after_loop._participant_is_waiting(p) for p in [newcomer, *cohort])
+
+
+@in_consents_experiment
+def test_a_closed_round_s_later_barrier_doesnt_wait_for_a_newcomer_yet_to_cue(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    for participant in cohort:
+        _cue_round(exp, participant, 0)
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    # The newcomer hasn't cued yet, and will skip the round, which has closed.
+    (newcomer,) = _working_participants(exp, 1)
+    pair.add_participant(newcomer)
+
+    feedback = GroupBarrier("feedback", group_type="pair")
+    _arrive(exp, feedback, cohort)
+    assert not any(feedback._participant_is_waiting(p) for p in cohort)
+
+
+@in_consents_experiment
+def test_rounds_named_out_of_order_release_their_barriers(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    for i in [1, 0]:
+        for participant in cohort:
+            PairTrial.cue({"target": i}, round=i)[0].consume(exp, participant)
+        barrier = GroupBarrier(
+            f"answered_{i}", group_type="pair", on_release=PairTrial.score_pair
+        )
+        _arrive(exp, barrier, cohort)
+        assert not any(barrier._participant_is_waiting(p) for p in cohort)
+        node = cohort[0].current_trial.node
+        assert node.sync_group_round == i
+        assert sorted(node.var.players) == [p.id for p in cohort]
+
+
+@in_consents_experiment
+def test_a_skipped_cue_moves_on_to_the_next_page(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    for participant in cohort:
+        PairTrial.cue({}, round=0)[0].consume(exp, participant)
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    (newcomer,) = _working_participants(exp, 1)
+    pair.add_participant(newcomer)
+    after = InfoPage("After the round", time_estimate=5)
+    timeline = Timeline(
+        InfoPage("Before the round", time_estimate=5),
+        PairTrial.cue({}, round=0),
+        after,
+    )
+    monkeypatch.setattr(exp, "timeline", timeline)
+    timeline.advance_page(exp, newcomer)
+    credit, progress = newcomer.time_credit, newcomer.progress
+
+    timeline.advance_page(exp, newcomer)
+    assert timeline.get_current_elt(exp, newcomer) is after
+    assert newcomer.current_trial is None
+    assert newcomer.time_credit == credit
+    assert newcomer.progress > progress
+
+
+@pytest.mark.parametrize("numbered", [False, True])
+@in_consents_experiment
+def test_a_member_in_the_next_round_doesnt_hold_up_this_round_s_later_barrier(
+    in_experiment_directory, db_session, numbered
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    (newcomer,) = _working_participants(exp, 1)
+
+    def cue(participant, i):
+        round_ = i if numbered else None
+        PairTrial.cue({"target": i}, round=round_)[0].consume(exp, participant)
+
+    for participant in cohort:
+        cue(participant, 0)
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    pair.add_participant(newcomer)
+    if numbered:
+        cue(newcomer, 0)  # skipped
+    cue(newcomer, 1)
+    assert newcomer.current_trial.sync_group_round == 1
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), [newcomer])
+    revealed = GroupBarrier(
+        "revealed", group_type="pair", on_release=PairTrial.score_pair
+    )
+    _arrive(exp, revealed, cohort)
+
+    assert not any(revealed._participant_is_waiting(p) for p in cohort)
+    assert sorted(cohort[0].current_trial.node.var.players) == [p.id for p in cohort]
+    # The newcomer still waits for the others to reach round 1.
+    assert newcomer.active_barriers["submitted"].released is False
+
+
+@in_consents_experiment
 def test_a_late_joiner_joins_an_open_round_or_starts_the_next(
     in_experiment_directory, db_session
 ):
@@ -382,11 +596,8 @@ def test_a_late_joiner_joins_an_open_round_or_starts_the_next(
         logic[0].consume(exp, participant)
     pair.add_participant(early)
     logic[0].consume(exp, early)
-    # Round 0 ends: one trial completes, one fails, and a member with an
-    # unfinished trial leaves.
-    cohort[0].current_trial.complete = True
-    cohort[1].current_trial.failed = True
-    pair.remove_participant(early)
+    # Round 0 closes when its barrier releases the group.
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), [*cohort, early])
     pair.add_participant(between)
     for participant in [between, *cohort]:
         logic[0].consume(exp, participant)
@@ -515,3 +726,84 @@ def test_on_dissolve_gets_the_waiting_members_trials_and_node(
     ((trials, node),) = _dissolved
     assert [t.participant_id for t in trials] == [waiter.id]
     assert node is trials[0].node and isinstance(node, SyncGroupNode)
+    assert [p.current_trial.sync_group_outcome for p in (waiter, quitter)] == [
+        "group_dissolved",
+        "left_experiment",
+    ]
+
+
+def _late_at_barrier(late_action):
+    def remove(exp, group, stayer, leaver):
+        barrier = GroupBarrier(
+            "late", group_type="main", late_after=5, late_action=late_action
+        )
+        _arrive(exp, barrier, [stayer])
+        _backdate_group(group, seconds=10)
+        barrier.check_waiting_participants([stayer])
+        return leaver
+
+    remove.fails = late_action == "fail"
+    return remove
+
+
+def _waited_too_long(exp, group, stayer, leaver):
+    barrier = GroupBarrier("wait", group_type="main", max_wait_action="leave_group")
+    _arrive(exp, barrier, [stayer])
+    barrier.handle_max_wait_timeout(stayer)
+    return stayer
+
+
+def _removed_without_reason(exp, group, stayer, leaver):
+    group.remove_participant(leaver)
+    return leaver
+
+
+def _dissolved_before_the_barrier(exp, group, stayer, leaver):
+    leaver.fail("returned")
+    return stayer
+
+
+def _late_after_complete(exp, group, stayer, leaver):
+    leaver.current_trial.complete = True
+    group.remove_participant(leaver, reason="late")
+    return leaver
+
+
+@pytest.mark.parametrize(
+    "remove, outcome, n",
+    [
+        (_late_at_barrier("fail"), "late", 2),
+        (_late_at_barrier("fail"), "late", 3),
+        (_late_at_barrier("leave_group"), "late", 2),
+        (_waited_too_long, "waited_too_long", 2),
+        (_removed_without_reason, "removed", 2),
+        (_dissolved_before_the_barrier, "group_dissolved", 2),
+        (_late_after_complete, "late", 2),
+    ],
+    ids=[
+        "fail",
+        "fail_two_of_a_trio",
+        "leave_group",
+        "max_wait",
+        "no_reason",
+        "dissolved",
+        "complete",
+    ],
+)
+@in_consents_experiment
+def test_the_outcome_records_why_a_player_left_the_round(
+    in_experiment_directory, db_session, remove, outcome, n
+):
+    exp = get_experiment()
+    members, group = _sync_group_of(exp, db_session, n)
+    stayer, leaver = members[0], members[-1]
+    group.below_quorum = "continue_without_group"
+    for participant in members:
+        TeamTrial.cue()[0].consume(exp, participant)
+    db.session.commit()
+
+    removed = remove(exp, group, stayer, leaver)
+    db.session.commit()
+    assert removed.current_trial.sync_group_outcome == outcome
+    if getattr(remove, "fails", False):
+        assert removed.failed and removed.sync_group_removal_reason("main") == "late"

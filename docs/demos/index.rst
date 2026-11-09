@@ -407,7 +407,7 @@ Groups
     failed. A ``GroupPrompt`` shows who has chosen and then everyone's
     number. Each round is one cued trial per player, sharing a node with
     the room. :doc:`/code/multiplayer/synchronization`,
-    :ref:`rounds-cued-trials`.
+    :ref:`rounds-one-trial-per-player`.
 
 `experiments/ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__
     An ultimatum game in cohorts, formed by a grouper that starts cohorts short
@@ -415,6 +415,13 @@ Groups
     player out sits out. Each round is one cued trial per player, with
     role-specific pages and the pair's result on the node its trials share.
     :doc:`/code/multiplayer/writing_a_round_based_experiment`.
+
+`experiments/public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__
+    A repeated public goods game in groups of three that carries on with two
+    when a member returns the study or stops responding, and tells the last
+    player, and anyone without a group, why the game ended. Each round is one
+    cued trial per player that pays its bonus, with the group's pot on the
+    node they share. :doc:`/code/multiplayer/synchronization`.
 
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
     A multi-room chat written directly on WebSockets rather than

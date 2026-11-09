@@ -1,0 +1,1 @@
+Trials made by `Trial.cue()` now set `position`, counting the participant's trials in the same module from 0, and a trial with `accumulate_answers = True` now starts with an empty dict as its `answer` instead of `None`.

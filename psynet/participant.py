@@ -744,7 +744,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         Returns ``None`` if they are still in such a group or were never in
         one. Otherwise returns ``"late"`` (removed by a barrier's
-        ``late_action="leave_group"`` or ``"leave_all_groups"``), ``"waited_too_long"`` (by its
+        ``late_after``, with any ``late_action``), ``"waited_too_long"`` (by its
         ``max_wait_action="leave_group"``), ``"no_group_formed"`` (a grouper
         with ``max_wait_action="continue_without_group"`` found them no group
         in time), ``"group_dissolved"`` (released
@@ -755,7 +755,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         even if they then fail there; once they are in the next group this
         returns ``None``), ``"finished"`` (left after playing
         their part), ``"left_experiment"`` (failed,
-        including returning the study), or ``None`` if no
+        including returning the study, and for a member's other groups
+        when a barrier's ``late_action="fail"`` fails them), or ``None`` if no
         reason was recorded, for example after removal from the dashboard.
         A player sat out of their first round was never in a group, so this
         returns ``None`` for them; check :meth:`~psynet.sync.Regrouper.sat_out`

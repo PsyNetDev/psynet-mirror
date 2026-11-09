@@ -1,3 +1,11 @@
+"""Form groups of three, then regroup the same participants into pairs.
+
+A :class:`~psynet.sync.SimpleGrouper` forms groups of three, a barrier gives
+each member a role, and a page shows the group. A
+:class:`~psynet.sync.GroupCloser` then ends those groups, and a second
+grouper of the same ``group_type`` forms pairs, which get roles in the same way.
+"""
+
 import random
 from typing import List
 
@@ -5,43 +13,19 @@ import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage
-from psynet.page import WaitPage
 from psynet.participant import Participant
 from psynet.sync import GroupBarrier, GroupCloser, SimpleGrouper, SyncGroup
 from psynet.timeline import PageMaker, Timeline
-from psynet.utils import get_logger
 
-logger = get_logger()
-
+GROUP = "main"
 ROLE_SETS = {
     2: ["speaker", "listener"],
     3: ["speaker", "listener", "observer"],
 }
 
 
-def waiting_page(participant: Participant):
-    active_barrier = next(iter(participant.active_barriers.values()), None)
-    if active_barrier:
-        all_participants = active_barrier.get_waiting_participants()
-        all_participants.sort(key=lambda p: p.id)
-        all_participant_ids = [str(participant.id) for participant in all_participants]
-        content = (
-            "Waiting for more participants to arrive. "
-            f"IDs of currently waiting participants: {', '.join(all_participant_ids)}."
-        )
-    else:
-        content = "Ready to go!"
-    return WaitPage(content=content, wait_time=2.5)
-
-
-def assign_roles(group: SyncGroup, participants: List[Participant]):
-    roles = ROLE_SETS[len(participants)]
-    random.shuffle(roles)
-    if len(roles) != len(participants):
-        raise ValueError(
-            f"Number of roles ({len(roles)}) must match number of participants "
-            f"({len(participants)})."
-        )
+def assign_roles(participants: List[Participant]):
+    roles = random.sample(ROLE_SETS[len(participants)], len(participants))
     for participant, role in zip(participants, roles):
         participant.var.role = role
 
@@ -82,31 +66,29 @@ class Exp(psynet.experiment.Experiment):
 
     timeline = Timeline(
         SimpleGrouper(
-            group_type="main",
-            id_="main_grouper_of_3",
+            group_type=GROUP,
             initial_group_size=3,
             quorum=3,
-            waiting_logic=PageMaker(waiting_page, time_estimate=5),
+            waiting_message="Waiting for more participants to arrive",
             max_wait_time=20,
         ),
         GroupBarrier(
             id_="assign_roles_first",
-            group_type="main",
+            group_type=GROUP,
             waiting_message="Waiting for everyone in your group",
             on_release=assign_roles,
         ),
         show_current_group(),
-        GroupCloser(group_type="main"),
+        GroupCloser(group_type=GROUP),
         SimpleGrouper(
-            group_type="main",
-            id_="main_grouper_of_2",
+            group_type=GROUP,
             initial_group_size=2,
-            waiting_logic=PageMaker(waiting_page, time_estimate=5),
+            waiting_message="Waiting for more participants to arrive",
             max_wait_time=20,
         ),
         GroupBarrier(
             id_="assign_roles_second",
-            group_type="main",
+            group_type=GROUP,
             waiting_message="Waiting for everyone in your group",
             on_release=assign_roles,
         ),

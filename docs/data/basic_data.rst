@@ -100,7 +100,23 @@ round 0. The group's trials with the same
 the group ends. Cued trials of one group and round also share a
 :class:`~psynet.trial.main.SyncGroupNode`, which can hold the group's results;
 the ``lowest_unique_number`` demo builds a table per player and round and
-one per room from them (see :ref:`rounds-cued-trials`).
+one per room from them (see :ref:`rounds-one-trial-per-player`).
+
+Groups that stay together save their rounds the same way. The
+``public_goods`` demo saves the group's ``contributions``, ``pot``,
+``multiplied_pot`` and ``share`` once per round on the node, and each
+player's ``contribution`` (``None`` for a player who ran out of time) and
+``payoff`` on their trial:
+
+.. literalinclude:: ../../demos/experiments/public_goods/experiment.py
+   :pyobject: ContributionTrial.score_round
+
+The trial pays its round's payoff as a bonus through ``score_answer`` and
+``compute_performance_reward``, so each participant's bonus is the sum of
+their trials' ``performance_reward``, and the export and the payments agree.
+Its ``player_round`` table also gives each trial's ``sync_group_outcome``,
+which says whether the player stayed to the end of the round or why they
+left it (see :ref:`round outcomes <sync-round-outcome>`).
 
 Group membership, for groups formed by a grouper (see
 :doc:`/code/multiplayer/synchronization`), is stored in two tables:
@@ -137,34 +153,36 @@ A convenient layout for dyads and small groups is one row per participant per
 round, with columns for the group, the round, the participant, their partner,
 the trial ID (to trace each row back to the database) and both players'
 responses. Group-level measures can be computed from this table.
-The ``rock_paper_scissors`` demo builds it from its trials and their nodes.
-The barrier that ends each round saves both players' actions and the winner
-once on the pair's node, including the random action played for someone who
-ran out of time, because that action is in no answer (see ``score_round``
-under "Barriers" in :doc:`/code/multiplayer/synchronization`). Each trial's
-``round_result`` reads the node from its player's point of view, and
-``get_basic_data`` reads one row from every trial, including the trial of a
-player who closed the page before finishing it:
+The ``rock_paper_scissors`` demo builds it from its trials. The barrier
+that ends each round saves on each player's trial the action they played,
+including the random action played for someone who ran out of time,
+because that action is in no answer, their partner's action and the
+result (see ``score_round`` under "Barriers" in
+:doc:`/code/multiplayer/synchronization`). ``get_basic_data`` reads one row
+from every trial, including the trial of a player who left during the
+round:
 
 .. literalinclude:: ../../demos/experiments/rock_paper_scissors/experiment.py
    :pyobject: Exp.get_basic_data
 
 For one pair playing three rounds, in which participant 2 timed out in
-round 1, this returns:
+round 1, this returns (leaving out the ``outcome``, ``"stayed"`` in every
+row, and ``partner_timed_out``):
 
 .. code-block:: text
 
-    group_id  round  participant_id  trial_id  action    timed_out  partner_id  partner_action  partner_timed_out  score
-    1         0      1               1         rock      False      2           paper           False              -1
-    1         0      2               2         paper     False      1           rock            False              1
-    1         1      1               3         scissors  False      2           paper           True               1
-    1         1      2               4         paper     True       1           scissors        False              -1
-    1         2      1               5         scissors  False      2           scissors        False              0
-    1         2      2               6         scissors  False      1           scissors        False              0
+    pair_id  round  participant_id  trial_id  choice    action    timed_out  partner_id  partner_action  result  points
+    1        0      1               1         rock      rock      False      2           paper           lost    -1
+    1        0      2               2         paper     paper     False      1           rock            won     1
+    1        1      1               3         scissors  scissors  False      2           paper           won     1
+    1        1      2               4         None      paper     True       1           scissors        lost    -1
+    1        2      1               5         scissors  scissors  False      2           scissors        drew    0
+    1        2      2               6         scissors  scissors  False      1           scissors        drew    0
 
 Each round has one row per member, and ``partner_id`` points in both
 directions. A round that was never scored, for example because a partner
-dropped out before choosing, has ``None`` in the result columns. Participants who are regrouped have
+dropped out before choosing, has ``None`` in the result columns, and its
+``outcome`` says why the player left the pair. Participants who are regrouped have
 one ``sync_group_id`` per group, so their rounds with each partner stay apart.
 
 .. _basic_data_regrouper:
@@ -174,7 +192,7 @@ Games with a regrouper
 
 In games that re-pair players with a :class:`~psynet.sync.Regrouper`, each
 group the regrouper forms is one round of one group. With one cued trial per
-player per round (see :ref:`rounds-cued-trials`), each trial records the pair
+player per round (see :ref:`rounds-one-trial-per-player`), each trial records the pair
 and the player's role, and the pair's node holds its results. The
 ``ultimatum_pairing`` demo reads one table from the trials, one from the
 nodes and one per player:

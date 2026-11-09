@@ -75,8 +75,8 @@ the same round:
 
 A player who timed out has no answer of their own: in the
 ``rock_paper_scissors`` demo their ``answer`` is ``None``. The move actually played,
-including the random one given to a player who timed out, is in the vars of
-the round's node (``actions``), as the demo's basic data shows (see
+including the random one given to a player who timed out, is in each
+trial's vars (``action``), as the demo's basic data shows (see
 :ref:`basic_data_groups`).
 
 Group details such as ``group_type`` are in the ``sync_group`` table, and

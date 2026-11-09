@@ -5,19 +5,22 @@ rounds. In each round both players choose an action within
 ``CHOICE_SECONDS``, a barrier scores the round once both have chosen, and
 both see the two actions and the winner, then chat about the round.
 
-Each round is one cued ``RockPaperScissorsTrial`` per player. The pair's two
-trials in a round share a node, which holds the round's facts: both actions,
-who ran out of time and the winner. Each player's choice is their trial's
-answer, and their view of the result (their action, their partner's and
-their score) is computed from the node.
+Each round is one cued ``RockPaperScissorsTrial`` per player, cued with the
+loop value as ``round=`` because the pair stays together. Each player's
+choice is their trial's answer. When the barrier releases the pair, it
+saves on each player's trial the action they played, their partner's
+action and the result, and the results page and the basic data read them
+from there.
 
 - A player who runs out of time gets a random action, so every round has a
   winner or a draw. Their answer stays ``None``; the action they played is
-  on the node.
+  saved with the result.
 - The demo doesn't handle dropouts: a player whose partner leaves waits up
   to ``PARTNER_WAIT_SECONDS`` at the next barrier and is then failed, as is
-  a participant for whom no partner arrives in that time. See
-  ``public_goods`` for a game that carries on when players leave.
+  a participant for whom no partner arrives in that time. Each trial's
+  ``sync_group_outcome`` says whether its player stayed to the end of the
+  round or why they left it. See ``public_goods`` for a game that carries
+  on when players leave.
 """
 
 import random
@@ -32,7 +35,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.sync import GroupBarrier, SimpleGrouper
 from psynet.timeline import Module, Timeline, for_loop, join
-from psynet.trial.main import SyncGroupNode, Trial
+from psynet.trial.main import Trial
 
 GROUP = "rock_paper_scissors"
 PARTNER_WAIT_SECONDS = 300
@@ -40,6 +43,8 @@ CHOICE_SECONDS = 20
 N_ROUNDS = 3
 ACTIONS = ["rock", "paper", "scissors"]
 BEATS = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
+POINTS = {"won": 1, "drew": 0, "lost": -1}
+RESULT_TEXTS = {"won": "You won!", "drew": "You drew.", "lost": "You lost."}
 
 
 def get_timeline():
@@ -56,19 +61,20 @@ def get_timeline():
             for_loop(
                 label="rounds",
                 iterate_over=range(N_ROUNDS),
-                logic=RockPaperScissorsTrial.cue({}),
+                logic=lambda i: RockPaperScissorsTrial.cue(round=i),
                 time_estimate_per_iteration=RockPaperScissorsTrial.time_estimate,
             ),
         ),
     )
 
 
-def _winner(actions):
-    """Return the ID of the player whose action wins, or ``None`` for a draw."""
-    (first, first_action), (second, second_action) = actions.items()
-    if first_action == second_action:
-        return None
-    return first if BEATS[first_action] == second_action else second
+def _result(action, partner_action):
+    """Return ``"won"``, ``"drew"`` or ``"lost"`` for the player who played ``action``."""
+    if action == partner_action:
+        return "drew"
+    if BEATS[action] == partner_action:
+        return "won"
+    return "lost"
 
 
 class RockPaperScissorsTrial(Trial):
@@ -82,6 +88,7 @@ class RockPaperScissorsTrial(Trial):
                 id_="finished_trial",
                 group_type=GROUP,
                 waiting_message="Waiting for your partner",
+                # Releasing the pair closes the round and scores it.
                 on_release=self.score_round,
                 max_wait_time=PARTNER_WAIT_SECONDS,
             ),
@@ -101,60 +108,49 @@ class RockPaperScissorsTrial(Trial):
         )
 
     @classmethod
-    def score_round(cls, trials: List["RockPaperScissorsTrial"], node: SyncGroupNode):
-        """Save both players' actions and the winner on the pair's node."""
-        actions = {
-            str(t.participant_id): t.answer or random.choice(ACTIONS) for t in trials
-        }
-        node.var.actions = actions
-        node.var.timed_out = [str(t.participant_id) for t in trials if t.answer is None]
-        node.var.winner = _winner(actions)
-
-    def round_result(self):
-        """Return the round's result from this trial's player's point of view, or ``None`` if it wasn't scored."""
-        node = self.node
-        if not node.var.has("actions"):
-            return None
-        player = str(self.participant_id)
-        # The grouper forms pairs and accepts no newcomers, so a round has
-        # exactly two players.
-        (partner,) = [id_ for id_ in node.var.actions if id_ != player]
-        winner = node.var.winner
-        return {
-            "action": node.var.actions[player],
-            "timed_out": player in node.var.timed_out,
-            "partner_id": int(partner),
-            "partner_action": node.var.actions[partner],
-            "partner_timed_out": partner in node.var.timed_out,
-            "score": 0 if winner is None else 1 if winner == player else -1,
-        }
+    def score_round(cls, trials: List["RockPaperScissorsTrial"]):
+        """Save each player's action, their partner's action and the result on the player's trial."""
+        for trial in trials:
+            trial.var.timed_out = trial.answer is None
+            trial.var.action = trial.answer or random.choice(ACTIONS)
+        # A pair needs both players to pass a barrier, so there are two trials.
+        first, second = trials
+        for trial, partner in [(first, second), (second, first)]:
+            trial.var.partner_id = partner.participant_id
+            trial.var.partner_action = partner.var.action
+            trial.var.partner_timed_out = partner.var.timed_out
+            trial.var.result = _result(trial.var.action, partner.var.action)
+            trial.var.points = POINTS[trial.var.result]
 
     def show_feedback(self, experiment, participant):
-        result = self.round_result()
-        outcome = {1: "You won!", 0: "You drew.", -1: "You lost."}[result["score"]]
-        if result["timed_out"]:
-            you = f"You ran out of time, so we chose {result['action']} for you"
+        if self.var.timed_out:
+            you = f"You ran out of time, so we chose {self.var.action} for you"
         else:
-            you = f"You chose {result['action']}"
-        if result["partner_timed_out"]:
-            other = (
+            you = f"You chose {self.var.action}"
+        if self.var.partner_timed_out:
+            partner = (
                 "your partner ran out of time, so we chose "
-                f"{result['partner_action']} for them"
+                f"{self.var.partner_action} for them"
             )
         else:
-            other = f"your partner chose {result['partner_action']}"
-        winner = self.node.var.winner
+            partner = f"your partner chose {self.var.partner_action}"
+        winner = {"won": participant.id, "lost": self.var.partner_id}.get(
+            self.var.result
+        )
         prompt = tags.div()
         with prompt:
             tags.h1("Round results")
-            tags.p(f"{you}, {other}. {outcome}")
+            tags.p(f"{you}, {partner}. {RESULT_TEXTS[self.var.result]}")
         return ModularPage(
             "results",
             GroupPrompt(
                 prompt,
                 group=self.sync_group,
                 participant=participant,
-                answers=self.node.var.actions,
+                answers={
+                    participant.id: self.var.action,
+                    self.var.partner_id: self.var.partner_action,
+                },
                 highlight={} if winner is None else {winner: "winner"},
                 note="Now chat with your partner about the round you just played!",
             ),
@@ -176,29 +172,42 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per round, with their partner's action.
+        """Return one row per player per round, from the trials.
 
-        Every trial gets a row, including the trial of a player who closed the
-        page before finishing it; the result columns are ``None`` for a round
-        that was never scored.
+        Every trial gets a row, including the trial of a player who left
+        during the round; the columns from ``action`` on are ``None`` for a
+        round that was never scored.
         """
-        unscored = dict.fromkeys(
-            ["action", "timed_out", "partner_id", "partner_action"]
-            + ["partner_timed_out", "score"]
+        trials = RockPaperScissorsTrial.query.order_by(
+            RockPaperScissorsTrial.sync_group_id,
+            RockPaperScissorsTrial.sync_group_round,
+            RockPaperScissorsTrial.id,
         )
-        rows = [
-            {
-                "group_id": trial.sync_group_id,
-                "round": trial.sync_group_round,
-                "participant_id": trial.participant_id,
-                "trial_id": trial.id,
-                # A player who ran out of time played a random action.
-                **(trial.round_result() or unscored),
-            }
-            for trial in RockPaperScissorsTrial.query.all()
-        ]
-        rows.sort(key=lambda r: (r["group_id"], r["round"], r["participant_id"]))
-        return {"player_round": rows}
+        return {
+            "player_round": [
+                {
+                    "pair_id": t.sync_group_id,
+                    "round": t.sync_group_round,
+                    "participant_id": t.participant_id,
+                    "trial_id": t.id,
+                    # "stayed" if the round was scored; otherwise why the
+                    # player left the pair, such as "left_experiment".
+                    "outcome": t.sync_group_outcome,
+                    # None if the player ran out of time or never answered.
+                    "choice": t.answer,
+                    # The action played, random after a timeout.
+                    "action": t.var.get("action"),
+                    "timed_out": t.var.get("timed_out"),
+                    "partner_id": t.var.get("partner_id"),
+                    "partner_action": t.var.get("partner_action"),
+                    "partner_timed_out": t.var.get("partner_timed_out"),
+                    # "won", "drew" or "lost".
+                    "result": t.var.get("result"),
+                    "points": t.var.get("points"),
+                }
+                for t in trials
+            ],
+        }
 
     test_n_bots = 2
     test_mode = "serial"
@@ -210,7 +219,7 @@ class Exp(psynet.experiment.Experiment):
             ("scissors", None, None, None),
             ("scissors", "scissors", "You drew.", "You drew."),
         ]
-        for first, second, first_outcome, second_outcome in rounds:
+        for first, second, first_result, second_result in rounds:
             advance_past_wait_pages(bots)
             _assert_on_page(bots, "choose_action")
 
@@ -230,10 +239,10 @@ class Exp(psynet.experiment.Experiment):
                 assert "your partner ran out of time, so we chose" in text, text
             else:
                 assert f"You chose {first}, your partner chose {second}. " in text
-                assert first_outcome in text, text
+                assert first_result in text, text
                 text = bots[1].current_page_text
                 assert f"You chose {second}, your partner chose {first}. " in text
-                assert second_outcome in text, text
+                assert second_result in text, text
             assert isinstance(bots[0].get_current_page().chatroom, ChatRoom)
 
             for bot in bots:
@@ -246,10 +255,12 @@ class Exp(psynet.experiment.Experiment):
 
         rows = self.get_basic_data()["player_round"]
         assert len(rows) == 6, rows
+        assert all(r["outcome"] == "stayed" for r in rows), rows
+        assert len({r["pair_id"] for r in rows}) == 1, rows
         by_player = {(r["round"], r["participant_id"]): r for r in rows}
         first, second = (bot.id for bot in bots)
         summary = {
-            key: (r["action"], r["partner_id"], r["partner_action"], r["score"])
+            key: (r["action"], r["partner_id"], r["partner_action"], r["points"])
             for key, r in by_player.items()
         }
         assert summary[(0, first)] == ("rock", second, "paper", -1), summary
@@ -257,10 +268,9 @@ class Exp(psynet.experiment.Experiment):
         assert summary[(2, first)] == ("scissors", second, "scissors", 0), summary
         assert summary[(2, second)] == ("scissors", first, "scissors", 0), summary
         timed_out = by_player[(1, second)]
-        assert timed_out["timed_out"] and timed_out["action"] in ACTIONS, timed_out
+        assert timed_out["choice"] is None and timed_out["timed_out"], timed_out
+        assert timed_out["action"] in ACTIONS, timed_out
         assert by_player[(1, first)]["partner_timed_out"], by_player[(1, first)]
-        assert len({r["group_id"] for r in rows}) == 1, rows
-        assert rows[0]["group_id"] is not None, rows
 
 
 def _assert_on_page(bots, label):

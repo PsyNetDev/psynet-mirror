@@ -13,12 +13,13 @@ partner from an earlier round.
 
 Good reference for nesting a `Regrouper` inside persistent cohorts made by a
 `SimpleGrouper` with `start_short_after` and top-ups, with the default
-re-pairing that avoids repeat partners and a `join_criterion` that turns
-latecomers away once the cohort's second round starts.
+re-pairing that avoids repeat partners, closing the cohort to latecomers with
+`stop_top_ups()` once one of its players reaches the second round.
 Each round is one cued trial per player (`Trial.cue(...)` with
-`sync_group_type = "pair"`, inside a `conditional` on being in a pair), so the pair's offer and
-result live on a node shared by its two trials, sit-outs get a page instead
-of a trial, and the basic data is read from trials and nodes.
+`sync_group_type = "pair"`, in a `switch` on the player's `round_status`), so
+the pair's offer and result live on a node shared by its two trials, sit-outs
+get a page instead of a trial, and the basic data is read from trials and
+nodes.
 
 ## Usage
 
