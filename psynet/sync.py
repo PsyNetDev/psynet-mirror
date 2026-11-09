@@ -2513,8 +2513,8 @@ class SimpleGrouper(Grouper):
         example from how many rounds they played. It is called while the group is being
         dissolved, so base the decision on the participant, not on who else is still in
         ``group``; if it raises or returns anything else, the error is logged and the member
-        is failed. A member whose own request is in progress is handled within
-        about a second by the barrier poller instead.
+        is failed. See :ref:`groups_below_min_size` for when the group is
+        dissolved.
 
     top_up_wait
         With ``join_existing_groups=True``, how many seconds a group below its
