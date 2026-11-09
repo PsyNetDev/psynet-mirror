@@ -60,7 +60,9 @@ the same round:
 .. code:: python
 
     trials = load_export_table("export.zip", "trial")
-    trials = trials[trials["sync_group_id"].notna() & ~trials["failed"]]
+    trials = trials[
+        trials["sync_group_id"].notna() & trials["complete"] & ~trials["failed"]
+    ]
 
     round_ = ["sync_group_id", "sync_group_round"]
     partners = trials[round_ + ["participant_id", "answer"]].rename(

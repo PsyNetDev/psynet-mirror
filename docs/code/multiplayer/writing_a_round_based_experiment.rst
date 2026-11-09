@@ -237,6 +237,9 @@ one who returned the study:
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: OfferTrial.score_pair
 
+The barrier is inside ``show_trial``, so the trials have not ended yet when
+``on_release`` runs: ``trial.answer`` holds each member's answer so far,
+which here is their decision, or ``None`` if their page ran out of time.
 The trial ends after the barrier, so its ``show_feedback`` can read the
 player's own answer (``self.answer``) and what ``on_release`` saved. The
 results page passes both answers to the prompt as speech bubbles:
