@@ -1183,6 +1183,23 @@ def _loaded_active_sync_groups(participant):
     return {} if not groups else groups
 
 
+def _update_unfinished_trial_answer(participant):
+    """Copy ``participant.answer`` to the participant's current trial while it runs.
+
+    So a barrier inside :meth:`~psynet.trial.main.Trial.show_trial` can read the
+    answers given so far from ``trial.answer``. A trial that is complete keeps
+    its final answer, and so does a failed one, which the participant may have
+    left for later pages.
+    """
+    if participant.current_trial_id is None:
+        return
+    trial = participant.current_trial
+    if trial is None or trial.complete or trial.failed:
+        return
+    answer = participant.answer
+    trial.answer = dict(answer) if isinstance(answer, dict) else answer
+
+
 def _is_timeline_hold(page):
     """Return whether ``page`` is a timeline hold overlay."""
     return bool(getattr(page, "is_timeline_hold", False))
@@ -2072,6 +2089,7 @@ class Page(Elt):
                 flag_modified(participant, "answer")
             else:
                 participant.answer = resp.answer
+            _update_unfinished_trial_answer(participant)
             participant.answer_is_fresh = True
             if isinstance(self.save_answer, str):
                 participant.var.set(self.save_answer, resp.answer)

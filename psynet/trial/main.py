@@ -238,6 +238,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         The response returned by the participant. This is serialised
         to JSON, so it shouldn't be too big.
         The user should not typically change this directly.
+        While the trial's pages are being answered, it holds the answer so far,
+        as it would be in ``participant.answer``, so that for example a
+        :class:`~psynet.sync.GroupBarrier` inside :meth:`show_trial` can read it
+        in ``on_release``. When the trial ends, it is set to the result of
+        :meth:`format_answer`.
 
     parent_trial_id : int
         If the trial is a repeat trial, this attribute corresponds to the ID
@@ -1227,9 +1232,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
         - Put a :class:`~psynet.sync.GroupBarrier` in each round, for example
           in :meth:`show_trial`, so that members stay in step.
-        - ``trial.answer`` is only set when the trial ends, after the round's
-          barriers, so their ``on_release`` reads what the pages saved with
-          ``save_answer``.
+        - The barriers' ``on_release`` can read each member's answer so far
+          from ``trial.answer``: ``None`` there means the page ran out of
+          time. With several answer pages before a barrier, set
+          :attr:`accumulate_answers` to get them all.
         - A grouped cue's definition must not depend on the player's own
           position in a loop; pass a function taking ``round`` or ``group``.
         - A participant who is in no group of that type gets an ungrouped
@@ -1301,7 +1307,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                             "pick",
                             "Pick a number.",
                             PushButtonControl([1, 2, 3, 4, 5]),
-                            save_answer="pick",
                             time_estimate=5,
                         ),
                         GroupBarrier(
@@ -1313,7 +1318,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
                 @classmethod
                 def score_room(cls, trials, node):
-                    node.var.picks = [t.participant.var.pick for t in trials]
+                    node.var.picks = [t.answer for t in trials]
 
             def left_room(participant):
                 return not participant.in_sync_group("room")
