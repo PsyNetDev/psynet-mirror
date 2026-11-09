@@ -22,17 +22,24 @@ Dropout decisions
   the lobby for a new group.
 - A group that falls below three before the game starts waits up to
   ``TOP_UP_WAIT`` seconds for a latecomer to replace the member who left.
-- A member who hasn't reached the next step of the game ``LATE_AFTER``
-  seconds after the previous one is removed, so nobody waits for them.
+- Each estimate has a time limit of ``ANSWER_SECONDS``; a player who runs
+  out of time gives none.
+- A member who stops responding is removed, so nobody waits for them: at
+  the start of the game ``LATE_AFTER`` seconds after the group formed, and
+  during it ``LATE_AFTER`` seconds after their page's time limit.
 - A group that falls below three once the game has started ends.
+- A median needs three estimates. When fewer arrive, because players ran
+  out of time or the group ended while they waited for it, the group's
+  estimates are saved without a median and there is nothing to revise.
 - Nobody is failed for what another player did, or for waiting: anyone
   without a group, because none formed within ``LOBBY_WAIT`` seconds, their
   group ended, or they were removed, answers the remaining questions alone.
 
 The timeouts are short so that the bot test runs quickly. A real deployment
 would start short after about a minute, wait about three minutes in the
-lobby, and allow about a minute for each of ``TOP_UP_WAIT`` and
-``LATE_AFTER``.
+lobby, allow about 30 seconds for ``ANSWER_SECONDS`` and about a minute for
+each of ``TOP_UP_WAIT`` and ``LATE_AFTER``, which also covers reading the
+introduction.
 """
 
 import statistics
@@ -58,7 +65,8 @@ QUORUM = 3
 START_SHORT_AFTER = 3
 LOBBY_WAIT = 8
 TOP_UP_WAIT = 4
-LATE_AFTER = 5
+ANSWER_SECONDS = 10
+LATE_AFTER = 15
 
 QUESTIONS = [
     "How many jelly beans fit in a one-litre jar?",
@@ -115,62 +123,79 @@ def get_timeline():
 
 def cue_question(question):
     """Cue the group's next question, or this loop's question for a player alone."""
-    return EstimateTrial.cue(
+
+    def question_for_round(round):
         # A group's round is the same for all its members; a player without a
         # group has no round.
-        lambda round: {"question": question if round is None else round}
-    )
+        return {"question": question if round is None else round}
+
+    return EstimateTrial.cue(question_for_round)
 
 
 class EstimateTrial(Trial):
     sync_group_type = GROUP
-    time_estimate = 30
+    time_estimate = 2 * ANSWER_SECONDS
     # The trial's answer holds both the estimate and the revised estimate.
     accumulate_answers = True
 
     def show_trial(self, experiment, participant):
         if self.sync_group is None:
-            return self.estimate_page()
+            # Alone, the estimate is the whole trial.
+            return self.estimate_page(time_estimate=self.time_estimate)
         return join(
-            self.estimate_page(),
+            self.estimate_page(time_estimate=ANSWER_SECONDS),
             GroupBarrier(
                 id_="estimates",
                 group_type=GROUP,
                 late_after=LATE_AFTER,
                 late_action="leave_group",
                 on_release=self.share_median,
+                on_dissolve=self.share_median,
             ),
-            PageMaker(self.revise_page, time_estimate=15),
+            # show_trial runs when the trial starts, so the page that shows the
+            # median is built later, once the barrier has saved it.
+            PageMaker(self.revise_page, time_estimate=ANSWER_SECONDS),
         )
 
     @property
     def question(self):
         return QUESTIONS[self.definition["question"]]
 
-    def estimate_page(self):
+    def estimate_page(self, time_estimate):
         return ModularPage(
             "estimate",
             self.question,
             NumberControl(),
             save_answer="estimate",
-            time_estimate=15,
+            time_limit=ANSWER_SECONDS,
+            time_estimate=time_estimate,
         )
 
     @classmethod
     def share_median(cls, trials: List["EstimateTrial"], node: SyncGroupNode):
-        """Save the group's estimates and their median on the node."""
+        """Save the group's estimates on the node, with their median if there are enough."""
+        # Browsers submit numbers as strings, and running out of time saves None.
         node.var.estimates = {
-            str(t.participant_id): t.participant.var.estimate for t in trials
+            str(t.participant_id): float(t.participant.var.estimate)
+            for t in trials
+            if t.participant.var.get("estimate") not in (None, "")
         }
-        node.var.median = statistics.median(node.var.estimates.values())
+        if len(node.var.estimates) >= QUORUM:
+            node.var.median = statistics.median(node.var.estimates.values())
 
     def revise_page(self, participant):
-        estimates = self.node.var.get("estimates", {})
-        if str(participant.id) not in estimates:
-            # Removed for being late, or the group ended at the barrier.
+        estimates = self.node.var.get("estimates") or {}
+        if not self.node.var.has("median"):
             return InfoPage(
-                "You answered this question, but without your group "
-                "there is no median to show.",
+                "Too few estimates arrived for a group median, so there is "
+                "nothing to revise.",
+                time_estimate=5,
+            )
+        if str(participant.id) not in estimates:
+            # They ran out of time, or were removed for being late.
+            return InfoPage(
+                "Your estimate didn't reach your group in time, so there is "
+                "nothing to revise.",
                 time_estimate=5,
             )
         return ModularPage(
@@ -183,7 +208,8 @@ class EstimateTrial(Trial):
                 answers={pid: f"{value:g}" for pid, value in estimates.items()},
             ),
             NumberControl(),
-            time_estimate=15,
+            time_limit=ANSWER_SECONDS,
+            time_estimate=ANSWER_SECONDS,
         )
 
 
@@ -210,6 +236,11 @@ class Exp(psynet.experiment.Experiment):
                     "group_id": t.sync_group_id,
                     "trial_id": t.id,
                     "estimate": t.answer.get("estimate"),
+                    # None for an answer given alone; False if it missed the
+                    # group's estimates, which make up the median.
+                    "in_median": None
+                    if t.sync_group_id is None
+                    else str(t.participant_id) in (t.node.var.get("estimates") or {}),
                     "revised": t.answer.get("revised"),
                 }
                 for t in trials
@@ -219,18 +250,22 @@ class Exp(psynet.experiment.Experiment):
                     "question": n.sync_group_round,
                     "group_id": n.sync_group_id,
                     "node_id": n.id,
+                    # The estimates that arrived in time; None if no member
+                    # was waiting for them.
                     "estimates": n.var.get("estimates"),
+                    # None if fewer than three estimates arrived.
                     "median": n.var.get("median"),
                 }
                 for n in groups
             ],
         }
 
-    test_n_bots = 8
+    test_n_bots = 11
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        group, latecomer, too_late, group_b = bots[:4], bots[3], bots[4], bots[5:]
+        group, latecomer, too_late = bots[:4], bots[3], bots[4]
+        group_b, group_c = bots[5:8], bots[8:]
         silent, players = group[0], group[1:]
 
         # Three start short, and a latecomer joins before the game starts.
@@ -244,9 +279,10 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(group)
 
         # One member goes silent; the other three carry on above quorum.
-        for bot, estimate in zip(players, [100, 200, 600]):
+        # Browsers submit estimates as strings.
+        for bot, estimate in zip(players, [100, 200, "600.5"]):
             bot.take_page(response=estimate)
-        advance_past_wait_pages(players, timeout=LATE_AFTER + 10)
+        advance_past_wait_pages(players, timeout=ANSWER_SECONDS + LATE_AFTER + 10)
         for bot in players:
             text = bot.current_page_text
             assert "median of your group's 3 estimates is 200." in text, text
@@ -266,12 +302,13 @@ class Exp(psynet.experiment.Experiment):
             assert "median of your group's 3 estimates is 1400." in text, text
             bot.take_page(response=1300)
 
-        # The silent member comes back and answers the rest alone.
+        # The silent member comes back, too late for the first question's
+        # median, and answers the second alone.
         assert silent.current_notice == (
             "Your group went on without you. Please continue."
         ), silent.current_notice
         silent.take_page(response=300)
-        assert silent.current_page_text.startswith("You answered this question"), (
+        assert silent.current_page_text.startswith("Your estimate didn't reach"), (
             silent.current_page_text
         )
         silent.take_page()
@@ -299,29 +336,56 @@ class Exp(psynet.experiment.Experiment):
                 "Too few members of your group remained. Please continue."
             ), bot.current_notice
 
-        finishers = [*bots[:5], *stayers]
+        # A group ends while two members wait for the first median.
+        for bot in group_c:
+            bot.take_page()
+        advance_past_wait_pages(group_c, timeout=START_SHORT_AFTER + 10)
+        for bot in group_c:
+            bot.take_page()
+        advance_past_wait_pages(group_c)
+        quitter_c, *waiting = group_c
+        for bot, estimate in zip(waiting, [10, 20]):
+            bot.take_page(response=estimate)
+        quitter_c.drop_out()
+        advance_past_wait_pages(waiting)
+        for bot in waiting:
+            text = bot.current_page_text
+            assert text.startswith("Too few estimates arrived"), text
+
+        finishers = [*bots[:5], *stayers, *waiting]
         run_bots_to_completion(finishers)
         assert not any(bot.failed for bot in finishers)
 
-        # Only the first group played together, without the silent member.
+        # The first group played both questions without the silent member;
+        # the last one's estimates were saved without a median.
         data = self.get_basic_data()
-        player_ids = [str(bot.id) for bot in players]
+        player_ids = sorted(str(bot.id) for bot in players)
         groups = data["group_round"]
         assert [
             (g["question"], g["median"], sorted(g["estimates"])) for g in groups
         ] == [
             (0, 200, player_ids),
+            (0, None, sorted(str(bot.id) for bot in waiting)),
             (1, 1400, player_ids),
         ], groups
         answers = {(r["participant_id"], r["question"]): r for r in data["answer"]}
         for bot in players:
             revised = [answers[(bot.id, question)]["revised"] for question in (0, 1)]
             assert revised == [250, 1300], revised
-        # The silent member answered the first question in their group's
-        # trial, after being removed, and the second alone.
+        # The silent member's late answer is in their group's trial, but not
+        # in its median.
         late = answers[(silent.id, 0)]
-        assert (late["group_id"], late["estimate"]) == (groups[0]["group_id"], 300)
-        alone = [(silent.id, 1)] + [
-            (bot.id, question) for bot in [too_late, *stayers] for question in (0, 1)
-        ]
-        assert all(answers[key]["group_id"] is None for key in alone), answers
+        assert (late["group_id"], late["in_median"]) == (groups[0]["group_id"], False)
+        # Answers given alone have no revision.
+        alone = (
+            [(silent.id, 1)]
+            + [
+                (bot.id, question)
+                for bot in [too_late, *stayers]
+                for question in (0, 1)
+            ]
+            + [(bot.id, 1) for bot in waiting]
+        )
+        for key in alone:
+            row = answers[key]
+            assert (row["group_id"], row["revised"]) == (None, None), row

@@ -29,8 +29,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `demos/experiments/rock_paper_scissors`,
   `demos/experiments/sync_quorum`, and
   `demos/experiments/gibbs_within_sync`; for games played in rounds, also
-  `demos/experiments/ultimatum_pairing` and
-  `demos/experiments/lowest_unique_number`.
+  `demos/experiments/ultimatum_pairing`,
+  `demos/experiments/lowest_unique_number` and
+  `demos/experiments/crowd_estimate`.
 
 ## Choose the synchronization model
 
@@ -241,9 +242,11 @@ Module("game", for_loop(
 - `trial.answer` is only set when the trial ends, after the barrier, so
   `on_release` reads what `save_answer` stored, while `score_answer`,
   `show_feedback` and `get_basic_data` read the trial and `self.node.var`.
-- Use `self.sync_group_role` for role-specific pages, and wrap the cue in
-  `only_in_group(group_type, ..., otherwise=...)` so a player the regrouper
-  sat out gets a page instead of a trial.
+- Use `self.sync_group_role` for role-specific pages. With a `Regrouper`,
+  wrap the cue in `only_in_group(group_type, ..., otherwise=...)` so a player
+  it sat out gets a page instead of a trial. Where players without a group
+  play on alone, as in an open lobby, leave the cue unwrapped and branch in
+  `show_trial` on `self.sync_group is None`, as `crowd_estimate` does.
 
 ## Recruitment and platform design
 

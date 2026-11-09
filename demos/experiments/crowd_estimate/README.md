@@ -4,7 +4,8 @@ A wisdom-of-crowds estimation game in an open lobby. Players wait for a group
 of four, or start with three once the first of them has waited long enough,
 and latecomers can join a group until its game starts. For each of two
 questions, members estimate, see everyone's estimate and the group's median
-in a `GroupPrompt`, and give a revised estimate. A member who stops
+in a `GroupPrompt`, and give a revised estimate, each within a time limit.
+The median needs three estimates in time. A member who stops
 responding is removed so the others don't wait for them, and anyone left
 without a group answers the questions alone instead of being failed.
 

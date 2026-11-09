@@ -886,35 +886,13 @@ For the rest of the timeline:
   a round in :func:`~psynet.sync.only_in_group`, which skips each step once
   the participant is out of the group. Its ``otherwise=`` runs for them
   afterwards instead, for example to answer a question alone if they never
-  answered it with the group. Build each question's steps in a function, so
-  that the lambda sees that question rather than the last one of a loop:
-
-  .. code-block:: python
-
-      def question_steps(question):
-          return only_in_group(
-              "team",
-              estimate_page(question),
-              GroupBarrier(id_=f"estimates_{question}", group_type="team",
-                           on_release=share_median),
-              revised_estimate_page(question),
-              otherwise=PageMaker(
-                  lambda participant: (
-                      estimate_page(question)
-                      if participant.var.get(f"estimate_{question}") is None
-                      else InfoPage("Your group has ended. Let's move on.")
-                  ),
-                  time_estimate=10,
-              ),
-          )
-
-  When each round is a trial added with
-  :meth:`Trial.cue() <psynet.trial.main.Trial.cue>`, a participant who is out
-  of the group when the trial starts gets an ungrouped trial, so
-  ``show_trial`` can give them the solo version of the round. In the
-  ``crowd_estimate`` demo, they give their estimate without the group's
-  median, and a member removed partway through a question is told there is
-  no median to show:
+  answered it with the group (see its docstring). A round played as a
+  trial added with :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` needs
+  no wrapper for that: a participant who is out of the group when the trial
+  starts gets an ungrouped trial, so ``show_trial`` can give them the solo
+  version of the round. In the ``crowd_estimate`` demo, they give their
+  estimate without the group's median, and a member whose estimate is not in
+  the median is told so:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
      :pyobject: EstimateTrial.show_trial
