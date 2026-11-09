@@ -355,7 +355,7 @@ class CustomStaticTrialMaker(StaticTrialMaker):
 
 @in_consents_experiment
 def test_a_synchronized_trial_maker_records_group_role_and_round(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, caplog
 ):
     exp = get_experiment()
     cohort, pairs = _paired(exp)
@@ -391,6 +391,13 @@ def test_a_synchronized_trial_maker_records_group_role_and_round(
             for p in members
         ] == [(pair.id, pairs.role(p), round) for p in members]
     assert all(p.current_trial.is_repeat_trial for p in members)
+
+    with caplog.at_level(logging.INFO):
+        for participant in members:
+            PairTrial._log_time_credit_before_trial(participant)
+            participant.inc_time_credit(40)  # e.g. waiting at a barrier
+            PairTrial._log_time_credit_after_trial(participant)
+    assert "unexpected amount of time credit" not in caplog.text
 
 
 class TeamTrial(Trial):

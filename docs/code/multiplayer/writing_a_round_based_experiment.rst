@@ -347,7 +347,9 @@ play for the whole game, and newcomers get the role that lets the most
 waiting players play.
 
 **Turns one after the other.** In games such as a trust game, the investor
-decides before the trustee. Put each role's page in a
+decides before the trustee. With cued trials, the role pages and the
+barriers between turns all go in the ``show_trial`` of one trial class. Put
+each role's page in a
 :func:`~psynet.timeline.conditional` on the role, followed by a
 :class:`~psynet.sync.GroupBarrier` for the pair: the other player waits at
 the barrier while it is not their turn. A ``waiting_screen`` on the barrier
