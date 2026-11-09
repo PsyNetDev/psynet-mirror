@@ -70,9 +70,8 @@ def get_timeline():
             for_loop(
                 label="rounds",
                 iterate_over=range(N_ROUNDS),
-                logic=lambda _: ContributionTrial.cue({}),
+                logic=ContributionTrial.cue({}),
                 time_estimate_per_iteration=ContributionTrial.time_estimate,
-                expected_repetitions=N_ROUNDS,
                 stop_if=left_team,
             ),
         ),
@@ -155,7 +154,7 @@ class ContributionTrial(Trial):
 
     def gives_feedback(self, experiment, participant):
         # Only rounds that were played to the end have results to show.
-        return self.var.has("payoff") and self.node.var.has("pot")
+        return self.var.has("payoff")
 
     def show_feedback(self, experiment, participant):
         node = self.node
