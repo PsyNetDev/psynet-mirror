@@ -4390,11 +4390,11 @@ class SyncGroupNode(GenericTrialNode):
         Otherwise the group moves on to a new node for the next round,
         counted from 0, which the others then join.
         With ``round_number``, it is the group's node for that round, or
-        ``None`` if the group finished that round without the participant:
-        they have no trial on it and it is no longer open. Naming a round the
-        participant played before another one, as when the module runs again,
-        raises a ``RuntimeError``: the group's nodes for the module are
-        reused, so the round would count as played already. A new node's
+        ``None`` if it is no longer open and the participant isn't playing it,
+        as when the group finished it without them. Naming a round the
+        participant played once they have cued a round played later, as when
+        the module runs again, raises a ``RuntimeError``: the group's nodes for
+        the module are reused, so the round would count as played already. A new node's
         definition is ``make_definition(round_number)``. Either way, the
         participant's link to ``group`` records the round as the one they
         last cued or skipped, for :class:`~psynet.sync.GroupBarrier` to tell
@@ -4440,23 +4440,30 @@ class SyncGroupNode(GenericTrialNode):
     @classmethod
     def _named_round(cls, node, group, participant):
         """Return ``node``, a round named by ``round=``, or ``None`` if the participant skips it."""
-        if cls._round_is_open(node, participant):
-            _record_round_position(group, participant, node)
-            return node
         link = _member_link(group, participant)
         if link.round_node_id == node.id and not link.skipped_round:
             # Another trial class cued in the round the participant is playing.
             return node
-        if Trial.query.filter_by(
-            node_id=node.id, participant_id=participant.id
-        ).first():
+        stored = link.round_node_id and db.session.get(cls, link.round_node_id)
+        if (
+            stored
+            and stored.module_id == node.module_id
+            and stored.id > node.id
+            and Trial.query.filter_by(
+                node_id=node.id, participant_id=participant.id
+            ).first()
+        ):
             raise RuntimeError(
                 f"Participant {participant.id} cued round {node.sync_group_round} "
                 f"of '{group.group_type}' group {group.id} again in module "
-                f"'{node.module_id}' after playing a later round. A module whose "
-                "cues pass round= can run only once per participant; give each "
-                "run of it its own module id."
+                f"'{node.module_id}' after cueing round {stored.sync_group_round}, "
+                "which was played after it. A module whose cues pass round= can "
+                "run only once per participant; give each run of it its own "
+                "module id."
             )
+        if not node.sync_group_closed:
+            _record_round_position(group, participant, node)
+            return node
         _record_round_position(group, participant, node, skipped=True)
         return None
 

@@ -4478,10 +4478,12 @@ def _members_past_visit(barrier_id, node, waiting_participants, links):
 
     Each visit row stores the member's round when they arrived. A member
     released from more visits of this barrier in this round than the
-    waiting members of the round is past their visit, as when a late
-    joiner who skipped the round reaches a barrier after the loop that the
-    players have passed. Counting visits keeps a barrier repeated within
-    one round waiting for everyone at each repetition.
+    waiting members who played the round (or than none, if only skippers
+    wait) is past their visit, as when a late joiner who skipped the round
+    reaches a barrier after the loop that the players have passed.
+    Counting visits keeps a barrier repeated within one round waiting for
+    everyone at each repetition. Skippers don't set the count, as they
+    missed the passes inside the round's trials.
     """
     released = dict(
         db.session.query(
@@ -4500,7 +4502,9 @@ def _members_past_visit(barrier_id, node, waiting_participants, links):
         (
             released.get(p.id, 0)
             for p in waiting_participants
-            if p.id in links and links[p.id].round_node_id == node.id
+            if p.id in links
+            and links[p.id].round_node_id == node.id
+            and not links[p.id].skipped_round
         ),
         default=0,
     )
