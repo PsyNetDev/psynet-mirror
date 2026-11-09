@@ -152,8 +152,7 @@ dissolved, and ``keep_playing`` (below) ends the game once fewer than two
 players are left. It makes the recipe safe to copy into a cohort without
 top-ups, where removing a late player would dissolve the cohort if that left
 it below its quorum, and the default ``below_quorum="fail"`` would fail the
-players who were on time (see :meth:`~psynet.sync.SyncGroup.remove_participant`
-and :ref:`groups_below_min_size`).
+players who were on time (see :ref:`groups_below_min_size`).
 
 ``only_in_group`` skips the rest of the round for a player removed from their
 pair, including its later group barriers, and runs its ``otherwise`` steps.
@@ -220,7 +219,7 @@ them in later rounds. This cohort accepts top-ups, so it is never dissolved,
 and ``reason="finished"`` here only shows them as "(finished)". It keeps the
 recipe safe to copy into a cohort without top-ups, where any other reason
 would dissolve the cohort if that left it below its quorum while the last
-players finish their rounds (see :meth:`~psynet.sync.SyncGroup.remove_participant`):
+players finish their rounds (see :ref:`groups_below_min_size`):
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: leave_cohort

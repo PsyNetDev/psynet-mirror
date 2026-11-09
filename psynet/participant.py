@@ -1231,7 +1231,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         If they are still on the main timeline, they are redirected to
         ``unsuccessful_end``. They are also removed from active sync groups.
         Whether that dissolves a group left below its ``quorum`` is described
-        in :meth:`~psynet.sync.SyncGroup.remove_participant`. See
+        in :ref:`groups_below_min_size`. See
         :doc:`/code/trials/participant_and_trial_failure`.
 
         Parameters
