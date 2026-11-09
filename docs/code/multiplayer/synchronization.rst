@@ -503,16 +503,18 @@ whichever group is left when a pair ends.
 GroupPrompt shows the group as it is now:
 
 - A member who left stays in their seat, faded, with the reason:
-  "(removed)" if a barrier removed them from the group for being late,
-  "(left)" if they failed or left the experiment, "(finished)" if they left
-  after playing their part (``reason="finished"``), and "(dropped out)"
-  otherwise. Groups that accept top-ups don't keep these seats; once they
-  stop accepting them, members who left before then appear too, as in a
-  team that lost someone during its instructions (see
-  :ref:`sync-lobby-top-ups`).
+  "(left)" if they failed or left the experiment; "(finished)" if they left
+  after playing their part (``reason="finished"``), which wins over leaving
+  the experiment but not over failing; "(removed)" if a barrier removed
+  them from the group for being late, or "(left)" once they have failed or
+  left the experiment; and "(dropped out)" otherwise.
 - A member who moved on to another group, such as next round's pair at a
   :class:`~psynet.sync.Regrouper`, is no longer shown, except on a results
   page (one with ``answers``) that shows their answer.
+- A group that accepts top-ups shows no members who left, not even those
+  who moved on and whose answer the page shows. Once it stops accepting
+  them, members who left before then appear too, as in a team that lost
+  someone during its instructions (see :ref:`sync-lobby-top-ups`).
 - A participant who is no longer in the group, for example because a
   barrier removed them for being late, sees only the text, as they do with
   ``group=self.sync_group`` in trial code (it is ``None`` after such a
