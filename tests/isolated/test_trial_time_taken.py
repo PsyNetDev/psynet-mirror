@@ -32,5 +32,6 @@ def test_trial_records_time_and_responses_of_its_own_pages():
         expected = ["info", *rejected, "number_1", "number_2"]
         assert [r.question for r in responses] == expected
 
-    # The feedback pages and the pages outside the trial maker have no trial.
+    # No trial for the two info pages around the trial maker, the five
+    # feedback pages, or the end page.
     assert Response.query.filter_by(trial_id=None).count() == 2 + 5 + 1
