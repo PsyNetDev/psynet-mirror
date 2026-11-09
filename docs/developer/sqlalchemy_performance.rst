@@ -499,7 +499,8 @@ happens around the barrier check:
   statements per member. The test sets a ceiling of 14 per member.
 * An idle ``check_barriers`` sweep fully re-checks every waiting visit (19
   statements each), and ``check_sync_groups`` recounts every active group
-  (6 statements each), even when nothing changed. Neither depends on group
+  (7 statements each, one of them the deferred ``below_quorum_since`` load),
+  even when nothing changed. Neither depends on group
   size.
 
 The dissolve and poller numbers are snapshots of work that could be batched

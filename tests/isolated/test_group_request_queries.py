@@ -49,17 +49,19 @@ _JITTER = 2
 _DISSOLVE_PER_MEMBER = 14
 
 # Snapshot: each sweep fully re-checks every waiting visit and recounts every
-# active group, even when nothing changed. Lower is better.
+# active group, even when nothing changed (including the deferred
+# ``below_quorum_since`` load in ``SimpleSyncGroup.check_numbers``). Lower is
+# better.
 _SWEEP_PER_VISIT = 19
-_SYNC_GROUPS_PER_GROUP = 6
+_SYNC_GROUPS_PER_GROUP = 7
 
 
-def _timeline(group_size, min_group_size=None):
+def _timeline(group_size, quorum=None):
     return Timeline(
         SimpleGrouper(
             "room",
             initial_group_size=group_size,
-            min_group_size=min_group_size or group_size,
+            quorum=quorum or group_size,
         ),
         ModularPage("choose", "Choose", PushButtonControl(["a", "b"]), time_estimate=1),
         GroupBarrier(id_="room_gate", group_type="room"),
@@ -145,7 +147,7 @@ def test_leaving_a_group_does_not_load_every_member(exp):
     counts = {}
     for group_size in (4, 8):
         db.session.remove()
-        exp.timeline = _timeline(group_size, min_group_size=2)
+        exp.timeline = _timeline(group_size, quorum=2)
         ids = _group_on_choose_page(exp, group_size)
         leader_id = Participant.query.get(ids[0]).sync_group.leader_id
         counts[group_size] = _count(lambda: _fail(leader_id))
