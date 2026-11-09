@@ -462,7 +462,8 @@ relock commit is on ``Experiment._relock_arriver_after_barrier_check``.
 The budget's ``finalize_commits`` count includes
 ``_attempt_queued_barrier_checks`` (the queued-check commit) and
 ``_relock_arriver_after_barrier_check``.
-Waiter-join ``NOWAIT`` stays 1. Relock ``FOR UPDATE`` stays 2.
+Waiter-join ``NOWAIT`` stays 1. Relock ``FOR UPDATE`` is now 2 (it was 1
+before the bare-row lock).
 
 Arrival notice (recipient already loaded, *N* - 1 waiters)
 ----------------------------------------------------------

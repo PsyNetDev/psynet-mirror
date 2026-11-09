@@ -1201,10 +1201,11 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 def get_participant(participant_id: int, for_update: bool = False) -> Participant:
     """
     Returns the participant with a given ID.
-    Warning: we recommend just using SQLAlchemy directly instead of using this function.
-    If you plan to update this Participant object, pass ``for_update=True``
-    here instead: a plain ``with_for_update()`` query that waits for the lock
-    can join the participant's current trial as it was before the wait.
+    For loads that don't lock, we recommend just using SQLAlchemy directly
+    instead of this function. If you plan to update this Participant object,
+    use ``for_update=True`` here rather than a plain ``with_for_update()``
+    query: one that waits for the lock can join the participant's current
+    trial as it was before the wait.
 
     Parameters
     ----------
@@ -1223,10 +1224,10 @@ def get_participant(participant_id: int, for_update: bool = False) -> Participan
     :class:`psynet.participant.Participant`
         The requested participant.
     """
-    query = Participant.query.filter_by(id=participant_id)
+    criterion = Participant.id == participant_id
     if for_update:
-        query = _load_participant_for_update(query, Participant.id == participant_id)
-    return query.one()
+        return _load_participant_for_update(Participant.query, criterion).one()
+    return Participant.query.filter(criterion).one()
 
 
 def _lock_and_load_participant(query, participant_id, *, nowait=False):
@@ -1249,13 +1250,13 @@ def _lock_and_load_participant(query, participant_id, *, nowait=False):
     Participant or None
         The locked participant, or ``None`` if ``query`` has no such row.
     """
-    return _load_participant_for_update(
-        query, Participant.id == participant_id, nowait=nowait
-    ).get(participant_id)
+    return _lock_for_load(query, Participant.id == participant_id, nowait).get(
+        participant_id
+    )
 
 
 def _load_participant_for_update(query, criterion, *, nowait=False):
-    """Return ``query`` set to lock its participant row and reload it fresh.
+    """Return ``query`` filtered by ``criterion``, locked and reloaded fresh.
 
     Use this, or :func:`_lock_and_load_participant` for loads by id, for every
     locking participant load. ``Participant.query`` joins
@@ -1270,9 +1271,9 @@ def _load_participant_for_update(query, criterion, *, nowait=False):
     Parameters
     ----------
     query :
-        Participant query, already filtered to the row(s) it will return.
+        Unfiltered participant query, such as ``Participant.query``.
     criterion :
-        SQLAlchemy criterion selecting the same participant row(s).
+        SQLAlchemy criterion selecting the participant row(s) to load.
     nowait :
         Fail at once with ``LockNotAvailable`` instead of waiting. A load
         that cannot wait cannot read stale rows, so it skips the extra lock.
@@ -1280,7 +1281,17 @@ def _load_participant_for_update(query, criterion, *, nowait=False):
     Returns
     -------
     sqlalchemy.orm.Query
-        ``query`` with ``FOR UPDATE OF participant`` and ``populate_existing``.
+        ``query`` filtered by ``criterion``, with ``FOR UPDATE OF
+        participant`` and ``populate_existing``.
+    """
+    return _lock_for_load(query, criterion, nowait).filter(criterion)
+
+
+def _lock_for_load(query, criterion, nowait):
+    """Lock the rows matching ``criterion`` and set ``query`` to load them.
+
+    Leaves ``query`` unfiltered so :meth:`~sqlalchemy.orm.Query.get` still
+    works on it.
     """
     if not nowait:
         query.session.execute(select(Participant.id).where(criterion).with_for_update())

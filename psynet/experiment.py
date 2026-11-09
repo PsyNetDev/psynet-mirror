@@ -5545,12 +5545,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Pass ``for_update=True`` to lock the participant row for the rest of
         the transaction.
         """
-        query = cls._participant_request_query().filter_by(unique_id=unique_id)
+        query = cls._participant_request_query()
+        criterion = Participant.unique_id == unique_id
         if for_update:
-            query = _load_participant_for_update(
-                query, Participant.unique_id == unique_id
-            )
-        return query.one()
+            return _load_participant_for_update(query, criterion).one()
+        return query.filter(criterion).one()
 
     @classmethod
     def get_participant_from_assignment_id(
@@ -5576,12 +5575,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         The corresponding participant object.
         """
-        query = Participant.query.filter_by(assignment_id=assignment_id)
+        criterion = Participant.assignment_id == assignment_id
         if for_update:
-            query = _load_participant_for_update(
-                query, Participant.assignment_id == assignment_id
-            )
-        return query.one()
+            return _load_participant_for_update(Participant.query, criterion).one()
+        return Participant.query.filter(criterion).one()
 
     @classmethod
     def get_participant_from_participant_id(
@@ -5609,12 +5606,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         The corresponding participant object.
         """
         participant_id = int(participant_id)
-        query = Participant.query.filter_by(id=participant_id)
+        criterion = Participant.id == participant_id
         if for_update:
-            query = _load_participant_for_update(
-                query, Participant.id == participant_id
-            )
-        return query.one()
+            return _load_participant_for_update(Participant.query, criterion).one()
+        return Participant.query.filter(criterion).one()
 
     @classmethod
     def get_participant_from_worker_id(cls, worker_id: str, for_update: bool = False):
@@ -5670,12 +5665,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         The corresponding participant object.
         """
-        query = Participant.query.filter_by(unique_id=unique_id)
+        criterion = Participant.unique_id == unique_id
         if for_update:
-            query = _load_participant_for_update(
-                query, Participant.unique_id == unique_id
-            )
-        return query.one()
+            return _load_participant_for_update(Participant.query, criterion).one()
+        return Participant.query.filter(criterion).one()
 
     @experiment_route("/google3580fca13e19b596.html")
     @staticmethod

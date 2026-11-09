@@ -149,7 +149,7 @@ from psynet.db import (
 )
 from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
-from psynet.participant import Participant
+from psynet.participant import Participant, _lock_and_load_participant
 from psynet.serialize import SerializedCallable, serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
 from psynet.timeline_hold import (
@@ -1274,11 +1274,8 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            participant = (
-                experiment._participant_request_query()
-                .with_for_update(of=Participant, nowait=True)
-                .populate_existing()
-                .get(participant_id)
+            participant = _lock_and_load_participant(
+                experiment._participant_request_query(), participant_id, nowait=True
             )
         except Exception as err:
             _rollback_preserving_barrier_queues()
@@ -3473,11 +3470,8 @@ def _time_out_overdue_waiters(sweep_ends):
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            participant = (
-                experiment._participant_request_query()
-                .with_for_update(of=Participant, nowait=True)
-                .populate_existing()
-                .get(participant_id)
+            participant = _lock_and_load_participant(
+                experiment._participant_request_query(), participant_id, nowait=True
             )
             if participant is not None:
                 _time_out_overdue_links(participant)

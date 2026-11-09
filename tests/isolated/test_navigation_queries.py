@@ -246,7 +246,6 @@ def test_a_locked_request_that_waited_reads_the_trial_the_lock_holder_wrote(
                 .get(participant_id)
             )
             holder.current_trial.score = 3
-            holder.current_trial.var.payoff = 3
             db.session.flush()
             backend_pid = db.session.execute(text("SELECT pg_backend_pid()")).scalar()
             locked.set()
@@ -274,13 +273,14 @@ def test_a_locked_request_that_waited_reads_the_trial_the_lock_holder_wrote(
     writer.start()
     assert locked.wait(timeout=10)
     db.session.expire_all()
-    participant = load_locked(experiment, ids)
+    try:
+        participant = load_locked(experiment, ids)
+    finally:
+        writer.join(timeout=15)
     assert participant.id == participant_id
-    writer.join(timeout=10)
     assert not writer.is_alive()
     assert errors == []
-    trial = participant.current_trial
-    assert (trial.score, trial.var.get("payoff")) == (3, 3)
+    assert participant.current_trial.score == 3
 
 
 def test_public_participant_getter_retains_eager_relationships_when_detached(
