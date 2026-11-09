@@ -113,8 +113,12 @@ def get_timeline():
             for_loop(
                 label="questions",
                 iterate_over=range(len(QUESTIONS)),
-                # Top-ups stop when the game starts, so a group's members all
-                # reach each question together and cue the same definition.
+                # Trial.cue warns against a grouped definition taken from the
+                # loop position. It is safe here because top-ups stop when the
+                # game starts, so a group's members reach each question
+                # together and cue the same definition. A function of
+                # ``round`` can't replace it: players without a group cue
+                # ungrouped trials, which get ``round=None``.
                 logic=lambda question: EstimateTrial.cue({"question": question}),
                 time_estimate_per_iteration=EstimateTrial.time_estimate,
                 expected_repetitions=len(QUESTIONS),
@@ -168,19 +172,19 @@ class EstimateTrial(Trial):
     @classmethod
     def share_median(cls, trials: List["EstimateTrial"], node: SyncGroupNode):
         """Save the group's estimates on the node, with their median if there are enough."""
-        # trial.answer collects the trial's answers so far, and is None before
-        # the first. Browsers submit numbers as strings, and running out of
-        # time saves None.
-        answers = {
-            str(t.participant_id): (t.answer or {}).get("estimate") for t in trials
-        }
-        node.var.estimates = {
-            pid: float(estimate)
-            for pid, estimate in answers.items()
-            if estimate not in (None, "")
-        }
-        if len(node.var.estimates) >= QUORUM:
-            node.var.median = statistics.median(node.var.estimates.values())
+        # on_dissolve can run a second time for a member whose request was
+        # busy, so add to the estimates saved by an earlier call.
+        estimates = dict(node.var.get("estimates") or {})
+        for t in trials:
+            # trial.answer collects the trial's answers so far, and is None
+            # before the first. Browsers submit numbers as strings, and running
+            # out of time saves None.
+            estimate = (t.answer or {}).get("estimate")
+            if estimate is not None:
+                estimates[str(t.participant_id)] = float(estimate)
+        node.var.estimates = estimates
+        if len(estimates) >= QUORUM:
+            node.var.median = statistics.median(estimates.values())
 
     def revise_page(self, participant):
         estimates = self.node.var.get("estimates") or {}
@@ -212,6 +216,13 @@ class EstimateTrial(Trial):
         )
 
 
+def _in_median(trial):
+    """Return whether the trial's estimate counted towards its group's median, or None if there is no median."""
+    if trial.sync_group_id is None or not trial.node.var.has("median"):
+        return None
+    return str(trial.participant_id) in trial.node.var.estimates
+
+
 class Exp(psynet.experiment.Experiment):
     label = "Wisdom-of-crowds estimation demo"
 
@@ -219,10 +230,12 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per answer, from the trials, and one per group per question, from the nodes."""
-        trials = EstimateTrial.query.filter_by(finalized=True).order_by(
-            EstimateTrial.id
-        )
+        """Return one row per player per question, from the trials, and one per group per question, from the nodes.
+
+        Every trial gets a row, including one whose player left before
+        answering, so a missing answer is None rather than a missing row.
+        """
+        trials = EstimateTrial.query.order_by(EstimateTrial.id)
         groups = SyncGroupNode.query.filter_by(module_id="game").order_by(
             SyncGroupNode.sync_group_round, SyncGroupNode.id
         )
@@ -234,13 +247,12 @@ class Exp(psynet.experiment.Experiment):
                     # None for an answer given alone.
                     "group_id": t.sync_group_id,
                     "trial_id": t.id,
-                    "estimate": t.answer.get("estimate"),
-                    # None for an answer given alone; False if it missed the
-                    # group's estimates, which make up the median.
-                    "in_median": None
-                    if t.sync_group_id is None
-                    else str(t.participant_id) in (t.node.var.get("estimates") or {}),
-                    "revised": t.answer.get("revised"),
+                    # None if the player ran out of time or left first.
+                    "estimate": (t.answer or {}).get("estimate"),
+                    # Whether the estimate counted towards the group's median;
+                    # None for an answer given alone or a group without one.
+                    "in_median": _in_median(t),
+                    "revised": (t.answer or {}).get("revised"),
                 }
                 for t in trials
             ],
@@ -371,10 +383,19 @@ class Exp(psynet.experiment.Experiment):
         for bot in players:
             revised = [answers[(bot.id, question)]["revised"] for question in (0, 1)]
             assert revised == [250, 1300], revised
-        # The silent member's late answer is in their group's trial, but not
-        # in its median.
+        # The silent member answered the first question after its time limit,
+        # so their group's trial saved no estimate and it missed the median.
         late = answers[(silent.id, 0)]
-        assert (late["group_id"], late["in_median"]) == (groups[0]["group_id"], False)
+        assert (late["group_id"], late["estimate"], late["in_median"]) == (
+            groups[0]["group_id"],
+            None,
+            False,
+        ), late
+        # The group that ended had no median to count towards, and the member
+        # who left still has a row.
+        for bot in group_c:
+            assert answers[(bot.id, 0)]["in_median"] is None, answers[(bot.id, 0)]
+        assert answers[(quitter_c.id, 0)]["estimate"] is None
         # Answers given alone have no revision.
         alone = (
             [(silent.id, 1)]
