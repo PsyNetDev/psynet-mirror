@@ -109,8 +109,7 @@ class ContributionTrial(Trial):
         )
 
     def contribution_page(self, participant):
-        # sync_group_round is None on an ungrouped trial, which the loop's
-        # stop_if=left_team never cues; without it, check for a group first.
+        # The loop's stop_if=left_team means the trial always has a group.
         return ModularPage(
             "contribution",
             GroupPrompt(
