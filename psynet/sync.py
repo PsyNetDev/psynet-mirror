@@ -4260,11 +4260,8 @@ class SimpleSyncGroup(SyncGroup):
         the game has started and a newcomer couldn't catch up. From then on it
         is treated as a group without top-ups (see
         :ref:`groups_below_min_size`); a group already below its
-        quorum is dissolved now. To stop top-ups when the
-        group passes a barrier, pass ``stop_top_ups=True`` to that
-        :class:`GroupBarrier`::
-
-            GroupBarrier(id_="game_starts", group_type="team", stop_top_ups=True)
+        quorum is dissolved now. To stop top-ups when the group passes a
+        barrier instead, pass ``stop_top_ups=True`` to that :class:`GroupBarrier`.
         """
         if not self.accepts_top_ups:
             return
