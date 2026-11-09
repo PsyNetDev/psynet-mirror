@@ -268,6 +268,12 @@ def _status_is_timeline_hold(status):
     return bool(page.get("is_timeline_hold"))
 
 
+def _status_is_waiting(status):
+    """Return whether cached driver status is a waiting page or a timeline hold."""
+    page = (status or {}).get("page") or {}
+    return bool(page.get("is_wait_page")) or _status_is_timeline_hold(status)
+
+
 def _retry_busy_http(send, sleep=time.sleep):
     """Call ``send`` and retry structured busy 503 and stale-timeline 409.
 
@@ -1435,6 +1441,15 @@ class ParticipantDriver:
     def current_page_label(self):
         """Label of the current page, or ``None`` once the participant has left."""
         return self._current_page.get("label")
+
+    @property
+    def is_waiting(self):
+        """Whether the current page is a waiting page, such as one at a barrier.
+
+        Like the other ``current_page_*`` properties, this reads the status as
+        of the last :meth:`take_page` or :meth:`refresh_status`.
+        """
+        return _status_is_waiting(self.status)
 
     @property
     def current_page_text(self):

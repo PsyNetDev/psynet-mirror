@@ -482,3 +482,26 @@ Leftover inactive visits are outside this budget. Last-arrival keeps
 second pool on that path. Migrating waiters onto the live visit is extra SQL
 only when the instance is already inactive. See
 :ref:`timeline-hold-resume-protocol`.
+
+Grouped request budgets
+-----------------------
+
+``tests/isolated/test_group_request_queries.py`` forms groups through real
+``/timeline`` and ``/response`` requests from a cold session and pins what
+happens around the barrier check:
+
+* A member leaving a group above quorum costs the same for groups of four
+  and eight (``18`` statements when the leader leaves, including choosing a
+  new leader). Removal compares link ids before identity, so it does not
+  load every member.
+* Dissolving a group fails each remaining member separately: their refresh,
+  ``fail()``, trial lock, hold lookup and flushes cost about 10–12
+  statements per member. The test sets a ceiling of 14 per member.
+* An idle ``check_barriers`` sweep fully re-checks every waiting visit (19
+  statements each), and ``check_sync_groups`` recounts every active group
+  (7 statements each, one of them the deferred ``below_quorum_since`` load),
+  even when nothing changed. Neither depends on group
+  size.
+
+The dissolve and poller numbers are snapshots of work that could be batched
+or skipped; lower them when it is.
