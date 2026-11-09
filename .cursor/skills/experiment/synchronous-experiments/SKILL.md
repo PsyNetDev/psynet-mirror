@@ -92,9 +92,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   for rounds on fixed ticks (`lowest_unique_number`). Participants who miss
   a split join the next one rather than being failed. For players who stop
   responding mid-round, follow "Moving slow players on" in
-  `code/multiplayer/writing_a_round_based_experiment`: besides
-  `late_action="leave_group"`, you must also `remove_participant` them from
-  the `within` group in `on_release`; see the quorum caveat there.
+  `code/multiplayer/writing_a_round_based_experiment`: use
+  `late_action="leave_all_groups"` so that they also leave the `within`
+  group; see the quorum caveat there.
 - A member on a timed page isn't treated as late until its limit plus 10 s,
   so `late_after` need not cover the page (see "Timeouts" in
   `code/multiplayer/synchronization`); the demos use 30 s so that a
@@ -123,20 +123,19 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   needs a group: stop a rounds loop with it in the `while_loop` condition,
   and give a synchronized trial maker a solo alternative, for example
   `conditional("paired", in_pair, paired_trials, solo_trials)`.
-- Wrap the steps of a round in `only_in_group(group_type, step, ...)` so a participant
-  who loses their group partway skips the rest, instead of a `conditional`
-  per page. A loop passed into `only_in_group` runs to its end, so either
-  pass a list of the rounds' steps,
-  `only_in_group("pair", [round_steps(n) for n in range(N_ROUNDS)])`, or put
-  `only_in_group` inside the loop, as in
-  `for_loop(..., logic=only_in_group("pair", round_steps()))`. Put the
-  grouper or `Regrouper` before it (see the `only_in_group` docstring for
-  why).
-- Pass `otherwise=` to `only_in_group` for what a member who left, or anyone
-  who never had a group, does instead, such as answering the rest of the
-  question alone. With a `Regrouper` in the loop, it is also the page for a
-  player it sat out that round:
-  `join(Regrouper(...), only_in_group("pair", round_steps(), otherwise=sitting_out))`.
+- Give the steps of a round to `join(..., stop_if=left_pair)`, with
+  `left_pair` returning `not participant.in_sync_group("pair")`, so a
+  participant who loses their group partway skips the rest, instead of a
+  `conditional` per page. `join` checks `stop_if` before each argument and
+  never cuts a started argument short, so a barrier or cued trial runs whole.
+  To end the rounds, pass the same `stop_if` to the `for_loop`. Put the
+  grouper or `Regrouper` before the `join`, not among its arguments, or
+  everyone not yet grouped skips it.
+- Follow with a `conditional` on the same function for what a member who
+  left, or anyone who never had a group, does instead, such as answering the
+  rest of the question alone. With a `Regrouper` in the loop, it is also the
+  page for a player it sat out that round:
+  `join(Regrouper(...), join(decision_page, barrier, outcome_page, stop_if=left_pair), conditional("sat_out", left_pair, sitting_out))`.
   Check `regrouper.sat_out(participant)` there to tell a sit-out from a
   player removed for being late, as `not_playing` in `ultimatum_pairing` does.
 - In a `Regrouper` game the player whose partner left stays in the pair, so

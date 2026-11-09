@@ -71,8 +71,10 @@ Each round of the timeline then looks like this:
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: play_round
 
-:func:`~psynet.sync.only_in_group` skips the rest of the round's steps for a
-player who is no longer in a pair, and shows its ``otherwise`` steps instead.
+The inner :func:`~psynet.timeline.join` has ``stop_if=left_pair``, so it
+skips the rest of the round's steps for a player who is no longer in a pair,
+and the ``conditional`` after it tells a player who sat out or was removed
+why.
 
 Making a decision
 -----------------
@@ -131,20 +133,14 @@ results, count towards it: give them a time limit too, or make
 partner went on without you. Please continue." on the progress bar (pass
 ``on_arrival_message`` to the barrier to change it).
 
-The barrier removes a late player from the pair only (see
-:ref:`sync-leaving-a-group`), so they would still be in the cohort, and the
-next split would wait for them until its deadline. A late player has usually
-closed their page, so the demo also takes them out of the cohort when it
-scores their partner's round:
-
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :start-at: if len(participants) < 2:
-   :end-before: participants[0].var.outcome
-   :dedent: 4
-
-This runs only when the partner reaches the barrier, so if neither partner
-comes back, the next split waits for its deadline. A late player who comes
-back is told that they were away, and their game ends.
+With ``late_action="leave_group"`` a late player would leave the pair only
+(see :ref:`sync-leaving-a-group`), so they would still be in the cohort, and
+the next split would wait for them until its deadline. A late player has
+usually closed their page, so the demo uses ``late_action="leave_all_groups"``,
+which takes them out of the cohort too. The barrier checks for late players
+only while their partner waits at it, so if neither partner comes back, the
+next split waits for its deadline. A late player who comes back is told that
+they were away, and their game ends.
 
 The cohort's grouper sets ``below_quorum="continue_without_group"``. In this
 demo it never takes effect: the cohort accepts top-ups, so it is never
@@ -154,8 +150,9 @@ top-ups, where removing a late player would dissolve the cohort if that left
 it below its quorum, and the default ``below_quorum="fail"`` would fail the
 players who were on time (see :ref:`groups_below_min_size`).
 
-``only_in_group`` skips the rest of the round for a player removed from their
-pair, including its later group barriers, and runs its ``otherwise`` steps.
+The ``stop_if`` on the round's ``join`` skips the rest of the round for a
+player removed from their pair, including its later group barriers, and the
+``conditional`` after it shows them ``not_playing``.
 
 Scoring the round
 -----------------

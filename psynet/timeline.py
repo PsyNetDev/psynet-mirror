@@ -469,14 +469,6 @@ class NullElt(Elt):
         pass
 
 
-class _StartConstruct(NullElt):
-    """Marks the start of a construct whose elements must run together."""
-
-
-class _EndConstruct(NullElt):
-    """Marks the end of a construct started by :class:`_StartConstruct`."""
-
-
 class CodeBlock(Elt):
     """
     A timeline component that executes some back-end logic without showing
@@ -600,11 +592,9 @@ class AsyncCodeBlock(EltCollection):
 
     def resolve(self):
         return join(
-            _StartConstruct(),
             CodeBlock(self.initiate),
             self.wait_logic() if self.wait else [],
             CodeBlock(self.wrap_up),
-            _EndConstruct(),
         )
 
     def initiate(self, participant, code_block):
@@ -3355,7 +3345,7 @@ class Response(_Response):
         """Whether this answer arrived after the participant's group went on without them.
 
         It is ``True`` when a barrier removed the participant from their group
-        for being late (``late_action="leave_group"``) while they were on this
+        for being late (``late_action="leave_group"`` or ``"leave_all_groups"``) while they were on this
         page, whether the group carried on or was dissolved. The group didn't
         use the answer, so a move in a game, for example, usually shouldn't
         count.
@@ -3395,8 +3385,48 @@ def is_list_of(x, what):
     return True
 
 
-def join(*args):
+def join(*args, stop_if: Optional[Callable] = None):
+    """Join timeline elements, lists of elements and collections into one list.
+
+    Parameters
+    ----------
+    args
+        Elements, lists or tuples of them, collections such as barriers or
+        trial makers, and functions (which become :class:`CodeBlock` s).
+        ``None`` is skipped.
+    stop_if
+        Optional function taking ``participant`` and/or ``experiment``.
+        If given, it is checked before each argument, and once it returns
+        ``True`` the participant skips the remaining arguments. Each
+        argument runs whole once started, so pass ``join(...)`` as one
+        argument for steps that must not be separated. A list or tuple is
+        one argument too: unpack it, as in ``join(*steps, stop_if=...)``,
+        to check between its elements. For example,
+        ``join(chat_page, barrier, outcome_page, stop_if=left_pair)``
+        skips the rest of a round once the participant has left their pair.
+        Use :func:`for_loop` with ``stop_if`` to stop a loop, and a
+        :func:`conditional` after the ``join`` to show something to those
+        who stopped.
+    """
     from .asset import AssetSpecification
+
+    if stop_if is not None:
+        return join(
+            *(
+                conditional(
+                    "stop_if",
+                    lambda participant, experiment: (
+                        not call_function_with_context(
+                            stop_if, participant=participant, experiment=experiment
+                        )
+                    ),
+                    arg,
+                    log_chosen_branch=False,
+                )
+                for arg in args
+                if arg is not None
+            )
+        )
 
     list_classes = (list, tuple)
 
@@ -4484,7 +4514,33 @@ def for_loop(
     logic: Union["TimelineLogic", Callable[..., "TimelineLogic"]],
     time_estimate_per_iteration: Optional[float] = None,
     expected_repetitions=None,
+    stop_if: Optional[Callable] = None,
 ):
+    """Run ``logic`` once for each item of ``iterate_over``.
+
+    Parameters
+    ----------
+    label
+        Label of the loop, unique among loops nested in each other.
+    iterate_over
+        The items, or a function taking ``participant`` and/or ``experiment``
+        that returns them when the participant reaches the loop.
+    logic
+        Timeline logic for one iteration, or a function taking the item
+        (and optionally ``participant`` and ``experiment``) that returns it.
+    time_estimate_per_iteration
+        Seconds one iteration is expected to take. Required if ``logic`` is
+        a function.
+    expected_repetitions
+        Expected number of iterations, used for time estimates. Inferred from
+        ``iterate_over`` when it is a sequence or a function without arguments.
+    stop_if
+        Optional function taking ``participant`` and/or ``experiment``,
+        checked before each iteration. Once it returns ``True`` the loop
+        ends, after the iteration in progress has finished. For example,
+        ``stop_if=left_team`` ends a game's rounds once the participant has
+        left their team.
+    """
     if time_estimate_per_iteration is None:
         if callable(logic):
             raise ValueError(
@@ -4549,11 +4605,15 @@ def for_loop(
             participant=participant,
         )
 
-    def should_stay_in_loop(participant):
+    def should_stay_in_loop(participant, experiment):
         nonlocal label
         # state = participant.for_loops[-1]
         state = participant.for_loops[label]
-        return state["index"] < len(state["lst"])
+        if state["index"] >= len(state["lst"]):
+            return False
+        return stop_if is None or not call_function_with_context(
+            stop_if, participant=participant, experiment=experiment
+        )
 
     def increment_counter(participant):
         # state = participant.for_loops[-1]
@@ -4563,7 +4623,6 @@ def for_loop(
         flag_modified(participant, "for_loops")
 
     return join(
-        _StartConstruct(),
         CodeBlock(setup),
         while_loop(
             "for_loop",
@@ -4580,7 +4639,6 @@ def for_loop(
             fix_time_credit=False,
         ),
         CodeBlock(wrapup),
-        _EndConstruct(),
     )
 
 
@@ -4651,7 +4709,6 @@ def sequence(
     label = f"sequence_{label}"
 
     return join(
-        _StartConstruct(),
         CodeBlock(initialize_sequence),
         while_loop(
             label=label,
@@ -4668,7 +4725,6 @@ def sequence(
             fix_time_credit=False,
         ),
         CodeBlock(tear_down_sequence),
-        _EndConstruct(),
     )
 
 
@@ -4705,45 +4761,3 @@ class RegisterTrialMaker(NullElt):
 
 
 TimelineLogic = Union[Elt, List[Elt], EltCollection]
-
-
-_STEP_STARTS = (
-    _StartConstruct,
-    StartFixElt,
-    StartWhile,
-    StartSwitch,
-    StartModule,
-    StartAccumulateAnswers,
-)
-_STEP_ENDS = (
-    _EndConstruct,
-    EndFixElt,
-    EndWhile,
-    EndSwitch,
-    EndModule,
-    EndAccumulateAnswers,
-)
-
-
-def _split_into_steps(*elts) -> List[List[Elt]]:
-    """Join ``elts`` and split the result into steps that can each be skipped.
-
-    A construct such as a barrier, ``conditional`` or loop becomes several
-    elements when joined, from a start marker to its matching end; each step
-    keeps such a construct whole.
-    """
-    steps, current, depth = [], [], 0
-    for elt in join(*elts):
-        current.append(elt)
-        if isinstance(elt, _STEP_STARTS):
-            depth += 1
-        elif isinstance(elt, _STEP_ENDS):
-            depth -= 1
-        if depth < 0:
-            raise ValueError("Unmatched end of a timeline construct.")
-        if depth == 0:
-            steps.append(current)
-            current = []
-    if current:
-        raise ValueError("Unmatched start of a timeline construct.")
-    return steps
