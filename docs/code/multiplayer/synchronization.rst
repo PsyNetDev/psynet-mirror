@@ -34,8 +34,8 @@ the grouper has a ``waiting_screen`` (see below).
 ``quorum`` (default: ``start_short_with``, or else ``initial_group_size``)
     How many active members a group needs to keep going. A group whose
     members fail or leave until it has fewer is below quorum: it cannot pass
-    a barrier, and is dissolved unless it accepts top-ups; see
-    `Waiting and dropouts`_. For groups of three or more, leaving it out
+    a barrier, and waits for newcomers or is dissolved (see
+    `Groups below quorum`_). For groups of three or more, leaving it out
     warns, so that you decide how many may drop out. ``min_group_size`` is
     a deprecated name for it.
 
@@ -45,11 +45,8 @@ the grouper has a ``waiting_screen`` (see below).
     group. Participants already waiting at the grouper join such a group on
     the next barrier check after one has room. Closed groups and groups with
     no active members are not joined. Groups formed with this option accept
-    *top-ups*: when a member drops out, barriers wait for a replacement
-    instead of dissolving the group, until ``group.stop_top_ups()`` is
-    called (or ``top_up_wait`` runs out, or the group passes a
-    :class:`~psynet.sync.GroupBarrier` with ``stop_top_ups=True``);
-    ``below_quorum`` applies from then on.
+    *top-ups*; see `Groups below quorum`_ for how they stop and what they
+    change when a member drops out.
 
 ``max_group_size`` (default: ``initial_group_size``)
     The largest size a group can reach through ``join_existing_groups``;
@@ -63,9 +60,7 @@ the grouper has a ``waiting_screen`` (see below).
     A function of ``group`` and ``participant`` that returns whether the
     participant may join that group. Only used with
     ``join_existing_groups=True``. Returning ``False`` only turns that
-    newcomer away: the group still accepts top-ups, so below its quorum its
-    barriers keep waiting for one; use ``top_up_wait`` or ``stop_top_ups``
-    so that it can stop (see :ref:`groups_below_min_size`).
+    newcomer away; it doesn't stop top-ups (see `Groups below quorum`_).
 
 ``start_short_after`` (default: ``None``)
     Seconds after which a smaller group may start. Once the longest-waiting
@@ -86,9 +81,8 @@ the grouper has a ``waiting_screen`` (see below).
     started short is not below quorum at its first barrier.
 
     With ``join_existing_groups=True``, later arrivals can fill a group
-    started short up, but a group that drops below quorum then waits for a
-    replacement; leave ``join_existing_groups`` out to keep playing with fewer
-    members (see :ref:`groups below quorum <groups_below_min_size>`).
+    started short up; see `Groups below quorum`_ for what top-ups change
+    when a member then drops out.
 
 ``max_wait_time`` (default: 20) and ``max_wait_action`` (default: ``"fail"``)
     How long a participant may wait for a group, and what happens then:
@@ -671,8 +665,8 @@ the maximum waiting time:
     Size it to cover everything between the grouper and that barrier, such as
     instructions or a practice trial, or members who read slowly are late
     before they arrive. Removing a late member from the group can also take
-    the group below its ``quorum``; a group that doesn't accept top-ups is then dissolved,
-    which by default fails the members who arrived on time (see
+    the group below its ``quorum``, which can dissolve it and by default fail
+    the members who arrived on time (see
     :ref:`groups below quorum <groups_below_min_size>`).
 
 Trial makers with ``sync_group_type`` take the same settings with a
@@ -725,7 +719,9 @@ described under :ref:`groups_below_min_size` below.
 Groups below quorum
 ~~~~~~~~~~~~~~~~~~~
 
-Two separate settings decide what happens when someone leaves a group:
+This section, with :meth:`~psynet.sync.SyncGroup.remove_participant`, is
+where the rule for when a group is dissolved is stated; other pages point
+here. Two separate settings decide what happens when someone leaves a group:
 
 - **The member who leaves** is handled by why they left: a barrier's
   ``max_wait_action`` (they waited too long for the others) or
@@ -746,7 +742,8 @@ Two separate settings decide what happens when someone leaves a group:
     example after the first round, pass ``stop_top_ups=True`` to the
     :class:`~psynet.sync.GroupBarrier` it passes then (or call
     ``group.stop_top_ups()``); from then on the group is treated as one
-    without top-ups.
+    without top-ups. A ``join_criterion`` that returns ``False`` only turns
+    that newcomer away; it doesn't stop top-ups.
   - Otherwise the group is dissolved at once, and the grouper's
     ``below_quorum`` decides for each remaining member: ``"fail"`` (default)
     fails them, telling them "Too few members of your group remained to
@@ -764,6 +761,7 @@ Two separate settings decide what happens when someone leaves a group:
     :class:`~psynet.sync.GroupBarrier` treats it like any group below
     quorum: it waits for a newcomer while the group accepts top-ups, and
     dissolves it otherwise.
+  - Groups made by a :class:`~psynet.sync.Regrouper` are never dissolved.
 
 So in a :class:`~psynet.sync.SimpleGrouper` pair, where any dropout
 dissolves the group, the two settings together decide both fates:
@@ -814,12 +812,12 @@ options:
         late_action="leave_group",
     )
 
-The grouper leaves out ``join_existing_groups``: a group that accepts
-top-ups waits for replacements when it drops below its ``quorum``
-instead of carrying on. To accept replacements only at the start, pass
-``join_existing_groups=True`` and stop top-ups once the game starts.
-``top_up_wait`` keeps a group that falls below its quorum before then from
-waiting for a newcomer who may never come:
+The grouper leaves out ``join_existing_groups``, so a team that falls below
+its quorum is dissolved rather than waiting for a replacement (see
+`Groups below quorum`_). To accept replacements only at the start, pass
+``join_existing_groups=True``, stop top-ups once the game starts, and set
+``top_up_wait`` so that a team below its quorum before then doesn't wait
+for a newcomer who may never come:
 
 .. code-block:: python
 

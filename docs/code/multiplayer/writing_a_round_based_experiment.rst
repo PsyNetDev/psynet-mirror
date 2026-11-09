@@ -289,8 +289,8 @@ Players who finish leave the cohort, so that the regrouper doesn't wait for
 them in later rounds. This cohort accepts top-ups, so it is never dissolved,
 and ``reason="finished"`` here only shows them as "(finished)". It keeps the
 recipe safe to copy into a cohort without top-ups, where any other reason
-would dissolve the cohort below its quorum while the last players finish
-their rounds (see :meth:`~psynet.sync.SyncGroup.remove_participant`):
+would dissolve the cohort if that left it below its quorum while the last
+players finish their rounds (see :meth:`~psynet.sync.SyncGroup.remove_participant`):
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: leave_cohort

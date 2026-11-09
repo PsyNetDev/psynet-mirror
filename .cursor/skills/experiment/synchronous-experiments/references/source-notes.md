@@ -18,7 +18,8 @@ and platform docs when a study is near deployment.
   hold copy in groups of three or more. Pair holds keep the title only. Set
   `notify_arrivals=False` to disable them, or customize copy with
   `on_arrival_message`.
-  It checks the group's `quorum`, can wait for top-ups, can fail groups below quorum,
+  It checks the group's `quorum` (a group below it waits for top-ups or is
+  dissolved; see "Groups below quorum" in the synchronization docs),
   and accepts `on_release(group, participants, trials, node, leader, left, barrier)`
   (any subset) for atomic shared updates.
   The `barrier` argument is reconstructed; see
