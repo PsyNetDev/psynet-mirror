@@ -3708,34 +3708,74 @@ def test_waiting_page_timeout_applies_on_the_next_request(
         exp.timeline = original_timeline
 
 
+_dissolve_calls = []
+
+
+def _record_dissolve(participants):
+    _dissolve_calls.append(sorted(p.id for p in participants))
+
+
+@pytest.mark.parametrize("below_quorum", ["fail", "continue_without_group"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_dissolution_leaves_a_busy_member_to_the_poller(
-    in_experiment_directory, db_session
+def test_dissolution_waits_for_a_busy_member_then_removes_everyone_at_once(
+    in_experiment_directory, db_session, below_quorum
 ):
-    """A partner busy in their own request is failed by the next poll, not waited for."""
+    """Nobody leaves while a member's own request holds their row; the poll then dissolves the rest in one go."""
     exp = get_experiment()
-    leaving, busy = _pair_sync_group(exp, db_session)[0]
-    busy_id, group_id = busy.id, busy.sync_group.id
+    (waiter, busy, quitter), group = _sync_group_of(exp, db_session, 3)
+    group.below_quorum = below_quorum
+    barrier = GroupBarrier(
+        id_="dissolve_at_once", group_type="main", on_dissolve=_record_dissolve
+    )
+    for participant in (waiter, busy):
+        _arrive_at_group_barrier(exp, barrier, participant)
+    _commit_barrier_arrivals()
+    ids, group_id = sorted([waiter.id, busy.id]), group.id
+    _dissolve_calls.clear()
 
     with db.engine.connect() as busy_request, busy_request.begin():
         busy_request.execute(
             text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
-            {"id": busy_id},
+            {"id": busy.id},
         )
         _set_transaction_lock_timeout(1)
-        leaving.fail("left")
+        quitter.fail("returned")
         db.session.commit()
-    assert not Participant.query.get(busy_id).failed
+        check_barriers()
+        db.session.expire_all()
+        assert Participant.query.get(waiter.id).in_sync_group("main")
+        assert _dissolve_calls == []
 
     check_barriers()
 
     db.session.expire_all()
-    assert Participant.query.get(busy_id).failure_tags == [
-        "sync group below minimum size"
-    ]
+    assert _dissolve_calls == [ids]
+    for participant_id in ids:
+        participant = Participant.query.get(participant_id)
+        assert not participant.in_sync_group("main")
+        assert participant.failed == (below_quorum == "fail")
     assert SyncGroup.query.get(group_id).active is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_member_whose_own_request_dissolves_the_group_is_removed_at_once(
+    in_experiment_directory, db_session
+):
+    """The requester's own row lock doesn't hold up the dissolution it triggers."""
+    exp = get_experiment()
+    (stayer, late), group = _pair_sync_group(exp, db_session)
+    group.below_quorum = "continue_without_group"
+    db_session.commit()
+    Participant.query.with_for_update(of=Participant).populate_existing().get(stayer.id)
+
+    group.remove_participant(late, reason="late")
+
+    assert not stayer.in_sync_group("main")
+    assert not group.active and not group.dissolving
 
 
 @pytest.mark.parametrize(

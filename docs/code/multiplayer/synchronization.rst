@@ -313,8 +313,10 @@ the trial, or ``participant.var.get("score")`` when there is no trial.
 If the group dissolves while some members are waiting at the barrier,
 ``on_dissolve`` runs for them instead, before they leave the group, with the
 same arguments except ``leader`` and ``left``.
-``participants`` are then the members waiting at the barrier, so a quiz can
-still score the last question for those who answered it:
+``participants`` are then the members waiting at the barrier. Dissolving
+waits until no member's request is in flight, usually a second at most, so
+``on_dissolve`` is called once, with every member waiting at the barrier. A
+quiz can therefore still score the last question for those who answered it:
 
 .. code-block:: python
 
