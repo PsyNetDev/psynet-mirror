@@ -1,6 +1,7 @@
 """Tests for transactional callbacks on :meth:`Trial.cue`."""
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from dallinger import db
@@ -11,6 +12,7 @@ from psynet.asset import Asset, ExternalAsset
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.db import transaction
 from psynet.experiment import get_experiment
+from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.trial.main import GenericTrialNode, Trial
@@ -236,6 +238,36 @@ def test_a_trial_ending_in_the_request_that_cued_it_can_pay_its_participant(
         participant.current_trial.on_finalized()
 
     assert participant.performance_reward == 0.5
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_trial_answer_follows_its_pages_until_the_trial_ends(
+    db_session, participant_and_node, monkeypatch
+):
+    """A barrier inside show_trial can read the answer so far from trial.answer."""
+    experiment, participant, node = participant_and_node
+    monkeypatch.setattr(
+        CueTrial,
+        "get_default_parent_node",
+        classmethod(lambda cls, participant, experiment: node),
+    )
+    CueTrial.cue(definition={})[0].consume(experiment, participant)
+    trial = participant.current_trial
+    page = ModularPage("pick", "Pick a number.", PushButtonControl([1, 2, 3]))
+
+    def submit(answer):
+        page._accept_response(SimpleNamespace(answer=answer), experiment, participant)
+
+    submit(1)
+    assert trial.answer == 1
+    trial.failed = True
+    submit(2)
+    trial.failed, trial.complete = False, True
+    submit(3)
+    assert trial.answer == 1
 
 
 def test_cue_creation_context_requires_on_trial_created():

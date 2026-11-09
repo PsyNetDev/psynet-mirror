@@ -194,12 +194,13 @@ def pairing_up(participant):
 
 def waiting_for_partner(participant):
     """Replace the decision buttons with the player's choice while their partner decides."""
-    if participant.var.decision is None:
+    trial = participant.current_trial
+    if trial.answer is None:
         text = "You ran out of time, so nobody will be paid this round."
-    elif participant.current_trial.sync_group_role == "proposer":
-        text = f"You offer {participant.var.decision} coins."
+    elif trial.sync_group_role == "proposer":
+        text = f"You offer {trial.answer} coins."
     else:
-        text = f"You accept at least {participant.var.decision} coins."
+        text = f"You accept at least {trial.answer} coins."
     # No ticks: the partner arriving releases the pair at once.
     return GroupPrompt(
         text,
@@ -281,7 +282,6 @@ class OfferTrial(Trial):
             PushButtonControl(
                 choices=list(range(endowment + 1)), arrange_vertically=False
             ),
-            save_answer="decision",
             time_limit=DECISION_SECONDS,
             time_estimate=10,
         )
@@ -294,13 +294,9 @@ class OfferTrial(Trial):
         node: SyncGroupNode,
         left: List[Participant],
     ):
-        """Save the pair's offer and result on the node, and each player's coins on their trial.
-
-        The trials' answers are only saved once the trials end, after this
-        barrier, so the decisions are read from ``participant.var``.
-        """
+        """Save the pair's offer and result on the node, and each player's coins on their trial."""
         by_role = {trial.sync_group_role: trial for trial in trials}
-        decisions = {role: t.participant.var.decision for role, t in by_role.items()}
+        decisions = {role: t.answer for role, t in by_role.items()}
         offer, minimum = decisions.get("proposer"), decisions.get("responder")
         if len(trials) < 2:
             away = any(p.sync_group_removal_reason("pair") == "late" for p in left)
