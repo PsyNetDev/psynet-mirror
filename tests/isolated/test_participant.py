@@ -309,6 +309,7 @@ class TestParticipantFailure:
         assert trial.failed
         assert trial.complete
         assert trial.answer == "Very much"
+        assert trial.response is not None and trial.time_taken is not None
         assert not participant.failed
         assert bot.is_working
 

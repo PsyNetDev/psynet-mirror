@@ -22,7 +22,7 @@ def test_trial_records_time_and_response_of_its_own_pages():
     assert len(trials) == 5
     for trial in trials:
         # Bots report each page's time estimate: 5 + 3 + 3 seconds, excluding
-        # the rejected attempt, the feedback page and the pages after the trial.
+        # the rejected attempt and the feedback page.
         assert trial.time_taken == 11
         assert trial.response.question == "number_2"
         assert trial.response.successful_validation

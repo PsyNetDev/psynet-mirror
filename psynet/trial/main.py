@@ -302,11 +302,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     response :
         The :class:`~psynet.timeline.Response` from the last accepted page of
-        :meth:`~psynet.trial.main.Trial.show_trial`, which completed the trial
-        and records in detail what the participant's web browser sent.
-        With several pages (for example with ``accumulate_answers``), the
-        responses of earlier pages are not linked; find them through
-        ``participant.all_responses``.
+        :meth:`~psynet.trial.main.Trial.show_trial` (normally the one that
+        completed the trial), which records in detail what the participant's
+        web browser sent. With several pages (for example with
+        ``accumulate_answers``), the responses of earlier pages are not linked
+        to the trial.
         Equals ``None`` until the participant submits a trial page.
 
     time_taken : float
