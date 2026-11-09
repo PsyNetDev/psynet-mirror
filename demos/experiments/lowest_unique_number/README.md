@@ -6,7 +6,8 @@ lowest number that nobody else in the room picked wins a bonus.
 
 Players who don't choose in time sit out that round and join the next one,
 instead of holding up their room or being failed. Someone left waiting with
-nobody to play with is still failed after the usual five-minute wait. Good
+nobody to play with skips the round after 60 seconds with a short message,
+instead of being failed. Good
 reference for `Regrouper(every=...)` rounds on fixed ticks, the `{SECONDS}` countdown,
 a page `time_limit`, and `GroupBarrier` timeouts that remove late players from the group rather than fail them.
 Each round is one cued trial per player (`Trial.cue(...)` with

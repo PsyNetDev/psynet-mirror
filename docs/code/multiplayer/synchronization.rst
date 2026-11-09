@@ -717,9 +717,9 @@ described under :ref:`groups_below_min_size` below.
 Groups below quorum
 ~~~~~~~~~~~~~~~~~~~
 
-This section, with :meth:`~psynet.sync.SyncGroup.remove_participant`, is
-where the rule for when a group is dissolved is stated; other pages point
-here. Two separate settings decide what happens when someone leaves a group:
+This section is the one place that states when a group is dissolved; other
+pages and docstrings point here. Two separate settings decide what happens
+when someone leaves a group:
 
 - **The member who leaves** is handled by why they left: a barrier's
   ``max_wait_action`` (they waited too long for the others) or
@@ -730,19 +730,22 @@ here. Two separate settings decide what happens when someone leaves a group:
   its ``quorum``. Below it, what happens depends on whether the group
   accepts top-ups:
 
-  - While it accepts newcomers (``join_existing_groups=True``), the group's
-    next barrier waits for new members to join, without a time limit if the
-    barrier sets ``late_after``. The grouper's ``top_up_wait=seconds`` limits
-    that wait: once the group has been below its quorum that long, it stops
-    accepting newcomers at its next barrier, as below. If every member leaves, the group closes at
-    the next periodic sync-group check (every few seconds), and later
-    arrivals form a new one. Once a newcomer could no longer catch up, for
-    example after the first round, pass ``stop_top_ups=True`` to the
-    :class:`~psynet.sync.GroupBarrier` it passes then (or call
-    ``group.stop_top_ups()``); from then on the group is treated as one
-    without top-ups. A ``join_criterion`` that returns ``False`` only turns
-    that newcomer away; it doesn't stop top-ups.
-  - Otherwise the group is dissolved at once, and the grouper's
+  - While it accepts newcomers (``join_existing_groups=True``), it is never
+    dissolved: its barriers wait for new members to join, until their
+    ``max_wait_time``, or without a limit if the barrier sets
+    ``late_after``. If every member leaves, the group closes at the next
+    periodic sync-group check (every few seconds), and later arrivals form a
+    new one. A ``join_criterion`` that returns ``False`` only turns that
+    newcomer away; it doesn't stop top-ups.
+  - Top-ups stop in three ways. Once a newcomer could no longer catch up,
+    for example after the first round, pass ``stop_top_ups=True`` to the
+    :class:`~psynet.sync.GroupBarrier` the group passes then, or call
+    ``group.stop_top_ups()``; a group already below its quorum is then
+    dissolved at once, however its members left. The grouper's
+    ``top_up_wait=seconds`` limits the wait instead: once the group has been
+    below its quorum that long, its next barrier stops top-ups and dissolves
+    it. From then on the group is treated as one without top-ups.
+  - Without top-ups, the group is dissolved at once, and the grouper's
     ``below_quorum`` decides for each remaining member: ``"fail"`` (default)
     fails them, telling them "Too few members of your group remained to
     continue, so we ended your session."; ``"continue_without_group"``
@@ -755,14 +758,16 @@ here. Two separate settings decide what happens when someone leaves a group:
     (for example submitting a page) is handled by the background barrier
     check within about a second instead, once that request finishes.
   - Members who leave with ``reason="finished"``, or who move on at a
-    :class:`~psynet.sync.Regrouper`, don't dissolve the group. Its next
-    :class:`~psynet.sync.GroupBarrier` treats it like any group below
-    quorum: it waits for a newcomer while the group accepts top-ups, and
-    dissolves it otherwise.
+    :class:`~psynet.sync.Regrouper` (``"moved_on"``), don't dissolve the
+    group when they leave, unlike any other
+    :meth:`~psynet.sync.SyncGroup.remove_participant` reason or a failure
+    in a group without top-ups. Its next :class:`~psynet.sync.GroupBarrier` treats it like any
+    group below quorum: it waits for a newcomer while the group accepts
+    top-ups, and dissolves it otherwise, whatever the reason.
   - Groups made by a :class:`~psynet.sync.Regrouper` are never dissolved.
 
-So in a :class:`~psynet.sync.SimpleGrouper` pair, where any dropout
-dissolves the group, the two settings together decide both fates:
+So in a :class:`~psynet.sync.SimpleGrouper` pair without top-ups, the two
+settings together decide both fates:
 
 .. list-table::
    :header-rows: 1
