@@ -1294,7 +1294,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             two trial classes played one after the other in one round. If
             the participant has no trial in that round and it is no longer
             open, the group finished it without them: the cue is skipped,
-            with no trial and no pages. Only for a trial class that sets
+            with no trial and no pages, and the round's later barriers don't
+            wait for them. Only for a trial class that sets
             :attr:`sync_group_type`, and not with a regrouper, whose groups
             mix players at different loop positions. Ignored for a
             participant without a group. See
@@ -1328,11 +1329,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 def score_room(cls, trials, node):
                     node.var.picks = [t.answer for t in trials]
 
-            def left_room(participant):
-                return not participant.in_sync_group("room")
-
-            # A fixed room plays rounds 0, 1 and 2. The Module gives the nodes
-            # a module_id, for example to find them by when exporting.
+            # A fixed room plays rounds 0, 1 and 2; a player who leaves it
+            # plays the remaining rounds alone. The Module gives the nodes a
+            # module_id, for example to find them by when exporting.
             join(
                 SimpleGrouper("room", initial_group_size=4),
                 Module(
@@ -1340,15 +1339,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                     for_loop(
                         label="rounds",
                         iterate_over=range(3),
-                        logic=PickTrial.cue({"numbers": [1, 2, 3, 4, 5]}),
+                        logic=lambda i: PickTrial.cue(
+                            {"numbers": [1, 2, 3, 4, 5], "round": i}, round=i
+                        ),
                         time_estimate_per_iteration=20,
-                        stop_if=left_room,
                     ),
-                ),
-                conditional(
-                    "room_ended",
-                    left_room,
-                    InfoPage("Your room has ended.", time_estimate=5),
                 ),
             )
         """
@@ -4362,7 +4357,11 @@ class SyncGroupNode(GenericTrialNode):
 
     @staticmethod
     def _round_is_open(node, group, participant):
-        """Whether ``participant``'s cue should join ``node``, the group's newest round."""
+        """Whether ``participant``'s cue should join ``node``, a round of ``group`` they have no trial on yet.
+
+        ``node`` is the group's newest round for an automatic cue, or the
+        round a cue's ``round`` names, which may be a past one.
+        """
         if node.sync_group_released:
             return False
         trials = Trial.query.filter_by(node_id=node.id)
