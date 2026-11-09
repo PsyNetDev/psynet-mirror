@@ -387,9 +387,9 @@ class GroupPrompt(Prompt):
         Groups that take top-ups are open-ended, like a lobby, so their
         leavers are not shown, nor, once top-ups stop, those who left before.
         """
-        if getattr(self.group, "accepts_top_ups", False):
+        if self.group.accepts_top_ups:
             return []
-        stopped_at = getattr(self.group, "top_ups_stopped_at", None)
+        stopped_at = self.group.top_ups_stopped_at
         active_ids = {p.id for p in self.group.active_participants}
         left = {}
         reasons = self._removal_reasons()

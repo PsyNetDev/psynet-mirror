@@ -966,7 +966,7 @@ def test_newcomer_waits_briefly_for_a_busy_group_instead_of_the_poller(
     assert db_session.execute(text(lock_timeout)).scalar() == "5s"
     db_session.commit()
 
-    timer = hold_group_row(3)
+    timer = hold_group_row(1.5)
     grouper._join_on_arrival(slow)
     assert not slow.in_sync_group("top_up")
     db_session.commit()
@@ -7751,6 +7751,7 @@ def test_top_up_wait_limits_how_long_a_group_waits_for_newcomers(
     group.below_quorum_since -= timedelta(seconds=11)
     assert barrier.choose_who_to_release([waiter]) == [waiter]
     assert not waiter.failed and not group.accepts_top_ups
+    assert group.top_ups_stopped_at is not None
     assert waiter.sync_group_removal_reason("team") == "group_dissolved"
 
 
@@ -7837,7 +7838,7 @@ def test_latecomers_fill_a_team_until_it_passes_game_starts(
 def test_group_barrier_counts_a_newcomer_joining_in_another_request(
     in_experiment_directory, db_session, stop_top_ups
 ):
-    """A barrier check on a group that accepts top-ups waits out a join in progress, then counts the newcomer."""
+    """A barrier check on a group that accepts top-ups doesn't release it during a join in progress, and later counts the newcomer."""
     exp = get_experiment()
     grouper = SimpleGrouper(
         "team", initial_group_size=4, quorum=2, join_existing_groups=True
@@ -7880,11 +7881,17 @@ def test_group_barrier_counts_a_newcomer_joining_in_another_request(
         joiner.flush()
         poller = threading.Thread(target=poll_barriers)
         poller.start()
-        # Commit the join while the check runs, or once it has finished.
+        # The check finds the group busy and defers. A check that counted
+        # the members without the lock would instead block on its UPDATE of
+        # the group; the join then commits, and that check releases the
+        # starters without the newcomer.
         deadline = time.monotonic() + 10
         while poller.is_alive() and time.monotonic() < deadline:
             blocked = db_session.execute(
-                text("SELECT count(*) FROM pg_locks WHERE NOT granted")
+                text(
+                    "SELECT count(*) FROM pg_stat_activity "
+                    "WHERE wait_event_type = 'Lock' AND datname = current_database()"
+                )
             ).scalar()
             db_session.rollback()
             if blocked:
@@ -7915,6 +7922,67 @@ def test_group_barrier_counts_a_newcomer_joining_in_another_request(
     _commit_barrier_arrivals()
     assert still_waiting() == []
     assert group.accepts_top_ups != stop_top_ups
+
+
+def _top_up_team_waiting_at(exp, db_session, barrier, n_starters=2):
+    """Return a team of ``n_starters`` that accepts top-ups, all waiting at ``barrier``, and the pending checks."""
+    grouper = SimpleGrouper(
+        "team", initial_group_size=4, quorum=2, join_existing_groups=True
+    )
+    starters = _working_participants(exp, n_starters)
+    group = grouper._make_group(starters, initial_group_size=4)
+    for participant in starters:
+        _arrive_at_group_barrier(exp, barrier, participant)
+    db_session.commit()
+    return starters, group, _take_pending_barrier_checks()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_group_barrier_check_on_a_busy_top_up_group_is_deferred_and_retried(
+    in_experiment_directory, db_session
+):
+    """The last arrival and the poller report a check deferred while the group is busy, so they retry it."""
+    exp = get_experiment()
+    barrier = GroupBarrier(id_="game_starts", group_type="team")
+    starters, group, checks = _top_up_team_waiting_at(exp, db_session, barrier)
+    with db.engine.connect() as joiner, joiner.begin():
+        joiner.execute(
+            text("SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"),
+            {"id": group.id},
+        )
+        assert _run_pending_barrier_checks(checks) is False
+        assert _process_barrier_instance(checks[0])
+    assert _run_pending_barrier_checks(checks)
+    db_session.expire_all()
+    assert all(barrier.can_participant_exit(p) for p in starters)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_group_barrier_check_counts_a_newcomer_who_joined_after_it_loaded_the_group(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    barrier = GroupBarrier(id_="game_starts", group_type="team")
+    starters, group, checks = _top_up_team_waiting_at(exp, db_session, barrier)
+    (newcomer,) = _working_participants(exp, 1)
+    assert len(group.active_participants) == 2
+    with Session(bind=db.engine) as other:
+        other.add(
+            ParticipantLinkSyncGroup(
+                participant_id=newcomer.id,
+                sync_group_id=group.id,
+                active=True,
+                arrival_time=timenow(),
+            )
+        )
+        other.commit()
+    barrier._check_instance(checks[0])
+    db_session.commit()
+    assert not any(barrier.can_participant_exit(p) for p in starters)
 
 
 @pytest.mark.parametrize(

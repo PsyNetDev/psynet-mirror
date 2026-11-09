@@ -158,6 +158,7 @@ from psynet.barrier_spec import (
 )
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.db import (
+    _lock_timeout,
     _SessionQueue,
     _set_transaction_lock_timeout,
     is_transient_transaction_error,
@@ -421,10 +422,8 @@ def _hold_barrier_instance_claim(instance_id, *, wait=False):
     """
     with db.engine.connect() as conn:
         with conn.begin():
-            timeout = get_config().get("timeline_lock_timeout_seconds")
-            conn.execute(
-                text("SELECT set_config('lock_timeout', :timeout, true)"),
-                {"timeout": f"{timeout}s"},
+            _set_transaction_lock_timeout(
+                get_config().get("timeline_lock_timeout_seconds"), session=conn
             )
             acquired = _execute_advisory_xact_lock(conn, instance_id, wait=wait)
             yield acquired
@@ -1475,55 +1474,54 @@ def _group_barrier_outcome(group, members, waiting_ids, scope):
 _JOIN_LOCK_WAIT_SECONDS = 1
 
 
-def _lock_top_up_group(group, *, wait=False) -> Optional["SimpleSyncGroup"]:
-    """Lock a group that accepts top-ups and reload its members, or return ``None`` if it is busy.
+def _lock_sync_group(
+    group_id, *, session=None, skip_locked=False, nowait=False, wait_seconds=None
+) -> Optional["SyncGroup"]:
+    """Lock a sync group's row ``FOR NO KEY UPDATE`` and reload it, with its member links.
 
-    Newcomers join under this lock (see ``SimpleGrouper._claim_group_to_join``),
-    and a :class:`GroupBarrier` check takes it before counting a top-up
-    group's members, holding it until it commits. So a newcomer either joins
-    before the check counts them or after it has released, never in between.
-    ``populate_existing`` also reloads the group's member links, so the count
-    includes newcomers who joined in other requests.
+    ``populate_existing`` also reloads the member links this session has
+    loaded, so they include members who joined or left in other requests.
+    See the lock order in :doc:`/developer/synchronization_internals`.
 
-    By default a row another transaction holds is skipped, not waited for:
-    barrier checks hold waiters' rows and the poller has many visits to
-    check, so the next check tries again. With ``wait=True``, for a
-    newcomer's own request, the wait is bounded by
-    ``_JOIN_LOCK_WAIT_SECONDS``; a lock timeout or deadlock returns ``None``
-    with the transaction intact. Holders of a group row never wait for
-    another participant's row (see the lock order in
-    :doc:`/developer/synchronization_internals`), so the wait is normally
-    only until a barrier check or another join commits.
+    Parameters
+    ----------
+    group_id
+        The group to lock.
+    session
+        The session to lock it in, by default ``db.session``.
+    skip_locked
+        Return ``None`` instead of waiting if another transaction holds the row.
+    nowait
+        Raise PostgreSQL's ``55P03`` (lock not available) instead of waiting.
+    wait_seconds
+        Wait at most this long, in a savepoint, then return ``None`` with
+        the transaction intact; a deadlock also returns ``None``.
+
+    Returns
+    -------
+    SyncGroup or None
+        The locked group, or ``None`` if it doesn't exist or stayed busy.
     """
-    query = SimpleSyncGroup.query.filter_by(id=group.id)
-    if not wait:
-        locked = (
-            query.with_for_update(of=SimpleSyncGroup, key_share=True, skip_locked=True)
-            .populate_existing()
-            .first()
+    if session is None:
+        session = db.session
+    query = (
+        session.query(SyncGroup)
+        .filter_by(id=group_id)
+        .with_for_update(
+            of=SyncGroup, key_share=True, skip_locked=skip_locked, nowait=nowait
         )
-    else:
-        previous = db.session.execute(
-            text("SELECT current_setting('lock_timeout')")
-        ).scalar()
-        try:
-            with db.session.begin_nested():
-                _set_transaction_lock_timeout(_JOIN_LOCK_WAIT_SECONDS)
-                locked = (
-                    query.with_for_update(of=SimpleSyncGroup, key_share=True)
-                    .populate_existing()
-                    .first()
-                )
-        except Exception as err:
-            if not is_transient_transaction_error(err):
-                raise
-            logger.debug("Sync group %s stayed busy while a newcomer waited.", group.id)
-            locked = None
-        db.session.execute(
-            text("SELECT set_config('lock_timeout', :timeout, true)"),
-            {"timeout": previous},
-        )
-    return locked
+        .populate_existing()
+    )
+    if wait_seconds is None:
+        return query.first()
+    try:
+        with _lock_timeout(wait_seconds, session=session):
+            return query.first()
+    except Exception as err:
+        if not is_transient_transaction_error(err):
+            raise
+        logger.debug("Sync group %s stayed busy for %s s.", group_id, wait_seconds)
+        return None
 
 
 #: What a :class:`GroupBarrier` does with a member who is late reaching it; see ``late_action``.
@@ -1976,10 +1974,13 @@ class GroupBarrier(Barrier):
     def _release_ready_waiters(self, waiting_participants, instance):
         """Release waiters whose group already passed, then check the rest as usual.
 
-        The rest wait for the next check if a newcomer may be joining their
-        group; see :meth:`_lock_top_up_groups`.
+        Their groups that accept top-ups are locked first; see
+        :meth:`_lock_top_up_groups`.
         """
         through = self._waiters_let_through(waiting_participants)
+        through_ids = {p.id for p in through}
+        rest = [p for p in waiting_participants if p.id not in through_ids]
+        self._lock_top_up_groups(rest)
         if through:
             logger.info(
                 "GroupBarrier '%s': letting through %i participant(s) whose group "
@@ -1991,34 +1992,23 @@ class GroupBarrier(Barrier):
             for participant in through:
                 self.release(participant)
             _queue_released_hold_waiters(through)
-        through_ids = {p.id for p in through}
-        rest = [p for p in waiting_participants if p.id not in through_ids]
-        if not self._lock_top_up_groups(rest):
-            return waiting_participants
         super()._release_ready_waiters(rest, instance)
         return waiting_participants
 
-    def _lock_top_up_groups(self, waiting_participants) -> bool:
-        """Lock the waiters' groups that accept top-ups, or return ``False`` if one is busy.
+    def _lock_top_up_groups(self, waiting_participants):
+        """Lock and reload the waiters' groups that accept top-ups, raising ``55P03`` if one is busy.
 
-        Decided once per check, before :meth:`check_waiting_participants`
-        and :meth:`choose_who_to_release`, so both see the same members,
-        including newcomers who joined in other requests, and nobody joins
-        until the check commits (see :func:`_lock_top_up_group`). A busy
-        group defers the whole check to the next one.
+        Newcomers join under the same lock (see
+        ``SimpleGrouper._claim_group_to_join``), so they join either before
+        the check counts them or after it commits. Taken once per check,
+        before :meth:`check_waiting_participants` and
+        :meth:`choose_who_to_release`, so both see the same members. A busy
+        group, perhaps with a newcomer joining, defers the whole check like a
+        busy waiter does: the poller and the last arrival retry it.
         """
         for group in self.get_waiting_groups(waiting_participants).values():
-            if getattr(group, "accepts_top_ups", False) and (
-                _lock_top_up_group(group) is None
-            ):
-                logger.debug(
-                    "GroupBarrier '%s' deferred: sync group %s is busy, "
-                    "perhaps with a newcomer joining.",
-                    self.id,
-                    group.id,
-                )
-                return False
-        return True
+            if group.accepts_top_ups:
+                _lock_sync_group(group.id, nowait=True)
 
     def waiting_pool_group(self, participant) -> "SyncGroup":
         """Return the participant's group of ``group_type``; its members wait together."""
@@ -2160,6 +2150,12 @@ class GroupBarrier(Barrier):
         super().handle_max_wait_timeout(participant)
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
+        """Release each waiting group that is ready, and dissolve those that can't reach their quorum.
+
+        Expects to run inside a barrier check, which has locked the waiters
+        and their groups that accept top-ups; called directly, it counts the
+        members this session has loaded and takes no such locks.
+        """
         waiting_participant_ids = {p.id for p in waiting_participants}
         participants_to_release = []
         groups = self.get_waiting_groups(waiting_participants)
@@ -2178,7 +2174,7 @@ class GroupBarrier(Barrier):
                 # The group can never reach its quorum, so remove everyone
                 # and release whoever is waiting here, after the grouper's
                 # below_quorum has failed or released each of them.
-                if getattr(group, "accepts_top_ups", False):
+                if group.accepts_top_ups:
                     group._close_to_top_ups()
                 participants_to_release.extend(
                     participant
@@ -2212,7 +2208,7 @@ class GroupBarrier(Barrier):
                 for link in group.participant_links:
                     if link.participant_id not in in_later_round:
                         link.page_deadline = None
-                if self.stop_top_ups and hasattr(group, "stop_top_ups"):
+                if self.stop_top_ups:
                     group.stop_top_ups()
 
                 trials = _round_trials(released, node)
@@ -2270,7 +2266,7 @@ class GroupBarrier(Barrier):
             if _round_is_busy(group, node):
                 # choose_who_to_release would defer this group.
                 continue
-            if getattr(group, "accepts_top_ups", False):
+            if group.accepts_top_ups:
                 # A peek takes no lock, but still counts newcomers who have
                 # joined since this session loaded the group.
                 db.session.expire(group, ["participant_links"])
@@ -3061,20 +3057,26 @@ class SimpleGrouper(Grouper):
 
         Each candidate's row is locked ``FOR NO KEY UPDATE SKIP LOCKED``, and
         its active members are re-counted under that lock, so two joiners
-        cannot both take a group's last place. A group another transaction
-        is changing is skipped for the next candidate. The joiner already
-        holds its own participant row (or, in a barrier check, the waiters'
-        rows), so this keeps the order participants before group.
+        cannot both take a group's last place. A :class:`GroupBarrier` check
+        holds the same lock while it counts a top-up group's members, so a
+        newcomer joins either before the check or after it commits. A group
+        another transaction is changing is skipped for the next candidate.
+        The joiner already holds its own participant row (or, in a barrier
+        check, the waiters' rows), so this keeps the order participants
+        before group.
 
         Parameters
         ----------
         participant
             The newcomer.
         wait
-            If every open group was busy, wait briefly for the best one
-            instead of returning ``None`` (see :func:`_lock_top_up_group`).
-            For the newcomer's own request, which would otherwise wait at
-            the grouper for the barrier poller; barrier checks don't wait.
+            If every open group was busy, wait up to
+            ``_JOIN_LOCK_WAIT_SECONDS`` for the best one instead of returning
+            ``None``. For the newcomer's own request, which would otherwise
+            wait at the grouper for the barrier poller; barrier checks don't
+            wait. The wait can't deadlock: the newcomer has no link in the
+            group yet, so whoever holds the group's row has no reason to
+            lock the newcomer's.
 
         Returns
         -------
@@ -3083,13 +3085,13 @@ class SimpleGrouper(Grouper):
         """
         busy = None
         for candidate in self._groups_to_join(participant):
-            group = _lock_top_up_group(candidate)
+            group = _lock_sync_group(candidate.id, skip_locked=True)
             if group is None:
                 busy = busy or candidate
             elif self._has_room_to_join(group):
                 return group
         if wait and busy is not None:
-            group = _lock_top_up_group(busy, wait=True)
+            group = _lock_sync_group(busy.id, wait_seconds=_JOIN_LOCK_WAIT_SECONDS)
             if group is not None and self._has_room_to_join(group):
                 return group
         return None
@@ -4295,6 +4297,14 @@ class SyncGroup(SQLBase, SQLMixin):
 
     n_active_participants = Column(Integer)
 
+    #: Whether newcomers may join; only :class:`SimpleSyncGroup` takes top-ups.
+    accepts_top_ups = False
+    #: When the group stopped accepting top-ups; see :class:`SimpleSyncGroup`.
+    top_ups_stopped_at = None
+
+    def stop_top_ups(self):
+        """Stop newcomers joining this group; a no-op for groups that never take them."""
+
     @property
     def participants(self) -> List[Participant]:
         """Read-only list of participants currently in the group (links with ``active=True``).
@@ -4474,9 +4484,7 @@ class SyncGroup(SQLBase, SQLMixin):
                 _record_leaving_the_round(self, participant, reason)
         self.check_numbers()
         _notify_membership_change(self)
-        if self.n_active_participants == 0 and not getattr(
-            self, "accepts_top_ups", False
-        ):
+        if self.n_active_participants == 0 and not self.accepts_top_ups:
             self.close()
         else:
             self.check_leader()
@@ -5976,8 +5984,9 @@ def _evaluate_held_instance(instance_id):
     """Evaluate one already-claimed visit and commit.
 
     Sets the ORM ``lock_timeout`` so check/commit cannot wait forever while
-    the extra connection holds the visit key. Nested waiter ``NOWAIT`` misses
-    return ``(False, [])`` so last-arrival can retry. Author ``on_release``
+    the extra connection holds the visit key. Nested ``NOWAIT`` misses, on a
+    waiter's row or on the row of their group that accepts top-ups, roll
+    back the check and return ``(False, [])`` so last-arrival can retry. Author ``on_release``
     and spec errors also return ``(False, [])`` so the group stays waiting.
     Other non-transient check errors propagate so ``GET /timeline`` does not
     first-paint a hold. Released waiter ids are drained here so they cannot
@@ -5992,7 +6001,8 @@ def _evaluate_held_instance(instance_id):
     except Exception as err:
         if is_transient_transaction_error(err):
             logger.debug(
-                "Barrier '%s' instance %s deferred because a waiter is locked.",
+                "Barrier '%s' instance %s deferred because a waiter or their "
+                "group is locked.",
                 instance.barrier_id if instance is not None else None,
                 instance_id,
             )
@@ -6050,9 +6060,10 @@ def _run_pending_barrier_checks(instance_ids, *, wait=True):
     Last-arrival waits for the extra-connection claim so it can release
     without waiting for the 0.5 s poller. It does not skip partner cursors
     after that commit. Waiter rows stay ``FOR UPDATE NOWAIT`` during the
-    check. A blocking claim wait that hits ``lock_timeout`` raises so
-    ``GET /timeline`` can return HTTP 503. A waiter-row ``NOWAIT`` miss
-    still returns ``False`` so the caller can retry once.
+    check, as are the rows of their groups that accept top-ups. A blocking
+    claim wait that hits ``lock_timeout`` raises so ``GET /timeline`` can
+    return HTTP 503. A ``NOWAIT`` miss on a waiter's or group's row still
+    returns ``False`` so the caller can retry once.
 
     Unfilled waiter GET recovery must pass ``wait=False``. Those requests try
     the claim so a dropped last-arrival check can still finish, but they must
@@ -6079,7 +6090,7 @@ def _process_barrier_instance(instance_id, *, retry=False):
     """Try one barrier visit and report whether contention deferred it.
 
     Contention is another request holding the visit claim, or a locked
-    waiter. Author ``on_release`` and spec errors are reported the same way.
+    waiter or top-up group. Author ``on_release`` and spec errors are reported the same way.
     The poller retries once in the same sweep, then queues the visit like a
     checked one.
     """
@@ -6098,7 +6109,7 @@ def _process_barrier_instance(instance_id, *, retry=False):
         if is_transient_transaction_error(err):
             qualifier = " still locked on retry" if retry else " deferred"
             logger.debug(
-                "Barrier '%s' instance %s%s because a waiter is locked.",
+                "Barrier '%s' instance %s%s because a waiter or their group is locked.",
                 barrier_id,
                 instance_id,
                 qualifier,
@@ -6135,12 +6146,7 @@ def _finish_dissolving_groups():
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            group = (
-                SyncGroup.query.filter_by(id=group_id)
-                .with_for_update(of=SyncGroup, key_share=True, skip_locked=True)
-                .populate_existing()
-                .first()
-            )
+            group = _lock_sync_group(group_id, skip_locked=True)
             if group is not None and group.active and group.dissolving:
                 group.check_numbers()
                 quorum = getattr(group, "min_group_size", None) or 0
@@ -6274,13 +6280,7 @@ def check_sync_groups():
                     get_config().get("timeline_lock_timeout_seconds"),
                     session=session,
                 )
-                group = (
-                    session.query(SyncGroup)
-                    .filter_by(id=group_id)
-                    .with_for_update(of=SyncGroup, key_share=True, skip_locked=True)
-                    .populate_existing()
-                    .first()
-                )
+                group = _lock_sync_group(group_id, session=session, skip_locked=True)
                 if group is None:
                     continue
                 group.check_numbers()

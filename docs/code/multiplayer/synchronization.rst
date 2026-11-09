@@ -634,7 +634,9 @@ GroupPrompt shows the group as it is now:
   who moved on and whose answer the page shows. Once it stops accepting
   them, only members who leave from then on are shown, so a team that lost
   someone during its instructions (see :ref:`sync-lobby-top-ups`) doesn't
-  show them during the game.
+  show them during the game. That includes members a barrier with
+  ``stop_top_ups=True`` removes for being late as it releases the group,
+  since they are removed just before top-ups stop.
 - A participant who is no longer in the group, for example because a
   barrier removed them for being late, sees only the text when the prompt
   is given ``group_type``. The prompt then needs no special case on pages
