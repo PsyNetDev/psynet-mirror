@@ -68,6 +68,8 @@ from ..timeline import (
     PreDeployRoutine,
     RecruitmentCriterion,
     RegisterTrialMaker,
+    _EndConstruct,
+    _StartConstruct,
     conditional,
     join,
     switch,
@@ -1390,9 +1392,13 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                     creation_context=creation_context,
                 )
 
+        # One construct, so only_in_group checks the group once before the
+        # trial and lets it run to its end, where it is scored and paid.
         return join(
+            _StartConstruct(),
             CodeBlock(_register_trial),
             cls.trial_logic(),
+            _EndConstruct(),
         )
 
     @classmethod

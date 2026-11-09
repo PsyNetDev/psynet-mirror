@@ -103,6 +103,7 @@ from psynet.timeline_hold import (
     default_group_barrier_arrival_message,
     default_hold_progress,
 )
+from psynet.trial.main import Trial
 from psynet.utils import call_function_with_context, get_config
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -7839,6 +7840,10 @@ def _do_nothing(participant):
     return None
 
 
+class _CuedTrial(Trial):
+    time_estimate = 5
+
+
 @pytest.mark.parametrize(
     "make_construct",
     [
@@ -7852,6 +7857,8 @@ def _do_nothing(participant):
             logic=lambda number: InfoPage(f"Round {number}"),
             time_estimate_per_iteration=1,
         ),
+        # A participant who leaves the group mid-trial still finishes the trial.
+        lambda: _CuedTrial.cue({}),
     ],
 )
 def test_split_into_steps_keeps_each_construct_whole(make_construct):
