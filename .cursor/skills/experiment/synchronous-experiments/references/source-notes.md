@@ -56,9 +56,10 @@ and platform docs when a study is near deployment.
   `SimpleGrouper`, role assignment with `GroupBarrier(on_release=...)`,
   `GroupCloser`, then a second group.
 - `create_rate_sync` shows a group-of-three create/rate/reveal flow with
-  barriers after creation and rating, partner state read from
-  `participant.sync_group.participants`, and shared output written in
-  `on_release`.
+  barriers after creation and rating. Each barrier's `on_release` reads the
+  members' `trial.answer` and stores the creations, votes, winner and result
+  (`"winner"`, `"tie"` or `"no_votes"`) in each member's `trial.var` for the
+  next page.
 - `rock_paper_scissors` shows dyadic synchronized static trials, barriers inside
   `show_trial`, server-side scoring in `on_release`, and a `ChatRoom` scoped to
   `self.sync_group.id` for communication after the round.

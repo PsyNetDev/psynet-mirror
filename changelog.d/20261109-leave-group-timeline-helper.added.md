@@ -1,0 +1,1 @@
+Added `psynet.sync.leave_group(group_type)`, a timeline step that takes the participant out of their group of that type, by default with `reason="finished"`, for example after their last round of a game.

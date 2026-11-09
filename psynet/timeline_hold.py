@@ -823,11 +823,19 @@ class _TimelineHoldPage(Page):
             NullControl,
             PushButtonControl,
         )
+        from psynet.trial.main import SyncGroupNode
         from psynet.utils import get_config
 
         screen = self.waiting_screen
         if callable(screen) and not isinstance(screen, dom_tag):
-            screen = call_function_with_context(screen, participant=participant)
+            trial = getattr(participant, "current_trial", None)
+            node = getattr(trial, "node", None)
+            screen = call_function_with_context(
+                screen,
+                participant=participant,
+                trial=trial,
+                node=node if isinstance(node, SyncGroupNode) else None,
+            )
         if screen is None:
             return None
         if not isinstance(screen, Page):

@@ -414,7 +414,7 @@ Groups
     failed. A ``GroupPrompt`` shows who has chosen and then everyone's
     number. Each round is one cued trial per player, sharing a node with
     the room. :doc:`/code/multiplayer/synchronization`,
-    :ref:`rounds-cued-trials`.
+    :ref:`rounds-one-trial-per-player`.
 
 `experiments/ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__
     An ultimatum game in cohorts, formed by a grouper that starts cohorts short

@@ -41,13 +41,13 @@ from psynet.sync import GroupBarrier, Regrouper
 from psynet.timeline import Module, Timeline, conditional, for_loop, join
 from psynet.trial.main import SyncGroupNode, Trial
 
+GROUP = "room"
 ROUND_SECONDS = 10
 CHOICE_SECONDS = 15
 ROOM_SIZE = 8
 N_ROUNDS = 2
 NUMBERS = [1, 2, 3, 4, 5]
 WIN_BONUS = 0.10
-WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + 20
 # Longer than the others can take to finish a round (the choice page plus the
 # barrier's late_after) and reach the next split. The feedback pages have no
 # time_limit, so a latecomer can still skip a round while the others read
@@ -69,7 +69,7 @@ def get_timeline():
                 iterate_over=range(N_ROUNDS),
                 logic=join(
                     Regrouper(
-                        "room",
+                        GROUP,
                         group_size=ROOM_SIZE,
                         smallest_group=2,
                         every=ROUND_SECONDS,
@@ -85,8 +85,8 @@ def get_timeline():
                         InfoPage(NO_ROOM_TEXT, time_estimate=5),
                     ),
                 ),
-                time_estimate_per_iteration=PickTrial.time_estimate + 5,
-                expected_repetitions=N_ROUNDS,
+                # Players wait for the next tick, on average half a round.
+                time_estimate_per_iteration=PickTrial.time_estimate + ROUND_SECONDS / 2,
             ),
         ),
     )
@@ -97,7 +97,7 @@ NO_ROOM_TEXT = "Nobody else was left to play this round with, so you skip it."
 
 
 def in_room(participant):
-    return participant.in_sync_group("room")
+    return participant.in_sync_group(GROUP)
 
 
 def lowest_unique(choices: dict):
@@ -114,7 +114,7 @@ def round_message(seconds_left):
 
 
 class PickTrial(Trial):
-    sync_group_type = "room"
+    sync_group_type = GROUP
     time_estimate = 15
 
     def show_trial(self, experiment, participant):
@@ -122,7 +122,7 @@ class PickTrial(Trial):
             self.choose_number(participant),
             GroupBarrier(
                 id_="round_finished",
-                group_type="room",
+                group_type=GROUP,
                 waiting_message="Waiting for the rest of the room…",
                 waiting_screen=your_pick,
                 # A player is taken out 30 s after the round starts (long enough
@@ -150,20 +150,26 @@ class PickTrial(Trial):
 
     @classmethod
     def score_room(cls, trials: List["PickTrial"], node: SyncGroupNode):
-        """Save the room's choices and winning number on the node, and whether each player won on their trial.
+        """Save the room's choices, result and winning number on the node, and whether each player won on their trial.
 
         Players who ran out of time have no choice and miss the round. Nobody wins when
         only one player chose.
         """
-        picks = {str(t.participant_id): t.answer for t in trials}
-        choices = {pid: n for pid, n in picks.items() if n is not None}
+        choices = {
+            str(t.participant_id): t.answer for t in trials if t.answer is not None
+        }
         winner = lowest_unique(choices) if len(choices) > 1 else None
+        if len(choices) < 2:
+            result = "one_choice"
+        elif winner is None:
+            result = "no_unique_number"
+        else:
+            result = "won"
         node.var.choices = choices
+        node.var.result = result
         node.var.winning_number = winner
         for trial in trials:
-            trial.var.won = (
-                winner is not None and picks[str(trial.participant_id)] == winner
-            )
+            trial.var.won = winner is not None and trial.answer == winner
 
     def score_answer(self, answer, definition):
         return 1 if self.var.get("won") else 0
@@ -172,21 +178,22 @@ class PickTrial(Trial):
         return WIN_BONUS * score
 
     def show_feedback(self, experiment, participant):
-        if not in_room(participant):
+        if self.sync_group_outcome == "late":
             # Taken out of the room mid-round by the barrier's late_after.
             return InfoPage(AWAY_TEXT, time_estimate=5)
         if self.answer is None:
             return InfoPage(
                 "You ran out of time, so you missed this round.", time_estimate=5
             )
-        choices, winner = self.node.var.choices, self.node.var.winning_number
-        picks = sorted(choices.values())
-        if len(picks) == 1:
+        result, winner = self.node.var.result, self.node.var.winning_number
+        if result == "one_choice":
             return InfoPage(
                 "Nobody else in your room picked a number in time, so nobody won this round.",
                 time_estimate=5,
             )
-        if winner is None:
+        choices = self.node.var.choices
+        picks = sorted(choices.values())
+        if result == "no_unique_number":
             outcome = "Nobody picked a unique number, so nobody won."
         elif self.var.won:
             outcome = f"You won with {winner}! You earn ${WIN_BONUS:.2f}."
@@ -209,15 +216,18 @@ class PickTrial(Trial):
         )
 
 
-def your_pick(participant):
+def your_pick(participant, trial):
     """Replace the number buttons with the player's pick while the rest of the room chooses."""
-    choice = participant.current_trial.answer
+    choice = trial.answer
     if choice is None:
         text = "You ran out of time, so you'll miss this round."
     else:
         text = f"You picked {choice}."
     # Ticks appear as the others choose.
-    return GroupPrompt(text, participant=participant, group_type="room")
+    return GroupPrompt(text, participant=participant, group=trial.sync_group)
+
+
+WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + 20
 
 
 def _arrive_together(bots):
@@ -242,38 +252,38 @@ class Exp(psynet.experiment.Experiment):
     def get_basic_data(cls, context=None, **kwargs):
         """Return one row per player per round, from the trials, and one per room, from the nodes.
 
-        A room can mix players at different rounds, so ``round`` counts each
-        player's own trials from 0. Each room plays one round, so the room
-        table has no round column.
+        A room can mix players at different rounds of the game, so ``round``
+        is the player's own count, the trial's ``position``. Each room plays
+        one round, so the room table has no round column.
         """
-        rounds = {}
-        player_rounds = []
-        for t in PickTrial.query.order_by(PickTrial.id):
-            rounds[t.participant_id] = rounds.get(t.participant_id, -1) + 1
-            player_rounds.append((rounds[t.participant_id], t))
         rooms = SyncGroupNode.query.filter_by(module_id="game")
         return {
             "player_round": [
                 {
-                    "round": round_,
+                    "round": t.position,
                     "room_id": t.sync_group_id,
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
                     # False while the trial runs or if the player left it; the
                     # choice is then the answer so far.
                     "complete": t.complete,
+                    # "stayed" if the player stayed to the end of the round,
+                    # "late" if they were taken out for being away.
+                    "outcome": t.sync_group_outcome,
                     "choice": t.answer,
                     # None if the player was away too long to play the round.
                     "won": t.var.get("won"),
                     "bonus": t.performance_reward,
                 }
-                for round_, t in player_rounds
+                for t in PickTrial.query.order_by(PickTrial.id)
             ],
             "room": [
                 {
                     "room_id": n.sync_group_id,
                     "node_id": n.id,
                     "choices": n.var.get("choices"),
+                    # "won", "no_unique_number" or "one_choice".
+                    "result": n.var.get("result"),
                     "winning_number": n.var.get("winning_number"),
                 }
                 for n in rooms.order_by(SyncGroupNode.id)
@@ -314,8 +324,10 @@ class Exp(psynet.experiment.Experiment):
 
         data = self.get_basic_data()
         assert [
-            (sorted(r["choices"].values()), r["winning_number"]) for r in data["room"]
-        ] == [([1, 2], 1), ([3, 3, 4], 4)], data["room"]
+            (sorted(r["choices"].values()), r["result"], r["winning_number"])
+            for r in data["room"]
+        ] == [([1, 2], "won", 1), ([3, 3, 4], "won", 4)], data["room"]
+        assert {r["outcome"] for r in data["player_round"]} == {"stayed"}
         # Players cue their trials in their own order, so compare sorted rows.
         assert sorted(
             ((r["round"], r["choice"], r["bonus"]) for r in data["player_round"]),

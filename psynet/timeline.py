@@ -2991,12 +2991,39 @@ class Timeline:
         self.check_group_policies()
 
     def check_group_policies(self):
-        """Warn about grouper and barrier settings that fail members who were on time."""
-        from .sync import warn_if_late_removal_fails_group
+        """Warn about grouper and barrier settings that fail members who were on time, or strand newcomers."""
+        from .sync import (
+            warn_if_late_removal_fails_group,
+            warn_if_newcomers_can_strand_group,
+        )
 
         warn_if_late_removal_fails_group(
             {id(barrier): barrier for barrier in self._barriers()}.values()
         )
+        warn_if_newcomers_can_strand_group(self._barriers_in_order())
+
+    def _barriers_in_order(self):
+        """Yield ``(barrier, in_loop)`` once per barrier, in timeline order.
+
+        ``in_loop`` says whether the barrier is inside a ``while_loop``, not
+        counting a barrier's own waiting loop. A ``for_loop`` builds its logic
+        when the participant reaches it, so barriers in one aren't yielded.
+        """
+        from .sync import Barrier
+
+        seen = set()
+        for branch_elts in self.elts.values():
+            depth = 0
+            for elt in branch_elts:
+                barrier = elt if isinstance(elt, Barrier) else elt.links.get("barrier")
+                if isinstance(barrier, Barrier):
+                    if id(barrier) not in seen:
+                        seen.add(id(barrier))
+                        yield barrier, depth > 0
+                elif isinstance(elt, StartWhile):
+                    depth += 1
+                elif isinstance(elt, EndWhile):
+                    depth -= 1
 
     def _barriers(self):
         """Yield the barrier behind each timeline element that has one."""

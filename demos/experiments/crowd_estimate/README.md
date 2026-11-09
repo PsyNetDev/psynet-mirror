@@ -14,12 +14,13 @@ Good reference for a `SimpleGrouper` with `start_short_after`, top-ups
 (`GroupBarrier(stop_top_ups=True)`), `top_up_wait` for a group waiting for a
 replacement, and `join(..., stop_if=...)` with a `conditional` for participants
 without a group. Each question is one cued trial per player
-(`Trial.cue(...)` on a trial class with `sync_group_type`): the group's estimates
-and median are saved once on the node its members' trials share, and a
-player without a group gets an ungrouped trial that asks only for their
-estimate. `get_basic_data` exports a row for every trial, including answers
-given alone and trials whose player left before answering, and the medians
-from the nodes.
+(`Trial.cue(..., round=question)` on a trial class with `sync_group_type`):
+the barrier that scores the question saves the group's estimates and median
+on the node its members' trials share, and on each trial whether its
+estimate is in the median. A player without a group gets an ungrouped trial
+that asks only for their estimate. `get_basic_data` exports a row for every
+trial, including answers given alone and trials whose player left before
+answering, and one per group and question from the nodes.
 
 ## Usage
 

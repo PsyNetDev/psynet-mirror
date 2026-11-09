@@ -21,17 +21,23 @@ Forming cohorts
 
 A :class:`~psynet.sync.SimpleGrouper` forms the cohorts. It starts a cohort
 of four as soon as four players are waiting, or a smaller one after a
-minute (``start_short_after``), and lets latecomers join until the cohort's
-second round starts (``join_existing_groups`` and ``join_criterion``; see
-:class:`~psynet.sync.SimpleGrouper`):
+minute (``start_short_after``), and lets latecomers join the cohort
+(``join_existing_groups``; see :class:`~psynet.sync.SimpleGrouper`):
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: SimpleGrouper(
    :end-before: Module(
    :dedent: 8
 
+A latecomer who joined after the first rounds would soon have nobody left
+to play with, because the others finish their rounds and leave, so a
+:class:`~psynet.timeline.CodeBlock` at the start of each round closes the
+cohort once one of its players reaches the second round. It calls
+:meth:`~psynet.sync.SimpleSyncGroup.stop_top_ups`, after which nobody can
+join:
+
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :pyobject: cohort_accepts_newcomers
+   :pyobject: stop_newcomers
 
 Pairing players each round
 --------------------------
@@ -42,7 +48,7 @@ pair and wait for the next split:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: pairing = Regrouper(
-   :end-before: UNPAID_TEXTS
+   :end-before: OUTCOME_TEXTS
 
 The round starts as soon as the whole cohort (``within``) is waiting, or at
 the ``deadline`` (counted from when the first player is back) without whoever
@@ -61,14 +67,15 @@ possible. ``waiting_message`` counts down to the deadline. See
 The regrouper keeps the round's bookkeeping, so the game doesn't need to
 store it in participant variables:
 
-- ``pairing.role(participant)`` is ``"proposer"`` or ``"responder"``;
 - ``pairing.rounds_played(participant)`` counts the pairs the player has
   joined, including one whose partner left or that they were removed from;
-- ``pairing.rounds_sat_out(participant)`` counts the rounds they sat out,
-  and ``pairing.sat_out(participant)`` says whether they sat out the
-  latest one.
+- ``pairing.rounds_sat_out(participant)`` counts the rounds they sat out.
 
-.. _rounds-cued-trials:
+Each player's role in the round is on their trial, as ``sync_group_role``
+(below). :class:`~psynet.sync.Regrouper` lists its other methods, such as
+``sat_out`` and ``role``.
+
+.. _rounds-one-trial-per-player:
 
 One trial per player per round
 ------------------------------
@@ -79,58 +86,34 @@ maker:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: Module(
-   :end-before: CodeBlock(leave_cohort)
+   :end-before: leave_group(COHORT)
    :dedent: 8
 
 The trial class sets ``sync_group_type``, so the trials that a pair's
 members cue in a round share one :class:`~psynet.trial.main.SyncGroupNode`.
 Each trial records the pair (``sync_group_id``), the player's role
-(``sync_group_role``) and the pair's round (``sync_group_round``), and keeps
+(``sync_group_role``), the pair's round (``sync_group_round``) and how the
+round ended for the player (``sync_group_outcome``, see
+:ref:`rounds-explaining-the-outcome`), and keeps
 them after the pair ends. The ``Module`` gives the nodes a ``module_id`` to
 find them by when exporting.
 
-``cue`` numbers each group's rounds by itself, from 0:
+``cue`` numbers each group's rounds from 0, so every pair here, new each
+round, plays round 0, and a definition must not depend on the player's own
+position in the loop. :ref:`rounds-cued-trials` explains when a cue joins a
+round, a trial's two round counters (``sync_group_round`` and
+``position``), a fixed group's loop with ``round=``, and several trial
+classes in one round.
 
-- A cue joins the group's newest node in the module while that round is
-  open and the player has no trial on it. A round is open until one of its
-  barriers releases the group, or until every other current member's trial
-  on it has ended.
-- Otherwise it starts the group's next round.
+The ``switch`` decides once, before the trial: a player in a pair gets
+the trial, one who sat out gets a page instead (see
+:ref:`rounds-sitting-out`), and one whose cohort has gone moves on to the
+page saying the game ended early:
 
-So every pair here, new each round, plays round 0, while a fixed group cued
-in a loop plays rounds 0, 1, 2 and so on, whichever trial classes it cues.
-A member who joins it late joins its current round only until any barrier
-of that round releases the group. After that, even while the others are
-still on a page after the barrier, the newcomer starts the next round,
-which the others then join. This needs a barrier in each
-round, such as the one in ``show_trial`` below, so that no member ends a
-round before the others have cued it.
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+   :pyobject: round_status
 
-Every trial in a round gets the definition of the round's first cue, so a
-definition must not depend on the player's own position in the loop, as in
-``logic=lambda i: OfferTrial.cue({"block": i})``. A late joiner, or a pair
-that the regrouper forms from players at different rounds, would then cue a
-different definition for the same round and get a ``ValueError``. Use a
-function taking ``round`` or ``group`` instead, such as
-``OfferTrial.cue(lambda round: {"block": round})``.
-
-Classes cued in the same open round share its node and definition: if the
-members cue different classes, such as an offer trial for the proposer and
-a reply trial for the responder, their trials share the node. Put
-role-specific content in the definition, keyed by role, or derive it from
-``self.sync_group_role``. A round with two phases, such as an offer and a
-reply, is normally one trial class with several pages. Only phases played
-one after the other by trials of two classes need ``round=``, because the
-second cue would otherwise start the next round, the player already having
-a trial on the round's node. Pass both cues the same ``round=``. This is
-only safe when every member is sure to be at the same loop position, as in
-a fixed group without top-ups and no regrouper: a late joiner, or a group
-mixing players at different positions, would otherwise land on an old
-round's node or a node of their own.
-
-The ``conditional`` decides once, before the trial: a player in a pair gets
-the trial, and one who sat out gets a page instead (see
-:ref:`rounds-sitting-out`). Once started, the trial runs to its end, where
+Once started, the trial runs to its end, where
 it is scored, even if the player is removed from their pair partway, so
 its feedback covers every outcome of the round. A round that is one cued
 trial needs no more than this; ``join(..., stop_if=...)`` is for rounds of
@@ -171,9 +154,13 @@ Moving slow players on
 
 The barrier after the decision page waits for
 both partners. A player who hasn't reached it within ``late_after`` seconds
-of the round's start is late, and with ``late_action="leave_group"`` is removed
-from the pair, so that their partner carries on alone (see
-:class:`~psynet.sync.GroupBarrier` for both options). A player on a page
+of the round's start is late. A late player has usually closed their page,
+so with ``late_action="leave_all_groups"`` they are removed from the pair and
+from the cohort: their partner carries on alone, and the next split doesn't
+wait for them. The narrower ``late_action="leave_group"`` removes them from
+the pair only, so the next split would wait for them until its deadline
+(see :class:`~psynet.sync.GroupBarrier` and :ref:`sync-leaving-a-group`).
+A player on a page
 with a time limit is not late before that limit has run out and an answer
 sent at the deadline has had 10 seconds to arrive, so the late limit need
 not be longer than the page's time limit.
@@ -199,27 +186,19 @@ results, count towards it: give them a time limit too, or make
 partner went on without you. Please continue." on the progress bar (pass
 ``on_arrival_message`` to the barrier to change it).
 
-With ``late_action="leave_group"`` a late player would leave the pair only
-(see :ref:`sync-leaving-a-group`), so they would still be in the cohort, and
-the next split would wait for them until its deadline. A late player has
-usually closed their page, so the demo uses ``late_action="leave_all_groups"``,
-which takes them out of the cohort too. The barrier checks for late players
-only while their partner waits at it, so if neither partner comes back, the
-next split waits for its deadline. A late player who comes back is told that
-they were away, and their game ends.
+The barrier checks for late players only while their partner waits at it,
+so if neither partner comes back, the next split waits for its deadline. A
+late player who comes back is told that they were away, and their game ends.
 
-The cohort's grouper sets ``below_quorum="continue_without_group"``. In this
-demo it never takes effect: the cohort accepts top-ups and the demo never
-stops them, so the cohort isn't dissolved here, and ``keep_playing`` (below)
-ends the game once fewer than two players are left. It makes the recipe
-safe to copy into a cohort without top-ups, or one whose top-ups stop (see
-:ref:`groups_below_min_size`), where removing a late player would dissolve
-the cohort if that left it below its quorum, and the default
-``below_quorum="fail"`` would fail the players who were on time.
+Once the cohort has stopped top-ups, removing a late player dissolves it if
+that leaves it below its quorum (see :ref:`groups_below_min_size`). The
+default ``below_quorum="fail"`` would then fail the players who were on
+time, so the cohort's grouper sets ``below_quorum="continue_without_group"``,
+and they carry on without the cohort, which ends their game.
 
 A player removed from their pair finishes the trial: its later group
 barriers let them straight through, and its feedback tells them they were
-away.
+away, because their trial's ``sync_group_outcome`` is ``"late"``.
 
 Scoring the round
 -----------------
@@ -227,12 +206,14 @@ Scoring the round
 The barrier's ``on_release`` scores the pair once both have arrived, or once
 the one who is left has. It takes ``trials``, the members' trials, and
 ``node``, the node they share, so a ``@classmethod`` on the trial class can
-save the pair's offer and result on the node and each player's coins on
+save the pair's players, offer and result on the node and each player's coins on
 their trial, where a page reloaded later still finds them. When a partner
 left or ran out of time, nobody is paid. The ``left`` argument lists the
 members who left the pair this round, and
 ``sync_group_removal_reason`` tells a partner who was too slow apart from
-one who returned the study:
+one who returned the study. ``trials`` only holds the trials of members
+still in the pair, so the players of the round come from ``node.all_trials``,
+which also keeps the trial of a player removed for being away:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: OfferTrial.score_pair
@@ -240,9 +221,30 @@ one who returned the study:
 The barrier is inside ``show_trial``, so the trials have not ended yet when
 ``on_release`` runs: ``trial.answer`` holds each member's answer so far,
 which here is their decision, or ``None`` if their page ran out of time.
-The trial ends after the barrier, so its ``show_feedback`` can read the
-player's own answer (``self.answer``) and what ``on_release`` saved. The
-results page passes both answers to the prompt as speech bubbles:
+
+.. _rounds-explaining-the-outcome:
+
+Explaining the outcome
+----------------------
+
+The trial ends after the barrier, so its feedback can read what was stored
+during the round rather than work it out from the player's groups:
+
+- ``self.sync_group_outcome`` says how the round ended for this player:
+  ``"stayed"`` once the barrier released the pair with them in it, or why
+  they left the pair before then, here ``"late"`` for a player taken out for
+  being away (see :ref:`round outcomes <sync-round-outcome>` for every value);
+- ``self.answer`` is their own decision, ``None`` if they ran out of time;
+- ``self.node.var`` holds what ``on_release`` saved for the pair.
+
+A partner's outcome is on their trial in ``self.node.all_trials``.
+``outcome`` turns these into one key of ``OUTCOME_TEXTS``:
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+   :pyobject: OfferTrial.outcome
+
+``show_feedback`` shows that text, and when the pair made a deal, passes
+both answers to the prompt as speech bubbles:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: OfferTrial.show_feedback
@@ -269,10 +271,10 @@ Sitting out
 With three players in a cohort, one of them has no partner. The player who has
 played the most rounds sits the round out; with ``left_over="sit_out"``
 they move on without a pair instead of waiting (see
-:class:`~psynet.sync.Regrouper`), so the ``conditional`` gives them a page
+:class:`~psynet.sync.Regrouper`), so the ``switch`` gives them a page
 instead of a trial that round. A player who was paired but removed from the
 pair before submitting their decision has a trial, and the first check in
-``show_feedback`` above tells them that they were away.
+``outcome`` above tells them that they were away.
 
 .. figure:: ../../_static/images/rounds/sit_out.png
    :width: 600
@@ -287,22 +289,19 @@ too often, has left the cohort, or their cohort is down to one player:
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: keep_playing
 
-Players who finish leave the cohort, so that the regrouper doesn't wait for
-them in later rounds. This cohort accepts top-ups and the demo never stops
-them, so the cohort isn't dissolved here, and ``reason="finished"`` only
-shows them as "(finished)". It keeps the recipe safe to copy into a cohort
-without top-ups, or one that stops them, where any other reason
-would dissolve the cohort if that left it below its quorum while the last
-players finish their rounds (see :ref:`groups_below_min_size`):
-
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :pyobject: leave_cohort
+Players who finish leave the cohort with
+:func:`leave_group(COHORT) <psynet.sync.leave_group>`, so that the
+regrouper doesn't wait for them in later rounds. It removes them with
+``reason="finished"``, which shows them as "(finished)" and never dissolves
+the cohort, so players who finish first don't dissolve the closed cohort
+while others are still playing.
 
 Exporting the rounds
 --------------------
 
-The results stay on the trials and nodes, so ``get_basic_data`` builds one
-table per player per pair from the trials and one per pair from the nodes.
+The results stay on the trials and nodes, so ``get_basic_data`` builds a
+table with one row per player and round from the trials, including each
+player's ``sync_group_outcome``, and one with a row per pair from the nodes.
 Rounds a player sat out have no trial, so a third table counts them with the
 regrouper (see :doc:`/data/basic_data`):
 
@@ -337,6 +336,11 @@ of time and who is still deciding:
 .. figure:: ../../_static/images/rounds/dash.png
    :width: 700
    :alt: A room of five: three players with a tick, one with a grey dash, and one still deciding
+
+The barrier's ``on_release`` applies the winning rule once and saves the
+room's result in ``node.var.result`` (``"won"``, ``"no_unique_number"`` or
+``"one_choice"``), so the feedback and the export read it rather than apply
+the rule again.
 
 **A draw per group.** ``definition`` can also be a function, for example
 ``lambda group: {"target": random.choice(TARGETS)}``. It is called once per
