@@ -7076,6 +7076,36 @@ def test_members_who_finish_dont_dissolve_the_group(
     assert (_removed_from_group_notice(last) is not None) is dissolved
 
 
+@pytest.mark.parametrize("below_quorum", ["fail", "continue_without_group"])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_removing_a_late_member_dissolves_a_group_without_top_ups(
+    in_experiment_directory, db_session, below_quorum
+):
+    """``reason="late"``, as in the round-based recipe, dissolves a cohort without top-ups."""
+    exp = get_experiment()
+    late, partner = [new_participant(exp) for _ in range(2)]
+    group = SimpleSyncGroup(
+        group_type="cohort",
+        initial_group_size=2,
+        max_group_size=2,
+        min_group_size=2,
+        accepts_top_ups=False,
+        below_quorum=below_quorum,
+    )
+    db_session.add(group)
+    for p in (late, partner):
+        p.status = "working"
+        group.add_participant(p)
+    db_session.commit()
+
+    group.remove_participant(late, reason="late")
+
+    assert not partner.in_sync_group("cohort")
+    assert partner.failed == (below_quorum == "fail")
+
+
 def _score_dissolved(participants, barrier):
     for participant in participants:
         participant.var.scored_at = barrier.id
