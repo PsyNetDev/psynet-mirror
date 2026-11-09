@@ -197,19 +197,20 @@ This runs only when the partner reaches the barrier, so if neither partner
 comes back, the next split waits for its deadline. A late player who comes
 back is told that they were away, and their game ends.
 
-The demo's cohort accepts newcomers all game, so it is never dissolved below
-its quorum, and ``keep_playing`` (below) ends the game once fewer than two
-players are left. If your cohort stops taking newcomers (with
-``stop_top_ups`` or ``top_up_wait``), removing a late player counts as a
-dropout and can dissolve it below its quorum, failing the players who were
-on time under the default ``below_quorum="fail"``; set ``below_quorum`` on
-its grouper accordingly (see :ref:`groups_below_min_size`).
+The cohort's grouper sets ``below_quorum="continue_without_group"``. In this
+demo it never takes effect: ``join_existing_groups=True`` keeps the cohort
+accepting top-ups even after ``join_criterion`` turns newcomers away, so it
+is never dissolved, and ``keep_playing`` (below) ends the game once fewer
+than two players are left. It makes the recipe safe to copy into a cohort
+that doesn't accept top-ups (without ``join_existing_groups``, or after
+``stop_top_ups`` or ``top_up_wait``). There, removing a late player with
+``reason="late"`` dissolves the cohort if it falls below its quorum, and the
+default ``below_quorum="fail"`` would fail the players who were on time (see
+:ref:`groups_below_min_size`).
 
-A player who was removed from their pair passes the round's later group
-barriers straight through, and ``only_in_group`` skips the rest of their
-trial. A player who was never in a pair, or whose pair
-was closed by a :class:`~psynet.sync.GroupCloser`, gets an error at a group
-barrier, which usually means a grouper is missing.
+``only_in_group`` skips the rest of the trial for a player removed from
+their pair, including its later group barriers, and runs its ``otherwise``
+steps.
 
 Scoring the round
 -----------------
@@ -258,7 +259,7 @@ played the most rounds sits the round out; with ``left_over="sit_out"``
 they move on without a pair instead of waiting (see
 :class:`~psynet.sync.Regrouper`), so ``only_in_group`` shows them its
 ``otherwise`` page and they get no trial that round. A player who was paired
-but removed from the pair before finishing the round is told that they were
+but removed from the pair before submitting their decision is told that they were
 away instead. They have left the cohort too, so the ``explain_round``
 condition in the timeline above also checks
 ``participant.sync_group_removal_reason("pair")``:

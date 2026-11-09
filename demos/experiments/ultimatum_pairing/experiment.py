@@ -80,6 +80,11 @@ def get_timeline():
             waiting_message=lobby_message,
             waiting_screen=forming_cohort,
             max_wait_time=300,
+            # Here the cohort keeps accepting top-ups (join_criterion only turns
+            # newcomers away), so it is never dissolved. In a cohort without
+            # top-ups, removing a late player would dissolve it below its
+            # quorum, and the default "fail" would fail the players on time.
+            below_quorum="continue_without_group",
         ),
         Module(
             "game",

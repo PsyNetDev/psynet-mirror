@@ -97,15 +97,16 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   for rounds on fixed ticks (`lowest_unique_number`). Participants who miss
   a split join the next one rather than being failed. For players who stop
   responding mid-round, follow "Moving slow players on" in
-  `code/multiplayer/writing_a_round_based_experiment`: a late barrier
-  removes them from the round's group, and the experiment also removes them
-  from the `within` group.
+  `code/multiplayer/writing_a_round_based_experiment`: besides
+  `late_action="leave_group"`, you must also `remove_participant` them from
+  the `within` group in `on_release`; see the quorum caveat there.
 - Write such a game as one cued trial per player per round, not as pages
   with round bookkeeping in participant variables; see "Rounds as cued
   trials" below.
-- A `GroupBarrier`'s `late_after` doesn't count a timed page until its limit
-  plus 10 s (see "Timeouts" in `code/multiplayer/synchronization`); the
-  demos use 30 s so that a background tab can notice the round has started.
+- A member on a timed page isn't treated as late until its limit plus 10 s,
+  so `late_after` need not cover the page (see "Timeouts" in
+  `code/multiplayer/synchronization`); the demos use 30 s so that a
+  background tab can notice the round has started.
 - The regrouper avoids last round's partners (`avoid_repeats="all_rounds"`
   avoids everyone met before), sits out whoever has played most, and counts
   rounds (`rounds_played`, `rounds_sat_out`); pass `roles=[...]` (with
@@ -144,6 +145,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   question alone. With a `Regrouper` in the loop, it is also the page for a
   player it sat out that round:
   `join(Regrouper(...), only_in_group("pair", round_steps(), otherwise=sitting_out))`.
+  Check `regrouper.sat_out(participant)` there to tell a sit-out from a
+  player removed for being late, as `not_playing` in `ultimatum_pairing` does.
 - In a `Regrouper` game the player whose partner left stays in the pair, so
   they play the round out and see its outcome, as in `ultimatum_pairing`;
   only the player removed for being late is out of the pair, and gets their
@@ -264,6 +267,9 @@ Module("game", for_loop(
   timestamps, responses, failures, and partial-completion reasons are analyzable.
 
 ## Test dropouts
+
+Bot tests wait out real timeouts: give `advance_past_wait_pages` a `timeout`
+longer than the `late_after` being tested.
 
 Real groups lose members in several ways; "Waiting and dropouts" in
 `design/groups` lists them, and "Settings for each kind of dropout" in
