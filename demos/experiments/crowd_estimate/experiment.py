@@ -184,14 +184,14 @@ class EstimateTrial(Trial):
                 estimates[str(t.participant_id)] = estimate
         node.var.estimates = estimates
         has_median = len(estimates) >= QUORUM
-        if has_median:
-            node.var.median = statistics.median(estimates.values())
+        node.var.median = statistics.median(estimates.values()) if has_median else None
         # From all the round's trials, so a member removed for being late is kept.
         for t in node.all_trials:
             t.var.in_median = str(t.participant_id) in estimates if has_median else None
 
     def revise_page(self, participant):
-        if not self.node.var.has("median"):
+        # No median if too few estimates arrived, or the group ended unscored.
+        if self.node.var.get("median") is None:
             return InfoPage(
                 "Too few estimates arrived for a group median, so there is "
                 "nothing to revise.",
@@ -209,10 +209,10 @@ class EstimateTrial(Trial):
             "revised",
             GroupPrompt(
                 f"{self.question} The median of your group's {len(estimates)} "
-                f"estimates is {self.node.var.median:g}. Give your revised estimate.",
+                f"estimates is {self.node.var.median:.15g}. Give your revised estimate.",
                 participant=participant,
                 group=self.sync_group,
-                answers={pid: f"{value:g}" for pid, value in estimates.items()},
+                answers={pid: f"{value:.15g}" for pid, value in estimates.items()},
             ),
             NumberControl(),
             time_limit=ANSWER_SECONDS,
