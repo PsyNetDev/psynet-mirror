@@ -667,13 +667,16 @@ def test_regrouper_lets_a_player_waiting_alone_carry_on(
     assert not player.in_sync_group("room")
 
 
-def _open_cohorts(stop_top_ups_after_rounds, initial_group_size=2, **kwargs):
+def _open_cohorts(
+    stop_top_ups_after_rounds, initial_group_size=2, below_quorum="fail", **kwargs
+):
     cohort_grouper = SimpleGrouper(
         "cohort",
         initial_group_size=initial_group_size,
         quorum=initial_group_size,
         max_group_size=6,
         join_existing_groups=True,
+        below_quorum=below_quorum,
     )
     pairs = Regrouper(
         "pair",
@@ -704,6 +707,45 @@ def test_regrouper_stops_top_ups_after_rounds(
     assert not cohort.accepts_top_ups
     _arrive(exp, cohort_grouper, [too_late])
     assert not too_late.in_sync_group("cohort")
+
+
+@in_consents_experiment
+def test_a_split_into_several_groups_counts_as_one_round(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort_grouper, pairs = _open_cohorts(2, initial_group_size=4)
+    players = _working_participants(exp, 4)
+    _arrive(exp, cohort_grouper, players)
+    cohort = players[0].active_sync_groups["cohort"]
+    for _ in range(2):
+        _arrive(exp, pairs, players)
+        assert cohort.accepts_top_ups
+    _arrive(exp, pairs, players)
+    assert not cohort.accepts_top_ups
+
+
+@in_consents_experiment
+def test_a_closing_split_of_sit_outs_alone_stops_top_ups(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort_grouper, pairs = _open_cohorts(
+        1, initial_group_size=3, deadline=15, left_over="sit_out"
+    )
+    players = _working_participants(exp, 3)
+    _arrive(exp, cohort_grouper, players)
+    cohort = players[0].active_sync_groups["cohort"]
+    _arrive(exp, pairs, players)
+    (sitter,) = [p for p in players if "pair" not in p.active_sync_groups]
+    assert cohort.accepts_top_ups
+
+    # The pair is still playing, so the sitter sits out again an extra deadline later.
+    pairs._backdate_last_split(cohort, 40)
+    _arrive(exp, pairs, [sitter])
+    _backdate_arrivals(pairs, [sitter], 31)
+    assert pairs.choose_who_to_release([sitter]) == [sitter]
+    assert not cohort.accepts_top_ups
 
 
 @in_consents_experiment
@@ -759,21 +801,29 @@ def test_a_round_of_latecomers_alone_counts_towards_closing_the_cohort(
     assert not too_late.in_sync_group("cohort")
 
 
+@pytest.mark.parametrize("below_quorum", ["fail", "continue_without_group"])
 @in_consents_experiment
 def test_closing_a_cohort_below_quorum_dissolves_it_without_a_split(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, below_quorum
 ):
     exp = get_experiment()
-    cohort_grouper, pairs = _open_cohorts(0, initial_group_size=3)
+    cohort_grouper, pairs = _open_cohorts(
+        0, initial_group_size=3, below_quorum=below_quorum, on_release=_count_releases
+    )
     *present, gone = _working_participants(exp, 3)
     _arrive(exp, cohort_grouper, [*present, gone])
     cohort = gone.active_sync_groups["cohort"]
     gone.status = "returned"
+    for participant in present:
+        pairs.receive_participant(participant)
     db_session.commit()
+    _count_releases.calls = 0
 
-    _arrive(exp, pairs, present)
-    assert not cohort.active
-    assert all(p.failed and pairs.rounds_played(p) == 0 for p in present)
+    assert set(pairs.choose_who_to_release(present)) == set(present)
+    assert not cohort.active and _count_releases.calls == 0
+    assert all(pairs.rounds_played(p) == 0 for p in present)
+    expected_tags = ["sync group below minimum size"] if below_quorum == "fail" else []
+    assert all(p.failure_tags == expected_tags for p in present)
 
 
 @in_consents_experiment

@@ -3336,10 +3336,10 @@ class Regrouper(Grouper):
         ``within`` group, for example a cohort formed with
         ``join_existing_groups=True``. Each split that forms groups in the
         cohort counts as one of its rounds, even one that groups only
-        latecomers while the others are still playing. The split that starts
-        the next round stops the cohort's top-ups, as
+        latecomers while the others are still playing. The next split, even
+        one in which everyone waiting sits out, stops the cohort's top-ups, as
         :meth:`SimpleSyncGroup.stop_top_ups` does; a cohort below its quorum
-        is then dissolved instead of split. With ``0`` the cohort closes when
+        is then dissolved instead of split, as its ``below_quorum`` says. With ``0`` the cohort closes when
         its first round starts. ``None`` (default) leaves top-ups to the
         grouper and the barriers. Needs ``within``.
 
@@ -3813,7 +3813,11 @@ class Regrouper(Grouper):
                 if members is None:
                     continue
                 if len(within_group.active_participants) < within_group.quorum:
+                    # Dissolving releases the members its below_quorum let
+                    # carry on; one deferred by a busy member releases nobody
+                    # until the poller finishes it.
                     within_group.stop_top_ups()
+                    released += [p for p in pool if self._within_group(p) is None]
                     continue
             released += self._split(within_group, members, stop_top_ups=stop_top_ups)
         return released
@@ -3835,9 +3839,9 @@ class Regrouper(Grouper):
         return self._n_splits(within_group) >= self.stop_top_ups_after_rounds
 
     def _n_splits(self, within_group) -> int:
-        """Return how many splits of this pool formed groups; a split's groups share their creation time."""
+        """Return how many splits of this pool formed groups."""
         return (
-            db.session.query(func.count(SyncGroup.creation_time.distinct()))
+            db.session.query(func.count(SyncGroup.split_id.distinct()))
             .filter(*self._pool_splits(within_group))
             .scalar()
         )
@@ -3955,31 +3959,27 @@ class Regrouper(Grouper):
         ]
 
     def _backdate_last_split(self, within_group, seconds):
-        """Move this pool's latest split back by ``seconds``, for tests (see :func:`psynet.bot.regroup_now`).
-
-        Only the groups formed within ``seconds`` of the latest one move,
-        which is enough to move the pool's last split time back by ``seconds``.
-        """
+        """Move this pool's latest split back by ``seconds``, for tests (see :func:`psynet.bot.regroup_now`)."""
         criteria = self._pool_splits(within_group)
         latest = (
-            db.session.query(func.max(SyncGroup.creation_time))
-            .filter(*criteria)
-            .scalar()
+            SyncGroup.query.filter(*criteria)
+            .order_by(SyncGroup.creation_time.desc())
+            .first()
         )
         if latest is None:
             return
         shift = timedelta(seconds=seconds)
-        recent = SyncGroup.query.filter(
-            *criteria, SyncGroup.creation_time > latest - shift
-        )
-        for group in recent:
+        for group in SyncGroup.query.filter(
+            *criteria, SyncGroup.split_id == latest.split_id
+        ):
             group.creation_time -= shift
 
     def _split(self, within_group, members, stop_top_ups=False):
         """Form this pool's groups and return the participants to release.
 
-        With ``stop_top_ups``, a split that forms a group also stops the
-        ``within`` group's top-ups (see ``stop_top_ups_after_rounds``).
+        With ``stop_top_ups``, a split that forms a group or releases sit-outs
+        also stops the ``within`` group's top-ups (see
+        ``stop_top_ups_after_rounds``).
         """
         if self.keep_roles:
             self._give_kept_roles(members)
@@ -3992,8 +3992,9 @@ class Regrouper(Grouper):
         roles = self._planned_roles(plan, members)
         # The split's time, not the inserts', decides which tick it used.
         split_time = timenow()
+        split_id = uuid.uuid4().hex
         groups = [
-            self._make_group(group_members, within_group, split_time)
+            self._make_group(group_members, within_group, split_time, split_id)
             for group_members in plan
         ]
         if roles:
@@ -4004,6 +4005,8 @@ class Regrouper(Grouper):
         left_over = [p for p in members if p.id not in placed]
         if not groups:
             if self._may_release_only_left_over(within_group, members):
+                if stop_top_ups:
+                    within_group.stop_top_ups()
                 self._record_sit_outs(left_over)
                 return left_over
             return []
@@ -4078,12 +4081,13 @@ class Regrouper(Grouper):
                     f"return groups of {len(self.roles)}, one member per role."
                 )
 
-    def _make_group(self, participants, within_group, creation_time):
+    def _make_group(self, participants, within_group, creation_time, split_id):
         """Create a fixed group that never dissolves or fails its members."""
         return self._create_group(
             participants,
             within_group_id=None if within_group is None else within_group.id,
             creation_time=creation_time,
+            split_id=split_id,
             initial_group_size=len(participants),
             max_group_size=len(participants),
             min_group_size=1,
@@ -4302,10 +4306,12 @@ class SyncGroup(SQLBase, SQLMixin):
     # Dissolution started but skipped members whose rows were busy; the
     # barrier poller finishes it.
     dissolving = Column(Boolean, default=False)
-    # The grouper that formed the group, and for a Regrouper with ``within``,
-    # the group it regrouped within.
+    # The grouper that formed the group. For a Regrouper, also the split that
+    # formed it, shared by that split's other groups, and with ``within``, the
+    # group it regrouped within.
     grouper_id = Column(String, index=True)
     within_group_id = Column(Integer, index=True)
+    split_id = Column(String)
 
     participant_links = relationship(
         "ParticipantLinkSyncGroup",
