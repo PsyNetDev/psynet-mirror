@@ -371,6 +371,35 @@ the barrier hasn't released yet. The first turn's barrier closes the round
 to newcomers: a player who joins the pair after it starts the next round
 rather than joining a round whose first turn is over.
 
+**Turns in a fixed group.** In the ``story_chain`` demo, a group of three
+writes a story one sentence at a time. Each turn is one cued round in the
+group's loop, ``StoryTurn.cue(turn_definition, round=turn)`` (see
+:ref:`a fixed group's loop <rounds-fixed-group-loop>`). The definition
+function runs only at the turn's first cue, so it chooses the writer once,
+by seat with :func:`~psynet.sync.group_seats`, and the node's definition
+stores their ID for every member's trial and for the export:
+
+.. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
+   :pyobject: choose_writer
+
+The writer gets the writing page before the turn's barrier; the others go
+straight to the barrier, whose ``waiting_screen`` shows them the story so
+far. The barrier closes the round, and its ``on_release`` saves the writer's
+sentence in ``node.var``:
+
+.. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
+   :pyobject: StoryTurn.show_trial
+
+.. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
+   :pyobject: StoryTurn.save_sentence
+
+A sentence that never arrived is saved as ``None``, and the writer trial's
+``sync_group_outcome`` says why: ``"stayed"`` if they ran out of time,
+``"late"`` or ``"left_experiment"`` if they left the group. The export has
+one row per turn, from the nodes and the writers' trials. Each member stores
+their group's ID when the group forms, so the last page can read the story
+from the group's nodes even after the group has ended.
+
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
 example to pair players by their earlier answers. With roles, return each
 group as a ``{role: participant}`` dict. See

@@ -140,8 +140,11 @@ membership with ``sync_group.add_participant(participant)`` and
 :func:`leave_group(group_type) <psynet.sync.leave_group>` takes the
 participant out of their group of that type, for example after their last
 round. The list has no guaranteed
-order, so sort by participant ID when you need a stable one, for example to
-assign roles. ``sync_group.leader`` is the group's leader.
+order. When you need a stable one, for example to assign roles or turns,
+use :func:`group_seats(group) <psynet.sync.group_seats>`, which numbers
+everyone who has been in the group by when they joined, and keeps the
+numbers when members leave (see the ``story_chain`` demo).
+``sync_group.leader`` is the group's leader.
 
 Regrouping
 ~~~~~~~~~~

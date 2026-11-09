@@ -409,6 +409,13 @@ Groups
     the room. :doc:`/code/multiplayer/synchronization`,
     :ref:`rounds-one-trial-per-player`.
 
+`experiments/story_chain <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/story_chain>`__
+    Groups of three write a story one sentence at a time. Each turn is a
+    cued round whose definition stores the writer, chosen by seat, and whose
+    ``GroupBarrier`` saves the sentence. A member who leaves plays no more
+    turns, and the next seat writes in their place.
+    :doc:`/code/multiplayer/writing_a_round_based_experiment`.
+
 `experiments/ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__
     An ultimatum game in cohorts, formed by a grouper that starts cohorts short
     and lets latecomers join. Each round re-pairs the cohort with a ``Regrouper``, and an odd
