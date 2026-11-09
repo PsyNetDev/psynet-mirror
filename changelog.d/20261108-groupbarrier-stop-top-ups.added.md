@@ -1,1 +1,1 @@
-Added `GroupBarrier(stop_top_ups=True)`, which stops a group accepting newcomers once it passes the barrier, for example at the start of a game a latecomer couldn't catch up with, instead of calling `group.stop_top_ups()` in `on_release`.
+Added `GroupBarrier(stop_top_ups=True)`, which stops a group accepting newcomers once it passes the barrier, for example at the start of a game a latecomer couldn't catch up with, instead of calling `group.stop_top_ups()` in `on_release`. See "Letting latecomers join before the game starts" in the synchronization docs for a recipe.

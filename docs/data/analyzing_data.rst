@@ -71,10 +71,12 @@ the same round:
         player_rounds["participant_id"] != player_rounds["partner_id"]
     ]
 
-``answer`` is ``None`` for a player who timed out. In the
-``rock_paper_scissors`` demo, the move actually played, including the random
-one given to a player who timed out, is in each trial's vars (``result``),
-as its basic data shows (see :ref:`basic_data_groups`).
+A player who timed out has no answer of their own: in the
+``rock_paper_scissors`` demo, whose trials accumulate answers, their
+``answer`` is ``{"choose_action": None}``. The move actually played,
+including the random one given to a player who timed out, is in each
+trial's vars (``result``), as the demo's basic data shows (see
+:ref:`basic_data_groups`).
 
 Group details such as ``group_type`` are in the ``sync_group`` table, and
 each member's role and removal reason in ``participant_link_sync_group``.

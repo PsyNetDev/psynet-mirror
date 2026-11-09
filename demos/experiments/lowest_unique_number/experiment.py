@@ -180,6 +180,9 @@ class PickTrial(Trial):
 
     def show_feedback(self, experiment, participant):
         if not self.var.has("won"):
+            # Not expected: only_in_group skips this page for players taken
+            # out of the room before it scored them. Kept so that an unscored
+            # trial shows the away message rather than failing.
             return InfoPage(AWAY_TEXT, time_estimate=5)
         if self.answer is None:
             return InfoPage(
