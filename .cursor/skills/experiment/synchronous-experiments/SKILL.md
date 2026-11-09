@@ -222,15 +222,9 @@ Module("game", for_loop(
 ))
 ```
 
-- Leave out `round`; that guide explains how `cue` numbers rounds. Keep a
-  `GroupBarrier` in every round so members stay in step.
-- Don't make the definition depend on the player's own loop position
-  (`lambda i: PickTrial.cue({"block": i})`): late joiners and mixed rooms
-  then clash. Use a definition function taking `round` or `group`.
-- A round with two phases is normally one trial class with several pages.
-  Pass the same `round=` to two classes only if every member is sure to be
-  at the same loop position (a fixed group without top-ups, no regrouper);
-  see the guide.
+- Keep a `GroupBarrier` in every round so members stay in step. For how
+  `cue` numbers rounds, the definition rules and the rare `round=`, follow
+  the guide above.
 - `trial.answer` is only set when the trial ends, after the barrier, so
   `on_release` reads what `save_answer` stored, while `score_answer`,
   `show_feedback` and `get_basic_data` read the trial and `self.node.var`.

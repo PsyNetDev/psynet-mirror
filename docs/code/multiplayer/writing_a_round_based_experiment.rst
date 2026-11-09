@@ -92,16 +92,18 @@ find them by when exporting.
 ``cue`` numbers each group's rounds by itself, from 0:
 
 - A cue joins the group's newest node in the module while that round is
-  open: the player has no trial on it, and some current member's trial on
-  it hasn't ended.
+  open and the player has no trial on it. A round is open until one of its
+  barriers releases the group, or until every other current member's trial
+  on it has ended.
 - Otherwise it starts the group's next round.
 
 So every pair here, new each round, plays round 0, while a fixed group cued
 in a loop plays rounds 0, 1, 2 and so on, whichever trial classes it cues.
 A member who joins it late plays its current round if that is still going,
-or starts the next one, which the others then join. This needs a barrier in
-each round, such as the one in ``show_trial`` below, so that no member ends
-a round before the others have cued it.
+or starts the next one, which the others then join, even while the others
+are still on a page after the round's barrier. This needs a barrier in each
+round, such as the one in ``show_trial`` below, so that no member ends a
+round before the others have cued it.
 
 Every trial in a round gets the definition of the round's first cue, so a
 definition must not depend on the player's own position in the loop, as in
@@ -111,19 +113,19 @@ different definition for the same round and get a ``ValueError``. Use a
 function taking ``round`` or ``group`` instead, such as
 ``OfferTrial.cue(lambda round: {"block": round})``.
 
-A round with two phases, such as an offer and a reply, is normally one
-trial class with several pages. If you really need trials of two classes
-played one after the other in one round, pass the same ``round=`` to both
-cues; they then share the round's node and its definition. This is only
-safe when every member is sure to be at the same loop position, as in a
-fixed group without top-ups and no regrouper: a late joiner, or a group
+Classes cued in the same open round share its node and definition: if the
+members cue different classes, such as an offer trial for the proposer and
+a reply trial for the responder, their trials share the node. Put
+role-specific content in the definition, keyed by role, or derive it from
+``self.sync_group_role``. A round with two phases, such as an offer and a
+reply, is normally one trial class with several pages. Only phases played
+one after the other by trials of two classes need ``round=``, because the
+second cue would otherwise start the next round, the player already having
+a trial on the round's node. Pass both cues the same ``round=``. This is
+only safe when every member is sure to be at the same loop position, as in
+a fixed group without top-ups and no regrouper: a late joiner, or a group
 mixing players at different positions, would otherwise land on an old
-round's node or a node of their own. A round's node isn't per class: if the
-members cue different classes in the same round, such as an offer trial for
-the proposer and a reply trial for the responder, those trials share the
-node and its definition too, so ``round=`` is only needed for phases played
-one after the other. Put role-specific content in the definition, keyed by
-role, or derive it from ``self.sync_group_role``.
+round's node or a node of their own.
 
 :func:`~psynet.sync.only_in_group` runs the trial only for players in a
 pair. Those who sat out, or were removed from their pair partway, see the
@@ -211,11 +213,10 @@ The cohort's grouper sets ``below_quorum="continue_without_group"``. In this
 demo it never takes effect: the cohort accepts top-ups and the demo never
 stops them, so the cohort isn't dissolved here, and ``keep_playing`` (below)
 ends the game once fewer than two players are left. It makes the recipe
-safe to copy into a cohort without top-ups, or one that stops them (with
-``stop_top_ups``, ``GroupBarrier(stop_top_ups=True)`` or ``top_up_wait``),
-where removing a late player would dissolve the cohort if that left
-it below its quorum, and the default ``below_quorum="fail"`` would fail the
-players who were on time (see :ref:`groups_below_min_size`).
+safe to copy into a cohort without top-ups, or one whose top-ups stop (see
+:ref:`groups_below_min_size`), where removing a late player would dissolve
+the cohort if that left it below its quorum, and the default
+``below_quorum="fail"`` would fail the players who were on time.
 
 ``only_in_group`` skips the rest of the trial for a player removed from
 their pair, including its later group barriers, and runs its ``otherwise``

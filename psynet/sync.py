@@ -1956,14 +1956,17 @@ class GroupBarrier(Barrier):
                 if self.stop_top_ups and hasattr(group, "stop_top_ups"):
                     group.stop_top_ups()
 
+                trials = [p.current_trial for p in group.active_participants]
+                node = _shared_node(group, trials)
+                if node is not None:
+                    _close_round(group, node)
                 if self.on_release:
                     try:
-                        trials = [p.current_trial for p in group.active_participants]
                         self.on_release(
                             group=group,
                             participants=group.active_participants,
                             trials=trials,
-                            node=_shared_node(group, trials),
+                            node=node,
                             leader=group.leader,
                             participant=group.leader,
                             left=left,
@@ -4301,6 +4304,18 @@ def _shared_node(group, trials):
     if isinstance(node, SyncGroupNode) and node.sync_group_id == group.id:
         return node
     return None
+
+
+def _close_round(group, node):
+    """Mark ``node`` released, so that later cues start the group's next round.
+
+    Takes the lock that :meth:`SyncGroupNode.for_cue` holds, so a cue either
+    commits before this, or sees the node released.
+    """
+    from .trial.main import _lock_until_commit
+
+    _lock_until_commit(f"sync_group_node:{node.module_id}:{group.id}")
+    node.sync_group_released = True
 
 
 def _run_on_dissolve(group, members):

@@ -1217,7 +1217,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         the participant's group of that type: the trials that the group's
         members cue in one module and round share one :class:`SyncGroupNode`,
         whose ``var`` holds the group's results for the round. ``cue`` numbers
-        each group's rounds from 0 by itself, and each trial records
+        each group's rounds from 0 by itself: a cue joins the group's newest
+        round while it is open, that is until one of its barriers releases the
+        group or every other current member's trial on it has ended, and
+        otherwise starts the next. Each trial records
         ``sync_group_id``, ``sync_group_role`` and ``sync_group_round``; see
         :ref:`rounds-cued-trials` for the rules. In short:
 
@@ -4291,6 +4294,8 @@ class SyncGroupNode(GenericTrialNode):
     # No foreign key, as on Trial.sync_group_id.
     sync_group_id = Column(Integer, index=True)
     sync_group_round = Column(Integer)
+    # Set when a GroupBarrier releases the group with all its trials here.
+    sync_group_released = Column(Boolean, default=False)
 
     def __init__(self, module_id, experiment, group, round_number, definition):
         super().__init__(module_id, experiment)
@@ -4306,6 +4311,8 @@ class SyncGroupNode(GenericTrialNode):
     @staticmethod
     def _round_is_open(node, group, participant):
         """Whether ``participant``'s cue should join ``node``, the group's newest round."""
+        if node.sync_group_released:
+            return False
         trials = Trial.query.filter_by(node_id=node.id)
         if trials.filter_by(participant_id=participant.id).first() is not None:
             return False
@@ -4326,8 +4333,10 @@ class SyncGroupNode(GenericTrialNode):
         """Return the node that ``participant``'s cued trial joins, creating it if needed.
 
         Without ``round_number``, this is the group's newest node in the module
-        while that round is open: the participant has no trial on it, and some
-        current member's trial on it hasn't ended yet. Otherwise the group
+        while that round is open and the participant has no trial on it. A
+        round is open until a :class:`~psynet.sync.GroupBarrier` releases the
+        group with all its trials on the node, or until every other current
+        member's trial on it has ended. Otherwise the group
         moves on to a new node for the next round, counted from 0, which the
         others then join. A trial ends when it gets its answer
         (``trial.complete``); trials of players who have left the group don't

@@ -98,6 +98,9 @@ def test_a_pair_s_cued_trials_share_one_node_per_round(
     assert isinstance(nodes[0], SyncGroupNode)
     assert nodes[0] is nodes[1] and nodes[2] is nodes[3] and nodes[0] is not nodes[2]
     assert nodes[0].network is nodes[2].network
+    PairTrial.cue({"target": 7})[0].consume(exp, cohort[0])
+    with pytest.raises(ValueError, match="already has the definition"):
+        PairTrial.cue({"target": 8})[0].consume(exp, cohort[1])
 
     pair.remove_participant(cohort[0])
     assert trials[0].sync_group is pair
@@ -150,6 +153,27 @@ def test_only_ungrouped_trials_check_their_time_credit(
 
     warned = [r.getMessage() for r in caplog.records if "unexpected" in r.getMessage()]
     assert len(warned) == 1 and f"Trial {cohort[1].current_trial.id} " in warned[0]
+
+
+@in_consents_experiment
+def test_a_barrier_release_closes_the_round(in_experiment_directory, db_session):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    logic = PairTrial.cue({"target": 1})
+    for participant in cohort:
+        logic[0].consume(exp, participant)
+    db.session.commit()
+    # Released, but still reading a reveal page, so the trials aren't complete.
+    _arrive(exp, GroupBarrier("pair_done", group_type="pair"), cohort)
+    (newcomer,) = _working_participants(exp, 1)
+    pair.add_participant(newcomer)
+    for participant in [newcomer, *cohort]:
+        logic[0].consume(exp, participant)
+    db.session.commit()
+
+    assert newcomer.current_trial.sync_group_round == 1
+    assert {p.current_trial.node_id for p in cohort} == {newcomer.current_trial.node_id}
 
 
 def _cue_in_parallel(exp, logic, participants):

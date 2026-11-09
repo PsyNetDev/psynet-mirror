@@ -271,7 +271,7 @@ go on the trials. Cued trials share a node per group and round, so there a
 ``@classmethod`` on the trial class can also save the
 group's results in ``node.var`` (see :ref:`rounds-cued-trials`). Results on
 the trial or node stay in the export for every round, while a participant
-variable keeps only the latest. It must be a module-level
+variable keeps only the latest. ``on_release`` must be a module-level
 function, a static or class method, or a method bound to a trial maker or a
 saved database object such as a trial. The ``barrier`` it receives is rebuilt
 from saved settings, so read only scalar settings such as ``waiting_message`` and
