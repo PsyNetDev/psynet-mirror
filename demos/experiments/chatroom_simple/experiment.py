@@ -13,8 +13,7 @@ message persistence and history replay are all provided by the built-in
 ``ChatRoom`` component. Instead of the chat's participant list, a
 :class:`~psynet.group_prompt.GroupPrompt` above the chat shows the pair and
 ticks a partner who has pressed Next. The chat ends by itself after
-``CHAT_SECONDS``. The structure mirrors the
-rock-paper-scissors chatroom demo, minus the game logic.
+``CHAT_SECONDS``.
 """
 
 from typing import List
