@@ -1588,6 +1588,8 @@ class GroupBarrier(Barrier):
     In or after a round of :meth:`~psynet.trial.main.Trial.cue`, it waits only for the members
     of that round, not for those who skipped it, are in a later round or have already passed it
     (see :ref:`rounds-cued-trials` and :ref:`a fixed group's loop <rounds-fixed-group-loop>`).
+    Before a late joiner's first cue, once the group has cued a round in the module, it waits
+    only for members who haven't cued one there either.
     When the trials of the members it releases are all on one cued round's node, the release
     closes that round to newcomers, whose cues then start the next round.
 
@@ -1682,6 +1684,11 @@ class GroupBarrier(Barrier):
         previous barrier pass, or since it formed; see below) and ``barrier``,
         the reconstructed registry object for this
         visit (scalar presentation and notification settings, not wait pages).
+        It doesn't run when the barrier releases only members catching up
+        with the group's rounds, such as a late joiner who skipped the
+        round or who reaches the barrier before their first cue while the
+        others are already playing; such a release isn't a group pass, so
+        it doesn't count for ``left`` or ``late_after`` either.
         ``participant.sync_group_removal_reason(group_type)`` says why each
         member in ``left`` went, for example to tell a player whose partner
         returned the study apart from one whose partner was too slow::
@@ -1917,7 +1924,7 @@ class GroupBarrier(Barrier):
         waiting = [
             m for m in group.active_participants if self._participant_is_waiting(m)
         ]
-        scope = _barrier_scope(group, waiting, self.id)
+        scope = _barrier_scope(group, waiting, self.id, _barrier_round(group, waiting))
         waiting_ids = {m.id for m in waiting}
         counted = {m.id for m in scope.waited_for} | {
             m.id for m in scope.releasable if m.id in waiting_ids
@@ -1995,10 +2002,11 @@ class GroupBarrier(Barrier):
         for group in groups.values():
             if self._skips_busy_group(group):
                 continue
-            if not _lock_round(group, _barrier_round(group, waiting_participants)):
+            node = _barrier_round(group, waiting_participants)
+            if not _lock_round(group, node):
                 continue
             group.check_numbers()
-            scope = _barrier_scope(group, waiting_participants, self.id)
+            scope = _barrier_scope(group, waiting_participants, self.id, node)
             outcome = _group_barrier_outcome(
                 group, group.active_participants, waiting_participant_ids, scope
             )
@@ -2014,11 +2022,16 @@ class GroupBarrier(Barrier):
                     if participant.id in waiting_participant_ids
                 )
             elif outcome == "release":
-                group.check_leader()
                 released = [
                     p for p in scope.releasable if p.id in waiting_participant_ids
                 ]
                 participants_to_release.extend(released)
+                released_ids = {p.id for p in released}
+                if not any(p.id in released_ids for p in scope.players):
+                    # Only members catching up pass, so it isn't the group's
+                    # pass: no bookkeeping and no on_release.
+                    continue
+                group.check_leader()
 
                 left = group.members_who_left_since(
                     group.last_barrier_pass_time or group.creation_time
@@ -2080,14 +2093,15 @@ class GroupBarrier(Barrier):
         """
         waiting_ids = {participant.id for participant in waiting_participants}
         for group in self.get_waiting_groups(waiting_participants).values():
-            if _round_is_busy(group, _barrier_round(group, waiting_participants)):
+            node = _barrier_round(group, waiting_participants)
+            if _round_is_busy(group, node):
                 # choose_who_to_release would defer this group.
                 continue
             if self.stop_top_ups and getattr(group, "accepts_top_ups", False):
                 # A peek takes no lock, but still counts newcomers who have
                 # joined since this session loaded the group.
                 db.session.expire(group, ["participant_links"])
-            scope = _barrier_scope(group, waiting_participants, self.id)
+            scope = _barrier_scope(group, waiting_participants, self.id, node)
             late_ids = {
                 participant.id
                 for participant in self._late_between_barriers(
@@ -2118,7 +2132,12 @@ class GroupBarrier(Barrier):
             group.check_numbers()
             if self.late_after is None:
                 continue
-            scope = _barrier_scope(group, waiting_participants, self.id)
+            scope = _barrier_scope(
+                group,
+                waiting_participants,
+                self.id,
+                _barrier_round(group, waiting_participants),
+            )
             late = self._late_between_barriers(group, waiting_ids, scope.waited_for)
             if self.late_action == "fail":
                 self._fail_late_participants(late)
@@ -4401,12 +4420,20 @@ class _BarrierScope(NamedTuple):
     #: Members a release takes along if they are waiting: all but those in a
     #: round the group played after the visit's round.
     releasable: List[Participant]
+    #: Members whose release makes it the group's pass of the visit: those it
+    #: waits for, also those who already passed it. A release of other
+    #: members alone, who are catching up, does no group bookkeeping.
+    players: List[Participant]
 
     def without(self, participant_ids) -> "_BarrierScope":
-        """Return this scope without the members whose ids are in ``participant_ids``."""
+        """Return this scope without the members whose ids are in ``participant_ids``.
+
+        ``players`` stays the same.
+        """
         return _BarrierScope(
             [p for p in self.waited_for if p.id not in participant_ids],
             [p for p in self.releasable if p.id not in participant_ids],
+            self.players,
         )
 
 
@@ -4442,24 +4469,34 @@ def _barrier_round(group, waiting_participants, links=None):
     return min(nodes, key=lambda node: node.id, default=None)
 
 
-def _barrier_scope(group, waiting_participants, barrier_id) -> _BarrierScope:
+def _barrier_scope(group, waiting_participants, barrier_id, node) -> _BarrierScope:
     """Return whom ``group``'s visit to the barrier ``barrier_id`` waits for, from stored rounds.
 
-    In the visit's round (see :func:`_barrier_round`), it waits for the
-    members who played that round, and for those behind it (an earlier
-    round, or none yet) only while the round is still open, since once it
-    has closed they will skip it. It doesn't wait for members who skipped
-    the round or are in a round played after it, for members behind it who
-    have finished the round's module (their ``ModuleState``), as when their
-    loop ended earlier, nor for members who already passed this visit (see
-    :func:`_members_past_visit`). A visit that belongs to no round waits for
-    every member. Costs at most two queries.
+    ``node`` is the visit's round, from :func:`_barrier_round`. In that
+    round, the visit waits for the members who played it, and for those
+    behind it (an earlier round, or none yet) only while the round is still
+    open, since once it has closed they will skip it. It doesn't wait for
+    members who skipped the round or are in a round played after it, for
+    members behind it who have finished the round's module (their
+    ``ModuleState``), as when their loop ended earlier, nor for members who
+    already passed this visit (see :func:`_members_past_visit`).
+
+    A visit with no round comes before the waiting members' first cue in
+    their module. If no member has cued a round in that module, as in a
+    group that never uses :meth:`~psynet.trial.main.Trial.cue`, it waits for
+    every member. Otherwise the group has started its rounds, so the visit
+    is a late joiner catching up: it waits only for the members who haven't
+    cued a round in the module either and haven't passed this visit yet.
+
+    Reads the members' stored rounds' nodes, which the session usually
+    holds already, and makes one query for this barrier's past visits, plus,
+    with members behind the round, one to re-read whether it has closed
+    and one per behind member whose module states aren't loaded yet.
     """
     members = group.active_participants
     links = _active_links(group)
-    node = _barrier_round(group, waiting_participants, links)
     if node is None:
-        return _BarrierScope(members, members)
+        return _scope_before_rounds(group, waiting_participants, barrier_id, links)
     played, behind, releasable = set(), set(), set()
     for participant in members:
         link = links.get(participant.id)
@@ -4477,12 +4514,40 @@ def _barrier_scope(group, waiting_participants, barrier_id) -> _BarrierScope:
         db.session.refresh(node, ["sync_group_closed"])
     if behind and not node.sync_group_closed:
         played |= behind
-    scope = _BarrierScope(
-        [p for p in members if p.id in played],
-        [p for p in members if p.id in releasable],
-    )
+    players = [p for p in members if p.id in played]
+    scope = _BarrierScope(players, [p for p in members if p.id in releasable], players)
+    waiting_players = [
+        p.id
+        for p in waiting_participants
+        if p.id in links
+        and links[p.id].round_node_id == node.id
+        and not links[p.id].skipped_round
+    ]
     return scope.without(
-        _members_past_visit(barrier_id, node, waiting_participants, links)
+        _members_past_visit(barrier_id, node.id, waiting_players, links)
+    )
+
+
+def _scope_before_rounds(group, waiting_participants, barrier_id, links):
+    """Return the scope of a visit with no round; see :func:`_barrier_scope`."""
+    from .trial.main import SyncGroupNode
+
+    members = group.active_participants
+    module_ids = {p.module_id for p in waiting_participants if p.id in links}
+    in_rounds = set()
+    for participant_id, link in links.items():
+        if link.round_node_id is None:
+            continue
+        node = db.session.get(SyncGroupNode, link.round_node_id)
+        if node is not None and node.module_id in module_ids:
+            in_rounds.add(participant_id)
+    if not in_rounds:
+        return _BarrierScope(members, members, members)
+    behind = [p for p in members if p.id not in in_rounds]
+    waiting = [p.id for p in waiting_participants if p.id in links]
+    # A catch-up: no players, so its release does no group bookkeeping.
+    return _BarrierScope(behind, behind, []).without(
+        _members_past_visit(barrier_id, None, waiting, links)
     )
 
 
@@ -4492,13 +4557,16 @@ def _left_module(participant, module_id):
     return bool(states) and all(state.finished for state in states)
 
 
-def _members_past_visit(barrier_id, node, waiting_participants, links):
-    """Return the ids of members who already passed this visit of ``barrier_id`` in round ``node``.
+def _members_past_visit(barrier_id, round_node_id, players, links):
+    """Return the ids of members who already passed this visit of ``barrier_id`` in a round.
 
-    Each visit row stores the member's round when they arrived. A member
-    released from more visits of this barrier in this round than the
-    waiting members who played the round (or than none, if only skippers
-    wait) is past their visit, as when a late joiner who skipped the round
+    ``round_node_id`` is the visit's round, or ``None`` for a visit before
+    the first cue, and ``players`` are the ids of the waiting members it
+    counts visits from: those who played the round, or all waiting members
+    before the first cue. Each visit row stores the member's round when
+    they arrived. A member released from more visits of this barrier in
+    this round than the ``players`` (or than none, if only skippers wait)
+    is past their visit, as when a late joiner who skipped the round
     reaches a barrier after the loop that the players have passed.
     Counting visits keeps a barrier repeated within one round waiting for
     everyone at each repetition. Only visits of the same kind as the waiting
@@ -4515,7 +4583,8 @@ def _members_past_visit(barrier_id, node, waiting_participants, links):
         )
         .filter(
             ParticipantLinkBarrier.barrier_id == barrier_id,
-            ParticipantLinkBarrier.round_node_id == node.id,
+            # IS NULL for a visit before the first cue.
+            ParticipantLinkBarrier.round_node_id == round_node_id,
             ParticipantLinkBarrier.participant_id.in_(list(links)),
         )
         .group_by(
@@ -4525,13 +4594,6 @@ def _members_past_visit(barrier_id, node, waiting_participants, links):
         )
         .all()
     )
-    players = [
-        p.id
-        for p in waiting_participants
-        if p.id in links
-        and links[p.id].round_node_id == node.id
-        and not links[p.id].skipped_round
-    ]
     current_kinds = [
         bool(in_trial)
         for pid, released, in_trial, _ in rows

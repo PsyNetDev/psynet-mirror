@@ -256,8 +256,12 @@ member of the group has reached it. When the last member arrives, the barrier
 calls ``on_release`` for the whole group. In or after a round of cued trials,
 it waits only for the members of that round: not for a late joiner who
 skipped it, a member already in a later round, one who has left the
-round's module, or one who has already passed it (see :ref:`rounds-cued-trials` and
-:ref:`a fixed group's loop <rounds-fixed-group-loop>`). In ``rock_paper_scissors`` the
+round's module, or one who has already passed it. Before a late joiner's
+first cue, once the group has cued a round in the module, it waits only for
+members who haven't cued one there either. A release of only members
+catching up, such as skippers, doesn't call ``on_release`` (see
+:ref:`rounds-cued-trials` and :ref:`a fixed group's loop
+<rounds-fixed-group-loop>`). In ``rock_paper_scissors`` the
 barrier after each choice scores the round and saves each player's result
 on their trial, where ``show_feedback`` reads it:
 
