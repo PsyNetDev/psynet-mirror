@@ -143,9 +143,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   they play the round out and see its outcome, as in `ultimatum_pairing`;
   only the player removed for being late is out of the pair, and gets their
   own page there.
-- With `join_existing_groups=True`, also pass a task-specific `join_criterion`
-  when a group can become unsuitable for newcomers in ways `stop_top_ups()`
-  doesn't cover, for example a chain that is nearly finished.
+- With `join_existing_groups=True`, also pass a `join_criterion` to turn
+  away newcomers who couldn't catch up, for example to a chain that is nearly
+  finished (it doesn't stop top-ups; pair it with `top_up_wait`).
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with
   filler work via `trial_maker.custom(...)`, as in `sync_quorum`.
 - For chain or Gibbs designs, distinguish true co-presence from async
@@ -208,9 +208,6 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   timestamps, responses, failures, and partial-completion reasons are analyzable.
 
 ## Test dropouts
-
-Bot tests wait out real timeouts: give `advance_past_wait_pages` a `timeout`
-longer than the `late_after` being tested.
 
 Real groups lose members in several ways; "Waiting and dropouts" in
 `design/groups` lists them, and "Settings for each kind of dropout" in

@@ -2422,9 +2422,9 @@ class SimpleGrouper(Grouper):
         A callable that takes ``group`` and ``participant`` as arguments, and returns ``True``
         if the participant should be allowed to join the group, and ``False`` otherwise.
         To be used in conjunction with ``join_existing_groups=True``. Returning ``False``
-        doesn't stop top-ups: the group still accepts them, so it is never dissolved and
-        ``below_quorum`` never applies. Use :meth:`SimpleSyncGroup.stop_top_ups` or
-        ``top_up_wait`` for that.
+        only turns that newcomer away: the group still accepts top-ups, so below its quorum
+        its barriers keep waiting for one; use ``top_up_wait`` or
+        :meth:`SimpleSyncGroup.stop_top_ups` so it can stop.
 
     below_quorum
         What happens to the members left in a group that falls below ``quorum``, which is
@@ -4079,18 +4079,24 @@ class SyncGroup(SQLBase, SQLMixin):
               being late (``late_action="leave_group"``).
             - ``"moved_on"``: not shown, unless the page shows their answer,
               for a member who left at a :class:`Regrouper`, for their next
-              group or to sit the round out. Like ``"finished"``, it doesn't
-              dissolve a group below its quorum, so a pair a
-              :class:`SimpleGrouper` formed isn't dissolved, failing the
-              partner, when the first member reaches a :class:`Regrouper`. A
-              later :class:`GroupBarrier` of the group's type still dissolves
-              it if fewer than its quorum are left.
+              group or to sit the round out, so a pair a :class:`SimpleGrouper`
+              formed isn't dissolved, failing the partner, when the first
+              member reaches a :class:`Regrouper`.
             - ``"finished"``: "(finished)", for a member who has played their
-              part, such as a player leaving a cohort after their last round.
-              Their leaving doesn't dissolve a group below its quorum, so the
-              members finishing their own last rounds aren't told that too few
-              remained. A later :class:`GroupBarrier` of the group's type
-              still dissolves it if fewer than its quorum are left.
+              part, such as a player leaving a cohort after their last round,
+              so the members finishing their own last rounds aren't told that
+              too few remained.
+
+            Removals for ``"finished"`` and ``"moved_on"`` never dissolve the
+            group. Other reasons dissolve a group below its quorum, but only
+            once it no longer accepts top-ups (after
+            :meth:`SimpleSyncGroup.stop_top_ups`, a :class:`GroupBarrier` with
+            ``stop_top_ups=True``, or the grouper's ``top_up_wait``). A group
+            below its quorum that still accepts top-ups is never dissolved: its
+            barriers wait for a newcomer, until their ``max_wait_time`` or,
+            with ``late_after``, without a limit. Once it no longer accepts
+            top-ups, its next :class:`GroupBarrier` dissolves it whatever the
+            reason, so a removal that kept it can still end it there.
         """
         if reason not in REMOVAL_REASONS:
             raise ValueError(

@@ -47,7 +47,9 @@ the grouper has a ``waiting_screen`` (see below).
     no active members are not joined. Groups formed with this option accept
     *top-ups*: when a member drops out, barriers wait for a replacement
     instead of dissolving the group, until ``group.stop_top_ups()`` is
-    called; ``below_quorum`` applies from then on.
+    called (or ``top_up_wait`` runs out, or the group passes a
+    :class:`~psynet.sync.GroupBarrier` with ``stop_top_ups=True``);
+    ``below_quorum`` applies from then on.
 
 ``max_group_size`` (default: ``initial_group_size``)
     The largest size a group can reach through ``join_existing_groups``;
@@ -60,7 +62,10 @@ the grouper has a ``waiting_screen`` (see below).
 ``join_criterion``
     A function of ``group`` and ``participant`` that returns whether the
     participant may join that group. Only used with
-    ``join_existing_groups=True``.
+    ``join_existing_groups=True``. Returning ``False`` only turns that
+    newcomer away: the group still accepts top-ups, so below its quorum its
+    barriers keep waiting for one; use ``top_up_wait`` or ``stop_top_ups``
+    so that it can stop (see :ref:`groups_below_min_size`).
 
 ``start_short_after`` (default: ``None``)
     Seconds after which a smaller group may start. Once the longest-waiting
@@ -723,9 +728,10 @@ Two separate settings decide what happens when someone leaves a group:
     (for example submitting a page) is handled by the background barrier
     check within about a second instead, once that request finishes.
   - Members who leave with ``reason="finished"``, or who move on at a
-    :class:`~psynet.sync.Regrouper`, don't dissolve the group; the group's
-    next :class:`~psynet.sync.GroupBarrier` dissolves it if it is still
-    below quorum.
+    :class:`~psynet.sync.Regrouper`, don't dissolve the group. Its next
+    :class:`~psynet.sync.GroupBarrier` treats it like any group below
+    quorum: it waits for a newcomer while the group accepts top-ups, and
+    dissolves it otherwise.
 
 So in a :class:`~psynet.sync.SimpleGrouper` pair, where any dropout
 dissolves the group, the two settings together decide both fates:
