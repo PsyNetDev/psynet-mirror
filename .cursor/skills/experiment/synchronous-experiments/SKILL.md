@@ -216,7 +216,12 @@ class PickTrial(Trial):
 # The Module gives the nodes a module_id to find them by when exporting.
 Module("game", for_loop(
     label="rounds", iterate_over=range(N_ROUNDS), time_estimate_per_iteration=20,
-    logic=join(Regrouper("room", ...), PickTrial.cue({"numbers": NUMBERS})),
+    logic=join(
+        Regrouper("room", ...),
+        # Players the regrouper left out see a page instead of a trial.
+        only_in_group("room", PickTrial.cue({"numbers": NUMBERS}),
+                      otherwise=InfoPage("You skip this round.", time_estimate=5)),
+    ),
 ))
 ```
 

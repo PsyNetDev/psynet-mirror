@@ -49,7 +49,9 @@ NUMBERS = [1, 2, 3, 4, 5]
 WIN_BONUS = 0.10
 WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + 20
 # Longer than the others can take to finish a round (the choice page plus the
-# barrier's late_after) and reach the next split.
+# barrier's late_after) and reach the next split. The feedback pages have no
+# time_limit, so a latecomer can still skip a round while the others read
+# their results.
 MAX_WAIT_SECONDS = 60
 
 
@@ -79,11 +81,7 @@ def get_timeline():
                     only_in_group(
                         "room",
                         PickTrial.cue({"numbers": NUMBERS}),
-                        otherwise=InfoPage(
-                            "Nobody else was left to play this round with, so "
-                            "you skip it.",
-                            time_estimate=5,
-                        ),
+                        otherwise=PageMaker(not_playing, time_estimate=5),
                     ),
                 ),
                 time_estimate_per_iteration=PickTrial.time_estimate + 5,
@@ -91,6 +89,19 @@ def get_timeline():
             ),
         ),
     )
+
+
+AWAY_TEXT = "You were away for too long, so you missed this round."
+
+
+def not_playing(participant):
+    """Explain why a player in no room this round doesn't play it."""
+    if participant.sync_group_removal_reason("room") == "late":
+        # Taken out of their room mid-round by the barrier's late_after.
+        text = AWAY_TEXT
+    else:
+        text = "Nobody else was left to play this round with, so you skip it."
+    return InfoPage(text, time_estimate=5)
 
 
 def lowest_unique(choices: dict):
@@ -169,9 +180,7 @@ class PickTrial(Trial):
 
     def show_feedback(self, experiment, participant):
         if not self.var.has("won"):
-            return InfoPage(
-                "You were away for too long, so you missed this round.", time_estimate=5
-            )
+            return InfoPage(AWAY_TEXT, time_estimate=5)
         if self.answer is None:
             return InfoPage(
                 "You ran out of time, so you missed this round.", time_estimate=5
