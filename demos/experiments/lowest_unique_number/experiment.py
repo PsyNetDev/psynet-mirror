@@ -253,6 +253,9 @@ class Exp(psynet.experiment.Experiment):
                     "room_id": t.sync_group_id,
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
+                    # False while the trial runs or if the player left it; the
+                    # choice is then the answer so far.
+                    "complete": t.complete,
                     "choice": t.answer,
                     # None if the player was away too long to play the round.
                     "won": t.var.get("won"),

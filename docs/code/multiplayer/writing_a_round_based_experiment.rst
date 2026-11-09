@@ -244,6 +244,9 @@ which also keeps the trial of a player removed for being away:
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: OfferTrial.score_pair
 
+The barrier is inside ``show_trial``, so the trials have not ended yet when
+``on_release`` runs: ``trial.answer`` holds each member's answer so far,
+which here is their decision, or ``None`` if their page ran out of time.
 The trial ends after the barrier, so its feedback can read the
 player's own answer (``self.answer``) and what ``on_release`` saved.
 ``outcome`` turns them into one key of ``OUTCOME_TEXTS``:

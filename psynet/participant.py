@@ -744,7 +744,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         Returns ``None`` if they are still in such a group or were never in
         one. Otherwise returns ``"late"`` (removed by a barrier's
-        ``late_action="leave_group"``), ``"waited_too_long"`` (by its
+        ``late_action="leave_group"`` or ``"leave_all_groups"``), ``"waited_too_long"`` (by its
         ``max_wait_action="leave_group"``), ``"no_group_formed"`` (a grouper
         with ``max_wait_action="continue_without_group"`` found them no group
         in time), ``"group_dissolved"`` (released
@@ -782,7 +782,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         """Return whether the participant is in an active group of ``group_type``.
 
         This becomes ``False`` once they leave the group, for example after a
-        barrier's ``late_action="leave_group"`` or when their group is dissolved.
+        barrier's ``late_action="leave_group"`` or ``"leave_all_groups"``, or when
+        their group is dissolved.
         """
         return group_type in self.active_sync_groups
 

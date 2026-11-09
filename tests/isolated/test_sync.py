@@ -6786,6 +6786,79 @@ def test_late_action_leave_all_groups_also_leaves_the_cohort(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+@pytest.mark.parametrize("both_pairs_late", [False, True])
+def test_late_member_leaving_all_groups_can_fail_the_cohort_with_a_warning(
+    in_experiment_directory, db_session, caplog, both_pairs_late
+):
+    """Leaving a cohort at full quorum fails its other members, but never another late member."""
+    exp = get_experiment()
+    barrier = GroupBarrier(
+        id_="round", group_type="pair", late_after=5, late_action="leave_all_groups"
+    )
+    late_a, on_time_a, b1, b2 = [new_participant(exp) for _ in range(4)]
+    for group_type, members, below_quorum in [
+        ("cohort", [late_a, on_time_a, b1, b2], "fail"),
+        ("pair", [late_a, on_time_a], "continue_without_group"),
+        ("pair", [b1, b2], "continue_without_group"),
+    ]:
+        group = SimpleSyncGroup(
+            group_type=group_type,
+            initial_group_size=len(members),
+            max_group_size=len(members),
+            min_group_size=len(members) if group_type == "cohort" else 1,
+            accepts_top_ups=False,
+            below_quorum=below_quorum,
+        )
+        db_session.add(group)
+        for p in members:
+            p.status = "working"
+            group.add_participant(p)
+        _backdate_group(group, seconds=10)
+    db_session.commit()
+
+    waiting = [on_time_a, b2] if both_pairs_late else [on_time_a, b1, b2]
+    with caplog.at_level("WARNING", logger="psynet"):
+        barrier.check_waiting_participants(waiting)
+    db_session.commit()
+
+    late = [late_a, b1] if both_pairs_late else [late_a]
+    assert all(not p.failed for p in late)
+    assert all(p.sync_group_removal_reason("cohort") == "late" for p in late)
+    assert all(p.failed for p in waiting)
+    assert "below_quorum='continue_without_group'" in caplog.text
+
+
+@pytest.mark.parametrize("late_action", ["leave_group", "leave_all_groups"])
+def test_timeline_warns_when_leaving_all_groups_would_fail_the_cohort(late_action):
+    def make_timeline():
+        return Timeline(
+            SimpleGrouper("cohort", initial_group_size=4, quorum=4),
+            SimpleGrouper(
+                "pair",
+                initial_group_size=2,
+                quorum=1,
+                below_quorum="continue_without_group",
+            ),
+            GroupBarrier(
+                id_="round", group_type="pair", late_after=30, late_action=late_action
+            ),
+            InfoPage("Done", time_estimate=1),
+        )
+
+    if late_action == "leave_all_groups":
+        with pytest.warns(
+            UserWarning, match="from all their groups, but grouper 'cohort"
+        ):
+            make_timeline()
+    else:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            make_timeline()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 @pytest.mark.parametrize("passed_a_barrier", [False, True])
 def test_late_after_counts_from_joining_the_group(
     in_experiment_directory, db_session, passed_a_barrier

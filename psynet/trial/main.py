@@ -51,6 +51,7 @@ from ..page import InfoPage, UnsuccessfulEndPage, WaitPage, wait_while
 from ..participant import Participant
 from ..sync import (
     GroupBarrier,
+    LateAction,
     ParticipantLinkSyncGroup,
     SyncGroup,
     _execute_advisory_xact_lock,
@@ -1974,9 +1975,7 @@ class TrialMaker(Module):
         sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
-        sync_group_late_action: Literal[
-            "fail", "leave_group", "leave_all_groups"
-        ] = "fail",
+        sync_group_late_action: LateAction = "fail",
         sync_group_waiting_message=None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
@@ -3287,9 +3286,7 @@ class NetworkTrialMaker(TrialMaker):
         sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
-        sync_group_late_action: Literal[
-            "fail", "leave_group", "leave_all_groups"
-        ] = "fail",
+        sync_group_late_action: LateAction = "fail",
         sync_group_waiting_message=None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):

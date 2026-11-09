@@ -385,6 +385,9 @@ class Exp(psynet.experiment.Experiment):
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
                     "role": t.sync_group_role,
+                    # False while the trial runs or if the player left it; the
+                    # decision is then the answer so far.
+                    "complete": t.complete,
                     # None if the player was away and never sent a decision.
                     "decision": t.answer,
                     "coins": t.var.get("coins"),
