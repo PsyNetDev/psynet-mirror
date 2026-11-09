@@ -7,7 +7,6 @@ from functools import cached_property
 from typing import List, Optional, Sequence, Union
 
 from dallinger import db
-from sqlalchemy import func
 
 from psynet.db import transaction
 
@@ -324,8 +323,8 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
         if not waiting:
             raise ValueError(f"None of the bots is waiting at '{regrouper.id}'.")
         _backdate_arrivals(regrouper, waiting, period)
-        for within_group in {regrouper._within_group(p) for p in waiting}:
-            _backdate_last_split(regrouper, within_group, period)
+        for within_group in {regrouper.waiting_pool_group(p) for p in waiting}:
+            regrouper._backdate_last_split(within_group, period)
     advance_past_wait_pages(bots, timeout=timeout)
 
 
@@ -335,26 +334,6 @@ def _backdate_arrivals(barrier, participants, seconds):
         participant.active_barriers[barrier.id].arrival_time -= timedelta(
             seconds=seconds
         )
-
-
-def _backdate_last_split(regrouper, within_group, seconds):
-    """Move a :class:`~psynet.sync.Regrouper` pool's latest split back by ``seconds``.
-
-    Only the groups formed within ``seconds`` of the latest one move, which
-    is enough to move the pool's last split time back by ``seconds``.
-    """
-    from .sync import SyncGroup
-
-    criteria = regrouper._pool_splits(within_group)
-    latest = (
-        db.session.query(func.max(SyncGroup.creation_time)).filter(*criteria).scalar()
-    )
-    if latest is None:
-        return
-    shift = timedelta(seconds=seconds)
-    recent = SyncGroup.query.filter(*criteria, SyncGroup.creation_time > latest - shift)
-    for group in recent:
-        group.creation_time -= shift
 
 
 def run_bots_to_completion(bots: List["BotDriver"], timeout: Optional[float] = 60.0):

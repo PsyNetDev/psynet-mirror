@@ -210,9 +210,11 @@ rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
 ``roles``, :meth:`~psynet.sync.Regrouper.role`.
 
 When the cohorts take latecomers (``join_existing_groups=True`` on their
-grouper), ``stop_top_ups_after_rounds=n`` lets them join only during a
-cohort's first ``n`` rounds: the split that starts the next round stops the
-cohort's top-ups (see :ref:`groups_below_min_size`).
+grouper), ``stop_top_ups_after_rounds=n`` lets them join only until the
+regrouper has started ``n`` rounds in the cohort: the split that starts the
+next round stops the cohort's top-ups (see :ref:`groups_below_min_size`).
+Every split that forms groups in the cohort counts as a round, even one that
+pairs only latecomers while the others are still playing.
 
 Play each round as one trial per player, added after the regrouper with
 :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` on a trial class that sets
@@ -858,7 +860,7 @@ Two separate settings decide what happens when someone leaves a group:
       quorum doesn't pass, so it keeps waiting there for a newcomer.
     - ``stop_top_ups_after_rounds=n`` on a :class:`~psynet.sync.Regrouper`
       that regroups within this group (``within``) stops them when the
-      regrouper starts the group's round after its first ``n``, for
+      regrouper starts its next split of the group after ``n``, for
       example ``1`` to let latecomers join a cohort only during its first
       round (see :ref:`sync-rounds-with-changing-groups`).
     - The grouper's ``top_up_wait=seconds`` limits that wait: once the

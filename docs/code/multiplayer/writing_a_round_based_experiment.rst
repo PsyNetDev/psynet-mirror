@@ -52,8 +52,8 @@ joins the next round. The demo's bot test starts such a round with
 With ``roles``, each pair has a proposer and a responder, and each player
 alternates between them. Partners from last round are kept apart where
 possible. ``stop_top_ups_after_rounds=OPEN_FOR_ROUNDS`` lets latecomers join
-the cohort only during its first round: the split that starts its second
-round stops the cohort's top-ups. ``waiting_message`` counts down to the
+the cohort only during its first round: the cohort's next split, even one
+that pairs only latecomers, stops its top-ups. ``waiting_message`` counts down to the
 deadline. See :class:`~psynet.sync.Regrouper` for these options:
 
 .. figure:: ../../_static/images/rounds/next_round.png

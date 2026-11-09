@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from psynet import sync, timeline_hold
-from psynet.bot import _backdate_arrivals, _backdate_last_split
+from psynet.bot import _backdate_arrivals
 from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
 from psynet.pytest_psynet import path_to_test_experiment
@@ -79,7 +79,7 @@ def test_regrouper_pairs_within_cohorts_and_does_not_wait_for_absent_members(
     _arrive(exp, pairs, present)
     assert all("pair" not in p.active_sync_groups for p in present)
     assert _waiting(pairs, present) == present
-    _backdate_last_split(pairs, cohort[0].active_sync_groups["cohort"], 31)
+    pairs._backdate_last_split(cohort[0].active_sync_groups["cohort"], 31)
     _backdate_arrivals(pairs, present, 31)
 
     released = pairs.choose_who_to_release(present)
@@ -379,7 +379,7 @@ def test_regrouper_left_over_waits_for_cohort_still_in_the_round(
 
     # The pair's round runs past the deadline; the odd one out, back first,
     # keeps waiting for them instead of sitting out again.
-    _backdate_last_split(pairs, cohort[0].active_sync_groups["cohort"], 40)
+    pairs._backdate_last_split(cohort[0].active_sync_groups["cohort"], 40)
     _arrive(exp, pairs, [odd_one_out])
     _backdate_arrivals(pairs, [odd_one_out], 16)
     assert pairs.choose_who_to_release([odd_one_out]) == []
@@ -419,7 +419,7 @@ def test_every_regrouper_left_over_waits_one_more_tick(
     _backdate_arrivals(pairs, cohort[:2], 16)
     _arrive(exp, pairs, cohort[2:])
     assert _waiting(pairs, cohort) == cohort[2:]
-    _backdate_last_split(pairs, cohort[0].active_sync_groups["cohort"], 32)
+    pairs._backdate_last_split(cohort[0].active_sync_groups["cohort"], 32)
 
     # The pair is still playing: held through one tick, released at the next.
     since_tick = time.time() - _latest_tick(time.time(), 15)
@@ -667,12 +667,12 @@ def test_regrouper_lets_a_player_waiting_alone_carry_on(
     assert not player.in_sync_group("room")
 
 
-def _open_cohorts(stop_top_ups_after_rounds):
+def _open_cohorts(stop_top_ups_after_rounds, initial_group_size=2, **kwargs):
     cohort_grouper = SimpleGrouper(
         "cohort",
-        initial_group_size=2,
-        quorum=2,
-        max_group_size=4,
+        initial_group_size=initial_group_size,
+        quorum=initial_group_size,
+        max_group_size=6,
         join_existing_groups=True,
     )
     pairs = Regrouper(
@@ -680,6 +680,7 @@ def _open_cohorts(stop_top_ups_after_rounds):
         within="cohort",
         group_size=2,
         stop_top_ups_after_rounds=stop_top_ups_after_rounds,
+        **kwargs,
     )
     return cohort_grouper, pairs
 
@@ -732,4 +733,66 @@ def test_closing_split_counts_a_newcomer_who_joined_in_another_request(
         other.commit()
 
     assert pairs.choose_who_to_release(starters) == []
+    assert cohort.accepts_top_ups
+
+
+@in_consents_experiment
+def test_a_round_of_latecomers_alone_counts_towards_closing_the_cohort(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort_grouper, pairs = _open_cohorts(1, deadline=30)
+    *starters, c, d, too_late = _working_participants(exp, 5)
+    _arrive(exp, cohort_grouper, starters)
+    cohort = starters[0].active_sync_groups["cohort"]
+    _arrive(exp, pairs, starters)
+    _arrive(exp, cohort_grouper, [c, d])
+    # The starters are still playing, so the latecomers pair at the deadline.
+    _arrive(exp, pairs, [c, d])
+    pairs._backdate_last_split(cohort, 31)
+    _backdate_arrivals(pairs, [c, d], 31)
+    assert set(pairs.choose_who_to_release([c, d])) == {c, d}
+    db_session.commit()
+
+    assert not cohort.accepts_top_ups
+    _arrive(exp, cohort_grouper, [too_late])
+    assert not too_late.in_sync_group("cohort")
+
+
+@in_consents_experiment
+def test_closing_a_cohort_below_quorum_dissolves_it_without_a_split(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort_grouper, pairs = _open_cohorts(0, initial_group_size=3)
+    *present, gone = _working_participants(exp, 3)
+    _arrive(exp, cohort_grouper, [*present, gone])
+    cohort = gone.active_sync_groups["cohort"]
+    gone.status = "returned"
+    db_session.commit()
+
+    _arrive(exp, pairs, present)
+    assert not cohort.active
+    assert all(p.failed and pairs.rounds_played(p) == 0 for p in present)
+
+
+@in_consents_experiment
+def test_a_closing_split_skips_a_cohort_another_request_holds(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort_grouper, pairs = _open_cohorts(0)
+    starters = _working_participants(exp, 2)
+    _arrive(exp, cohort_grouper, starters)
+    cohort = starters[0].active_sync_groups["cohort"]
+    for participant in starters:
+        pairs.receive_participant(participant)
+    db_session.commit()
+
+    with Session(bind=db.engine) as busy_request:
+        busy_request.execute(
+            text("SELECT id FROM sync_group WHERE id = :id FOR UPDATE"),
+            {"id": cohort.id},
+        )
+        assert pairs.choose_who_to_release(starters) == []
     assert cohort.accepts_top_ups

@@ -3341,17 +3341,14 @@ class Regrouper(Grouper):
     stop_top_ups_after_rounds
         Optional number of rounds during which newcomers can still join the
         ``within`` group, for example a cohort formed with
-        ``join_existing_groups=True``. The split that starts a later round, one
-        in which a waiting member has already played this many rounds (see
-        :meth:`rounds_played`), stops the ``within`` group's top-ups, as
-        :meth:`SimpleSyncGroup.stop_top_ups` does. With ``0`` the cohort closes
-        when its first round starts. ``None`` (default) leaves top-ups to the
+        ``join_existing_groups=True``. Each split that forms groups in the
+        cohort counts as one of its rounds, even one that groups only
+        latecomers while the others are still playing. The split that starts
+        the next round stops the cohort's top-ups, as
+        :meth:`SimpleSyncGroup.stop_top_ups` does; a cohort below its quorum
+        is then dissolved instead of split. With ``0`` the cohort closes when
+        its first round starts. ``None`` (default) leaves top-ups to the
         grouper and the barriers. Needs ``within``.
-
-        A round a member sits out (``left_over="sit_out"``) or misses doesn't
-        count towards their rounds played, so the cohort closes at the first
-        split that forms a group while a member who has played this many
-        rounds is waiting.
 
     max_wait_time
         Longest a participant waits at the regrouper before ``max_wait_action``
@@ -3813,7 +3810,7 @@ class Regrouper(Grouper):
             members = self._members_to_split(within_group, pool)
             if members is None:
                 continue
-            stop_top_ups = self._ends_join_window(within_group, members)
+            stop_top_ups = self._ends_join_window(within_group)
             if stop_top_ups:
                 if not _lock_group_to_stop_top_ups(within_group):
                     continue
@@ -3821,6 +3818,9 @@ class Regrouper(Grouper):
                 # joined in another request now keeps a complete pool waiting.
                 members = self._members_to_split(within_group, pool)
                 if members is None:
+                    continue
+                if len(within_group.active_participants) < within_group.quorum:
+                    within_group.stop_top_ups()
                     continue
             released += self._split(within_group, members, stop_top_ups=stop_top_ups)
         return released
@@ -3833,14 +3833,21 @@ class Regrouper(Grouper):
             return self._waiting_at_tick(pool, time.time())
         return pool
 
-    def _ends_join_window(self, within_group, members) -> bool:
-        """Return whether splitting ``members`` starts a round after ``stop_top_ups_after_rounds``."""
+    def _ends_join_window(self, within_group) -> bool:
+        """Return whether the next split comes after ``stop_top_ups_after_rounds`` splits of this cohort."""
         if self.stop_top_ups_after_rounds is None or not getattr(
             within_group, "accepts_top_ups", False
         ):
             return False
-        rounds = max((self.rounds_played(m) for m in members), default=0)
-        return rounds >= self.stop_top_ups_after_rounds
+        return self._n_splits(within_group) >= self.stop_top_ups_after_rounds
+
+    def _n_splits(self, within_group) -> int:
+        """Return how many splits of this pool formed groups; a split's groups share their creation time."""
+        return (
+            db.session.query(func.count(SyncGroup.creation_time.distinct()))
+            .filter(*self._pool_splits(within_group))
+            .scalar()
+        )
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         return any(
@@ -3953,6 +3960,27 @@ class Regrouper(Grouper):
             if within_group is None
             else SyncGroup.within_group_id == within_group.id,
         ]
+
+    def _backdate_last_split(self, within_group, seconds):
+        """Move this pool's latest split back by ``seconds``, for tests (see :func:`psynet.bot.regroup_now`).
+
+        Only the groups formed within ``seconds`` of the latest one move,
+        which is enough to move the pool's last split time back by ``seconds``.
+        """
+        criteria = self._pool_splits(within_group)
+        latest = (
+            db.session.query(func.max(SyncGroup.creation_time))
+            .filter(*criteria)
+            .scalar()
+        )
+        if latest is None:
+            return
+        shift = timedelta(seconds=seconds)
+        recent = SyncGroup.query.filter(
+            *criteria, SyncGroup.creation_time > latest - shift
+        )
+        for group in recent:
+            group.creation_time -= shift
 
     def _split(self, within_group, members, stop_top_ups=False):
         """Form this pool's groups and return the participants to release.
