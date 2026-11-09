@@ -27,34 +27,39 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 
 ## Where each round is recorded
 
-Play each round as one trial per player, so that PsyNet records the group
-and round on the trial; a game written as pages without trials should
-become one cued trial per player per round. Use these columns rather than
-matching timestamps across tables.
+Follow "Group experiments" in `data/basic_data`: play each round as one
+trial per player, save each player's results on their trial and the
+group's on its `SyncGroupNode`, and build the tables from those, not from
+timestamps or `position`. For example:
 
-- Trials of a trial maker with `sync_group_type`, and cued trials whose
-  class sets `sync_group_type` (`Trial.cue(...)`), have
-  `sync_group_id`, `sync_group_role` and `sync_group_round`. A group's
-  trials with the same `sync_group_id` and `sync_group_round` are one round,
-  including a latecomer's. Don't match rounds by `position`, which counts
-  each participant's own trials.
-- Save each player's results on their trial (`trial.var`), including
-  outcomes the server computes, such as a move played for a player who ran
-  out of time. A `GroupBarrier`'s `on_release` receives the members'
-  `trials` for this. Pay bonuses through the trial's `score_answer` and
-  `compute_performance_reward`, so that `trial.performance_reward` matches
-  the payment.
-- Cued trials of one group and round share a `SyncGroupNode`
-  (`on_release` receives it as `node`): save the group's results once, in
-  `node.var`, and export one row per group per round from
-  `SyncGroupNode.query.filter_by(module_id=...)`.
+```python
+@classmethod
+def score_round(cls, trials, node):  # GroupBarrier(..., on_release=cls.score_round)
+    node.var.total = sum(t.participant.var.choice or 0 for t in trials)
+    for trial in trials:
+        trial.var.result = {"choice": trial.participant.var.choice}
 
-Start from `get_basic_data` in the `lowest_unique_number` demo for cued
-trials, in the `ultimatum_pairing` demo for pairs that change every round
-(see "Games with a regrouper" in `data/basic_data`), or in the
-`rock_paper_scissors` demo for a trial maker. If a per-round value exists
-only in participant variables or browser state, change the experiment to
-save it on the trial or node before any data are collected.
+# In the Experiment class:
+@classmethod
+def get_basic_data(cls, context=None, **kwargs):
+    return {"player_round": [
+        {"group_id": t.sync_group_id, "round": t.sync_group_round, **t.var.result}
+        for t in MyTrial.query.all() if t.var.has("result")
+    ]}
+```
+
+Start from the `get_basic_data` of the demo closest to the design:
+
+- `rock_paper_scissors`: a fixed pair playing a trial maker.
+- `ultimatum_pairing`: pairs that change every round, with a table per
+  pair from the nodes (see "Games with a regrouper" in `data/basic_data`).
+- `lowest_unique_number`: rooms that each play one round. Its `round`
+  counts the player's own trials, because no room has more than one round;
+  where a group plays several rounds, use `sync_group_round` instead.
+
+If a per-round value exists only in participant variables or browser
+state, change the experiment to save it on the trial or node before any
+data are collected.
 
 ## Workflow
 

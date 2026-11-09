@@ -12,6 +12,7 @@ from psynet.sync import GroupBarrier, SimpleGrouper
 from psynet.timeline import Timeline, join
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 
+GROUP = "rock_paper_scissors"
 PARTNER_WAIT_SECONDS = 300
 CHOICE_SECONDS = 20
 N_ROUNDS = 3
@@ -23,7 +24,7 @@ def get_timeline():
     return Timeline(
         EnableChatrooms(),
         SimpleGrouper(
-            group_type="rock_paper_scissors",
+            group_type=GROUP,
             initial_group_size=2,
             waiting_message="Waiting for your partner",
             max_wait_time=PARTNER_WAIT_SECONDS,
@@ -37,7 +38,7 @@ def get_timeline():
             allow_repeated_nodes=True,
             expected_trials_per_participant=N_ROUNDS,
             max_trials_per_participant=N_ROUNDS,
-            sync_group_type="rock_paper_scissors",
+            sync_group_type=GROUP,
             sync_group_waiting_message="Waiting for your partner",
             sync_group_max_wait_time=PARTNER_WAIT_SECONDS,
         ),
@@ -60,7 +61,7 @@ class RockPaperScissorsTrial(StaticTrial):
             self.choose_action(participant),
             GroupBarrier(
                 id_="finished_trial",
-                group_type="rock_paper_scissors",
+                group_type=GROUP,
                 waiting_message="Waiting for your partner",
                 on_release=self.score_trial,
                 max_wait_time=PARTNER_WAIT_SECONDS,
@@ -92,6 +93,8 @@ class RockPaperScissorsTrial(StaticTrial):
             for t in trials
         }
         for trial in trials:
+            # The grouper forms pairs and accepts no newcomers, so a round has
+            # exactly two trials.
             (partner,) = [t for t in trials if t != trial]
             trial.var.result = {
                 "action": actions[trial.id],
@@ -154,9 +157,9 @@ class Exp(psynet.experiment.Experiment):
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
         """Return one row per player per round, with their partner's action."""
-        trials = RockPaperScissorsTrial.query.filter_by(
-            failed=False, complete=True
-        ).all()
+        # Not only complete trials: a trial is completed by its player's next
+        # request, which never comes if they close the page after the round.
+        trials = RockPaperScissorsTrial.query.all()
         rows = [
             {
                 "group_id": trial.sync_group_id,
@@ -176,9 +179,10 @@ class Exp(psynet.experiment.Experiment):
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
+        # In round 1, the second bot runs out of time and plays a random action.
         rounds = [
             ("rock", "paper", "You lost.", "You won!"),
-            ("scissors", "paper", "You won!", "You lost."),
+            ("scissors", None, None, None),
             ("scissors", "scissors", "You drew.", "You drew."),
         ]
         for first, second, first_outcome, second_outcome in rounds:
@@ -189,16 +193,22 @@ class Exp(psynet.experiment.Experiment):
             bots[0].take_page(response=first)
             bots[0].refresh_status()
             assert bots[0].current_page_label == "wait", bots[0].current_page_label
-            bots[1].take_page(response=second)
+            if second is None:
+                bots[1].run_out_of_time()
+            else:
+                bots[1].take_page(response=second)
             advance_past_wait_pages(bots)
             _assert_on_page(bots, "results")
 
             text = bots[0].current_page_text
-            assert f"You chose {first}, your partner chose {second}. " in text, text
-            assert first_outcome in text, text
-            text = bots[1].current_page_text
-            assert f"You chose {second}, your partner chose {first}. " in text, text
-            assert second_outcome in text, text
+            if second is None:
+                assert "your partner ran out of time, so we chose" in text, text
+            else:
+                assert f"You chose {first}, your partner chose {second}. " in text
+                assert first_outcome in text, text
+                text = bots[1].current_page_text
+                assert f"You chose {second}, your partner chose {first}. " in text
+                assert second_outcome in text, text
             assert isinstance(bots[0].get_current_page().chatroom, ChatRoom)
 
             for bot in bots:
@@ -213,14 +223,15 @@ class Exp(psynet.experiment.Experiment):
         summary = [
             (r["round"], r["action"], r["partner_action"], r["score"]) for r in rows
         ]
-        assert summary == [
+        assert summary[:2] + summary[4:] == [
             (0, "rock", "paper", -1),
             (0, "paper", "rock", 1),
-            (1, "scissors", "paper", 1),
-            (1, "paper", "scissors", -1),
             (2, "scissors", "scissors", 0),
             (2, "scissors", "scissors", 0),
         ], summary
+        timed_out = rows[3]
+        assert timed_out["timed_out"] and timed_out["action"] in ACTIONS, timed_out
+        assert rows[2]["partner_timed_out"], rows[2]
         assert len({r["group_id"] for r in rows}) == 1, rows
         assert rows[0]["group_id"] is not None, rows
         assert {r["partner_id"] for r in rows} == {bot.id for bot in bots}, rows

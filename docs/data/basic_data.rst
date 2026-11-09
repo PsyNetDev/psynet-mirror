@@ -140,13 +140,11 @@ the trial ID (to trace each row back to the database) and both players'
 responses. Group-level measures can be computed from this table.
 The ``rock_paper_scissors`` demo builds it from its trials. The barrier that
 ends each round saves each player's action, their partner's and the score on
-their trial, including the random action played for someone who ran out of
-time, because that action is in no answer:
-
-.. literalinclude:: ../../demos/experiments/rock_paper_scissors/experiment.py
-   :pyobject: RockPaperScissorsTrial.score_trial
-
-``get_basic_data`` then reads one row from each scored trial:
+their trial in ``trial.var.result``, including the random action played for
+someone who ran out of time, because that action is in no answer (see
+``score_trial`` under "Barriers" in :doc:`/code/multiplayer/synchronization`).
+``get_basic_data`` then reads one row from each scored trial, including the
+trial of a player who closed the page before finishing it:
 
 .. literalinclude:: ../../demos/experiments/rock_paper_scissors/experiment.py
    :pyobject: Exp.get_basic_data
