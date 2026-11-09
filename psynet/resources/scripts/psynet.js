@@ -2349,35 +2349,49 @@
     // Browsers keep an AudioContext suspended until the participant interacts
     // with the document. Firefox and Chrome then allow resume() at any time;
     // Safari only inside the click handler itself, so a resume() that does not
-    // settle quickly is treated as refused. After the participant's click,
-    // audio is allowed but can take a few seconds to start (for example while
-    // the audio output opens), so that wait is longer.
+    // settle quickly is treated as refused. Audio can also start late, for
+    // example while the browser opens the audio output, so the dialog closes
+    // by itself once the context runs.
     const AUDIO_RESUME_WAIT_MS = 500;
-    const AUDIO_RESUME_AFTER_CLICK_WAIT_MS = 10000;
 
-    let waitForResume = function (resumed, waitMs) {
+    let waitForResume = function (resumed) {
       return Promise.race([
         resumed.catch(() => {}),
-        new Promise((resolve) => setTimeout(resolve, waitMs)),
+        new Promise((resolve) => setTimeout(resolve, AUDIO_RESUME_WAIT_MS)),
       ]);
     };
 
     let askUserToEnableAudio = function () {
+      let context = psynet.media.audioContext;
       return new Promise((resolve) => {
         let modal = $("#resume-modal");
+        let button = $("#resume-button");
+        let close = function () {
+          context.removeEventListener("statechange", closeWhenRunning);
+          button.off("click");
+          modal.css("display", "none");
+          $("#js-psych").trigger("focus");
+          resolve();
+        };
+        let closeWhenRunning = function () {
+          if (context.state === "running") {
+            close();
+          }
+        };
+        context.addEventListener("statechange", closeWhenRunning);
         modal.css("display", "block");
-        $("#resume-button").one("click", async function () {
+        button.one("click", async function () {
           // resume() must run synchronously inside the click for Safari.
           // Tone.js keeps its own AudioContext, so resume that one too.
-          let resumed = psynet.media.audioContext.resume();
+          let resumed = context.resume();
           if (window.Tone) {
             Tone.start().catch(() => {});
           }
           modal.css("display", "none");
-          $("#js-psych").trigger("focus");
-          await waitForResume(resumed, AUDIO_RESUME_AFTER_CLICK_WAIT_MS);
-          resolve();
+          await waitForResume(resumed);
+          close();
         });
+        closeWhenRunning();
       });
     };
 
@@ -2388,7 +2402,7 @@
         return;
       }
       if (navigator.userActivation?.hasBeenActive !== false) {
-        await waitForResume(context.resume(), AUDIO_RESUME_WAIT_MS);
+        await waitForResume(context.resume());
       }
       // Ask again if the browser still refuses after a click.
       while (context.state === "suspended") {
