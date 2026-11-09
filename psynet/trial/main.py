@@ -396,11 +396,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             ":meth:`Trial.cue` on a :class:`SyncGroupNode`, one of "
             ':data:`~psynet.sync.SyncGroupOutcome`: ``"stayed"`` '
             "once a :class:`~psynet.sync.GroupBarrier` releases the group while "
-            "this is the player's current trial and every released member whose "
-            "current trial is on one of the group's nodes is on this trial's "
-            "node (members released with no current trial, such as a newcomer "
-            "who skipped the round, or with a trial on another node get "
-            "nothing), or why the player left the "
+            "this is the player's current trial and is on the node of the round "
+            "that barrier visit belongs to (a barrier before the module's first "
+            "cue belongs to no round and stores nothing, and released members "
+            "whose current trial is not on that node, such as a newcomer who "
+            "skipped the round, get nothing), or why the player left the "
             "group, one of the reasons of "
             ":meth:`~psynet.sync.SyncGroup.remove_participant`, such as "
             '``"late"``, ``"left_experiment"`` or ``"group_dissolved"`` (for '
