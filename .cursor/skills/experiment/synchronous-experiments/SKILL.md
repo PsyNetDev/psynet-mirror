@@ -146,11 +146,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   player removed for being late, as `not_playing` in `ultimatum_pairing` does.
   `public_goods` uses `otherwise=` in a team game that plays on with fewer
   members, down to its quorum, and pays the last member for the round in
-  which the group dissolves. `only_in_group` also skips the end of a cued
-  trial, where it is scored and paid, for a player who leaves partway. When
-  that player must still be paid, pass `only_in_group` the rounds' loop,
-  which is one step (see above), and check the group once per round, as
-  `public_goods` does in `play_round`.
+  which the group dissolves. A cued trial is one step, so a player who
+  leaves partway still reaches its end, where it is scored and paid.
 - In a `Regrouper` game the player whose partner left stays in the pair, so
   they play the round out and see its outcome, as in `ultimatum_pairing`;
   only the player removed for being late is out of the pair, and gets their
