@@ -166,8 +166,9 @@ Rounds with changing groups
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If the same group plays every round, you need no regrouper: form the group
-once with a :class:`~psynet.sync.SimpleGrouper` and put the
-:class:`~psynet.sync.GroupBarrier` objects inside the round loop. Use a
+once with a :class:`~psynet.sync.SimpleGrouper` and make the round loop's
+body one cued trial whose ``show_trial`` contains the
+:class:`~psynet.sync.GroupBarrier` objects (see :ref:`rounds-cued-trials`). Use a
 regrouper when each round should form new groups, for example new pairs
 within a cohort.
 

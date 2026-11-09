@@ -196,8 +196,10 @@ def test_a_release_waits_for_a_cue_holding_the_round_lock(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
             {"key": key},
         )
+        assert not barrier.would_release(cohort)
         assert barrier.choose_who_to_release(cohort) == []
     assert not node.sync_group_released
+    assert barrier.would_release(cohort)
     released = barrier.choose_who_to_release(cohort)
     assert {p.id for p in released} == {p.id for p in cohort}
     assert node.sync_group_released

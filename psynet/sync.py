@@ -2031,6 +2031,9 @@ class GroupBarrier(Barrier):
         """
         waiting_ids = {participant.id for participant in waiting_participants}
         for group in self.get_waiting_groups(waiting_participants).values():
+            if _round_is_busy(group):
+                # choose_who_to_release would defer this group.
+                continue
             if self.stop_top_ups and getattr(group, "accepts_top_ups", False):
                 # A peek takes no lock, but still counts newcomers who have
                 # joined since this session loaded the group.
@@ -4358,15 +4361,42 @@ def _lock_round(group) -> bool:
     The group's members are re-read under the lock, so a cue that committed
     before it is counted. Groups with no shared cued round need no lock.
     """
-    node = _shared_node(group, [p.current_trial for p in group.active_participants])
-    if node is None:
+    key = _round_lock_key(group)
+    if key is None:
         return True
-    if not _execute_advisory_xact_lock(
-        db.session, f"sync_group_node:{node.module_id}:{group.id}", wait=False
-    ):
+    if not _execute_advisory_xact_lock(db.session, key, wait=False):
         return False
     db.session.expire(group, ["participant_links"])
     return True
+
+
+def _round_lock_key(group):
+    """Return the lock key of the cued round ``group``'s members share, or ``None``."""
+    node = _shared_node(group, [p.current_trial for p in group.active_participants])
+    if node is None:
+        return None
+    return f"sync_group_node:{node.module_id}:{group.id}"
+
+
+def _round_is_busy(group) -> bool:
+    """Return whether a cue holds the lock :func:`_lock_round` would try.
+
+    Probes with a session lock released at once, because a peek's savepoint
+    rollback would not release a transaction lock, and holding it until
+    commit would block that round's cues for no reason.
+    """
+    key = _round_lock_key(group)
+    if key is None:
+        return False
+    params = {"key": key}
+    if not db.session.execute(
+        text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"), params
+    ).scalar():
+        return True
+    db.session.execute(
+        text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"), params
+    )
+    return False
 
 
 def _run_on_dissolve(group, members):
