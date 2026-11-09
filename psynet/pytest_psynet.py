@@ -451,6 +451,8 @@ def reset_sys_modules():
     """
     if _active_experiment_directory is None:
         clean_sys_modules()
+        for key in [k for k in sys.modules if pytest_dallinger.is_dallinger_module(k)]:
+            del sys.modules[key]
 
 
 pytest_dallinger.reset_sys_modules = reset_sys_modules

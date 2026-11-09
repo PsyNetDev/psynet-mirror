@@ -340,7 +340,7 @@ def clean_sys_modules():
         key
         for key, module in list(sys.modules.items())
         if key.startswith("dallinger_experiment")
-        or str(getattr(module, "__name__", "")).startswith("dallinger_experiment")
+        or getattr(module, "__package__", None) == "dallinger_experiment"
     ]
     for key in to_clear:
         del sys.modules[key]

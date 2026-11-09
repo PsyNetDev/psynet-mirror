@@ -76,9 +76,12 @@ def test_clean_sys_modules_removes_the_directory_name_alias(monkeypatch):
 
     package = types.ModuleType("dallinger_experiment")
     monkeypatch.setitem(sys.modules, "dallinger_experiment", package)
+    package.__package__ = "dallinger_experiment"
+    monkeypatch.setitem(sys.modules, "dallinger_experiment", package)
     monkeypatch.setitem(sys.modules, "timeline", package)
 
     clean_sys_modules()
 
     assert "dallinger_experiment" not in sys.modules
     assert "timeline" not in sys.modules
+    assert "psynet.command_line" in sys.modules
