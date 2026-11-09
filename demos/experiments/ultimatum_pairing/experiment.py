@@ -340,6 +340,10 @@ class OfferTrial(Trial):
             trial.var.coins = coins.get(role, 0)
 
     def show_feedback(self, experiment, participant):
+        if left_pair(participant):
+            # Removed for being away: the not_playing page after the trial
+            # explains.
+            return None
         result, offer = self.node.var.result, self.node.var.offer
         if result == "timed_out" and self.answer is None:
             return InfoPage("You ran out of time, so nobody was paid.", time_estimate=5)
@@ -460,7 +464,7 @@ class Exp(psynet.experiment.Experiment):
         # so this pair was their second round and the game didn't end early.
         for text in [AWAY_TEXT, "That's the end"]:
             leaver.take_page()
-            assert text in leaver.current_page_text
+            assert text in leaver.current_page_text, leaver.current_page_text
 
         # The stayer has been in two pairs. The lingerer wasn't failed, and
         # the sit-out didn't count, so those two play a final round together.
