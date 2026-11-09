@@ -51,6 +51,22 @@ def _outcome(decode, text):
         return "error", type(err)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        {12: "rock", 15: "paper"},
+        {"round": {0: [1, 2]}},
+        {(1, 2): "x", None: "y", 1.5: "z", True: "w"},
+        {"12": "a string key stays a string"},
+    ],
+)
+def test_dictionary_keys_keep_their_type(value):
+    """Integer participant IDs used as keys, for example, come back as integers."""
+    decoded = unserialize(serialize(value))
+    assert decoded == value
+    assert [type(k) for k in decoded] == [type(k) for k in value]
+
+
 @pytest.mark.parametrize("text", ["", "hello", "{'a': 1}"])
 def test_unserialize_handles_non_json_text_like_jsonpickle(text):
     # jsonpickle falls back to YAML only when PyYAML is installed.

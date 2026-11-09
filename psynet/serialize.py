@@ -172,6 +172,15 @@ def is_lambda_function(x):
 
 
 class PsyNetPickler(Pickler):
+    """Pickler that keeps the type of non-string dictionary keys.
+
+    ``jsonpickle.encode`` ignores its own ``keys`` argument when given a
+    pickler as ``context``, so ``keys`` must be set here.
+    """
+
+    def __init__(self, keys=True, **kwargs):
+        super().__init__(keys=keys, **kwargs)
+
     def flatten(self, obj, reset=True):
         if is_lambda_function(obj):
             try:
@@ -195,9 +204,10 @@ class PsyNetPickler(Pickler):
 
 
 class PsyNetUnpickler(Unpickler):
-    """
-    The PsyNetUnpickler class
-    """
+    """Unpickler that restores the non-string dictionary keys written by :class:`PsyNetPickler`."""
+
+    def __init__(self, keys=True, **kwargs):
+        super().__init__(keys=keys, **kwargs)
 
     # def _restore(self, obj):
     #     print(obj)
@@ -269,11 +279,10 @@ class PsyNetUnpickler(Unpickler):
 
 
 def serialize(x, **kwargs):
-    pickler = PsyNetPickler()
-    keys = kwargs.pop("keys", True)
+    pickler = PsyNetPickler(keys=kwargs.pop("keys", True))
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message="jsonpickle cannot pickle")
-        return jsonpickle.encode(x, keys=keys, **kwargs, context=pickler, warn=True)
+        return jsonpickle.encode(x, **kwargs, context=pickler, warn=True)
 
 
 def to_dict(x):
