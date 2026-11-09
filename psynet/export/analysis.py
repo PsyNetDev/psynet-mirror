@@ -70,6 +70,33 @@ def load_export_table(
     return _read_table_csv(path)
 
 
+_JSON_KEY = "json://"
+
+
+def _untag_key(key):
+    """Return a column-friendly name for a dictionary key tagged with ``json://``.
+
+    PsyNet writes non-string keys such as ``12`` as ``"json://12"``; this
+    returns ``"12"``. A tagged string key, ``json://"json://x"``, returns ``"json://x"``.
+    """
+    if not isinstance(key, str) or not key.startswith(_JSON_KEY):
+        return key
+    text = key[len(_JSON_KEY) :]
+    try:
+        decoded = json.loads(text)
+    except ValueError:
+        return text
+    return decoded if isinstance(decoded, str) else text
+
+
+def _untag_keys(value):
+    if isinstance(value, dict):
+        return {_untag_key(k): _untag_keys(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_untag_keys(v) for v in value]
+    return value
+
+
 def unpack_json_column(
     data_frame: pd.DataFrame,
     column: str,
@@ -80,7 +107,9 @@ def unpack_json_column(
     """Unpack a JSON text column into ordinary columns.
 
     Nested objects are left as Python objects after ``json.loads``. Existing
-    columns are never overwritten unless ``overwrite`` is true.
+    columns are never overwritten unless ``overwrite`` is true. Dictionary
+    keys that PsyNet stored with a ``json://`` tag lose the tag, so the
+    integer key ``12`` becomes the column ``12`` rather than ``json://12``.
     """
     if column not in data_frame.columns:
         raise KeyError(column)
@@ -103,7 +132,7 @@ def unpack_json_column(
         else:
             parsed.append({"value": loaded})
 
-    unpacked = pd.json_normalize(parsed)
+    unpacked = pd.json_normalize([_untag_keys(row) for row in parsed])
     if prefix:
         unpacked = unpacked.add_prefix(prefix)
 

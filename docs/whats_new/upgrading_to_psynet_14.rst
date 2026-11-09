@@ -492,6 +492,21 @@ templates that changes the database.
   Fixed bot answers, from ``bot_response`` or a ``get_bot_response`` method
   that returns a plain value, are saved as given, so give them as numbers
   too: ``bot_response=3``, not ``bot_response="3"``.
+* Dictionaries stored in the database, such as ``participant.var``,
+  ``trial.var``, ``node.var``, answers and definitions, now keep the type of
+  their keys: ``{12: "rock"}`` reads back as ``{12: "rock"}``, not
+  ``{"12": "rock"}``. Search for lookups with string-converted keys, such as
+  ``choices[str(participant.id)]``, and use the original key:
+  ``choices[participant.id]``. A dictionary with both string and non-string
+  keys keeps its key types but not its key order: string keys come first.
+  Flask's ``jsonify`` and Jinja's ``tojson`` sort keys, so they raise
+  ``TypeError`` for a dictionary with both integer and string keys, and
+  ``json.dumps`` raises it for tuple keys. Convert the keys of such a
+  dictionary before sending it to the browser:
+
+  .. code:: python
+
+      choices = {str(k): v for k, v in participant.var.choice_by_player.items()}
 * ``LanguageVocabularyTrial`` answers are now screen positions (``"1"`` to
   ``"4"``) rather than ``"correct"``. A custom subclass that compares an
   answer with ``"correct"`` should compare it with
@@ -595,6 +610,11 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
   asset class names.
 * ``extra_var`` is removed; read variables from the ``vars`` column with
   ``psynet.export.unpack_json_column``.
+* JSON columns write non-string dictionary keys with a ``json://`` tag, for
+  example ``{"json://12": "rock"}`` for ``{12: "rock"}``.
+  ``unpack_json_column`` removes the tag, so this becomes a column named
+  ``12``. Scripts that parse these columns themselves, for example with
+  ``json.loads``, must remove the tag too.
 * Search experiment code for ``copy_expert``, ``copy_from``, ``copy_to`` and
   ``COPY``. In a web request or background job, PostgreSQL ``COPY`` must run
   inside :func:`psynet.db.blocking_psycopg`, or psycopg2 raises

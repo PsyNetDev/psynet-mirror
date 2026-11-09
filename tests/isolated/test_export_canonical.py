@@ -103,6 +103,16 @@ def test_unpack_json_column_accepts_already_parsed_lists():
     assert unpacked.iloc[0]["value"] == ["first", "second"]
 
 
+def test_unpack_json_column_names_columns_after_untagged_keys():
+    from psynet.serialize import serialize
+
+    frame = pd.DataFrame({"var": [serialize({"choice_by_player": {12: "rock"}})]})
+
+    unpacked = unpack_json_column(frame, "var")
+
+    assert unpacked.iloc[0]["choice_by_player.12"] == "rock"
+
+
 def test_database_tables_and_identifier_sidecars_share_one_snapshot(tmp_path):
     from psynet.export.database import export_database_snapshot
 

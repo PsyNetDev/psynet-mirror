@@ -52,6 +52,10 @@ Reading the tables
         "participant_identifiers.csv",
     )
 
+In JSON columns, PsyNet tags dictionary keys that are not strings with
+``json://``, so ``{12: "rock"}`` is stored as ``{"json://12": "rock"}``.
+``unpack_json_column`` removes the tag and names the column ``12``.
+
 In group experiments, join trials to their groups through
 ``participant_link_sync_group`` (see :ref:`basic_data_groups`). This example
 pairs each trial with the trials of the other group members in the same

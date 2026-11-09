@@ -181,6 +181,24 @@ class PsyNetPickler(Pickler):
     def __init__(self, keys=True, **kwargs):
         super().__init__(keys=keys, **kwargs)
 
+    def _flatten_dict_obj(self, obj, data=None, exclude=()):
+        # With keys=True, jsonpickle walks every dict twice: string keys first,
+        # then non-string keys. A plain dict with only string keys gives the
+        # same output in one pass, which keeps serialize() as fast as before.
+        if (
+            self.keys
+            and type(obj) is dict
+            and not exclude
+            and all(isinstance(k, str) for k in obj)
+        ):
+            if data is None:
+                data = {}
+            flatten = self._flatten_string_key_value_pair
+            for k, v in obj.items():
+                flatten(k, v, data)
+            return data
+        return super()._flatten_dict_obj(obj, data, exclude=exclude)
+
     def flatten(self, obj, reset=True):
         if is_lambda_function(obj):
             try:
@@ -208,26 +226,6 @@ class PsyNetUnpickler(Unpickler):
 
     def __init__(self, keys=True, **kwargs):
         super().__init__(keys=keys, **kwargs)
-
-    # def _restore(self, obj):
-    #     print(obj)
-    #     if isinstance(obj, dict) and "py/object" in obj:
-    #         if obj["py/object"].startswith("dallinger_experiment"):
-    #             cls = self.get_experiment_object(obj["py/object"])
-    #             if hasattr(cls, "_sa_registry"):
-    #                 return self.load_sql_object(cls, obj)
-    #             else:
-    #                 self.register_classes(cls)
-    #                 return super()._restore(obj)
-    #
-    #     if isinstance(obj, dict) and "py/function" in obj:
-    #         if obj["py/function"].startswith("dallinger_experiment"):
-    #             return self.get_experiment_object(obj["py/function"])
-    #
-    #             # import pydevd_pycharm
-    #             # pydevd_pycharm.settrace('localhost', port=12345, stdoutToServer=True, stderrToServer=True)
-    #
-    #     return super()._restore(obj)
 
     def _restore_object(self, obj):
         cls_id = obj["py/object"]
@@ -285,31 +283,40 @@ def serialize(x, **kwargs):
         return jsonpickle.encode(x, **kwargs, context=pickler, warn=True)
 
 
-def to_dict(x):
-    pickler = PsyNetPickler()
-    return pickler.flatten(x)
+def _restore_json_keys(pairs):
+    """Restore dictionary keys tagged with ``json://`` as :class:`PsyNetUnpickler` does.
+
+    Like jsonpickle, put untagged keys first and tagged keys after them.
+    """
+    data = {}
+    tagged = []
+    for k, v in pairs:
+        if k.startswith(jsonpickle.tags.JSON_KEY):
+            tagged.append((k, v))
+        else:
+            data[k] = v
+    for k, v in tagged:
+        data[json.loads(k[len(jsonpickle.tags.JSON_KEY) :])] = v
+    return data
 
 
 def unserialize(x):
-    # If we don't provide the custom classes directly, jsonpickle tries to find them itself,
-    # and ends up messing up the SQLAlchemy mapper registration system,
-    # producing duplicate mappers for each custom class.
-    # import_local_experiment()
-    # custom_classes = list(get_custom_sql_classes().values())
-    # return jsonpickle.decode(x, context=unpickler, classes=custom_classes)
-    #
-    # jsonpickle tags every value that is not plain JSON with "py/" (the
-    # "json://" check is defensive). Untagged JSON decodes identically with
-    # json.loads, which is several times faster. Text that is not JSON still
-    # goes to jsonpickle, which falls back to YAML when PyYAML is installed.
-    if '"py/' not in x and "json://" not in x:
+    # jsonpickle tags every value that is not plain JSON with "py/", and every
+    # non-string dictionary key with "json://". A tuple key, for example, is
+    # written as "json://{\"py/tuple\": ...}", so it still contains "py/".
+    # Text without "py/" therefore decodes identically with json.loads, which
+    # is several times faster, as long as "json://" keys are restored. Text
+    # that is not JSON still goes to jsonpickle, which falls back to YAML when
+    # PyYAML is installed.
+    if '"py/' not in x:
         try:
+            if "json://" in x:
+                return json.loads(x, object_pairs_hook=_restore_json_keys)
             return json.loads(x)
-        except ValueError:
+        except (TypeError, ValueError):
             pass
     unpickler = PsyNetUnpickler()
     return jsonpickle.decode(x, context=unpickler)
-    # return jsonpickle.decode(x, classes=custom_classes)
 
 
 # These classes cannot be reliably pickled by the `jsonpickle` library.

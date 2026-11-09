@@ -10,27 +10,34 @@ from psynet.serialize import PsyNetUnpickler, serialize, unserialize
 
 shared = {"x": 1}
 
+_VALUES = [
+    None,
+    True,
+    2**70,
+    1.5,
+    float("inf"),
+    "é ünïcode",
+    'user text mentioning "py/object" and json://',
+    {"a": [1, {"b": None}], "c": "d"},
+    [shared, shared],
+    {"k": (1, 2)},
+    {12: "rock", "b": {0: shared}, "c": shared},
+    {"s": {"json://k": shared}, "t": shared, 2: [{3: None}]},
+    {1, 2},
+    np.array([1, 2]),
+    Markup("<b>x</b>"),
+    datetime.datetime(2026, 1, 1),
+    len,
+]
 
-@pytest.mark.parametrize(
-    "value",
-    [
-        None,
-        True,
-        2**70,
-        1.5,
-        float("inf"),
-        "é ünïcode",
-        'user text mentioning "py/object" and json://',
-        {"a": [1, {"b": None}], "c": "d"},
-        [shared, shared],
-        {"k": (1, 2)},
-        {1, 2},
-        np.array([1, 2]),
-        Markup("<b>x</b>"),
-        datetime.datetime(2026, 1, 1),
-        len,
-    ],
-)
+
+@pytest.mark.parametrize("value", _VALUES)
+def test_serialize_matches_jsonpickle(value):
+    """PsyNetPickler's single-pass shortcut for string-keyed dictionaries must not change the output."""
+    assert serialize(value) == jsonpickle.encode(value, keys=True)
+
+
+@pytest.mark.parametrize("value", _VALUES)
 def test_unserialize_matches_jsonpickle(value):
     encoded = serialize(value)
     expected = jsonpickle.decode(encoded, context=PsyNetUnpickler())
@@ -65,6 +72,11 @@ def test_dictionary_keys_keep_their_type(value):
     decoded = unserialize(serialize(value))
     assert decoded == value
     assert [type(k) for k in decoded] == [type(k) for k in value]
+
+
+def test_mixed_key_dictionaries_keep_key_types_but_not_order():
+    decoded = unserialize(serialize({1: "a", "b": 2, 3: "c"}))
+    assert list(decoded.items()) == [("b", 2), (1, "a"), (3, "c")]
 
 
 @pytest.mark.parametrize("text", ["", "hello", "{'a': 1}"])
