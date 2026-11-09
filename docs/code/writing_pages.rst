@@ -112,7 +112,9 @@ Pass ``save_answer`` to store the answer in a participant variable:
 The most recent answer is also available as ``participant.answer``. Every
 response is a row of the ``response`` table: ``question`` holds the page's
 label, alongside ``answer``, ``metadata`` (including ``time_taken``), and
-``successful_validation``.
+``successful_validation``. For the pages of a trial, PsyNet also stores the
+summed time in the trial's ``time_taken`` column and links the last page's
+response as its ``response``; see :class:`~psynet.trial.main.Trial`.
 
 Choice controls save the element of ``choices`` that the participant picked,
 keeping its type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``, and
