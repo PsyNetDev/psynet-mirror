@@ -517,7 +517,10 @@ GroupPrompt shows the group as it is now:
   "(removed)" if a barrier removed them from the group for being late,
   "(left)" if they failed or left the experiment, "(finished)" if they left
   after playing their part (``reason="finished"``), and "(dropped out)"
-  otherwise. Groups that accept top-ups don't keep these seats.
+  otherwise. Groups that accept top-ups don't keep these seats; once they
+  stop accepting them, members who left before then appear too, as in a
+  team that lost someone during its instructions (see
+  :ref:`sync-lobby-top-ups`).
 - A member who moved on to another group, such as next round's pair at a
   :class:`~psynet.sync.Regrouper`, is no longer shown, except on a results
   page (one with ``answers``) that shows their answer.
@@ -805,13 +808,30 @@ options:
 
 The grouper leaves out ``join_existing_groups``, so a team that falls below
 its quorum is dissolved rather than waiting for a replacement (see
-`Groups below quorum`_). To let latecomers join a team only before its game
-starts, pass ``join_existing_groups=True`` and stop top-ups at the barrier
-that starts the game. Latecomers can join until every member already in the
-team has reached that barrier; then the team passes it, which ends top-ups.
-The barrier waits for anyone who joined before then, for up to
-``late_after`` after they joined, before removing them as late, so the pages
-before it, such as instructions, are the join window. ``top_up_wait`` stops a
+`Groups below quorum`_).
+
+The ``sync_quorum`` demo lets participants into part of the timeline only
+while at least three are present. Its grouper has no maximum size and accepts
+top-ups:
+
+.. literalinclude:: ../../../demos/experiments/sync_quorum/experiment.py
+   :start-at: SimpleGrouper(
+   :end-before: for_loop(
+   :dedent: 12
+
+.. _sync-lobby-top-ups:
+
+Letting latecomers join before the game starts
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To let latecomers join a team only before its game starts, pass
+``join_existing_groups=True`` to the team example's grouper and stop top-ups
+at the barrier that starts the game. Latecomers can join until the team
+passes that barrier, which it does once every member already in it has
+reached it and it still has its quorum; passing ends top-ups. The barrier
+waits for anyone who joined before then, for up to ``late_after`` after they
+joined, before removing them as late, so the pages before it, such as
+instructions, are the join window. ``top_up_wait`` stops a
 team that falls below its quorum before then from waiting for a newcomer who
 may never come; ``late_after`` also removes the barrier's default 20-second
 wait limit, which would otherwise time the members out first:
@@ -840,15 +860,6 @@ wait limit, which would otherwise time the members out first:
 At ``game_starts``, as at ``round_finished`` above, ``late_after`` counts
 from when each member joined the team or from its previous barrier pass, so
 make it cover any untimed pages before the barrier as well.
-
-The ``sync_quorum`` demo lets participants into part of the timeline only
-while at least three are present. Its grouper has no maximum size and accepts
-top-ups:
-
-.. literalinclude:: ../../../demos/experiments/sync_quorum/experiment.py
-   :start-at: SimpleGrouper(
-   :end-before: for_loop(
-   :dedent: 12
 
 .. _sync-leaving-a-group:
 

@@ -7519,9 +7519,46 @@ def test_latecomers_fill_a_team_until_it_passes_game_starts(
     starters = [new_participant(exp) for _ in range(2)]
     for p in starters:
         p.status = "working"
-    alone = grouper._make_group(starters, initial_group_size=4)
+    at_quorum = grouper._make_group(starters, initial_group_size=4)
     assert set(game_starts.choose_who_to_release(starters)) == set(starters)
-    assert not alone.accepts_top_ups
+    assert not at_quorum.accepts_top_ups
+
+    *on_time, slow = [new_participant(exp) for _ in range(3)]
+    for p in (*on_time, slow):
+        p.status = "working"
+    grouper._make_group(on_time, initial_group_size=4)
+    grouper._join_existing_groups(slow)
+    for link in slow.sync_group_links:
+        link.arrival_time -= timedelta(seconds=121)
+    game_starts.check_waiting_participants(on_time)
+    assert slow.sync_group_removal_reason("team") == "late"
+    assert set(game_starts.choose_who_to_release(on_time)) == set(on_time)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_game_starts_waits_while_a_newcomer_is_joining(
+    in_experiment_directory, db_session
+):
+    """A ``stop_top_ups`` barrier skips a group whose row a joiner holds, until the next check."""
+    exp = get_experiment()
+    grouper, game_starts = _lobby_recipe()
+    starters = [new_participant(exp) for _ in range(2)]
+    for p in starters:
+        p.status = "working"
+    group = grouper._make_group(starters, initial_group_size=4)
+    db_session.commit()
+
+    with db.engine.connect() as joiner, joiner.begin():
+        joiner.execute(
+            text("SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"),
+            {"id": group.id},
+        )
+        assert game_starts.choose_who_to_release(starters) == []
+    assert group.accepts_top_ups
+    assert set(game_starts.choose_who_to_release(starters)) == set(starters)
+    assert not group.accepts_top_ups
 
 
 @pytest.mark.parametrize(
