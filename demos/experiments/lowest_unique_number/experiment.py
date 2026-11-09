@@ -155,15 +155,14 @@ class PickTrial(Trial):
         Players who ran out of time have no choice and miss the round. Nobody wins when
         only one player chose.
         """
-        picks = {str(t.participant_id): t.answer for t in trials}
-        choices = {pid: n for pid, n in picks.items() if n is not None}
+        choices = {
+            str(t.participant_id): t.answer for t in trials if t.answer is not None
+        }
         winner = lowest_unique(choices) if len(choices) > 1 else None
         node.var.choices = choices
         node.var.winning_number = winner
         for trial in trials:
-            trial.var.won = (
-                winner is not None and picks[str(trial.participant_id)] == winner
-            )
+            trial.var.won = winner is not None and trial.answer == winner
 
     def score_answer(self, answer, definition):
         return 1 if self.var.get("won") else 0

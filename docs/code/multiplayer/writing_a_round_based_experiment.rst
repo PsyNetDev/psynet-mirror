@@ -42,7 +42,7 @@ pair and wait for the next split:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: pairing = Regrouper(
-   :end-before: UNPAID_TEXTS
+   :end-before: OUTCOME_TEXTS
 
 The round starts as soon as the whole cohort (``within``) is waiting, or at
 the ``deadline`` (counted from when the first player is back) without whoever
@@ -128,9 +128,14 @@ a fixed group without top-ups and no regrouper: a late joiner, or a group
 mixing players at different positions, would otherwise land on an old
 round's node or a node of their own.
 
-The ``conditional`` decides once, before the trial: a player in a pair gets
-the trial, and one who sat out gets a page instead (see
-:ref:`rounds-sitting-out`). Once started, the trial runs to its end, where
+The ``switch`` decides once, before the trial: a player in a pair gets
+the trial, one who sat out gets a page instead (see
+:ref:`rounds-sitting-out`), and one whose cohort has gone moves on to the
+page saying the game ended early:
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+   :pyobject: round_status
+ Once started, the trial runs to its end, where
 it is scored, even if the player is removed from their pair partway, so
 its feedback covers every outcome of the round. A round that is one cued
 trial needs no more than this; ``join(..., stop_if=...)`` is for rounds of
@@ -239,9 +244,15 @@ which also keeps the trial of a player removed for being away:
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: OfferTrial.score_pair
 
-The trial ends after the barrier, so its ``show_feedback`` can read the
-player's own answer (``self.answer``) and what ``on_release`` saved. The
-results page passes both answers to the prompt as speech bubbles:
+The trial ends after the barrier, so its feedback can read the
+player's own answer (``self.answer``) and what ``on_release`` saved.
+``outcome`` turns them into one key of ``OUTCOME_TEXTS``:
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+   :pyobject: OfferTrial.outcome
+
+``show_feedback`` shows that text, and when the pair made a deal, passes
+both answers to the prompt as speech bubbles:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: OfferTrial.show_feedback
@@ -268,10 +279,10 @@ Sitting out
 With three players in a cohort, one of them has no partner. The player who has
 played the most rounds sits the round out; with ``left_over="sit_out"``
 they move on without a pair instead of waiting (see
-:class:`~psynet.sync.Regrouper`), so the ``conditional`` gives them a page
+:class:`~psynet.sync.Regrouper`), so the ``switch`` gives them a page
 instead of a trial that round. A player who was paired but removed from the
 pair before submitting their decision has a trial, and the first check in
-``show_feedback`` above tells them that they were away.
+``outcome`` above tells them that they were away.
 
 .. figure:: ../../_static/images/rounds/sit_out.png
    :width: 600

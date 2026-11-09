@@ -50,6 +50,7 @@ from psynet.timeline import (
     Timeline,
     conditional,
     join,
+    switch,
     while_loop,
 )
 from psynet.trial.main import SyncGroupNode, Trial
@@ -84,8 +85,9 @@ def get_timeline():
             waiting_message=lobby_message,
             waiting_screen=forming_cohort,
             max_wait_time=300,
-            # No effect here, since the cohort accepts top-ups; it keeps the
-            # recipe copy-safe ("Moving slow players on" in the guide).
+            # Never fails the others when players leave. A cohort that accepts
+            # top-ups isn't dissolved anyway; this matters once you copy it
+            # into one without top-ups ("Moving slow players on" in the guide).
             below_quorum="continue_without_group",
         ),
         Module(
@@ -95,17 +97,15 @@ def get_timeline():
                 keep_playing,
                 join(
                     pairing,
-                    conditional(
-                        "paired",
-                        in_pair,
-                        OfferTrial.cue({"endowment": ENDOWMENT}),
-                        # Without a cohort the game is over and the ended-early
-                        # page explains why.
-                        conditional(
-                            "sat_out",
-                            lambda participant: cohort_of(participant) is not None,
-                            InfoPage(SIT_OUT_TEXT, time_estimate=5),
-                        ),
+                    switch(
+                        "round",
+                        round_status,
+                        {
+                            "paired": OfferTrial.cue({"endowment": ENDOWMENT}),
+                            "sat_out": InfoPage(SIT_OUT_TEXT, time_estimate=5),
+                            # The game is over; the ended-early page explains why.
+                            "no_cohort": [],
+                        },
                     ),
                 ),
                 expected_repetitions=N_ROUNDS,
@@ -122,6 +122,15 @@ def get_timeline():
 
 def in_pair(participant):
     return participant.in_sync_group("pair")
+
+
+def round_status(participant):
+    """Return whether the regrouper paired the player, sat them out, or left them with no cohort."""
+    if in_pair(participant):
+        return "paired"
+    if cohort_of(participant) is not None:
+        return "sat_out"
+    return "no_cohort"
 
 
 def cohort_of(participant):
@@ -203,9 +212,6 @@ def waiting_for_partner(participant):
     )
 
 
-AWAY_TEXT = "You were away for too long, so you got no coins this round."
-
-
 SIT_OUT_TEXT = (
     "You sit out this round without a partner. If you sit out "
     f"{MAX_SIT_OUTS} rounds, the game ends early for you."
@@ -222,10 +228,14 @@ pairing = Regrouper(
     waiting_screen=pairing_up,
 )
 
-UNPAID_TEXTS = {
+OUTCOME_TEXTS = {
+    "away": "You were away for too long, so you got no coins this round.",
+    "own_time_out": "You ran out of time, so nobody was paid.",
     "partner_away": "Your partner was away for too long, so nobody was paid.",
     "partner_left": "Your partner left, so nobody was paid.",
     "timed_out": "Your partner ran out of time, so nobody was paid.",
+    "rejected": "The offer of {offer} coins was rejected, so nobody was paid.",
+    "accepted": "The offer of {offer} coins was accepted. You earned {coins}.",
 }
 
 
@@ -311,21 +321,21 @@ class OfferTrial(Trial):
         for role, trial in by_role.items():
             trial.var.coins = coins.get(role, 0)
 
-    def show_feedback(self, experiment, participant):
+    def outcome(self, participant):
+        """Return the key in ``OUTCOME_TEXTS`` that describes the round for this player."""
         if not in_pair(participant):
             # Removed from the pair for being away too long.
-            return InfoPage(AWAY_TEXT, time_estimate=5)
-        result, offer = self.node.var.result, self.node.var.offer
-        if result == "timed_out" and self.answer is None:
-            return InfoPage("You ran out of time, so nobody was paid.", time_estimate=5)
-        if result in UNPAID_TEXTS:
-            return InfoPage(UNPAID_TEXTS[result], time_estimate=5)
-        if result == "rejected":
-            text = f"The offer of {offer} coins was rejected, so nobody was paid."
-        else:
-            text = (
-                f"The offer of {offer} coins was accepted. You earned {self.var.coins}."
-            )
+            return "away"
+        if self.node.var.result == "timed_out" and self.answer is None:
+            return "own_time_out"
+        return self.node.var.result
+
+    def show_feedback(self, experiment, participant):
+        outcome = self.outcome(participant)
+        offer = self.node.var.get("offer")
+        text = OUTCOME_TEXTS[outcome].format(offer=offer, coins=self.var.get("coins"))
+        if outcome not in ("accepted", "rejected"):
+            return InfoPage(text, time_estimate=5)
         players = self.node.var.players
         return ModularPage(
             "outcome",
@@ -351,7 +361,8 @@ def _play(bots):
 
 
 def _cohort_accepts_newcomers(bot):
-    return cohort_accepts_newcomers(cohort_of(Participant.query.get(bot.id)), None)
+    participant = Participant.query.get(bot.id)
+    return cohort_accepts_newcomers(cohort_of(participant), participant)
 
 
 class Exp(psynet.experiment.Experiment):
@@ -433,7 +444,7 @@ class Exp(psynet.experiment.Experiment):
         assert leaver.with_participant(lambda p: cohort_of(p) is None)
         # The leaver comes back later. Rounds count the pairs a player joined,
         # so this pair was their second round and the game didn't end early.
-        for text in [AWAY_TEXT, "That's the end"]:
+        for text in [OUTCOME_TEXTS["away"], "That's the end"]:
             leaver.take_page()
             assert text in leaver.current_page_text, leaver.current_page_text
 
