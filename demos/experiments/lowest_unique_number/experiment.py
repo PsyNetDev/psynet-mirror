@@ -38,7 +38,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.sync import GroupBarrier, Regrouper
-from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop, join
+from psynet.timeline import Module, Timeline, conditional, for_loop, join
 from psynet.trial.main import SyncGroupNode, Trial
 
 ROUND_SECONDS = 10
@@ -80,7 +80,7 @@ def get_timeline():
                     ),
                     conditional(
                         "in_room",
-                        lambda participant: participant.in_sync_group("room"),
+                        in_room,
                         PickTrial.cue({"numbers": NUMBERS}),
                         InfoPage(NO_ROOM_TEXT, time_estimate=5),
                     ),
@@ -94,6 +94,10 @@ def get_timeline():
 
 AWAY_TEXT = "You were away for too long, so you missed this round."
 NO_ROOM_TEXT = "Nobody else was left to play this round with, so you skip it."
+
+
+def in_room(participant):
+    return participant.in_sync_group("room")
 
 
 def lowest_unique(choices: dict):
@@ -115,7 +119,7 @@ class PickTrial(Trial):
 
     def show_trial(self, experiment, participant):
         return join(
-            PageMaker(self.choose_number, time_estimate=5),
+            self.choose_number(participant),
             GroupBarrier(
                 id_="round_finished",
                 group_type="room",
@@ -171,9 +175,8 @@ class PickTrial(Trial):
         return WIN_BONUS * score
 
     def show_feedback(self, experiment, participant):
-        if not self.var.has("won"):
-            # Taken out of the room mid-round by the barrier's late_after,
-            # before it scored them.
+        if not in_room(participant):
+            # Taken out of the room mid-round by the barrier's late_after.
             return InfoPage(AWAY_TEXT, time_estimate=5)
         if self.answer is None:
             return InfoPage(
@@ -248,9 +251,8 @@ class Exp(psynet.experiment.Experiment):
         rounds = {}
         player_rounds = []
         for t in PickTrial.query.order_by(PickTrial.id):
-            round_ = rounds[t.participant_id] = rounds.get(t.participant_id, -1) + 1
-            if t.sync_group_id is not None:
-                player_rounds.append((round_, t))
+            rounds[t.participant_id] = rounds.get(t.participant_id, -1) + 1
+            player_rounds.append((rounds[t.participant_id], t))
         rooms = SyncGroupNode.query.filter_by(module_id="game")
         return {
             "player_round": [
