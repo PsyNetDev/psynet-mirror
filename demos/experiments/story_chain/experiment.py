@@ -67,7 +67,7 @@ N_ROUNDS = 2
 N_TURNS = N_ROUNDS * GROUP_SIZE
 WRITE_SECONDS = 20
 LATE_AFTER = 30
-GROUPER_WAIT = 60
+GROUPER_WAIT = 30
 TURN_BARRIER = "turn_finished"
 
 
@@ -120,7 +120,7 @@ def choose_writer(group, turn: int) -> int:
     seats = group_seats(group)
     by_seat = sorted(seats, key=seats.get)
     start = turn % GROUP_SIZE
-    present = {participant.id for participant in group.participants}
+    present = {participant.id for participant in group.active_participants}
     return next(pid for pid in by_seat[start:] + by_seat[:start] if pid in present)
 
 
@@ -330,20 +330,14 @@ class Exp(psynet.experiment.Experiment):
             ],
         }
 
-    test_n_bots = 13
+    test_n_bots = 10
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        full_group, lost_group, late_group, short_group = (
-            bots[:3],
-            bots[3:6],
-            bots[6:9],
-            bots[9:12],
-        )
-        (loner,) = bots[12:]
+        full_group, lost_group, short_group = bots[:3], bots[3:6], bots[6:9]
+        (loner,) = bots[9:]
         self._test_full_story(full_group)
         self._test_group_dissolving_while_writing(lost_group)
-        self._test_late_writer(late_group)
         self._test_shrinking_group(short_group, loner)
 
         advance_past_wait_pages([loner], timeout=GROUPER_WAIT + 10)
@@ -422,70 +416,53 @@ class Exp(psynet.experiment.Experiment):
             "left_experiment",
         ]
 
-    def _test_late_writer(self, bots: List[BotDriver]):
-        # The first writer goes silent, so the barrier takes them out and the
-        # other two go on without them. The second waits there until then,
-        # and then writes the next turn.
-        first, second, third = _seated(bots)
-        advance_past_wait_pages([second], timeout=LATE_AFTER + 20)
-        assert second.current_page_label == "write", second.current_page_text
-        second.take_page(response="A fox ran.")
-        advance_past_wait_pages([second, third], stop_at=TURN_BARRIER)
-        assert (
-            first.current_notice == "Your group went on without you. Please continue."
-        )
-        first.take_page(response="Too late.")
-        advance_past_wait_pages([first])
-        text = first.current_page_text
-        assert f"{EARLY_END_INTROS['late']} A fox ran. How" in text, text
-        assert self._turns(first)[:2] == [
-            (first.id, None, "late"),
-            (second.id, "A fox ran.", "stayed"),
-        ]
-        assert self._removal_reasons([first]) == ["late"]
-        run_bots_to_completion([second, third])
-
     def _test_shrinking_group(self, bots: List[BotDriver], loner: BotDriver):
         first, second, third = _seated(bots)
+        # Meanwhile a participant arrives who will find no group.
+        loner.take_page()
         first.take_page(response="Once upon a time.")
         advance_past_wait_pages(bots, stop_at=TURN_BARRIER)
 
-        # The second writer returns the study on their turn, which adds nothing.
+        # The second writer goes silent, so the barrier takes them out and
+        # the other two go on without them.
         assert second.current_page_label == "write"
-        second.drop_out()
+        advance_past_wait_pages([third], timeout=LATE_AFTER + 20)
         advance_past_wait_pages([first, third], stop_at=TURN_BARRIER)
+        assert (
+            second.current_notice == "Your group went on without you. Please continue."
+        )
+        second.take_page(response="Too late.")
+        advance_past_wait_pages([second])
+        text = second.current_page_text
+        assert f"{EARLY_END_INTROS['late']} Once upon a time. How" in text, text
+
+        # The third writes their own turn and, after the first's, the
+        # second's. The first returns the study before the last turn, while
+        # the third waits at its barrier, so the group dissolves there and
+        # saves the third's sentence.
         third.take_page(response="A dragon appeared.")
         advance_past_wait_pages([first, third], stop_at=TURN_BARRIER)
         first.take_page(response="It was hungry.")
         advance_past_wait_pages([first, third], stop_at=TURN_BARRIER)
-
-        # The third writes the second's turn and then their own. The first
-        # goes silent once that turn begins, so the last turn's barrier takes
-        # them out, and the group of one dissolves there, saving the third's
-        # sentence. Meanwhile a participant arrives who will find no group.
-        third.take_page(response="It ate the moon.")
         assert third.current_page_label == "write", third.current_page_text
+        third.take_page(response="It ate the moon.")
+        advance_past_wait_pages([third], stop_at=TURN_BARRIER)
         third.take_page(response="The end.")
-        loner.take_page()
-        advance_past_wait_pages([third], timeout=LATE_AFTER + 20)
-        assert first.current_notice == (
-            "Your partner went on without you. Please continue."
-        )
-        first.take_page()
+        first.drop_out()
+        advance_past_wait_pages([third])
         story = "Once upon a time. A dragon appeared. It was hungry. It ate the moon. The end."
-        for bot in [first, third]:
-            assert f"your group wrote: {story} How" in bot.current_page_text
+        assert f"your group wrote: {story} How" in third.current_page_text
 
-        assert self._turns(first) == [
+        assert self._turns(third) == [
             (first.id, "Once upon a time.", "stayed"),
-            (second.id, None, "left_experiment"),
+            (second.id, None, "late"),
             (third.id, "A dragon appeared.", "stayed"),
             (first.id, "It was hungry.", "stayed"),
             (third.id, "It ate the moon.", "stayed"),
             (third.id, "The end.", "group_dissolved"),
         ]
         assert self._removal_reasons([first, second, third]) == [
-            "late",
             "left_experiment",
+            "late",
             "group_dissolved",
         ]

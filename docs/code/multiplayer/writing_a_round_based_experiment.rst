@@ -407,10 +407,10 @@ A sentence that never arrived is saved as ``None``, and the writer trial's
 returned the study, or ``"group_dissolved"`` if the others left. If the
 chosen writer leaves between the turn's first cue and their own, they have
 no trial for the turn at all, and the export's ``writer_outcome`` is
-``None``. The export has
-one row per turn, from the nodes and the writers' trials. Each member stores
-their group's ID when the group forms, so the last page can read the story
-from the group's nodes even after the group has ended.
+``None``. The export has one row per turn, from the nodes and the writers'
+trials. Each member stores their group's ID when the group forms, so the
+last page can read the story from the group's nodes even after the group
+has ended.
 
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
 example to pair players by their earlier answers. With roles, return each

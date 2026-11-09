@@ -11,9 +11,9 @@ saves the writer's sentence in `node.var`, and the export has one row per
 turn. A writer who runs out of time adds nothing, a member who leaves or goes
 silent plays no more turns and the next seat writes in their place, the last
 member left goes on to the story so far, and someone who finds no group is
-told so. The bot test plays a full story, one whose group shrinks and then
-dissolves at the last turn, and one whose group dissolves while the writer is
-still writing.
+told so. The bot test plays a full story, one whose group dissolves while the
+writer is still writing, and one whose writer goes silent and is left behind
+before another member leaves at the last turn.
 
 ## Usage
 
