@@ -1,0 +1,1 @@
+A fixed group that plays a loop of cued rounds can now pass the loop value as `round=`, as in `Trial.cue({"question": i}, round=i)`. Each iteration is then the group's round of that number, so a round's definition can come from the loop: a player who joins the group late skips the rounds it finished without them, and a player who leaves plays the remaining iterations alone.

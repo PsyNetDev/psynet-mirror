@@ -370,6 +370,35 @@ def test_an_explicit_round_lets_two_classes_share_a_node(
 
 
 @in_consents_experiment
+def test_an_explicit_round_skips_a_round_the_group_finished_without_the_player(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    (newcomer,) = _working_participants(exp, 1)
+
+    def cue(participant, i):
+        PairTrial.cue({"target": i}, round=i)[0].consume(exp, participant)
+        return participant.current_trial
+
+    for participant in cohort:
+        cue(participant, 0)
+    _arrive(exp, GroupBarrier("answered", group_type="pair"), cohort)
+    for participant in cohort:
+        cue(participant, 1)
+    pair.add_participant(newcomer)
+
+    assert cue(newcomer, 0) is None
+    joined = cue(newcomer, 1)
+    assert joined.node is cohort[0].current_trial.node
+    assert joined.definition == {"target": 1}
+    pair.remove_participant(cohort[1])
+    alone = cue(cohort[1], 2)
+    assert alone.sync_group_id is None and alone.definition == {"target": 2}
+
+
+@in_consents_experiment
 def test_a_late_joiner_joins_an_open_round_or_starts_the_next(
     in_experiment_directory, db_session
 ):

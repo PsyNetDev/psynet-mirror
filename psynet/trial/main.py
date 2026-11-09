@@ -1240,10 +1240,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           from ``trial.answer``: ``None`` there means the page ran out of
           time. With several answer pages before a barrier, set
           :attr:`accumulate_answers` to get them all.
-        - A grouped cue's definition can depend on the player's own position
-          in a loop only if every member reaches each round at the same
-          position, as in a fixed group whose top-ups stop before the loop;
-          otherwise pass a function taking ``round`` or ``group``.
+        - In a loop of rounds played by a fixed group, pass the loop value as
+          ``round``, so that a definition can come from the loop. Otherwise a
+          grouped cue's definition must not depend on the player's own
+          position in a loop; pass a function taking ``round`` or ``group``.
         - A participant who is in no group of that type gets an ungrouped
           trial on the module's default node, so put the cue in a
           :func:`~psynet.timeline.conditional` on
@@ -1286,17 +1286,17 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             to the participant-facing trial definition.
 
         round :
-            The group's round to put this trial in, overriding the automatic
-            one. Rarely needed, since a round with two phases is normally one
-            trial class with several pages, and cues of different classes while
-            a round is open, such as one class per role, share its node and
-            definition without ``round``. Use it for phases of one round played
-            one after the other by trials of different classes (pass both the
-            same non-negative integer). Only for a trial class that sets
-            :attr:`sync_group_type`, and only safe when every member is sure
-            to be at the same loop position, as in a fixed group without
-            top-ups and no regrouper; otherwise a late joiner or a mixed group
-            lands on an old round's node or a node of their own.
+            The group's round to put this trial in, a non-negative integer,
+            instead of the automatic one. Pass the loop value when a fixed
+            group plays a loop of rounds, or the same value to the cues of
+            two trial classes played one after the other in one round. If
+            the participant has no trial in that round and it is no longer
+            open, the group finished it without them: the cue is skipped,
+            with no trial and no pages. Only for a trial class that sets
+            :attr:`sync_group_type`, and not with a regrouper, whose groups
+            mix players at different loop positions. Ignored for a
+            participant without a group. See
+            :ref:`a fixed group's loop <rounds-fixed-group-loop>`.
 
         Examples
         --------
@@ -1381,6 +1381,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             node, group, trial_definition = cls._cued_trial_node(
                 definition, round, participant, experiment
             )
+            if node is None:
+                participant.current_trial = None
+                return
             trial = cls(
                 experiment,
                 node,
@@ -1410,10 +1413,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                     creation_context=creation_context,
                 )
 
-        return join(
-            CodeBlock(_register_trial),
-            cls.trial_logic(),
-        )
+        trial_logic = cls.trial_logic()
+        if round is not None:
+            trial_logic = conditional(
+                "cued_round",
+                lambda participant: participant.current_trial is not None,
+                trial_logic,
+                log_chosen_branch=False,
+            )
+        return join(CodeBlock(_register_trial), trial_logic)
 
     @classmethod
     def _cued_trial_node(cls, definition, round_number, participant, experiment):
@@ -1451,21 +1459,29 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         node = SyncGroupNode.for_cue(
             group, round_number, participant, experiment, make_definition
         )
+        if node is None:
+            logger.info(
+                "Participant %s skips round %s of '%s' group %s, which finished "
+                "without them.",
+                participant.id,
+                round_number,
+                cls.sync_group_type,
+                group.id,
+            )
+            return None, group, None
         if not callable(definition) and definition != node.definition:
             raise ValueError(
                 f"{cls.__name__}.cue() got the definition {definition!r}, but "
                 f"round {node.sync_group_round} of '{cls.sync_group_type}' group "
                 f"{group.id} already has the definition {node.definition!r}. "
                 "All trials in a group's round share the definition of its first "
-                "cue, whatever their class or role, so the definition must not "
-                "depend on the player's own position in a loop unless every "
-                "member reaches each round at the same position (late joiners "
-                "and rooms mixing players from different rounds don't), nor "
-                "differ between the classes or roles cued in one "
-                "round. Pass the same dict, or a function taking round or group, "
-                "which is only called for the round's first cue; put "
-                "role-specific content in the definition keyed by role, or derive "
-                "it from sync_group_role."
+                "cue, whatever their class or role. A definition taken from the "
+                "player's own position in a loop differs for late joiners and in "
+                "rooms mixing players from different rounds; in a fixed group's "
+                "loop, also pass the loop value as round=. Otherwise pass the "
+                "same dict, or a function taking round or group, which is only "
+                "called for the round's first cue. Put role-specific content in "
+                "the definition keyed by role, or derive it from sync_group_role."
             )
         return node, group, node.definition
 
@@ -4375,7 +4391,9 @@ class SyncGroupNode(GenericTrialNode):
         others then join. A trial ends when it gets its answer
         (``trial.complete``); trials of players who have left the group don't
         keep a round open.
-        With ``round_number``, it is the group's node for that round. A new node's
+        With ``round_number``, it is the group's node for that round, or
+        ``None`` if the group finished that round without the participant:
+        they have no trial on it and it is no longer open. A new node's
         definition is ``make_definition(round_number)``.
 
         The group's members cue their trials in parallel requests, so this
@@ -4397,17 +4415,24 @@ class SyncGroupNode(GenericTrialNode):
                 return newest
             else:
                 round_number = newest.sync_group_round + 1
-        node = nodes.filter_by(sync_group_round=round_number).one_or_none()
-        if node is None:
-            node = cls(
-                module_id,
-                experiment,
-                group,
-                round_number,
-                make_definition(round_number),
+        else:
+            node = (
+                nodes.filter_by(sync_group_round=round_number)
+                .populate_existing()
+                .one_or_none()
             )
-            db.session.add(node)
-            node.check_on_deploy()
+            if node is not None:
+                played = Trial.query.filter_by(
+                    node_id=node.id, participant_id=participant.id
+                ).first()
+                if played is None and not cls._round_is_open(node, group, participant):
+                    return None
+                return node
+        node = cls(
+            module_id, experiment, group, round_number, make_definition(round_number)
+        )
+        db.session.add(node)
+        node.check_on_deploy()
         return node
 
 

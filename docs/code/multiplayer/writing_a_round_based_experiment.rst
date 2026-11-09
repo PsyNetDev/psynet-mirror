@@ -112,17 +112,41 @@ the group shares, such as what a round shows and the group's rows in the
 export. ``trial.position`` counts the player's own cued trials in the
 module, grouped or not. Use it for the player's own sequence, such as the
 round in a per-player export when groups change every round. The two agree
-only in a fixed group that every member joined before the loop.
+only in a fixed group that every member joined before the loop. In a fixed
+group's loop with ``round=`` (below), ``sync_group_round`` is the loop
+value.
 
-Every trial in a round gets the definition of the round's first cue. A
-definition can come from the player's own position in the loop, as in
-``logic=lambda i: OfferTrial.cue({"block": i})``, only if every member
-reaches each round at the same position: a fixed group whose top-ups stop
-before the loop, with no regrouper. Otherwise a late joiner, or a pair that
-the regrouper forms from players at different rounds, would cue a different
-definition for the same round and get a ``ValueError``. Use a function
-taking ``round`` or ``group`` instead, such as
+Every trial in a round gets the definition of the round's first cue. Here,
+a definition taken from the player's own position in the loop, as in
+``logic=lambda i: OfferTrial.cue({"block": i})``, would fail: a pair that
+the regrouper forms from players at different rounds would cue two
+definitions for one round and get a ``ValueError``. Use a function taking
+``round`` or ``group`` instead, such as
 ``OfferTrial.cue(lambda round: {"block": round})``.
+
+.. _rounds-fixed-group-loop:
+
+A fixed group that plays a loop of rounds together should pass the loop
+value as ``round=``:
+
+.. code-block:: python
+
+    for_loop(
+        label="questions",
+        iterate_over=range(len(QUESTIONS)),
+        logic=lambda i: EstimateTrial.cue({"question": i}, round=i),
+        time_estimate_per_iteration=EstimateTrial.time_estimate,
+    )
+
+Each iteration is then the group's round of that number, whoever cues it
+first, so its definition can come from the loop. A member who joins late
+skips the rounds that the group finished without them: rounds where they
+have no trial and that are no longer open. They play the rest. A skipped
+round shows nothing and earns no time credit, but the progress bar moves on
+as if it had been played. A member who leaves the group plays the remaining
+iterations alone, with the same loop values. Don't pass ``round=`` with a
+regrouper: its groups mix players at different loop positions, whose trials
+would be split across rounds.
 
 Classes cued in the same open round share its node and definition: if the
 members cue different classes, such as an offer trial for the proposer and
@@ -132,11 +156,10 @@ role-specific content in the definition, keyed by role, or derive it from
 reply, is normally one trial class with several pages. Only phases played
 one after the other by trials of two classes need ``round=``, because the
 second cue would otherwise start the next round, the player already having
-a trial on the round's node. Pass both cues the same ``round=``. This is
-only safe when every member is sure to be at the same loop position, as in
-a fixed group without top-ups and no regrouper: a late joiner, or a group
-mixing players at different positions, would otherwise land on an old
-round's node or a node of their own.
+a trial on the round's node. Pass both cues the same ``round=``, such as
+the loop value in a fixed group's loop. A member with a trial in the round
+joins it even after its barrier has released the group, while a late
+joiner without one skips it.
 
 The ``switch`` decides once, before the trial: a player in a pair gets
 the trial, one who sat out gets a page instead (see
