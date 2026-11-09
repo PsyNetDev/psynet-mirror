@@ -1,0 +1,1 @@
+Added `late_action="leave_all_groups"` to `GroupBarrier` (and `sync_group_late_action` to trial makers): a late member leaves all their groups, for example the cohort their pair was formed in as well as the pair, so the cohort's next split doesn't wait for them. The `ultimatum_pairing` demo uses it instead of removing late players from the cohort by hand.

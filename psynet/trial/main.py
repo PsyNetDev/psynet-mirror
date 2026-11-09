@@ -1717,7 +1717,8 @@ class TrialMaker(Module):
     sync_group_late_action
         What happens to a member who is later than ``sync_group_late_after``: ``"fail"``
         (default) fails them; ``"leave_group"`` removes them from the group, so the rest can go on
-        without them (see :ref:`sync-leaving-a-group`).
+        without them (see :ref:`sync-leaving-a-group`); ``"leave_all_groups"`` also removes them
+        from their other groups.
 
     sync_group_waiting_message
         Message on the waiting indicator at the trial maker's own sync-group waits
@@ -1748,7 +1749,9 @@ class TrialMaker(Module):
         sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
-        sync_group_late_action: Literal["fail", "leave_group"] = "fail",
+        sync_group_late_action: Literal[
+            "fail", "leave_group", "leave_all_groups"
+        ] = "fail",
         sync_group_waiting_message=None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
@@ -2940,7 +2943,8 @@ class NetworkTrialMaker(TrialMaker):
     sync_group_late_action
         What happens to a member who is later than ``sync_group_late_after``: ``"fail"``
         (default) fails them; ``"leave_group"`` removes them from the group, so the rest can go on
-        without them (see :ref:`sync-leaving-a-group`).
+        without them (see :ref:`sync-leaving-a-group`); ``"leave_all_groups"`` also removes them
+        from their other groups.
 
     sync_group_waiting_message
         Message on the waiting indicator at the trial maker's own sync-group waits
@@ -3019,7 +3023,9 @@ class NetworkTrialMaker(TrialMaker):
         sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
-        sync_group_late_action: Literal["fail", "leave_group"] = "fail",
+        sync_group_late_action: Literal[
+            "fail", "leave_group", "leave_all_groups"
+        ] = "fail",
         sync_group_waiting_message=None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):

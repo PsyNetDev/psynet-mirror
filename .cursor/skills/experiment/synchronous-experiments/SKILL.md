@@ -92,9 +92,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   for rounds on fixed ticks (`lowest_unique_number`). Participants who miss
   a split join the next one rather than being failed. For players who stop
   responding mid-round, follow "Moving slow players on" in
-  `code/multiplayer/writing_a_round_based_experiment`: besides
-  `late_action="leave_group"`, you must also `remove_participant` them from
-  the `within` group in `on_release`; see the quorum caveat there.
+  `code/multiplayer/writing_a_round_based_experiment`: use
+  `late_action="leave_all_groups"` so that they also leave the `within`
+  group; see the quorum caveat there.
 - A member on a timed page isn't treated as late until its limit plus 10 s,
   so `late_after` need not cover the page (see "Timeouts" in
   `code/multiplayer/synchronization`); the demos use 30 s so that a
