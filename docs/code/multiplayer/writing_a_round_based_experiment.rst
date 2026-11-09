@@ -104,11 +104,12 @@ of that round releases the group. After that, even while the others are
 still on a page after the barrier, the newcomer starts the next round,
 which the others then join. This needs a barrier in each
 round, such as the one in ``show_trial`` below, so that no member ends a
-round before the others have cued it. In a round with several barriers, a
-newcomer who joins between them holds up the round's later barriers, which
-wait for every member, so such a round can't take newcomers yet. A barrier
-the group passes once, before the rounds, needs
-``pass_newcomers=True`` (see :ref:`sync-newcomers-at-passed-barriers`).
+round before the others have cued it. A round's later barriers don't wait
+for a member who is already in a later round, such as that newcomer: a
+barrier in a cued round waits only for the members in that round, in an
+earlier one, or in none yet. A barrier the group passes once, before the
+rounds, needs ``pass_newcomers=True`` (see
+:ref:`sync-newcomers-at-passed-barriers`).
 
 So a trial has two round counters. ``sync_group_round`` counts the group's
 rounds, and is ``None`` on a trial played without a group. Use it for what
@@ -145,7 +146,8 @@ value as ``round=``:
 Each iteration is then the group's round of that number, whoever cues it
 first, so its definition can come from the loop. A member who joins late
 skips the rounds that the group finished without them: rounds where they
-have no trial and that are no longer open. They play the rest. A skipped
+have no trial and that are no longer open. They play the rest, and the
+barriers of a round they skipped don't wait for them. A skipped
 round shows nothing and earns no time credit, but the progress bar moves on
 as if it had been played. A member who leaves the group plays the remaining
 iterations alone, with the same loop values. Don't pass ``round=`` with a
@@ -163,7 +165,8 @@ second cue would otherwise start the next round, the player already having
 a trial on the round's node. Pass both cues the same ``round=``, such as
 the loop value in a fixed group's loop. A member with a trial in the round
 joins it even after its barrier has released the group, while a late
-joiner without one skips it.
+joiner without one skips the whole round, both phases, and the second
+phase's barriers don't wait for them.
 
 The ``switch`` decides once, before the trial: a player in a pair gets
 the trial, one who sat out gets a page instead (see
@@ -172,7 +175,8 @@ page saying the game ended early:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: round_status
- Once started, the trial runs to its end, where
+
+Once started, the trial runs to its end, where
 it is scored, even if the player is removed from their pair partway, so
 its feedback covers every outcome of the round. A round that is one cued
 trial needs no more than this; ``join(..., stop_if=...)`` is for rounds of

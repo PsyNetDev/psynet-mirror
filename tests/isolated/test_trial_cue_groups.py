@@ -15,7 +15,7 @@ from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import GroupBarrier
-from psynet.timeline import Module
+from psynet.timeline import Module, Timeline
 from psynet.trial.chain import ChainNode
 from psynet.trial.main import GenericTrialNetwork, SyncGroupNode, Trial
 from psynet.trial.static import StaticNode, StaticTrialMaker
@@ -396,6 +396,70 @@ def test_an_explicit_round_skips_a_round_the_group_finished_without_the_player(
     pair.remove_participant(cohort[1])
     alone = cue(cohort[1], 2)
     assert alone.sync_group_id is None and alone.definition == {"target": 2}
+
+
+@in_consents_experiment
+def test_a_skipped_cue_moves_on_to_the_next_page(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    for participant in cohort:
+        PairTrial.cue({}, round=0)[0].consume(exp, participant)
+    for participant in cohort:
+        participant.current_trial.complete = True
+    (newcomer,) = _working_participants(exp, 1)
+    pair.add_participant(newcomer)
+    after = InfoPage("After the round", time_estimate=5)
+    timeline = Timeline(
+        InfoPage("Before the round", time_estimate=5),
+        PairTrial.cue({}, round=0),
+        after,
+    )
+    monkeypatch.setattr(exp, "timeline", timeline)
+    timeline.advance_page(exp, newcomer)
+    credit, progress = newcomer.time_credit, newcomer.progress
+
+    timeline.advance_page(exp, newcomer)
+    assert timeline.get_current_elt(exp, newcomer) is after
+    assert newcomer.current_trial is None
+    assert newcomer.time_credit == credit
+    assert newcomer.progress > progress
+
+
+@pytest.mark.parametrize("numbered", [False, True])
+@in_consents_experiment
+def test_a_member_in_the_next_round_doesnt_hold_up_this_round_s_later_barrier(
+    in_experiment_directory, db_session, numbered
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    (newcomer,) = _working_participants(exp, 1)
+
+    def cue(participant, i):
+        round_ = i if numbered else None
+        PairTrial.cue({"target": i}, round=round_)[0].consume(exp, participant)
+
+    for participant in cohort:
+        cue(participant, 0)
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    pair.add_participant(newcomer)
+    if numbered:
+        cue(newcomer, 0)  # skipped
+    cue(newcomer, 1)
+    assert newcomer.current_trial.sync_group_round == 1
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), [newcomer])
+    revealed = GroupBarrier(
+        "revealed", group_type="pair", on_release=PairTrial.score_pair
+    )
+    _arrive(exp, revealed, cohort)
+
+    assert not any(revealed._participant_is_waiting(p) for p in cohort)
+    assert sorted(cohort[0].current_trial.node.var.players) == [p.id for p in cohort]
+    # The newcomer still waits for the others to reach round 1.
+    assert newcomer.active_barriers["submitted"].released is False
 
 
 @in_consents_experiment

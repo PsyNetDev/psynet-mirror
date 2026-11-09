@@ -7289,8 +7289,9 @@ def test_leave_group_takes_the_participant_out_as_finished(
     assert not leaver.in_sync_group("main")
     assert leaver.sync_group_removal_reason("main") == "finished"
     assert stayer.in_sync_group("main")
-    with pytest.raises(ValueError, match="reason must be one of"):
-        leave_group("main", reason="bored")
+    for reason in ("bored", None):
+        with pytest.raises(ValueError, match="reason must be one of"):
+            leave_group("main", reason=reason)
 
 
 @pytest.mark.parametrize("below_quorum", ["fail", "continue_without_group"])
