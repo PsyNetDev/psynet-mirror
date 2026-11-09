@@ -111,15 +111,24 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - For a lobby that should not wait forever for a full group, use
   `SimpleGrouper(start_short_after=..., quorum=...)`; a short start forms a
   group of at least the quorum (`start_short_with` overrides that). To let
-  latecomers fill it up until the game starts:
+  latecomers join while the group reads its instructions, stop top-ups at
+  the barrier that starts the game; the group passes it as soon as its
+  current members arrive, so latecomers can only join before then:
 
   ```python
-  SimpleGrouper("team", ..., join_existing_groups=True, top_up_wait=30)
-  GroupBarrier(id_="game_starts", group_type="team", stop_top_ups=True)
+  SimpleGrouper("team", initial_group_size=4, quorum=2, start_short_after=60,
+                max_wait_time=120, join_existing_groups=True, top_up_wait=60,
+                below_quorum="continue_without_group")
+  InfoPage("Read the rules of the game...", time_estimate=60)
+  GroupBarrier(id_="game_starts", group_type="team", stop_top_ups=True,
+               late_after=120, late_action="leave_group")
   ```
 
-  Read "Groups below quorum" in `code/multiplayer/synchronization` for what
-  top-ups change when a member drops out. To let participants who find no
+  `late_after` removes the barrier's default 20-second wait limit, which
+  would otherwise time members out before `top_up_wait` ends their wait for
+  a newcomer. Read "Groups below quorum" in
+  `code/multiplayer/synchronization` for what top-ups change when a member
+  drops out. To let participants who find no
   group carry on alone instead of being failed, pass the grouper
   `max_wait_action="continue_without_group"`.
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
