@@ -29,7 +29,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.sync import GroupBarrier, SimpleGrouper, only_in_group
-from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop, join
+from psynet.timeline import Module, PageMaker, Timeline, for_loop, join
 from psynet.trial.main import SyncGroupNode, Trial
 
 GROUP = "team"
@@ -84,15 +84,11 @@ def get_timeline():
 def play_round():
     """Play one round, unless the player has left the group.
 
-    ``only_in_group`` would check the group before each step of the trial and
-    skip its end, where it is paid, for the last player of a cancelled round,
-    so the check happens here, once per round.
+    The outer ``only_in_group`` checks the group once before the loop, so the
+    loop checks it again before each round. A cued trial is one step, so a
+    player whose round is cancelled partway still reaches its end and is paid.
     """
-    return conditional(
-        "in_team",
-        lambda participant: participant.in_sync_group(GROUP),
-        ContributionTrial.cue({}),
-    )
+    return only_in_group(GROUP, ContributionTrial.cue({}))
 
 
 class ContributionTrial(Trial):
