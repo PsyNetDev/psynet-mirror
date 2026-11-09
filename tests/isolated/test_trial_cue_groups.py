@@ -404,6 +404,11 @@ def _cue_round(exp, participant, i):
     return participant.current_trial
 
 
+def _complete_trials(participants):
+    for participant in participants:
+        participant.current_trial.complete = True
+
+
 @pytest.mark.parametrize("n_rounds", [1, 2])
 @in_consents_experiment
 def test_a_skipper_doesnt_hold_up_the_round_s_later_barrier(
@@ -552,6 +557,7 @@ def test_a_skipper_doesnt_wait_for_players_who_passed_a_later_barrier(
     _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
     (newcomer,) = _working_participants(exp, 1)
     pair.add_participant(newcomer)
+    _complete_trials(cohort)
     after_loop = GroupBarrier(
         "after_loop",
         group_type="pair",
@@ -614,9 +620,10 @@ def test_a_member_who_rejoined_skips_a_closed_round_they_played(
     assert _cue_round(exp, cohort[0], 0) is None
 
 
+@pytest.mark.parametrize("skipper_first", [False, True])
 @in_consents_experiment
 def test_a_skipper_releases_with_the_players_at_a_barrier_s_second_pass(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, skipper_first
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
@@ -625,13 +632,15 @@ def test_a_skipper_releases_with_the_players_at_a_barrier_s_second_pass(
         _cue_round(exp, participant, 0)
     # The players pass "sync" in the trial, then again after it with the skipper.
     _arrive(exp, GroupBarrier("sync", group_type="pair"), cohort)
+    _complete_trials(cohort)
     (newcomer,) = _working_participants(exp, 1)
     pair.add_participant(newcomer)
     assert _cue_round(exp, newcomer, 0) is None
     sync = GroupBarrier("sync", group_type="pair")
-    _arrive(exp, sync, [cohort[0], newcomer])
+    first = [newcomer] if skipper_first else [cohort[0], newcomer]
+    _arrive(exp, sync, first)
     assert sync._participant_is_waiting(newcomer)
-    _arrive(exp, sync, cohort[1:])
+    _arrive(exp, sync, [p for p in cohort if p not in first])
     assert not any(sync._participant_is_waiting(p) for p in [newcomer, *cohort])
 
 

@@ -1861,13 +1861,24 @@ class GroupBarrier(Barrier):
         return group
 
     def receive_participant(self, participant: Participant):
-        """Register the arrival, storing the member's cued round on their visit."""
+        """Register the arrival, storing the member's cued round on their visit.
+
+        The visit also stores whether it is inside the member's trial of
+        that round, which hasn't completed yet.
+        """
         super().receive_participant(participant)
         group = participant.active_sync_groups[self.group_type]
         member_link = _active_links(group).get(participant.id)
         if member_link is not None:
             visit = participant.active_barriers[self.id]
             visit.round_node_id = member_link.round_node_id
+            trial = participant.current_trial
+            visit.in_round_trial = (
+                trial is not None
+                and member_link.round_node_id is not None
+                and trial.node_id == member_link.round_node_id
+                and not trial.complete
+            )
 
     def get_waiting_participants(self, participant=None, *, for_update: bool = False):
         """Return people waiting at this group visit.
@@ -4482,32 +4493,49 @@ def _members_past_visit(barrier_id, node, waiting_participants, links):
     wait) is past their visit, as when a late joiner who skipped the round
     reaches a barrier after the loop that the players have passed.
     Counting visits keeps a barrier repeated within one round waiting for
-    everyone at each repetition. Skippers don't set the count, as they
-    missed the passes inside the round's trials.
+    everyone at each repetition. Only visits of the same kind as the waiting
+    players' current one count, inside the round's trial or outside it (see
+    ``ParticipantLinkBarrier.in_round_trial``), so a skipper, who misses the
+    passes inside the trial, is matched with the players' passes after it.
     """
-    released = dict(
+    rows = (
         db.session.query(
-            ParticipantLinkBarrier.participant_id, func.count(ParticipantLinkBarrier.id)
+            ParticipantLinkBarrier.participant_id,
+            ParticipantLinkBarrier.released,
+            ParticipantLinkBarrier.in_round_trial,
+            func.count(ParticipantLinkBarrier.id),
         )
         .filter(
             ParticipantLinkBarrier.barrier_id == barrier_id,
             ParticipantLinkBarrier.round_node_id == node.id,
-            ParticipantLinkBarrier.released.is_(True),
             ParticipantLinkBarrier.participant_id.in_(list(links)),
         )
-        .group_by(ParticipantLinkBarrier.participant_id)
+        .group_by(
+            ParticipantLinkBarrier.participant_id,
+            ParticipantLinkBarrier.released,
+            ParticipantLinkBarrier.in_round_trial,
+        )
         .all()
     )
-    visit = min(
-        (
-            released.get(p.id, 0)
-            for p in waiting_participants
-            if p.id in links
-            and links[p.id].round_node_id == node.id
-            and not links[p.id].skipped_round
-        ),
-        default=0,
-    )
+    players = [
+        p.id
+        for p in waiting_participants
+        if p.id in links
+        and links[p.id].round_node_id == node.id
+        and not links[p.id].skipped_round
+    ]
+    current_kinds = [
+        bool(in_trial)
+        for pid, released, in_trial, _ in rows
+        if pid in players and not released
+    ]
+    in_trial = bool(current_kinds) and all(current_kinds)
+    released = {
+        pid: count
+        for pid, was_released, kind, count in rows
+        if was_released and bool(kind) == in_trial
+    }
+    visit = min((released.get(pid, 0) for pid in players), default=0)
     return {pid for pid, count in released.items() if count > visit}
 
 
@@ -4946,6 +4974,10 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     # (``ParticipantLinkSyncGroup.round_node_id``), so a later visit can
     # tell who already passed it in that round; see ``_barrier_scope``.
     round_node_id = Column(Integer)
+    # The visit happened inside the member's trial of that round (before the
+    # trial completed), so ``_members_past_visit`` compares it only with
+    # other visits inside the trial; skippers' visits never are.
+    in_round_trial = Column(Boolean, default=False)
     # With explicit waiting_logic there is no hold record, so the link keeps
     # the max_wait_time deadline for the poller.
     deadline_at = Column(DateTime)
