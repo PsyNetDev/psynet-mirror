@@ -661,13 +661,16 @@ leader leaves, another member becomes leader (see
 before starting the trial maker copies these from the members already in it,
 so the group keeps them, but still gets their own within-participant chains.
 
-Members only copy from someone in the same run of the trial maker: in a
-loop that repeats it, a member's state from a previous run doesn't count.
-At the start of each run, members wait for a member, normally the leader,
-to start the run; after that, anyone who arrives copies from them. If no
-member who is still in the group starts the run, as when the leader's loop
-ended earlier, the wait ends at ``sync_group_max_wait_time`` with
-``sync_group_max_wait_action``.
+PsyNet numbers each participant's runs of the trial maker, as when a loop
+repeats it. At the start of a run, members wait until another member,
+normally the leader, has started a run they can copy from, then copy from
+them. On a member's first run, that is any member's current run, so a
+newcomer joins play in progress. On a later run, it is only a run with
+the same number: a member who loops quickly doesn't copy from a partner
+who is still on the last page of the previous run, but waits for them to
+start the new run. If no member who is still in the group starts it, as
+when the leader's loop ended earlier, the wait ends at
+``sync_group_max_wait_time`` with ``sync_group_max_wait_action``.
 
 The start of every trial is synchronized; add
 :class:`~psynet.sync.GroupBarrier` elements inside the trial, as in

@@ -401,6 +401,22 @@ def test_each_module_numbers_a_group_s_rounds_from_0(
 
 
 @in_consents_experiment
+def test_module_states_count_the_participant_s_runs_of_the_module(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    (participant,) = _working_participants(exp, 1)
+    looped = Module("looped", InfoPage("Hi", time_estimate=1))
+    for _ in range(2):
+        participant.start_module(looped)
+        participant.end_module(looped)
+    participant.start_module(Module("other", InfoPage("Hi", time_estimate=1)))
+
+    assert [s.run_index for s in participant.module_states["looped"]] == [1, 2]
+    assert participant.module_state.run_index == 1
+
+
+@in_consents_experiment
 def test_a_barrier_before_a_module_s_first_cue_gets_no_round(
     in_experiment_directory, db_session
 ):

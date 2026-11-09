@@ -1806,14 +1806,29 @@ def _initialized_in(participant, trial_maker_id) -> bool:
     return state is not None and state.trial_maker_initialized
 
 
-def _initialized_member_state(group, trial_maker_id, exclude=None):
-    """Return the current-run trial maker state of an initialized active member of ``group``, or ``None``.
+def _initialized_member_state(group, trial_maker_id, participant):
+    """Return the state ``participant`` copies the group's choices from, or ``None``.
 
-    Prefers the leader's. Skips the member ``exclude``.
+    That is the current-run state of another active member of ``group``
+    whom the trial maker has initialized, preferring the leader's. On their
+    first run of the trial maker, ``participant`` copies any such state,
+    joining play in progress; on a later run of a loop, only one with the
+    same ``run_index``, not that of a member still finishing the previous
+    run.
     """
+    own = _latest_state(participant, trial_maker_id)
+    if own is None:
+        return None
     for member in _leader_first(group):
-        if member != exclude and _initialized_in(member, trial_maker_id):
-            return _latest_state(member, trial_maker_id)
+        if member == participant:
+            continue
+        state = _latest_state(member, trial_maker_id)
+        if (
+            state is not None
+            and state.trial_maker_initialized
+            and (own.run_index == 1 or state.run_index == own.run_index)
+        ):
+            return state
     return None
 
 
@@ -1827,16 +1842,18 @@ def _leader_first(group):
 class _InitParticipantBarrier(GroupBarrier):
     """The barrier at which a synchronized trial maker initializes its group, leader first.
 
-    Members wait here until a member of the group, normally the leader, is
-    initialized in this run of the trial maker; a state from a previous run
-    of a loop doesn't count. After that, anyone who arrives passes straight
-    through and initializes alone, copying the group's choices (see
-    :meth:`TrialMaker.init_participant_group`), including a newcomer who
-    arrived while the group's release was committing or who was promoted
-    to leader after the group passed (see
-    :meth:`~psynet.sync.SyncGroup.check_leader`). If no member is in this
-    run yet, as when the leader's loop ended earlier, the barrier's usual
-    rules apply, ending with its ``max_wait_time``.
+    Members wait here until another member of the group, normally the
+    leader, is initialized in a run they can copy the group's choices from
+    (see :meth:`TrialMaker._group_choices_state`): on a member's first run
+    of the trial maker, any member's current run, and on a later run of a
+    loop, only a run with the same ``run_index``, not that of a member
+    still finishing the previous run. A member who can copy passes straight
+    through and initializes alone, including a newcomer who arrived while
+    the group's release was committing or who was promoted to leader after
+    the group passed (see :meth:`~psynet.sync.SyncGroup.check_leader`).
+    Otherwise the barrier's usual rules apply, ending with its
+    ``max_wait_time`` if no member starts the run, as when the leader's
+    loop ended earlier.
     """
 
     _lets_newcomers_through = True
@@ -1853,7 +1870,8 @@ class _InitParticipantBarrier(GroupBarrier):
     def _lets_through(self, group, participant) -> bool:
         return (
             group.leader is not None
-            and _initialized_member_state(group, self.trial_maker_id) is not None
+            and _initialized_member_state(group, self.trial_maker_id, participant)
+            is not None
         )
 
 
@@ -2692,18 +2710,20 @@ class TrialMaker(Module):
 
         A follower copies the leader's. A leader makes them, unless they were
         promoted after other members initialized: then they copy those
-        members', so the whole group keeps the same choices. Only states
-        from the members' current run of the trial maker count, not one
-        from a previous run of a loop; if the leader has none, a follower
-        copies another member's, or makes the choices if no member has one.
-        The source may be in a later page than ``participant``, so this
-        reads their state for this trial maker rather than their current
-        module state.
+        members', so the whole group keeps the same choices. Only members'
+        current runs of the trial maker count. On ``participant``'s first
+        run, any member's current run counts, as for a newcomer joining
+        play in progress; on a later run of a loop, only a run with the same
+        ``run_index``, so a member still finishing the previous run doesn't
+        count. If the leader has no such run, a follower copies another
+        member's, or makes the choices if no member has one. The source may
+        be in a later page than ``participant``, so this reads their state
+        for this trial maker rather than their current module state.
         """
         sync_group = self._active_sync_group(participant)
         if sync_group is None:
             return None
-        return _initialized_member_state(sync_group, self.id, exclude=participant)
+        return _initialized_member_state(sync_group, self.id, participant)
 
     def init_participant_group(self, experiment, participant):
         """Set the participant's group for this trial maker.
