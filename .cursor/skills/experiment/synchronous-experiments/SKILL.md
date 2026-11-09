@@ -84,7 +84,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   no member's request is in flight. Members still on an earlier page get
   neither callback, so
   check their cued trial's `sync_group_outcome == "group_dissolved"` in a
-  step after the barrier if they need a result too.
+  step after the barrier if they need a result too. A trial whose pages
+  already ended with `"stayed"` keeps it, so for a barrier after
+  `show_trial` check `participant.sync_group_removal_reason(...)` instead.
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries
