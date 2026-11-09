@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from dallinger import db
+from sqlalchemy import text
 
 from psynet.experiment import get_experiment
 from psynet.page import InfoPage
@@ -36,6 +37,11 @@ _definition_calls = []
 def _make_definition(group, round):
     _definition_calls.append((group.id, round))
     return {"target": round}
+
+
+def _record_definition_args(group, round):
+    _definition_calls.append((group, round))
+    return {}
 
 
 class PairTrial(Trial):
@@ -93,6 +99,9 @@ def test_a_pair_s_cued_trials_share_one_node_per_round(
     assert isinstance(nodes[0], SyncGroupNode)
     assert nodes[0] is nodes[1] and nodes[2] is nodes[3] and nodes[0] is not nodes[2]
     assert nodes[0].network is nodes[2].network
+    PairTrial.cue({"target": 7})[0].consume(exp, cohort[0])
+    with pytest.raises(ValueError, match="already has the definition"):
+        PairTrial.cue({"target": 8})[0].consume(exp, cohort[1])
 
     pair.remove_participant(cohort[0])
     assert trials[0].sync_group is pair
@@ -100,6 +109,9 @@ def test_a_pair_s_cued_trials_share_one_node_per_round(
     ungrouped = cohort[0].current_trial
     assert ungrouped.sync_group_id is None
     assert not isinstance(ungrouped.node, SyncGroupNode)
+    _definition_calls.clear()
+    PairTrial.cue(_record_definition_args)[0].consume(exp, cohort[0])
+    assert _definition_calls == [(None, None)]
 
 
 @in_consents_experiment
@@ -142,6 +154,55 @@ def test_only_ungrouped_trials_check_their_time_credit(
 
     warned = [r.getMessage() for r in caplog.records if "unexpected" in r.getMessage()]
     assert len(warned) == 1 and f"Trial {cohort[1].current_trial.id} " in warned[0]
+
+
+@in_consents_experiment
+def test_a_barrier_release_closes_the_round(in_experiment_directory, db_session):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    logic = PairTrial.cue({"target": 1})
+    for participant in cohort:
+        logic[0].consume(exp, participant)
+    db.session.commit()
+    # The first of the round's two barriers (submitted, then revealed)
+    # releases, and the trials aren't complete yet.
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    (newcomer,) = _working_participants(exp, 1)
+    pair.add_participant(newcomer)
+    for participant in [newcomer, *cohort]:
+        logic[0].consume(exp, participant)
+    db.session.commit()
+
+    assert newcomer.current_trial.sync_group_round == 1
+    assert {p.current_trial.node_id for p in cohort} == {newcomer.current_trial.node_id}
+
+
+@in_consents_experiment
+def test_a_release_waits_for_a_cue_holding_the_round_lock(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    for participant in cohort:
+        PairTrial.cue({"target": 1})[0].consume(exp, participant)
+    db.session.commit()
+    node = cohort[0].current_trial.node
+    barrier = GroupBarrier("submitted", group_type="pair")
+    key = f"sync_group_node:{node.module_id}:{node.sync_group_id}"
+
+    with db.engine.connect() as cue_request, cue_request.begin():
+        cue_request.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": key},
+        )
+        assert not barrier.would_release(cohort)
+        assert barrier.choose_who_to_release(cohort) == []
+    assert not node.sync_group_released
+    assert barrier.would_release(cohort)
+    released = barrier.choose_who_to_release(cohort)
+    assert {p.id for p in released} == {p.id for p in cohort}
+    assert node.sync_group_released
 
 
 def _cue_in_parallel(exp, logic, participants):
@@ -212,6 +273,9 @@ def test_first_ungrouped_trials_cued_in_parallel_share_the_default_node(
 def test_cue_takes_round_only_when_the_trial_has_a_sync_group_type():
     with pytest.raises(ValueError, match="takes round="):
         SoloTrial.cue({}, round=0)
+    for bad in (-1, 1.0, True, "1"):
+        with pytest.raises(ValueError, match="non-negative integer"):
+            PairTrial.cue({}, round=bad)
 
 
 def test_a_grouped_cue_takes_no_node():
@@ -271,6 +335,11 @@ def test_alternating_trial_classes_advance_the_round(
         ("VoteTrial", 1),
     ]
 
+    # Different classes cued by different players in an open round share it.
+    PairTrial.cue({"target": 1})[0].consume(exp, cohort[0])
+    VoteTrial.cue({"target": 1})[0].consume(exp, cohort[1])
+    assert cohort[0].current_trial.node is cohort[1].current_trial.node
+
 
 @in_consents_experiment
 def test_an_explicit_round_lets_two_classes_share_a_node(
@@ -278,14 +347,25 @@ def test_an_explicit_round_lets_two_classes_share_a_node(
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
-    PairTrial.cue(lambda: {"target": 1}, round=4)[0].consume(exp, cohort[0])
-    VoteTrial.cue({"target": 1}, round=4)[0].consume(exp, cohort[0])
+    for participant in cohort:
+        PairTrial.cue(lambda: {"target": 1}, round=4)[0].consume(exp, participant)
+    db.session.commit()
+    # The first class's barrier releases, but round= still joins the round.
+    _arrive(exp, GroupBarrier("offered", group_type="pair"), cohort)
     with pytest.raises(ValueError, match="already has the definition"):
         VoteTrial.cue({"target": 2}, round=4)[0].consume(exp, cohort[1])
+    for participant in cohort:
+        VoteTrial.cue({"target": 1}, round=4)[0].consume(exp, participant)
     PairTrial.cue({"target": 1})[0].consume(exp, cohort[0])
     db.session.commit()
 
-    assert [t.sync_group_round for t in Trial.query.order_by(Trial.id)] == [4, 4, 5]
+    assert [t.sync_group_round for t in Trial.query.order_by(Trial.id)] == [
+        4,
+        4,
+        4,
+        4,
+        5,
+    ]
     assert SyncGroupNode.query.count() == 2
 
 

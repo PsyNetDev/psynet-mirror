@@ -1217,14 +1217,18 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         the participant's group of that type: the trials that the group's
         members cue in one module and round share one :class:`SyncGroupNode`,
         whose ``var`` holds the group's results for the round. ``cue`` numbers
-        each group's rounds from 0 by itself, and each trial records
+        each group's rounds from 0 by itself: a cue joins the group's newest
+        round while it is open, that is until any barrier of that round
+        releases the group or every other current member's trial on it has
+        ended, and otherwise starts the next. So a newcomer joins a round only
+        before its first barrier releases. Each trial records
         ``sync_group_id``, ``sync_group_role`` and ``sync_group_round``; see
         :ref:`rounds-cued-trials` for the rules. In short:
 
         - Put a :class:`~psynet.sync.GroupBarrier` in each round, for example
           in :meth:`show_trial`, so that members stay in step.
-        - ``trial.answer`` is only set when the trial ends, after that barrier,
-          so its ``on_release`` reads what the pages saved with
+        - ``trial.answer`` is only set when the trial ends, after the round's
+          barriers, so their ``on_release`` reads what the pages saved with
           ``save_answer``.
         - A grouped cue's definition must not depend on the player's own
           position in a loop; pass a function taking ``round`` or ``group``.
@@ -1267,15 +1271,17 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             to the participant-facing trial definition.
 
         round :
-            Rarely needed: the group's round to put this trial in, overriding
-            the automatic one, only for phases of one round played one after
-            the other by trials of different classes (pass both the same
-            ``round``). A round with two phases is normally one trial class
-            with several pages, and cues of different classes while a round is
-            open, such as one class per role, share its node and definition
-            without ``round``. Only for a trial class that sets
-            :attr:`sync_group_type`; every member of the group must pass the
-            same value.
+            The group's round to put this trial in, overriding the automatic
+            one. Rarely needed, since a round with two phases is normally one
+            trial class with several pages, and cues of different classes while
+            a round is open, such as one class per role, share its node and
+            definition without ``round``. Use it for phases of one round played
+            one after the other by trials of different classes (pass both the
+            same non-negative integer). Only for a trial class that sets
+            :attr:`sync_group_type`, and only safe when every member is sure
+            to be at the same loop position, as in a fixed group without
+            top-ups and no regrouper; otherwise a late joiner or a mixed group
+            lands on an old round's node or a node of their own.
 
         Examples
         --------
@@ -1333,6 +1339,13 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             raise ValueError(
                 f"{cls.__name__}.cue() takes round= only if "
                 f"{cls.__name__}.sync_group_type is set."
+            )
+        if round is not None and (
+            isinstance(round, bool) or not isinstance(round, int) or round < 0
+        ):
+            raise ValueError(
+                f"{cls.__name__}.cue() takes round= as a non-negative integer, "
+                f"got {round!r}."
             )
 
         if isinstance(definition, ChainNode):
@@ -4282,6 +4295,8 @@ class SyncGroupNode(GenericTrialNode):
     # No foreign key, as on Trial.sync_group_id.
     sync_group_id = Column(Integer, index=True)
     sync_group_round = Column(Integer)
+    # Set when a GroupBarrier releases the group with all its trials here.
+    sync_group_released = Column(Boolean, default=False)
 
     def __init__(self, module_id, experiment, group, round_number, definition):
         super().__init__(module_id, experiment)
@@ -4297,10 +4312,14 @@ class SyncGroupNode(GenericTrialNode):
     @staticmethod
     def _round_is_open(node, group, participant):
         """Whether ``participant``'s cue should join ``node``, the group's newest round."""
+        if node.sync_group_released:
+            return False
         trials = Trial.query.filter_by(node_id=node.id)
         if trials.filter_by(participant_id=participant.id).first() is not None:
             return False
         members = [p.id for p in group.active_participants if p.id != participant.id]
+        if not members:
+            return False
         return (
             trials.filter(
                 Trial.participant_id.in_(members),
@@ -4315,8 +4334,10 @@ class SyncGroupNode(GenericTrialNode):
         """Return the node that ``participant``'s cued trial joins, creating it if needed.
 
         Without ``round_number``, this is the group's newest node in the module
-        while that round is open: the participant has no trial on it, and some
-        current member's trial on it hasn't ended yet. Otherwise the group
+        while that round is open and the participant has no trial on it. A
+        round is open until a :class:`~psynet.sync.GroupBarrier` releases the
+        group with all its trials on the node, or until every other current
+        member's trial on it has ended. Otherwise the group
         moves on to a new node for the next round, counted from 0, which the
         others then join. A trial ends when it gets its answer
         (``trial.complete``); trials of players who have left the group don't
@@ -4330,9 +4351,13 @@ class SyncGroupNode(GenericTrialNode):
         """
         module_id = participant.module_id
         _lock_until_commit(f"sync_group_node:{module_id}:{group.id}")
+        # Re-read under the lock what another request may have just committed.
+        db.session.expire(group, ["participant_links"])
         nodes = cls.query.filter_by(module_id=module_id, sync_group_id=group.id)
         if round_number is None:
-            newest = nodes.order_by(cls.sync_group_round.desc()).first()
+            newest = (
+                nodes.order_by(cls.sync_group_round.desc()).populate_existing().first()
+            )
             if newest is None:
                 round_number = 0
             elif cls._round_is_open(newest, group, participant):
