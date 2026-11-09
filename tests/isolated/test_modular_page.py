@@ -1,11 +1,16 @@
+import uuid
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from dallinger import db
 from flask import Flask
 from jinja2 import DictLoader
 from markupsafe import Markup
 
+from psynet.db import transaction
+from psynet.demography.general import CountryOfBirth
+from psynet.experiment import get_experiment
 from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     AudioMeterControl,
     CheckboxControl,
@@ -19,7 +24,10 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     RatingScale,
     TimedPushButtonControl,
 )
-from psynet.timeline import FailedValidation
+from psynet.page import InfoPage
+from psynet.participant import Participant
+from psynet.pytest_psynet import path_to_test_experiment
+from psynet.timeline import Timeline
 
 # from importlib import resources
 
@@ -505,6 +513,46 @@ class _NoGreenControl(PushButtonControl):
         return "No green!" if response.answer == "green" else None
 
 
+@pytest.fixture
+def submit(db_session, monkeypatch):
+    """Submit a response whose formatted answer is ``answer`` and return its outcome."""
+    experiment = get_experiment()
+
+    def _submit(page, answer):
+        monkeypatch.setattr(page, "format_answer", lambda raw_answer, **_: raw_answer)
+        timeline = Timeline(page, InfoPage("Done", time_estimate=1))
+        monkeypatch.setattr(experiment, "timeline", timeline)
+        participant = Participant(
+            experiment=experiment,
+            recruiter_id="hotair",
+            worker_id=str(uuid.uuid4()),
+            hit_id="hit",
+            assignment_id=str(uuid.uuid4()),
+            mode="debug",
+        )
+        db.session.add(participant)
+        timeline.advance_page(experiment, participant)
+        db.session.commit()
+        with transaction():
+            result = experiment.process_response(
+                participant_id=participant.id,
+                raw_answer=answer,
+                blobs={},
+                metadata={"time_taken": 0},
+                page_uuid=participant.page_uuid,
+                client_ip_address="127.0.0.1",
+            )
+        return result.payload["submission"]
+
+    return _submit
+
+
+_CONSENTS = pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+
+
+@_CONSENTS
 @pytest.mark.parametrize(
     "control, answer",
     [
@@ -516,13 +564,15 @@ class _NoGreenControl(PushButtonControl):
         (RadioButtonControl(["a"]), "free text"),
         (CheckboxControl(["a", "b"]), ["a", "c"]),
         (CheckboxControl(["a"]), "a"),
+        (CheckboxControl(["a"], force_selection=True), None),
     ],
 )
-def test_option_controls_reject_answers_outside_their_choices(control, answer):
-    page = ModularPage("test", "Hi!", control)
-    assert isinstance(page.validate(SimpleNamespace(answer=answer)), FailedValidation)
+def test_option_controls_reject_answers_outside_their_choices(submit, control, answer):
+    page = ModularPage("test", "Hi!", control, time_estimate=1)
+    assert submit(page, answer) == "rejected"
 
 
+@_CONSENTS
 @pytest.mark.parametrize(
     "control, answer",
     [
@@ -536,9 +586,31 @@ def test_option_controls_reject_answers_outside_their_choices(control, answer):
         (TimedPushButtonControl(["A"]), [{"eventType": "trialStart"}]),
     ],
 )
-def test_option_controls_accept_their_choices_and_empty_answers(control, answer):
-    page = ModularPage("test", "Hi!", control)
-    assert page.validate(SimpleNamespace(answer=answer)) is None
+def test_option_controls_accept_their_choices_and_empty_answers(
+    submit, control, answer
+):
+    page = ModularPage("test", "Hi!", control, time_estimate=1)
+    assert submit(page, answer) == "approved"
+
+
+@_CONSENTS
+@pytest.mark.parametrize(
+    "make_page",
+    [
+        # CountryOfBirth overrides ModularPage.validate without calling super().
+        CountryOfBirth,
+        lambda: ModularPage(
+            "test",
+            "Hi!",
+            DropdownControl(["GB", "US"]),
+            validate=lambda answer: None,
+            time_estimate=1,
+        ),
+    ],
+)
+def test_page_validation_cannot_accept_answers_outside_the_choices(submit, make_page):
+    assert submit(make_page(), "XX") == "rejected"
+    assert submit(make_page(), "GB") == "approved"
 
 
 def test_option_controls_reject_choices_with_the_same_text():

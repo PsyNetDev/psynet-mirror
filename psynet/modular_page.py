@@ -877,8 +877,8 @@ class Control(JavaScriptContributor):
     def _reject_impossible_answer(self, answer):
         """Return a :class:`~psynet.timeline.FailedValidation` for an answer the control cannot produce.
 
-        :class:`ModularPage` runs this check before any other validation,
-        so overriding :meth:`validate` does not remove it.
+        The experiment runs this check on every submitted response before the page's
+        :meth:`validate`, so overriding :meth:`validate` does not remove it.
         """
         return None
 
@@ -952,18 +952,22 @@ class OptionControl(Control):
     with its original type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``.
     NumPy scalars in ``choices`` become the equivalent Python values.
 
-    By default the page rejects an answer that is not one of ``choices``,
-    or the control's empty answer such as ``None``.
-    Only a tampered request can submit such an answer,
-    so the participant sees the generic message "You need to select an answer!".
+    By default the experiment rejects a formatted answer that is neither one of ``choices``
+    nor the control's empty answer, such as ``None``, before running any ``validate``;
+    ``force_selection`` decides whether an empty answer is accepted.
+    The browser cannot submit such an answer, but a tampered request can,
+    and so can a bot whose ``bot_response`` has the wrong type, such as ``"3"`` for the choice ``3``,
+    or a subclass that overrides :meth:`format_answer` without passing ``restrict_to_choices=False``.
+    The rejection message is the generic "You need to select an answer!".
 
     Parameters
     ----------
 
     restrict_to_choices :
         Whether to reject answers that are not one of ``choices``. Default: ``True``.
-        Set it to ``False`` for a subclass whose :meth:`format_answer` saves something else,
-        such as a dictionary of the choice and a reaction time.
+        Set it to ``False`` when the saved answer is something else,
+        such as a dictionary of the choice and a reaction time from an overridden
+        :meth:`format_answer` on the control or the page.
     """
 
     def __init__(
@@ -1475,6 +1479,8 @@ class TimedPushButtonControl(PushButtonControl):
         button_highlight_duration: float = 0.75,
         **kwargs,
     ):
+        # The answer is the browser's event log, not a choice.
+        kwargs.setdefault("restrict_to_choices", False)
         super().__init__(
             choices=choices, labels=labels, show_next_button=True, **kwargs
         )
@@ -1482,10 +1488,6 @@ class TimedPushButtonControl(PushButtonControl):
 
     def format_answer(self, raw_answer, **kwargs):
         return {**kwargs}["metadata"]["event_log"]
-
-    def _reject_impossible_answer(self, answer):
-        # The answer is the browser's event log, not a choice.
-        return None
 
     def visualize_response(self, answer, response, trial):
         """Highlight every button that the response's event log records as pressed."""
@@ -2299,9 +2301,6 @@ class ModularPage(Page):
         return "\n".join([renderers[key] for key in self.layout])
 
     def validate(self, response, **kwargs):
-        impossible = self.control._reject_impossible_answer(response.answer)
-        if impossible is not None:
-            return impossible
         if self._validate_function is None:
             return self.control.validate(response, **kwargs)
         else:

@@ -122,14 +122,18 @@ the timing of each button press. The browser submits choices as text, so a
 control whose choices share the same text, such as ``1`` and ``"1"``, raises
 ``ValueError``.
 
-The page rejects an answer that is not one of the control's choices, such as an
-offer of 11 from a tampered request in a 0–10 game, so you don't need to check
-this yourself. An empty answer, such as ``None`` from a page that submits
-without a click, still passes this check; where a control has
-``force_selection``, that decides whether to accept it. A radio button control with
-``show_free_text_option=True`` accepts any text. If a subclass saves something
-other than a choice, for example by overriding ``format_answer``, pass
-``restrict_to_choices=False``. See :class:`~psynet.modular_page.OptionControl`.
+The experiment rejects an answer that is not one of the control's choices, such
+as an offer of 11 from a tampered request in a 0–10 game, so you don't need to
+check this yourself. The check runs before any ``validate``, including a page
+that overrides ``validate``, so a ``validate`` cannot accept such an answer. An
+empty answer, such as ``None`` from a page that submits without a click, still
+passes this check; where a control has ``force_selection``, that decides whether
+to accept it. A radio button control with ``show_free_text_option=True`` accepts
+any text. If the saved answer is something other than a choice, for example
+because the control or the page overrides ``format_answer`` to wrap the choice
+in a dictionary, pass ``restrict_to_choices=False`` to the control.
+``TimedPushButtonControl`` does this for you. See
+:class:`~psynet.modular_page.OptionControl`.
 
 To validate a response, subclass the control and implement ``validate``. The
 method returns ``None`` to accept the response, or a message for the

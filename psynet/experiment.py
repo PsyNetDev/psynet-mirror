@@ -4335,14 +4335,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     client_ip_address=client_ip_address,
                     answer=answer,
                 )
-                validation = event.validate(
-                    response=response,
-                    answer=response.answer,
-                    raw_answer=raw_answer,
-                    participant=participant,
-                    experiment=self,
-                    page=event,
-                )
+                validation = event._reject_impossible_answer(response.answer)
+                if validation is None:
+                    validation = event.validate(
+                        response=response,
+                        answer=response.answer,
+                        raw_answer=raw_answer,
+                        participant=participant,
+                        experiment=self,
+                        page=event,
+                    )
                 if isinstance(validation, str):
                     validation = FailedValidation(message=validation)
 
