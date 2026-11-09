@@ -132,7 +132,10 @@ catching up, late joiners or skippers, isn't the group's pass:
 ``on_release`` doesn't run, and it doesn't count for ``left`` or
 ``late_after``.
 
-These rules use the rounds members have cued in the barrier's module, so
+These rules use the rounds members have cued in the barrier's module, and
+in a module that a loop repeats, only those of the waiting members' run of
+it or a later one: a barrier at the start of the next run waits for every
+member again, until someone cues that run's first round. So
 they don't cover a barrier in a module where the group cues no rounds, such
 as one before a separate module of rounds: a newcomer who reaches it after
 the group has gone waits there for members who are further on, until the

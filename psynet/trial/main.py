@@ -1,5 +1,6 @@
 import datetime
 import random
+from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import partial
 from math import isnan
@@ -1786,6 +1787,11 @@ Index(
 )
 
 
+# While a group's release initializes its members, the state of the first
+# one initialized, whom the others copy the group's choices from.
+_released_with_state = ContextVar("psynet_released_with_state", default=None)
+
+
 def _latest_state(participant, trial_maker_id):
     """Return the participant's state for their current run of the trial maker, or ``None``.
 
@@ -2358,12 +2364,22 @@ class TrialMaker(Module):
         """Initialize the group's members in this run, leader first.
 
         Skips members who aren't in a run of the trial maker, such as a
-        leader whose loop ended earlier.
+        leader whose loop ended earlier. Everyone released together is at
+        the start of their current run, so the others copy the group's
+        choices from the first one initialized, normally the leader, even
+        if their ``run_index`` differs, as when groups re-form inside a loop.
         """
+        source = None
         for participant in _leader_first(group):
             state = _latest_state(participant, self.id)
-            if state is not None and not state.trial_maker_initialized:
+            if state is None or state.trial_maker_initialized:
+                continue
+            token = _released_with_state.set(source)
+            try:
                 self.init_participant(experiment, participant)
+            finally:
+                _released_with_state.reset(token)
+            source = source or state
 
     @property
     def _setup_extra(self):
@@ -2721,10 +2737,16 @@ class TrialMaker(Module):
         member's, or makes the choices if no member has one. The source may
         be in a later page than ``participant``, so this reads their state
         for this trial maker rather than their current module state.
+
+        In a group's release, the others copy the first member initialized,
+        whatever their runs (see :meth:`_init_participants_in_sync_group`).
         """
         sync_group = self._active_sync_group(participant)
         if sync_group is None:
             return None
+        released_with = _released_with_state.get()
+        if released_with is not None:
+            return released_with
         return _initialized_member_state(sync_group, self.id, participant)
 
     def init_participant_group(self, experiment, participant):
@@ -4625,6 +4647,13 @@ def _record_round_position(group, participant, node, skipped=False):
     link = _member_link(group, participant)
     link.round_node_id = node.id
     link.skipped_round = skipped
+    link.round_run_index = _current_run_index(participant)
+
+
+def _current_run_index(participant):
+    """Return the ``run_index`` of ``participant``'s current module state, or ``None`` outside a module."""
+    state = participant.module_state
+    return None if state is None else state.run_index
 
 
 # SyncGroupNode shares the node table, and SQLAlchemy doesn't accept

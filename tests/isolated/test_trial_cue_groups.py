@@ -425,18 +425,24 @@ def test_module_states_count_the_participant_s_runs_of_the_module(
     assert participant.module_state.run_index == 1
 
 
+@pytest.mark.parametrize("next_module_id", ["second", "first"])
 @in_consents_experiment
-def test_a_barrier_before_a_module_s_first_cue_gets_no_round(
-    in_experiment_directory, db_session
+def test_a_barrier_before_a_module_run_s_first_cue_gets_no_round(
+    in_experiment_directory, db_session, next_module_id
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
+    first = Module("first", InfoPage("Hi", time_estimate=1))
     for participant in cohort:
-        participant.start_module(Module("first", InfoPage("Hi", time_estimate=1)))
+        participant.start_module(first)
         PairTrial.cue({})[0].consume(exp, participant)
     first_trials = [p.current_trial for p in cohort]
+    # The next module, or a loop's next run of the same one.
     for participant in cohort:
-        participant.start_module(Module("second", InfoPage("Hi", time_estimate=1)))
+        participant.end_module(first)
+        participant.start_module(
+            Module(next_module_id, InfoPage("Hi", time_estimate=1))
+        )
     _released.clear()
     barrier = GroupBarrier(
         "second_start", group_type="pair", on_release=PairTrial.record_release

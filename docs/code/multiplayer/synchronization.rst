@@ -282,11 +282,12 @@ for compatibility).
 
 ``node`` is the group's :class:`~psynet.trial.main.SyncGroupNode` for the
 round the barrier is in or after: the earliest of the rounds the waiting
-members stored when they last cued (or skipped) one in their current
-module, not a node worked out from their trials. It is ``None``
-before the group's first cue in the module, including at a barrier at the
-start of a module after another module's rounds, and in a group that never
-uses :meth:`~psynet.trial.main.Trial.cue`. When ``node`` is set, ``trials``
+members stored when they last cued (or skipped) one in their current run
+of their current module, not a node worked out from their trials. It is
+``None`` before the group's first cue in the module, including at a barrier
+at the start of a module after another module's rounds or at the start of a
+loop's next run of the same module, and in a group that never uses
+:meth:`~psynet.trial.main.Trial.cue`. When ``node`` is set, ``trials``
 holds ``None`` for a member whose current trial is not on it, such as a
 newcomer released at a feedback barrier during a practice trial; when it is
 ``None``, ``trials`` holds each member's current trial whatever its node,
@@ -339,8 +340,8 @@ later:
   player's current trial on the round's node. A barrier after the trial,
   between rounds or after the loop also stores it, as long as the trial is
   still the player's current trial and has no outcome yet, but a barrier
-  of a later module before its first cue (where ``node`` is ``None``) does
-  not. Members released with another current trial, such as a newcomer's
+  of a later module, or of a loop's next run of the module, before its
+  first cue (where ``node`` is ``None``) does not. Members released with another current trial, such as a newcomer's
   practice trial, don't stop it, and get nothing, as do members who
   skipped the round;
 - why the player left the group: a reason of
@@ -357,8 +358,8 @@ ended. Two things differ: leaving before they have ended replaces
 ``"stayed"`` from an earlier barrier of the round, and moving on
 (``"moved_on"``, for example at the next round's regrouper) or finishing
 (``"finished"``) after they have ended stores nothing. Nor does leaving the
-group once the player is in a later module, for example by failing a
-questionnaire there. A partner's outcome is on their trial in
+group once the player is in a later module, or a later run of the trial's
+module, for example by failing a questionnaire there. A partner's outcome is on their trial in
 ``node.all_trials``:
 
 .. code-block:: python
@@ -678,7 +679,10 @@ the same number: a member who loops quickly doesn't copy from a partner
 who is still on the last page of the previous run, but waits for them to
 start the new run. If no member who is still in the group starts it, as
 when the leader's loop ended earlier, the wait ends at
-``sync_group_max_wait_time`` with ``sync_group_max_wait_action``.
+``sync_group_max_wait_time`` with ``sync_group_max_wait_action``. Members
+who start the run together, as when the group's release lets them all
+through, copy from the leader whatever their run numbers, for example in
+groups that re-form inside the loop.
 
 The start of every trial is synchronized; add
 :class:`~psynet.sync.GroupBarrier` elements inside the trial, as in

@@ -414,6 +414,24 @@ WITHIN_CHAINS = dict(
 )
 
 
+class _WithinTrialMaker(ChainTrialMaker):
+    def create_networks_within(self, experiment, participant):
+        group = participant.module_state.participant_group
+        networks = [SimpleNamespace(block=b, participant_group=group) for b in "XY"]
+        participant.networks = networks
+        return networks
+
+
+def _synchronized_within_trial_maker(choose_participant_group):
+    return make_trial_maker(
+        _WithinTrialMaker,
+        sync_group_type="main",
+        choose_participant_group=choose_participant_group,
+        block_order="listed",
+        **WITHIN_CHAINS,
+    )
+
+
 @pytest.mark.parametrize("arriving_is_leader", [False, True])
 @pytest.mark.parametrize(
     "other_member", ["later_page", "finished", "early_exited", "previous_run"]
@@ -421,20 +439,7 @@ WITHIN_CHAINS = dict(
 def test_init_participant_copies_the_group_s_choices_from_a_member_s_matching_run(
     arriving_is_leader, other_member
 ):
-    class WithinTrialMaker(ChainTrialMaker):
-        def create_networks_within(self, experiment, participant):
-            group = participant.module_state.participant_group
-            networks = [SimpleNamespace(block=b, participant_group=group) for b in "XY"]
-            participant.networks = networks
-            return networks
-
-    trial_maker = make_trial_maker(
-        WithinTrialMaker,
-        sync_group_type="main",
-        choose_participant_group=lambda participant: "A",
-        block_order="listed",
-        **WITHIN_CHAINS,
-    )
+    trial_maker = _synchronized_within_trial_maker(lambda participant: "A")
     # The other member is initialized and on a later page of their current run,
     # or that run is over, or the arriving member has already looped to the next.
     other_state = _tm_state(
@@ -465,6 +470,34 @@ def test_init_participant_copies_the_group_s_choices_from_a_member_s_matching_ru
     if arriving_is_leader or not copies:
         # A follower who copies takes trials on the leader's chains instead.
         assert {n.participant_group for n in arriving.networks} == {expected[0]}
+
+
+def test_members_released_together_copy_the_leader_whatever_their_run_index():
+    trial_maker = _synchronized_within_trial_maker(
+        lambda participant: f"G{participant.id}"
+    )
+    group = SimpleNamespace(id=1)
+
+    def member(id, run_index):
+        state = _tm_state(run_index=run_index)
+        return SimpleNamespace(
+            id=id,
+            module_state=state,
+            module_states={trial_maker.id: [state]},
+            active_sync_groups={"main": group},
+            select_module=lambda module_id: None,
+        )
+
+    # Groups re-formed inside a loop: the follower is on a later run.
+    leader, follower = member(1, run_index=1), member(2, run_index=2)
+    group.leader, group.active_participants = leader, [follower, leader]
+    trial_maker._init_participants_in_sync_group(group, experiment=None)
+
+    choices = [
+        (s.participant_group, s.block_order, s.block_position)
+        for s in (leader.module_state, follower.module_state)
+    ]
+    assert choices == [("G1", ["X", "Y"], 0)] * 2
 
 
 @pytest.mark.parametrize("chain_kwargs", [WITHIN_CHAINS, {}])
