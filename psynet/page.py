@@ -370,7 +370,6 @@ def wait_while(
         hold_logic = hold if log_message is None else join(CodeBlock(log), hold)
         return join(
             conditional(
-                label,
                 entry_condition,
                 logic_if_true=hold_logic,
                 fix_time_credit=fix_time_credit,
@@ -388,7 +387,6 @@ def wait_while(
 
     return join(
         while_loop(
-            label,
             condition,
             logic=logic,
             expected_repetitions=expected_repetitions,
@@ -396,6 +394,7 @@ def wait_while(
             fail_on_timeout=fail_on_timeout,
             on_timeout=on_timeout,
             fix_time_credit=fix_time_credit,
+            label=label,
         ),
     )
 

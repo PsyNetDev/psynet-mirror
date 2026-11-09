@@ -127,11 +127,8 @@ maker only read it.
 Branching and repetition
 ------------------------
 
-Each construct takes a label. Give each one a distinct, descriptive label;
-nested loops must use different labels.
-
-:func:`~psynet.timeline.switch` takes a label, a function returning a key,
-and a dictionary mapping keys to logic. Here the key is the answer to the
+:func:`~psynet.timeline.switch` takes a function returning a key and a
+dictionary mapping keys to logic. Here the key is the answer to the
 preceding page:
 
 .. literalinclude:: ../../demos/features/timeline/experiment.py
@@ -139,7 +136,7 @@ preceding page:
    :end-before: while_loop(
    :dedent: 8
 
-:func:`~psynet.timeline.while_loop` takes a label, a ``condition`` and
+:func:`~psynet.timeline.while_loop` takes a ``condition`` and
 ``logic``, plus ``expected_repetitions`` for time estimation. By default
 (``fix_time_credit=True``), every participant gets time credit for
 ``expected_repetitions`` iterations, however many they actually do.
@@ -147,8 +144,10 @@ preceding page:
 reach it while the condition still holds are sent to the unsuccessful end
 unless ``fail_on_timeout=False``. ``extend_while`` pauses that limit while it
 returns ``True``, for example while a participant's recording is still
-uploading.
-:func:`~psynet.timeline.conditional` takes a label, a ``condition``, and
+uploading. A loop with ``max_loop_time`` also needs a ``label``, under which
+PsyNet stores when the participant entered it; loops nested in each other
+need different labels.
+:func:`~psynet.timeline.conditional` takes a ``condition``, and
 ``logic_if_true`` and ``logic_if_false``. This loop repeats until the random
 score is above 5, with feedback that depends on the score:
 
@@ -158,8 +157,10 @@ score is above 5, with feedback that depends on the score:
    :dedent: 8
 
 :func:`~psynet.timeline.for_loop` takes keyword arguments only: ``label``,
-``iterate_over``, a function returning the list for this participant, and
-``logic``, a function from one item to timeline logic. It needs
+under which PsyNet stores the participant's position in the loop, so nested
+loops need different labels; ``iterate_over``, a function returning the list
+for this participant; and ``logic``, a function from one item to timeline
+logic. It needs
 ``time_estimate_per_iteration`` when ``logic`` is a function, and
 ``expected_repetitions`` when ``iterate_over`` takes arguments such as
 ``participant``:
@@ -209,7 +210,6 @@ conditional:
 .. code-block:: python
 
     conditional(
-        "screening_result",
         condition=lambda participant: participant.var.passed_screening,
         logic_if_true=main_task,
         logic_if_false=UnsuccessfulEndPage(failure_tags=["screening"]),

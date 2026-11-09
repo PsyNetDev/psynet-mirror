@@ -77,7 +77,6 @@ class Exp(psynet.experiment.Experiment):
                 ),  # Participant will only be allowed to visit the quorate page 3 times
                 logic=join(
                     conditional(
-                        "check_quorate",
                         condition=lambda participant: (
                             participant.sync_group.n_active_participants
                             >= participant.sync_group.min_group_size

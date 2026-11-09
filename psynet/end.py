@@ -327,7 +327,6 @@ class RejectedConsentLogic(UnsuccessfulEndLogic):
 
     def before_debrief_logic(self) -> TimelineLogic:
         return conditional(
-            "report_rejected_consent",
             self.has_rejected_consent_to_report,
             AsyncCodeBlock(self.report_rejected_consent, wait=False),
             log_chosen_branch=False,

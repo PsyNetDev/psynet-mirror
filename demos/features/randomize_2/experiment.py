@@ -12,7 +12,6 @@ class Exp(psynet.experiment.Experiment):
 
     timeline = Timeline(
         randomize(
-            label="trial makers",
             logic=[
                 trial_maker_1,
                 trial_maker_2,

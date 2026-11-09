@@ -21,7 +21,6 @@ class Exp(psynet.experiment.Experiment):
             lambda participant: participant.var.set("fail_routine_executed", False)
         ),
         switch(
-            "switch",
             lambda participant: participant.id,
             {
                 1: InfoPage("Nothing to see here...", time_estimate=5),

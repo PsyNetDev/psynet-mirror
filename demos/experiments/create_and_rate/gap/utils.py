@@ -9,7 +9,6 @@ from psynet.timeline import join, switch
 def get_instructions():
     return join(
         switch(
-            "initial_instructions",
             lambda experiment, participant: participant.var.is_rater,
             {
                 # Creator
@@ -76,7 +75,6 @@ def get_instructions():
         # Instructions before practice + specific prescreen for creator
         #######################
         switch(
-            "instructions_before_practice",
             lambda experiment, participant: participant.var.is_rater,
             {
                 # Creator

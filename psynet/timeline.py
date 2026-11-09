@@ -14,7 +14,7 @@ import uuid
 import warnings
 from collections import Counter
 from datetime import datetime
-from functools import cached_property
+from functools import cached_property, wraps
 from importlib import resources
 from statistics import median
 from types import FunctionType
@@ -3284,8 +3284,38 @@ def _while_loop_timed_out(participant, label, max_loop_time, now=None):
     )
 
 
+def _accepts_legacy_label(func):
+    """Accept the deprecated call form ``func(label, ...)``, warning the caller."""
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if args and isinstance(args[0], str):
+            if "label" in kwargs:
+                raise TypeError(f"{func.__name__}() got two labels.")
+            warnings.warn(
+                f"Passing a label as the first argument of {func.__name__}() is deprecated "
+                "and will stop working in a future PsyNet version. "
+                f"Drop the label, or pass it as a keyword: {func.__name__}(..., label=...).",
+                FutureWarning,
+                stacklevel=2,
+            )
+            kwargs["label"] = args[0]
+            args = args[1:]
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def _label_from_function(function, default):
+    """Return the name of ``function``, or ``default`` if it has none (e.g. a lambda)."""
+    name = getattr(function, "__name__", None)
+    if not name or name == "<lambda>":
+        return default
+    return name
+
+
+@_accepts_legacy_label
 def while_loop(
-    label: str,
     condition: Callable,
     logic,
     expected_repetitions: int,
@@ -3294,6 +3324,7 @@ def while_loop(
     fail_on_timeout=True,
     on_timeout: Optional[Callable] = None,
     extend_while: Optional[Callable] = None,
+    label: Optional[str] = None,
 ):
     """
     Loops a series of elts while a given criterion is satisfied.
@@ -3301,9 +3332,6 @@ def while_loop(
 
     Parameters
     ----------
-
-    label:
-        Internal label to assign to the construct.
 
     condition:
         A function with up to two arguments named ``participant`` and ``experiment``,
@@ -3345,12 +3373,23 @@ def while_loop(
         checked on each iteration. While it returns ``True`` the loop cannot
         time out, and ``max_loop_time`` restarts once it returns ``False``.
 
+    label:
+        Name of the loop, used in logs and failure tags. Required when
+        ``max_loop_time`` is set, because the loop's start time is stored
+        under this name; loops nested in each other need different labels.
+        Otherwise defaults to the name of ``condition``.
+
     Returns
     -------
 
     list
         A list of elts that can be embedded in a timeline using :func:`psynet.timeline.join`.
     """
+    if label is None:
+        if max_loop_time is not None:
+            raise ValueError("while_loop() needs a label when max_loop_time is set.")
+        label = _label_from_function(condition, "while_loop")
+
     start_while = StartWhile(label)
     end_while = EndWhile(label)
 
@@ -3422,7 +3461,6 @@ def while_loop(
     # to an inactive browser tab must not time out work that has already finished.
     conditional_logic = join(
         conditional(
-            "max_loop_time_condition",
             lambda participant, experiment: call_function_with_context(
                 max_loop_time_condition,
                 participant=participant,
@@ -3443,7 +3481,6 @@ def while_loop(
         CodeBlock(start_loop),
         start_while,
         conditional(
-            label,
             condition_wrapped,
             conditional_logic,
             # The while loop includes its own progress bounds, so we don't need to bound progress here.
@@ -3452,6 +3489,7 @@ def while_loop(
             bound_progress=False,
             log_chosen_branch=False,
             time_estimate=time_estimate,
+            label=label,
         ),
         end_while,
     )
@@ -3470,14 +3508,15 @@ def check_branches(branches):
     return branches
 
 
+@_accepts_legacy_label
 def switch(
-    label: str,
     function: Callable,
     branches: dict,
     fix_time_credit: bool = False,
     bound_progress: bool = True,
     log_chosen_branch: bool = True,
     time_estimate: float = None,
+    label: Optional[str] = None,
 ):
     """
     Selects a series of elts to display to the participant according to a
@@ -3485,9 +3524,6 @@ def switch(
 
     Parameters
     ----------
-
-    label:
-        Internal label to assign to the construct.
 
     function:
         A function with up to two arguments named ``participant`` and ``experiment``,
@@ -3515,12 +3551,18 @@ def switch(
         An optional time estimate to use for the switch construct. If not provided, the time estimate
         will be estimated by computing time estimates for all branches and taking the maximum.
 
+    label:
+        Name under which the chosen branch is recorded in ``participant.branch_log``.
+        Defaults to the name of ``function``, or ``"switch"`` for a lambda.
+
     Returns
     -------
 
     list
         A list of elts that can be embedded in a timeline using :func:`psynet.timeline.join`.
     """
+    if label is None:
+        label = _label_from_function(function, "switch")
     branches = check_branches(branches)
 
     all_branch_starts = dict()
@@ -3603,8 +3645,8 @@ class EndSwitchBranch(GoTo):
         self.name = name
 
 
+@_accepts_legacy_label
 def conditional(
-    label: str,
     condition: Callable,
     logic_if_true,
     logic_if_false=None,
@@ -3612,15 +3654,13 @@ def conditional(
     bound_progress: bool = True,
     log_chosen_branch: bool = True,
     time_estimate: float = None,
+    label: Optional[str] = None,
 ):
     """
     Executes a series of elts if and only if a certain condition is satisfied.
 
     Parameters
     ----------
-
-    label:
-        Internal label to assign to the construct.
 
     condition:
         A function with up to two arguments named ``participant`` and ``experiment``,
@@ -3650,6 +3690,10 @@ def conditional(
         An optional time estimate to use for the conditional construct. If not provided, the time estimate
         will be estimated by computing time estimates for the two branches and taking the maximum.
 
+    label:
+        Name under which the outcome is recorded in ``participant.branch_log``.
+        Defaults to the name of ``condition``, or ``"conditional"`` for a lambda.
+
     Returns
     -------
 
@@ -3657,7 +3701,7 @@ def conditional(
         A list of elts that can be embedded in a timeline using :func:`psynet.timeline.join`.
     """
     return switch(
-        label,
+        label=label or _label_from_function(condition, "conditional"),
         function=condition,
         branches={
             True: logic_if_true,
@@ -4349,8 +4393,8 @@ def for_loop(
     return join(
         CodeBlock(setup),
         while_loop(
-            "for_loop",
             should_stay_in_loop,
+            label=label,
             logic=join(
                 PageMaker(content, time_estimate_per_iteration),
                 CodeBlock(increment_counter),
@@ -4366,11 +4410,22 @@ def for_loop(
     )
 
 
+def _warn_unused_label(construct, label):
+    """Warn that ``construct`` no longer takes a label."""
+    if label is not None:
+        warnings.warn(
+            f"{construct}() no longer takes a label; the argument is ignored "
+            "and will stop working in a future PsyNet version.",
+            FutureWarning,
+            stacklevel=3,
+        )
+
+
 def sequence(
     *,
-    label: str,
     function: Callable,
     logic: list,
+    label: Optional[str] = None,
 ):
     """
     Administers a sequence of logical units in an order determined by a function.
@@ -4379,9 +4434,6 @@ def sequence(
 
     Parameters
     ----------
-
-    label:
-        Internal label to assign to the construct.
 
     function:
         A function with up to two arguments named ``participant`` and ``experiment``,
@@ -4392,7 +4444,11 @@ def sequence(
         A list of logical units to be administered in the order determined by ``function``.
         Each element should be a unit of timeline logic, for example a trial maker
         or a sequence of Elts created through the join function.
+
+    label:
+        Deprecated and ignored.
     """
+    _warn_unused_label("sequence", label)
     assert isinstance(logic, list)
 
     for elt in logic:
@@ -4430,16 +4486,14 @@ def sequence(
         participant.sequences.pop()
         flag_modified(participant, "sequences")
 
-    label = f"sequence_{label}"
-
     return join(
         CodeBlock(initialize_sequence),
         while_loop(
-            label=label,
+            label="sequence",
             condition=sequence_is_not_finished,
             logic=join(
                 switch(
-                    label=label,
+                    label="sequence",
                     function=get_current_position,
                     branches={i: logic[i] for i in range(sequence_length)},
                 ),
@@ -4452,7 +4506,7 @@ def sequence(
     )
 
 
-def randomize(*, label, logic):
+def randomize(*, logic, label=None):
     """
     Randomizes the order of a series of logical units.
     This could be used, for example, to randomize the order of a series of questionnaires.
@@ -4461,17 +4515,17 @@ def randomize(*, label, logic):
     Parameters
     ----------
 
-    label:
-        Internal label to assign to the construct.
-
     logic:
         A list to be randomized.
         Each element should be a unit of timeline logic, for example a trial maker
         or a sequence of Elts created through the join function.
+
+    label:
+        Deprecated and ignored.
     """
+    _warn_unused_label("randomize", label)
     n = len(logic)
     return sequence(
-        label=label,
         function=lambda participant: random.sample(range(n), k=n),
         logic=logic,
     )

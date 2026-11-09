@@ -11,7 +11,6 @@ class Exp(psynet.experiment.Experiment):
 
     timeline = Timeline(
         randomize(
-            label="Numbers from 0-99",
             logic=[InfoPage(f"{i}", time_estimate=5) for i in range(100)],
         ),
     )

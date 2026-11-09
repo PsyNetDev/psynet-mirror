@@ -45,11 +45,9 @@ class Exp(psynet.experiment.Experiment):
                 lambda participant: participant.var.set("current_page", "welcome")
             ),
             while_loop(
-                "main",
                 condition=lambda: True,
                 logic=join(
                     switch(
-                        "main",
                         lambda participant: participant.var.get("current_page"),
                         {
                             "welcome": content_page(

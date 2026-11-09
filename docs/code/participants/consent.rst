@@ -77,7 +77,6 @@ sends those who decline to the rejected-consent ending:
         return join(
             StudyConsentPage(),
             conditional(
-                "consent_declined",
                 lambda participant: participant.answer != "agree",
                 RejectedConsentPage(failure_tags=["consent_declined"]),
             ),

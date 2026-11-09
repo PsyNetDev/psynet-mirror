@@ -26,7 +26,6 @@ class Exp(psynet.experiment.Experiment):
     timeline = Timeline(
         CodeBlock(lambda participant: participant.var.set("counter", 0)),
         while_loop(
-            "test_while_loop_1",
             condition=lambda participant: participant.var.counter < 5,  # noqa
             logic=[
                 InfoPage("Please click 'Next'", time_estimate=1.0),
@@ -44,7 +43,6 @@ class Exp(psynet.experiment.Experiment):
         WaitPage(wait_time=1.0),
         CodeBlock(lambda participant: participant.var.set("counter", 0)),
         while_loop(
-            "test_while_loop_1",
             condition=lambda participant: participant.var.counter < 1,  # noqa
             logic=[
                 InfoPage("Please click 'Next'", time_estimate=1.0),

@@ -76,7 +76,6 @@ class Exp(psynet.experiment.Experiment):
             lambda participant: participant.var.set("route", "prescreener_completed")
         ),
         conditional(
-            "decide_whether_to_fail_participant",
             lambda participant: participant.id == 2,
             logic_if_true=[
                 CodeBlock(
@@ -88,7 +87,6 @@ class Exp(psynet.experiment.Experiment):
             ],
         ),
         conditional(
-            "decide_whether_to_fail_participant",
             lambda participant: participant.id == 3,
             logic_if_true=[
                 CodeBlock(

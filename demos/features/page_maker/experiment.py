@@ -66,7 +66,6 @@ class Exp(psynet.experiment.Experiment):
         CodeBlock(lambda participant: participant.var.set("while_loop_counter", 0)),
         PageMaker(
             lambda participant: while_loop(
-                "test",
                 condition=lambda participant: participant.var.while_loop_counter < 3,
                 logic=[
                     CodeBlock(

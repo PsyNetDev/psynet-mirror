@@ -33,7 +33,7 @@ def test_experiment_inserts_capability_check_at_start():
 def test_insert_at_start_matches_timeline_built_with_element():
     def elts():
         return [
-            conditional("cond", lambda: True, InfoPage("A", time_estimate=2)),
+            conditional(lambda: True, InfoPage("A", time_estimate=2)),
             InfoPage("B", time_estimate=1),
         ]
 

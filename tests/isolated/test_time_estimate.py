@@ -26,7 +26,6 @@ def test_estimate_page_maker():
 
 def test_switch():
     logic = switch(
-        "test_switch",
         lambda: random.choice(["a", "b"]),
         branches={
             "a": InfoPage("Branch A", time_estimate=1.0),
@@ -38,7 +37,6 @@ def test_switch():
 
 def test_while_loop():
     loop = while_loop(
-        "test_while_loop",
         condition=lambda: True,  # noqa
         logic=InfoPage("Please click 'Next'", time_estimate=1.0),
         expected_repetitions=3,

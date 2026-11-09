@@ -60,7 +60,6 @@ class Exp(psynet.experiment.Experiment):
     timeline = Timeline(
         CodeBlock(lambda participant: participant.var.set("collecting_coins", "Yes")),
         while_loop(
-            "loop",
             lambda participant: participant.var.collecting_coins == "Yes",
             logic=join(
                 collect_coin(),

@@ -160,7 +160,6 @@ the same maximum:
 staircase = Module(
     "staircase",
     while_loop(
-        label="adaptive staircase",
         condition=lambda participant: (
             not adaptive_logic.should_stop(trial_history(participant))
         ),

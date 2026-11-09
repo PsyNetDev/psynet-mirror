@@ -28,7 +28,6 @@ failing participants to :class:`~psynet.page.UnsuccessfulEndPage`:
                 time_estimate=3,
             ),
             conditional(
-                "fail_if_impaired",
                 lambda participant: participant.answer == "Yes",
                 UnsuccessfulEndPage(failure_tags=["hearing_impairment_check"]),
             ),

@@ -226,7 +226,6 @@ class Exp(psynet.experiment.Experiment):
             time_estimate=2 * 60,
         ),
         switch(
-            "participant_flow",
             lambda participant: participant.id % 4,
             {
                 0: normal_plus_performance_reward(),

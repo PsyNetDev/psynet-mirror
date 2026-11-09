@@ -122,7 +122,6 @@ class Exp(psynet.experiment.Experiment):
                 bot_response="Yes",
             ),
             conditional(
-                "like_chocolate",
                 lambda participant: participant.answer == "Yes",
                 InfoPage("It's nice to hear that you like chocolate!", time_estimate=6),
                 InfoPage(
@@ -134,7 +133,6 @@ class Exp(psynet.experiment.Experiment):
         ),
         CodeBlock(lambda participant: participant.set_answer("Yes")),
         while_loop(
-            "example_loop",
             lambda participant: participant.answer == "Yes",
             Module(
                 "loop",
@@ -208,7 +206,6 @@ class Exp(psynet.experiment.Experiment):
                 )
             ),
             switch(
-                "color",
                 lambda participant: participant.answer,
                 branches={
                     "Red": InfoPage("Red is a nice color, wait 1s.", time_estimate=1),

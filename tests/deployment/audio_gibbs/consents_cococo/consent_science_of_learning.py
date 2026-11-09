@@ -367,7 +367,6 @@ class consent_cococo_science_of_learning(Module, Consent):
         elts = join(
             consent_page,
             conditional(
-                "science_of_learning_consent_conditional",
                 lambda experiment, participant: participant.answer == "I do not consent",
                 RejectedConsentPage(failure_tags=["science_of_learning_consent_rejected"]),
             ),

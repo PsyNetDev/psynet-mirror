@@ -428,12 +428,13 @@ debug, test or deploy command stops once and lists them.
 
 See :doc:`upgrading_deployment_file_selection`.
 
-15. Failing participants and trial maker arguments
---------------------------------------------------
+15. Failing participants and changed arguments
+----------------------------------------------
 
 Search for ``def fail_participant``, ``data_check_failed``,
-``attention_check_failed`` and positional arguments to ``TrialMaker(`` or
-``NetworkTrialMaker(``.
+``attention_check_failed``, positional arguments to ``TrialMaker(`` or
+``NetworkTrialMaker(``, and labels passed to ``conditional(``, ``switch(``,
+``while_loop(``, ``sequence(`` or ``randomize(``.
 
 * Overriding ``Experiment.fail_participant`` raises an error. Call
   ``participant.fail()``, or register a ``ParticipantFailRoutine`` for code
@@ -445,6 +446,13 @@ Search for ``def fail_participant``, ``data_check_failed``,
 * The ``fail_trials_on_premature_exit`` argument is ignored: when a
   participant leaves or fails, their unfinished trials always fail and their
   submitted trials are kept.
+* ``conditional``, ``switch`` and ``while_loop`` no longer take a label as
+  their first argument; the old form still works but warns. Delete the label,
+  so that ``conditional("is_adult", lambda participant: ..., logic)`` becomes
+  ``conditional(lambda participant: ..., logic)``. Keep it as ``label=...``
+  only on a ``while_loop`` with ``max_loop_time``. ``sequence`` and
+  ``randomize`` ignore their ``label`` argument; delete it. ``for_loop``
+  still requires its label.
 
 See :doc:`/code/trials/participant_and_trial_failure`.
 

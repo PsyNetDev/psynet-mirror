@@ -1270,7 +1270,6 @@ class AttentionTest(Module):
                 expect_scrolling=True,
             ),
             conditional(
-                "exclude_check_1",
                 lambda experiment, participant: (
                     participant.answer is not None
                     and self.fail_on in ["attention_test_1", "any"]
@@ -1285,7 +1284,6 @@ class AttentionTest(Module):
                 )
             ),
             conditional(
-                "attention_test_2",
                 lambda experiment, participant: self.pages == 2,
                 ModularPage(
                     label="attention_test_2",
@@ -1296,7 +1294,6 @@ class AttentionTest(Module):
                 ),
             ),
             conditional(
-                "exclude_check_2",
                 lambda experiment, participant: (
                     self.pages == 2
                     and fail_on is not None
@@ -2264,7 +2261,6 @@ class BrowserCapabilityCheck(Module):
             _browser_capability_permission_intro(perm_caps) if perm_caps else None,
             BrowserCapabilityCheckPage(caps, label=label),
             conditional(
-                f"{label}_fail",
                 lambda participant: (
                     isinstance(participant.answer, dict)
                     and not participant.answer.get("passed", True)

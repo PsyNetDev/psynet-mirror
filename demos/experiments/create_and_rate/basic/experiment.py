@@ -169,7 +169,6 @@ class Exp(psynet.experiment.Experiment):
             time_estimate=1,
         ),
         switch(
-            "pick_demo_switch",
             lambda participant: participant.answer,
             branches=branches,
             fix_time_credit=False,

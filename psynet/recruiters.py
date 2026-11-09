@@ -1967,7 +1967,6 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                 time_estimate=0.5,
             ),
             while_loop(
-                "wait_for_assignment_return",
                 condition=lambda participant: not participant.var.assignment_returned,
                 logic=join(
                     AsyncCodeBlock(
@@ -1977,7 +1976,6 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                         check_interval=1.0,
                     ),
                     conditional(
-                        label="assignment_return_result",
                         condition=lambda participant: (
                             participant.var.assignment_returned
                         ),
@@ -1991,7 +1989,6 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                                 on_timeout=self._notify_return_for_bonus_payment_timeout,
                             ),
                             conditional(
-                                "return_for_bonus_credited",
                                 condition=self._return_for_bonus_credited,
                                 logic_if_true=InfoPage(
                                     _p(

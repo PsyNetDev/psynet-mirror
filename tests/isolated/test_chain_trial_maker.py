@@ -7,7 +7,7 @@ import pytest
 from dallinger import db
 
 from psynet.sync import GroupBarrier
-from psynet.timeline import ModuleState
+from psynet.timeline import ModuleState, StartSwitch
 from psynet.trial.chain import ChainNode, ChainTrial, ChainTrialMaker
 from psynet.trial.dense import DenseTrialMaker
 from psynet.trial.main import (
@@ -319,9 +319,7 @@ def test_sync_trial_maker_requires_active_group_for_synced_participant():
     trial_maker = make_trial_maker(sync_group_type="sync")
     participant = DummyParticipant()
     start_switch = next(
-        elt
-        for elt in trial_maker._init_participant()
-        if getattr(elt, "label", None) == "init_participant"
+        elt for elt in trial_maker._init_participant() if isinstance(elt, StartSwitch)
     )
 
     with pytest.raises(RuntimeError, match="active sync group of type 'sync'"):

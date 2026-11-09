@@ -969,7 +969,6 @@ class Barrier(EltCollection):
             CodeBlock(lambda participant: self.receive_participant(participant)),
             waiting_elts,
             conditional(
-                "participant_failed",
                 condition=lambda participant: participant.failed,
                 logic_if_true=UnsuccessfulEndPage(),
                 time_estimate=0,
@@ -1520,7 +1519,6 @@ class GroupBarrier(Barrier):
         if not self.skip_if_not_in_group:
             return elts
         return conditional(
-            f"barrier:{self.id}:in_group",
             condition=lambda participant: (
                 self.group_type in participant.active_sync_groups
             ),
@@ -2152,7 +2150,6 @@ class SimpleGrouper(Grouper):
         return join(
             CodeBlock(self._join_existing_groups),
             conditional(
-                "joined_an_existing_group",
                 condition=lambda participant: (
                     self.group_type in participant.active_sync_groups
                 ),

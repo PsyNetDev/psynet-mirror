@@ -214,7 +214,6 @@ def play_round():
             content=round_message,
         ),
         conditional(
-            "paired",
             in_pair,
             join(
                 PageMaker(decision_page, time_estimate=10),
@@ -261,14 +260,12 @@ class Exp(psynet.experiment.Experiment):
             max_wait_time=300,
         ),
         while_loop(
-            "rounds",
             keep_playing,
             play_round(),
             expected_repetitions=N_ROUNDS,
         ),
         CodeBlock(leave_team),
         conditional(
-            "ended_early",
             ended_early,
             PageMaker(ended_early_page, time_estimate=5),
         ),

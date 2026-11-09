@@ -55,7 +55,6 @@ class Exp(psynet.experiment.Experiment):
             time_estimate=5,
         ),
         conditional(
-            "failure",
             lambda participant: not participant.var.is_good_participant,
             UnsuccessfulEndPage(),
         ),

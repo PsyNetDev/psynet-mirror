@@ -88,13 +88,13 @@ def test_while_loop_budget_is_fixed_and_a_cleared_condition_exits_normally(
 
     timeline = Timeline(
         while_loop(
-            "bounded_wait",
             lambda: pending,
             WaitPage(wait_time=1),
             expected_repetitions=0,
             max_loop_time=budget,
             fail_on_timeout=False,
             on_timeout=lambda participant: participant.var.set("timed_out", True),
+            label="bounded_wait",
         ),
         InfoPage("Continue", time_estimate=0),
     )
@@ -133,13 +133,13 @@ def test_while_loop_timer_restarts_after_extend_while_clears(
     extending = True
     timeline = Timeline(
         while_loop(
-            "extended_wait",
             lambda: True,
             WaitPage(wait_time=1),
             expected_repetitions=0,
             max_loop_time=10,
             fail_on_timeout=False,
             extend_while=lambda: extending,
+            label="extended_wait",
         ),
         InfoPage("Continue", time_estimate=0),
     )

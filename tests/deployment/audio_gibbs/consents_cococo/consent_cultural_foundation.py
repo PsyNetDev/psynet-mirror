@@ -627,7 +627,6 @@ class consent_irb_cultural_foundation(Module, Consent):
         elts = [
             main_page,
             conditional(
-                "cf_main_consent_conditional",
                 lambda experiment, participant: (
                     not participant.answer.get(main_label, True)
                 ),
@@ -651,7 +650,6 @@ class consent_irb_cultural_foundation(Module, Consent):
             elts += [
                 av_page,
                 conditional(
-                    "cf_av_consent_conditional",
                     lambda experiment, participant: (
                         not participant.answer.get("cf_av_consent", True)
                     ),

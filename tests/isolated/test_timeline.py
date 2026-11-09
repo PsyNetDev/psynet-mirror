@@ -34,8 +34,11 @@ from psynet.timeline import (
     Page,
     PageMaker,
     ProgressStage,
+    StartSwitch,
     Timeline,
+    conditional,
     join,
+    randomize,
     switch,
     while_loop,
 )
@@ -1592,7 +1595,6 @@ def test_estimate_credit__simple():
 
 def test_estimate_credit__switch__bound_reward_true():
     e = switch(
-        "test",
         lambda experiment, participant: participant.var.switch,
         {
             "a": InfoPage("", time_estimate=3),
@@ -1605,7 +1607,6 @@ def test_estimate_credit__switch__bound_reward_true():
 
 def test_estimate_credit__switch__bound_reward_false():
     e = switch(
-        "test",
         lambda experiment, participant: participant.var.switch,
         {
             "a": InfoPage("", time_estimate=3),
@@ -1619,10 +1620,8 @@ def test_estimate_credit__switch__bound_reward_false():
 
 def test_estimate_credit__while_loop__switch__bound_reward_true():
     e = while_loop(
-        "loop123",
         lambda experiment, participant: experiment.var.not_ready,
         switch(
-            "test",
             lambda experiment, participant: participant.var.switch,
             {
                 "a": InfoPage("", time_estimate=3),
@@ -1637,10 +1636,8 @@ def test_estimate_credit__while_loop__switch__bound_reward_true():
 
 def test_estimate_credit__while_loop__switch__bound_reward_false():
     e = while_loop(
-        "loop",
         lambda experiment, participant: experiment.var.not_ready,
         switch(
-            "test",
             lambda experiment, participant: participant.var.switch,
             {
                 "a": InfoPage("", time_estimate=3),
@@ -1659,13 +1656,13 @@ def test_while_loop_on_timeout_runs_before_failure():
         participant.var.timeout_callback_ran = True
 
     e = while_loop(
-        "loop_with_timeout_callback",
         lambda: True,
         InfoPage("", time_estimate=1),
         expected_repetitions=1,
         max_loop_time=1,
         fail_on_timeout=True,
         on_timeout=on_timeout,
+        label="loop_with_timeout_callback",
     )
 
     assert any(
@@ -1674,12 +1671,39 @@ def test_while_loop_on_timeout_runs_before_failure():
     )
 
 
+def _branch_log_labels(elts):
+    return [elt.label for elt in elts if isinstance(elt, StartSwitch)]
+
+
+def test_branch_log_label_defaults_to_condition_name():
+    def is_adult(participant):
+        return True
+
+    page = InfoPage("", time_estimate=1)
+    assert _branch_log_labels(conditional(is_adult, page)) == ["is_adult"]
+    assert _branch_log_labels(conditional(lambda: True, page)) == ["conditional"]
+    assert _branch_log_labels(conditional(is_adult, page, label="age")) == ["age"]
+
+
+def test_legacy_label_argument_warns():
+    page = InfoPage("", time_estimate=1)
+    with pytest.warns(FutureWarning, match="first argument of conditional"):
+        elts = conditional("age", lambda: True, page)
+    assert _branch_log_labels(elts) == ["age"]
+    with pytest.warns(FutureWarning, match="randomize\\(\\) no longer takes a label"):
+        randomize(label="order", logic=[page, page])
+
+
+def test_while_loop_needs_label_with_max_loop_time():
+    with pytest.raises(ValueError, match="needs a label"):
+        while_loop(lambda: True, InfoPage("", time_estimate=1), 1, max_loop_time=5)
+
+
 def test_switch_with_trial_maker():
     tm_1 = new_trial_maker(id_="tm-1")
     tm_2 = new_trial_maker(id_="tm-2")
     timeline = Timeline(
         switch(
-            "test",
             lambda experiment, participant: participant.var.switch,
             {
                 "a": tm_1,

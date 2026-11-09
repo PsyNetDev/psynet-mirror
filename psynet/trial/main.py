@@ -1381,13 +1381,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     def _construct_feedback_logic(cls, trial_maker):
         from ..media_upload import _recording_wait_timeout
 
-        if trial_maker:
-            label = trial_maker.with_namespace("feedback")
-        else:
-            label = f"{cls.__name__}__feedback"
-
         return conditional(
-            label=label,
             condition=lambda experiment, participant: (
                 not participant.current_trial._recording_failed
                 and participant.current_trial.gives_feedback(experiment, participant)
@@ -1406,7 +1400,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                     check_interval=1.0,
                 ),
                 conditional(
-                    label=f"{label}__still_valid",
                     condition=lambda participant: (
                         not participant.current_trial._recording_failed
                     ),
@@ -1889,7 +1882,6 @@ class TrialMaker(Module):
 
     def _init_participant(self):
         return conditional(
-            "init_participant",
             # If the participant is in a sync group and the leader has not been initialized,
             # then we put a GroupBarrier to ensure that the leader can be initialized first.
             # Otherwise we go ahead and initialize the participant.
@@ -2452,7 +2444,6 @@ class TrialMaker(Module):
             return results["passed"]
 
         logic = switch(
-            "performance_check",
             function=eval_checks,
             branches={
                 True: [] if type == "trial" else self._get_end_feedback_passed_logic(),
@@ -2608,7 +2599,6 @@ class TrialMaker(Module):
             CodeBlock(lambda participant: participant.select_module(self.id)),
             self._wait_for_trial(),
             conditional(
-                "is_trial_available",
                 condition=lambda participant: participant.trial_status != "exit",
                 logic_if_true=self.trial_class.trial_logic(trial_maker=self),
                 logic_if_false=CodeBlock(
@@ -2623,7 +2613,6 @@ class TrialMaker(Module):
         return join(
             self._wait_for_trial(),
             while_loop(
-                self.with_namespace("trial_loop"),
                 condition=lambda participant: participant.trial_status != "exit",
                 logic=join(
                     self.trial_class.trial_logic(trial_maker=self),
@@ -2646,7 +2635,6 @@ class TrialMaker(Module):
             if not self.sync_group_type:
                 return CodeBlock(self._try_to_prepare_trial_solo)
             return conditional(
-                "prepare_trial",
                 lambda participant: (
                     self.sync_group_type in participant.active_sync_groups
                 ),
@@ -2664,7 +2652,6 @@ class TrialMaker(Module):
         return join(
             try_to_prepare_trial(),
             while_loop(
-                "Waiting for trial",
                 lambda participant: participant.trial_status == "wait",
                 logic=join(
                     # Keep an explicit page wait so each iteration reruns
@@ -2681,6 +2668,7 @@ class TrialMaker(Module):
                     participant.id
                 ),
                 fix_time_credit=False,
+                label="Waiting for trial",
             ),
         )
 

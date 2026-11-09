@@ -51,7 +51,6 @@ class Language(Module):
             MotherTongue(),
             MoreThanOneLanguage(),
             conditional(
-                "more_than_one_language",
                 lambda experiment, participant: participant.answer == "yes",
                 LanguagesInOrderOfProficiency(),
             ),
@@ -86,7 +85,6 @@ class Dance(Module):
         self.elts = join(
             DanceSociallyOrProfessionally(),
             conditional(
-                "dance_socially_or_professionally",
                 lambda experiment, participant: (
                     participant.answer in ["socially", "professionally"]
                 ),

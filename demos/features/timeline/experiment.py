@@ -50,7 +50,6 @@ def get_timeline():
             time_estimate=5,
         ),
         switch(
-            "choose_page",
             lambda participant: participant.var.choose_page,
             {
                 "page_1": InfoPage("page_1", time_estimate=5),
@@ -59,7 +58,6 @@ def get_timeline():
             },
         ),
         while_loop(
-            "my_loop",
             condition=lambda participant: participant.var.get("score", default=0) <= 5,
             logic=join(
                 CodeBlock(
@@ -68,7 +66,6 @@ def get_timeline():
                     )
                 ),
                 conditional(
-                    "feedback",
                     condition=lambda participant: participant.var.score <= 5,
                     logic_if_true=PageMaker(
                         lambda participant: InfoPage(
