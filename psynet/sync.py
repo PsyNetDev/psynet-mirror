@@ -4486,7 +4486,9 @@ def _barrier_scope(group, waiting_participants, barrier_id, node) -> _BarrierSco
     group that never uses :meth:`~psynet.trial.main.Trial.cue`, it waits for
     every member. Otherwise the group has started its rounds, so the visit
     is a late joiner catching up: it waits only for the members who haven't
-    cued a round in the module either and haven't passed this visit yet.
+    cued a round in the module either, are still in it (see
+    :func:`_still_in_module`, as for members behind a round) and haven't
+    passed this visit yet.
 
     Reads the members' stored rounds' nodes, which the session usually
     holds already, and makes one query for this barrier's past visits, plus,
@@ -4502,7 +4504,7 @@ def _barrier_scope(group, waiting_participants, barrier_id, node) -> _BarrierSco
         link = links.get(participant.id)
         round_node_id = None if link is None else link.round_node_id
         if round_node_id is None or round_node_id < node.id:
-            if not _left_module(participant, node.module_id):
+            if _still_in_module(participant, node.module_id):
                 behind.add(participant.id)
         elif round_node_id == node.id:
             if not link.skipped_round:
@@ -4543,7 +4545,12 @@ def _scope_before_rounds(group, waiting_participants, barrier_id, links):
             in_rounds.add(participant_id)
     if not in_rounds:
         return _BarrierScope(members, members, members)
-    behind = [p for p in members if p.id not in in_rounds]
+    behind = [
+        p
+        for p in members
+        if p.id not in in_rounds
+        and any(_still_in_module(p, module_id) for module_id in module_ids)
+    ]
     waiting = [p.id for p in waiting_participants if p.id in links]
     # A catch-up: no players, so its release does no group bookkeeping.
     return _BarrierScope(behind, behind, []).without(
@@ -4551,10 +4558,16 @@ def _scope_before_rounds(group, waiting_participants, barrier_id, links):
     )
 
 
-def _left_module(participant, module_id):
-    """Return whether ``participant`` has finished module ``module_id`` and not started it again."""
+def _still_in_module(participant, module_id):
+    """Return whether a member behind the group's rounds in module ``module_id`` may still cue there.
+
+    A barrier waits for such members only while this holds. It doesn't once
+    they have finished the module and not started it again, as when their
+    loop ended earlier or a conditional skipped it, reading their
+    ``ModuleState``; a member who hasn't started it yet may still come.
+    """
     states = participant.module_states.get(module_id, [])
-    return bool(states) and all(state.finished for state in states)
+    return not states or not all(state.finished for state in states)
 
 
 def _members_past_visit(barrier_id, round_node_id, players, links):

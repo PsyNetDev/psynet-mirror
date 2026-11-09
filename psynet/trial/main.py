@@ -1305,7 +1305,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             when the group first plays them, not by number. A module whose
             cues pass ``round`` runs once per participant, so give each run
             of it its own module id; cueing a round again after a later one,
-            or a trial class again in the same round, raises an error. Only
+            even one the participant skipped, or a trial class again in the
+            same round, raises an error. Only
             for a trial class that sets :attr:`sync_group_type`, and not with a
             regrouper, whose groups mix players at different loop positions.
             For a participant without a group, ``round`` doesn't select a
@@ -4394,9 +4395,10 @@ class SyncGroupNode(GenericTrialNode):
         With ``round_number``, it is the group's node for that round, or
         ``None`` if it is no longer open and the participant isn't playing it,
         as when the group finished it without them. Naming a round the
-        participant played, as when the module runs again, raises a
-        ``RuntimeError`` (see :meth:`_named_round`): the group's nodes for
-        the module are reused, so the round would count as played already.
+        participant played, or one before a round they played or skipped,
+        as when the module runs again, raises a ``RuntimeError`` (see
+        :meth:`_named_round`): the group's nodes for the module are reused,
+        so the round would count as played or skipped already.
         ``trial_class`` is the class of the cued trial. A new node's
         definition is ``make_definition(round_number)``. Either way, the
         participant's link to ``group`` records the round as the one they
@@ -4444,9 +4446,10 @@ class SyncGroupNode(GenericTrialNode):
     def _named_round(cls, node, group, participant, trial_class):
         """Return ``node``, a round named by ``round=``, or ``None`` if the participant skips it.
 
-        Raises a ``RuntimeError`` if the participant played the round
-        already: they have a trial of ``trial_class`` on it, or of any class
-        once they have cued a round played after it.
+        Raises a ``RuntimeError`` if the module runs again: the participant
+        has a trial of ``trial_class`` on the round they are playing, or
+        their stored round is one played after it, whether they played or
+        skipped either. So a skip never moves their stored round back.
         """
         link = _member_link(group, participant)
         stored = link.round_node_id and db.session.get(cls, link.round_node_id)
@@ -4454,20 +4457,20 @@ class SyncGroupNode(GenericTrialNode):
         played_after = (
             stored and stored.module_id == node.module_id and stored.id > node.id
         )
-        again = (playing or played_after) and (
-            (trial_class if playing else Trial)
-            .query.filter_by(node_id=node.id, participant_id=participant.id)
-            .first()
+        if played_after or (
+            playing
+            and trial_class.query.filter_by(
+                node_id=node.id, participant_id=participant.id
+            ).first()
             is not None
-        )
-        if again:
+        ):
             raise RuntimeError(
                 f"Participant {participant.id} cued {trial_class.__name__} for "
                 f"round {node.sync_group_round} of '{group.group_type}' group "
-                f"{group.id} again in module '{node.module_id}', after playing "
-                "it. A module whose cues pass round= can run only once per "
-                "participant, with one trial of each class in a round; give "
-                "each run of it its own module id."
+                f"{group.id} again in module '{node.module_id}', after it or a "
+                "later round. A module whose cues pass round= can run only "
+                "once per participant, with one trial of each class in a "
+                "round; give each run of it its own module id."
             )
         if playing:
             # Another trial class cued in the round the participant is playing.
