@@ -433,11 +433,32 @@ def experiment_directory(request):
 
 
 loaded_experiment_directory = None
+_active_experiment_directory = None
+
+
+@pytest.fixture(autouse=True)
+def reset_sys_modules():
+    """Unimport experiment modules before each test outside an experiment directory.
+
+    This replaces Dallinger's fixture of the same name, which unimports them
+    before every test. Inside :func:`in_experiment_directory` the class-scoped
+    fixtures have already imported the experiment and hold its classes, so
+    unimporting it would make the next import, for example Dallinger's
+    server module, which PsyNet imports lazily to send socket messages,
+    execute ``experiment.py`` again and register duplicate SQLAlchemy classes.
+    :func:`in_experiment_directory` unimports the experiment on teardown
+    instead.
+    """
+    if _active_experiment_directory is None:
+        clean_sys_modules()
+
+
+pytest_dallinger.reset_sys_modules = reset_sys_modules
 
 
 @pytest.fixture(scope="class")
 def in_experiment_directory(experiment_directory):
-    global loaded_experiment_directory
+    global loaded_experiment_directory, _active_experiment_directory
     if (
         loaded_experiment_directory is not None
         and loaded_experiment_directory != experiment_directory
@@ -466,9 +487,11 @@ def in_experiment_directory(experiment_directory):
                 original_skip_dependency_check = os.getenv("SKIP_DEPENDENCY_CHECK")
                 if is_in_repo_experiment() or not Path("constraints.txt").exists():
                     os.environ["SKIP_DEPENDENCY_CHECK"] = "1"
+                _active_experiment_directory = experiment_directory
                 try:
                     yield experiment_directory
                 finally:
+                    _active_experiment_directory = None
                     if original_skip_dependency_check is None:
                         os.environ.pop("SKIP_DEPENDENCY_CHECK", None)
                     else:

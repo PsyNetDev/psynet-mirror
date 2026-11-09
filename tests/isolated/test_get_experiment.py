@@ -18,6 +18,28 @@ def test_get_experiment():
     assert isinstance(exp, Experiment)
 
 
+@pytest.fixture(scope="class")
+def class_scoped_experiment_class(in_experiment_directory):
+    from psynet.experiment import import_local_experiment
+
+    return import_local_experiment()["class"]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+class TestExperimentStaysImportedDuringTests:
+    def test_importing_the_experiment_module_reuses_its_classes(
+        self, class_scoped_experiment_class
+    ):
+        """A lazy import of the experiment must not execute experiment.py again."""
+        import importlib
+
+        experiment_class = class_scoped_experiment_class
+        module = importlib.import_module(experiment_class.__module__)
+        assert getattr(module, experiment_class.__name__) is experiment_class
+
+
 def test_dashboard_sessions_share_one_login_across_experiments_and_threads(
     monkeypatch,
 ):
