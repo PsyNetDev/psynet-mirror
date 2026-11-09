@@ -8,7 +8,7 @@ from markupsafe import Markup
 
 from psynet.bot import Bot
 from psynet.db import transaction
-from psynet.demography.general import CountryOfBirth
+from psynet.demography.general import CountryOfBirth, MotherTongue
 from psynet.experiment import get_experiment
 from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     AudioMeterControl,
@@ -616,8 +616,9 @@ def test_page_validation_cannot_accept_answers_outside_the_choices(submit, make_
 
 
 @_CONSENTS
-def test_country_page_requires_an_answer(submit):
-    assert submit(CountryOfBirth(), None) == "rejected"
+@pytest.mark.parametrize("page_class", [CountryOfBirth, MotherTongue])
+def test_demography_dropdown_pages_require_an_answer(submit, page_class):
+    assert submit(page_class(), None) == "rejected"
 
 
 def test_option_controls_reject_choices_with_the_same_text():

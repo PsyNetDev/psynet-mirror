@@ -2329,8 +2329,9 @@ class ModularPage(Page):
         if rejection is not None:
             logger.warning(
                 "Page %r rejected the answer %r because it is not one of the control's "
-                "choices %r. If the choices change each time the page is built, "
-                "keep them stable or pass restrict_to_choices=False.",
+                "choices %r. If the page or control reformats the answer, or the choices "
+                "change each time the page is built, pass restrict_to_choices=False "
+                "or keep the choices stable.",
                 self.label,
                 answer,
                 getattr(self.control, "choices", None),
