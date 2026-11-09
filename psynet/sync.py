@@ -4449,10 +4449,11 @@ def _barrier_scope(group, waiting_participants, barrier_id) -> _BarrierScope:
     members who played that round, and for those behind it (an earlier
     round, or none yet) only while the round is still open, since once it
     has closed they will skip it. It doesn't wait for members who skipped
-    the round or are in a round played after it, nor for members who
-    already passed this visit (see :func:`_members_past_visit`). A visit
-    that belongs to no round waits for every member. Costs at most two
-    queries.
+    the round or are in a round played after it, for members behind it who
+    have finished the round's module (their ``ModuleState``), as when their
+    loop ended earlier, nor for members who already passed this visit (see
+    :func:`_members_past_visit`). A visit that belongs to no round waits for
+    every member. Costs at most two queries.
     """
     members = group.active_participants
     links = _active_links(group)
@@ -4464,7 +4465,8 @@ def _barrier_scope(group, waiting_participants, barrier_id) -> _BarrierScope:
         link = links.get(participant.id)
         round_node_id = None if link is None else link.round_node_id
         if round_node_id is None or round_node_id < node.id:
-            behind.add(participant.id)
+            if not _left_module(participant, node.module_id):
+                behind.add(participant.id)
         elif round_node_id == node.id:
             if not link.skipped_round:
                 played.add(participant.id)
@@ -4482,6 +4484,12 @@ def _barrier_scope(group, waiting_participants, barrier_id) -> _BarrierScope:
     return scope.without(
         _members_past_visit(barrier_id, node, waiting_participants, links)
     )
+
+
+def _left_module(participant, module_id):
+    """Return whether ``participant`` has finished module ``module_id`` and not started it again."""
+    states = participant.module_states.get(module_id, [])
+    return bool(states) and all(state.finished for state in states)
 
 
 def _members_past_visit(barrier_id, node, waiting_participants, links):

@@ -463,6 +463,32 @@ def test_a_closed_round_s_later_barrier_doesnt_wait_for_a_newcomer_yet_to_cue(
 
 
 @in_consents_experiment
+def test_an_open_round_doesnt_wait_for_a_member_who_left_the_module(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    (newcomer,) = _working_participants(exp, 1)
+    module = Module("rounds", InfoPage("Hi", time_estimate=1))
+    for participant in [*cohort, newcomer]:
+        participant.start_module(module)
+    for participant in cohort:
+        _cue_round(exp, participant, 0)
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    pair.add_participant(newcomer)
+    assert _cue_round(exp, newcomer, 0) is None
+    # The newcomer's loop ends here, so they will never cue round 1.
+    newcomer.end_module(module)
+
+    for participant in cohort:
+        _cue_round(exp, participant, 1)
+    submitted = GroupBarrier("submitted", group_type="pair")
+    _arrive(exp, submitted, cohort)
+    assert not any(submitted._participant_is_waiting(p) for p in cohort)
+
+
+@in_consents_experiment
 def test_rounds_named_out_of_order_release_their_barriers(
     in_experiment_directory, db_session
 ):
