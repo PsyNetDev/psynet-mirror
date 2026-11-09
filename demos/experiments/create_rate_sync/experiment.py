@@ -95,17 +95,17 @@ class CreateRateTrial(StaticTrial):
                 group=self.sync_group,
                 participant=participant,
             ),
-            PushButtonControl(choices=self.find_creations(participant)),
+            PushButtonControl(choices=self.find_creations()),
             time_estimate=5,
             time_limit=VOTE_SECONDS,
         )
 
-    def find_creations(self, participant):
+    def find_creations(self):
         """Return the other members' creations in random order."""
         creations = [
             creation
             for participant_id, creation in self.var.creations.items()
-            if participant_id != str(participant.id)
+            if participant_id != str(self.participant_id)
         ]
         random.shuffle(creations)
         return creations
@@ -175,7 +175,8 @@ class Exp(psynet.experiment.Experiment):
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        # What each bot creates and votes for in each trial, and the most popular creation.
+        # What each bot creates and votes for in each trial, and the most
+        # popular creation, or None for a tie.
         trials = [
             (
                 ["chocolate", "pudding", "yoghurt"],
@@ -187,7 +188,7 @@ class Exp(psynet.experiment.Experiment):
                 ["salad", "schnitzel", "salad"],
                 "salad",
             ),
-            (["melon", "shrimp", "soup"], ["soup", "soup", "melon"], "soup"),
+            (["melon", "shrimp", "soup"], ["shrimp", "soup", "melon"], None),
         ]
         advance_past_wait_pages(bots)
 
@@ -202,11 +203,12 @@ class Exp(psynet.experiment.Experiment):
                 bot.take_page(response=vote)
             advance_past_wait_pages(bots)
 
+            note = "It's a tie." if winner is None else f"{winner} got the most votes."
             for i, bot in enumerate(bots):
                 partners = " and ".join(sorted(votes[:i] + votes[i + 1 :]))
                 assert bot.current_page_text == (
                     f"You voted for {votes[i]}, your partners voted for {partners}. "
-                    f"Here is what everyone made. {winner} got the most votes."
+                    f"Here is what everyone made. {note}"
                 )
                 bot.take_page()
             advance_past_wait_pages(bots)

@@ -224,7 +224,7 @@ def your_pick(participant, trial):
     else:
         text = f"You picked {choice}."
     # Ticks appear as the others choose.
-    return GroupPrompt(text, participant=participant, group_type="room")
+    return GroupPrompt(text, participant=participant, group=trial.sync_group)
 
 
 WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + 20

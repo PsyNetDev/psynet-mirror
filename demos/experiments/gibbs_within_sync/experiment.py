@@ -1,3 +1,21 @@
+"""Gibbs sampling with chains shared by groups of three.
+
+A :class:`~psynet.sync.SimpleGrouper` forms groups of three, and the
+:class:`~psynet.trial.gibbs.GibbsTrialMaker` has ``sync_group_type=GROUP``
+and ``chain_type="within"``, so each group follows one chain together: on
+each step every member sets the same colour slider for the same target word,
+and the members' answers are summarized into the next node.
+
+Each slider page shows the group with a :class:`~psynet.group_prompt.GroupPrompt`,
+ticking members off as they submit, and from the second step on a page first
+shows each member's colour and slider value from the step before.
+
+A member who drops out can be replaced: ``join_existing_groups`` with
+``join_criterion=is_group_joinable`` lets a newcomer join while the group's
+leader has more than one trial left, and the newcomer starts at the group's
+next step.
+"""
+
 import random
 from typing import List
 

@@ -83,7 +83,7 @@ maker:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: Module(
-   :end-before: leave_group("cohort")
+   :end-before: leave_group(COHORT)
    :dedent: 8
 
 The trial class sets ``sync_group_type``, so the trials that a pair's
@@ -230,7 +230,7 @@ during the round rather than work it out from the player's groups:
 - ``self.sync_group_outcome`` says how the round ended for this player:
   ``"stayed"`` once the barrier released the pair with them in it, or why
   they left the pair before then, here ``"late"`` for a player taken out for
-  being away (see :ref:`sync-round-outcome` for every value);
+  being away (see :ref:`round outcomes <sync-round-outcome>` for every value);
 - ``self.answer`` is their own decision, ``None`` if they ran out of time;
 - ``self.node.var`` holds what ``on_release`` saved for the pair.
 

@@ -57,6 +57,8 @@ from psynet.timeline import (
 )
 from psynet.trial.main import SyncGroupNode, Trial
 
+COHORT = "cohort"
+PAIR = "pair"
 COHORT_SIZE = 4
 MIN_COHORT_SIZE = 2
 SHORT_START_SECONDS = 60
@@ -77,7 +79,7 @@ def get_timeline():
             time_estimate=5,
         ),
         SimpleGrouper(
-            "cohort",
+            COHORT,
             initial_group_size=COHORT_SIZE,
             quorum=MIN_COHORT_SIZE,
             start_short_after=SHORT_START_SECONDS,
@@ -112,7 +114,7 @@ def get_timeline():
                 expected_repetitions=N_ROUNDS,
             ),
         ),
-        leave_group("cohort"),
+        leave_group(COHORT),
         conditional(
             "ended_early",
             ended_early,
@@ -122,7 +124,7 @@ def get_timeline():
 
 
 def in_pair(participant):
-    return participant.in_sync_group("pair")
+    return participant.in_sync_group(PAIR)
 
 
 def round_status(participant):
@@ -135,7 +137,7 @@ def round_status(participant):
 
 
 def cohort_of(participant):
-    return participant.active_sync_groups.get("cohort")
+    return participant.active_sync_groups.get(COHORT)
 
 
 def lobby_message(seconds_left):
@@ -160,7 +162,7 @@ def ended_early_page(participant):
             f"You sat out {MAX_SIT_OUTS} rounds without a partner, "
             "so the game ended early for you."
         )
-    elif participant.sync_group_removal_reason("cohort") == "late":
+    elif participant.sync_group_removal_reason(COHORT) == "late":
         text = "You were away for too long, so the game ended early for you."
     else:
         text = "Not enough players stayed to keep playing, so the game ended early."
@@ -170,10 +172,8 @@ def ended_early_page(participant):
 def stop_newcomers(participant):
     """Stop latecomers joining the cohort once a player reaches round ``OPEN_UNTIL_ROUND``."""
     cohort = cohort_of(participant)
-    if (
-        cohort is not None
-        and pairing.rounds_played(participant) >= OPEN_UNTIL_ROUND - 1
-    ):
+    next_round = pairing.rounds_played(participant) + 1
+    if cohort is not None and next_round >= OPEN_UNTIL_ROUND:
         cohort.stop_top_ups()
 
 
@@ -209,7 +209,7 @@ def waiting_for_partner(participant, trial):
     return GroupPrompt(
         text,
         participant=participant,
-        group_type="pair",
+        group=trial.sync_group,
         names="anonymous",
         show_progress=False,
     )
@@ -222,8 +222,8 @@ SIT_OUT_TEXT = (
 
 
 pairing = Regrouper(
-    "pair",
-    within="cohort",
+    PAIR,
+    within=COHORT,
     roles=["proposer", "responder"],
     deadline=ROUND_DEADLINE_SECONDS,
     left_over="sit_out",
@@ -243,7 +243,7 @@ OUTCOME_TEXTS = {
 
 
 class OfferTrial(Trial):
-    sync_group_type = "pair"
+    sync_group_type = PAIR
     time_estimate = 15
 
     def show_trial(self, experiment, participant):
@@ -251,7 +251,7 @@ class OfferTrial(Trial):
             self.decision_page(participant),
             GroupBarrier(
                 id_="round_finished",
-                group_type="pair",
+                group_type=PAIR,
                 waiting_message="Waiting for your partner…",
                 waiting_screen=waiting_for_partner,
                 # A player is taken out 30 s after the round starts (long
@@ -306,7 +306,7 @@ class OfferTrial(Trial):
         decisions = {role: t.answer for role, t in by_role.items()}
         offer, minimum = decisions.get("proposer"), decisions.get("responder")
         if len(trials) < 2:
-            away = any(p.sync_group_removal_reason("pair") == "late" for p in left)
+            away = any(p.sync_group_removal_reason(PAIR) == "late" for p in left)
             result = "partner_away" if away else "partner_left"
         elif offer is None or minimum is None:
             result = "timed_out"
@@ -466,10 +466,12 @@ class Exp(psynet.experiment.Experiment):
 
         # The stayer has been in two pairs. The lingerer wasn't failed, and
         # the sit-out didn't count, so those two play a final round together.
+        # The cohort stays closed to latecomers after the stayer has left it.
         for bot in [stayer, *sitting_out, bots[3]]:
             bot.take_page()
         last_pair = [sitting_out[0], bots[3]]
         advance_past_wait_pages(last_pair, timeout=WAIT_TIMEOUT)
+        assert not _cohort_accepts_newcomers(last_pair[0])
         _play(last_pair)
         assert all("The offer of" in bot.current_page_text for bot in last_pair)
         for bot in last_pair:
