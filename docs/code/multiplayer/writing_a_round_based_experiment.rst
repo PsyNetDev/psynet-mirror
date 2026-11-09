@@ -108,11 +108,16 @@ member ends a round before the others have cued it. A trial ends at the
 end of ``show_trial``, so with the barrier outside it (for example in
 ``show_feedback`` or after the cue), a slow member could find the round
 finished by a fast teammate and start or skip to the next one, even in a
-group without newcomers when it passes ``round=``. A round's later
-barriers don't wait for a member who is already in a round the group
-played after it, such as that newcomer: a barrier where a waiting member's
-current trial is on one of the group's rounds waits only for the members
-in that round, in an earlier one, or in none yet.
+group without newcomers when it passes ``round=``.
+
+Each member's group membership records the round they last cued or
+skipped. A barrier that members reach in or after a round (in the trial,
+in its feedback, between iterations or after the loop) waits for the
+members who played that round, and for those who haven't reached it yet
+only while it is still open. It doesn't wait for a member who skipped the
+round or is already in a round the group played after it, such as that
+newcomer. When it releases, it also releases the round's skippers who are
+waiting there, for example at a barrier after the loop.
 
 So a trial has two round counters. ``sync_group_round`` counts the group's
 rounds, and is ``None`` on a trial played without a group. Use it for what

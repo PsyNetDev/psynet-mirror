@@ -4361,29 +4361,37 @@ class SyncGroupNode(GenericTrialNode):
         """The :class:`~psynet.sync.SyncGroup` whose round this node holds."""
         return db.session.get(SyncGroup, self.sync_group_id)
 
-    @staticmethod
-    def _round_is_open(node, group, participant):
-        """Whether ``participant``'s cue should join ``node``, a round of ``group`` they have no trial on yet.
+    def is_open(self, group) -> bool:
+        """Whether this round still takes members of ``group`` who have no trial on it.
 
-        ``node`` is the group's newest round for an automatic cue, or the
-        round a cue's ``round`` names, which may be a past one.
+        It is open until a :class:`~psynet.sync.GroupBarrier` releases the
+        group with all its trials here (``sync_group_released``), or until
+        no current member has an unfinished trial on it.
         """
-        if node.sync_group_released:
+        if self.sync_group_released:
             return False
-        trials = Trial.query.filter_by(node_id=node.id)
-        if trials.filter_by(participant_id=participant.id).first() is not None:
-            return False
-        members = [p.id for p in group.active_participants if p.id != participant.id]
+        members = [p.id for p in group.active_participants]
         if not members:
             return False
         return (
-            trials.filter(
+            Trial.query.filter(
+                Trial.node_id == self.id,
                 Trial.participant_id.in_(members),
                 Trial.complete.is_not(True),
                 Trial.failed.is_not(True),
             ).first()
             is not None
         )
+
+    @staticmethod
+    def _round_is_open(node, group, participant):
+        """Whether ``participant``'s cue should join ``node``, a round of ``group``.
+
+        ``node`` is the group's newest round for an automatic cue, or the
+        round a cue's ``round`` names, which may be a past one.
+        """
+        played = Trial.query.filter_by(node_id=node.id, participant_id=participant.id)
+        return played.first() is None and node.is_open(group)
 
     @classmethod
     def for_cue(cls, group, round_number, participant, experiment, make_definition):
@@ -4401,7 +4409,10 @@ class SyncGroupNode(GenericTrialNode):
         With ``round_number``, it is the group's node for that round, or
         ``None`` if the group finished that round without the participant:
         they have no trial on it and it is no longer open. A new node's
-        definition is ``make_definition(round_number)``.
+        definition is ``make_definition(round_number)``. Either way, the
+        participant's link to ``group`` records the round as the one they
+        last cued or skipped, for :class:`~psynet.sync.GroupBarrier` to tell
+        whom a round's barriers wait for.
 
         The group's members cue their trials in parallel requests, so this
         holds an advisory lock on the module and group until the request
@@ -4419,6 +4430,7 @@ class SyncGroupNode(GenericTrialNode):
             if newest is None:
                 round_number = 0
             elif cls._round_is_open(newest, group, participant):
+                _record_round_position(group, participant, newest)
                 return newest
             else:
                 round_number = newest.sync_group_round + 1
@@ -4432,15 +4444,27 @@ class SyncGroupNode(GenericTrialNode):
                 played = Trial.query.filter_by(
                     node_id=node.id, participant_id=participant.id
                 ).first()
-                if played is None and not cls._round_is_open(node, group, participant):
+                if played is None and not node.is_open(group):
+                    _record_round_position(group, participant, node, skipped=True)
                     return None
+                _record_round_position(group, participant, node)
                 return node
         node = cls(
             module_id, experiment, group, round_number, make_definition(round_number)
         )
         db.session.add(node)
         node.check_on_deploy()
+        db.session.flush()
+        _record_round_position(group, participant, node)
         return node
+
+
+def _record_round_position(group, participant, node, skipped=False):
+    """Store ``node`` as the round of ``group`` that ``participant`` last cued or skipped."""
+    for link in group.participant_links:
+        if link.active and link.participant_id == participant.id:
+            link.round_node_id = node.id
+            link.skipped_round = skipped
 
 
 # SyncGroupNode shares the node table, and SQLAlchemy doesn't accept

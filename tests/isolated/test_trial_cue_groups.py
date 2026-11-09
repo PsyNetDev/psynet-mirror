@@ -398,6 +398,65 @@ def test_an_explicit_round_skips_a_round_the_group_finished_without_the_player(
     assert alone.sync_group_id is None and alone.definition == {"target": 2}
 
 
+def _cue_round(exp, participant, i):
+    PairTrial.cue({"target": i}, round=i)[0].consume(exp, participant)
+    return participant.current_trial
+
+
+@pytest.mark.parametrize("n_rounds", [1, 2])
+@in_consents_experiment
+def test_a_skipper_doesnt_hold_up_the_round_s_later_barrier(
+    in_experiment_directory, db_session, n_rounds
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    (newcomer,) = _working_participants(exp, 1)
+    for i in range(n_rounds):
+        for participant in cohort:
+            _cue_round(exp, participant, i)
+        _arrive(exp, GroupBarrier(f"submitted_{i}", group_type="pair"), cohort)
+    pair.add_participant(newcomer)
+    for i in range(n_rounds):
+        # The newcomer skips every round, the last one too, and cues no other.
+        assert _cue_round(exp, newcomer, i) is None
+
+    revealed = GroupBarrier(
+        "revealed", group_type="pair", on_release=PairTrial.score_pair
+    )
+    _arrive(exp, revealed, cohort)
+    assert not any(revealed._participant_is_waiting(p) for p in cohort)
+    assert sorted(cohort[0].current_trial.node.var.players) == [p.id for p in cohort]
+
+    # A barrier the skipper reaches too, such as after the loop, waits for
+    # the players and then releases everyone.
+    after_loop = GroupBarrier("after_loop", group_type="pair")
+    _arrive(exp, after_loop, [newcomer])
+    assert after_loop._participant_is_waiting(newcomer)
+    _arrive(exp, after_loop, cohort)
+    assert not any(after_loop._participant_is_waiting(p) for p in [newcomer, *cohort])
+
+
+@in_consents_experiment
+def test_a_feedback_barrier_after_the_round_ended_doesnt_wait_for_a_newcomer(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    for participant in cohort:
+        _cue_round(exp, participant, 0)
+    for participant in cohort:
+        participant.current_trial.complete = True
+    # The newcomer hasn't cued yet, and will skip the round, which has ended.
+    (newcomer,) = _working_participants(exp, 1)
+    pair.add_participant(newcomer)
+
+    feedback = GroupBarrier("feedback", group_type="pair")
+    _arrive(exp, feedback, cohort)
+    assert not any(feedback._participant_is_waiting(p) for p in cohort)
+
+
 @in_consents_experiment
 def test_rounds_named_out_of_order_release_their_barriers(
     in_experiment_directory, db_session
