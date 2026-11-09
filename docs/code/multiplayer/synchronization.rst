@@ -812,7 +812,11 @@ settings together decide both fates:
 The last row is rarely what a pair wants, so PsyNet warns about it when the
 experiment loads, and logs a warning when it happens. To let the partner who was on time carry on, set
 ``below_quorum="continue_without_group"``; ``late_action="fail"`` instead ends the
-session for both.
+session for both. With ``late_action="leave_all_groups"`` the same applies to
+the late member's other groups: a cohort without top-ups that one departure
+takes below its quorum fails all its other members, including those in other
+pairs, unless its grouper has ``below_quorum="continue_without_group"``. PsyNet
+warns about this too.
 
 For example, a group of four that may start with two after a minute, and
 whose members carry on when others are slow or leave, combines these
