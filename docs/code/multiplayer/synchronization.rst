@@ -348,8 +348,8 @@ later:
   player's current trial on the round's node. A barrier after the trial,
   between rounds or after the loop also stores it, as long as the trial is
   still the player's current trial and has no outcome yet, but a barrier
-  of a later module before its first cue (where ``node`` is ``None``) does
-  not. Members released with another current trial, such as a newcomer's
+  of a later module, or of a later run of the same module, before its
+  first cue (where ``node`` is ``None``) does not. Members released with another current trial, such as a newcomer's
   practice trial, don't stop it, and get nothing, as do members who
   skipped the round;
 - why the player left the group: a reason of
@@ -366,8 +366,8 @@ ended. Two things differ: leaving before they have ended replaces
 ``"stayed"`` from an earlier barrier of the round, and moving on
 (``"moved_on"``, for example at the next round's regrouper) or finishing
 (``"finished"``) after they have ended stores nothing. Nor does leaving the
-group once the player is in a later module, for example by failing a
-questionnaire there. A partner's outcome is on their trial in
+group once the player is in a later module or a later run of the same
+module, for example by failing a questionnaire there. A partner's outcome is on their trial in
 ``node.all_trials``:
 
 .. code-block:: python
