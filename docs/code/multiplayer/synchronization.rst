@@ -280,9 +280,10 @@ If the group dissolves while some members are waiting at the barrier,
 ``on_dissolve`` runs for them instead, before they leave the group, with the
 same arguments except ``leader`` and ``participant``. ``participants`` are
 then the members waiting at the barrier. Dissolving waits for any member who
-is in the middle of another request, usually a second or two once that
-request finishes, so ``on_dissolve`` is called once, with every member
-waiting at the barrier. A quiz can therefore still score the last question for those who answered it:
+is in the middle of another request, so it may happen a second or two after
+that request finishes, and ``on_dissolve`` is called once, with every member
+waiting at the barrier. A quiz can still score the last question for those
+who answered it:
 
 .. code-block:: python
 

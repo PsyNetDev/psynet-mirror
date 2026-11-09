@@ -271,7 +271,7 @@ def _status_is_timeline_hold(status):
 def _status_is_waiting(status):
     """Return whether cached driver status is a waiting page or a timeline hold."""
     page = (status or {}).get("page") or {}
-    return bool(page.get("is_wait_page") or page.get("is_timeline_hold"))
+    return bool(page.get("is_wait_page")) or _status_is_timeline_hold(status)
 
 
 def _retry_busy_http(send, sleep=time.sleep):

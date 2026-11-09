@@ -1680,10 +1680,9 @@ class GroupBarrier(Barrier):
         the group, so that what they did is not lost. For example, it can score
         the last question for the members who answered it. It takes the same
         arguments as ``on_release`` except ``leader`` and ``participant``:
-        ``participants`` are
-        the members waiting here. The same serialization rules apply.
-        Dissolving waits for any member who is in the middle of another
-        request, so ``on_dissolve`` is called once, with every member
+        ``participants`` are the members waiting here. The same serialization
+        rules apply. Dissolving waits for any member who is in the middle of
+        another request, so ``on_dissolve`` is called once, with every member
         waiting here.
 
     stop_top_ups
@@ -1948,7 +1947,8 @@ class GroupBarrier(Barrier):
             if outcome == "dissolve":
                 # The group can never reach its quorum, so remove everyone
                 # and release whoever is waiting here, after the grouper's
-                # below_quorum has failed or released each of them.
+                # below_quorum has failed or released each of them (or
+                # nobody yet, if a member is busy; see _dissolve).
                 group.accepts_top_ups = False
                 participants_to_release.extend(
                     participant
