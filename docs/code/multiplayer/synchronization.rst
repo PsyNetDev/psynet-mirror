@@ -54,7 +54,10 @@ the grouper has a ``waiting_screen`` (see below).
     ``join_existing_groups=True``. The limit holds when several participants
     try to join at once: joins to one group take turns, and a participant
     who finds a group busy tries the next suitable group, or waits at the
-    grouper and tries again shortly.
+    grouper and tries again shortly. If every suitable group is busy when a
+    newcomer arrives, their own request waits up to a second for the best
+    one before falling back to the grouper; joins made by a barrier check
+    never wait.
 
 ``join_criterion``
     A function of ``group`` and ``participant`` that returns whether the

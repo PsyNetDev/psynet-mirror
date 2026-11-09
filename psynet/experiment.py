@@ -7573,9 +7573,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         Each attempt tries the extra-connection instance claim, then waits
         only if ``wait`` is true and another worker already holds it. Waiter
-        rows stay ``NOWAIT``. A blocking claim wait that times out raises
-        (HTTP 503). The second attempt does not wait for a partner transaction
-        to commit; it only retries waiter ``NOWAIT``. Reinstall
+        rows stay ``NOWAIT`` and top-up group rows ``SKIP LOCKED``, so neither
+        waits. A blocking claim wait that times out raises (HTTP 503). The
+        second attempt does not wait for a partner transaction to commit; it
+        only retries waiter ``NOWAIT``. Reinstall
         ``lock_timeout`` before that retry because ``SET LOCAL`` ends at the
         check commit. If those misses continue, the caller first-paints the
         live cursor. Partners catch up on overlay wake; the 0.5s poller skips

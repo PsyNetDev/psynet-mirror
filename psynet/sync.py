@@ -65,9 +65,10 @@ this module. That loop:
   connection, leaving definition and instance metadata available to arrival
   requests. That extra transaction stays open until this poller's
   skip-after-commit finishes.
-- Locks waiters with ``FOR UPDATE NOWAIT``. If any waiter is already locked
-  (for example by ``POST /response``), it skips that barrier this tick instead
-  of blocking the poller.
+- Locks waiters with ``FOR UPDATE NOWAIT`` and groups a waiter would top up
+  with ``SKIP LOCKED``. If a waiter is already locked (for example by
+  ``POST /response``), it skips that barrier this tick, and a locked top-up
+  group is passed over for the next candidate, instead of blocking the poller.
 - Evaluates the barrier's release hooks in an isolated transaction, then
   skips waiters **this poller** released, one row at a time, after that commit.
 - Logs and skips failures per barrier so one bad barrier does not stall others.
@@ -86,8 +87,8 @@ short coordination transaction before rendering. That lets a ``Grouper`` form
 groups and a ``GroupBarrier`` release the group without waiting for the poller.
 Last-arrival does not skip partner timeline cursors after that commit; partners
 leave on overlay wake (or this poller, if it won the release). Waiter rows stay
-``NOWAIT`` during the check so a locked partner cannot stall that request for
-``lock_timeout``.
+``NOWAIT`` and top-up group rows ``SKIP LOCKED`` during the check so a locked
+partner or group cannot stall that request for ``lock_timeout``.
 
 Callable attributes on barriers (e.g., ``on_release``) persist through
 :mod:`psynet.barrier_spec` so each ``BarrierInstance`` keeps stable release
@@ -2373,8 +2374,7 @@ class GroupBarrier(Barrier):
     def _dissolve_after_late_removal(self, group, late):
         """Dissolve ``group`` if losing ``late`` left it below quorum, warning if that may fail the rest."""
         had_others = group.n_active_participants > 0
-        if hasattr(group, "dissolve_if_below_quorum"):
-            group.dissolve_if_below_quorum()
+        group.dissolve_if_below_quorum()
         dissolved = group.n_active_participants == 0 or group.dissolving
         if (
             self.late_action != "fail"
@@ -4497,6 +4497,9 @@ class SyncGroup(SQLBase, SQLMixin):
             ),
             key=lambda participant: participant.id,
         )
+
+    def dissolve_if_below_quorum(self):
+        """Dissolve the group if it fell below its quorum; groups without a quorum never do."""
 
     def _dissolve(self):
         """Remove every active member at once, failing them if the group says so.

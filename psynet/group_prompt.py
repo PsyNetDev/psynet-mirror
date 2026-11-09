@@ -400,7 +400,7 @@ class GroupPrompt(Prompt):
                 (
                     stopped_at is not None
                     and link.removal_time is not None
-                    and link.removal_time < stopped_at
+                    and link.removal_time <= stopped_at
                 )
                 or member.id in active_ids
                 or member.id == self.participant.id
