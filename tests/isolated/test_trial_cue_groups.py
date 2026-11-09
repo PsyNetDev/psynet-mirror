@@ -742,6 +742,7 @@ def _late_at_barrier(late_action):
         barrier.check_waiting_participants([stayer])
         return leaver
 
+    remove.fails = late_action == "fail"
     return remove
 
 
@@ -762,35 +763,47 @@ def _dissolved_before_the_barrier(exp, group, stayer, leaver):
     return stayer
 
 
-def _late_after_the_trial_s_pages(exp, group, stayer, leaver):
+def _late_after_complete(exp, group, stayer, leaver):
     leaver.current_trial.complete = True
     group.remove_participant(leaver, reason="late")
     return leaver
 
 
 @pytest.mark.parametrize(
-    "remove, outcome",
+    "remove, outcome, n",
     [
-        (_late_at_barrier("fail"), "late"),
-        (_late_at_barrier("leave_group"), "late"),
-        (_waited_too_long, "waited_too_long"),
-        (_removed_without_reason, "removed"),
-        (_dissolved_before_the_barrier, "group_dissolved"),
-        (_late_after_the_trial_s_pages, "late"),
+        (_late_at_barrier("fail"), "late", 2),
+        (_late_at_barrier("fail"), "late", 3),
+        (_late_at_barrier("leave_group"), "late", 2),
+        (_waited_too_long, "waited_too_long", 2),
+        (_removed_without_reason, "removed", 2),
+        (_dissolved_before_the_barrier, "group_dissolved", 2),
+        (_late_after_complete, "late", 2),
     ],
-    ids=["fail", "leave_group", "max_wait", "no_reason", "dissolved", "complete"],
+    ids=[
+        "fail",
+        "fail_two_of_a_trio",
+        "leave_group",
+        "max_wait",
+        "no_reason",
+        "dissolved",
+        "complete",
+    ],
 )
 @in_consents_experiment
 def test_the_outcome_records_why_a_player_left_the_round(
-    in_experiment_directory, db_session, remove, outcome
+    in_experiment_directory, db_session, remove, outcome, n
 ):
     exp = get_experiment()
-    (stayer, leaver), group = _sync_group_of(exp, db_session, 2)
+    members, group = _sync_group_of(exp, db_session, n)
+    stayer, leaver = members[0], members[-1]
     group.below_quorum = "continue_without_group"
-    for participant in (stayer, leaver):
+    for participant in members:
         TeamTrial.cue()[0].consume(exp, participant)
     db.session.commit()
 
     removed = remove(exp, group, stayer, leaver)
     db.session.commit()
     assert removed.current_trial.sync_group_outcome == outcome
+    if getattr(remove, "fails", False):
+        assert removed.failed and removed.sync_group_removal_reason("main") == "late"
