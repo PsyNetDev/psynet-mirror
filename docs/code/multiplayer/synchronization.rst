@@ -631,8 +631,8 @@ decisions each one needs. These settings carry them out:
   the next (see `Rounds with changing groups`_). One who stops responding
   partway through a round is removed from their group by
   ``late_action="leave_group"``, but stays in the ``within`` group, so the
-  next split waits for them until its deadline; :ref:`rounds-slow-players`
-  shows how to take them out of it too.
+  next split waits for them until its deadline; ``late_action="leave_all_groups"``
+  takes them out of both (see :ref:`rounds-slow-players`).
 
 Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
 
@@ -675,8 +675,9 @@ the maximum waiting time:
     :class:`~psynet.sync.GroupBarrier` yet: a member who hasn't reached the
     barrier within ``late_after`` seconds of the group's previous barrier
     pass, or of joining the group if that is later, is late, and is handled
-    by ``late_action``: ``"fail"`` (default) fails them, and ``"leave_group"``
-    removes them from the group. Members who arrive on time wait for the
+    by ``late_action``: ``"fail"`` (default) fails them, ``"leave_group"``
+    removes them from the group, and ``"leave_all_groups"`` removes them from
+    all their groups, such as the cohort a pair was formed in. Members who arrive on time wait for the
     others until they arrive or are late, so they need no ``max_wait_time``
     of their own.
 
@@ -816,7 +817,7 @@ settings together decide both fates:
    * - waited too long, ``max_wait_action="leave_group"``
      - leaver carries on alone, absent partner failed
      - both carry on alone
-   * - was late, ``late_action="leave_group"``
+   * - was late, ``late_action="leave_group"`` or ``"leave_all_groups"``
      - late member carries on alone, partner who was on time failed
      - both carry on alone
 

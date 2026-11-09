@@ -251,8 +251,10 @@ class OfferTrial(Trial):
                 # A player is taken out 30 s after the round starts (long
                 # enough for a background tab to notice), but not while their
                 # answer to the timed decision page may still be on its way.
+                # They have probably closed their page, so they leave the
+                # cohort too, and the next split doesn't wait for them.
                 late_after=30,
-                late_action="leave_group",
+                late_action="leave_all_groups",
                 on_release=self.score_pair,
             ),
         )
@@ -301,13 +303,7 @@ class OfferTrial(Trial):
         decisions = {role: t.participant.var.decision for role, t in by_role.items()}
         offer, minimum = decisions.get("proposer"), decisions.get("responder")
         if len(trials) < 2:
-            away = [p for p in left if p.sync_group_removal_reason("pair") == "late"]
-            # An away partner has probably closed their page, so they leave the
-            # cohort too, and the rest of it doesn't wait for them.
-            for partner in away:
-                cohort = cohort_of(partner)
-                if cohort is not None:
-                    cohort.remove_participant(partner, reason="late")
+            away = any(p.sync_group_removal_reason("pair") == "late" for p in left)
             result = "partner_away" if away else "partner_left"
         elif offer is None or minimum is None:
             result = "timed_out"
