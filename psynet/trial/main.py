@@ -389,6 +389,21 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             "no trials, so the followers wait too and no number is used up."
         ),
     )
+    sync_group_outcome = Column(
+        String,
+        doc=(
+            "How the group's round ended for this player, for a trial made by "
+            ':meth:`Trial.cue` on a :class:`SyncGroupNode`: ``"released"`` '
+            "once a :class:`~psynet.sync.GroupBarrier` releases the group with "
+            "the trial on the round's node, or why the player left the group "
+            "before the trial's pages (``show_trial``) ended, one of the "
+            "reasons of :meth:`~psynet.sync.SyncGroup.remove_participant`, "
+            'such as ``"late"``, ``"left_experiment"`` or '
+            '``"group_dissolved"``, or ``"removed"`` without a reason. '
+            "Leaving replaces a release by an earlier barrier of the round. "
+            "``None`` while nothing has happened yet, and for ungrouped trials."
+        ),
+    )
     definition = Column(PythonObject)
 
     complete = Column(
@@ -1210,7 +1225,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @classmethod
     def cue(
         cls,
-        definition,
+        definition=None,
         assets=None,
         on_trial_created=None,
         creation_context=None,
@@ -1252,6 +1267,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           ``participant.in_sync_group(...)`` if its pages need the group.
           Once started, the trial runs to its end even if they leave the
           group, so :meth:`show_feedback` can explain every outcome.
+        - :attr:`sync_group_outcome` records how the round ended for the
+          player: ``"released"`` by a barrier, or why they left the group
+          before the trial's pages ended. A partner's is on their trial in
+          ``self.node.all_trials``.
 
         Parameters
         ----------
@@ -1269,6 +1288,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             called then, with ``participant`` set to that first member, and a
             later cue with a different ``dict`` raises a ``ValueError``.
             Otherwise a function is called for each trial, with ``group=None``.
+            Defaults to ``{}``, for a trial whose pages need no content from
+            it, for example ``PickTrial.cue(round=i)``.
 
         assets :
             Optional dictionary of assets to add to the trial (in addition to any provided by
@@ -1357,6 +1378,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         """
         from psynet.trial.chain import ChainNode
 
+        if definition is None:
+            definition = {}
         if creation_context is not None and on_trial_created is None:
             raise ValueError("creation_context requires an on_trial_created callback.")
         if cls.sync_group_type is None and round is not None:

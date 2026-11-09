@@ -137,6 +137,51 @@ def test_group_barrier_passes_the_members_trials_to_on_release(
 
 
 @in_consents_experiment
+def test_each_trial_records_how_its_round_ended_for_the_player(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    stayer, leaver = cohort
+    pair = stayer.active_sync_groups["pair"]
+    for participant in cohort:
+        PairTrial.cue(round=0)[0].consume(exp, participant)
+    _arrive(exp, GroupBarrier("offered", group_type="pair"), cohort)
+    # Leaving before the trial's pages end replaces an earlier barrier's release.
+    pair.remove_participant(leaver, reason="late")
+    _arrive(exp, GroupBarrier("answered", group_type="pair"), [stayer])
+    assert [p.current_trial.sync_group_outcome for p in cohort] == ["released", "late"]
+
+    stayer.current_trial.complete = True
+    pair.remove_participant(stayer, reason="finished")
+    assert stayer.current_trial.sync_group_outcome == "released"
+    PairTrial.cue()[0].consume(exp, stayer)
+    assert stayer.current_trial.definition == {}
+    assert stayer.current_trial.sync_group_outcome is None
+
+
+@in_consents_experiment
+def test_a_waiting_screen_gets_the_trial_and_its_node(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    PairTrial.cue()[0].consume(exp, cohort[0])
+    hold = GroupBarrier(
+        "answered", group_type="pair", waiting_screen=_trial_and_node_screen
+    ).waiting_logic
+
+    trial = cohort[0].current_trial
+    screen = hold.waiting_screen_page(cohort[0])
+    assert screen.prompt.text == f"Trial {trial.id} on node {trial.node.id}"
+    assert hold.waiting_screen_page(cohort[1]).prompt.text == "Trial None on node None"
+
+
+def _trial_and_node_screen(trial, node):
+    return f"Trial {getattr(trial, 'id', None)} on node {getattr(node, 'id', None)}"
+
+
+@in_consents_experiment
 def test_only_ungrouped_trials_check_their_time_credit(
     in_experiment_directory, db_session, caplog
 ):
@@ -681,3 +726,7 @@ def test_on_dissolve_gets_the_waiting_members_trials_and_node(
     ((trials, node),) = _dissolved
     assert [t.participant_id for t in trials] == [waiter.id]
     assert node is trials[0].node and isinstance(node, SyncGroupNode)
+    assert [p.current_trial.sync_group_outcome for p in (waiter, quitter)] == [
+        "group_dissolved",
+        "left_experiment",
+    ]

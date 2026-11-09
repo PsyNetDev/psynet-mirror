@@ -150,7 +150,7 @@ class PickTrial(Trial):
 
     @classmethod
     def score_room(cls, trials: List["PickTrial"], node: SyncGroupNode):
-        """Save the room's choices and winning number on the node, and whether each player won on their trial.
+        """Save the room's choices, result and winning number on the node, and whether each player won on their trial.
 
         Players who ran out of time have no choice and miss the round. Nobody wins when
         only one player chose.
@@ -159,7 +159,14 @@ class PickTrial(Trial):
             str(t.participant_id): t.answer for t in trials if t.answer is not None
         }
         winner = lowest_unique(choices) if len(choices) > 1 else None
+        if len(choices) < 2:
+            result = "one_choice"
+        elif winner is None:
+            result = "no_unique_number"
+        else:
+            result = "won"
         node.var.choices = choices
+        node.var.result = result
         node.var.winning_number = winner
         for trial in trials:
             trial.var.won = winner is not None and trial.answer == winner
@@ -171,21 +178,22 @@ class PickTrial(Trial):
         return WIN_BONUS * score
 
     def show_feedback(self, experiment, participant):
-        if not in_room(participant):
+        if self.sync_group_outcome == "late":
             # Taken out of the room mid-round by the barrier's late_after.
             return InfoPage(AWAY_TEXT, time_estimate=5)
         if self.answer is None:
             return InfoPage(
                 "You ran out of time, so you missed this round.", time_estimate=5
             )
-        choices, winner = self.node.var.choices, self.node.var.winning_number
-        picks = sorted(choices.values())
-        if len(picks) == 1:
+        result, winner = self.node.var.result, self.node.var.winning_number
+        if result == "one_choice":
             return InfoPage(
                 "Nobody else in your room picked a number in time, so nobody won this round.",
                 time_estimate=5,
             )
-        if winner is None:
+        choices = self.node.var.choices
+        picks = sorted(choices.values())
+        if result == "no_unique_number":
             outcome = "Nobody picked a unique number, so nobody won."
         elif self.var.won:
             outcome = f"You won with {winner}! You earn ${WIN_BONUS:.2f}."
@@ -208,9 +216,9 @@ class PickTrial(Trial):
         )
 
 
-def your_pick(participant):
+def your_pick(participant, trial):
     """Replace the number buttons with the player's pick while the rest of the room chooses."""
-    choice = participant.current_trial.answer
+    choice = trial.answer
     if choice is None:
         text = "You ran out of time, so you'll miss this round."
     else:
@@ -259,6 +267,9 @@ class Exp(psynet.experiment.Experiment):
                     # False while the trial runs or if the player left it; the
                     # choice is then the answer so far.
                     "complete": t.complete,
+                    # "released" if the player stayed to the end of the round,
+                    # "late" if they were taken out for being away.
+                    "outcome": t.sync_group_outcome,
                     "choice": t.answer,
                     # None if the player was away too long to play the round.
                     "won": t.var.get("won"),
@@ -271,6 +282,8 @@ class Exp(psynet.experiment.Experiment):
                     "room_id": n.sync_group_id,
                     "node_id": n.id,
                     "choices": n.var.get("choices"),
+                    # "won", "no_unique_number" or "one_choice".
+                    "result": n.var.get("result"),
                     "winning_number": n.var.get("winning_number"),
                 }
                 for n in rooms.order_by(SyncGroupNode.id)
@@ -311,8 +324,10 @@ class Exp(psynet.experiment.Experiment):
 
         data = self.get_basic_data()
         assert [
-            (sorted(r["choices"].values()), r["winning_number"]) for r in data["room"]
-        ] == [([1, 2], 1), ([3, 3, 4], 4)], data["room"]
+            (sorted(r["choices"].values()), r["result"], r["winning_number"])
+            for r in data["room"]
+        ] == [([1, 2], "won", 1), ([3, 3, 4], "won", 4)], data["room"]
+        assert {r["outcome"] for r in data["player_round"]} == {"released"}
         # Players cue their trials in their own order, so compare sorted rows.
         assert sorted(
             ((r["round"], r["choice"], r["bonus"]) for r in data["player_round"]),

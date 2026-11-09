@@ -197,9 +197,8 @@ def pairing_up(participant):
     return "Getting the next round ready."
 
 
-def waiting_for_partner(participant):
+def waiting_for_partner(participant, trial):
     """Replace the decision buttons with the player's choice while their partner decides."""
-    trial = participant.current_trial
     if trial.answer is None:
         text = "You ran out of time, so nobody will be paid this round."
     elif trial.sync_group_role == "proposer":
@@ -328,24 +327,26 @@ class OfferTrial(Trial):
         for role, trial in by_role.items():
             trial.var.coins = coins.get(role, 0)
 
-    def outcome(self, participant):
+    def outcome(self):
         """Return the key in ``OUTCOME_TEXTS`` that describes the round for this player."""
-        if not in_pair(participant):
-            # Removed from the pair for being away too long.
+        if self.sync_group_outcome == "late":
             return "away"
         if self.node.var.result == "timed_out" and self.answer is None:
             return "own_time_out"
         return self.node.var.result
 
     def show_feedback(self, experiment, participant):
-        outcome = self.outcome(participant)
-        if outcome not in ("accepted", "rejected"):
-            return InfoPage(OUTCOME_TEXTS[outcome], time_estimate=5)
+        outcome = self.outcome()
         pair = self.node.var
+        text = OUTCOME_TEXTS[outcome].format(
+            offer=pair.get("offer"), coins=self.var.get("coins")
+        )
+        if outcome not in ("accepted", "rejected"):
+            return InfoPage(text, time_estimate=5)
         return ModularPage(
             "outcome",
             GroupPrompt(
-                OUTCOME_TEXTS[outcome].format(offer=pair.offer, coins=self.var.coins),
+                text,
                 participant=participant,
                 group=self.sync_group,
                 answers={
@@ -397,6 +398,9 @@ class Exp(psynet.experiment.Experiment):
                     # False while the trial runs or if the player left it; the
                     # decision is then the answer so far.
                     "complete": t.complete,
+                    # "released" if the player stayed to the end of the round,
+                    # "late" if they were taken out for being away.
+                    "outcome": t.sync_group_outcome,
                     # None if the player was away and never sent a decision.
                     "decision": t.answer,
                     "coins": t.var.get("coins"),
@@ -484,8 +488,11 @@ class Exp(psynet.experiment.Experiment):
         assert [(p["offer"], p["minimum"], p["result"]) for p in pairs] == [
             (5, 3, "accepted")
         ] * 3, pairs
+        away_rows = [r for r in data["player_round"] if r["pair_id"] in away]
+        assert sorted(r["outcome"] for r in away_rows) == ["late", "released"]
         rows = [r for r in data["player_round"] if r["pair_id"] not in away]
         assert len(rows) == 6
+        assert all(row["outcome"] == "released" for row in rows), rows
         assert all(
             (row["decision"], row["coins"])
             == {"proposer": (5, 5), "responder": (3, 5)}[row["role"]]
