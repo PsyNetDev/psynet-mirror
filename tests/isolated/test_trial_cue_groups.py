@@ -400,6 +400,33 @@ def test_each_module_numbers_a_group_s_rounds_from_0(
     ]
 
 
+@in_consents_experiment
+def test_a_barrier_before_a_module_s_first_cue_gets_no_round(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    for participant in cohort:
+        participant.start_module(Module("first", InfoPage("Hi", time_estimate=1)))
+        PairTrial.cue({})[0].consume(exp, participant)
+    first_trials = [p.current_trial for p in cohort]
+    for participant in cohort:
+        participant.start_module(Module("second", InfoPage("Hi", time_estimate=1)))
+    _released.clear()
+    barrier = GroupBarrier(
+        "second_start", group_type="pair", on_release=PairTrial.record_release
+    )
+    _arrive(exp, barrier, cohort)
+
+    ((participants, trials, node),) = _released
+    assert node is None
+    assert {p.id: t for p, t in zip(participants, trials)} == {
+        t.participant_id: t for t in first_trials
+    }
+    assert [t.sync_group_outcome for t in first_trials] == [None, None]
+    assert not first_trials[0].node.sync_group_closed
+
+
 class VoteTrial(Trial):
     time_estimate = 1
     sync_group_type = "pair"
