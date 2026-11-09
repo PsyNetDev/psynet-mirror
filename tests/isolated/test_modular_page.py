@@ -505,6 +505,8 @@ def test_option_controls_save_the_choice_the_browser_names(control, raw_answer, 
         ("abc", "abc"),
         ("", ""),
         ("nan", "nan"),
+        ("inf", "inf"),
+        ("12345678901234567890", 12345678901234567890),
     ],
 )
 def test_number_control_saves_numbers(raw_answer, answer):
@@ -514,6 +516,17 @@ def test_number_control_saves_numbers(raw_answer, answer):
     assert saved == answer and type(saved) is type(answer)
     failed = control.validate(SimpleNamespace(answer=saved)) is not None
     assert failed == isinstance(answer, str)
+
+
+@pytest.mark.parametrize(
+    "answer, valid",
+    [(np.int64(5), True), (np.float64(2.5), True), ("25", False), (True, False)]
+    + [(float("nan"), False), (float("inf"), False)],
+)
+def test_number_control_validates_bot_answers(answer, valid):
+    """Bot answers skip ``format_answer``, so they must already be finite numbers."""
+    failed = NumberControl().validate(SimpleNamespace(answer=answer)) is not None
+    assert failed != valid
 
 
 @pytest.mark.parametrize(
