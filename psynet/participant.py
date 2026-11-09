@@ -412,11 +412,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         providing detailed information about the last response submitted
         by the participant. This is a more detailed version of ``answer``.
 
-    branch_log : list
-        Stores the conditional branches that the participant has taken
-        through the experiment.
-        Should not be modified directly.
-
     failure_tags : list
         Stores tags that identify the reason that the participant has failed
         the experiment (if any). For example, if a participant fails
@@ -481,7 +476,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     answer = Column(PythonObject)
     answer_accumulation_depth = Column(Integer)
     sequences = Column(PythonList)
-    branch_log = Column(PythonObject)
     for_loops = Column(PythonObject)
     failure_tags = Column(PythonList)
 
@@ -860,7 +854,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.issued_completion_code_type = None
         self.base_payment = experiment.base_payment
         self.client_ip_address = None
-        self.branch_log = []
         self.total_wait_page_time = 0.0
         self.pending_redirect = None
 
@@ -1030,25 +1023,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
             .order_by(desc(Response.id))
             .first()
         )
-
-    def append_branch_log(self, entry: str):
-        # We need to create a new list otherwise the change may not be recognized
-        # by SQLAlchemy(?)
-        if (
-            not isinstance(entry, list)
-            or len(entry) != 2
-            or not isinstance(entry[0], str)
-        ):
-            raise ValueError(
-                f"Log entry must be a list of length 2 where the first element is a string (received {entry})."
-            )
-        if json.loads(json.dumps(entry)) != entry:
-            raise ValueError(
-                f"The provided log entry cannot be accurately serialised to JSON (received {entry}). "
-                + "Please simplify the log entry (this is typically determined by the output type of the user-provided function "
-                + "in switch() or conditional())."
-            )
-        self.branch_log = self.branch_log + [entry]
 
     def append_failure_tags(self, *tags):
         """

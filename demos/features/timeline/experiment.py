@@ -91,7 +91,6 @@ def get_timeline():
             save_answer="target_number",
         ),
         for_loop(
-            label="counting",
             iterate_over=lambda participant: list(
                 range(1, participant.var.target_number + 1)
             ),

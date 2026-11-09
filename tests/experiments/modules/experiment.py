@@ -25,7 +25,6 @@ class Exp(psynet.experiment.Experiment):
         Module(
             "module_a",
             for_loop(
-                label="module_a_loop",
                 iterate_over=lambda: ["cat", "dog"],
                 logic=lambda animal: join(
                     CodeBlock(

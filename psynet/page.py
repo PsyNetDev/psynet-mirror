@@ -373,7 +373,6 @@ def wait_while(
                 entry_condition,
                 logic_if_true=hold_logic,
                 fix_time_credit=fix_time_credit,
-                log_chosen_branch=False,
                 time_estimate=expected_wait,
             )
         )

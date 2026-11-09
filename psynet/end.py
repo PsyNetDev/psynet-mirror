@@ -329,7 +329,6 @@ class RejectedConsentLogic(UnsuccessfulEndLogic):
         return conditional(
             self.has_rejected_consent_to_report,
             AsyncCodeBlock(self.report_rejected_consent, wait=False),
-            log_chosen_branch=False,
         )
 
     @staticmethod

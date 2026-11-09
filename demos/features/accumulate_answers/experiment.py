@@ -120,7 +120,6 @@ part_3_logic = PageMaker(
             "I'm going to ask you the same question 3 times in a row.", time_estimate=5
         ),
         for_loop(
-            label="Repeat 3 times",
             iterate_over=lambda: range(3),
             logic=lambda _: animal_page(
                 "dog", time_estimate=5, bot_response="Very much"

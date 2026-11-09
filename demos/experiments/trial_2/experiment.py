@@ -52,7 +52,6 @@ class RateTrial(Trial):
 audio_ratings = Module(
     "audio_ratings",
     for_loop(
-        label="Deliver 5 random samples from the stimulus set",
         iterate_over=lambda nodes: random.sample(nodes, 5),
         logic=lambda node: RateTrial.cue(node),
         time_estimate_per_iteration=RateTrial.time_estimate,

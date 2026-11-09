@@ -72,4 +72,4 @@ When using browser automation, launch a dedicated browser subagent for dashboard
 })();
 ```
 
-Important fields for the Prolific manual test are: `id`, `worker_id`, `assignment_id`, `hit_id`, `failed`, `failed_reason`, `status`, `complete`, `branch_log`, `failure_tags`, `base_payment`, `performance_reward`, `progress`, and `time_credit`.
+Important fields for the Prolific manual test are: `id`, `worker_id`, `assignment_id`, `hit_id`, `failed`, `failed_reason`, `status`, `complete`, `failure_tags`, `base_payment`, `performance_reward`, `progress`, and `time_credit`.

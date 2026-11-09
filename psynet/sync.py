@@ -972,7 +972,6 @@ class Barrier(EltCollection):
                 condition=lambda participant: participant.failed,
                 logic_if_true=UnsuccessfulEndPage(),
                 time_estimate=0,
-                log_chosen_branch=False,
             ),
         )
         for elt in elts:
@@ -1523,7 +1522,6 @@ class GroupBarrier(Barrier):
                 self.group_type in participant.active_sync_groups
             ),
             logic_if_true=elts,
-            log_chosen_branch=False,
         )
 
     def waiting_pool_group(self, participant) -> "SyncGroup":

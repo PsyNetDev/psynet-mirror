@@ -11,7 +11,6 @@ class Exp(psynet.experiment.Experiment):
         trial_maker_1.custom(
             trial_maker_2.custom(
                 for_loop(
-                    label="loop over pairs of trials",
                     iterate_over=lambda: range(3),
                     logic=lambda _: join(
                         trial_maker_1.cue_trial(),

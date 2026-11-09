@@ -1412,11 +1412,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                         time_estimate=0,
                     ),
                     fix_time_credit=False,
-                    log_chosen_branch=False,
                 ),
             ),
             fix_time_credit=False,
-            log_chosen_branch=False,
         )
 
     @property
@@ -2450,7 +2448,6 @@ class TrialMaker(Module):
                 False: self.check_fail_logic(),
             },
             fix_time_credit=False,
-            log_chosen_branch=False,
         )
 
         if type == "end" and self.end_performance_check_waits:
@@ -2605,7 +2602,6 @@ class TrialMaker(Module):
                     lambda: logger.debug("No trial found, skipping")
                 ),
                 fix_time_credit=False,
-                log_chosen_branch=False,
             ),
         )
 

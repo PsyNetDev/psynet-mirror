@@ -94,7 +94,6 @@ def test_while_loop_budget_is_fixed_and_a_cleared_condition_exits_normally(
             max_loop_time=budget,
             fail_on_timeout=False,
             on_timeout=lambda participant: participant.var.set("timed_out", True),
-            label="bounded_wait",
         ),
         InfoPage("Continue", time_estimate=0),
     )
@@ -139,7 +138,6 @@ def test_while_loop_timer_restarts_after_extend_while_clears(
             max_loop_time=10,
             fail_on_timeout=False,
             extend_while=lambda: extending,
-            label="extended_wait",
         ),
         InfoPage("Continue", time_estimate=0),
     )

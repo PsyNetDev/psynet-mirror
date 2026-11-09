@@ -3256,54 +3256,84 @@ class EndWhile(NullElt):
         self.label = label
 
 
-def _while_loop_state_key(label, key):
-    """Return the bug-compatible participant-var key for while-loop state."""
-    # Keep the duplicated suffix so in-progress participants and existing
-    # experiment code continue to resolve the same stored keys.
-    prefix = f"__{label}__{key}"
-    return f"{prefix}__{key}"
+def _while_loop_state_key(loop_key, key):
+    """Return the participant-var key under which a while loop stores ``key``."""
+    return f"__{loop_key}__{key}"
 
 
-def _get_while_loop_start_time(participant, label):
+def _get_while_loop_start_time(participant, loop_key):
     """Return the authoritative server start time for a while loop."""
     value = participant.var.get(
-        _while_loop_state_key(label, "loop_start_time"), default=None
+        _while_loop_state_key(loop_key, "loop_start_time"), default=None
     )
     return None if value is None else unserialise_datetime(value)
 
 
-def _while_loop_timed_out(participant, label, max_loop_time, now=None):
+def _while_loop_timed_out(participant, loop_key, max_loop_time, now=None):
     """Return whether a while loop has reached its maximum duration."""
     if max_loop_time is None:
         return False
     if now is None:
         now = datetime.now()
-    started_at = _get_while_loop_start_time(participant, label)
+    started_at = _get_while_loop_start_time(participant, loop_key)
     return (
         started_at is not None and (now - started_at).total_seconds() >= max_loop_time
     )
 
 
-def _accepts_legacy_label(func):
-    """Accept the deprecated call form ``func(label, ...)``, warning the caller."""
+def _elt_key(elt, prefix):
+    """Return a participant-state key for ``elt`` based on its timeline position.
 
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        if args and isinstance(args[0], str):
-            if "label" in kwargs:
-                raise TypeError(f"{func.__name__}() got two labels.")
+    Elements get positional ids when the timeline is built, and elements made by
+    a page maker get its id plus their index, so the key stays the same each
+    time the page maker rebuilds them.
+    """
+    return prefix + "_" + "_".join(str(part) for part in elt.id)
+
+
+def _accepts_deprecated_labels(ignore=()):
+    """Let a timeline construct accept deprecated label arguments, warning the caller.
+
+    A string first argument, the old positional label, is passed on as
+    ``label=``. Keyword arguments named in ``ignore`` (possibly including
+    ``label``) are dropped.
+    """
+
+    def decorator(func):
+        name = func.__name__
+
+        def warn(message):
             warnings.warn(
-                f"Passing a label as the first argument of {func.__name__}() is deprecated "
-                "and will stop working in a future PsyNet version. "
-                f"Drop the label, or pass it as a keyword: {func.__name__}(..., label=...).",
+                f"{message} This will stop working in a future PsyNet version.",
                 FutureWarning,
-                stacklevel=2,
+                stacklevel=3,
             )
-            kwargs["label"] = args[0]
-            args = args[1:]
-        return func(*args, **kwargs)
 
-    return wrapper
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if args and isinstance(args[0], str):
+                if "label" in kwargs:
+                    raise TypeError(f"{name}() got two labels.")
+                if "label" in ignore:
+                    warn(
+                        f"{name}() no longer takes a label; delete the first argument."
+                    )
+                else:
+                    kwargs["label"] = args[0]
+                    warn(
+                        f"Passing a label as the first argument of {name}() is deprecated; "
+                        f"delete it, or pass it as {name}(..., label=...)."
+                    )
+                args = args[1:]
+            for arg in ignore:
+                if arg in kwargs:
+                    del kwargs[arg]
+                    warn(f"{name}() no longer uses {arg}; delete it.")
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 def _label_from_function(function, default):
@@ -3314,7 +3344,7 @@ def _label_from_function(function, default):
     return name
 
 
-@_accepts_legacy_label
+@_accepts_deprecated_labels()
 def while_loop(
     condition: Callable,
     logic,
@@ -3374,10 +3404,8 @@ def while_loop(
         time out, and ``max_loop_time`` restarts once it returns ``False``.
 
     label:
-        Name of the loop, used in logs and failure tags. Required when
-        ``max_loop_time`` is set, because the loop's start time is stored
-        under this name; loops nested in each other need different labels.
-        Otherwise defaults to the name of ``condition``.
+        Name of the loop in logs and in the ``while_loop:<label>`` failure tag
+        given on timeout. Defaults to the name of ``condition``.
 
     Returns
     -------
@@ -3386,8 +3414,6 @@ def while_loop(
         A list of elts that can be embedded in a timeline using :func:`psynet.timeline.join`.
     """
     if label is None:
-        if max_loop_time is not None:
-            raise ValueError("while_loop() needs a label when max_loop_time is set.")
         label = _label_from_function(condition, "while_loop")
 
     start_while = StartWhile(label)
@@ -3403,14 +3429,18 @@ def while_loop(
         logger.debug(f"Evaluating while_loop ({label}) condition: result = {result}")
         return result
 
+    def loop_key():
+        return _elt_key(start_while, "while_loop")
+
+    def state_key(key):
+        return _while_loop_state_key(loop_key(), key)
+
     def start_loop(participant, experiment):
         """Snapshot the loop's start and runtime budget once per entry."""
-        participant.var.set(
-            _while_loop_state_key(label, "loop_start_time"), serialise(datetime.now())
-        )
+        participant.var.set(state_key("loop_start_time"), serialise(datetime.now()))
         if callable(max_loop_time):
             participant.var.set(
-                _while_loop_state_key(label, "loop_max_time"),
+                state_key("loop_max_time"),
                 call_function_with_context(
                     max_loop_time, participant=participant, experiment=experiment
                 ),
@@ -3422,16 +3452,16 @@ def while_loop(
             extend_while, participant=participant, experiment=experiment
         ):
             participant.var.set(
-                _while_loop_state_key(label, "loop_start_time"),
+                state_key("loop_start_time"),
                 serialise(datetime.now()),
             )
             return False
         limit = (
-            participant.var.get(_while_loop_state_key(label, "loop_max_time"))
+            participant.var.get(state_key("loop_max_time"))
             if callable(max_loop_time)
             else max_loop_time
         )
-        return _while_loop_timed_out(participant, label, limit)
+        return _while_loop_timed_out(participant, loop_key(), limit)
 
     from .page import UnsuccessfulEndPage
 
@@ -3470,7 +3500,6 @@ def while_loop(
             # The while loop includes its own progress bounds, so we don't need to bound progress
             # within this inner component.
             bound_progress=False,
-            log_chosen_branch=False,
             time_estimate=0.0,
         ),
         logic,
@@ -3487,9 +3516,7 @@ def while_loop(
             # Moreover, this conditional contains a GoTo, which will cause the progress bound logic
             # to fail if enabled here.
             bound_progress=False,
-            log_chosen_branch=False,
             time_estimate=time_estimate,
-            label=label,
         ),
         end_while,
     )
@@ -3508,15 +3535,13 @@ def check_branches(branches):
     return branches
 
 
-@_accepts_legacy_label
+@_accepts_deprecated_labels(ignore=("label", "log_chosen_branch"))
 def switch(
     function: Callable,
     branches: dict,
     fix_time_credit: bool = False,
     bound_progress: bool = True,
-    log_chosen_branch: bool = True,
     time_estimate: float = None,
-    label: Optional[str] = None,
 ):
     """
     Selects a series of elts to display to the participant according to a
@@ -3544,16 +3569,9 @@ def switch(
         exits the conditional construct, the progress estimate will be the same as if the participant
         had taken the branch with the maximum time credit. Defaults to ``True``.
 
-    log_chosen_branch:
-        Whether to keep a log of which participants took each branch; defaults to ``True``.
-
     time_estimate:
         An optional time estimate to use for the switch construct. If not provided, the time estimate
         will be estimated by computing time estimates for all branches and taking the maximum.
-
-    label:
-        Name under which the chosen branch is recorded in ``participant.branch_log``.
-        Defaults to the name of ``function``, or ``"switch"`` for a lambda.
 
     Returns
     -------
@@ -3561,13 +3579,11 @@ def switch(
     list
         A list of elts that can be embedded in a timeline using :func:`psynet.timeline.join`.
     """
-    if label is None:
-        label = _label_from_function(function, "switch")
     branches = check_branches(branches)
 
     all_branch_starts = dict()
     all_elts = []
-    end_switch = EndSwitch(label)
+    end_switch = EndSwitch()
 
     for branch_name, branch_elts in branches.items():
         branch_start = StartSwitchBranch(branch_name)
@@ -3577,11 +3593,9 @@ def switch(
         all_elts = all_elts + [branch_start] + branch_elts + [branch_end]
 
     start_switch = StartSwitch(
-        label,
         function,
         branch_start_elts=all_branch_starts,
         end_switch=end_switch,
-        log_chosen_branch=log_chosen_branch,
     )
     combined_elts = [start_switch] + all_elts + [end_switch]
 
@@ -3603,34 +3617,14 @@ def switch(
 
 
 class StartSwitch(ReactiveGoTo):
-    def __init__(
-        self, label, function, branch_start_elts, end_switch, log_chosen_branch=True
-    ):
-        if log_chosen_branch:
-
-            def function_2(experiment, participant):
-                val = call_function_with_context(
-                    function,
-                    experiment=experiment,
-                    participant=participant,
-                )
-                log_entry = [label, val]
-                participant.append_branch_log(log_entry)
-                return val
-
-            super().__init__(function_2, targets=branch_start_elts)
-        else:
-            super().__init__(function, targets=branch_start_elts)
-        self.label = label
+    def __init__(self, function, branch_start_elts, end_switch):
+        super().__init__(function, targets=branch_start_elts)
         self.branch_start_elts = branch_start_elts
         self.end_switch = end_switch
-        self.log_chosen_branch = log_chosen_branch
 
 
 class EndSwitch(NullElt):
-    def __init__(self, label):
-        super().__init__()
-        self.label = label
+    pass
 
 
 class StartSwitchBranch(NullElt):
@@ -3645,16 +3639,14 @@ class EndSwitchBranch(GoTo):
         self.name = name
 
 
-@_accepts_legacy_label
+@_accepts_deprecated_labels(ignore=("label", "log_chosen_branch"))
 def conditional(
     condition: Callable,
     logic_if_true,
     logic_if_false=None,
     fix_time_credit: bool = False,
     bound_progress: bool = True,
-    log_chosen_branch: bool = True,
     time_estimate: float = None,
-    label: Optional[str] = None,
 ):
     """
     Executes a series of elts if and only if a certain condition is satisfied.
@@ -3683,16 +3675,9 @@ def conditional(
         exits the conditional construct, the progress estimate will be the same as if the participant
         had taken the branch with the maximum time credit. Defaults to ``True``.
 
-    log_chosen_branch:
-        Whether to keep a log of which participants took each branch; defaults to ``True``.
-
     time_estimate:
         An optional time estimate to use for the conditional construct. If not provided, the time estimate
         will be estimated by computing time estimates for the two branches and taking the maximum.
-
-    label:
-        Name under which the outcome is recorded in ``participant.branch_log``.
-        Defaults to the name of ``condition``, or ``"conditional"`` for a lambda.
 
     Returns
     -------
@@ -3701,7 +3686,6 @@ def conditional(
         A list of elts that can be embedded in a timeline using :func:`psynet.timeline.join`.
     """
     return switch(
-        label=label or _label_from_function(condition, "conditional"),
         function=condition,
         branches={
             True: logic_if_true,
@@ -3709,7 +3693,6 @@ def conditional(
         },
         fix_time_credit=fix_time_credit,
         bound_progress=bound_progress,
-        log_chosen_branch=log_chosen_branch,
         time_estimate=time_estimate,
     )
 
@@ -4305,9 +4288,9 @@ class RecruitmentCriterion(NullElt):
 FOR_LOOP_STACK_DEPTH = -1
 
 
+@_accepts_deprecated_labels(ignore=("label",))
 def for_loop(
     *,
-    label: str,
     iterate_over: Union[Sequence, Callable[..., Sequence]],
     logic: Union["TimelineLogic", Callable[..., "TimelineLogic"]],
     time_estimate_per_iteration: Optional[float] = None,
@@ -4332,9 +4315,11 @@ def for_loop(
                 )
             return len(iterate_over())
 
+    def state_key():
+        return _elt_key(setup_elt, "for_loop")
+
     def setup(experiment, participant):
         nonlocal iterate_over
-        nonlocal label
         if callable(iterate_over):
             lst = call_function_with_context(
                 iterate_over,
@@ -4343,30 +4328,17 @@ def for_loop(
             )
         else:
             lst = iterate_over
-        state = {"lst": lst, "index": 0}
-        # participant.for_loops.append(state)
-        if label in participant.for_loops:
-            raise ValueError(
-                f"Duplicated for_loop label detected: {label}. "
-                "This suggests that you have tried to nest two for loops with the same label, "
-                "which is not permitted. Please disambiguate the labels."
-            )
-        participant.for_loops[label] = state
+        participant.for_loops[state_key()] = {"lst": lst, "index": 0}
         flag_modified(participant, "for_loops")
 
     def wrapup(experiment, participant):
-        nonlocal label
-        del participant.for_loops[label]
+        del participant.for_loops[state_key()]
         flag_modified(participant, "for_loops")
 
     def content(experiment, participant):
-        # global FOR_LOOP_STACK_DEPTH
-        # FOR_LOOP_STACK_DEPTH += 1
-        # state = participant.for_loops[FOR_LOOP_STACK_DEPTH]
         if not callable(logic):
             return logic
-        nonlocal label
-        state = participant.for_loops[label]
+        state = participant.for_loops[state_key()]
         lst = state["lst"]
         index = state["index"]
         input = lst[index]
@@ -4378,23 +4350,21 @@ def for_loop(
         )
 
     def should_stay_in_loop(participant):
-        nonlocal label
-        # state = participant.for_loops[-1]
-        state = participant.for_loops[label]
+        state = participant.for_loops[state_key()]
         return state["index"] < len(state["lst"])
 
     def increment_counter(participant):
-        # state = participant.for_loops[-1]
-        nonlocal label
-        state = participant.for_loops[label]
+        state = participant.for_loops[state_key()]
         state["index"] += 1
         flag_modified(participant, "for_loops")
 
+    setup_elt = CodeBlock(setup)
+
     return join(
-        CodeBlock(setup),
+        setup_elt,
         while_loop(
             should_stay_in_loop,
-            label=label,
+            label="for_loop",
             logic=join(
                 PageMaker(content, time_estimate_per_iteration),
                 CodeBlock(increment_counter),
@@ -4410,22 +4380,11 @@ def for_loop(
     )
 
 
-def _warn_unused_label(construct, label):
-    """Warn that ``construct`` no longer takes a label."""
-    if label is not None:
-        warnings.warn(
-            f"{construct}() no longer takes a label; the argument is ignored "
-            "and will stop working in a future PsyNet version.",
-            FutureWarning,
-            stacklevel=3,
-        )
-
-
+@_accepts_deprecated_labels(ignore=("label",))
 def sequence(
     *,
     function: Callable,
     logic: list,
-    label: Optional[str] = None,
 ):
     """
     Administers a sequence of logical units in an order determined by a function.
@@ -4444,11 +4403,7 @@ def sequence(
         A list of logical units to be administered in the order determined by ``function``.
         Each element should be a unit of timeline logic, for example a trial maker
         or a sequence of Elts created through the join function.
-
-    label:
-        Deprecated and ignored.
     """
-    _warn_unused_label("sequence", label)
     assert isinstance(logic, list)
 
     for elt in logic:
@@ -4493,7 +4448,6 @@ def sequence(
             condition=sequence_is_not_finished,
             logic=join(
                 switch(
-                    label="sequence",
                     function=get_current_position,
                     branches={i: logic[i] for i in range(sequence_length)},
                 ),
@@ -4506,7 +4460,8 @@ def sequence(
     )
 
 
-def randomize(*, logic, label=None):
+@_accepts_deprecated_labels(ignore=("label",))
+def randomize(*, logic):
     """
     Randomizes the order of a series of logical units.
     This could be used, for example, to randomize the order of a series of questionnaires.
@@ -4519,11 +4474,7 @@ def randomize(*, logic, label=None):
         A list to be randomized.
         Each element should be a unit of timeline logic, for example a trial maker
         or a sequence of Elts created through the join function.
-
-    label:
-        Deprecated and ignored.
     """
-    _warn_unused_label("randomize", label)
     n = len(logic)
     return sequence(
         function=lambda participant: random.sample(range(n), k=n),

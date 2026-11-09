@@ -144,10 +144,8 @@ preceding page:
 reach it while the condition still holds are sent to the unsuccessful end
 unless ``fail_on_timeout=False``. ``extend_while`` pauses that limit while it
 returns ``True``, for example while a participant's recording is still
-uploading. A loop with ``max_loop_time`` also needs a ``label``, under which
-PsyNet stores when the participant entered it; loops nested in each other
-need different labels.
-:func:`~psynet.timeline.conditional` takes a ``condition``, and
+uploading.
+:func:`~psynet.timeline.conditional` takes a ``condition``,
 ``logic_if_true`` and ``logic_if_false``. This loop repeats until the random
 score is above 5, with feedback that depends on the score:
 
@@ -156,11 +154,9 @@ score is above 5, with feedback that depends on the score:
    :end-before: ModularPage(
    :dedent: 8
 
-:func:`~psynet.timeline.for_loop` takes keyword arguments only: ``label``,
-under which PsyNet stores the participant's position in the loop, so nested
-loops need different labels; ``iterate_over``, a function returning the list
-for this participant; and ``logic``, a function from one item to timeline
-logic. It needs
+:func:`~psynet.timeline.for_loop` takes keyword arguments only:
+``iterate_over``, a function returning the list for this participant, and
+``logic``, a function from one item to timeline logic. It needs
 ``time_estimate_per_iteration`` when ``logic`` is a function, and
 ``expected_repetitions`` when ``iterate_over`` takes arguments such as
 ``participant``:

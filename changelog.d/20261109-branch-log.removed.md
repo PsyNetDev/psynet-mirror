@@ -1,0 +1,1 @@
+Removed `participant.branch_log`, the export column that recorded which branch of each `conditional` and `switch` a participant took, and the `log_chosen_branch` argument, which is now ignored with a warning. Store a branch choice in `participant.var` from a `CodeBlock` if an analysis needs it.

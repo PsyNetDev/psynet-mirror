@@ -433,8 +433,9 @@ See :doc:`upgrading_deployment_file_selection`.
 
 Search for ``def fail_participant``, ``data_check_failed``,
 ``attention_check_failed``, positional arguments to ``TrialMaker(`` or
-``NetworkTrialMaker(``, and labels passed to ``conditional(``, ``switch(``,
-``while_loop(``, ``sequence(`` or ``randomize(``.
+``NetworkTrialMaker(``, labels passed to ``conditional(``, ``switch(``,
+``while_loop(``, ``for_loop(``, ``sequence(`` or ``randomize(``, and
+``log_chosen_branch`` or ``branch_log``.
 
 * Overriding ``Experiment.fail_participant`` raises an error. Call
   ``participant.fail()``, or register a ``ParticipantFailRoutine`` for code
@@ -446,13 +447,17 @@ Search for ``def fail_participant``, ``data_check_failed``,
 * The ``fail_trials_on_premature_exit`` argument is ignored: when a
   participant leaves or fails, their unfinished trials always fail and their
   submitted trials are kept.
-* ``conditional``, ``switch`` and ``while_loop`` no longer take a label as
-  their first argument; the old form still works but warns. Delete the label,
-  so that ``conditional("is_adult", lambda participant: ..., logic)`` becomes
-  ``conditional(lambda participant: ..., logic)``. Keep it as ``label=...``
-  only on a ``while_loop`` with ``max_loop_time``. ``sequence`` and
-  ``randomize`` ignore their ``label`` argument; delete it. ``for_loop``
-  still requires its label.
+* Timeline constructs no longer need labels; the old forms still work but
+  warn. Delete the first argument of ``conditional``, ``switch`` and
+  ``while_loop``, so that ``conditional("is_adult", lambda participant: ...,
+  logic)`` becomes ``conditional(lambda participant: ..., logic)``, and delete
+  ``label=`` from ``for_loop``, ``sequence`` and ``randomize``. A
+  ``while_loop`` may keep ``label=...`` to name its ``while_loop:<label>``
+  failure tag.
+* ``participant.branch_log`` is gone, and ``log_chosen_branch`` is ignored
+  with a warning; delete it. If an analysis needs to know which
+  branch a participant took, store it with ``participant.var`` in a
+  ``CodeBlock``.
 
 See :doc:`/code/trials/participant_and_trial_failure`.
 

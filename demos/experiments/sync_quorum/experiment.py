@@ -71,7 +71,6 @@ class Exp(psynet.experiment.Experiment):
                 max_wait_time=120,
             ),
             for_loop(
-                label="quorate",
                 iterate_over=range(
                     3
                 ),  # Participant will only be allowed to visit the quorate page 3 times

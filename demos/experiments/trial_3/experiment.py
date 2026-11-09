@@ -34,7 +34,6 @@ class RateTrial(Trial):
 audio_ratings = Module(
     "audio_ratings",
     for_loop(
-        label="Deliver 5 trials with randomly sampled parameters",
         iterate_over=lambda: [
             {
                 "frequency_gradient": random.uniform(-100, 100),

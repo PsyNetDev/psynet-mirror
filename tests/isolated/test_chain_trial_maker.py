@@ -62,13 +62,9 @@ class DummyParticipant:
         self.id = 1
         self.active_sync_groups = {}
         self.sync_group_links = []
-        self.branch_log = []
         self.module_state = DummyModuleState()
         self.current_trial = None
         self.trial_status = None
-
-    def append_branch_log(self, entry):
-        self.branch_log.append(entry)
 
 
 def make_trial_maker(trial_maker_class=ChainTrialMaker, **kwargs):
@@ -324,8 +320,6 @@ def test_sync_trial_maker_requires_active_group_for_synced_participant():
 
     with pytest.raises(RuntimeError, match="active sync group of type 'sync'"):
         start_switch.get_target(experiment=None, participant=participant)
-
-    assert participant.branch_log == []
 
 
 def test_follower_copies_leader_state_after_leader_moved_on():

@@ -137,7 +137,6 @@ class Exp(psynet.experiment.Experiment):
             time_estimate=5,
         ),
         for_loop(
-            label="rounds",
             iterate_over=range(N_ROUNDS),
             logic=play_round(),
             expected_repetitions=N_ROUNDS,

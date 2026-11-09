@@ -20,7 +20,6 @@ class Exp(psynet.experiment.Experiment):
     label = "Static cue"
     timeline = Timeline(
         for_loop(
-            label="loop over custom trials",
             iterate_over=lambda: range(3),
             logic=CustomTrial.cue(definition={}),
             time_estimate_per_iteration=10,
