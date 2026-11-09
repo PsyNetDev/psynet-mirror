@@ -1267,7 +1267,7 @@ By default, a waiting participant stays on their current page, with input
 disabled and a small waiting indicator showing ``waiting_message``. To show dedicated
 pages instead, pass them as ``waiting_logic``; they repeat until the
 participant is released. In ``sync_quorum``, waiting participants answer
-trials from another trial maker:
+filler trials from the ``animals`` trial maker:
 
 .. literalinclude:: ../../../demos/experiments/sync_quorum/experiment.py
    :start-at: filler = PageMaker(

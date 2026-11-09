@@ -287,7 +287,7 @@ too often, has left the cohort, or their cohort is down to one player:
    :pyobject: keep_playing
 
 Players who finish leave the cohort with
-:func:`leave_group("cohort") <psynet.sync.leave_group>`, so that the
+:func:`leave_group(COHORT) <psynet.sync.leave_group>`, so that the
 regrouper doesn't wait for them in later rounds. It removes them with
 ``reason="finished"``, which shows them as "(finished)" and never dissolves
 the cohort, so players who finish first don't dissolve the closed cohort

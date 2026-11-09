@@ -3,8 +3,8 @@
 A :class:`~psynet.sync.SimpleGrouper` with ``join_existing_groups=True`` forms
 a group once ``QUORUM`` participants are waiting, and newcomers join it
 later. While a participant waits, and whenever the group is below its quorum,
-they take filler trials from another trial maker, so they don't waste their
-time. A multiplayer game could use this to start only once enough players
+they take filler trials from the ``animals`` trial maker, so they don't waste
+their time. A multiplayer game could use this to start only once enough players
 are present.
 """
 
@@ -89,8 +89,8 @@ class Exp(psynet.experiment.Experiment):
                 "In particular, there is a central part of the timeline that participants "
                 "can only access once sufficiently many other participants are present at "
                 "the same time. This would be useful for e.g. a multiplayer game. "
-                "While participants are waiting for other participants, they take trials "
-                "from another trial maker, so they don't waste their time."
+                "While participants are waiting for other participants, they answer "
+                "filler questions about animals, so they don't waste their time."
             ),
             time_estimate=5,
         ),
@@ -153,21 +153,27 @@ class Exp(psynet.experiment.Experiment):
             page = bot.get_current_page()
             assert page.label == "animal_trial"
 
-        # A new bot joins the existing group, making it quorate again. They
-        # usually join on arrival, but if the group is busy, they take a filler
-        # trial until the background barrier check adds them.
-        bots[3].take_page()
-        if bots[3].current_page_label == "animal_trial":
-            time.sleep(2)
-            bots[3].take_page()
-        assert "We are now quorate." in bots[3].current_page_text
+        # A new bot joins the existing group, making it quorate again.
+        _join_quorate_group(bots[3])
         assert bots[3].sync_group_n_active_participants == 3
 
-        # If we bring in a 5th participant, they should be able to join the main room right away.
-        assert isinstance(bots[4].get_current_page(), InfoPage)
-        bots[4].take_page()
-        assert "We are now quorate." in bots[4].current_page_text
+        # A 5th participant joins the quorate group too.
+        _join_quorate_group(bots[4])
         assert bots[4].sync_group_n_active_participants == 4
 
         for bot in [bots[1], bots[2], bots[3]]:
             bot.run_to_completion(render_pages=True)
+
+
+def _join_quorate_group(bot):
+    """Take a new bot past the intro page and into the quorate group.
+
+    Newcomers usually join on arrival, but if the group is busy, they take a
+    filler trial until the background barrier check adds them.
+    """
+    assert isinstance(bot.get_current_page(), InfoPage)
+    bot.take_page()
+    if bot.current_page_label == "animal_trial":
+        time.sleep(2)
+        bot.take_page()
+    assert "We are now quorate." in bot.current_page_text
