@@ -764,15 +764,36 @@ def test_a_barrier_repeated_in_a_round_waits_for_everyone_each_time(
     assert step._participant_is_waiting(cohort[0])
 
 
-@pytest.mark.parametrize("n_rounds, skipper", [(1, False), (2, False), (2, True)])
+@pytest.mark.parametrize(
+    "module_ids, n_rounds, skipper",
+    [
+        (["a"], 1, False),
+        (["a"], 2, False),
+        (["a"], 2, True),
+        (["a", "b", "a"], 0, False),
+    ],
+)
 @in_consents_experiment
 def test_cueing_a_played_or_skipped_round_again_raises(
-    in_experiment_directory, db_session, n_rounds, skipper
+    in_experiment_directory, db_session, module_ids, n_rounds, skipper
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
     pair = cohort[0].active_sync_groups["pair"]
     (newcomer,) = _working_participants(exp, 1)
+    *earlier_ids, module_id = module_ids
+    for earlier_id in earlier_ids:
+        earlier = Module(earlier_id, InfoPage("Hi", time_estimate=1))
+        for participant in cohort:
+            participant.start_module(earlier)
+            _cue_round(exp, participant, 0)
+        _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+        _complete_trials(cohort)
+        for participant in cohort:
+            participant.end_module(earlier)
+    module = Module(module_id, InfoPage("Hi", time_estimate=1))
+    for participant in [*cohort, newcomer]:
+        participant.start_module(module)
     players = cohort
     for i in range(n_rounds):
         for participant in players:
@@ -782,7 +803,7 @@ def test_cueing_a_played_or_skipped_round_again_raises(
             pair.add_participant(newcomer)
             assert _cue_round(exp, newcomer, 0) is None
             players = [*cohort, newcomer]
-    with pytest.raises(RuntimeError, match="its own module id"):
+    with pytest.raises(RuntimeError, match="again"):
         _cue_round(exp, players[-1], 0)
 
 
