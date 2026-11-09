@@ -482,3 +482,22 @@ Leftover inactive visits are outside this budget. Last-arrival keeps
 second pool on that path. Migrating waiters onto the live visit is extra SQL
 only when the instance is already inactive. See
 :ref:`timeline-hold-resume-protocol`.
+
+Grouped request budgets
+-----------------------
+
+``tests/isolated/test_group_request_queries.py`` pins whole requests around
+the check window, called through the real handlers with a cold session.
+``test_barrier_requests_do_not_grow_with_group_size`` covers an arrival
+``POST /response`` from a page, the hold poll while waiting, the last
+arrival and the poll after release, and requires each to issue the same
+number of statements for groups of three and seven, give or take two. An
+internal commit can drop a row such as the sync group from the weak identity
+map, and loading it again moves a count by a statement or two between runs.
+A statement per member adds at least four.
+
+An arrival rebuilds every waiting member's hold overlay.
+``GroupBarrier._notify_arrivals`` counts the group once and passes the counts
+to each overlay, because recounting per member lazy-loads each member's
+``sync_group_links``. Do not batch-load those links instead:
+``_populate_sync_group_links`` can drop links that are not flushed yet.
