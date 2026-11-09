@@ -165,8 +165,17 @@ def test_each_trial_records_how_its_round_ended_for_the_player(
     pair.remove_participant(stayer, reason="finished")
     assert stayer.current_trial.sync_group_outcome == "stayed"
     PairTrial.cue()[0].consume(exp, stayer)
-    assert stayer.current_trial.definition == {}
     assert stayer.current_trial.sync_group_outcome is None
+
+
+@in_consents_experiment
+def test_cue_without_a_definition_uses_make_definition(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    PairTrial.cue()[0].consume(exp, cohort[0])
+    assert cohort[0].current_trial.definition == {}
 
 
 @in_consents_experiment
@@ -425,6 +434,9 @@ def test_a_barrier_before_a_module_s_first_cue_gets_no_round(
     }
     assert [t.sync_group_outcome for t in first_trials] == [None, None]
     assert not first_trials[0].node.sync_group_closed
+    # Leaving the group in a later module doesn't record on the earlier round.
+    cohort[1].fail("questionnaire attention check")
+    assert [t.sync_group_outcome for t in first_trials] == [None, None]
 
 
 class VoteTrial(Trial):
@@ -1227,7 +1239,6 @@ def _late_at_barrier(late_action):
         barrier.check_waiting_participants([stayer])
         return leaver
 
-    remove.fails = late_action == "fail"
     return remove
 
 
@@ -1254,26 +1265,31 @@ def _dissolved_and_failed(exp, group, stayer, leaver):
     return stayer
 
 
-_dissolved_and_failed.fails = True
-
-
 def _late_after_complete(exp, group, stayer, leaver):
     leaver.current_trial.complete = True
     group.remove_participant(leaver, reason="late")
     return leaver
 
 
+def _dissolved_after_complete(exp, group, stayer, leaver):
+    _arrive(exp, GroupBarrier("done", group_type="main"), [stayer, leaver])
+    stayer.current_trial.complete = True
+    leaver.fail("returned")
+    return stayer
+
+
 @pytest.mark.parametrize(
-    "remove, outcome, n",
+    "remove, outcome, n, fails",
     [
-        (_late_at_barrier("fail"), "late", 2),
-        (_late_at_barrier("fail"), "late", 3),
-        (_late_at_barrier("leave_group"), "late", 2),
-        (_waited_too_long, "waited_too_long", 2),
-        (_removed_without_reason, "removed", 2),
-        (_dissolved_before_the_barrier, "group_dissolved", 2),
-        (_dissolved_and_failed, "group_dissolved", 2),
-        (_late_after_complete, "late", 2),
+        (_late_at_barrier("fail"), "late", 2, True),
+        (_late_at_barrier("fail"), "late", 3, True),
+        (_late_at_barrier("leave_group"), "late", 2, False),
+        (_waited_too_long, "waited_too_long", 2, False),
+        (_removed_without_reason, "removed", 2, False),
+        (_dissolved_before_the_barrier, "group_dissolved", 2, False),
+        (_dissolved_and_failed, "group_dissolved", 2, True),
+        (_late_after_complete, "late", 2, False),
+        (_dissolved_after_complete, "stayed", 2, False),
     ],
     ids=[
         "fail",
@@ -1284,11 +1300,12 @@ def _late_after_complete(exp, group, stayer, leaver):
         "dissolved",
         "dissolved_and_failed",
         "complete",
+        "dissolved_after_complete",
     ],
 )
 @in_consents_experiment
 def test_the_outcome_records_why_a_player_left_the_round(
-    in_experiment_directory, db_session, remove, outcome, n
+    in_experiment_directory, db_session, remove, outcome, n, fails
 ):
     exp = get_experiment()
     members, group = _sync_group_of(exp, db_session, n)
@@ -1301,7 +1318,7 @@ def test_the_outcome_records_why_a_player_left_the_round(
     removed = remove(exp, group, stayer, leaver)
     db.session.commit()
     assert removed.current_trial.sync_group_outcome == outcome
-    if getattr(remove, "fails", False):
+    if fails:
         assert removed.failed and removed.sync_group_removal_reason("main") == outcome
 
 

@@ -416,13 +416,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             "group, one of the reasons of "
             ":meth:`~psynet.sync.SyncGroup.remove_participant`, such as "
             '``"late"``, ``"left_experiment"`` or ``"group_dissolved"`` (for '
-            "every member still in the group when it dissolves, including "
-            'those ``below_quorum="fail"`` fails), or '
+            "members still in the group when it dissolves, including "
+            'those ``below_quorum="fail"`` fails, unless the trial is already '
+            '``"stayed"`` with :attr:`complete` set), or '
             '``"removed"`` without a reason. The first of these is kept, '
             "except that leaving before :attr:`complete` is set replaces "
             '``"stayed"``, and ``"moved_on"`` or ``"finished"`` after it is set '
-            "stores nothing. ``None`` while nothing has happened yet, and for "
-            "ungrouped trials."
+            "stores nothing. Leaving the group once the player is in a later "
+            "module stores nothing either. ``None`` while nothing has happened "
+            "yet, and for ungrouped trials."
         ),
     )
     definition = Column(PythonObject)

@@ -1690,16 +1690,9 @@ class GroupBarrier(Barrier):
         for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
         ``sync_group_type`` that the barrier is part of), ``node`` (the
         group's :class:`~psynet.trial.main.SyncGroupNode` for the round the
-        barrier is in or after, the earliest round the waiting members
-        stored when they last cued or skipped one in their current module;
-        ``None`` before the group's first cue in the module, such as at the
-        start of a module after another module's rounds, or in a group that
-        never cues; when it is set, ``trials`` holds ``None`` for a member
-        whose trial is not on it, such as a newcomer released at a feedback
-        barrier during a practice trial, and when it is ``None``, each
-        member's current trial whatever its node, or ``None`` for a member
-        with none; at a barrier in the round's ``show_trial`` every member
-        released is on the node), ``leader`` (the
+        barrier is in or after, or ``None`` before the group's first cue in
+        the module; see :ref:`the barrier's node <sync-barrier-node>` for how it is chosen and how
+        it affects ``trials``), ``leader`` (the
         group's leader, who may be missing from ``participants``),
         ``participant`` (the same object as ``leader``, kept for
         compatibility), ``left`` (the members who left the group since its
@@ -4627,7 +4620,8 @@ def _record_leaving_the_round(group, participant, reason):
 
     Leaving before the trial's pages end replaces ``"stayed"``; after they end,
     only a trial without an outcome records it, and moving on or finishing
-    never does.
+    never does. A trial from an earlier module records nothing, as a barrier
+    in a later module belongs to no round of it.
     """
     from .trial.main import SyncGroupNode
 
@@ -4636,6 +4630,7 @@ def _record_leaving_the_round(group, participant, reason):
         trial is None
         or trial.sync_group_id != group.id
         or not isinstance(trial.node, SyncGroupNode)
+        or not _in_current_module(trial.node, participant)
     ):
         return
     if trial.complete and (
@@ -4716,9 +4711,14 @@ def _barrier_round(group, waiting_participants, links=None):
         if link is None or link.round_node_id is None:
             continue
         node = db.session.get(SyncGroupNode, link.round_node_id)
-        if node is not None and node.module_id == participant.module_id:
+        if node is not None and _in_current_module(node, participant):
             nodes.append(node)
     return min(nodes, key=lambda node: node.id, default=None)
+
+
+def _in_current_module(node, participant):
+    """Return whether the round ``node`` belongs to ``participant``'s current module."""
+    return node.module_id == participant.module_id
 
 
 def _barrier_scope(group, waiting_participants, barrier_id, node) -> _BarrierScope:
