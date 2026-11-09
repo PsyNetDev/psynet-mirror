@@ -203,7 +203,10 @@ check for it first:
     )
 
 A member who leaves the group plays the remaining
-iterations alone, with the same loop values. Rounds are ordered by when
+iterations alone, with the same loop values. One who leaves and rejoins
+it skips a cue of a round in which they already have a trial of that
+class, even an open round.
+Rounds are ordered by when
 the group first plays them, so the loop values needn't increase. Don't
 pass ``round=`` with a
 regrouper: its groups mix players at different loop positions, whose trials

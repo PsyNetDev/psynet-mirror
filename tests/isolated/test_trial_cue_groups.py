@@ -400,6 +400,33 @@ def test_each_module_numbers_a_group_s_rounds_from_0(
     ]
 
 
+@in_consents_experiment
+def test_a_barrier_before_a_module_s_first_cue_gets_no_round(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    for participant in cohort:
+        participant.start_module(Module("first", InfoPage("Hi", time_estimate=1)))
+        PairTrial.cue({})[0].consume(exp, participant)
+    first_trials = [p.current_trial for p in cohort]
+    for participant in cohort:
+        participant.start_module(Module("second", InfoPage("Hi", time_estimate=1)))
+    _released.clear()
+    barrier = GroupBarrier(
+        "second_start", group_type="pair", on_release=PairTrial.record_release
+    )
+    _arrive(exp, barrier, cohort)
+
+    ((participants, trials, node),) = _released
+    assert node is None
+    assert {p.id: t for p, t in zip(participants, trials)} == {
+        t.participant_id: t for t in first_trials
+    }
+    assert [t.sync_group_outcome for t in first_trials] == [None, None]
+    assert not first_trials[0].node.sync_group_closed
+
+
 class VoteTrial(Trial):
     time_estimate = 1
     sync_group_type = "pair"
@@ -894,19 +921,22 @@ def test_cueing_a_played_or_skipped_round_again_raises(
         _cue_round(exp, players[-1], 0)
 
 
+@pytest.mark.parametrize("round_closed", [True, False])
 @in_consents_experiment
-def test_a_member_who_rejoined_skips_a_closed_round_they_played(
-    in_experiment_directory, db_session
+def test_a_member_who_rejoined_skips_a_round_they_played(
+    in_experiment_directory, db_session, round_closed
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
     pair = cohort[0].active_sync_groups["pair"]
     for participant in cohort:
         _cue_round(exp, participant, 0)
-    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    if round_closed:
+        _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
     pair.remove_participant(cohort[0], reason="moved_on")
     pair.add_participant(cohort[0])
     assert _cue_round(exp, cohort[0], 0) is None
+    assert PairTrial.query.filter_by(participant_id=cohort[0].id).count() == 1
 
 
 @pytest.mark.parametrize("skipper_first", [False, True])
