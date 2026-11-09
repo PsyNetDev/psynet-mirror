@@ -131,7 +131,7 @@ def round_status(participant):
     """Return whether the regrouper paired the player, sat them out, or left them with no cohort."""
     if in_pair(participant):
         return "paired"
-    if cohort_of(participant) is not None:
+    if pairing.sat_out(participant):
         return "sat_out"
     return "no_cohort"
 

@@ -89,9 +89,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   assignment; PsyNet does not guarantee the stored order.
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries
   such as submit, rate, reveal, score, or bonus computation.
-- Read partner state through `participant.sync_group.participants`,
-  participant vars, trial vars, node vars, or `on_release` outputs. Do not let
-  the browser decide shared experiment state.
+- Read partners' answers from what `on_release` stored on the trial or node
+  (trial vars, node vars); use `sync_group.participants` only for membership,
+  such as assigning roles. Do not let the browser decide shared experiment
+  state.
 - For games played in rounds with changing partners or rooms, put a
   `Regrouper(group_type, group_size=..., within=...)` at the start of each
   round instead of a grouper and closer. Pass `deadline=` to split once
@@ -142,7 +143,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   To end the rounds, pass the same `stop_if` to the `for_loop`. Put the
   grouper or `Regrouper` before the `join`, not among its arguments, or
   everyone not yet grouped skips it. A round that is one cued trial needs
-  only a `conditional` (see "Rounds as cued trials").
+  no `join`: with a cohort (`within=`), follow the three-way `switch` on
+  `round_status` (paired, sat out, no cohort) in "One trial per player per
+  round" of `code/multiplayer/writing_a_round_based_experiment`, as in
+  `ultimatum_pairing`; without one, a two-way `conditional` is enough, as in
+  `lowest_unique_number` (see "Rounds as cued trials").
 - Follow with a `conditional` on the same function for what a member who
   left, or anyone who never had a group, does instead, such as answering the
   rest of the question alone. With a `Regrouper` in the loop, it is also the

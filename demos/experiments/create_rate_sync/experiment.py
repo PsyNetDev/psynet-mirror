@@ -72,19 +72,23 @@ class CreateRateTrial(StaticTrial):
 
     @classmethod
     def count_votes(cls, trials: List["CreateRateTrial"]):
-        """Store every member's vote, and the creation with the most votes, on each member's trial.
+        """Store every member's vote and the result of the vote on each member's trial.
 
-        A member who ran out of time has the vote ``None``. Nobody wins a tie.
+        A member who ran out of time has the vote ``None``. The result is
+        ``"winner"`` (stored with the ``winner`` creation), ``"tie"`` or
+        ``"no_votes"``.
         """
         votes = {str(t.participant_id): t.answer["rate"] for t in trials}
         counts = Counter(v for v in votes.values() if v is not None).most_common(2)
-        winner = (
-            counts[0][0]
-            if counts and (len(counts) == 1 or counts[0][1] > counts[1][1])
-            else None
-        )
+        if not counts:
+            result, winner = "no_votes", None
+        elif len(counts) == 1 or counts[0][1] > counts[1][1]:
+            result, winner = "winner", counts[0][0]
+        else:
+            result, winner = "tie", None
         for trial in trials:
             trial.var.votes = votes
+            trial.var.result = result
             trial.var.winner = winner
 
     def rate(self, participant):
@@ -124,10 +128,10 @@ class CreateRateTrial(StaticTrial):
 
         creations, winner = self.var.creations, self.var.winner
         highlight = {}
-        if winner is not None:
+        if self.var.result == "winner":
             note = f"{winner} got the most votes."
             highlight = {pid: "winner" for pid, c in creations.items() if c == winner}
-        elif own is None and not others:
+        elif self.var.result == "no_votes":
             note = "Nobody voted."
         else:
             note = "It's a tie."
