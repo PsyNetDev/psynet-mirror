@@ -332,7 +332,7 @@ The trial ends after the barrier, so its feedback can read what was stored
 during the round rather than work it out from the player's groups:
 
 - ``self.sync_group_outcome`` says how the round ended for this player:
-  ``"released"`` once the barrier released the pair with them in it, or why
+  ``"stayed"`` once the barrier released the pair with them in it, or why
   they left the pair before then, here ``"late"`` for a player taken out for
   being away (see :ref:`sync-round-outcome` for every value);
 - ``self.answer`` is their own decision, ``None`` if they ran out of time;

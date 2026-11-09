@@ -394,7 +394,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         doc=(
             "How the group's round ended for this player, for a trial made by "
             ":meth:`Trial.cue` on a :class:`SyncGroupNode`, one of "
-            ':data:`~psynet.sync.SyncGroupOutcome`: ``"released"`` '
+            ':data:`~psynet.sync.SyncGroupOutcome`: ``"stayed"`` '
             "once a :class:`~psynet.sync.GroupBarrier` releases the group while "
             "this is the player's current trial, or why the player left the "
             "group, one of the reasons of "
@@ -1273,7 +1273,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           Once started, the trial runs to its end even if they leave the
           group, so :meth:`show_feedback` can explain every outcome.
         - :attr:`sync_group_outcome` records how the round ended for the
-          player: ``"released"`` by a barrier, or why they left the group.
+          player: ``"stayed"`` once a barrier released the group with
+          them in it, or why they left the group.
           A partner's is on their trial in
           ``self.node.all_trials``.
 

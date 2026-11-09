@@ -150,11 +150,11 @@ def test_each_trial_records_how_its_round_ended_for_the_player(
     # Leaving before the trial's pages end replaces an earlier barrier's release.
     pair.remove_participant(leaver, reason="late")
     _arrive(exp, GroupBarrier("answered", group_type="pair"), [stayer])
-    assert [p.current_trial.sync_group_outcome for p in cohort] == ["released", "late"]
+    assert [p.current_trial.sync_group_outcome for p in cohort] == ["stayed", "late"]
 
     stayer.current_trial.complete = True
     pair.remove_participant(stayer, reason="finished")
-    assert stayer.current_trial.sync_group_outcome == "released"
+    assert stayer.current_trial.sync_group_outcome == "stayed"
     PairTrial.cue()[0].consume(exp, stayer)
     assert stayer.current_trial.definition == {}
     assert stayer.current_trial.sync_group_outcome is None

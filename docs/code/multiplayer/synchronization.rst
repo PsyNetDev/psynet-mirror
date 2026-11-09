@@ -312,7 +312,7 @@ Each trial on a group's node records how the round ended for its player in
 and exports can read it rather than work it out from the player's groups
 later:
 
-- ``"released"``: a group barrier released the group while this was the
+- ``"stayed"``: a group barrier released the group while this was the
   player's current trial on the round's node;
 - why the player left the group: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
@@ -325,7 +325,7 @@ The first of these to happen is stored, even after the trial's pages
 (``show_trial``) have ended, for example at a barrier in ``show_feedback``.
 :attr:`~psynet.trial.main.Trial.complete` says whether those pages have
 ended. Two things differ: leaving before they have ended replaces
-``"released"`` from an earlier barrier of the round, and moving on
+``"stayed"`` from an earlier barrier of the round, and moving on
 (``"moved_on"``, for example at the next round's regrouper) or finishing
 (``"finished"``) after they have ended stores nothing. A partner's outcome
 is on their trial in ``node.all_trials``:
@@ -337,7 +337,7 @@ is on their trial in ``node.all_trials``:
             return InfoPage("You were away for too long, so you missed this round.")
         partners = [trial for trial in self.node.all_trials if trial.id != self.id]
         partner_left = any(
-            trial.sync_group_outcome not in (None, "released") for trial in partners
+            trial.sync_group_outcome not in (None, "stayed") for trial in partners
         )
         ...
 

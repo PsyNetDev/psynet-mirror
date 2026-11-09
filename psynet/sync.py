@@ -1546,9 +1546,9 @@ RemovalReason = Literal[
 ]
 REMOVAL_REASONS = (None, *get_args(RemovalReason))
 #: Values of :attr:`~psynet.trial.main.Trial.sync_group_outcome` other than
-#: ``None``: ``"released"`` by a barrier, a :data:`RemovalReason`, or
-#: ``"removed"`` for a removal without one.
-SyncGroupOutcome = Literal["released", "removed", RemovalReason]
+#: ``None``: ``"stayed"`` once a barrier releases the group with the player
+#: in it, a :data:`RemovalReason`, or ``"removed"`` for a removal without one.
+SyncGroupOutcome = Literal["stayed", "removed", RemovalReason]
 # Reasons for leaving that don't dissolve a group below its quorum.
 _KEEPS_GROUP_REASONS = ("finished", "moved_on")
 
@@ -2121,7 +2121,7 @@ class GroupBarrier(Barrier):
                     node.sync_group_closed = True
                     for trial in trials:
                         if trial is not None and trial.sync_group_outcome is None:
-                            trial.sync_group_outcome = "released"
+                            trial.sync_group_outcome = "stayed"
                 if self.on_release:
                     try:
                         self.on_release(
