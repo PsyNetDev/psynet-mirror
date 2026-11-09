@@ -1629,8 +1629,8 @@ class GroupBarrier(Barrier):
         sends them to the end of the experiment; ``"leave_group"`` removes them from the group, and they carry on with the
         experiment without it (see :ref:`sync-leaving-a-group`).
         Their next page says "Your partner didn't arrive in time. Please continue." in a pair (see
-        ``on_arrival_message`` for larger groups), and a :class:`~psynet.group_prompt.GroupPrompt` marks them
-        "(dropped out)". It is the waiting member who leaves, not the absent ones; to move on
+        ``on_arrival_message`` for larger groups); for how a :class:`~psynet.group_prompt.GroupPrompt`
+        shows them, see :ref:`sync-showing-the-group`. It is the waiting member who leaves, not the absent ones; to move on
         without slow members, use ``late_after`` and ``late_action`` instead. If that takes
         the group below its quorum, see :ref:`groups_below_min_size` for whether it
         is dissolved.
@@ -1684,7 +1684,7 @@ class GroupBarrier(Barrier):
         the barrier that starts a game a latecomer couldn't catch up with.
         Only affects groups formed with ``join_existing_groups=True``. A group
         below its quorum doesn't pass, so it keeps waiting here for a newcomer,
-        up to the grouper's ``top_up_wait`` (see :ref:`groups_below_min_size`).
+        up to the grouper's ``top_up_wait``, if set (see :ref:`groups_below_min_size`).
 
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
@@ -2463,8 +2463,7 @@ class SimpleGrouper(Grouper):
         A callable that takes ``group`` and ``participant`` as arguments, and returns ``True``
         if the participant should be allowed to join the group, and ``False`` otherwise.
         To be used in conjunction with ``join_existing_groups=True``. Returning ``False``
-        only turns that newcomer away; it doesn't stop top-ups, so use ``top_up_wait`` or
-        :meth:`SimpleSyncGroup.stop_top_ups` too (see :ref:`groups_below_min_size`).
+        only turns that newcomer away (see :ref:`groups_below_min_size`).
 
     below_quorum
         What happens to the members left when a group is dissolved below its ``quorum``
@@ -4106,8 +4105,9 @@ class SyncGroup(SQLBase, SQLMixin):
         reason
             Why they left, stored on their link and returned by
             :meth:`~psynet.participant.Participant.sync_group_removal_reason`.
-            It also sets how :class:`~psynet.group_prompt.GroupPrompt` shows
-            them to the remaining members:
+            It also sets the label :class:`~psynet.group_prompt.GroupPrompt`
+            gives them (for when they are shown at all, see
+            :ref:`sync-showing-the-group`):
 
             - ``None`` (default), ``"left_experiment"``, ``"waited_too_long"`` or
               ``"group_dissolved"``: "(dropped out)", or "(left)" once they
