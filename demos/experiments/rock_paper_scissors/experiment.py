@@ -73,7 +73,6 @@ class RockPaperScissorsTrial(Trial):
             ),
             PushButtonControl(choices=ACTIONS),
             time_estimate=5,
-            save_answer="last_action",
             # Running out of time saves None; score_trial then plays a random move.
             time_limit=CHOICE_SECONDS,
         )
@@ -81,11 +80,9 @@ class RockPaperScissorsTrial(Trial):
     @classmethod
     def score_trial(cls, trials: List["RockPaperScissorsTrial"]):
         """Save each player's action, their partner's and the score on their trial."""
-        timed_out = {t.id: t.participant.var.last_action is None for t in trials}
+        timed_out = {t.id: t.answer is None for t in trials}
         actions = {
-            t.id: random.choice(ACTIONS)
-            if timed_out[t.id]
-            else t.participant.var.last_action
+            t.id: random.choice(ACTIONS) if timed_out[t.id] else t.answer
             for t in trials
         }
         for trial in trials:
