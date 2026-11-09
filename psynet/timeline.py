@@ -1187,9 +1187,10 @@ def _update_unfinished_trial_answer(participant):
     """Copy ``participant.answer`` to the participant's current trial while it runs.
 
     So a barrier inside :meth:`~psynet.trial.main.Trial.show_trial` can read the
-    answers given so far from ``trial.answer``. A trial that is complete keeps
-    its final answer, and so does a failed one, which the participant may have
-    left for later pages.
+    answers given so far from ``trial.answer``. The copy stops once the trial is
+    complete or failed, so pages the participant reaches after leaving a failed
+    trial do not overwrite its answer. Finalisation still writes the formatted
+    answer, also on a trial that failed while it ran.
     """
     if participant.current_trial_id is None:
         return
