@@ -7525,9 +7525,17 @@ def test_group_barrier_below_quorum(
         below_quorum=grouper.below_quorum,
     )
     group.last_barrier_pass_time = timenow()
-    db_session.add(group)
+    other_group = SimpleSyncGroup(
+        group_type="other",
+        initial_group_size=2,
+        max_group_size=2,
+        min_group_size=1,
+        accepts_top_ups=False,
+    )
+    db_session.add_all([group, other_group])
     for p in participants:
         group.add_participant(p)
+        other_group.add_participant(p)
     db_session.commit()
     db_session.expire(group)
 
@@ -7538,7 +7546,10 @@ def test_group_barrier_below_quorum(
     assert all(p.active_sync_groups.get("main") is None for p in participants)
     assert [p.failed for p in participants] == failed
     assert [p.sync_group_removal_reason("main") for p in participants] == [
-        "left_experiment" if was_failed else "group_dissolved" for was_failed in failed
+        "group_dissolved"
+    ] * len(participants)
+    assert [p.sync_group_removal_reason("other") for p in participants] == [
+        "left_experiment" if was_failed else None for was_failed in failed
     ]
     # Members who carry on alone are told why on their next page.
     for p, was_failed in zip(participants, failed):

@@ -319,7 +319,9 @@ later:
 - ``"stayed"``: a group barrier released the group while this was the
   player's current trial on the round's node. A barrier after the trial,
   between rounds or after the loop also stores it, as long as the trial is
-  still the player's current trial and has no outcome yet;
+  still the player's current trial and has no outcome yet. Members released
+  with another current trial, such as a newcomer's practice trial, don't
+  stop it, and get nothing, as do members who skipped the round;
 - why the player left the group: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
   ``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or
@@ -460,7 +462,10 @@ function that returns one of these, or ``None`` to keep
 the last page. The function can take ``participant``, ``trial``, the
 participant's current trial, and ``node``, that trial's
 :class:`~psynet.trial.main.SyncGroupNode` (``None`` on another kind of node),
-asking for them by name as ``on_release`` does.
+asking for them by name as ``on_release`` does. At a grouper or
+:class:`~psynet.sync.Regrouper`, ``trial`` is the participant's previous
+trial, such as the previous round's, because ``current_trial`` only changes
+when the next trial is cued.
 The participant can't submit a waiting screen, so a page
 with a Next button, push buttons or ``auto_advance`` raises an error; use
 a control that doesn't submit, such as ``NullControl``. Groupers and :func:`~psynet.page.wait_while` take ``waiting_screen`` too,

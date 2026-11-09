@@ -949,7 +949,9 @@ class Barrier(EltCollection):
         :class:`~psynet.trial.main.SyncGroupNode`, or ``None`` if it is on
         another kind of node), for example
         ``waiting_screen(trial, node)`` to show the player's answer and the
-        round's state. It runs on each request (a page load
+        round's state. At a grouper or :class:`Regrouper`, ``trial`` is the
+        participant's previous trial, such as the previous round's, because
+        ``current_trial`` only changes when the next trial is cued. It runs on each request (a page load
         or a check for the release), sometimes more than once, so base it on
         the participant's state
         rather than on chance. Returning ``None`` keeps the current page, as
@@ -2147,7 +2149,11 @@ class GroupBarrier(Barrier):
                     # Closes the round to newcomers: their cues start the next.
                     node.sync_group_closed = True
                     for trial in trials:
-                        if trial is not None and trial.sync_group_outcome is None:
+                        if (
+                            trial is not None
+                            and trial.node_id == node.id
+                            and trial.sync_group_outcome is None
+                        ):
                             trial.sync_group_outcome = "stayed"
                 if self.on_release:
                     try:
@@ -4425,6 +4431,11 @@ class SyncGroup(SQLBase, SQLMixin):
         Waiting here could deadlock with that member's request, which holds
         their row and then needs this group's row.
 
+        Each member leaves this group as ``"group_dissolved"`` before being
+        failed, as in :meth:`GroupBarrier._remove_late_participants`, because
+        failing removes a member from the groups they are still in as
+        ``"left_experiment"``.
+
         Returns
         -------
         list of Participant
@@ -4445,9 +4456,9 @@ class SyncGroup(SQLBase, SQLMixin):
             group_size = len(group_seats(self))
             for participant in removed:
                 action = self._below_quorum_action(participant)
+                self._remove_without_quorum_check(participant, "group_dissolved")
                 if action == "fail":
                     participant.fail("sync group below minimum size")
-                self._remove_without_quorum_check(participant, "group_dissolved")
                 if action == "continue_without_group":
                     _tell_group_ended(participant, group_size)
             self.check_numbers()
@@ -4576,19 +4587,24 @@ def _record_leaving_the_round(group, participant, reason):
 
 
 def _shared_node(group, trials):
-    """Return ``group``'s node that all ``trials`` share, or ``None``.
+    """Return ``group``'s :class:`SyncGroupNode` that its ``trials`` share, or ``None``.
 
-    Members with no current trial (``None`` in ``trials``) are ignored.
+    Trials of other groups or off a ``SyncGroupNode``, such as a newcomer's
+    practice trial, and ``None`` for members with no current trial, are
+    ignored.
     """
     from .trial.main import SyncGroupNode
 
-    nodes = {trial.node_id: trial.node for trial in trials if trial is not None}
+    nodes = {
+        trial.node_id: trial.node
+        for trial in trials
+        if trial is not None
+        and isinstance(trial.node, SyncGroupNode)
+        and trial.node.sync_group_id == group.id
+    }
     if len(nodes) != 1:
         return None
-    node = next(iter(nodes.values()))
-    if isinstance(node, SyncGroupNode) and node.sync_group_id == group.id:
-        return node
-    return None
+    return next(iter(nodes.values()))
 
 
 class _BarrierScope(NamedTuple):

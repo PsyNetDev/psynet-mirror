@@ -226,6 +226,29 @@ def test_a_barrier_release_closes_the_round(in_experiment_directory, db_session)
 
 
 @in_consents_experiment
+def test_a_feedback_barrier_closes_the_round_despite_a_newcomer_s_other_trial(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    for participant in cohort:
+        PairTrial.cue({})[0].consume(exp, participant)
+        participant.current_trial.complete = True
+    (newcomer,) = _working_participants(exp, 1)
+    SoloTrial.cue({})[0].consume(exp, newcomer)
+    pair.add_participant(newcomer)
+    _arrive(exp, GroupBarrier("feedback", group_type="pair"), [*cohort, newcomer])
+
+    assert cohort[0].current_trial.node.sync_group_closed
+    assert [p.current_trial.sync_group_outcome for p in [*cohort, newcomer]] == [
+        "stayed",
+        "stayed",
+        None,
+    ]
+
+
+@in_consents_experiment
 def test_a_release_waits_for_a_cue_holding_the_round_lock(
     in_experiment_directory, db_session
 ):
@@ -918,6 +941,15 @@ def _dissolved_before_the_barrier(exp, group, stayer, leaver):
     return stayer
 
 
+def _dissolved_and_failed(exp, group, stayer, leaver):
+    group.below_quorum = "fail"
+    leaver.fail("returned")
+    return stayer
+
+
+_dissolved_and_failed.fails = True
+
+
 def _late_after_complete(exp, group, stayer, leaver):
     leaver.current_trial.complete = True
     group.remove_participant(leaver, reason="late")
@@ -933,6 +965,7 @@ def _late_after_complete(exp, group, stayer, leaver):
         (_waited_too_long, "waited_too_long", 2),
         (_removed_without_reason, "removed", 2),
         (_dissolved_before_the_barrier, "group_dissolved", 2),
+        (_dissolved_and_failed, "group_dissolved", 2),
         (_late_after_complete, "late", 2),
     ],
     ids=[
@@ -942,6 +975,7 @@ def _late_after_complete(exp, group, stayer, leaver):
         "max_wait",
         "no_reason",
         "dissolved",
+        "dissolved_and_failed",
         "complete",
     ],
 )
@@ -961,7 +995,7 @@ def test_the_outcome_records_why_a_player_left_the_round(
     db.session.commit()
     assert removed.current_trial.sync_group_outcome == outcome
     if getattr(remove, "fails", False):
-        assert removed.failed and removed.sync_group_removal_reason("main") == "late"
+        assert removed.failed and removed.sync_group_removal_reason("main") == outcome
 
 
 @in_consents_experiment

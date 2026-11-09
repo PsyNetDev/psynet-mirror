@@ -396,10 +396,16 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             ":meth:`Trial.cue` on a :class:`SyncGroupNode`, one of "
             ':data:`~psynet.sync.SyncGroupOutcome`: ``"stayed"`` '
             "once a :class:`~psynet.sync.GroupBarrier` releases the group while "
-            "this is the player's current trial, or why the player left the "
+            "this is the player's current trial and every released member whose "
+            "current trial is on one of the group's nodes is on this trial's "
+            "node (members released with no current trial, such as a newcomer "
+            "who skipped the round, or with a trial on another node get "
+            "nothing), or why the player left the "
             "group, one of the reasons of "
             ":meth:`~psynet.sync.SyncGroup.remove_participant`, such as "
-            '``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or '
+            '``"late"``, ``"left_experiment"`` or ``"group_dissolved"`` (for '
+            "every member still in the group when it dissolves, including "
+            'those ``below_quorum="fail"`` fails), or '
             '``"removed"`` without a reason. The first of these is kept, '
             "except that leaving before :attr:`complete` is set replaces "
             '``"stayed"``, and ``"moved_on"`` or ``"finished"`` after it is set '
