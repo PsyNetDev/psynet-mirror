@@ -385,7 +385,8 @@ stores their ID for every member's trial and for the export:
 The writer gets the writing page before the turn's barrier; the others go
 straight to the barrier, whose ``waiting_screen`` shows them the story so
 far. The barrier closes the round, and its ``on_release`` saves the writer's
-sentence in ``node.var``:
+sentence in ``node.var``. Its ``on_dissolve`` does the same if the group
+dissolves while members wait there:
 
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
    :pyobject: StoryTurn.show_trial
@@ -393,9 +394,20 @@ sentence in ``node.var``:
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
    :pyobject: StoryTurn.save_sentence
 
+``on_dissolve`` only runs for members waiting at the barrier, so if the
+group dissolves while the writer is still writing, the writer's own trial
+saves their sentence when it finishes:
+
+.. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
+   :pyobject: StoryTurn.on_finalized
+
 A sentence that never arrived is saved as ``None``, and the writer trial's
 ``sync_group_outcome`` says why: ``"stayed"`` if they ran out of time,
-``"late"`` or ``"left_experiment"`` if they left the group. The export has
+``"late"`` if the barrier took them out, ``"left_experiment"`` if they
+returned the study, or ``"group_dissolved"`` if the others left. If the
+chosen writer leaves between the turn's first cue and their own, they have
+no trial for the turn at all, and the export's ``writer_outcome`` is
+``None``. The export has
 one row per turn, from the nodes and the writers' trials. Each member stores
 their group's ID when the group forms, so the last page can read the story
 from the group's nodes even after the group has ended.
