@@ -99,9 +99,10 @@ find them by when exporting.
 
 So every pair here, new each round, plays round 0, while a fixed group cued
 in a loop plays rounds 0, 1, 2 and so on, whichever trial classes it cues.
-A member who joins it late plays its current round if that is still going,
-or starts the next one, which the others then join, even while the others
-are still on a page after the round's barrier. This needs a barrier in each
+A member who joins it late joins its current round only until any barrier
+of that round releases the group. After that, even while the others are
+still on a page after the barrier, the newcomer starts the next round,
+which the others then join. This needs a barrier in each
 round, such as the one in ``show_trial`` below, so that no member ends a
 round before the others have cued it.
 
@@ -366,7 +367,9 @@ player's own tick. In bot tests, ``advance_past_wait_pages(bots,
 stop_at="investor_sent")`` leaves the bots waiting at that barrier, so the
 test can take the investor's turn first. Once the investor's answer releases
 the barrier, the same call moves the trustee on: ``stop_at`` holds only bots
-the barrier hasn't released yet.
+the barrier hasn't released yet. The first turn's barrier closes the round
+to newcomers: a player who joins the pair after it starts the next round
+rather than joining a round whose first turn is over.
 
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
 example to pair players by their earlier answers. With roles, return each

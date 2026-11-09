@@ -1218,16 +1218,17 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         members cue in one module and round share one :class:`SyncGroupNode`,
         whose ``var`` holds the group's results for the round. ``cue`` numbers
         each group's rounds from 0 by itself: a cue joins the group's newest
-        round while it is open, that is until one of its barriers releases the
-        group or every other current member's trial on it has ended, and
-        otherwise starts the next. Each trial records
+        round while it is open, that is until any barrier of that round
+        releases the group or every other current member's trial on it has
+        ended, and otherwise starts the next. So a newcomer joins a round only
+        before its first barrier releases. Each trial records
         ``sync_group_id``, ``sync_group_role`` and ``sync_group_round``; see
         :ref:`rounds-cued-trials` for the rules. In short:
 
         - Put a :class:`~psynet.sync.GroupBarrier` in each round, for example
           in :meth:`show_trial`, so that members stay in step.
-        - ``trial.answer`` is only set when the trial ends, after that barrier,
-          so its ``on_release`` reads what the pages saved with
+        - ``trial.answer`` is only set when the trial ends, after the round's
+          barriers, so their ``on_release`` reads what the pages saved with
           ``save_answer``.
         - A grouped cue's definition must not depend on the player's own
           position in a loop; pass a function taking ``round`` or ``group``.

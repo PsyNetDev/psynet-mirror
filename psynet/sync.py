@@ -1579,6 +1579,8 @@ class GroupBarrier(Barrier):
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
     have reached the Barrier. It also checks the group against its ``quorum``: a group below it
     can't proceed, and waits for newcomers or is dissolved (see :ref:`groups_below_min_size`).
+    When the group's members are on one round of cued trials, a release closes that round to
+    newcomers, whose cues then start the next round (see :ref:`rounds-cued-trials`).
 
     After the arrival write commits, the same request evaluates the barrier in
     a short transaction so partners are released without waiting for the 0.5 s
@@ -1955,6 +1957,8 @@ class GroupBarrier(Barrier):
                 and not _lock_group_to_stop_top_ups(group)
             ):
                 continue
+            if not _lock_round(group):
+                continue
             group.check_numbers()
             outcome = _group_barrier_outcome(
                 group, group.active_participants, waiting_participant_ids
@@ -1987,7 +1991,8 @@ class GroupBarrier(Barrier):
                 trials = [p.current_trial for p in group.active_participants]
                 node = _shared_node(group, trials)
                 if node is not None:
-                    _close_round(group, node)
+                    # Closes the round to newcomers: their cues start the next.
+                    node.sync_group_released = True
                 if self.on_release:
                     try:
                         self.on_release(
@@ -4331,16 +4336,25 @@ def _shared_node(group, trials):
     return None
 
 
-def _close_round(group, node):
-    """Mark ``node`` released, so that later cues start the group's next round.
+def _lock_round(group) -> bool:
+    """Try the lock of the cued round that ``group``'s members share, or return ``False`` if it is busy.
 
-    Takes the lock that :meth:`SyncGroupNode.for_cue` holds, so a cue either
-    commits before this, or sees the node released.
+    A release marks that round's node released, so newcomers' cues start the
+    next round. :meth:`~psynet.trial.main.SyncGroupNode.for_cue` holds the
+    same lock while a cue runs, so a busy lock defers the release to the next
+    barrier check, instead of waiting while this request holds waiter rows.
+    The group's members are re-read under the lock, so a cue that committed
+    before it is counted. Groups with no shared cued round need no lock.
     """
-    from .trial.main import _lock_until_commit
-
-    _lock_until_commit(f"sync_group_node:{node.module_id}:{group.id}")
-    node.sync_group_released = True
+    node = _shared_node(group, [p.current_trial for p in group.active_participants])
+    if node is None:
+        return True
+    if not _execute_advisory_xact_lock(
+        db.session, f"sync_group_node:{node.module_id}:{group.id}", wait=False
+    ):
+        return False
+    db.session.expire(group, ["participant_links"])
+    return True
 
 
 def _run_on_dissolve(group, members):

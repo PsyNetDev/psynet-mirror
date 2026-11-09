@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from dallinger import db
+from sqlalchemy import text
 
 from psynet.experiment import get_experiment
 from psynet.page import InfoPage
@@ -164,8 +165,9 @@ def test_a_barrier_release_closes_the_round(in_experiment_directory, db_session)
     for participant in cohort:
         logic[0].consume(exp, participant)
     db.session.commit()
-    # Released, but still reading a reveal page, so the trials aren't complete.
-    _arrive(exp, GroupBarrier("pair_done", group_type="pair"), cohort)
+    # The first of the round's two barriers (submitted, then revealed)
+    # releases, and the trials aren't complete yet.
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
     (newcomer,) = _working_participants(exp, 1)
     pair.add_participant(newcomer)
     for participant in [newcomer, *cohort]:
@@ -174,6 +176,31 @@ def test_a_barrier_release_closes_the_round(in_experiment_directory, db_session)
 
     assert newcomer.current_trial.sync_group_round == 1
     assert {p.current_trial.node_id for p in cohort} == {newcomer.current_trial.node_id}
+
+
+@in_consents_experiment
+def test_a_release_waits_for_a_cue_holding_the_round_lock(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    for participant in cohort:
+        PairTrial.cue({"target": 1})[0].consume(exp, participant)
+    db.session.commit()
+    node = cohort[0].current_trial.node
+    barrier = GroupBarrier("submitted", group_type="pair")
+    key = f"sync_group_node:{node.module_id}:{node.sync_group_id}"
+
+    with db.engine.connect() as cue_request, cue_request.begin():
+        cue_request.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": key},
+        )
+        assert barrier.choose_who_to_release(cohort) == []
+    assert not node.sync_group_released
+    released = barrier.choose_who_to_release(cohort)
+    assert {p.id for p in released} == {p.id for p in cohort}
+    assert node.sync_group_released
 
 
 def _cue_in_parallel(exp, logic, participants):
@@ -318,14 +345,25 @@ def test_an_explicit_round_lets_two_classes_share_a_node(
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
-    PairTrial.cue(lambda: {"target": 1}, round=4)[0].consume(exp, cohort[0])
-    VoteTrial.cue({"target": 1}, round=4)[0].consume(exp, cohort[0])
+    for participant in cohort:
+        PairTrial.cue(lambda: {"target": 1}, round=4)[0].consume(exp, participant)
+    db.session.commit()
+    # The first class's barrier releases, but round= still joins the round.
+    _arrive(exp, GroupBarrier("offered", group_type="pair"), cohort)
     with pytest.raises(ValueError, match="already has the definition"):
         VoteTrial.cue({"target": 2}, round=4)[0].consume(exp, cohort[1])
+    for participant in cohort:
+        VoteTrial.cue({"target": 1}, round=4)[0].consume(exp, participant)
     PairTrial.cue({"target": 1})[0].consume(exp, cohort[0])
     db.session.commit()
 
-    assert [t.sync_group_round for t in Trial.query.order_by(Trial.id)] == [4, 4, 5]
+    assert [t.sync_group_round for t in Trial.query.order_by(Trial.id)] == [
+        4,
+        4,
+        4,
+        4,
+        5,
+    ]
     assert SyncGroupNode.query.count() == 2
 
 
