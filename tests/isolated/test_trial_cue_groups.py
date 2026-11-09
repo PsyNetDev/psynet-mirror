@@ -38,6 +38,11 @@ def _make_definition(group, round):
     return {"target": round}
 
 
+def _record_definition_args(group, round):
+    _definition_calls.append((group, round))
+    return {}
+
+
 class PairTrial(Trial):
     time_estimate = 1
     sync_group_type = "pair"
@@ -100,6 +105,9 @@ def test_a_pair_s_cued_trials_share_one_node_per_round(
     ungrouped = cohort[0].current_trial
     assert ungrouped.sync_group_id is None
     assert not isinstance(ungrouped.node, SyncGroupNode)
+    _definition_calls.clear()
+    PairTrial.cue(_record_definition_args)[0].consume(exp, cohort[0])
+    assert _definition_calls == [(None, None)]
 
 
 @in_consents_experiment
@@ -212,6 +220,9 @@ def test_first_ungrouped_trials_cued_in_parallel_share_the_default_node(
 def test_cue_takes_round_only_when_the_trial_has_a_sync_group_type():
     with pytest.raises(ValueError, match="takes round="):
         SoloTrial.cue({}, round=0)
+    for bad in (-1, 1.0, True, "1"):
+        with pytest.raises(ValueError, match="non-negative integer"):
+            PairTrial.cue({}, round=bad)
 
 
 def test_a_grouped_cue_takes_no_node():

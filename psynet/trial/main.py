@@ -1267,15 +1267,17 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             to the participant-facing trial definition.
 
         round :
-            Rarely needed: the group's round to put this trial in, overriding
-            the automatic one, only for phases of one round played one after
-            the other by trials of different classes (pass both the same
-            ``round``). A round with two phases is normally one trial class
-            with several pages, and cues of different classes while a round is
-            open, such as one class per role, share its node and definition
-            without ``round``. Only for a trial class that sets
-            :attr:`sync_group_type`; every member of the group must pass the
-            same value.
+            Rarely needed, since a round with two phases is normally one trial
+            class with several pages, and cues of different classes while a
+            round is open, such as one class per role, share its node and
+            definition without ``round``. The group's round to put this trial
+            in, overriding the automatic one, for phases of one round played
+            one after the other by trials of different classes (pass both the
+            same non-negative integer). Only for a trial class that sets
+            :attr:`sync_group_type`, and only safe when every member is sure
+            to be at the same loop position, as in a fixed group without
+            top-ups and no regrouper; otherwise a late joiner or a mixed group
+            lands on an old round's node or a node of their own.
 
         Examples
         --------
@@ -1333,6 +1335,13 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             raise ValueError(
                 f"{cls.__name__}.cue() takes round= only if "
                 f"{cls.__name__}.sync_group_type is set."
+            )
+        if round is not None and (
+            isinstance(round, bool) or not isinstance(round, int) or round < 0
+        ):
+            raise ValueError(
+                f"{cls.__name__}.cue() takes round= as a non-negative integer, "
+                f"got {round!r}."
             )
 
         if isinstance(definition, ChainNode):

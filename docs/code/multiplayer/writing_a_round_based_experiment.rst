@@ -112,10 +112,13 @@ function taking ``round`` or ``group`` instead, such as
 ``OfferTrial.cue(lambda round: {"block": round})``.
 
 A round with two phases, such as an offer and a reply, is normally one
-trial class with several pages. If you really need trials of two classes in
-one round, pass the same ``round=`` to both cues, for example the index of
-the surrounding :func:`~psynet.timeline.for_loop`; they then share the
-round's node and its definition. A round's node isn't per class: if the
+trial class with several pages. If you really need trials of two classes
+played one after the other in one round, pass the same ``round=`` to both
+cues; they then share the round's node and its definition. This is only
+safe when every member is sure to be at the same loop position, as in a
+fixed group without top-ups and no regrouper: a late joiner, or a group
+mixing players at different positions, would otherwise land on an old
+round's node or a node of their own. A round's node isn't per class: if the
 members cue different classes in the same round, such as an offer trial for
 the proposer and a reply trial for the responder, those trials share the
 node and its definition too, so ``round=`` is only needed for phases played

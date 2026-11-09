@@ -1630,10 +1630,11 @@ class GroupBarrier(Barrier):
         Optional callback invoked when the barrier releases the group. It may take
         ``group``, ``participants`` (the group's active members), ``trials``
         (each member's ``current_trial``, in the same order as ``participants``,
-        for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
+        ``None`` for a member with none, for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
         ``sync_group_type`` that the barrier is part of), ``node`` (the
         group's :class:`~psynet.trial.main.SyncGroupNode` for the round, if
-        all those trials are on it, and otherwise ``None``), ``leader`` (the
+        all those trials are on it, ignoring members with no current trial,
+        and otherwise ``None``), ``leader`` (the
         group's leader), ``participant`` (the same object as ``leader``, kept for
         compatibility), ``left`` (the members who left the group since its
         previous barrier pass, or since it formed; see below) and ``barrier``,
@@ -4284,7 +4285,10 @@ class SimpleSyncGroup(SyncGroup):
 
 
 def _shared_node(group, trials):
-    """Return ``group``'s node that all ``trials`` share, or ``None``."""
+    """Return ``group``'s node that all ``trials`` share, or ``None``.
+
+    Members with no current trial (``None`` in ``trials``) are ignored.
+    """
     from .trial.main import SyncGroupNode
 
     nodes = {trial.node_id: trial.node for trial in trials if trial is not None}

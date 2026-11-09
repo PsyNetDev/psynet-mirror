@@ -100,9 +100,6 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `code/multiplayer/writing_a_round_based_experiment`: besides
   `late_action="leave_group"`, you must also `remove_participant` them from
   the `within` group in `on_release`; see the quorum caveat there.
-- Write such a game as one cued trial per player per round, not as pages
-  with round bookkeeping in participant variables; see "Rounds as cued
-  trials" below.
 - A member on a timed page isn't treated as late until its limit plus 10 s,
   so `late_after` need not cover the page (see "Timeouts" in
   `code/multiplayer/synchronization`); the demos use 30 s so that a
@@ -233,8 +230,10 @@ Module("game", for_loop(
 - Don't make the definition depend on the player's own loop position
   (`lambda i: PickTrial.cue({"block": i})`): late joiners and mixed rooms
   then clash. Use a definition function taking `round` or `group`.
-- A round with two phases is normally one trial class with several pages;
-  the guide covers the rare `round=` for putting two classes in one round.
+- A round with two phases is normally one trial class with several pages.
+  Pass the same `round=` to two classes only if every member is sure to be
+  at the same loop position (a fixed group without top-ups, no regrouper);
+  see the guide.
 - `trial.answer` is only set when the trial ends, after the barrier, so
   `on_release` reads what `save_answer` stored, while `score_answer`,
   `show_feedback` and `get_basic_data` read the trial and `self.node.var`.
