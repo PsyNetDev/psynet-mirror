@@ -59,6 +59,7 @@ class Exp(psynet.experiment.Experiment):
     timeline = Timeline(
         InfoPage("Welcome to the experiment!", time_estimate=5),
         switch(
+            # lambda participant: 3,
             lambda participant: (participant.id - 1) % 4,
             {
                 0: ErrorOnSubmitResponse(38574, "Lorem ipsum", time_estimate=5),

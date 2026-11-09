@@ -35,6 +35,7 @@ class RateTrial(Trial):
 
 word_ratings = Module(
     "word_ratings",
+    # Randomly sample three words from the word list.
     for_loop(
         iterate_over=lambda: random.sample(WORDS, 3),
         logic=lambda word: RateTrial.cue(

@@ -2022,6 +2022,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                     ),
                 ),
                 expected_repetitions=1,
+                label="wait_for_assignment_return",
             ),
         )
 

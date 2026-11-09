@@ -1677,11 +1677,32 @@ def test_deprecated_label_arguments_warn_and_are_ignored():
     assert len(legacy) == len(conditional(lambda: True, page))
     with pytest.warns(FutureWarning, match="no longer uses log_chosen_branch"):
         switch(lambda: "a", {"a": page}, log_chosen_branch=False)
+    # The old positional log_chosen_branch must not become time_estimate.
+    for legacy, time in [
+        (lambda: conditional("l", lambda: True, page, None, False, True, False), 1),
+        (lambda: switch("s", lambda: "a", {"a": page}, False, True, False, 3), 3),
+    ]:
+        with pytest.warns(FutureWarning) as record:
+            elts = legacy()
+        assert "no longer uses log_chosen_branch" in str(record[-1].message)
+        assert CreditEstimate(elts).get_max("time") == time
     with pytest.warns(FutureWarning, match="for_loop\\(\\) no longer uses label"):
         for_loop(label="letters", iterate_over=["a"], logic=page)
     with pytest.warns(FutureWarning, match="pass it as while_loop"):
         loop = while_loop("rounds", lambda: True, page, expected_repetitions=1)
     assert any(isinstance(elt, StartWhile) and elt.label == "rounds" for elt in loop)
+
+
+def test_while_loop_default_label_names_the_condition():
+    def ready():
+        return False
+
+    def label(condition):
+        loop = while_loop(condition, InfoPage("", time_estimate=1), 1)
+        return next(elt.label for elt in loop if isinstance(elt, StartWhile))
+
+    assert label(ready) == "ready"
+    assert label(lambda: False).startswith("lambda@test_timeline.py:")
 
 
 def test_switch_with_trial_maker():

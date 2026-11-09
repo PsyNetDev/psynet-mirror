@@ -2621,6 +2621,7 @@ class TrialMaker(Module):
                 ),
                 expected_repetitions=self.expected_trials_per_participant,
                 fix_time_credit=False,
+                label=self.with_namespace("trial_loop"),
             ),
         )
 

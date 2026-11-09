@@ -33,6 +33,7 @@ class RateTrial(Trial):
 
 audio_ratings = Module(
     "audio_ratings",
+    # Deliver 5 trials with randomly sampled parameters.
     for_loop(
         iterate_over=lambda: [
             {

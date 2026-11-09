@@ -10,6 +10,7 @@ class Exp(psynet.experiment.Experiment):
     timeline = Timeline(
         trial_maker_1.custom(
             trial_maker_2.custom(
+                # Loop over pairs of trials, one from each trial maker.
                 for_loop(
                     iterate_over=lambda: range(3),
                     logic=lambda _: join(

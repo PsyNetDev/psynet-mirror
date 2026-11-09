@@ -453,7 +453,8 @@ Search for ``def fail_participant``, ``data_check_failed``,
   logic)`` becomes ``conditional(lambda participant: ..., logic)``, and delete
   ``label=`` from ``for_loop``, ``sequence`` and ``randomize``. A
   ``while_loop`` may keep ``label=...`` to name its ``while_loop:<label>``
-  failure tag.
+  failure tag; keep it if an analysis reads that tag, because without it a
+  lambda condition gives a tag like ``while_loop:lambda@experiment.py:42``.
 * ``participant.branch_log`` is gone, and ``log_chosen_branch`` is ignored
   with a warning; delete it. If an analysis needs to know which
   branch a participant took, store it with ``participant.var`` in a

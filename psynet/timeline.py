@@ -7,6 +7,7 @@ if TYPE_CHECKING:
 import copy
 import inspect
 import json
+import os
 import random
 import re
 import time
@@ -3241,11 +3242,6 @@ def join(*args):
 
 class StartWhile(NullElt):
     def __init__(self, label):
-        # targets = {
-        #     True: self,
-        #     False: end_while
-        # }
-        # super().__init__(condition, targets)
         super().__init__()
         self.label = label
 
@@ -3288,15 +3284,22 @@ def _elt_key(elt, prefix):
     a page maker get its id plus their index, so the key stays the same each
     time the page maker rebuilds them.
     """
-    return prefix + "_" + "_".join(str(part) for part in elt.id)
+    if elt.id is None:
+        raise RuntimeError(
+            f"{elt} has no timeline position yet, so its {prefix} state has no key. "
+            "Was it left out of the timeline?"
+        )
+    return prefix + json.dumps(elt.id, separators=(",", ":"))
 
 
-def _accepts_deprecated_labels(ignore=()):
+def _accepts_deprecated_labels(ignore=(), removed_positional=None):
     """Let a timeline construct accept deprecated label arguments, warning the caller.
 
     A string first argument, the old positional label, is passed on as
     ``label=``. Keyword arguments named in ``ignore`` (possibly including
-    ``label``) are dropped.
+    ``label``) are dropped. ``removed_positional`` maps an argument name to
+    its old position after the label; when a call with a positional label
+    reaches that position, the argument there is dropped too.
     """
 
     def decorator(func):
@@ -3325,6 +3328,10 @@ def _accepts_deprecated_labels(ignore=()):
                         f"delete it, or pass it as {name}(..., label=...)."
                     )
                 args = args[1:]
+                for arg, position in (removed_positional or {}).items():
+                    if len(args) > position:
+                        args = args[:position] + args[position + 1 :]
+                        warn(f"{name}() no longer uses {arg}; delete it.")
             for arg in ignore:
                 if arg in kwargs:
                     del kwargs[arg]
@@ -3336,12 +3343,15 @@ def _accepts_deprecated_labels(ignore=()):
     return decorator
 
 
-def _label_from_function(function, default):
-    """Return the name of ``function``, or ``default`` if it has none (e.g. a lambda)."""
-    name = getattr(function, "__name__", None)
-    if not name or name == "<lambda>":
-        return default
-    return name
+def _default_while_loop_label(condition):
+    """Name a while loop after its condition, e.g. ``ready`` or ``lambda@experiment.py:42``."""
+    name = getattr(condition, "__name__", None)
+    if name and name != "<lambda>":
+        return name
+    code = getattr(condition, "__code__", None)
+    if code is None:
+        return "while_loop"
+    return f"lambda@{os.path.basename(code.co_filename)}:{code.co_firstlineno}"
 
 
 @_accepts_deprecated_labels()
@@ -3405,7 +3415,8 @@ def while_loop(
 
     label:
         Name of the loop in logs and in the ``while_loop:<label>`` failure tag
-        given on timeout. Defaults to the name of ``condition``.
+        given on timeout. Defaults to the name of ``condition``, or for a
+        lambda its file and line, e.g. ``lambda@experiment.py:42``.
 
     Returns
     -------
@@ -3414,7 +3425,7 @@ def while_loop(
         A list of elts that can be embedded in a timeline using :func:`psynet.timeline.join`.
     """
     if label is None:
-        label = _label_from_function(condition, "while_loop")
+        label = _default_while_loop_label(condition)
 
     start_while = StartWhile(label)
     end_while = EndWhile(label)
@@ -3535,7 +3546,9 @@ def check_branches(branches):
     return branches
 
 
-@_accepts_deprecated_labels(ignore=("label", "log_chosen_branch"))
+@_accepts_deprecated_labels(
+    ignore=("label", "log_chosen_branch"), removed_positional={"log_chosen_branch": 4}
+)
 def switch(
     function: Callable,
     branches: dict,
@@ -3639,7 +3652,9 @@ class EndSwitchBranch(GoTo):
         self.name = name
 
 
-@_accepts_deprecated_labels(ignore=("label", "log_chosen_branch"))
+@_accepts_deprecated_labels(
+    ignore=("label", "log_chosen_branch"), removed_positional={"log_chosen_branch": 5}
+)
 def conditional(
     condition: Callable,
     logic_if_true,
@@ -4285,9 +4300,6 @@ class RecruitmentCriterion(NullElt):
         self.function = function
 
 
-FOR_LOOP_STACK_DEPTH = -1
-
-
 @_accepts_deprecated_labels(ignore=("label",))
 def for_loop(
     *,
@@ -4296,6 +4308,40 @@ def for_loop(
     time_estimate_per_iteration: Optional[float] = None,
     expected_repetitions=None,
 ):
+    """
+    Repeats a unit of timeline logic once for each item in a list.
+
+    Nested for loops each keep their own state, so they need no labels.
+
+    Parameters
+    ----------
+
+    iterate_over:
+        The items to loop over, or a function with up to two arguments named
+        ``participant`` and ``experiment`` that returns them. The function is
+        called once, when the participant enters the loop.
+
+    logic:
+        The timeline logic for each iteration, or a function that takes the
+        current item as its first argument (plus optionally ``participant``
+        and ``experiment``) and returns that logic. The function cannot create
+        modules or trial makers.
+
+    time_estimate_per_iteration:
+        Expected duration of one iteration in seconds. Required if ``logic``
+        is a function; otherwise estimated from ``logic``.
+
+    expected_repetitions:
+        Expected number of iterations, used for progress and time estimates.
+        Inferred from ``iterate_over`` if omitted; required if ``iterate_over``
+        is a function that takes arguments.
+
+    Returns
+    -------
+
+    list
+        A list of elts that can be embedded in a timeline using :func:`psynet.timeline.join`.
+    """
     if time_estimate_per_iteration is None:
         if callable(logic):
             raise ValueError(

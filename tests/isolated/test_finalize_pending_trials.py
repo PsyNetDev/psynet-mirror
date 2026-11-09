@@ -162,6 +162,58 @@ def test_while_loop_timer_restarts_after_extend_while_clears(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+def test_while_loop_in_for_loop_times_each_iteration(
+    db_session, participant, monkeypatch
+):
+    """Loop state survives the page maker rebuilding the loop on each request."""
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    import psynet.timeline as timeline_module
+    from psynet.page import InfoPage, WaitPage
+    from psynet.timeline import Timeline, for_loop, while_loop
+
+    now = datetime.now()
+    monkeypatch.setattr(timeline_module, "datetime", SimpleNamespace(now=lambda: now))
+    timeouts = []
+    timeline = Timeline(
+        for_loop(
+            iterate_over=[1, 2],
+            logic=lambda x: while_loop(
+                lambda: True,
+                WaitPage(wait_time=1),
+                expected_repetitions=0,
+                max_loop_time=10,
+                fail_on_timeout=False,
+                on_timeout=lambda: timeouts.append(x),
+            ),
+            time_estimate_per_iteration=1,
+        ),
+        InfoPage("Continue", time_estimate=0),
+    )
+    exp = get_experiment()
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+
+    def advance(seconds):
+        nonlocal now
+        now += timedelta(seconds=seconds)
+        timeline.advance_page(exp, participant)
+        return isinstance(timeline.get_current_elt(exp, participant), WaitPage)
+
+    assert advance(0)
+    assert advance(5)
+    assert advance(6) and timeouts == [1]
+    assert advance(5)
+    assert not advance(6)
+    assert timeouts == [1, 2]
+    assert timeline.get_current_elt(exp, participant).content == "Continue"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
 @pytest.mark.parametrize("expiry_source", ["clock", "poll", "late_poll"])
 @pytest.mark.parametrize("upload_state", ["pending", "processing"])
 def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
