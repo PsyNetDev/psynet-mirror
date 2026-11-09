@@ -278,6 +278,8 @@ on their trial, where ``show_feedback`` reads it:
 below), ``leader`` and ``barrier`` (``participant`` is the leader too, kept
 for compatibility).
 
+.. _sync-barrier-node:
+
 ``node`` is the group's :class:`~psynet.trial.main.SyncGroupNode` for the
 round the barrier is in or after: the earliest of the rounds the waiting
 members stored when they last cued (or skipped) one in their current
@@ -354,8 +356,10 @@ The first of these to happen is stored, even after the trial's pages
 ended. Two things differ: leaving before they have ended replaces
 ``"stayed"`` from an earlier barrier of the round, and moving on
 (``"moved_on"``, for example at the next round's regrouper) or finishing
-(``"finished"``) after they have ended stores nothing. A partner's outcome
-is on their trial in ``node.all_trials``:
+(``"finished"``) after they have ended stores nothing. Nor does leaving the
+group once the player is in a later module, for example by failing a
+questionnaire there. A partner's outcome is on their trial in
+``node.all_trials``:
 
 .. code-block:: python
 
@@ -397,7 +401,11 @@ the group dissolves get neither callback: they pass the barrier without
 waiting. If they need a result too, give them one in a step after the
 barrier, for example when their trial's ``sync_group_outcome`` is
 ``"group_dissolved"``, as it is for every member still in the group when it
-dissolves, waiting or not (see :ref:`round outcomes <sync-round-outcome>`).
+dissolves, waiting or not, unless the trial's pages had already ended with
+``"stayed"`` (see :ref:`round outcomes <sync-round-outcome>`). For a barrier
+after ``show_trial``, such as in ``show_feedback``, check
+``participant.sync_group_removal_reason(group_type) == "group_dissolved"``
+instead.
 
 The barrier ``id_`` identifies one waiting point. Barriers with the same ID
 share a waiting pool, so give barriers with different ``on_release``
