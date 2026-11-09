@@ -38,7 +38,13 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper, only_in_group
+from psynet.sync import (
+    GroupBarrier,
+    Regrouper,
+    SimpleGrouper,
+    SyncGroup,
+    only_in_group,
+)
 from psynet.timeline import (
     CodeBlock,
     Module,
@@ -287,7 +293,11 @@ class OfferTrial(Trial):
 
     @classmethod
     def score_pair(
-        cls, trials: List["OfferTrial"], node: SyncGroupNode, left: List[Participant]
+        cls,
+        group: SyncGroup,
+        trials: List["OfferTrial"],
+        node: SyncGroupNode,
+        left: List[Participant],
     ):
         """Save the pair's offer and result on the node, and each player's coins on their trial.
 
@@ -310,7 +320,10 @@ class OfferTrial(Trial):
             result = "timed_out"
         else:
             result = "accepted" if offer >= minimum else "rejected"
-        node.var.players = {role: t.participant_id for role, t in by_role.items()}
+        # From the pair's links, which outlast removal, so an away player is kept.
+        node.var.players = {
+            link.role: link.participant_id for link in group.participant_links
+        }
         node.var.offer = offer
         node.var.minimum = minimum
         node.var.result = result

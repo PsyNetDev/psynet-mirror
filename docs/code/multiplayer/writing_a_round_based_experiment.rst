@@ -322,6 +322,12 @@ own trials as their round:
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: get_timeline
 
+A player left with nobody to play with, for example a latecomer whose
+last round comes after everyone else has finished, waits at the regrouper
+for up to a minute. Then ``max_wait_action="continue_without_group"`` lets
+them carry on without a room, and ``only_in_group`` shows them a short page
+instead of the round, rather than failing them.
+
 Each player picks a number, and the room sees who has picked, who ran out
 of time and who is still deciding:
 

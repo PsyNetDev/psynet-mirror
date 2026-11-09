@@ -18,9 +18,11 @@ doesn't choose in time misses the round and joins the next one, so the rest
 of the room isn't held up. A player who leaves the page, for example by
 closing the tab, is removed from their room 30 s after the room forms, or
 10 s after the time limit if that is later.
-Missing a round doesn't fail anyone. A player who comes back after the
-others' last round has started waits alone, though, and is failed once they
-reach the regrouper's ``max_wait_time`` (300 s by default), as at any barrier.
+Missing a round doesn't fail anyone. A player left with nobody to play
+with, for example one who comes back after the others' last round has
+started, waits at the regrouper for up to ``MAX_WAIT_SECONDS``, then skips
+that round with a short message (``max_wait_action="continue_without_group"``
+and ``only_in_group``) instead of being failed.
 
 To keep the same people together across rounds, form cohorts first and
 regroup within them (``Regrouper("room", within="cohort", ...)``); see the
@@ -35,7 +37,7 @@ from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
-from psynet.sync import GroupBarrier, Regrouper
+from psynet.sync import GroupBarrier, Regrouper, only_in_group
 from psynet.timeline import Module, PageMaker, Timeline, for_loop, join
 from psynet.trial.main import SyncGroupNode, Trial
 
@@ -46,6 +48,9 @@ N_ROUNDS = 2
 NUMBERS = [1, 2, 3, 4, 5]
 WIN_BONUS = 0.10
 WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + 20
+# Longer than the others can take to finish a round (the choice page plus the
+# barrier's late_after) and reach the next split.
+MAX_WAIT_SECONDS = 60
 
 
 def get_timeline():
@@ -68,8 +73,18 @@ def get_timeline():
                         every=ROUND_SECONDS,
                         waiting_message=round_message,
                         waiting_screen="Getting the next round ready.",
+                        max_wait_time=MAX_WAIT_SECONDS,
+                        max_wait_action="continue_without_group",
                     ),
-                    PickTrial.cue({"numbers": NUMBERS}),
+                    only_in_group(
+                        "room",
+                        PickTrial.cue({"numbers": NUMBERS}),
+                        otherwise=InfoPage(
+                            "Nobody else was left to play this round with, so "
+                            "you skip it.",
+                            time_estimate=5,
+                        ),
+                    ),
                 ),
                 time_estimate_per_iteration=PickTrial.time_estimate + 5,
                 expected_repetitions=N_ROUNDS,

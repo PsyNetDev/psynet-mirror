@@ -318,7 +318,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         If ``True`` (default), PsyNet will check at the end of the trial whether the participant received
         the expected amount of time credit. If the received amount is inconsistent with the amount
         specified by ``time_estimate``, then a warning message will be delivered,
-        suggesting a revised value for ``time_estimate``.
+        suggesting a revised value for ``time_estimate``. Trials played in a
+        group (with ``sync_group_id``) are not checked, because by default their
+        barriers credit the time actually spent waiting for the others.
 
     response_id : int
         ID of the associated :class:`~psynet.timeline.Response` object.
@@ -1532,7 +1534,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         trial.time_credit_from_trial = (
             trial.time_credit_after_trial - trial.time_credit_before_trial
         )
-        if trial.check_time_credit_received:
+        if trial.check_time_credit_received and trial.sync_group_id is None:
             original_estimate = cls._get_trial_time_estimate(
                 trial_maker=trial.trial_maker
             )

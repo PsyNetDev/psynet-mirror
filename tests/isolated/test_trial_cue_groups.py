@@ -1,5 +1,6 @@
 """Tests for :meth:`Trial.cue` with a trial class that has ``sync_group_type``."""
 
+import logging
 import sys
 import threading
 import time
@@ -121,6 +122,26 @@ def test_group_barrier_passes_the_members_trials_to_on_release(
     trials = PairTrial.query.order_by(PairTrial.participant_id).all()
     assert sorted(trials[0].node.var.players) == [p.id for p in cohort]
     assert all(trial.var.scored for trial in trials)
+
+
+@in_consents_experiment
+def test_only_ungrouped_trials_check_their_time_credit(
+    in_experiment_directory, db_session, caplog
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    PairTrial.cue({})[0].consume(exp, cohort[0])
+    pair.remove_participant(cohort[1])
+    PairTrial.cue({})[0].consume(exp, cohort[1])
+    with caplog.at_level(logging.INFO):
+        for participant in cohort:
+            PairTrial._log_time_credit_before_trial(participant)
+            participant.inc_time_credit(40)  # e.g. waiting at a barrier
+            PairTrial._log_time_credit_after_trial(participant)
+
+    warned = [r.getMessage() for r in caplog.records if "unexpected" in r.getMessage()]
+    assert len(warned) == 1 and f"Trial {cohort[1].current_trial.id} " in warned[0]
 
 
 def _cue_in_parallel(exp, logic, participants):
