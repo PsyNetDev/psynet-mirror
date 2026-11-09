@@ -116,7 +116,6 @@ class ContributionTrial(Trial):
                 group=self.sync_group,
             ),
             PushButtonControl(choices=list(range(ENDOWMENT + 1))),
-            save_answer="contribution",
             time_limit=DECISION_SECONDS,
             time_estimate=DECISION_SECONDS,
         )
@@ -128,11 +127,8 @@ class ContributionTrial(Trial):
         node.var.pot = sum(node.var.contributions.values())
         node.var.share = MULTIPLIER * node.var.pot / len(trials)
         for trial in trials:
-            # None means the player ran out of time.
-            trial.var.contribution = trial.participant.var.contribution
-            trial.var.payoff = (
-                ENDOWMENT - (trial.var.contribution or 0) + node.var.share
-            )
+            # An answer of None means the player ran out of time.
+            trial.var.payoff = ENDOWMENT - (trial.answer or 0) + node.var.share
 
     @classmethod
     def cancel_round(cls, trials: List["ContributionTrial"], node: SyncGroupNode):
@@ -158,10 +154,10 @@ class ContributionTrial(Trial):
 
     def show_feedback(self, experiment, participant):
         node = self.node
-        if self.var.contribution is None:
+        if self.answer is None:
             you = "You ran out of time and put in nothing"
         else:
-            you = f"You put in {self.var.contribution}"
+            you = f"You put in {self.answer}"
         return ModularPage(
             "results",
             GroupPrompt(
@@ -182,7 +178,7 @@ class ContributionTrial(Trial):
 
 def contributions(trials):
     """Return each player's tokens in the pot, keyed by participant ID as a string."""
-    return {str(t.participant_id): t.participant.var.contribution or 0 for t in trials}
+    return {str(t.participant_id): t.answer or 0 for t in trials}
 
 
 def game_over(participant):
@@ -225,9 +221,8 @@ class Exp(psynet.experiment.Experiment):
                     "group_id": t.sync_group_id,
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
-                    # Only for rounds with results; None there means the
-                    # player ran out of time.
-                    "contribution": t.var.get("contribution"),
+                    # None if the player ran out of time or never answered.
+                    "contribution": t.answer,
                     "played": t.var.has("payoff"),
                     # None if the player returned the study during the round.
                     "payoff": t.score,
