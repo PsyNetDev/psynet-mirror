@@ -1233,9 +1233,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         - A grouped cue's definition must not depend on the player's own
           position in a loop; pass a function taking ``round`` or ``group``.
         - A participant who is in no group of that type gets an ungrouped
-          trial on the module's default node, so wrap the cue in
-          ``join(..., stop_if=...)`` if its pages need the group. Once
-          started, the trial runs to its end even if they leave the group.
+          trial on the module's default node, so put the cue in a
+          :func:`~psynet.timeline.conditional` on
+          ``participant.in_sync_group(...)`` if its pages need the group.
+          Once started, the trial runs to its end even if they leave the
+          group, so :meth:`show_feedback` can explain every outcome.
 
         Parameters
         ----------

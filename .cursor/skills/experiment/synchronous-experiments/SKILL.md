@@ -135,14 +135,15 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   never cuts a started argument short, so a barrier or cued trial runs whole.
   To end the rounds, pass the same `stop_if` to the `for_loop`. Put the
   grouper or `Regrouper` before the `join`, not among its arguments, or
-  everyone not yet grouped skips it.
+  everyone not yet grouped skips it. A round that is one cued trial needs
+  only a `conditional` (see "Rounds as cued trials").
 - Follow with a `conditional` on the same function for what a member who
   left, or anyone who never had a group, does instead, such as answering the
   rest of the question alone. With a `Regrouper` in the loop, it is also the
   page for a player it sat out that round:
   `join(Regrouper(...), join(decision_page, barrier, outcome_page, stop_if=left_pair), conditional("sat_out", left_pair, sitting_out))`.
   Check `regrouper.sat_out(participant)` there to tell a sit-out from a
-  player removed for being late, as `not_playing` in `ultimatum_pairing` does.
+  player removed for being late.
 - In a `Regrouper` game the player whose partner left stays in the pair, so
   they play the round out and see its outcome, as in `ultimatum_pairing`;
   only the player removed for being late is out of the pair, and gets their
@@ -202,17 +203,14 @@ class PickTrial(Trial):
         for trial in trials:  # each player's result
             trial.var.choice = trial.participant.var.choice
 
-def left_room(participant):
-    return not participant.in_sync_group("room")
-
 # The Module gives the nodes a module_id to find them by when exporting.
 Module("game", for_loop(
     label="rounds", iterate_over=range(N_ROUNDS), time_estimate_per_iteration=20,
     logic=join(
         Regrouper("room", ...),
         # Players the regrouper left out see a page instead of a trial.
-        join(PickTrial.cue({"numbers": NUMBERS}), stop_if=left_room),
-        conditional("skipped", left_room,
+        conditional("in_room", lambda participant: participant.in_sync_group("room"),
+                    PickTrial.cue({"numbers": NUMBERS}),
                     InfoPage("You skip this round.", time_estimate=5)),
     ),
 ))
@@ -224,10 +222,12 @@ Module("game", for_loop(
 - `trial.answer` is only set when the trial ends, after the barrier, so
   `on_release` reads what `save_answer` stored, while `score_answer`,
   `show_feedback` and `get_basic_data` read the trial and `self.node.var`.
-- Use `self.sync_group_role` for role-specific pages, and wrap the cue in
-  `join(..., stop_if=left_room)`, followed by a `conditional` on `left_room`,
-  so a player the regrouper sat out gets a page instead of a trial. A
-  started trial runs to its end even if the player leaves the group.
+- Use `self.sync_group_role` for role-specific pages, and put the cue in a
+  `conditional` on `participant.in_sync_group(...)`, with a page as the
+  other branch, so a player the regrouper sat out gets a page instead of a
+  trial. A started trial runs to its end even if the player leaves the
+  group, so its `show_feedback` explains every outcome, including being
+  removed for lateness.
 
 ## Recruitment and platform design
 
