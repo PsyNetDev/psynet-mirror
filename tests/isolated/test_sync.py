@@ -109,6 +109,7 @@ from timeline_hold_helpers import (  # noqa: E402
     _hold_wake_publications,
     _json_hold_is_silent,
     _json_timeline,
+    _lock_participant_row,
     _participant_hold,
     _participant_row_is_locked,
     _process_response,
@@ -3749,6 +3750,29 @@ def test_dissolution_waits_for_a_busy_member_then_removes_everyone_at_once(
         assert not participant.in_sync_group("main")
         assert participant.failed == (below_quorum == "fail")
     assert SyncGroup.query.get(group_id).active is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_deferred_dissolution_leaves_free_members_rows_unlocked(
+    in_experiment_directory, db_session
+):
+    """Waiting for a busy member doesn't hold the free members' rows until the caller commits."""
+    exp = get_experiment()
+    (free, busy, quitter), group = _sync_group_of(exp, db_session, 3)
+
+    with _lock_participant_row(busy.id):
+        _set_transaction_lock_timeout(1)
+        quitter.fail("returned")
+        assert group.dissolving
+        assert not _participant_row_is_locked(free.id)
+        db.session.commit()
+
+    db.session.expire_all()
+    assert Participant.query.get(quitter.id).failed
+    assert not Participant.query.get(quitter.id).in_sync_group("main")
+    assert Participant.query.get(free.id).in_sync_group("main")
 
 
 @pytest.mark.parametrize(

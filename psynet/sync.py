@@ -1681,7 +1681,7 @@ class GroupBarrier(Barrier):
         the last question for the members who answered it. It takes the same
         arguments as ``on_release`` except ``leader``: ``participants`` are
         the members waiting here. The same serialization rules apply.
-        Dissolving waits until no member's request is in flight, so
+        Dissolving waits until no other member's request is in flight, so
         ``on_dissolve`` is called once, with every member waiting here.
 
     stop_top_ups
@@ -2115,17 +2115,18 @@ class GroupBarrier(Barrier):
         had_others = group.n_active_participants > 0
         if hasattr(group, "dissolve_if_below_quorum"):
             group.dissolve_if_below_quorum()
-        dissolved = group.n_active_participants == 0 or group.dissolving
+        dissolves = group.n_active_participants == 0 or group.dissolving
         if (
             had_others
-            and dissolved
+            and dissolves
             and getattr(group, "below_quorum", None) != "continue_without_group"
         ):
             logger.warning(
-                "GroupBarrier '%s': removing late members %s dissolved group %s, "
-                "so its below_quorum may have failed its other members while the "
-                "late ones carry on. Set below_quorum='continue_without_group' on "
-                "the grouper to let them carry on too.",
+                "GroupBarrier '%s': removing late members %s dissolves group %s "
+                "(now, or once its members' requests finish), so its below_quorum "
+                "may fail its other members while the late ones carry on. Set "
+                "below_quorum='continue_without_group' on the grouper to let them "
+                "carry on too.",
                 self.id,
                 [p.id for p in late],
                 group.id,
@@ -3899,8 +3900,8 @@ class SyncGroup(SQLBase, SQLMixin):
     end_time = Column(DateTime)
     last_barrier_pass_time = Column(DateTime, nullable=True)
     leader_id = Column(Integer, ForeignKey("participant.id"))
-    # Dissolution started but skipped members whose rows were busy; the
-    # barrier poller finishes it.
+    # Dissolution is queued because a member's row was busy; nobody has been
+    # removed yet, and the barrier poller dissolves the group all at once.
     dissolving = Column(Boolean, default=False)
     # The grouper that formed the group, and for a Regrouper with ``within``,
     # the group it regrouped within.
@@ -4287,12 +4288,21 @@ def _lock_free_participants(participants):
 def _lock_all_participants(participants):
     """Lock every participant's row without waiting, or return ``None`` if another transaction holds one.
 
-    Like :func:`_lock_free_participants`, but all or nothing. The rows it did
-    lock stay locked until this transaction ends.
+    Like :func:`_lock_free_participants`, but all or nothing. The locks are
+    taken in a savepoint, rolled back if any row was skipped, so the free
+    members' requests are not held up until this transaction ends. Opening
+    the savepoint flushes pending changes, so rolling it back keeps them.
     """
-    locked = _skip_locked_participant_ids(participants)
+    savepoint = db.session.begin_nested()
+    try:
+        locked = _skip_locked_participant_ids(participants)
+    except BaseException:
+        savepoint.rollback()
+        raise
     if any(participant.id not in locked for participant in participants):
+        savepoint.rollback()
         return None
+    savepoint.commit()
     return _still_working(participants)
 
 

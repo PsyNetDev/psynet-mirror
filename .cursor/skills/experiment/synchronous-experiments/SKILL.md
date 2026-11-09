@@ -74,7 +74,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   when it isn't set. Pass the same function as `on_dissolve` too when members
   waiting at the barrier as the group dissolves should still get their
   result; it is called once, with all of them, because dissolving waits until
-  no member's request is in flight. Members still on an earlier page get
+  no other member's request is in flight. Members still on an earlier page get
   neither callback, so
   check `participant.sync_group_removal_reason(...)` in a step after the
   barrier if they need a result too.
