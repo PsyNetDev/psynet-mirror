@@ -4,6 +4,7 @@ import logging
 import sys
 import threading
 import time
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -536,6 +537,66 @@ def test_a_member_in_the_next_round_doesnt_hold_up_this_round_s_later_barrier(
     assert sorted(cohort[0].current_trial.node.var.players) == [p.id for p in cohort]
     # The newcomer still waits for the others to reach round 1.
     assert newcomer.active_barriers["submitted"].released is False
+
+
+@pytest.mark.parametrize("late_after", [None, 10])
+@in_consents_experiment
+def test_a_skipper_doesnt_wait_for_players_who_passed_a_later_barrier(
+    in_experiment_directory, db_session, late_after
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    for participant in cohort:
+        _cue_round(exp, participant, 0)
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    (newcomer,) = _working_participants(exp, 1)
+    pair.add_participant(newcomer)
+    after_loop = GroupBarrier(
+        "after_loop",
+        group_type="pair",
+        late_after=late_after,
+        late_action="leave_group",
+    )
+    _arrive(exp, after_loop, cohort)
+    if late_after:
+        # The players would be late if the skipper's visit waited for them.
+        pair.last_barrier_pass_time -= timedelta(seconds=60)
+        for link in pair.participant_links:
+            link.arrival_time -= timedelta(seconds=60)
+
+    assert _cue_round(exp, newcomer, 0) is None
+    _arrive(exp, after_loop, [newcomer])
+    assert not after_loop._participant_is_waiting(newcomer)
+    assert all("pair" in p.active_sync_groups for p in cohort)
+
+
+@in_consents_experiment
+def test_a_barrier_repeated_in_a_round_waits_for_everyone_each_time(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    for participant in cohort:
+        _cue_round(exp, participant, 0)
+    step = GroupBarrier("step", group_type="pair")
+    _arrive(exp, step, cohort)
+    _arrive(exp, step, cohort[:1])
+    assert step._participant_is_waiting(cohort[0])
+
+
+@in_consents_experiment
+def test_cueing_a_round_again_after_a_later_one_raises(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    for i in (0, 1):
+        for participant in cohort:
+            _cue_round(exp, participant, i)
+        _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    with pytest.raises(RuntimeError, match="its own module id"):
+        _cue_round(exp, cohort[0], 0)
 
 
 @in_consents_experiment

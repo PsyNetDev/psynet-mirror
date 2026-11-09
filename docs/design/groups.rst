@@ -32,7 +32,9 @@ A **barrier** makes every member of a group wait until all members have
 reached it. Barriers go wherever the design needs participants to be in the
 same place: before a round starts, after everyone has responded, or before
 results are shown. When the last member arrives, the barrier can run code for
-the whole group, such as scoring a round or assigning roles.
+the whole group, such as scoring a round or assigning roles. For cued rounds,
+where a barrier waits only for the members of its round, see
+:ref:`rounds-cued-trials`.
 
 In a trial maker, the group can also share its trials. One member acts as the
 **leader**: PsyNet picks the leader's next node as if they were taking the
