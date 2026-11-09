@@ -27,7 +27,9 @@ Design constraints:
   Members who moved on to their next group, as in a new round, are no
   longer shown, except on pages with ``answers`` that include their answer,
   where they keep their seat and bubble. The reason comes from
-  :meth:`psynet.sync.SyncGroup.remove_participant`.
+  :meth:`psynet.sync.SyncGroup.remove_participant`. While the group accepts
+  top-ups, members who left are omitted; after top-ups stop they appear too
+  (:ref:`sync-lobby-top-ups`).
 - The HTML is built on the server; ``static/scripts/group-prompt.js`` only
   updates ticks and dashes, so pages without JavaScript still show the group.
 """
@@ -78,6 +80,8 @@ class GroupPrompt(Prompt):
     dropped out of the group is drawn faded and marked "(left)",
     "(removed)", "(finished)" or "(dropped out)"; one who moved on to their next group, as in a
     new round, is no longer shown, unless the page shows their answer.
+    While the group accepts top-ups, members who left are omitted; after
+    top-ups stop they appear too (:ref:`sync-lobby-top-ups`).
 
     A page shows either progress (ticks for who has answered) or
     ``answers``, and what it draws from the group's state updates live:
