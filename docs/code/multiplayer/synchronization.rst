@@ -937,17 +937,21 @@ example "(dropped out)", unless the group still accepts top-ups (see
 For the rest of the timeline:
 
 - :class:`~psynet.sync.GroupBarrier`\ s of that group type let them straight
-  through. Pages between the barriers are still shown, so wrap the steps of
-  a round in :func:`~psynet.sync.only_in_group`, which skips each step once
-  the participant is out of the group. Its ``otherwise=`` runs for them
-  afterwards instead, for example to answer a question alone if they never
-  answered it with the group (see its docstring). A round played as a
-  trial added with :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` needs
-  no wrapper for that: a participant who is out of the group when the trial
-  starts gets an ungrouped trial, so ``show_trial`` can give them the solo
-  version of the round. In the ``crowd_estimate`` demo, they give their
-  estimate without the group's median, and a member whose estimate is not in
-  the median is told so:
+  through. Pages between the barriers are still shown, so give the steps of
+  a round to :func:`~psynet.timeline.join` with ``stop_if``, which checks
+  before each argument and skips the remaining arguments once the
+  participant has left. Each argument runs to its end once started, so a
+  page, barrier or cued trial is never cut short, and a trial is still
+  scored and paid. To end a game's rounds, give the loop the same
+  ``stop_if``: :func:`~psynet.timeline.for_loop` checks it before each
+  iteration. Show something to the participants who left with a
+  ``conditional`` afterwards. A round played as a trial added with
+  :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` needs no ``stop_if``
+  for that: a participant who is out of the group when the trial starts
+  gets an ungrouped trial, so ``show_trial`` can give them the solo version
+  of the round. In the ``crowd_estimate`` demo, they give their estimate
+  without the group's median, and a member whose estimate is not in the
+  median is told so:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
      :pyobject: EstimateTrial.show_trial
@@ -955,22 +959,17 @@ For the rest of the timeline:
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
      :pyobject: EstimateTrial.revise_page
 
-  Lists and ``join(...)`` are split into their steps, but a barrier,
-  ``conditional`` or loop is one step, checked when the participant reaches
-  it, so a loop passed to ``only_in_group`` runs to its end. For rounds,
-  pass a list of the rounds' steps, as in
-  ``only_in_group("pair", [round_steps(n) for n in range(N_ROUNDS)])``, or
-  put ``only_in_group`` inside the loop's ``logic``. The steps are for
-  participants already in the group, so the grouper or
-  :class:`~psynet.sync.Regrouper` that forms it goes before
-  ``only_in_group``, never among its steps. There it would be skipped by
-  everyone not yet in a group: at the start that is everyone, and later it is
-  anyone who sat out a round, who would then never be grouped again. When
-  pairs change every round, use ``for_loop(..., logic=join(Regrouper(...), only_in_group("pair",
-  round_steps(), otherwise=sitting_out)))``, where ``sitting_out`` is a page
-  for anyone not in a pair by the end of the round: sat out by the
-  regrouper, or removed partway for being late. Without ``otherwise`` they
-  skip the round with no page.
+  Put the grouper or :class:`~psynet.sync.Regrouper` that forms the group
+  before the ``join``, not among its arguments: it would be skipped by
+  everyone not yet in a group, at the start everyone and later anyone who sat
+  out a round, who would then never be grouped again. When pairs change
+  every round, use ``for_loop(..., logic=join(Regrouper(...),
+  join(decision_page, round_barrier, outcome_page, stop_if=left_pair),
+  conditional("sat_out", left_pair, sitting_out)))``, where ``sitting_out``
+  is a page for anyone not in a pair by the end of the round: sat out by the
+  regrouper, or removed partway for being late. Pass the steps themselves
+  to the ``join``, not ``*`` the result of another ``join``, which is
+  already a flat list of elements.
 - Trial makers synchronized on that group type give them no more trials.
   A member who leaves before finishing any trial of such a trial maker,
   including one who is out of the group when it starts, skips the rest of

@@ -55,8 +55,8 @@ from psynet.bot import (
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, NumberControl
 from psynet.page import InfoPage
-from psynet.sync import GroupBarrier, SimpleGrouper, only_in_group
-from psynet.timeline import Module, PageMaker, Timeline, for_loop, join
+from psynet.sync import GroupBarrier, SimpleGrouper
+from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop, join
 from psynet.trial.main import SyncGroupNode, Trial
 
 GROUP = "crowd"
@@ -91,8 +91,7 @@ def get_timeline():
             max_wait_action="continue_without_group",
             waiting_message="Waiting for other players to join…",
         ),
-        only_in_group(
-            GROUP,
+        join(
             InfoPage(
                 "You're in a group of up to four players. For each question, "
                 "give an estimate, see your group's estimates, and then give "
@@ -106,8 +105,9 @@ def get_timeline():
                 late_action="leave_group",
                 stop_top_ups=True,
             ),
-            otherwise=InfoPage(SOLO_TEXT, time_estimate=5),
+            stop_if=left_group,
         ),
+        conditional("solo", left_group, InfoPage(SOLO_TEXT, time_estimate=5)),
         Module(
             "game",
             for_loop(
@@ -119,6 +119,10 @@ def get_timeline():
             ),
         ),
     )
+
+
+def left_group(participant):
+    return not participant.in_sync_group(GROUP)
 
 
 def cue_question(question):

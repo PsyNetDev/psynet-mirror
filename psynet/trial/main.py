@@ -1234,7 +1234,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           position in a loop; pass a function taking ``round`` or ``group``.
         - A participant who is in no group of that type gets an ungrouped
           trial on the module's default node, so wrap the cue in
-          :func:`~psynet.sync.only_in_group` if its pages need the group.
+          ``join(..., stop_if=...)`` if its pages need the group. Once
+          started, the trial runs to its end even if they leave the group.
 
         Parameters
         ----------
@@ -1312,6 +1313,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 def score_room(cls, trials, node):
                     node.var.picks = [t.participant.var.pick for t in trials]
 
+            def left_room(participant):
+                return not participant.in_sync_group("room")
+
             # A fixed room plays rounds 0, 1 and 2. The Module gives the nodes
             # a module_id, for example to find them by when exporting.
             join(
@@ -1321,13 +1325,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                     for_loop(
                         label="rounds",
                         iterate_over=range(3),
-                        logic=only_in_group(
-                            "room",
-                            PickTrial.cue({"numbers": [1, 2, 3, 4, 5]}),
-                            otherwise=InfoPage("Your room has ended.", time_estimate=5),
-                        ),
+                        logic=PickTrial.cue({"numbers": [1, 2, 3, 4, 5]}),
                         time_estimate_per_iteration=20,
+                        stop_if=left_room,
                     ),
+                ),
+                conditional(
+                    "room_ended",
+                    left_room,
+                    InfoPage("Your room has ended.", time_estimate=5),
                 ),
             )
         """

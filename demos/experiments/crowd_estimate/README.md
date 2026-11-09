@@ -12,7 +12,7 @@ without a group answers the questions alone instead of being failed.
 Good reference for a `SimpleGrouper` with `start_short_after`, top-ups
 (`join_existing_groups=True`) that stop when the game starts
 (`GroupBarrier(stop_top_ups=True)`), `top_up_wait` for a group waiting for a
-replacement, and `only_in_group(..., otherwise=...)` for participants
+replacement, and `join(..., stop_if=...)` with a `conditional` for participants
 without a group. Each question is one cued trial per player
 (`Trial.cue(...)` on a trial class with `sync_group_type`): the group's estimates
 and median are saved once on the node its members' trials share, and a
