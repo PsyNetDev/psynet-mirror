@@ -113,10 +113,15 @@ in its feedback, between iterations or after the loop) waits for the
 members who played that round, and for those who haven't reached it yet
 only while it is still open. It doesn't wait for a member who skipped the
 round or is already in a round the group played after it, such as that
-newcomer. When it releases, it also releases the round's skippers who are
-waiting there, for example at a barrier after the loop. A barrier the group
-passes once, before the rounds, needs ``pass_newcomers=True`` (see
-:ref:`sync-newcomers-at-passed-barriers`).
+newcomer, nor for one who has already passed it in that round. When it
+releases, it also releases the round's skippers who are waiting there, so a
+skipper who reaches a barrier after the loop is released with the players,
+or alone if they have already passed it.
+
+These rules use the rounds members have cued or skipped, so they don't cover
+a barrier the group passes once, before the rounds: a newcomer who reaches
+it after the group has gone waits there for good. Give such a barrier
+``pass_newcomers=True`` (see :ref:`sync-newcomers-at-passed-barriers`).
 
 So a trial has two round counters. ``sync_group_round`` counts the group's
 rounds, and is ``None`` on a trial played without a group. Use it for what
@@ -182,7 +187,10 @@ iterations alone, with the same loop values. Rounds are ordered by when
 the group first plays them, so the loop values needn't increase. Don't
 pass ``round=`` with a
 regrouper: its groups mix players at different loop positions, whose trials
-would be split across rounds.
+would be split across rounds. A module whose cues pass ``round=`` runs once
+per participant, because a group's rounds belong to the module id: give
+each run its own module id. Cueing a round again after a later one raises
+an error.
 
 Classes cued in the same open round share its node and definition: if the
 members cue different classes, such as an offer trial for the proposer and
