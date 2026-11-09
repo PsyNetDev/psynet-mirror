@@ -1556,8 +1556,8 @@ class GroupBarrier(Barrier):
     """
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
     have reached the Barrier. It also checks the group against its ``quorum``: a group below it
-    can't proceed. If the group accepts top-ups, the barrier waits for new participants to join; otherwise
-    the group is dissolved, and the grouper's ``below_quorum`` decides what happens to its members.
+    can't proceed, and waits for newcomers or is dissolved as described in
+    :meth:`SyncGroup.remove_participant`.
 
     After the arrival write commits, the same request evaluates the barrier in
     a short transaction so partners are released without waiting for the 0.5 s
@@ -1612,8 +1612,8 @@ class GroupBarrier(Barrier):
         ``on_arrival_message`` for larger groups), and a :class:`~psynet.group_prompt.GroupPrompt` marks them
         "(dropped out)". It is the waiting member who leaves, not the absent ones; to move on
         without slow members, use ``late_after`` and ``late_action`` instead. If that takes
-        the group below its quorum, as in a SimpleGrouper pair, the group dissolves, and the grouper's
-        ``below_quorum`` decides what happens to the others.
+        the group below its quorum, see :meth:`SyncGroup.remove_participant` for whether it
+        is dissolved.
 
     late_after
         Acts on members who haven't reached this barrier yet: the longest each may take to reach it, in seconds,
@@ -1632,10 +1632,9 @@ class GroupBarrier(Barrier):
         ``group``, ``participants`` (the group's active members), ``trials``
         (each member's ``current_trial``, in the same order as ``participants``,
         for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
-        ``sync_group_type`` that the barrier is part of), ``node`` (the node
-        all those trials share, such as the group's
-        :class:`~psynet.trial.main.SyncGroupNode` for the round, or ``None`` if
-        they don't share one), ``leader`` (the
+        ``sync_group_type`` that the barrier is part of), ``node`` (the
+        group's :class:`~psynet.trial.main.SyncGroupNode` for the round, if
+        all those trials are on it, and otherwise ``None``), ``leader`` (the
         group's leader), ``participant`` (the same object as ``leader``, kept for
         compatibility), ``left`` (the members who left the group since its
         previous barrier pass, or since it formed; see below) and ``barrier``,
@@ -1728,8 +1727,8 @@ class GroupBarrier(Barrier):
         pairs and ``"{ARRIVED}/{TOTAL} of your group are ready."`` in larger
         groups. It is called whenever the participant's browser fetches its
         notice, which can be several times per arrival, so it should depend
-        only on its arguments and have no side effects. Notices stay on one
-        line (overflow ellipsizes), so keep them to a short sentence.
+        only on its arguments and have no side effects. Notices wrap onto at
+        most two lines (overflow ellipsizes), so keep them to a short sentence.
 
         ``"removed"`` is the progress-bar notice for someone removed by
         ``late_action="leave_group"``, shown until they leave
@@ -1957,11 +1956,12 @@ class GroupBarrier(Barrier):
 
                 if self.on_release:
                     try:
+                        trials = [p.current_trial for p in group.active_participants]
                         self.on_release(
                             group=group,
                             participants=group.active_participants,
-                            trials=_current_trials(group.active_participants),
-                            node=_shared_node(group.active_participants),
+                            trials=trials,
+                            node=_shared_node(group, trials),
                             leader=group.leader,
                             participant=group.leader,
                             left=left,
@@ -2419,9 +2419,9 @@ class SimpleGrouper(Grouper):
 
     quorum
         How many active members a group needs to keep going. A group whose
-        members fail or leave until it has fewer than this is below quorum:
-        while it accepts newcomers (``join_existing_groups=True``) its barriers
-        wait for them, and otherwise it is dissolved (see ``below_quorum``).
+        members fail or leave until it has fewer than this is below quorum; it
+        then waits for newcomers or is dissolved, as described in
+        :meth:`SyncGroup.remove_participant`.
         Defaults to ``start_short_with`` if given, and otherwise to
         ``initial_group_size``, so that a group needs all its members; for
         groups of three or more, leaving it out warns. Must be at most
@@ -2445,11 +2445,14 @@ class SimpleGrouper(Grouper):
     join_criterion
         A callable that takes ``group`` and ``participant`` as arguments, and returns ``True``
         if the participant should be allowed to join the group, and ``False`` otherwise.
-        To be used in conjunction with ``join_existing_groups=True``.
+        To be used in conjunction with ``join_existing_groups=True``. Returning ``False``
+        only turns that newcomer away; it doesn't stop top-ups, so use ``top_up_wait`` or
+        :meth:`SimpleSyncGroup.stop_top_ups` too (see :meth:`SyncGroup.remove_participant`).
 
     below_quorum
-        What happens to the members left in a group that falls below ``quorum``, which is
-        then dissolved at once. The member whose departure caused it is handled by their own
+        What happens to the members left when a group is dissolved below its ``quorum``
+        (for when that happens, see :meth:`SyncGroup.remove_participant`; while a group
+        accepts top-ups, it never is). The member whose departure caused it is handled by their own
         cause instead (a barrier's ``max_wait_action`` or ``late_action``, or their
         failure). ``"fail"`` (default) fails them, telling them "Too few members of your
         group remained to continue, so we ended your session." ``"continue_without_group"``
@@ -2459,16 +2462,13 @@ class SimpleGrouper(Grouper):
         example from how many rounds they played. It is called while the group is being
         dissolved, so base the decision on the participant, not on who else is still in
         ``group``; if it raises or returns anything else, the error is logged and the member
-        is failed. With ``join_existing_groups=True`` it applies once the group stops
-        accepting newcomers (see :meth:`SimpleSyncGroup.stop_top_ups` and
-        ``top_up_wait``). A member whose own request is in progress is handled within
+        is failed. A member whose own request is in progress is handled within
         about a second by the barrier poller instead.
 
     top_up_wait
         With ``join_existing_groups=True``, how many seconds a group below its
         ``quorum`` waits for newcomers. Then it stops accepting them, as with
-        :meth:`SimpleSyncGroup.stop_top_ups`, and ``below_quorum`` applies to the
-        members left. The time counts from when the group fell below its quorum,
+        :meth:`SimpleSyncGroup.stop_top_ups`. The time counts from when the group fell below its quorum,
         and runs out when its members are waiting at a barrier of the group.
         Default: ``None``, waiting for newcomers without a limit.
 
@@ -4100,18 +4100,31 @@ class SyncGroup(SQLBase, SQLMixin):
               being late (``late_action="leave_group"``).
             - ``"moved_on"``: not shown, unless the page shows their answer,
               for a member who left at a :class:`Regrouper`, for their next
-              group or to sit the round out. Like ``"finished"``, it doesn't
-              dissolve a group below its quorum, so a pair a
-              :class:`SimpleGrouper` formed isn't dissolved, failing the
-              partner, when the first member reaches a :class:`Regrouper`. A
-              later :class:`GroupBarrier` of the group's type still dissolves
-              it if fewer than its quorum are left.
+              group or to sit the round out, so a pair a :class:`SimpleGrouper`
+              formed isn't dissolved, failing the partner, when the first
+              member reaches a :class:`Regrouper`.
             - ``"finished"``: "(finished)", for a member who has played their
-              part, such as a player leaving a cohort after their last round.
-              Their leaving doesn't dissolve a group below its quorum, so the
-              members finishing their own last rounds aren't told that too few
-              remained. A later :class:`GroupBarrier` of the group's type
-              still dissolves it if fewer than its quorum are left.
+              part, such as a player leaving a cohort after their last round,
+              so the members finishing their own last rounds aren't told that
+              too few remained.
+
+            **When a group is dissolved.** This is the one place that states
+            the rule; other docs point here. Removals for ``"finished"`` and
+            ``"moved_on"`` never dissolve the group. Other reasons dissolve a
+            group below its quorum, but only once it no longer accepts top-ups.
+            A group accepts top-ups if its :class:`SimpleGrouper` has
+            ``join_existing_groups=True``, until
+            :meth:`SimpleSyncGroup.stop_top_ups`, a :class:`GroupBarrier` with
+            ``stop_top_ups=True``, or the grouper's ``top_up_wait`` stops them;
+            a ``join_criterion`` that returns ``False`` only turns that
+            newcomer away. A group below its quorum that still accepts top-ups
+            is never dissolved: its barriers wait for a newcomer, until their
+            ``max_wait_time`` or, with ``late_after``, without a limit. Once it
+            no longer accepts top-ups, its next :class:`GroupBarrier`
+            dissolves it whatever the reason, so a removal that kept it can
+            still end it there. When a group is dissolved, its grouper's
+            ``below_quorum`` decides for each member left. Groups made by a
+            :class:`Regrouper` are never dissolved.
         """
         if reason not in REMOVAL_REASONS:
             raise ValueError(
@@ -4257,10 +4270,10 @@ class SimpleSyncGroup(SyncGroup):
         """Stop newcomers joining this group, so that it no longer waits for them.
 
         For a group formed with ``join_existing_groups=True``, for example once
-        the game has started and a newcomer couldn't catch up. From then on a
-        group below its quorum is dissolved like any group without top-ups,
-        and the grouper's ``below_quorum`` decides for its members; a group
-        already below its quorum is dissolved now. To stop top-ups when the
+        the game has started and a newcomer couldn't catch up. From then on it
+        is treated as a group without top-ups (see
+        :meth:`SyncGroup.remove_participant`); a group already below its
+        quorum is dissolved now. To stop top-ups when the
         group passes a barrier, pass ``stop_top_ups=True`` to that
         :class:`GroupBarrier`::
 
@@ -4287,19 +4300,17 @@ class SimpleSyncGroup(SyncGroup):
         self._dissolve()
 
 
-def _current_trials(participants):
-    """Return each participant's ``current_trial``, in the same order, for barrier callbacks."""
-    return [participant.current_trial for participant in participants]
+def _shared_node(group, trials):
+    """Return ``group``'s node that all ``trials`` share, or ``None``."""
+    from .trial.main import SyncGroupNode
 
-
-def _shared_node(participants):
-    """Return the node that all ``participants``' current trials share, or ``None``."""
-    nodes = {
-        trial.node_id: trial.node
-        for trial in _current_trials(participants)
-        if trial is not None
-    }
-    return next(iter(nodes.values())) if len(nodes) == 1 else None
+    nodes = {trial.node_id: trial.node for trial in trials if trial is not None}
+    if len(nodes) != 1:
+        return None
+    node = next(iter(nodes.values()))
+    if isinstance(node, SyncGroupNode) and node.sync_group_id == group.id:
+        return node
+    return None
 
 
 def _run_on_dissolve(group, members):
@@ -4318,12 +4329,13 @@ def _run_on_dissolve(group, members):
                 participant
             )
     for barrier, participants in waiting.values():
+        trials = [p.current_trial for p in participants]
         try:
             barrier.on_dissolve(
                 group=group,
                 participants=participants,
-                trials=_current_trials(participants),
-                node=_shared_node(participants),
+                trials=trials,
+                node=_shared_node(group, trials),
                 barrier=barrier,
             )
         except Exception as err:

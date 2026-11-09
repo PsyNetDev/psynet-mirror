@@ -47,7 +47,8 @@ pair and wait for the next split:
 The round starts as soon as the whole cohort (``within``) is waiting, or at
 the ``deadline`` (counted from when the first player is back) without whoever
 isn't back yet, if enough players are waiting to
-form a pair; latecomers join the next round.
+form a pair. A player who isn't back by then is still in the cohort, and
+joins the next round.
 With ``roles``, each pair has a proposer and a responder, and each player
 alternates between them. Partners from last round are kept apart where
 possible. ``waiting_message`` counts down to the deadline. See
@@ -62,7 +63,7 @@ store it in participant variables:
 
 - ``pairing.role(participant)`` is ``"proposer"`` or ``"responder"``;
 - ``pairing.rounds_played(participant)`` counts the pairs the player has
-  been in;
+  joined, including one whose partner left or that they were removed from;
 - ``pairing.rounds_sat_out(participant)`` counts the rounds they sat out,
   and ``pairing.sat_out(participant)`` says whether they sat out the
   latest one.
@@ -82,19 +83,44 @@ maker:
    :dedent: 8
 
 The trial class sets ``sync_group_type``, so the trials that a pair's
-members cue share one :class:`~psynet.trial.main.SyncGroupNode`. Each trial
-records the pair (``sync_group_id``) and the player's role
-(``sync_group_role``), and keeps them after the pair ends. The ``Module``
-gives the nodes a ``module_id`` to find them by when exporting.
+members cue in a round share one :class:`~psynet.trial.main.SyncGroupNode`.
+Each trial records the pair (``sync_group_id``), the player's role
+(``sync_group_role``) and the pair's round (``sync_group_round``), and keeps
+them after the pair ends. The ``Module`` gives the nodes a ``module_id`` to
+find them by when exporting.
 
-Every pair here is new and plays a single round, so ``cue`` needs no round
-number, and ``sync_group_round`` is ``None``. A group that plays several
-rounds needs ``round=``, the same value for all its members, such as the
-index of the surrounding :func:`~psynet.timeline.for_loop`, as in
-:ref:`rounds-variations`; leaving it out there raises an error at the
-group's second round. A count of the player's own rounds would not do as
-``round``, because members can be at different passes of the loop, for
-example when one of them sat the last round out.
+``cue`` numbers each group's rounds by itself, from 0:
+
+- A cue joins the group's newest node in the module while that round is
+  open: the player has no trial on it, and some current member's trial on
+  it hasn't ended.
+- Otherwise it starts the group's next round.
+
+So every pair here, new each round, plays round 0, while a fixed group cued
+in a loop plays rounds 0, 1, 2 and so on, whichever trial classes it cues.
+A member who joins it late plays its current round if that is still going,
+or starts the next one, which the others then join. This needs a barrier in
+each round, such as the one in ``show_trial`` below, so that no member ends
+a round before the others have cued it.
+
+Every trial in a round gets the definition of the round's first cue, so a
+definition must not depend on the player's own position in the loop, as in
+``logic=lambda i: OfferTrial.cue({"block": i})``. A late joiner, or a pair
+that the regrouper forms from players at different rounds, would then cue a
+different definition for the same round and get a ``ValueError``. Use a
+function taking ``round`` or ``group`` instead, such as
+``OfferTrial.cue(lambda round: {"block": round})``.
+
+A round with two phases, such as an offer and a reply, is normally one
+trial class with several pages. If you really need trials of two classes in
+one round, pass the same ``round=`` to both cues, for example the index of
+the surrounding :func:`~psynet.timeline.for_loop`; they then share the
+round's node and its definition. A round's node isn't per class: if the
+members cue different classes in the same round, such as an offer trial for
+the proposer and a reply trial for the responder, those trials share the
+node and its definition too, so ``round=`` is only needed for phases played
+one after the other. Put role-specific content in the definition, keyed by
+role, or derive it from ``self.sync_group_role``.
 
 :func:`~psynet.sync.only_in_group` runs the trial only for players in a
 pair. Those who sat out, or were removed from their pair partway, see the
@@ -161,14 +187,35 @@ without a time limit before the decision page, such as the last round's
 results, count towards it: give them a time limit too, or make
 ``late_after`` long enough for a slow reader. A player who was removed from the pair sees "Your
 partner went on without you. Please continue." on the progress bar (pass
-``on_arrival_message`` to the barrier to change it) and joins the next round
-when they come back.
+``on_arrival_message`` to the barrier to change it).
 
-A player who was removed from their pair passes the round's later group
-barriers straight through, and ``only_in_group`` skips the rest of their
-trial. A player who was never in a pair, or whose pair
-was closed by a :class:`~psynet.sync.GroupCloser`, gets an error at a group
-barrier, which usually means a grouper is missing.
+The barrier removes a late player from the pair only (see
+:ref:`sync-leaving-a-group`), so they would still be in the cohort, and the
+next split would wait for them until its deadline. A late player has usually
+closed their page, so the demo also takes them out of the cohort when the
+barrier scores their partner's round (in ``score_pair``, shown in full below):
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+   :start-at: away = [p for p in left
+   :end-before: result = "partner_away"
+   :dedent: 12
+
+This runs only when the partner reaches the barrier, so if neither partner
+comes back, the next split waits for its deadline. A late player who comes
+back is told that they were away, and their game ends.
+
+The cohort's grouper sets ``below_quorum="continue_without_group"``. In this
+demo it never takes effect: the cohort accepts top-ups, so it is never
+dissolved, and ``keep_playing`` (below) ends the game once fewer than two
+players are left. It makes the recipe safe to copy into a cohort without
+top-ups, where removing a late player would dissolve the cohort if that left
+it below its quorum, and the default ``below_quorum="fail"`` would fail the
+players who were on time (see :meth:`~psynet.sync.SyncGroup.remove_participant`
+and :ref:`groups_below_min_size`).
+
+``only_in_group`` skips the rest of the trial for a player removed from
+their pair, including its later group barriers, and runs its ``otherwise``
+steps.
 
 Scoring the round
 -----------------
@@ -217,31 +264,33 @@ played the most rounds sits the round out; with ``left_over="sit_out"``
 they move on without a pair instead of waiting (see
 :class:`~psynet.sync.Regrouper`), so ``only_in_group`` shows them its
 ``otherwise`` page and they get no trial that round. A player who was paired
-but removed from the pair before finishing the round is told that they were
-away instead:
+but removed from the pair before submitting their decision is told that they were
+away instead. They have left the cohort too, so the ``explain_round``
+condition in the timeline above also checks
+``participant.sync_group_removal_reason("pair")``:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: not_playing
 
 .. figure:: ../../_static/images/rounds/sit_out.png
    :width: 600
-   :alt: A page saying "You sit out this round. It doesn't count towards your rounds."
+   :alt: A page saying "You sit out this round without a partner. If you sit out 2 rounds, the game ends early for you."
 
 Ending the game
 ---------------
 
 The rounds loop runs until a player has played their rounds, has sat out
-too often, or their cohort is down to one player:
+too often, has left the cohort, or their cohort is down to one player:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: keep_playing
 
 Players who finish leave the cohort, so that the regrouper doesn't wait for
-them in later rounds. With ``reason="finished"`` their leaving doesn't
-dissolve the cohort below its quorum, so the last players aren't told that
-too few players remained while they finish their own rounds. A later
-``GroupBarrier`` for the cohort would still dissolve it below its quorum;
-here, only the pairs have barriers:
+them in later rounds. This cohort accepts top-ups, so it is never dissolved,
+and ``reason="finished"`` here only shows them as "(finished)". It keeps the
+recipe safe to copy into a cohort without top-ups, where any other reason
+would dissolve the cohort if that left it below its quorum while the last
+players finish their rounds (see :meth:`~psynet.sync.SyncGroup.remove_participant`):
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: leave_cohort
@@ -264,11 +313,20 @@ Variations
 
 **Larger groups and fixed rounds.** The ``lowest_unique_number`` demo
 regroups all waiting players into rooms of up to eight every 10 seconds,
-with ``every=10`` and no ``within``, for a fixed number of rounds. It passes
-the loop's index as the round:
+with ``every=10`` and no ``within``, for a fixed number of rounds. Each
+room is new, so its trials are all in round 0. A room can mix players at
+different rounds of the game, for example a latecomer playing their first
+round with others playing their second, so the export numbers each player's
+own trials as their round:
 
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: get_timeline
+
+A player left with nobody to play with, for example a latecomer whose
+last round comes after everyone else has finished, waits at the regrouper
+for up to a minute. Then ``max_wait_action="continue_without_group"`` lets
+them carry on without a room, and ``only_in_group`` shows them a short page
+instead of the round, rather than failing them.
 
 Each player picks a number, and the room sees who has picked, who ran out
 of time and who is still deciding:

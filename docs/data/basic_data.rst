@@ -93,15 +93,14 @@ class sets ``sync_group_type``, record the group the participant was in when
 the trial was created, in ``trial.sync_group_id``, and their role in it, if
 a :class:`~psynet.sync.Regrouper` gave one, in ``trial.sync_group_role``.
 ``trial.sync_group_round`` says which of the group's rounds the trial belongs
-to: a trial maker numbers them from 0, shared by a member who joined the group
-late, and a cued trial stores the ``round`` passed to
-:meth:`~psynet.trial.main.Trial.cue`, or ``None`` if the group plays a
-single round and ``round`` was left out. The group's trials with the same
+to, counted from 0 and shared by a member who joined the group late; a group
+re-formed every round, as by a :class:`~psynet.sync.Regrouper`, plays only
+round 0. The group's trials with the same
 ``sync_group_id`` and ``sync_group_round`` are one round. All three stay after
 the group ends. Cued trials of one group and round also share a
 :class:`~psynet.trial.main.SyncGroupNode`, which can hold the group's results;
 the ``lowest_unique_number`` demo builds a table per player and round and
-one per room and round from them (see :ref:`rounds-cued-trials`).
+one per room from them (see :ref:`rounds-cued-trials`).
 
 Groups that stay together save their rounds the same way. The
 ``public_goods`` demo saves the group's ``contributions``, ``pot`` and
@@ -151,29 +150,30 @@ A convenient layout for dyads and small groups is one row per participant per
 round, with columns for the group, the round, the participant, their partner,
 the trial ID (to trace each row back to the database) and both players'
 responses. Group-level measures can be computed from this table.
-The ``rock_paper_scissors`` demo, where each trial's answer is a
-dictionary such as ``{"choose_action": "rock"}``, matches each trial to its
-partner's by the group and round that the trials record, and reads the
-partner from the group's members:
+The ``rock_paper_scissors`` demo builds this table from the result that its
+barrier's ``on_release`` saves on each trial (``trial.var.result``). The
+result holds the player's and the partner's moves, with the random move a
+player who timed out was given, and the moves by participant ID
+(``action_by_player``), from which the partner comes:
 
 .. literalinclude:: ../../demos/experiments/rock_paper_scissors/experiment.py
    :pyobject: Exp.get_basic_data
 
-For one pair playing three rounds, this returns:
+For one pair playing three rounds, in which participant 2 timed out in
+round 1, this returns:
 
 .. code-block:: text
 
-    group_id  round  participant_id  partner_id  trial_id  action    partner_action
-    1         0      1               2           1         rock      paper
-    1         0      2               1           2         paper     rock
-    1         1      1               2           3         scissors  paper
-    1         1      2               1           4         paper     scissors
-    1         2      1               2           5         scissors  scissors
-    1         2      2               1           6         scissors  scissors
+    group_id  round  participant_id  partner_id  trial_id  action    partner_action  timed_out  score
+    1         0      1               2           1         rock      paper           False      -1
+    1         0      2               1           2         paper     rock            False      1
+    1         1      1               2           3         scissors  paper           False      1
+    1         1      2               1           4         paper     scissors        True       -1
+    1         2      1               2           5         scissors  scissors        False      0
+    1         2      2               1           6         scissors  scissors        False      0
 
 Each complete round has one row per member, and ``partner_id`` points in
-both directions. A missing ``partner_action`` means the partner has no
-completed trial for that round, for example because they dropped out.
+both directions.
 
 Because each trial records its own group, this also works when participants
 are regrouped.
