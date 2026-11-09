@@ -1187,9 +1187,10 @@ def _update_unfinished_trial_answer(participant):
     """Copy ``participant.answer`` to the participant's current trial while it runs.
 
     So a barrier inside :meth:`~psynet.trial.main.Trial.show_trial` can read the
-    answers given so far from ``trial.answer``. A trial that is complete keeps
-    its final answer, and so does a failed one, which the participant may have
-    left for later pages.
+    answers given so far from ``trial.answer``. The copy stops once the trial is
+    complete or failed, so pages the participant reaches after leaving a failed
+    trial do not overwrite its answer. Finalisation still writes the formatted
+    answer, also on a trial that failed while it ran.
     """
     if participant.current_trial_id is None:
         return
@@ -3363,7 +3364,7 @@ class Response(_Response):
         """Whether this answer arrived after the participant's group went on without them.
 
         It is ``True`` when a barrier removed the participant from their group
-        for being late (``late_action="leave_group"``) while they were on this
+        for being late (``late_action="leave_group"`` or ``"leave_all_groups"``) while they were on this
         page, whether the group carried on or was dissolved. The group didn't
         use the answer, so a move in a game, for example, usually shouldn't
         count.
@@ -3417,7 +3418,9 @@ def join(*args, stop_if: Optional[Callable] = None):
         If given, it is checked before each argument, and once it returns
         ``True`` the participant skips the remaining arguments. Each
         argument runs whole once started, so pass ``join(...)`` as one
-        argument for steps that must not be separated. For example,
+        argument for steps that must not be separated. A list or tuple is
+        one argument too: unpack it, as in ``join(*steps, stop_if=...)``,
+        to check between its elements. For example,
         ``join(chat_page, barrier, outcome_page, stop_if=left_pair)``
         skips the rest of a round once the participant has left their pair.
         Use :func:`for_loop` with ``stop_if`` to stop a loop, and a

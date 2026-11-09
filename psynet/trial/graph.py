@@ -6,6 +6,7 @@ from sqlalchemy.orm import aliased
 
 from ..data import SQLBase, SQLMixin, register_table
 from ..field import PythonObject
+from ..sync import LateAction
 from ..utils import NoArgumentProvided
 from .chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
 from .main import with_trial_maker_namespace
@@ -402,7 +403,7 @@ class GraphChainTrialMaker(ChainTrialMaker):
         sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
-        sync_group_late_action: Literal["fail", "leave_group"] = "fail",
+        sync_group_late_action: LateAction = "fail",
         sync_group_waiting_message=None,
     ):
         if chain_type == "within":

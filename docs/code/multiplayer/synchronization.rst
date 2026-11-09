@@ -413,8 +413,10 @@ a control that doesn't submit, such as ``NullControl``. Groupers and :func:`~psy
 for example to replace the instructions while a cohort forms. A barrier
 without a waiting screen (or one whose function returns ``None``) that
 follows another barrier's waiting screen shows a plain waiting page, since
-the last page is no longer on screen. In the following example, the
-participant's own choice replaces the buttons they chose it with.
+the last page is no longer on screen. In the following example, the barrier
+is inside a trial's ``show_trial``, and the participant's own choice, read
+from their current trial's answer so far, replaces the buttons they chose
+it with.
 ``show_progress=False`` hides the answer ticks, which are of little use
 in a pair, where the partner's arrival releases the barrier at once:
 
@@ -422,7 +424,7 @@ in a pair, where the partner's arrival releases the barrier at once:
 
     def your_choice(participant):
         return GroupPrompt(
-            f"You offer {participant.var.decision} coins.",
+            f"You offer {participant.current_trial.answer} coins.",
             participant=participant,
             group_type="pair",
             show_progress=False,
@@ -492,7 +494,6 @@ one, PsyNet logs a warning and the group stays as first drawn:
             "choose",
             GroupPrompt("Pick a number.", participant=participant, group_type="room"),
             PushButtonControl(choices=[1, 2, 3, 4, 5]),
-            save_answer="choice",
         )
 
 After the barrier, pass ``answers`` to show each member's answer in a speech
@@ -814,7 +815,11 @@ settings together decide both fates:
 The last row is rarely what a pair wants, so PsyNet warns about it when the
 experiment loads, and logs a warning when it happens. To let the partner who was on time carry on, set
 ``below_quorum="continue_without_group"``; ``late_action="fail"`` instead ends the
-session for both.
+session for both. With ``late_action="leave_all_groups"`` the same applies to
+the late member's other groups: a cohort without top-ups that one departure
+takes below its quorum fails all its other members, including those in other
+pairs, unless its grouper has ``below_quorum="continue_without_group"``. PsyNet
+warns about this too.
 
 For example, a group of four that may start with two after a minute, and
 whose members carry on when others are slow or leave, combines these

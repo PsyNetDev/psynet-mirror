@@ -17,6 +17,7 @@ from psynet.trial.chain import (
     _reject_removed_balance_argument,
 )
 
+from ..sync import LateAction
 from ..utils import NoArgumentProvided, get_logger, is_method_overridden
 
 logger = get_logger()
@@ -316,7 +317,7 @@ class StaticTrialMaker(ChainTrialMaker):
         sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
-        sync_group_late_action: Literal["fail", "leave_group"] = "fail",
+        sync_group_late_action: LateAction = "fail",
         sync_group_waiting_message=None,
     ):
         _reject_removed_balance_argument(

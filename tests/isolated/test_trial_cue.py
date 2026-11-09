@@ -15,6 +15,7 @@ from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
+from psynet.timeline import StartAccumulateAnswers
 from psynet.trial.main import GenericTrialNode, Trial
 
 
@@ -268,6 +269,31 @@ def test_trial_answer_follows_its_pages_until_the_trial_ends(
     trial.failed, trial.complete = False, True
     submit(3)
     assert trial.answer == 1
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_trial_answer_accumulates_across_pages(
+    db_session, participant_and_node, monkeypatch
+):
+    """With accumulate_answers, trial.answer holds every page answered so far."""
+    experiment, participant, node = participant_and_node
+    monkeypatch.setattr(
+        CueTrial,
+        "get_default_parent_node",
+        classmethod(lambda cls, participant, experiment: node),
+    )
+    CueTrial.cue(definition={})[0].consume(experiment, participant)
+    StartAccumulateAnswers().consume(experiment, participant)
+    trial = participant.current_trial
+    for label, answer in [("first", 1), ("second", 2)]:
+        page = ModularPage(label, "Pick a number.", PushButtonControl([1, 2]))
+        page._accept_response(SimpleNamespace(answer=answer), experiment, participant)
+        db.session.flush()
+    db.session.expire(trial)
+    assert trial.answer == {"first": 1, "second": 2}
 
 
 def test_cue_creation_context_requires_on_trial_created():

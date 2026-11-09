@@ -618,6 +618,10 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
   ``"4"``) rather than image names. Find the asset key of the chosen image
   with ``LanguageVocabularyTrial.image_keys[definition["order"][int(answer) - 1]]``;
   the correct image is ``"image_correct"``.
+* An unfinished trial, abandoned or still running at export time, can now
+  have an ``answer``: the answer so far, copied from its pages before
+  ``format_answer`` runs. Filter on ``complete`` as well as ``failed`` when
+  analysing answers.
 
 See :doc:`/data/what_an_export_contains`.
 
