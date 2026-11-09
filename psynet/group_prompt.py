@@ -20,16 +20,8 @@ Design constraints:
 - Live redraws re-create the prompt on the server from a signed token, so
   only options that can be serialized take part in them; functions and
   ``answers`` fix the display when the page loads.
-- Members who drop out of the group stay in their seat, faded and marked
-  "(left)" if they failed or left the experiment, "(removed)" if a
-  barrier removed them for being late, "(finished)" if they left after
-  playing their part, and "(dropped out)" otherwise.
-  Members who moved on to their next group, as in a new round, are no
-  longer shown, except on pages with ``answers`` that include their answer,
-  where they keep their seat and bubble. The reason comes from
-  :meth:`psynet.sync.SyncGroup.remove_participant`. While the group accepts
-  top-ups, members who left are omitted; after top-ups stop they appear too
-  (see :ref:`groups_below_min_size`).
+- How a member who left is shown depends on the reason given to
+  :meth:`psynet.sync.SyncGroup.remove_participant`.
 - The HTML is built on the server; ``static/scripts/group-prompt.js`` only
   updates ticks and dashes, so pages without JavaScript still show the group.
 """
@@ -76,12 +68,10 @@ class GroupPrompt(Prompt):
     (:attr:`~psynet.pseudonym.Pseudonym.sticker_html`; see
     :doc:`/code/multiplayer/pseudonyms`): in a row for up to four people,
     and in a zigzag across the width of the page for more. Hovering over or
-    tapping a member brings their speech bubble to the front. A member who
-    dropped out of the group is drawn faded and marked "(left)",
-    "(removed)", "(finished)" or "(dropped out)"; one who moved on to their next group, as in a
-    new round, is no longer shown, unless the page shows their answer.
-    While the group accepts top-ups, members who left are omitted; after
-    top-ups stop they appear too (see :ref:`groups_below_min_size`).
+    tapping a member brings their speech bubble to the front. Members who
+    left are drawn faded with the reason, such as "(dropped out)", or not at
+    all, depending on why they left and whether the group still accepts
+    top-ups (see :ref:`sync-showing-the-group`).
 
     A page shows either progress (ticks for who has answered) or
     ``answers``, and what it draws from the group's state updates live:
