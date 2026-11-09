@@ -329,6 +329,11 @@ class TestParticipantFailure:
         assert not trial.complete
         assert participant.failed
 
+        bot.run_to_completion()
+        db.session.refresh(trial)
+        assert trial.response is None
+        assert trial.time_taken is None
+
     def test_assignment_returned_can_fail_sync_group_partners(
         self, launched_experiment, participant
     ):

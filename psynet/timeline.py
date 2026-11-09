@@ -1933,7 +1933,9 @@ class Page(Elt):
         trial = participant.current_trial
         # Pages after _finalize_trial (feedback, or pages before the next
         # trial is prepared) leave current_trial set but don't belong to it.
-        if isinstance(trial, Trial) and not trial.complete:
+        # A failed participant's trial never completes, and their remaining
+        # pages (such as the unsuccessful-end page) don't belong to it either.
+        if isinstance(trial, Trial) and not trial.complete and not participant.failed:
             trial.response = resp
             page_time = resp.metadata.get("time_taken")
             if page_time is not None:

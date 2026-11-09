@@ -318,7 +318,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         ends) counts up to that submission. Feedback pages are not included.
         A trial failed by :attr:`~psynet.trial.main.TrialMaker.response_timeout_sec`
         keeps the time of the pages answered so far, and of any the participant
-        answers afterwards. Bots report each page's ``time_estimate``.
+        answers afterwards. Pages submitted after the participant fails, such as
+        the unsuccessful-end page, are not included.
+        Bots report each page's ``time_estimate``.
         Equals ``None`` until the participant submits a trial page.
     """
 
