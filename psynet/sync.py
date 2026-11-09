@@ -170,10 +170,7 @@ from psynet.timeline import (
     TIME_LIMIT_GRACE_SECONDS,
     CodeBlock,
     EltCollection,
-    _EndConstruct,
     _is_timeline_hold,
-    _split_into_steps,
-    _StartConstruct,
     conditional,
     join,
 )
@@ -1083,7 +1080,7 @@ class Barrier(EltCollection):
         return bool(waiting_participants)
 
     def resolve(self):
-        from psynet.timeline import join, while_loop
+        from psynet.timeline import while_loop
 
         if not self._shows_countdown():
             _reject_countdown(
@@ -1124,7 +1121,7 @@ class Barrier(EltCollection):
             # the participant back to it.
             if elt is not leave:
                 elt.links.setdefault("barrier", self)
-        return join(_StartConstruct(), elts, _EndConstruct())
+        return elts
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Release the participant's active barrier link after a max-wait timeout."""
@@ -2730,7 +2727,6 @@ class SimpleGrouper(Grouper):
         from .timeline import conditional, join
 
         return join(
-            _StartConstruct(),
             CodeBlock(self._join_existing_groups),
             conditional(
                 "joined_an_existing_group",
@@ -2740,7 +2736,6 @@ class SimpleGrouper(Grouper):
                 logic_if_true=[],
                 logic_if_false=super().resolve(),
             ),
-            _EndConstruct(),
         )
 
     def _find_group_to_join(self, participant: Participant):
@@ -3791,107 +3786,6 @@ class _RegroupHistory(NamedTuple):
     rounds: Dict[int, int]
     times_met: Dict[int, Counter]
     role_counts: Dict[int, Dict[str, int]]
-
-
-def only_in_group(group_type: str, *steps, otherwise=None):
-    """Run each of ``steps`` only while the participant is in a group of ``group_type``.
-
-    The group is checked before each step, so a participant who leaves the
-    group partway, for example because their partner returned the study,
-    skips the rest of the steps rather than seeing pages that only make sense
-    with a partner. A :class:`GroupBarrier` already lets such a participant
-    straight through; this covers the pages between barriers.
-
-    Lists and ``join(...)`` are split into their steps, but a barrier,
-    ``conditional``, loop or ``Trial.cue(...)`` is one step, checked when the
-    participant reaches it. So a cued trial runs to its end, where it is
-    scored and paid, even if the participant leaves the group partway, and a
-    loop passed to ``only_in_group`` runs to its end too. For rounds,
-    pass a list of the rounds' steps instead::
-
-        only_in_group("pair", [round_steps(number) for number in range(N_ROUNDS)])
-
-    or put ``only_in_group`` inside the loop, as in
-    ``for_loop(..., logic=only_in_group("pair", round_steps()))``. The steps
-    are for participants already in the group, so put the grouper or
-    :class:`Regrouper` that forms it before the block. Inside the block, the
-    grouper would be skipped by everyone not yet in a group: at the start that
-    is everyone, and later it is anyone who sat out a round, who would then
-    never be grouped again.
-    Put a :class:`GroupCloser` after the block: it takes everyone out of the
-    group, so the steps after it and ``otherwise`` would treat them all as
-    having left. When pairs change every round, regroup inside the
-    loop, as in ``for_loop(..., logic=join(Regrouper(...),
-    only_in_group("pair", round_steps(), otherwise=sitting_out)))``. The
-    ``otherwise`` page is for anyone not in a pair by the end of the round:
-    sat out by the regrouper, or removed partway for being late. Without it,
-    they skip the round with no page.
-
-    Parameters
-    ----------
-    group_type
-        The group type to check, as in ``participant.in_sync_group(group_type)``.
-    steps
-        Timeline elements or lists of elements, each one step.
-    otherwise
-        Optional timeline elements to run after the steps for a participant
-        who is not in a group of ``group_type`` by then: one who left partway,
-        and one who was never in such a group. A participant who left partway
-        may have answered some of the steps already, so check what they still
-        need, for example with ``participant.var.get(...)``.
-
-    Examples
-    --------
-    One round of a trust game, where a participant who loses their partner
-    skips straight to whatever follows the round::
-
-        only_in_group(
-            "pair",
-            PageMaker(chat_page, time_estimate=60),
-            GroupBarrier(id_="chat_done", group_type="pair"),
-            PageMaker(outcome_page, time_estimate=10),
-        )
-
-    One question of a group estimation game, which a participant without a
-    group answers alone. Build each question's steps in a function, so that
-    the lambda sees that question rather than the last one of a loop::
-
-        def question_steps(question):
-            return only_in_group(
-                "team",
-                estimate_page(question),
-                GroupBarrier(id_=f"estimates_{question}", group_type="team",
-                             on_release=share_median),
-                revised_estimate_page(question),
-                otherwise=PageMaker(
-                    lambda participant: (
-                        estimate_page(question)
-                        if participant.var.get(f"estimate_{question}") is None
-                        else InfoPage("Your group has ended. Let's move on.")
-                    ),
-                    time_estimate=10,
-                ),
-            )
-    """
-    group_steps = [
-        conditional(
-            f"only_in_group:{group_type}",
-            lambda participant: participant.in_sync_group(group_type),
-            step,
-            log_chosen_branch=False,
-        )
-        for step in _split_into_steps(*steps)
-    ]
-    if otherwise is not None:
-        group_steps.append(
-            conditional(
-                f"only_in_group:{group_type}:otherwise",
-                lambda participant: not participant.in_sync_group(group_type),
-                otherwise,
-                log_chosen_branch=False,
-            )
-        )
-    return join(*group_steps)
 
 
 def warn_if_late_removal_fails_group(barriers):

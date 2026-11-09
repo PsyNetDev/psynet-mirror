@@ -28,8 +28,8 @@ from psynet.bot import BotDriver, advance_past_wait_pages, run_bots_to_completio
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
-from psynet.sync import GroupBarrier, SimpleGrouper, only_in_group
-from psynet.timeline import Module, PageMaker, Timeline, for_loop, join
+from psynet.sync import GroupBarrier, SimpleGrouper
+from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop, join
 from psynet.trial.main import SyncGroupNode, Trial
 
 GROUP = "team"
@@ -63,32 +63,30 @@ def get_timeline():
             max_wait_action="continue_without_group",
             waiting_message="Waiting for two other players to join…",
         ),
-        only_in_group(
-            GROUP,
-            Module(
-                "game",
-                for_loop(
-                    label="rounds",
-                    iterate_over=range(N_ROUNDS),
-                    logic=lambda _: play_round(),
-                    time_estimate_per_iteration=ContributionTrial.time_estimate,
-                    expected_repetitions=N_ROUNDS,
-                ),
+        Module(
+            "game",
+            # A cued trial runs to its end once started, so a player whose
+            # group dissolves partway through a round is still paid for it.
+            for_loop(
+                label="rounds",
+                iterate_over=range(N_ROUNDS),
+                logic=lambda _: ContributionTrial.cue({}),
+                time_estimate_per_iteration=ContributionTrial.time_estimate,
+                expected_repetitions=N_ROUNDS,
+                stop_if=left_team,
             ),
+        ),
+        conditional(
+            "game_over",
+            left_team,
+            PageMaker(game_ended_early, time_estimate=5),
             PageMaker(game_over, time_estimate=5),
-            otherwise=PageMaker(game_ended_early, time_estimate=5),
         ),
     )
 
 
-def play_round():
-    """Play one round, unless the player has left the group.
-
-    The outer ``only_in_group`` checks the group once before the loop, so the
-    loop checks it again before each round. A cued trial is one step, so a
-    player whose round is cancelled partway still reaches its end and is paid.
-    """
-    return only_in_group(GROUP, ContributionTrial.cue({}))
+def left_team(participant):
+    return not participant.in_sync_group(GROUP)
 
 
 class ContributionTrial(Trial):

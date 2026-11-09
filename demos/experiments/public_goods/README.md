@@ -12,8 +12,8 @@ the game ended for them.
 
 Good reference for a `SimpleGrouper` with a `quorum` whose members carry on
 without the group, a scoring `GroupBarrier` with `late_after`, `on_release`
-and `on_dissolve`, and `only_in_group(..., otherwise=...)` for players without
-a group. Each round is one cued trial per player (`Trial.cue(...)`
+and `on_dissolve`, and `for_loop(..., stop_if=...)` with a `conditional`
+afterwards for players without a group. Each round is one cued trial per player (`Trial.cue(...)`
 on a trial class with `sync_group_type`): the group's pot is saved once on the node its
 members' trials share, each player's contribution and payoff on their trial,
 which pays the bonus, and the basic data is read from the trials and nodes.
