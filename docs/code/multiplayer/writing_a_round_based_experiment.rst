@@ -29,7 +29,8 @@ minute (``start_short_after``), and lets latecomers join the cohort
    :end-before: Module(
    :dedent: 8
 
-A latecomer who joined after the first rounds couldn't catch up, so a
+A latecomer who joined after the first rounds would soon have nobody left
+to play with, because the others finish their rounds and leave, so a
 :class:`~psynet.timeline.CodeBlock` at the start of each round closes the
 cohort once one of its players reaches the second round. It calls
 :meth:`~psynet.sync.SimpleSyncGroup.stop_top_ups`, after which nobody can
@@ -73,6 +74,8 @@ store it in participant variables:
 Each player's role in the round is on their trial, as ``sync_group_role``
 (below). :class:`~psynet.sync.Regrouper` lists its other methods, such as
 ``sat_out`` and ``role``.
+
+.. _rounds-one-trial-per-player:
 
 One trial per player per round
 ------------------------------

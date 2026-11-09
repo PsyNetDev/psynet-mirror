@@ -295,7 +295,8 @@ holds up their partners. Give decision pages a time limit. A player who runs
 out of time moves on, and their partners see that they ran out of time instead
 of waiting. A player who falls further behind, for example because they closed
 the tab, is late at the barrier after the decision: they are removed from
-the group and can rejoin in the next round.
+the group, and either rejoin in the next round or, as in
+``ultimatum_pairing``, end their game.
 
 Decide when the game ends: after a fixed number of rounds, when a player has
 sat out too often, or when too few players remain to form a group.

@@ -213,7 +213,7 @@ Play each round as one trial per player, added after the regrouper with
 :class:`~psynet.trial.main.SyncGroupNode` for the group's results, and each
 trial records the group, the player's role and the round, so the game needs
 no bookkeeping of its own and its data can be exported from trials and
-nodes (see :ref:`rounds-cued-trials`).
+nodes (see :ref:`rounds-one-trial-per-player`).
 
 :doc:`writing_a_round_based_experiment` builds a complete game this way, including moving
 slow players on and sitting out. :class:`~psynet.sync.Regrouper` lists all
@@ -274,7 +274,7 @@ compatibility). In ``rock_paper_scissors`` every pair plays on the same
 node, which is not a group's node, so ``node`` is ``None`` and the results
 go on the trials. Cued trials share a node per group and round, so there a
 ``@classmethod`` on the trial class can also save the
-group's results in ``node.var`` (see :ref:`rounds-cued-trials`). Results on
+group's results in ``node.var`` (see :ref:`rounds-one-trial-per-player`). Results on
 the trial or node stay in the export for every round, while a participant
 variable keeps only the latest. ``on_release`` must be a module-level
 function, a static or class method, or a method bound to a trial maker or a
@@ -639,8 +639,11 @@ Rounds of cued trials
 
 This section is the reference for rounds played as one cued trial per
 player, on a trial class that sets ``sync_group_type``, whether the groups
-are fixed or formed anew each round. ``cue`` numbers each group's rounds by
-itself, from 0:
+are fixed or formed anew each round. For a worked example, with the
+group's results in ``node.var`` and the exports, see
+:ref:`rounds-one-trial-per-player` in the round-based tutorial.
+
+``cue`` numbers each group's rounds by itself, from 0:
 
 - A cue joins the group's newest node in the module while that round is
   open and the player has no trial on it. A round closes when one of its

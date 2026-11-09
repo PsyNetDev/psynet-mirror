@@ -192,8 +192,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 
 ### Rounds as cued trials
 
-Follow "One trial per player per round" in
-`code/multiplayer/writing_a_round_based_experiment`:
+Follow "Rounds of cued trials" in `code/multiplayer/synchronization` for
+how `cue` numbers rounds, the rules for `definition`, and `round=`. "One
+trial per player per round" in
+`code/multiplayer/writing_a_round_based_experiment` is the worked example:
 
 ```python
 class PickTrial(Trial):
@@ -229,8 +231,7 @@ Module("game", for_loop(
 - Keep a `GroupBarrier` in every round, inside `show_trial` after the
   answer page, so members stay in step. A cued round closes only when its
   barrier releases the group; a round without one never closes, and a
-  latecomer can join it after the others have finished. For how
-  `cue` numbers rounds and the definition rules, follow the guide above.
+  latecomer can join it after the others have finished.
 - When a fixed group plays a loop of rounds, pass the loop value as
   `round=` (`Trial.cue({"question": i}, round=i)`): late joiners then skip
   the rounds the group finished without them, and players who leave
@@ -251,8 +252,9 @@ Module("game", for_loop(
 - Use `self.sync_group_role` for role-specific pages, and put the cue in a
   `conditional` on `participant.in_sync_group(...)`, with a page as the
   other branch, so a player the regrouper sat out gets a page instead of a
-  trial. A started trial runs to its end even if the player leaves the
-  group, so its `show_feedback` explains every outcome, including being
+  trial. With a cohort (`within=`), use the three-way `switch` on
+  `round_status` instead, as described above. A started trial runs to its
+  end even if the player leaves the group, so its `show_feedback` explains every outcome, including being
   removed for lateness. Read how the round ended for each player from
   `trial.sync_group_outcome` (`"stayed"`, or why they left, such as
   `"late"`), a partner's from their trial in `self.node.all_trials`, rather
