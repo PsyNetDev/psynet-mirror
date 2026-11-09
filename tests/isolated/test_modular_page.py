@@ -18,6 +18,7 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     KeyboardPushButtonControl,
     ModularPage,
     MusicNotationPrompt,
+    NumberControl,
     Prompt,
     PushButtonControl,
     RadioButtonControl,
@@ -493,6 +494,26 @@ def test_option_control_bots_answer_like_the_browser(control, expected):
 def test_option_controls_save_the_choice_the_browser_names(control, raw_answer, answer):
     """The browser's string becomes the matching choice; other answers pass through."""
     assert control.format_answer(raw_answer) == answer
+
+
+@pytest.mark.parametrize(
+    "raw_answer, answer",
+    [
+        ("78.5", 78.5),
+        ("100", 100),
+        ("-3", -3),
+        ("abc", "abc"),
+        ("", ""),
+        ("nan", "nan"),
+    ],
+)
+def test_number_control_saves_numbers(raw_answer, answer):
+    """A number from the browser is saved as an int or float; anything else fails validation."""
+    control = NumberControl()
+    saved = control.format_answer(raw_answer)
+    assert saved == answer and type(saved) is type(answer)
+    failed = control.validate(SimpleNamespace(answer=saved)) is not None
+    assert failed == isinstance(answer, str)
 
 
 @pytest.mark.parametrize(

@@ -1755,11 +1755,23 @@ class NumberControl(Control):
     def metadata(self):
         return {"width": self.width, "text_align": self.text_align}
 
+    def format_answer(self, raw_answer, **kwargs):
+        """Return the answer as an ``int`` if it is a whole number, otherwise a ``float``.
+
+        An answer that is not a finite number is returned unchanged, so that
+        :meth:`validate` can reject it.
+        """
+        try:
+            number = float(raw_answer)
+        except (TypeError, ValueError):
+            return raw_answer
+        if not math.isfinite(number):
+            return raw_answer
+        return int(number) if number.is_integer() else number
+
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
-        try:
-            float(response.answer)
-        except ValueError:
+        if not isinstance(response.answer, (int, float)):
             return FailedValidation(_p("validation", "You need to provide a number!"))
         return None
 
