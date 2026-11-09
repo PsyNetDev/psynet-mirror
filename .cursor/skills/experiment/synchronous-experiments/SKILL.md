@@ -216,15 +216,13 @@ Module("game", for_loop(
 ))
 ```
 
-- Leave out `round`: `cue` numbers each group's rounds from 0. A cue joins
-  the group's newest node unless the participant already has a trial on it;
-  otherwise it starts the next round. A `Regrouper`'s groups play round 0; a
-  fixed group advances each round; a late joiner joins the current round.
-  Keep a `GroupBarrier` in every round so members stay in step.
-- A round with two phases is normally one trial class with several pages.
-  To put two classes in one round, pass both the same `round=`; they then
-  share the node and its definition, and a later cue with a different `dict`
-  raises an error.
+- Leave out `round`; that guide explains how `cue` numbers rounds. Keep a
+  `GroupBarrier` in every round so members stay in step.
+- Don't make the definition depend on the player's own loop position
+  (`lambda i: PickTrial.cue({"block": i})`): late joiners and mixed rooms
+  then clash. Use a definition function taking `round` or `group`.
+- A round with two phases is normally one trial class with several pages;
+  the guide covers the rare `round=` for putting two classes in one round.
 - `trial.answer` is only set when the trial ends, after the barrier, so
   `on_release` reads what `save_answer` stored, while `score_answer`,
   `show_feedback` and `get_basic_data` read the trial and `self.node.var`.

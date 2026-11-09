@@ -198,6 +198,17 @@ def test_a_grouped_cue_takes_no_node():
         PairTrial.cue(ChainNode.__new__(ChainNode))
 
 
+def test_a_trial_maker_rejects_a_trial_class_of_another_group_type():
+    with pytest.raises(ValueError, match="only Trial.cue uses"):
+        StaticTrialMaker(
+            id_="mismatch",
+            trial_class=PairTrial,
+            nodes=[StaticNode(definition={})],
+            expected_trials_per_participant=1,
+            sync_group_type="room",
+        )
+
+
 @in_consents_experiment
 def test_each_module_numbers_a_group_s_rounds_from_0(
     in_experiment_directory, db_session

@@ -376,7 +376,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         doc=(
             "Which round of ``sync_group_id`` this trial belongs to, counted "
             "from 0. A member who joined the group late shares the group's "
-            "numbers."
+            "numbers. In a trial maker, a leader told to wait gives the group "
+            "no trials, so the followers wait too and no number is used up."
         ),
     )
     definition = Column(PythonObject)
@@ -1236,7 +1237,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         ----------
 
         definition :
-            This can be a ``dict`` object, which will then be saved to the trial's ``definition`` slot.
+            This can be a ``dict`` object of plain JSON-like values, which will
+            then be saved to the trial's ``definition`` slot.
             Alternatively, it can be a :class:`~psynet.trial.chain.ChainNode`,
             which will be saved to ``trial.node``, and whose ``definition`` will
             be saved to ``trial.definition``.
@@ -1245,7 +1247,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             :attr:`sync_group_type`, the round's first cue sets the node's
             definition, which every trial in the round gets: a function is only
             called then, with ``participant`` set to that first member, and a
-            later cue with a different ``dict`` raises a ``ValueError``.
+            later cue with a different ``dict`` raises a ``ValueError``. So a
+            grouped cue's definition must not depend on the player's own
+            position in a loop, as in ``lambda i: PickTrial.cue({"block": i})``:
+            a late joiner, or a room that a Regrouper fills with players from
+            different rounds, would then cue a different definition for the
+            same round. Pass a function taking ``round`` or ``group`` instead.
             Otherwise a function is called for each trial, with ``group=None``.
 
         assets :
@@ -1346,8 +1353,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 definition=trial_definition,
             )
             if group is not None:
-                _record_sync_group(trial, participant, group)
-                trial.sync_group_round = node.sync_group_round
+                _record_sync_group(trial, participant, group, node.sync_group_round)
             db.session.add(trial)
             participant.current_trial = trial
 
@@ -1413,8 +1419,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 f"round {node.sync_group_round} of '{cls.sync_group_type}' group "
                 f"{group.id} already has the definition {node.definition!r}. "
                 "All trials in a group's round share the definition of its first "
-                "cue: pass the same one, or a function, which is only called for "
-                "the round's first cue."
+                "cue, so the definition must not depend on the player's own "
+                "position in a loop, which differs for late joiners and in rooms "
+                "mixing players from different rounds. Pass the same dict, or a "
+                "function taking round or group, which is only called for the "
+                "round's first cue."
             )
         return node, group, node.definition
 
@@ -4188,9 +4197,11 @@ def _lock_until_commit(key):
     _execute_advisory_xact_lock(db.session, key, wait=True)
 
 
-def _record_sync_group(trial, participant, group):
-    """Save ``group`` and the participant's role in it on ``trial``."""
+def _record_sync_group(trial, participant, group, round_number=None):
+    """Save ``group``, the participant's role in it and, if given, the round on ``trial``."""
     trial.sync_group_id = group.id
+    if round_number is not None:
+        trial.sync_group_round = round_number
     link = ParticipantLinkSyncGroup.query.filter_by(
         participant_id=participant.id, sync_group_id=group.id, active=True
     ).one_or_none()
@@ -4255,6 +4266,9 @@ class SyncGroupNode(GenericTrialNode):
     ``definition`` is every trial's definition in the round, and ``var`` is
     the place for the group's results, for example those that a
     :class:`~psynet.sync.GroupBarrier`'s ``on_release`` computes.
+
+    Cued trials take ``sync_group_round`` from this node, while trial makers
+    with ``sync_group_type`` compute it from their own trials.
     """
 
     # No foreign key, as on Trial.sync_group_id.

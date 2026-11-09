@@ -1956,7 +1956,7 @@ class GroupBarrier(Barrier):
 
                 if self.on_release:
                     try:
-                        trials = _current_trials(group.active_participants)
+                        trials = [p.current_trial for p in group.active_participants]
                         self.on_release(
                             group=group,
                             participants=group.active_participants,
@@ -4287,11 +4287,6 @@ class SimpleSyncGroup(SyncGroup):
         self._dissolve()
 
 
-def _current_trials(participants):
-    """Return each participant's ``current_trial``, in the same order, for barrier callbacks."""
-    return [participant.current_trial for participant in participants]
-
-
 def _shared_node(group, trials):
     """Return ``group``'s node that all ``trials`` share, or ``None``."""
     from .trial.main import SyncGroupNode
@@ -4321,7 +4316,7 @@ def _run_on_dissolve(group, members):
                 participant
             )
     for barrier, participants in waiting.values():
-        trials = _current_trials(participants)
+        trials = [p.current_trial for p in participants]
         try:
             barrier.on_dissolve(
                 group=group,

@@ -101,6 +101,14 @@ and a member who joins it late joins its current round. This needs a
 barrier in each round, such as the one in ``show_trial`` below, so that no
 member starts the next round before the others have cued this one.
 
+Every trial in a round gets the definition of the round's first cue, so a
+definition must not depend on the player's own position in the loop, as in
+``logic=lambda i: OfferTrial.cue({"block": i})``. A late joiner, or a pair
+that the regrouper forms from players at different rounds, would then cue a
+different definition for the same round and get a ``ValueError``. Use a
+function taking ``round`` or ``group`` instead, such as
+``OfferTrial.cue(lambda round: {"block": round})``.
+
 A round with two phases, such as an offer and a reply, is normally one
 trial class with several pages. If you really need trials of two classes in
 one round, pass the same ``round=`` to both cues, for example the index of
