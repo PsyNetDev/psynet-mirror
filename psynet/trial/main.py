@@ -398,8 +398,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             ':data:`~psynet.sync.SyncGroupOutcome`: ``"stayed"`` '
             "once a :class:`~psynet.sync.GroupBarrier` releases the group while "
             "this is the player's current trial and is on the node of the round "
-            "that barrier visit belongs to (a barrier before the module's first "
-            "cue belongs to no round and stores nothing, and released members "
+            "that barrier visit belongs to (a barrier before the first cue of "
+            "this run of the module belongs to no round and stores nothing, "
+            "and released members "
             "whose current trial is not on that node, such as a newcomer who "
             "skipped the round, get nothing), or why the player left the "
             "group, one of the reasons of "
@@ -412,7 +413,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             "except that leaving before :attr:`complete` is set replaces "
             '``"stayed"``, and ``"moved_on"`` or ``"finished"`` after it is set '
             "stores nothing. Leaving the group once the player is in a later "
-            "module stores nothing either. ``None`` while nothing has happened "
+            "module, or a later run of the same module (another "
+            "``ModuleState``), stores nothing either. ``None`` while nothing has happened "
             "yet, and for ungrouped trials."
         ),
     )
@@ -4643,17 +4645,18 @@ def _member_link(group, participant):
 
 
 def _record_round_position(group, participant, node, skipped=False):
-    """Store ``node`` as the round of ``group`` that ``participant`` last cued or skipped."""
+    """Store ``node`` as the round of ``group`` that ``participant`` last cued or skipped.
+
+    Also stores the participant's current ``ModuleState``, so a later run of
+    the same module can tell that the round belongs to an earlier run.
+    """
     link = _member_link(group, participant)
-    link.round_node_id = node.id
-    link.skipped_round = skipped
-    link.round_run_index = _current_run_index(participant)
-
-
-def _current_run_index(participant):
-    """Return the ``run_index`` of ``participant``'s current module state, or ``None`` outside a module."""
     state = participant.module_state
-    return None if state is None else state.run_index
+    if state is not None and state.id is None:
+        db.session.flush()
+    link.round_node_id = node.id
+    link.round_module_state_id = None if state is None else state.id
+    link.skipped_round = skipped
 
 
 # SyncGroupNode shares the node table, and SQLAlchemy doesn't accept
