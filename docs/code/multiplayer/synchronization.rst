@@ -249,14 +249,14 @@ Barriers
 A :class:`~psynet.sync.GroupBarrier` holds each member until every active
 member of the group has reached it. When the last member arrives, the barrier
 calls ``on_release`` for the whole group. In ``rock_paper_scissors`` the
-barrier after each choice scores the round and saves each player's result
-on their trial, where ``show_feedback`` reads it:
+barrier after each choice scores the round and saves both actions and the
+winner on the pair's node, where ``show_feedback`` reads them:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors/experiment.py
    :pyobject: RockPaperScissorsTrial.show_trial
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors/experiment.py
-   :pyobject: RockPaperScissorsTrial.score_trial
+   :pyobject: RockPaperScissorsTrial.score_round
 
 ``on_release`` can take any of the arguments ``group``, ``participants``,
 ``trials`` (each member's current trial, in the same order as

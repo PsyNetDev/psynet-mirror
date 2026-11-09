@@ -130,47 +130,12 @@ test("default barriers hold the current page until websocket release", { tag: "@
     await expect(
       firstParticipant.locator(".psynet-timeline-hold-progress")
     ).toHaveCount(0);
-    // The partner is still on choose_action. Grouped pages must subscribe to
+    // The partner is still on choose_action, whose GroupPrompt shows a live
+    // tick instead of an arrival notice. Grouped pages must subscribe to
     // arrival_updates even when sync_group_links was not already loaded.
-    const arrivalNotice = secondParticipant.locator("#psynet-arrival-notice");
-    await expect(arrivalNotice).toHaveText("Your partner is ready.", {
-      timeout: STEP_TIMEOUT_MS
-    });
-    await expect(arrivalNotice).toHaveAttribute("title", "Your partner is ready.");
-    await expect(arrivalNotice).toBeVisible();
     await expect(
-      secondParticipant.locator("#timeline-header #psynet-arrival-notice")
-    ).toHaveCount(1);
-    if (process.env.ARTIFACT_DIR) {
-      await secondParticipant.setViewportSize({ width: 375, height: 667 });
-      await secondParticipant.screenshot({
-        path: `${process.env.ARTIFACT_DIR}/rps_arrival_notice_phone_default.png`,
-      });
-    }
-    const longNoticeText =
-      "Your partner is ready to continue. Please wait a little longer while we get everything ready for the next trial.";
-    await secondParticipant.evaluate((message) => {
-      window.psynet.showArrivalNotice(message);
-    }, longNoticeText);
-    await secondParticipant.setViewportSize({ width: 375, height: 667 });
-    const longNotice = await arrivalNotice.evaluate((el) => ({
-      height: el.getBoundingClientRect().height,
-      overflowed: el.scrollHeight > el.clientHeight,
-    }));
-    // Two lines at most, then an ellipsis. 48 px fits two lines of the
-    // narrow-screen notice (under 720 px), not of the desktop one.
-    expect(longNotice.height).toBeLessThan(48);
-    expect(longNotice.overflowed).toBeTruthy();
-    await expect(arrivalNotice).toHaveAttribute("title", longNoticeText);
-    if (process.env.ARTIFACT_DIR) {
-      await secondParticipant.screenshot({
-        path: `${process.env.ARTIFACT_DIR}/rps_arrival_notice_phone.png`,
-      });
-    }
-    await secondParticipant.setViewportSize({ width: 1280, height: 720 });
-    await secondParticipant.evaluate(() => {
-      window.psynet.showArrivalNotice("Your partner is ready.");
-    });
+      secondParticipant.locator(".psynet-group-member--answered")
+    ).toHaveCount(1, { timeout: STEP_TIMEOUT_MS });
     await expect(secondParticipant.locator("#main-body")).toContainText(
       "Choose your action"
     );
@@ -183,7 +148,7 @@ test("default barriers hold the current page until websocket release", { tag: "@
         fullPage: true
       });
       await secondParticipant.screenshot({
-        path: `${process.env.ARTIFACT_DIR}/rps_arrival_notice.png`,
+        path: `${process.env.ARTIFACT_DIR}/rps_partner_tick.png`,
         fullPage: true
       });
     }
@@ -311,6 +276,92 @@ test("default barriers hold the current page until websocket release", { tag: "@
     expect(pageErrors).toEqual([]);
   } finally {
     delayedChatSocket.releaseAll();
+    await firstContext.close();
+    await secondContext.close();
+    await stopExperiment(experiment.proc);
+  }
+});
+
+test("a partner still choosing sees a two-line arrival notice", { tag: "@inplace-only" }, async ({
+  browser
+}) => {
+  // Its choice page has no GroupPrompt, so the partner gets the progress-bar
+  // notice when the first player reaches the barrier after it.
+  const experiment = startExperiment(
+    path.resolve("tests/playwright/experiments/stacked_group_holds"),
+    { env: { PSYNET_STACKED_GROUP_SIZE: "2" } }
+  );
+  const firstContext = await browser.newContext();
+  const secondContext = await browser.newContext();
+
+  try {
+    const recruitmentUrl = await experiment.urlPromise;
+    const firstParticipant = await beginExperiment(
+      await firstContext.newPage(),
+      firstContext,
+      withFreshParticipantIds(recruitmentUrl, "arrival_notice_first")
+    );
+    const secondParticipant = await beginExperiment(
+      await secondContext.newPage(),
+      secondContext,
+      withFreshParticipantIds(recruitmentUrl, "arrival_notice_second")
+    );
+    await Promise.all([
+      completeInitialGateway(firstParticipant),
+      completeInitialGateway(secondParticipant)
+    ]);
+    await Promise.all(
+      [firstParticipant, secondParticipant].map((page) =>
+        expect(page.locator("#main-body")).toContainText("Choose your action", {
+          timeout: STEP_TIMEOUT_MS
+        })
+      )
+    );
+    await secondParticipant.waitForFunction(
+      () => Boolean(window.psynet?.arrivalUpdates?.connection?.isOpen?.()),
+      { timeout: STEP_TIMEOUT_MS }
+    );
+
+    await firstParticipant.getByRole("button", { name: "go" }).click();
+    // Grouped pages must subscribe to arrival_updates even when
+    // sync_group_links was not already loaded.
+    const arrivalNotice = secondParticipant.locator("#psynet-arrival-notice");
+    await expect(arrivalNotice).toHaveText("Your partner is ready.", {
+      timeout: STEP_TIMEOUT_MS
+    });
+    await expect(arrivalNotice).toHaveAttribute("title", "Your partner is ready.");
+    await expect(arrivalNotice).toBeVisible();
+    await expect(
+      secondParticipant.locator("#timeline-header #psynet-arrival-notice")
+    ).toHaveCount(1);
+    await secondParticipant.setViewportSize({ width: 375, height: 667 });
+    if (process.env.ARTIFACT_DIR) {
+      await secondParticipant.screenshot({
+        path: `${process.env.ARTIFACT_DIR}/arrival_notice_phone_default.png`,
+      });
+    }
+    const longNoticeText =
+      "Your partner is ready to continue. Please wait a little longer while we get everything ready for the next trial. Thank you for your patience.";
+    await secondParticipant.evaluate((message) => {
+      window.psynet.showArrivalNotice(message);
+    }, longNoticeText);
+    const longNotice = await arrivalNotice.evaluate((el) => ({
+      height: el.getBoundingClientRect().height,
+      overflowed: el.scrollHeight > el.clientHeight,
+    }));
+    // Two lines at most, then an ellipsis. 48 px fits two lines of the
+    // narrow-screen notice (under 720 px), not of the desktop one.
+    expect(longNotice.height).toBeLessThan(48);
+    expect(longNotice.overflowed).toBeTruthy();
+    await expect(arrivalNotice).toHaveAttribute("title", longNoticeText);
+    if (process.env.ARTIFACT_DIR) {
+      await secondParticipant.screenshot({
+        path: `${process.env.ARTIFACT_DIR}/arrival_notice_phone.png`,
+      });
+    }
+    await assertNoBackendError(firstParticipant);
+    await assertNoBackendError(secondParticipant);
+  } finally {
     await firstContext.close();
     await secondContext.close();
     await stopExperiment(experiment.proc);

@@ -35,16 +35,27 @@ timestamps or `position`. For example:
 ```python
 @classmethod
 def score_round(cls, trials, node):  # GroupBarrier(..., on_release=cls.score_round)
-    node.var.total = sum(t.participant.var.choice or 0 for t in trials)
+    # Each player's choice is their trial's answer, None after a timeout.
+    total = sum(t.answer or 0 for t in trials)
+    node.var.total = total
     for trial in trials:
-        trial.var.result = {"choice": trial.participant.var.choice}
+        trial.var.payoff = total / len(trials) - (trial.answer or 0)
 
 # In the Experiment class:
 @classmethod
 def get_basic_data(cls, context=None, **kwargs):
+    """Return one row per trial, including rounds that were never scored."""
     return {"player_round": [
-        {"group_id": t.sync_group_id, "round": t.sync_group_round, **t.var.result}
-        for t in MyTrial.query.all() if t.var.has("result")
+        {
+            "group_id": t.sync_group_id,
+            "round": t.sync_group_round,
+            "participant_id": t.participant_id,
+            "trial_id": t.id,
+            "choice": t.answer,
+            "payoff": t.var.get("payoff"),
+            "group_total": t.node.var.get("total"),
+        }
+        for t in MyTrial.query.all()
     ]}
 ```
 
@@ -77,9 +88,12 @@ data are collected.
 4. Extract scores at each level the analysis uses: player-round, partner,
    group, cumulative, and bonus-relevant scores, plus score components when
    they are needed to audit the scoring rule.
-5. Build the player-round table in `get_basic_data` from the trials, and a
-   group-round table from the `SyncGroupNode` rows if the game has group
-   results. Give roles and player order their own columns. Keep nested JSON
+5. Build the player-round table in `get_basic_data` from the trials, one
+   row for every trial, including rounds that were never scored or that
+   the player left, with `None` in the columns they didn't reach; say so in
+   the docstring. Add a group-round table from the `SyncGroupNode` rows if
+   the game has group results. Give roles and player order their own
+   columns. Keep nested JSON
    or raw event IDs only where they help auditing.
 6. Run the experiment with bots or simulated participants
    (`simulate-participants/SKILL.md`), export it, and check the table against

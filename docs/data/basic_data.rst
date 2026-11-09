@@ -137,13 +137,14 @@ A convenient layout for dyads and small groups is one row per participant per
 round, with columns for the group, the round, the participant, their partner,
 the trial ID (to trace each row back to the database) and both players'
 responses. Group-level measures can be computed from this table.
-The ``rock_paper_scissors`` demo builds it from its trials. The barrier that
-ends each round saves each player's action, their partner's and the score on
-their trial in ``trial.var.result``, including the random action played for
-someone who ran out of time, because that action is in no answer (see
-``score_trial`` under "Barriers" in :doc:`/code/multiplayer/synchronization`).
-``get_basic_data`` then reads one row from each scored trial, including the
-trial of a player who closed the page before finishing it:
+The ``rock_paper_scissors`` demo builds it from its trials and their nodes.
+The barrier that ends each round saves both players' actions and the winner
+once on the pair's node, including the random action played for someone who
+ran out of time, because that action is in no answer (see ``score_round``
+under "Barriers" in :doc:`/code/multiplayer/synchronization`). Each trial's
+``round_result`` reads the node from its player's point of view, and
+``get_basic_data`` reads one row from every trial, including the trial of a
+player who closed the page before finishing it:
 
 .. literalinclude:: ../../demos/experiments/rock_paper_scissors/experiment.py
    :pyobject: Exp.get_basic_data
@@ -161,9 +162,9 @@ round 1, this returns:
     1         2      1               5         scissors  False      2           scissors        False              0
     1         2      2               6         scissors  False      1           scissors        False              0
 
-Each scored round has one row per member, and ``partner_id`` points in both
+Each round has one row per member, and ``partner_id`` points in both
 directions. A round that was never scored, for example because a partner
-dropped out before choosing, has no rows. Participants who are regrouped have
+dropped out before choosing, has ``None`` in the result columns. Participants who are regrouped have
 one ``sync_group_id`` per group, so their rounds with each partner stay apart.
 
 .. _basic_data_regrouper:
