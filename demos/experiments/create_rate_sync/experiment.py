@@ -1,3 +1,17 @@
+"""Synchronous create-and-rate game for groups of three.
+
+In each trial, every member of the group first types the name of a food item,
+then chooses between the items of the other two members, and then sees how
+the group voted. The vote has a time limit of ``VOTE_SECONDS``, so one slow
+member can't hold up the group; a member who runs out of time doesn't vote.
+
+Each trial collects both answers in ``trial.answer`` (``accumulate_answers``).
+After each phase, a :class:`~psynet.sync.GroupBarrier`'s ``on_release`` reads
+the members' answers from their trials and stores what the next page needs
+in each trial's ``var``: everyone's creations, and then everyone's votes and
+the winning creation.
+"""
+
 import random
 from collections import Counter
 from typing import List
@@ -6,27 +20,12 @@ import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl, TextControl
-from psynet.participant import Participant
 from psynet.sync import GroupBarrier, SimpleGrouper
-from psynet.timeline import CodeBlock, PageMaker, Timeline, join
+from psynet.timeline import PageMaker, Timeline, join
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 
-# Overview #####################################################################
-
-# This experiment implements a synchronous create and rate task. Groups of three participants
-# are created. In each trial, each participant is first asked to type the name of a food item.
-# In a second phase of each trial, each participant chooses between the food items given by
-# the other two participants, and is then informed about the choices made by the other participants.
-# The vote has a time limit, so one slow participant can't hold up the group; a participant who
-# runs out of time doesn't vote.
-
-# #############################################################################
-
+GROUP = "create_rate"
 VOTE_SECONDS = 20
-
-
-class CreateRateTrialMaker(StaticTrialMaker):
-    pass
 
 
 class CreateRateTrial(StaticTrial):
@@ -35,69 +34,90 @@ class CreateRateTrial(StaticTrial):
 
     def show_trial(self, experiment, participant):
         return join(
-            PageMaker(self.create, time_estimate=5),
+            ModularPage(
+                "create",
+                # Ticks appear as the others finish.
+                GroupPrompt(
+                    f"Type something you can have as {self.definition['target']}:",
+                    group=self.sync_group,
+                    participant=participant,
+                ),
+                TextControl(),
+                time_estimate=5,
+            ),
             GroupBarrier(
                 id_="finished_creating",
-                group_type="create_rate",
+                group_type=GROUP,
                 waiting_message="Waiting for the rest of your group",
+                on_release=self.store_creations,
             ),
             PageMaker(self.rate, time_estimate=5),
             GroupBarrier(
                 id_="finished_rating",
-                group_type="create_rate",
+                group_type=GROUP,
                 waiting_message="Waiting for the rest of your group",
                 # The fastest voter may wait out the rest of the vote.
                 max_wait_time=VOTE_SECONDS + 30,
-                on_release=self.save_ratings,
+                on_release=self.count_votes,
             ),
             PageMaker(self.show_ratings, time_estimate=5),
         )
 
-    def create(self, participant):
-        prompt = f"Type something you can have as {self.definition['target']}:"
-        return join(
-            ModularPage(
-                "create",
-                # Ticks appear as the others finish.
-                GroupPrompt(prompt, group=self.sync_group, participant=participant),
-                TextControl(),
-                time_estimate=5,
-                save_answer="create",
-            ),
-            CodeBlock(
-                lambda participant: self.var.set("create", participant.var.create)
-            ),
-        )
+    @classmethod
+    def store_creations(cls, trials: List["CreateRateTrial"]):
+        """Store every member's creation on each member's trial."""
+        creations = {str(t.participant_id): t.answer["create"] for t in trials}
+        for trial in trials:
+            trial.var.creations = creations
+
+    @classmethod
+    def count_votes(cls, trials: List["CreateRateTrial"]):
+        """Store every member's vote and the result of the vote on each member's trial.
+
+        A member who ran out of time has the vote ``None``. The result is
+        ``"winner"`` (stored with the ``winner`` creation), ``"tie"`` or
+        ``"no_votes"``.
+        """
+        votes = {str(t.participant_id): t.answer["rate"] for t in trials}
+        counts = Counter(v for v in votes.values() if v is not None).most_common(2)
+        if not counts:
+            result, winner = "no_votes", None
+        elif len(counts) == 1 or counts[0][1] > counts[1][1]:
+            result, winner = "winner", counts[0][0]
+        else:
+            result, winner = "tie", None
+        for trial in trials:
+            trial.var.votes = votes
+            trial.var.result = result
+            trial.var.winner = winner
 
     def rate(self, participant):
-        prompt = f"Choose the {self.definition['target']} you prefer:"
-        return join(
-            ModularPage(
-                "rate",
-                GroupPrompt(prompt, group=self.sync_group, participant=participant),
-                PushButtonControl(
-                    choices=self.find_creations(participant),
-                ),
-                time_estimate=5,
-                save_answer="rate",
-                time_limit=VOTE_SECONDS,
+        return ModularPage(
+            "rate",
+            GroupPrompt(
+                f"Choose the {self.definition['target']} you prefer:",
+                group=self.sync_group,
+                participant=participant,
             ),
-            CodeBlock(lambda participant: self.var.set("rate", participant.var.rate)),
+            PushButtonControl(choices=self.find_creations()),
+            time_estimate=5,
+            time_limit=VOTE_SECONDS,
         )
 
-    def find_creations(self, participant):
+    def find_creations(self):
+        """Return the other members' creations in random order."""
         creations = [
-            p.var.create
-            for p in participant.sync_group.participants
-            if p != participant
+            creation
+            for participant_id, creation in self.var.creations.items()
+            if participant_id != str(self.participant_id)
         ]
         random.shuffle(creations)
         return creations
 
     def show_ratings(self, participant):
-        result = participant.var.last_trial
-        own = result["rating_self"]
-        others = [r for r in result["rating_others"] if r is not None]
+        votes = dict(self.var.votes)
+        own = votes.pop(str(participant.id))
+        others = sorted(v for v in votes.values() if v is not None)
         you = "You ran out of time to vote" if own is None else f"You voted for {own}"
         if not others:
             partners = "your partners didn't vote"
@@ -105,26 +125,21 @@ class CreateRateTrial(StaticTrial):
             partners = f"one partner voted for {others[0]} and the other didn't vote"
         else:
             partners = f"your partners voted for {others[0]} and {others[1]}"
-        prompt = f"{you}, {partners}. Here is what everyone made."
-        creations = result["creation_by_player"]
-        counts = Counter(
-            r for r in result["rating_by_player"].values() if r is not None
-        )
+
+        creations, winner = self.var.creations, self.var.winner
         highlight = {}
-        if not counts:
+        if self.var.result == "winner":
+            note = f"{winner} got the most votes."
+            highlight = {pid: "winner" for pid, c in creations.items() if c == winner}
+        elif self.var.result == "no_votes":
             note = "Nobody voted."
         else:
-            top, n_votes = counts.most_common(1)[0]
-            if list(counts.values()).count(n_votes) == 1:
-                note = f"{top} got the most votes."
-                highlight = {pid: "winner" for pid, c in creations.items() if c == top}
-            else:
-                note = "It's a tie."
+            note = "It's a tie."
 
         return ModularPage(
             "show_ratings",
             GroupPrompt(
-                prompt,
+                f"{you}, {partners}. Here is what everyone made.",
                 group=self.sync_group,
                 participant=participant,
                 answers=creations,
@@ -134,36 +149,19 @@ class CreateRateTrial(StaticTrial):
             time_estimate=5,
         )
 
-    def save_ratings(self, participants: List[Participant]):
-        assert len(participants) == 3
-
-        ratings = [p.var.rate for p in participants]
-        creations = {p.id: p.var.create for p in participants}
-        rating_by_player = {p.id: p.var.rate for p in participants}
-
-        for i in range(len(participants)):
-            participants[i].var.last_trial = {
-                "rating_self": ratings[i],
-                "rating_others": sorted(
-                    ratings[:i] + ratings[i + 1 :], key=lambda r: (r is None, r or "")
-                ),
-                "creation_by_player": creations,
-                "rating_by_player": rating_by_player,
-            }
-
 
 class Exp(psynet.experiment.Experiment):
     label = "Synchronous create and rate demo"
 
     timeline = Timeline(
         SimpleGrouper(
-            group_type="create_rate",
+            group_type=GROUP,
             initial_group_size=3,
             # Every member creates and rates, so the group can't lose anyone.
             quorum=3,
             waiting_message="Waiting for the rest of your group",
         ),
-        CreateRateTrialMaker(
+        StaticTrialMaker(
             id_="create_rate",
             trial_class=CreateRateTrial,
             nodes=[
@@ -172,7 +170,7 @@ class Exp(psynet.experiment.Experiment):
             ],
             expected_trials_per_participant=3,
             max_trials_per_participant=3,
-            sync_group_type="create_rate",
+            sync_group_type=GROUP,
             sync_group_waiting_message="Waiting for the rest of your group",
         ),
     )
@@ -181,115 +179,43 @@ class Exp(psynet.experiment.Experiment):
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
+        # What each bot creates and votes for in each trial, and the most
+        # popular creation, or None for a tie.
+        trials = [
+            (
+                ["chocolate", "pudding", "yoghurt"],
+                ["yoghurt", "yoghurt", "pudding"],
+                "yoghurt",
+            ),
+            (
+                ["schnitzel", "salad", "burger"],
+                ["salad", "schnitzel", "salad"],
+                "salad",
+            ),
+            (["melon", "shrimp", "soup"], ["shrimp", "soup", "melon"], None),
+        ]
         advance_past_wait_pages(bots)
 
-        # CREATE 1
-        assert bots[0].current_page_label == "create"
-        bots[0].take_page(response="chocolate")
-        assert bots[0].current_page_label == "wait"
+        for creations, votes, winner in trials:
+            for bot, creation in zip(bots, creations):
+                assert bot.current_page_label == "create"
+                bot.take_page(response=creation)
+            advance_past_wait_pages(bots)
 
-        assert bots[1].current_page_label == "create"
-        bots[1].take_page(response="pudding")
+            for bot, vote in zip(bots, votes):
+                assert bot.current_page_label == "rate"
+                bot.take_page(response=vote)
+            advance_past_wait_pages(bots)
 
-        assert bots[2].current_page_label == "create"
-        bots[2].take_page(response="yoghurt")
+            note = "It's a tie." if winner is None else f"{winner} got the most votes."
+            for i, bot in enumerate(bots):
+                partners = " and ".join(sorted(votes[:i] + votes[i + 1 :]))
+                assert bot.current_page_text == (
+                    f"You voted for {votes[i]}, your partners voted for {partners}. "
+                    f"Here is what everyone made. {note}"
+                )
+                bot.take_page()
+            advance_past_wait_pages(bots)
 
-        advance_past_wait_pages(bots)
-
-        # RATE 1
-        assert bots[0].current_page_label == "rate"
-        bots[0].take_page(response="yoghurt")
-
-        assert bots[1].current_page_label == "rate"
-        bots[1].take_page(response="yoghurt")
-
-        assert bots[2].current_page_label == "rate"
-        bots[2].take_page(response="pudding")
-
-        advance_past_wait_pages(bots)
-
-        texts = [bot.current_page_text for bot in bots]
-        assert (
-            texts[0]
-            == "You voted for yoghurt, your partners voted for pudding and yoghurt. Here is what everyone made. yoghurt got the most votes."
-        )
-        assert (
-            texts[1]
-            == "You voted for yoghurt, your partners voted for pudding and yoghurt. Here is what everyone made. yoghurt got the most votes."
-        )
-        assert (
-            texts[2]
-            == "You voted for pudding, your partners voted for yoghurt and yoghurt. Here is what everyone made. yoghurt got the most votes."
-        )
-        assert bots[0].get_current_page().prompt.note == "yoghurt got the most votes."
-
-        bots[0].take_page()
-        bots[1].take_page()
-        bots[2].take_page()
-        advance_past_wait_pages(bots)
-
-        # CREATE 2
-        bots[0].take_page(response="schnitzel")
-        bots[1].take_page(response="salad")
-        bots[2].take_page(response="burger")
-        advance_past_wait_pages(bots)
-
-        # RATE 2
-        bots[0].take_page(response="salad")
-        bots[1].take_page(response="schnitzel")
-        bots[2].take_page(response="salad")
-        advance_past_wait_pages(bots)
-
-        texts = [bot.current_page_text for bot in bots]
-        assert (
-            texts[0]
-            == "You voted for salad, your partners voted for salad and schnitzel. Here is what everyone made. salad got the most votes."
-        )
-        assert (
-            texts[1]
-            == "You voted for schnitzel, your partners voted for salad and salad. Here is what everyone made. salad got the most votes."
-        )
-        assert (
-            texts[2]
-            == "You voted for salad, your partners voted for salad and schnitzel. Here is what everyone made. salad got the most votes."
-        )
-
-        bots[0].take_page()
-        bots[1].take_page()
-        bots[2].take_page()
-        advance_past_wait_pages(bots)
-
-        # CREATE 3
-        bots[0].take_page(response="melon")
-        bots[1].take_page(response="shrimp")
-        bots[2].take_page(response="soup")
-        advance_past_wait_pages(bots)
-
-        # RATE 3
-        bots[0].take_page(response="soup")
-        bots[1].take_page(response="soup")
-        bots[2].take_page(response="melon")
-        advance_past_wait_pages(bots)
-
-        texts = [bot.current_page_text for bot in bots]
-        assert (
-            texts[0]
-            == "You voted for soup, your partners voted for melon and soup. Here is what everyone made. soup got the most votes."
-        )
-        assert (
-            texts[1]
-            == "You voted for soup, your partners voted for melon and soup. Here is what everyone made. soup got the most votes."
-        )
-        assert (
-            texts[2]
-            == "You voted for melon, your partners voted for soup and soup. Here is what everyone made. soup got the most votes."
-        )
-
-        bots[0].take_page()
-        bots[1].take_page()
-        bots[2].take_page()
-        advance_past_wait_pages(bots)
-
-        texts = [bot.current_page_text for bot in bots]
-        for text in texts:
-            assert "That's the end!" in text
+        for bot in bots:
+            assert "That's the end!" in bot.current_page_text

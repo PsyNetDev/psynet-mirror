@@ -13,12 +13,15 @@ away too long, and a participant for whom no group forms are each told why
 the game ended for them.
 
 Good reference for a `SimpleGrouper` with a `quorum` whose members carry on
-without the group, a scoring `GroupBarrier` with `late_after`, `on_release`
-and `on_dissolve`, and `for_loop(..., stop_if=...)` with a `conditional`
-afterwards for players without a group. Each round is one cued trial per player (`Trial.cue(...)`
-on a trial class with `sync_group_type`): the group's pot is saved once on the node its
-members' trials share, each player's contribution and payoff on their trial,
-which pays the bonus, and the basic data is read from the trials and nodes.
+without the group, a scoring `GroupBarrier` with `late_after`, `on_release`,
+`on_dissolve` and a `waiting_screen`, and `for_loop(..., stop_if=...)` with a
+`conditional` afterwards for players without a group. Each round is one cued
+trial per player (`Trial.cue(round=i)` on a trial class with
+`sync_group_type`, the loop of a fixed group): the group's pot is saved once
+on the node its members' trials share, each player's contribution and payoff
+on their trial, which pays the bonus, and the trial's `sync_group_outcome`
+says whether the player stayed to the end of the round or why they left. The
+basic data is read from the trials and nodes.
 
 ## Usage
 

@@ -83,15 +83,16 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   result; it is called once, with all of them, because dissolving waits until
   no member's request is in flight. Members still on an earlier page get
   neither callback, so
-  check `participant.sync_group_removal_reason(...)` in a step after the
-  barrier if they need a result too.
+  check their cued trial's `sync_group_outcome == "group_dissolved"` in a
+  step after the barrier if they need a result too.
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries
   such as submit, rate, reveal, score, or bonus computation.
-- Read partner state through `participant.sync_group.participants`,
-  participant vars, trial vars, node vars, or `on_release` outputs. Do not let
-  the browser decide shared experiment state.
+- Read partners' answers from what `on_release` stored on the trial or node
+  (trial vars, node vars); use `sync_group.participants` only for membership,
+  such as assigning roles. Do not let the browser decide shared experiment
+  state.
 - For games played in rounds with changing partners or rooms, put a
   `Regrouper(group_type, group_size=..., within=...)` at the start of each
   round instead of a grouper and closer. Pass `deadline=` to split once
@@ -120,6 +121,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   group of at least the quorum (`start_short_with` overrides that). To let
   latecomers join only before the game starts, follow "Letting latecomers
   join before the game starts" in `code/multiplayer/synchronization`.
+  If groups keep taking newcomers after that, pass `pass_newcomers=True` to
+  each `GroupBarrier` the group passes once, so a newcomer doesn't wait there
+  for members further on (see "Letting latecomers join during the game").
+  Never set it on a barrier in a loop or in `show_trial`.
   For a per-person condition (not a join window), such as a chain that is
   too far along for them to catch up with, pass `join_criterion` (see
   `join_criterion` under "Forming groups" in
@@ -138,7 +143,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   To end the rounds, pass the same `stop_if` to the `for_loop`. Put the
   grouper or `Regrouper` before the `join`, not among its arguments, or
   everyone not yet grouped skips it. A round that is one cued trial needs
-  only a `conditional` (see "Rounds as cued trials").
+  no `join`: with a cohort (`within=`), follow the three-way `switch` on
+  `round_status` (paired, sat out, no cohort) in "One trial per player per
+  round" of `code/multiplayer/writing_a_round_based_experiment`, as in
+  `ultimatum_pairing`; without one, a two-way `conditional` is enough, as in
+  `lowest_unique_number` (see "Rounds as cued trials").
 - Follow with a `conditional` on the same function for what a member who
   left, or anyone who never had a group, does instead, such as answering the
   rest of the question alone. With a `Regrouper` in the loop, it is also the
@@ -146,10 +155,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `join(Regrouper(...), join(decision_page, barrier, outcome_page, stop_if=left_pair), conditional("sat_out", left_pair, sitting_out))`.
   Check `regrouper.sat_out(participant)` there to tell a sit-out from a
   player removed for being late.
-  `public_goods` stops its rounds loop with `stop_if` in a team game that
+  `public_goods` stops its `round=i` loop with `stop_if` in a team game that
   plays on with fewer members, down to its quorum, and pays the last member
   for the round in which the group dissolves: a started cued trial runs to
-  its end, where it is scored and paid.
+  its end, where `score_answer` reads its `sync_group_outcome`.
 - In a `Regrouper` game the player whose partner left stays in the pair, so
   they play the round out and see its outcome, as in `ultimatum_pairing`;
   only the player removed for being late is out of the pair, and gets their
@@ -187,8 +196,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 
 ### Rounds as cued trials
 
-Follow "One trial per player per round" in
-`code/multiplayer/writing_a_round_based_experiment`:
+Follow "Rounds of cued trials" in `code/multiplayer/synchronization` for
+how `cue` numbers rounds, the rules for `definition`, and `round=`. "One
+trial per player per round" in
+`code/multiplayer/writing_a_round_based_experiment` is the worked example:
 
 ```python
 class PickTrial(Trial):
@@ -221,19 +232,38 @@ Module("game", for_loop(
 ))
 ```
 
-- Keep a `GroupBarrier` in every round so members stay in step. For how
-  `cue` numbers rounds, the definition rules and the rare `round=`, follow
-  the guide above.
+- Keep a `GroupBarrier` in every round, inside `show_trial` after the
+  answer page, so members stay in step. A cued round closes only when its
+  barrier releases the group; a round without one never closes, and a
+  latecomer can join it after the others have finished.
+- When a fixed group plays a loop of rounds, pass the loop value as
+  `round=` (`Trial.cue({"question": i}, round=i)`): late joiners then skip
+  the rounds the group finished without them, and players who leave
+  continue alone. A skipped cue leaves `participant.current_trial` as
+  `None`, so guard later steps of the iteration that read it with a
+  `conditional` on `participant.current_trial is not None`. Don't pass
+  `round=` with a regrouper.
 - `on_release` reads each member's answer so far from `trial.answer`
-  (`accumulate_answers = True` for several answer pages), and
-  `score_answer`, `show_feedback` and `get_basic_data` read the trial and
-  `self.node.var`.
+  (`accumulate_answers = True` for several answer pages, which makes it a
+  dict from the start), and `score_answer`, `show_feedback` and
+  `get_basic_data` read the trial and `self.node.var`. `node.all_trials`
+  keeps the trials of players who left during the round. Exports need no
+  round counter of their own: `sync_group_round` counts the group's rounds,
+  for what the group shares, and `position` counts the player's own
+  trials in the module, grouped or not.
+- Put `leave_group(group_type)` after a player's last round so that the
+  rest of the group, and any `Regrouper`, stops waiting for them.
 - Use `self.sync_group_role` for role-specific pages, and put the cue in a
   `conditional` on `participant.in_sync_group(...)`, with a page as the
   other branch, so a player the regrouper sat out gets a page instead of a
-  trial. A started trial runs to its end even if the player leaves the
-  group, so its `show_feedback` explains every outcome, including being
-  removed for lateness.
+  trial. With a cohort (`within=`), use the three-way `switch` on
+  `round_status` instead, as described above. A started trial runs to its
+  end even if the player leaves the group, so its `show_feedback` explains every outcome, including being
+  removed for lateness. Read how the round ended for each player from
+  `trial.sync_group_outcome` (`"stayed"`, or why they left, such as
+  `"late"`), a partner's from their trial in `self.node.all_trials`, rather
+  than from current group membership. A barrier's `waiting_screen` can take
+  `trial` and `node` to show the round's state.
 
 ## Recruitment and platform design
 

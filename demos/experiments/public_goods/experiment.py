@@ -6,9 +6,12 @@ and shared between the members who played the round, and everyone sees the
 group's contributions and what they earned, paid as a bonus of
 ``TOKEN_VALUE`` per token.
 
-Each round is one cued ``ContributionTrial`` per player. The team's trials in
+Each round is one cued ``ContributionTrial`` per player, cued with the loop
+value as ``round=`` because the team stays together. The team's trials in
 one round share a node, which holds the team's contributions and pot; each
-player's contribution and payoff are on their trial, which pays the bonus.
+player's contribution and payoff are on their trial, which pays the bonus,
+and the trial's ``sync_group_outcome`` records whether the player stayed to
+the end of the round or why they left it.
 
 - Running out of time on the contribution page puts nothing in the pot, so
   the player keeps their tokens and still gets their share.
@@ -67,13 +70,14 @@ def get_timeline():
         ),
         Module(
             "game",
-            # A cued trial runs to its end once started, so a player whose
-            # group dissolves partway through a round is still paid for it.
             for_loop(
                 label="rounds",
                 iterate_over=range(N_ROUNDS),
-                logic=ContributionTrial.cue({}),
+                logic=lambda i: ContributionTrial.cue(round=i),
                 time_estimate_per_iteration=ContributionTrial.time_estimate,
+                # Checked before each round. A started trial runs to its end,
+                # so the last player is still paid for the round in which the
+                # group dissolves.
                 stop_if=left_team,
             ),
         ),
@@ -101,17 +105,20 @@ class ContributionTrial(Trial):
                 id_="round_finished",
                 group_type=GROUP,
                 waiting_message="Waiting for the other players…",
+                waiting_screen=your_contribution,
                 late_after=LATE_AFTER,
                 late_action="leave_group",
+                # Releasing the team closes the round and scores it.
                 on_release=self.score_round,
                 on_dissolve=self.cancel_round,
             ),
         )
 
     def contribution_page(self, participant):
-        # The loop's stop_if=left_team means the trial always has a group.
         return ModularPage(
             "contribution",
+            # Ticks appear as the others decide. The loop's stop_if=left_team
+            # means the trial always has a group, so sync_group_round is set.
             GroupPrompt(
                 f"Round {self.sync_group_round + 1} of {N_ROUNDS}. How many of "
                 f"your {ENDOWMENT} tokens do you put in the group pot?",
@@ -144,24 +151,32 @@ class ContributionTrial(Trial):
         node.var.contributions = _contributions_by_player(trials)
 
     def score_answer(self, answer, definition):
-        if self.var.has("payoff"):
+        """Return the tokens the player earned in the round."""
+        outcome = self.sync_group_outcome
+        if outcome == "stayed":
             return self.var.payoff
-        # The group dissolved during the round, whether or not the last member
-        # was already waiting at the barrier, so they keep their tokens. A
-        # player removed for being late earns nothing for the round.
-        if self.participant.sync_group_removal_reason(GROUP) == "group_dissolved":
+        # The last player keeps their tokens for the cancelled round, whether
+        # or not they were already waiting at the barrier.
+        if outcome == "group_dissolved":
             return ENDOWMENT
+        # Removed for being late.
         return 0
 
     def compute_performance_reward(self, score):
         return TOKEN_VALUE * score
 
     def gives_feedback(self, experiment, participant):
-        # Only rounds that were played to the end have results to show.
-        return self.var.has("payoff")
+        return self.sync_group_outcome == "stayed"
 
     def show_feedback(self, experiment, participant):
         node = self.node
+        n_left = sum(t.sync_group_outcome != "stayed" for t in node.all_trials)
+        if n_left == 0:
+            left = ""
+        elif n_left == 1:
+            left = "One player left during the round. "
+        else:
+            left = f"{n_left} players left during the round. "
         if self.answer is None:
             you = "You ran out of time and put in nothing"
         else:
@@ -169,7 +184,7 @@ class ContributionTrial(Trial):
         return ModularPage(
             "results",
             GroupPrompt(
-                f"The group put {node.var.pot} tokens in the pot, which became "
+                f"{left}The group put {node.var.pot} tokens in the pot, which became "
                 f"{node.var.multiplied_pot:g} and was shared between "
                 f"{len(node.var.contributions)} players: {node.var.share:g} tokens "
                 f"each. {you}, so you earned {self.var.payoff:g} tokens this round.",
@@ -187,6 +202,16 @@ class ContributionTrial(Trial):
 def _contributions_by_player(trials):
     """Return each player's tokens in the pot, keyed by participant ID as a string."""
     return {str(t.participant_id): t.answer or 0 for t in trials}
+
+
+def your_contribution(participant, trial):
+    """Replace the contribution buttons with the player's contribution while the others decide."""
+    if trial.answer is None:
+        text = "You ran out of time, so you put in nothing."
+    else:
+        text = f"You put in {trial.answer} tokens."
+    # Ticks appear as the others decide.
+    return GroupPrompt(text, participant=participant, group=trial.sync_group)
 
 
 def game_over(participant):
@@ -215,37 +240,44 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per round, from the trials, and one per group per round, from the nodes.
+        """Return one row per player per round, from the trials, and one per team per round, from the nodes.
 
         Every trial gets a row, including one whose player left or whose
-        round was cancelled; ``played`` says whether the round was scored.
+        round was cancelled; ``outcome`` says how the round ended for the
+        player.
         """
         trials = ContributionTrial.query.order_by(
             ContributionTrial.sync_group_round, ContributionTrial.id
         )
-        groups = SyncGroupNode.query.filter_by(module_id="game").order_by(
+        teams = SyncGroupNode.query.filter_by(module_id="game").order_by(
             SyncGroupNode.sync_group_round, SyncGroupNode.id
         )
         return {
             "player_round": [
                 {
                     "round": t.sync_group_round,
-                    "group_id": t.sync_group_id,
+                    "team_id": t.sync_group_id,
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
+                    # False while the trial runs or if the player returned
+                    # the study during it.
+                    "complete": t.complete,
+                    # "stayed" if the round was scored; otherwise why the
+                    # player left: "late", "left_experiment" or, for the
+                    # last player of a cancelled round, "group_dissolved".
+                    "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or never answered.
                     "contribution": t.answer,
-                    "played": t.var.has("payoff"),
                     # None if the player returned the study during the round.
                     "payoff": t.score,
                     "bonus": t.performance_reward,
                 }
                 for t in trials
             ],
-            "group_round": [
+            "team_round": [
                 {
                     "round": n.sync_group_round,
-                    "group_id": n.sync_group_id,
+                    "team_id": n.sync_group_id,
                     "node_id": n.id,
                     "contributions": n.var.get("contributions"),
                     # None if the round was cancelled.
@@ -253,7 +285,7 @@ class Exp(psynet.experiment.Experiment):
                     "multiplied_pot": n.var.get("multiplied_pot"),
                     "share": n.var.get("share"),
                 }
-                for n in groups
+                for n in teams
             ],
         }
 
@@ -267,20 +299,33 @@ class Exp(psynet.experiment.Experiment):
         self._test_others_leave_before_contributing(*bots[7:10])
 
         data = self.get_basic_data()
-        # The full game's group, then the dropouts' group, whose last round
+        # The full game's team, then the dropouts' team, whose last round
         # was cancelled with only the stayer's 5 tokens in.
-        groups = [g for g in data["group_round"] if g["contributions"] is not None]
-        assert [(g["round"], g["pot"]) for g in groups] == [
+        teams = [t for t in data["team_round"] if t["contributions"] is not None]
+        assert [(t["round"], t["pot"]) for t in teams] == [
             (0, 18),
             (0, 18),
             (1, 12),
             (1, 14),
             (2, 12),
             (2, None),
-        ], groups
-        assert groups[-1]["contributions"] == {str(bots[5].id): 5}, groups[-1]
+        ], teams
+        assert teams[-1]["contributions"] == {str(bots[5].id): 5}, teams[-1]
 
         rows = data["player_round"]
+        # Silent was removed for being late before cueing their third round.
+        left = {
+            (r["participant_id"], r["round"]): r["outcome"]
+            for r in rows
+            if r["outcome"] != "stayed"
+        }
+        assert left == {
+            (bots[3].id, 1): "left_experiment",
+            (bots[5].id, 2): "group_dissolved",
+            (bots[7].id, 0): "left_experiment",
+            (bots[8].id, 0): "left_experiment",
+            (bots[9].id, 0): "group_dissolved",
+        }, left
         for bot in bots:
             paid = sum(r["bonus"] or 0 for r in rows if r["participant_id"] == bot.id)
             reward = bot.with_participant(lambda p: p.performance_reward)
@@ -320,12 +365,16 @@ class Exp(psynet.experiment.Experiment):
         quitter.drop_out()
         advance_past_wait_pages([silent, stayer])
         text = stayer.current_page_text
+        assert text.startswith("One player left during the round."), text
         assert "shared between 2 players: 10.5 tokens each" in text, text
 
         # Round 3: silent stops responding and is removed for being late,
         # which dissolves the group while the stayer waits for the results.
         stayer.take_page()
         stayer.take_page(response=5)
+        # While waiting, the waiting screen shows the stayer's contribution.
+        advance_past_wait_pages([stayer], stop_at="round_finished")
+        assert "You put in 5 tokens." in stayer.current_page_text
         advance_past_wait_pages([stayer], timeout=LATE_AFTER + 15)
         assert stayer.current_notice == (
             "Too few members of your group remained. Please continue."
