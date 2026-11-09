@@ -54,8 +54,8 @@ When a participant reaches a barrier, ``Barrier.receive_participant``:
 A scheduled task in ``Experiment._check_barriers`` calls ``check_barriers`` in
 this module. That loop:
 
-- Finishes dissolving sync groups whose dissolution skipped members who were
-  busy in their own request (see ``SyncGroup._dissolve``).
+- Dissolves sync groups whose dissolution waited because a member was busy
+  in their own request (see ``SyncGroup._dissolve``).
 - Applies ``max_wait_time`` to waiters whose hold or waiting-page deadline has
   passed. Their own request normally does this, so waiters who left would
   otherwise stay.
@@ -1690,10 +1690,10 @@ class GroupBarrier(Barrier):
         while members are waiting at this barrier, before they are removed from
         the group, so that what they did is not lost. For example, it can score
         the last question for the members who answered it. It takes the same
-        arguments as ``on_release`` except ``leader`` and ``left``: ``participants`` are
-        the members waiting here. The same serialization rules apply. A waiting member whose own request
-        is busy at that moment is handled once it finishes, in a second call
-        with just them.
+        arguments as ``on_release`` except ``leader`` and ``left``:
+        ``participants`` are the members waiting here. The same serialization
+        rules apply. Dissolving waits until no member's request is in flight,
+        so ``on_dissolve`` is called once, with every member waiting here.
 
     stop_top_ups
         If ``True``, the group stops accepting newcomers once it passes this
@@ -4127,23 +4127,31 @@ class SyncGroup(SQLBase, SQLMixin):
         )
 
     def _dissolve(self):
-        """Remove every active member, failing them if the group says so.
+        """Remove every active member at once, failing them if the group says so.
 
-        Other members' rows are locked without waiting. A member whose own
-        request holds their row is skipped and the group is marked
-        ``dissolving``, so the barrier poller finishes the job once that
-        request commits. Waiting here could deadlock with that member's
-        request, which holds their row and then needs this group's row.
+        Members' rows are locked without waiting; rows this transaction
+        already holds, such as the requester's own, count as free. If another
+        request holds any member's row, nobody is removed: the group is marked
+        ``dissolving`` and the barrier poller tries again on its next pass.
+        Waiting here could deadlock with that member's request, which holds
+        their row and then needs this group's row.
 
         Returns
         -------
         list of Participant
-            The members removed now.
+            The members removed, or an empty list if the dissolution waits.
         """
         self._dissolving_below_quorum = True
         try:
-            remaining = list(self.active_participants)
-            removed = _lock_free_participants(remaining)
+            removed = _lock_all_participants(list(self.active_participants))
+            if removed is None:
+                if not self.dissolving:
+                    logger.debug(
+                        "Dissolving sync group %s waits for a member's request.",
+                        self.id,
+                    )
+                self.dissolving = True
+                return []
             _run_on_dissolve(self, removed)
             group_size = len(group_seats(self))
             for participant in removed:
@@ -4156,7 +4164,7 @@ class SyncGroup(SQLBase, SQLMixin):
                 if action == "continue_without_group":
                     _tell_group_ended(participant, group_size)
             self.check_numbers()
-            self.dissolving = len(removed) < len(remaining)
+            self.dissolving = False
             if self.n_active_participants == 0:
                 self.close()
         finally:
@@ -4245,8 +4253,8 @@ class SimpleSyncGroup(SyncGroup):
     def dissolve_if_below_quorum(self):
         """Dissolve a group without top-ups that fell below its quorum.
 
-        Members who are busy in another request are handled shortly after
-        by the barrier poller; see :meth:`SyncGroup._dissolve`.
+        If a member is busy in another request, the barrier poller dissolves
+        the group shortly after instead; see :meth:`SyncGroup._dissolve`.
         """
         if (
             getattr(self, "_dissolving_below_quorum", False)
@@ -4304,10 +4312,28 @@ def _lock_free_participants(participants):
     The returned participants are refreshed, and any who failed or left
     meanwhile are dropped.
     """
+    locked = _skip_locked_participant_ids(participants)
+    return _still_working([p for p in participants if p.id in locked])
+
+
+def _lock_all_participants(participants):
+    """Lock every participant's row without waiting, or return ``None`` if another transaction holds one.
+
+    Like :func:`_lock_free_participants`, but all or nothing. The rows it did
+    lock stay locked until this transaction ends.
+    """
+    locked = _skip_locked_participant_ids(participants)
+    if any(participant.id not in locked for participant in participants):
+        return None
+    return _still_working(participants)
+
+
+def _skip_locked_participant_ids(participants):
+    """Lock participants' rows with ``SKIP LOCKED`` and return the ids locked."""
     if not participants:
-        return []
+        return set()
     ids = sorted({participant.id for participant in participants})
-    locked = set(
+    return set(
         db.session.execute(
             select(Participant.id)
             .where(Participant.id.in_(ids))
@@ -4315,14 +4341,16 @@ def _lock_free_participants(participants):
             .with_for_update(skip_locked=True)
         ).scalars()
     )
-    free = []
+
+
+def _still_working(participants):
+    """Refresh locked participants and drop any who failed or left meanwhile."""
+    working = []
     for participant in participants:
-        if participant.id not in locked:
-            continue
         db.session.refresh(participant, ["failed", "status", "page_uuid"])
         if not participant.failed and participant.status == "working":
-            free.append(participant)
-    return free
+            working.append(participant)
+    return working
 
 
 def _insert_values_from_state(record) -> dict:
@@ -5339,13 +5367,13 @@ def _process_barrier_instance(instance_id, *, retry=False):
 
 
 def _finish_dissolving_groups():
-    """Remove or fail members that a group dissolution had to skip.
+    """Try again to dissolve groups whose dissolution waited for a busy member.
 
     Each group is handled in its own transaction. A group another request
-    holds, and members still busy, are left for the next sweep. Group and
-    member rows are taken without waiting; other lock waits while failing a
-    member, for example on their trials, are bounded by
-    ``timeline_lock_timeout_seconds``.
+    holds, or with a member still busy, is left for the next sweep. A group
+    back at its quorum by then is no longer dissolved. Group and member rows
+    are taken without waiting; other lock waits while failing a member, for
+    example on their trials, are bounded by ``timeline_lock_timeout_seconds``.
     """
     with Session(bind=db.engine) as session:
         group_ids = [
@@ -5366,7 +5394,12 @@ def _finish_dissolving_groups():
                 .first()
             )
             if group is not None and group.active and group.dissolving:
-                group._dissolve()
+                group.check_numbers()
+                quorum = getattr(group, "min_group_size", None) or 0
+                if 0 < quorum <= group.n_active_participants:
+                    group.dissolving = False
+                else:
+                    group._dissolve()
             db.session.commit()
         except Exception as err:
             db.session.rollback()
@@ -5411,7 +5444,7 @@ def check_barriers():
     publishes unpublished until that walk returns. Each visit still commits
     before the next check so a locked waiter cannot poison sibling checks.
 
-    Each sweep first finishes group dissolutions that skipped busy members
+    Each sweep first retries group dissolutions that waited for busy members
     and times out overdue waiters, then checks visits, least
     recently checked first, with new or changed ones given a head start. Each
     of the two steps stops starting new work after
