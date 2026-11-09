@@ -7341,16 +7341,17 @@ def _score_dissolved(participants, barrier, dissolved):
         participant.var.scored_at = [barrier.id, dissolved]
 
 
+@pytest.mark.parametrize("below_quorum", ["continue_without_group", "fail"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_also_on_dissolve_calls_on_release_once_for_each_member(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, below_quorum
 ):
-    """Waiting members get the call as the group dissolves, the others at the next barrier they reach."""
+    """Waiting members get the call as the group dissolves, those who continue at the next barrier they reach."""
     exp = get_experiment()
     (waiter, answering, quitter), group = _sync_group_of(exp, db_session, 3)
-    group.below_quorum = "continue_without_group"
+    group.below_quorum = below_quorum
     barrier = GroupBarrier(
         id_="question_3",
         group_type="main",
@@ -7366,10 +7367,16 @@ def test_also_on_dissolve_calls_on_release_once_for_each_member(
     assert waiter.var.get("scored_at") == ["question_3", True]
     assert answering.var.get("scored_at") is None
     _pass_barrier(exp, barrier, answering)
-    assert answering.var.get("scored_at") == ["question_3", True]
+    late_call = ["question_3", True] if below_quorum != "fail" else None
+    assert answering.var.get("scored_at") == late_call
     answering.var.scored_at = None
     _pass_barrier(exp, barrier, answering)
     assert answering.var.get("scored_at") is None
+
+
+def test_also_on_dissolve_needs_on_release():
+    with pytest.raises(ValueError, match="needs an on_release"):
+        GroupBarrier(id_="scored", group_type="main", also_on_dissolve=True)
 
 
 @pytest.mark.parametrize(

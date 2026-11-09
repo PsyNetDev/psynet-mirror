@@ -81,8 +81,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   which returns `None` when it isn't set. Pass `also_on_dissolve=True` when
   members should still get their result if the group dissolves below its
   quorum first: `on_release` then also runs, with `dissolved=True`, once
-  for the members waiting at the barrier and once for each member still on
-  an earlier page, when they reach it. Don't add an `on_finalized` or
+  for the members waiting at the barrier. The others get a call only with
+  `below_quorum="continue_without_group"`, each when they reach the next
+  `also_on_dissolve` barrier of that group type in the module; under the
+  default `"fail"` they are failed instead. Don't add an `on_finalized` or
   feedback fallback for `"group_dissolved"`; save results per member, since
   each call has only its own members' `trials`.
 - To read a group's rounds after the game, use `group.round_nodes(module_id)`,

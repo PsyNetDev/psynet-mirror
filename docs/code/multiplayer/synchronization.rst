@@ -399,10 +399,15 @@ the results it would have stored, so read them with ``.get``, which returns
 ``None`` when they aren't set: ``trial.var.get("score")`` for results saved on
 the trial, or ``participant.var.get("score")`` when there is no trial.
 To keep what the members did when their group dissolves below its quorum,
-pass ``also_on_dissolve=True``: ``on_release`` then also runs for every
-member still in the group, with ``dissolved=True``, at the barrier of that
-group type they reach first. A quiz can therefore still score the last
-question for those who answered it:
+pass ``also_on_dissolve=True``: ``on_release`` then also runs, with
+``dissolved=True``, for the members waiting at that barrier when the group
+dissolves and, if the grouper sets
+``below_quorum="continue_without_group"`` (or a function returning it), for
+each member who carries on without the group, at the next barrier with
+``also_on_dissolve`` of that group type they reach in the same module.
+Under the default ``below_quorum="fail"``, the members who aren't waiting
+at such a barrier are failed and get no call. A quiz can therefore still
+score the last question for those who answered it:
 
 .. code-block:: python
 
@@ -416,17 +421,21 @@ question for those who answered it:
 The members waiting at the barrier when the group dissolves get one call
 together, before they leave the group. Dissolving waits until no member's
 request is in flight, usually a second at most, so that call includes
-every member waiting there. Each member still on an earlier page, such as
-the question itself, gets their own call when they reach the barrier, once
-their answer has arrived. ``participants`` are the members of the call,
-and ``node`` and ``trials`` follow the same rule as for a release, from the
-members' stored rounds when the group dissolved, so a late call still
-refers to the round the group dissolved in. Read the whole round from
+every member waiting there. Each member who continues and wasn't waiting
+there, such as one still answering the question or waiting at an earlier
+barrier without ``also_on_dissolve``, gets their own call when they reach
+the barrier, once their answer has arrived; barriers without
+``also_on_dissolve`` on the way don't use the call up. ``participants`` are
+the members of the call, ``leader`` is ``None``, since a dissolved group has
+no leader, and ``participant`` is the first of ``participants``. ``node``
+and ``trials`` follow the same rule as for a release, from the members'
+stored rounds when the group dissolved, so a late call still refers to the
+round the group dissolved in. Read the whole round from
 ``node.all_trials``, and save results for each member rather than overwrite
-those of an earlier call. ``left`` lists the members who left before the group dissolved. A
-member gets no call if the first barrier of that type they reach has no
-``also_on_dissolve``, or comes in a later round's trial, played alone or in
-another group. Every member still in the group when it
+those of an earlier call. ``left`` lists the members who left before the
+group dissolved. A member gets no late call if they reach the barrier in
+another module, after joining a new group of that type, or in a later
+round's trial played alone. Every member still in the group when it
 dissolves, waiting or not, has the trial outcome ``"group_dissolved"`` (see
 :ref:`round outcomes <sync-round-outcome>`).
 

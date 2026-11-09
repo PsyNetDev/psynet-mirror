@@ -16,7 +16,7 @@ from psynet.experiment import get_experiment
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.sync import GroupBarrier
+from psynet.sync import GroupBarrier, SimpleSyncGroup
 from psynet.timeline import Module, Timeline
 from psynet.trial.chain import ChainNode
 from psynet.trial.main import GenericTrialNetwork, SyncGroupNode, Trial
@@ -1087,64 +1087,91 @@ _dissolved = []
 def test_also_on_dissolve_gives_each_member_their_trial_and_the_round_s_node(
     in_experiment_directory, db_session
 ):
+    """Members not waiting at the scoring barrier get their call there, past a plain barrier."""
     exp = get_experiment()
-    (waiter, answering, quitter), group = _sync_group_of(exp, db_session, 3)
+    (waiter, at_sync, answering, quitter), group = _sync_group_of(exp, db_session, 4)
     group.below_quorum = "continue_without_group"
     logic = TeamTrial.cue({})
-    for participant in (waiter, answering, quitter):
+    for participant in (waiter, at_sync, answering, quitter):
         logic[0].consume(exp, participant)
     db.session.commit()
     _dissolved.clear()
+    sync = GroupBarrier("team_sync", group_type="main")
+    score = GroupBarrier(
+        "team_done",
+        group_type="main",
+        on_release=TeamTrial.record_dissolve,
+        also_on_dissolve=True,
+    )
+    _arrive(exp, score, [waiter])
+    _arrive(exp, sync, [at_sync])
+
+    quitter.fail("returned")
+    db.session.commit()
+    _pass_barrier(exp, sync, answering)
+    for participant in (answering, at_sync):
+        _pass_barrier(exp, score, participant)
+
+    node = waiter.current_trial.node
+    assert isinstance(node, SyncGroupNode)
+    assert _dissolved == [
+        ([p.current_trial], node, True) for p in (waiter, answering, at_sync)
+    ]
+    assert [
+        p.current_trial.sync_group_outcome
+        for p in (waiter, at_sync, answering, quitter)
+    ] == ["group_dissolved"] * 3 + ["left_experiment"]
+
+
+def _join_a_new_team(exp, participant):
+    group = SimpleSyncGroup(
+        group_type="main",
+        initial_group_size=1,
+        max_group_size=1,
+        min_group_size=1,
+        accepts_top_ups=False,
+    )
+    db.session.add(group)
+    group.add_participant(participant)
+    TeamTrial.cue({})[0].consume(exp, participant)
+
+
+@pytest.mark.parametrize(
+    "before_barrier",
+    [
+        lambda exp, p: TeamTrial.cue({})[0].consume(exp, p),
+        _join_a_new_team,
+        lambda exp, p: p.start_module(
+            Module("debrief", InfoPage("Hi", time_estimate=1))
+        ),
+    ],
+    ids=["solo_round", "new_group", "other_module"],
+)
+@in_consents_experiment
+def test_a_late_also_on_dissolve_call_is_only_for_the_dissolved_round(
+    in_experiment_directory, db_session, before_barrier
+):
+    exp = get_experiment()
+    (answering, quitter), group = _sync_group_of(exp, db_session, 2)
+    group.below_quorum = "continue_without_group"
+    for participant in (answering, quitter):
+        participant.start_module(Module("game", InfoPage("Hi", time_estimate=1)))
+        TeamTrial.cue({})[0].consume(exp, participant)
+    db.session.commit()
+    _dissolved.clear()
+    quitter.fail("returned")
+    db.session.commit()
+
+    before_barrier(exp, answering)
     barrier = GroupBarrier(
         "team_done",
         group_type="main",
         on_release=TeamTrial.record_dissolve,
         also_on_dissolve=True,
     )
-    _arrive(exp, barrier, [waiter])
-
-    quitter.fail("returned")
-    db.session.commit()
     _pass_barrier(exp, barrier, answering)
 
-    node = waiter.current_trial.node
-    assert isinstance(node, SyncGroupNode)
-    assert _dissolved == [
-        ([waiter.current_trial], node, True),
-        ([answering.current_trial], node, True),
-    ]
-    assert [
-        p.current_trial.sync_group_outcome for p in (waiter, answering, quitter)
-    ] == ["group_dissolved", "group_dissolved", "left_experiment"]
-
-
-@in_consents_experiment
-def test_a_late_also_on_dissolve_call_gets_the_round_the_group_dissolved_in(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    (answering, quitter), group = _sync_group_of(exp, db_session, 2)
-    group.below_quorum = "continue_without_group"
-    logic = TeamTrial.cue({})
-    for participant in (answering, quitter):
-        participant.start_module(Module("game", InfoPage("Hi", time_estimate=1)))
-        logic[0].consume(exp, participant)
-    trial = answering.current_trial
-    db.session.commit()
-    _dissolved.clear()
-    quitter.fail("returned")
-    db.session.commit()
-
-    answering.start_module(Module("debrief", InfoPage("Hi", time_estimate=1)))
-    barrier = GroupBarrier(
-        "team_debrief",
-        group_type="main",
-        on_release=TeamTrial.record_dissolve,
-        also_on_dissolve=True,
-    )
-    _pass_barrier(exp, barrier, answering)
-
-    assert _dissolved == [([trial], trial.node, True)]
+    assert _dissolved == []
 
 
 class TimedTeamTrial(TeamTrial):

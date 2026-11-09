@@ -353,9 +353,10 @@ which here is their decision, or ``None`` if their page ran out of time.
 A pair here never dissolves: the partner who is left is scored alone. In a
 group that can dissolve below its quorum before the barrier releases it,
 such as a fixed team without top-ups, pass ``also_on_dissolve=True`` too, so
-that ``on_release`` also scores the round for the members still in the
-group, with ``dissolved=True``, including those who were still deciding
-(see :ref:`keeping results when a group dissolves <sync-on-dissolve>`).
+that ``on_release`` also scores the round, with ``dissolved=True``, for the
+members waiting at the barrier and, with
+``below_quorum="continue_without_group"``, for those who were still
+deciding (see :ref:`keeping results when a group dissolves <sync-on-dissolve>`).
 
 .. _rounds-explaining-the-outcome:
 

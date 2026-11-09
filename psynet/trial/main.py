@@ -337,6 +337,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         suggesting a revised value for ``time_estimate``. Trials played in a
         group (with ``sync_group_id``) are not checked, because by default their
         barriers credit the time actually spent waiting for the others.
+        A trial of a class with :attr:`sync_group_type` played without a group
+        is checked against :attr:`solo_time_estimate` instead, if it is set.
 
     response_id : int
         ID of the associated :class:`~psynet.timeline.Response` object.
@@ -4431,6 +4433,8 @@ class SyncGroupNode(GenericTrialNode):
 
     def trial_of(self, participant) -> Optional["Trial"]:
         """Return the participant's trial in this round, or ``None`` if they have none.
+
+        Reads ``all_trials``, so the trial can be a failed one.
 
         Parameters
         ----------
