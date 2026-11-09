@@ -739,14 +739,21 @@ when someone leaves a group:
     periodic sync-group check (every few seconds), and later arrivals form a
     new one. A ``join_criterion`` that returns ``False`` only turns that
     newcomer away; it doesn't stop top-ups.
-  - Top-ups stop in three ways. Once a newcomer could no longer catch up,
-    for example after the first round, pass ``stop_top_ups=True`` to the
-    :class:`~psynet.sync.GroupBarrier` the group passes then, or call
-    ``group.stop_top_ups()``; a group already below its quorum is then
-    dissolved at once, however its members left. The grouper's
-    ``top_up_wait=seconds`` limits the wait instead: once the group has been
-    below its quorum that long, its next barrier stops top-ups and dissolves
-    it. From then on the group is treated as one without top-ups.
+  - Top-ups stop in three ways, and from then on the group is treated as
+    one without top-ups:
+
+    - ``group.stop_top_ups()`` stops them at once; a group already below
+      its quorum is then dissolved, however its members left.
+    - ``stop_top_ups=True`` on a :class:`~psynet.sync.GroupBarrier` stops
+      them when the group passes that barrier, for example after the first
+      round, once a newcomer could no longer catch up. A group below its
+      quorum doesn't pass, so it keeps waiting there for a newcomer.
+    - The grouper's ``top_up_wait=seconds`` limits that wait: once the
+      group has been below its quorum that long, the barrier it is waiting
+      at stops top-ups and dissolves it. This only helps members who are
+      still waiting, so give that barrier a ``max_wait_time`` (20 seconds
+      by default) longer than ``top_up_wait``, or ``late_after``, which
+      removes the limit.
   - Without top-ups, the group is dissolved at once, and the grouper's
     ``below_quorum`` decides for each remaining member: ``"fail"`` (default)
     fails them, telling them "Too few members of your group remained to
@@ -819,23 +826,40 @@ options:
 
 The grouper leaves out ``join_existing_groups``, so a team that falls below
 its quorum is dissolved rather than waiting for a replacement (see
-`Groups below quorum`_). To accept replacements only at the start, pass
-``join_existing_groups=True``, stop top-ups once the game starts, and set
-``top_up_wait`` so that a team below its quorum before then doesn't wait
-for a newcomer who may never come:
+`Groups below quorum`_). To let latecomers join a team only before its game
+starts, pass ``join_existing_groups=True`` and stop top-ups at the barrier
+that starts the game. Latecomers can join only while the team is on the
+pages between the grouper and that barrier, such as its instructions: the
+team passes the barrier as soon as its current members reach it, which ends
+top-ups. ``top_up_wait`` stops a team that falls below its quorum before then
+from waiting for a newcomer who may never come; ``late_after`` on the barrier
+removes its default 20-second wait limit, which would otherwise time the
+members out first:
 
 .. code-block:: python
 
     SimpleGrouper(
         group_type="team",
-        # ... as above, and:
+        initial_group_size=4,
+        quorum=2,
+        start_short_after=60,
+        max_wait_time=120,
         join_existing_groups=True,
-        top_up_wait=30,
+        top_up_wait=60,
+        below_quorum="continue_without_group",
     )
-    GroupBarrier(id_="game_starts", group_type="team", stop_top_ups=True)
+    InfoPage("Read the rules of the game...", time_estimate=60)
+    GroupBarrier(
+        id_="game_starts",
+        group_type="team",
+        stop_top_ups=True,
+        late_after=120,
+        late_action="leave_group",
+    )
 
-``late_after`` counts from the previous barrier pass, so make it cover any
-untimed pages between the two barriers as well.
+At both barriers, ``late_after`` counts from when each member joined the
+team or from its previous barrier pass, so make it cover any untimed pages
+before the barrier as well.
 
 The ``sync_quorum`` demo lets participants into part of the timeline only
 while at least three are present. Its grouper has no maximum size and accepts

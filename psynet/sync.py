@@ -1679,7 +1679,9 @@ class GroupBarrier(Barrier):
         If ``True``, the group stops accepting newcomers once it passes this
         barrier, as :meth:`SimpleSyncGroup.stop_top_ups` does, for example at
         the barrier that starts a game a latecomer couldn't catch up with.
-        Only affects groups formed with ``join_existing_groups=True``.
+        Only affects groups formed with ``join_existing_groups=True``. A group
+        below its quorum doesn't pass, so it keeps waiting here for a newcomer
+        (see :ref:`groups_below_min_size`).
 
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
@@ -2284,7 +2286,7 @@ class Grouper(Barrier):
                     "timeline_hold",
                     "We couldn't find a partner for you in time. Please continue.",
                 )
-                if _is_pair(group_size)
+                if group_size == 2
                 else _p(
                     "timeline_hold",
                     "We couldn't form a group for you in time. Please continue.",
@@ -2466,9 +2468,10 @@ class SimpleGrouper(Grouper):
 
     top_up_wait
         With ``join_existing_groups=True``, how many seconds a group below its
-        ``quorum`` waits for newcomers. Then it stops accepting them, as with
-        :meth:`SimpleSyncGroup.stop_top_ups`. The time counts from when the group fell below its quorum,
-        and runs out when its members are waiting at a barrier of the group.
+        ``quorum`` waits for newcomers. Then the barrier its members are waiting at
+        stops top-ups and dissolves it. The time counts from when the group fell below
+        its quorum. Members who reach that barrier's ``max_wait_time`` first are timed
+        out, so give it a longer one, or ``late_after`` (see :ref:`groups_below_min_size`).
         Default: ``None``, waiting for newcomers without a limit.
 
     start_short_after
@@ -5088,15 +5091,10 @@ def _reconstructed_arrival_barrier(link, reconstructed):
     return barrier
 
 
-def _is_pair(group_size) -> bool:
-    """Return whether notices for a group of ``group_size`` should speak of a partner."""
-    return group_size is not None and group_size <= 2
-
-
 def _tell_group_ended(participant, group_size):
     """Tell a member who carries on alone after their group dissolved, on their next page."""
     _p = get_translator(context=True)
-    if _is_pair(group_size):
+    if group_size <= 2:
         text = _p(
             "timeline_hold",
             "Your partner is no longer in your group. Please continue.",

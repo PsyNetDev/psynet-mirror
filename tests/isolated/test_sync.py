@@ -7477,6 +7477,75 @@ def test_top_up_wait_limits_how_long_a_group_waits_for_newcomers(
     assert waiter.sync_group_removal_reason("team") == "group_dissolved"
 
 
+def _lobby_recipe():
+    """The grouper and barrier of the "fill a team until the game starts" recipe."""
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=4,
+        quorum=2,
+        start_short_after=60,
+        max_wait_time=120,
+        join_existing_groups=True,
+        top_up_wait=60,
+        below_quorum="continue_without_group",
+    )
+    game_starts = GroupBarrier(
+        id_="game_starts",
+        group_type="team",
+        stop_top_ups=True,
+        late_after=120,
+        late_action="leave_group",
+    )
+    return grouper, game_starts
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_latecomers_fill_a_team_until_it_passes_game_starts(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper, game_starts = _lobby_recipe()
+    first, second, latecomer, too_late = [new_participant(exp) for _ in range(4)]
+    for p in (first, second, latecomer, too_late):
+        p.status = "working"
+    group = grouper._make_group([first, second], initial_group_size=4)
+    db_session.commit()
+
+    grouper._join_existing_groups(latecomer)
+    assert latecomer.in_sync_group("team")
+    assert game_starts.choose_who_to_release([first, second]) == []
+    released = game_starts.choose_who_to_release([first, second, latecomer])
+    assert set(released) == {first, second, latecomer}
+    assert not group.accepts_top_ups
+    grouper._join_existing_groups(too_late)
+    assert not too_late.in_sync_group("team")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_stop_top_ups_barrier_waits_for_a_team_below_quorum_and_the_method_dissolves_it(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper, game_starts = _lobby_recipe()
+    quitter, waiter = [new_participant(exp) for _ in range(2)]
+    for p in (quitter, waiter):
+        p.status = "working"
+    group = grouper._make_group([quitter, waiter], initial_group_size=4)
+    db_session.commit()
+
+    quitter.fail("quit")
+    assert game_starts.choose_who_to_release([waiter]) == []
+    assert group.accepts_top_ups and waiter.in_sync_group("team")
+
+    group.stop_top_ups()
+    assert waiter.sync_group_removal_reason("team") == "group_dissolved"
+    assert not waiter.failed
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
