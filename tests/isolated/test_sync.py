@@ -7473,6 +7473,37 @@ def test_top_up_wait_limits_how_long_a_group_waits_for_newcomers(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_a_closed_join_criterion_doesnt_stop_top_ups(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=2,
+        join_existing_groups=True,
+        join_criterion=lambda group, participant: False,
+        below_quorum="continue_without_group",
+    )
+    barrier = GroupBarrier(id_="game_starts", group_type="team")
+    quitter, waiter = [new_participant(exp) for _ in range(2)]
+    for p in (quitter, waiter):
+        p.status = "working"
+    group = grouper._make_group([quitter, waiter], initial_group_size=2)
+    db_session.commit()
+
+    quitter.fail("quit")
+    assert group.accepts_top_ups
+    assert barrier.choose_who_to_release([waiter]) == []
+    assert waiter.in_sync_group("team")
+
+    group.stop_top_ups()
+    assert not waiter.failed
+    assert waiter.sync_group_removal_reason("team") == "group_dissolved"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_grouper_lets_an_ungrouped_participant_carry_on(
     in_experiment_directory, db_session
 ):

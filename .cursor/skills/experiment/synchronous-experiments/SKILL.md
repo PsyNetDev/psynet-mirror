@@ -111,12 +111,12 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - For a lobby that should not wait forever for a full group, use
   `SimpleGrouper(start_short_after=..., quorum=...)`; a short start forms a
   group of at least the quorum (`start_short_with` overrides that). Add
-  `join_existing_groups=True` to let latecomers fill it up, at the cost that a
-  group below its `quorum` then waits for a replacement instead of playing on.
-  Pass `stop_top_ups=True` to the `GroupBarrier` after which newcomers can
-  no longer catch up, such as the one that starts the game; `below_quorum`
-  then applies. Pass `top_up_wait=seconds` too, so a group that falls below
-  its quorum before then doesn't wait for a newcomer for ever. To let
+  `join_existing_groups=True` to let latecomers fill it up, then pass
+  `stop_top_ups=True` to the `GroupBarrier` after which newcomers can no
+  longer catch up, such as the one that starts the game, and `top_up_wait=seconds`
+  to the grouper. Read "Groups below quorum" in
+  `code/multiplayer/synchronization` for what top-ups change when a member
+  drops out. To let
   participants who find no group carry on alone instead of being failed,
   pass the grouper `max_wait_action="continue_without_group"`.
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
@@ -145,7 +145,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   own page there.
 - With `join_existing_groups=True`, also pass a `join_criterion` to turn
   away newcomers who couldn't catch up, for example to a chain that is nearly
-  finished (it doesn't stop top-ups; pair it with `top_up_wait`).
+  finished (it doesn't stop top-ups; pair it with `top_up_wait` or
+  `stop_top_ups`).
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with
   filler work via `trial_maker.custom(...)`, as in `sync_quorum`.
 - For chain or Gibbs designs, distinguish true co-presence from async
