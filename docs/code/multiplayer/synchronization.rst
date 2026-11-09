@@ -370,7 +370,7 @@ the group dissolves get neither callback: they pass the barrier without
 waiting. If they need a result too, give them one in a step after the
 barrier, for example when their trial's ``sync_group_outcome`` is
 ``"group_dissolved"``, as it is for every member still in the group when it
-dissolves, waiting or not (see :ref:`sync-round-outcome`).
+dissolves, waiting or not (see :ref:`round outcomes <sync-round-outcome>`).
 
 The barrier ``id_`` identifies one waiting point. Barriers with the same ID
 share a waiting pool, so give barriers with different ``on_release``
@@ -1124,7 +1124,7 @@ For the rest of the timeline:
   A cued trial they were playing in that group keeps the reason in
   ``sync_group_outcome``, even after they join another group, unless the
   trial's pages had already ended with an outcome stored (see
-  :ref:`sync-round-outcome` for the rule).
+  :ref:`round outcomes <sync-round-outcome>` for the rule).
 - An answer submitted on the page where a member was removed for being late
   has ``response.too_late_for_group`` set, so analysis can leave it out.
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only
