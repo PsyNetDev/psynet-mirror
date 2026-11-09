@@ -33,7 +33,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper, only_in_group
+from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper
 from psynet.timeline import (
     CodeBlock,
     PageMaker,
@@ -248,11 +248,14 @@ pairing = Regrouper(
 )
 
 
+def left_pair(participant):
+    return not participant.in_sync_group("pair")
+
+
 def play_round():
     return join(
         pairing,
-        only_in_group(
-            "pair",
+        join(
             PageMaker(decision_page, time_estimate=10),
             GroupBarrier(
                 id_="round_finished",
@@ -267,17 +270,21 @@ def play_round():
                 on_release=score_round,
             ),
             PageMaker(show_outcome, time_estimate=5),
-            # Without a cohort the game is over and the ended-early page
-            # explains why, but a player removed for being away, who left the
-            # cohort too, is told about the round.
-            otherwise=conditional(
-                "explain_round",
-                lambda participant: (
+            stop_if=left_pair,
+        ),
+        # Without a cohort the game is over and the ended-early page explains
+        # why, but a player who sat out, or who was removed for being away
+        # and left the cohort too, is told about the round.
+        conditional(
+            "explain_round",
+            lambda participant: (
+                left_pair(participant)
+                and (
                     cohort_of(participant) is not None
                     or participant.sync_group_removal_reason("pair") == "late"
-                ),
-                PageMaker(not_playing, time_estimate=5),
+                )
             ),
+            PageMaker(not_playing, time_estimate=5),
         ),
     )
 

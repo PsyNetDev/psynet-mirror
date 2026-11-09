@@ -71,8 +71,10 @@ Each round of the timeline then looks like this:
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: play_round
 
-:func:`~psynet.sync.only_in_group` skips the rest of the round's steps for a
-player who is no longer in a pair, and shows its ``otherwise`` steps instead.
+The inner :func:`~psynet.timeline.join` has ``stop_if=left_pair``, so it
+skips the rest of the round's steps for a player who is no longer in a pair,
+and the ``conditional`` after it tells a player who sat out or was removed
+why.
 
 Making a decision
 -----------------
@@ -154,8 +156,9 @@ top-ups, where removing a late player would dissolve the cohort if that left
 it below its quorum, and the default ``below_quorum="fail"`` would fail the
 players who were on time (see :ref:`groups_below_min_size`).
 
-``only_in_group`` skips the rest of the round for a player removed from their
-pair, including its later group barriers, and runs its ``otherwise`` steps.
+The ``stop_if`` on the round's ``join`` skips the rest of the round for a
+player removed from their pair, including its later group barriers, and the
+``conditional`` after it shows them ``not_playing``.
 
 Scoring the round
 -----------------

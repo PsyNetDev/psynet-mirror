@@ -50,7 +50,6 @@ from psynet.sync import (
     GroupBarrier,
     ParticipantLinkBarrier,
     ParticipantLinkSyncGroup,
-    Regrouper,
     SimpleGrouper,
     SimpleSyncGroup,
     SyncGroup,
@@ -77,21 +76,14 @@ from psynet.sync import (
     check_sync_groups,
     group_seats,
     hold_message,
-    only_in_group,
     pending_arrival_notice_for,
 )
 from psynet.timeline import (
-    AsyncCodeBlock,
     CodeBlock,
     Page,
     PageMaker,
-    ReactiveGoTo,
     Response,
     Timeline,
-    _EndConstruct,
-    _split_into_steps,
-    for_loop,
-    join,
 )
 from psynet.timeline_hold import (
     TimelineHoldRecord,
@@ -103,7 +95,6 @@ from psynet.timeline_hold import (
     default_group_barrier_arrival_message,
     default_hold_progress,
 )
-from psynet.trial.main import Trial
 from psynet.utils import call_function_with_context, get_config
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -7765,100 +7756,3 @@ def test_group_barrier_max_wait_leave_group_releases_barrier_link(
     )
     InfoPage("After").consume(exp, participant)
     assert _removed_from_group_notice(participant) is None
-
-
-def _labels_reached(elts, participant):
-    """Walk ``elts`` as the timeline would, returning the labels of the pages shown."""
-    elts, i, labels = join(elts), 0, []
-    while i < len(elts):
-        elt = elts[i]
-        if isinstance(elt, ReactiveGoTo):
-            target = elt.get_target(experiment=None, participant=participant)
-            i = next(j for j, other in enumerate(elts) if other is target)
-            continue
-        if isinstance(elt, Page):
-            labels.append(elt.label)
-        i += 1
-    return labels
-
-
-@pytest.mark.parametrize(
-    "in_group, expected", [(True, ["play", "outcome"]), (False, ["alone"])]
-)
-def test_only_in_group_runs_otherwise_for_participants_out_of_the_group(
-    in_group, expected
-):
-    elts = only_in_group(
-        "pair",
-        InfoPage("Play", label="play", time_estimate=1),
-        InfoPage("Outcome", label="outcome", time_estimate=1),
-        otherwise=InfoPage("Alone", label="alone", time_estimate=1),
-    )
-    participant = SimpleNamespace(
-        module_state=None, in_sync_group=lambda group_type: in_group
-    )
-    assert _labels_reached(elts, participant) == expected
-
-
-def _do_nothing(participant):
-    return None
-
-
-class _CuedTrial(Trial):
-    time_estimate = 5
-
-
-@pytest.mark.parametrize(
-    "make_construct",
-    [
-        lambda: GroupBarrier(id_="round_done", group_type="pair"),
-        lambda: SimpleGrouper("pair", initial_group_size=2, quorum=2),
-        lambda: Regrouper("pair", group_size=2, every=30),
-        lambda: AsyncCodeBlock(_do_nothing, expected_wait=5),
-        lambda: for_loop(
-            label="rounds",
-            iterate_over=range(2),
-            logic=lambda number: InfoPage(f"Round {number}"),
-            time_estimate_per_iteration=1,
-        ),
-        # A participant who leaves the group mid-trial still finishes the trial.
-        lambda: _CuedTrial.cue({}),
-    ],
-)
-def test_split_into_steps_keeps_each_construct_whole(make_construct):
-    page = InfoPage("Hello", time_estimate=1)
-    assert len(_split_into_steps(join(page, make_construct(), page))) == 3
-
-
-def test_split_into_steps_rejects_an_unmatched_end():
-    with pytest.raises(ValueError, match="Unmatched end"):
-        _split_into_steps(_EndConstruct())
-
-
-def test_only_in_group_skips_the_rounds_after_the_participant_leaves():
-    def round_steps(number):
-        return join(
-            InfoPage("Choose", label=f"choose_{number}", time_estimate=1),
-            InfoPage("Outcome", label=f"outcome_{number}", time_estimate=1),
-        )
-
-    checks = iter([True, False, False, False])
-    participant = SimpleNamespace(
-        module_state=None, in_sync_group=lambda group_type: next(checks)
-    )
-    elts = only_in_group("pair", [round_steps(number) for number in range(2)])
-    assert _labels_reached(elts, participant) == ["choose_0"]
-
-
-def test_only_in_group_skips_the_steps_after_the_participant_leaves():
-    checks = iter([True, False, False])
-    participant = SimpleNamespace(
-        module_state=None, in_sync_group=lambda group_type: next(checks)
-    )
-    elts = only_in_group(
-        "pair",
-        InfoPage("Round 1", label="round_1", time_estimate=1),
-        InfoPage("Round 2", label="round_2", time_estimate=1),
-        otherwise=InfoPage("Alone", label="alone", time_estimate=1),
-    )
-    assert _labels_reached(elts, participant) == ["round_1", "alone"]

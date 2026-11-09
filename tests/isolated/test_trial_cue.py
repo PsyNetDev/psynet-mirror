@@ -13,7 +13,6 @@ from psynet.db import transaction
 from psynet.experiment import get_experiment
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.timeline import CodeBlock
 from psynet.trial.main import GenericTrialNode, Trial
 
 
@@ -30,11 +29,6 @@ class CueTrial(Trial):
 
     def show_trial(self, experiment, participant):
         raise NotImplementedError
-
-
-def _register_trial(logic):
-    """Return the code block of ``Trial.cue`` that creates the trial."""
-    return next(elt for elt in logic if isinstance(elt, CodeBlock))
 
 
 @pytest.fixture
@@ -84,7 +78,7 @@ def test_cue_calls_on_trial_created_with_context(
     )
 
     with transaction():
-        _register_trial(logic).consume(experiment, participant)
+        logic[0].consume(experiment, participant)
 
     trial = CueTrial.query.one()
     record = CueCreationRecord.query.one()
@@ -128,7 +122,7 @@ def test_cue_callback_failure_rolls_back_trial_and_related_records(
 
     with pytest.raises(RuntimeError, match="callback failed"):
         with transaction():
-            _register_trial(logic).consume(experiment, participant)
+            logic[0].consume(experiment, participant)
 
     assert CueTrial.query.count() == 0
     assert CueCreationRecord.query.count() == 0
@@ -165,7 +159,7 @@ def test_cue_adds_assets_before_on_trial_created(
     )
 
     with transaction():
-        _register_trial(logic).consume(experiment, participant)
+        logic[0].consume(experiment, participant)
 
     trial = CueTrial.query.one()
     assert trial.assets["stimulus"].url == "http://example.com/example.mp3"
@@ -204,7 +198,7 @@ def test_cue_asset_callback_failure_rolls_back_trial_and_assets(
 
     with pytest.raises(RuntimeError, match="callback failed"):
         with transaction():
-            _register_trial(logic).consume(experiment, participant)
+            logic[0].consume(experiment, participant)
 
     assert CueTrial.query.count() == 0
     assert CueCreationRecord.query.count() == 0
