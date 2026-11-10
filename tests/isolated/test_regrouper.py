@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from psynet import sync, timeline_hold
 from psynet.bot import _backdate_arrivals, _backdate_splits, regroup_now
+from psynet.db import _set_transaction_lock_timeout
 from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
 from psynet.pytest_psynet import path_to_test_experiment
@@ -861,6 +862,8 @@ def test_a_cohort_waiting_to_dissolve_is_not_split(in_experiment_directory, db_s
     for participant in present:
         pairs.receive_participant(participant)
     _backdate_arrivals(pairs, present, 31)
+    # A busy leader would make marking the cohort wait on the leader_id foreign key.
+    cohort.leader = present[0]
     db_session.commit()
 
     with Session(bind=db.engine) as busy_request:
@@ -869,6 +872,7 @@ def test_a_cohort_waiting_to_dissolve_is_not_split(in_experiment_directory, db_s
             {"id": busy.id},
         )
         for _ in range(2):
+            _set_transaction_lock_timeout(1)
             assert pairs.choose_who_to_release(present) == []
             db_session.commit()
         assert cohort.dissolving and not pairs.would_release(present)
@@ -901,6 +905,7 @@ def test_backdating_reaches_the_deadline_after_quick_splits(
     lingering_role = pairs.role(lingering)
     assert lingering_role in ("proposer", "responder")
     _arrive(exp, pairs, present)
+    assert all(pairs.role(p) is None for p in present)  # Waiting for the split.
 
     _backdate_splits(pairs, cohort, 30)
     _backdate_arrivals(pairs, present, 30)

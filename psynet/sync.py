@@ -3562,10 +3562,12 @@ class Regrouper(Grouper):
         This is their role in their latest round with this regrouper, even
         after they were removed from that group, so a reloaded page still
         shows it. It is ``None`` once they are back at the regrouper, while
-        waiting for the next split or after sitting a round out, and before
-        their first round. With ``keep_roles`` it is instead their permanent
-        role, which a newcomer gets at their first split. It is also ``None``
-        while they are in a group of this type that another grouper formed.
+        waiting for the next split or after a visit that ended without a
+        group (for example sitting a round out), and before their first round.
+        With ``keep_roles`` it is instead their permanent role, which a
+        newcomer gets at their first split. It is also ``None`` while they are
+        in a group of this type that another grouper formed; once they leave
+        that group, it is their role from this regrouper again.
         """
         if self.keep_roles:
             links = self._links([participant.id])
@@ -5445,9 +5447,14 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     # A Regrouper released the participant without a group.
     sat_out = Column(Boolean, default=False)
     # The group a Regrouper split placed the participant in at this visit;
-    # empty if the visit ended without one. ``Regrouper.role`` reads it.
-    sync_group_id = Column(Integer, ForeignKey("sync_group.id"))
-    sync_group = relationship("SyncGroup")
+    # empty if the visit ended without one. ``Regrouper.role`` reads it. No
+    # foreign key, as on Trial.sync_group_id, so writing a visit doesn't wait
+    # for a request that holds the group's row.
+    sync_group_id = Column(Integer, index=True)
+    sync_group = relationship(
+        "SyncGroup",
+        primaryjoin="foreign(ParticipantLinkBarrier.sync_group_id) == SyncGroup.id",
+    )
     # The last page the participant answered before arriving, other than a
     # waiting page, ended on its time limit
     # (``Participant.timed_out_since_barrier``).
