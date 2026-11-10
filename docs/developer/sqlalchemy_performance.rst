@@ -361,8 +361,9 @@ Fewer statements, fewer commits, or fewer per-waiter lazy loads are
 improvements: update the expected numbers in that test and in this section.
 
 Use the profiler as a statement-count gate, not a duration gate. Do not put
-these budgets on Playwright or the full ``/timeline`` / ``/response`` stack.
-See :ref:`sqlalchemy_profiling`.
+these absolute budgets on Playwright or the full ``/timeline`` /
+``/response`` stack; the relative budget in `Grouped request budgets`_ is
+the exception. See :ref:`sqlalchemy_profiling`.
 
 Profile with a cold session, as a real request has: expunge the session so it
 holds none of the waiters before the profiled window. A test that keeps every
@@ -482,3 +483,24 @@ Leftover inactive visits are outside this budget. Last-arrival keeps
 second pool on that path. Migrating waiters onto the live visit is extra SQL
 only when the instance is already inactive. See
 :ref:`timeline-hold-resume-protocol`.
+
+Grouped request budgets
+-----------------------
+
+``tests/isolated/test_group_request_queries.py`` pins whole requests around
+the check window, called through the real handlers with a cold session.
+``test_barrier_requests_do_not_grow_with_group_size`` covers an arrival
+``POST /response`` from a page, the hold poll while waiting, the last
+arrival and the poll after release, and requires each to issue the same
+number of statements for groups of three and seven, give or take two. The
+test disables hold timeouts and checks that the last arrival releases the
+whole group, so a slow run cannot measure failed participants instead of the
+hold. The tolerance covers internal commits: one can drop a row such as the
+sync group from the weak identity map, and loading it again moves a count by
+a statement or two between runs. A statement per member adds at least four.
+
+An arrival rebuilds every waiting member's hold overlay.
+``GroupBarrier._notify_arrivals`` counts the group once and passes the counts
+to each overlay, because recounting per member lazy-loads each member's
+``sync_group_links``. Do not batch-load those links instead:
+``_populate_sync_group_links`` can drop links that are not flushed yet.
