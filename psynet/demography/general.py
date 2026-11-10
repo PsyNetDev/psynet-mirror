@@ -242,7 +242,7 @@ class CountryDropdown(ModularPage):
 
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
-        if self.control.force_selection and response.answer == "":
+        if self.control.force_selection and response.answer in ("", None):
             return FailedValidation(
                 _p("country-select", "You need to select a country!")
             )
@@ -344,7 +344,7 @@ class MotherTongue(ModularPage):
 
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
-        if self.control.force_selection and response.answer == "":
+        if self.control.force_selection and response.answer in ("", None):
             return FailedValidation(
                 _p("language-select", "You need to select a language!")
             )
