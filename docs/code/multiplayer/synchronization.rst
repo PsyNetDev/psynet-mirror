@@ -369,30 +369,30 @@ leaves the group before then, or whose group is dissolved, doesn't get
 the results it would have stored, so read them with ``.get``, which returns
 ``None`` when they aren't set: ``trial.var.get("score")`` for results saved on
 the trial, or ``participant.var.get("score")`` when there is no trial.
-If the group dissolves while some members are waiting at the barrier,
-``on_dissolve`` runs for them instead, before they leave the group, with the
-same arguments except ``leader`` and ``left``. ``participants`` are
-then the members waiting at the barrier, and ``node`` and ``trials`` follow
-the same rule as for ``on_release``.
-Dissolving waits for any member who is in the middle of another request, so
-it may happen a second or two after that request finishes, and
-``on_dissolve`` is called once, with every member waiting at the barrier. A
-quiz can still score the last question for those who answered it:
+
+Nothing runs when a group dissolves, but the round's results are still
+stored: each trial's ``answer`` holds what the player answered, the round's
+trials are in ``node.all_trials``, and each trial's ``sync_group_outcome`` is
+``"group_dissolved"`` for every member still in the group when it dissolved,
+waiting at the barrier or still on a page, unless the trial's pages had
+already ended with ``"stayed"`` (see :ref:`round outcomes <sync-round-outcome>`).
+Members who were waiting at the barrier pass it at once, and so do those
+still on an earlier page, such as the question itself. Code that needs the
+round's result, such as ``show_feedback``, an export or ``on_finalized``,
+computes it from those facts when ``on_release`` didn't run. A quiz can
+still score the last question for those who answered it:
 
 .. code-block:: python
 
-    GroupBarrier(id_="question_3", group_type="team",
-                 on_release=partial(score_question, question=3),
-                 on_dissolve=partial(score_question, question=3))
+    def show_feedback(self, experiment, participant):
+        score = self.var.get("score")
+        if score is None and self.sync_group_outcome == "group_dissolved":
+            answers = [t.answer for t in self.node.all_trials if t.answer is not None]
+            score = score_answers(answers)
+        ...
 
-Members who are still on an earlier page, such as the question itself, when
-the group dissolves get neither callback: they pass the barrier without
-waiting. If they need a result too, give them one in a step after the
-barrier, for example when their trial's ``sync_group_outcome`` is
-``"group_dissolved"``, as it is for every member still in the group when it
-dissolves, waiting or not, unless the trial's pages had already ended with
-``"stayed"`` (see :ref:`round outcomes <sync-round-outcome>`). For a barrier
-after ``show_trial``, such as in ``show_feedback``, check
+If the barrier that didn't release is after ``show_trial``, for example in
+``show_feedback``, the trial keeps ``"stayed"``, so check
 ``participant.sync_group_removal_reason(group_type) == "group_dissolved"``
 instead.
 

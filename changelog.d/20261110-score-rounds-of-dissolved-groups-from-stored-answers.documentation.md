@@ -1,0 +1,1 @@
+"Synchronization" and the case studies of late, slow and leaving players now show how to score the round of a group that dissolved: no callback runs when a group dissolves, so `show_feedback`, an export or `on_finalized` computes the result from each trial's `answer` in `node.all_trials` when the trial's `sync_group_outcome` is `"group_dissolved"`.

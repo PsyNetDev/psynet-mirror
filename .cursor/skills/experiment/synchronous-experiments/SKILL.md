@@ -78,13 +78,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   (see "Release callbacks"). `on_release` doesn't run
   for members who left before the release or whose group dissolved, so read
   what it stores with `trial.var.get("score")` (or `participant.var.get`),
-  which returns `None` when it isn't set. Pass the same function as `on_dissolve` too when members
-  waiting at the barrier as the group dissolves should still get their
-  result; it is called once, with all of them, because dissolving waits for
-  any member who is in the middle of another request. Members still on an earlier page get
-  neither callback, so
-  check their cued trial's `sync_group_outcome == "group_dissolved"` in a
-  step after the barrier if they need a result too. A trial whose pages
+  which returns `None` when it isn't set. Nothing runs when a group
+  dissolves, so where members still need a result (`show_feedback`, an
+  export or `on_finalized`), compute it from the stored answers:
+  `trial.answer` on each of `node.all_trials`, when their cued trial's
+  `sync_group_outcome == "group_dissolved"`. A trial whose pages
   already ended with `"stayed"` keeps it, so for a barrier after
   `show_trial` check `participant.sync_group_removal_reason(...)` instead.
 - Sort `sync_group.participants` by participant ID before deterministic role
