@@ -10,8 +10,8 @@ import pytest
 from dallinger import db
 from sqlalchemy import text
 
-import psynet.sync
 from psynet.db import _set_transaction_lock_timeout
+from psynet.error import ErrorRecord
 from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
@@ -19,9 +19,13 @@ from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     GroupBarrier,
+    GroupDivergenceError,
     _hold_barrier_instance_claim,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
+    check_barriers,
+    fail_on_group_divergence,
+    leave_group,
 )
 from psynet.timeline import Module, Timeline
 from psynet.trial.chain import ChainNode
@@ -835,48 +839,118 @@ def test_late_after_in_a_round_fails_a_newcomer_waiting_outside_it(
     assert cohort[1].failed and newcomer.failed
 
 
-@pytest.mark.parametrize("in_tests", [True, False])
-@in_consents_experiment
-def test_members_waiting_for_each_other_at_different_barriers_are_reported(
-    in_experiment_directory, db_session, caplog, monkeypatch, in_tests
-):
-    monkeypatch.setattr(psynet.sync, "_in_tests", lambda: in_tests)
-    monkeypatch.setattr(psynet.sync, "_reported_divergences", set())
-    exp = get_experiment()
-    cohort, newcomer, _ = _newcomer_in_round_0(exp)
-    in_round = GroupBarrier("submitted", group_type="pair")
-    # A barrier at the start of each iteration, which the newcomer reaches first.
-    start = GroupBarrier("ready", group_type="pair")
-    _arrive(exp, in_round, cohort[:1])
-    _arrive(exp, start, [newcomer])
-    with caplog.at_level(logging.ERROR):
-        if in_tests:
-            with pytest.raises(psynet.sync.GroupDivergenceError, match="'ready' has"):
-                _arrive(exp, in_round, cohort[1:])
-            return
-        _arrive(exp, in_round, cohort[1:])
-        start.choose_who_to_release([newcomer])
-    (error,) = [r for r in caplog.records if "wait for each other" in r.getMessage()]
-    assert error.levelname == "ERROR" and "'submitted' has" in error.getMessage()
-    assert all(in_round._participant_is_waiting(p) for p in cohort)
+def divergences():
+    """Sweep the barriers, as the poller does, and return the divergences recorded."""
+    db.session.commit()
+    check_barriers()
+    return [r.message for r in ErrorRecord.query.filter_by(kind="GroupDivergenceError")]
 
 
-@in_consents_experiment
-def test_divergence_is_reported_when_the_poller_holds_the_last_arrival_s_visit(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    cohort, newcomer, _ = _newcomer_in_round_0(exp)
-    in_round = GroupBarrier("submitted", group_type="pair")
-    _arrive(exp, in_round, cohort[:1])
-    _arrive(exp, GroupBarrier("ready", group_type="pair"), [newcomer])
-    _arrive_at_group_barrier(exp, in_round, cohort[1])
+def _in_round(**kwargs):
+    return GroupBarrier("submitted", group_type="pair", **kwargs)
+
+
+def _arrives(exp, pair, cohort):
+    _arrive(exp, _in_round(), cohort)
+
+
+def _arrives_as_the_poller_holds_the_visit(exp, pair, cohort):
+    _arrive(exp, _in_round(), cohort[:1])
+    _arrive_at_group_barrier(exp, _in_round(), cohort[1])
     db.session.commit()
     checks = _take_pending_barrier_checks()
     with _hold_barrier_instance_claim(checks[0]) as claimed:
-        assert claimed
-        with pytest.raises(psynet.sync.GroupDivergenceError):
-            _run_pending_barrier_checks(checks, wait=False)
+        assert claimed and not _run_pending_barrier_checks(checks, wait=False)
+
+
+def _leaves(exp, pair, cohort):
+    _arrive(exp, _in_round(), cohort[:1])
+    leave_group("pair").consume(exp, cohort[1])
+
+
+def _is_removed_as_late(exp, pair, cohort):
+    _arrive(exp, _in_round(late_after=5, late_action="leave_group"), cohort[:1])
+    newcomer_link = max(pair.participant_links, key=lambda link: link.arrival_time)
+    joined = newcomer_link.arrival_time
+    _backdate_group(pair, seconds=10)
+    newcomer_link.arrival_time = joined
+
+
+@pytest.mark.parametrize(
+    "second_member",
+    [_arrives, _arrives_as_the_poller_holds_the_visit, _leaves, _is_removed_as_late],
+)
+@in_consents_experiment
+def test_a_sweep_reports_members_waiting_for_each_other_at_different_barriers(
+    in_experiment_directory, db_session, caplog, second_member
+):
+    exp = get_experiment()
+    cohort, newcomer, pair = _newcomer_in_round_0(exp)
+    # A barrier at the start of each iteration, which the newcomer reaches first.
+    _arrive(exp, GroupBarrier("ready", group_type="pair"), [newcomer])
+    second_member(exp, pair, cohort)
+    with caplog.at_level(logging.ERROR):
+        (message,) = divergences()
+    assert f"'ready' has participants {newcomer.id}" in message
+    assert f"'submitted' has participants {cohort[0].id}" in message
+    assert message in [r.getMessage() for r in caplog.records]
+    assert _in_round()._participant_is_waiting(cohort[0])
+    assert divergences() == [message]
+    (record,) = ErrorRecord.query.filter_by(kind="GroupDivergenceError")
+    assert record.token == f"group-divergence-{pair.id}"
+    assert record.participant_id == min(newcomer.id, cohort[0].id)
+
+
+@in_consents_experiment
+def test_bot_tests_fail_with_a_divergence_recorded_while_they_run(
+    in_experiment_directory, db_session
+):
+    db.session.add(ErrorRecord(GroupDivergenceError("From an earlier run.")))
+    db.session.commit()
+    with pytest.raises(GroupDivergenceError, match="^Recorded during the run.$"):
+        with fail_on_group_divergence():
+            db.session.add(
+                ErrorRecord(GroupDivergenceError("Recorded during the run."))
+            )
+            db.session.commit()
+            raise RuntimeError("A bot timed out at its barrier.")
+
+
+def _at_a_regrouper_and_a_barrier(exp):
+    cohort, pairs = _cohort_and_pairs(exp, 2)
+    _arrive(exp, pairs, cohort[:1])
+    _arrive(exp, GroupBarrier("ready", group_type="cohort"), cohort[1:])
+
+
+def _a_newcomer_at_a_barrier_that_passes_newcomers(exp):
+    cohort, _ = _paired(exp)
+    ready = GroupBarrier("ready", group_type="pair", pass_newcomers=True)
+    _arrive(exp, ready, cohort)
+    (newcomer,) = _working_participants(exp, 1)
+    cohort[0].active_sync_groups["pair"].add_participant(newcomer)
+    _arrive(exp, _in_round(), cohort)
+    _arrive(exp, ready, [newcomer])
+
+
+def _everyone_at_one_barrier(exp):
+    cohort, newcomer, _ = _newcomer_in_round_0(exp)
+    _arrive(exp, _in_round(), [*cohort, newcomer])
+
+
+@pytest.mark.parametrize(
+    "arrange",
+    [
+        _at_a_regrouper_and_a_barrier,
+        _a_newcomer_at_a_barrier_that_passes_newcomers,
+        _everyone_at_one_barrier,
+    ],
+)
+@in_consents_experiment
+def test_a_sweep_does_not_report_a_group_that_can_pass(
+    in_experiment_directory, db_session, arrange
+):
+    arrange(get_experiment())
+    assert divergences() == []
 
 
 @in_consents_experiment

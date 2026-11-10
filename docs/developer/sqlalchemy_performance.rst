@@ -537,7 +537,10 @@ happens around the barrier check:
   statements each), and ``check_sync_groups`` recounts every active group
   (7 statements each, one of them the deferred ``below_quorum_since`` load),
   even when nothing changed. Neither depends on group
-  size.
+  size. A ``check_barriers`` sweep that found waiting visits then looks for
+  diverged groups in one more statement (``_divergence_candidates``), and
+  runs the full check (``_divergence_message``) only for a group whose members all wait at two or more of its
+  barriers and that has no divergence record yet.
 
 The size comparisons allow two statements of tolerance for internal commits:
 one can drop a row such as the sync group from the weak identity map, and

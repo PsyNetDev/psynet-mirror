@@ -234,9 +234,11 @@ Module("game", for_loop(
   it is, so put the barriers where all members reach them in the same
   order, and have a member who stops playing early leave the group
   (`leave_group`) first. Members waiting at different barriers of one group
-  wait for each other; PsyNet logs an error naming the barriers. In bot
-  tests it raises `GroupDivergenceError`, so the arriving bot's request
-  fails with HTTP 500.
+  wait for each other; the background barrier check records one error for
+  the group naming the barriers, logs it and lists it on the dashboard's
+  Errors tab. A bot test then fails with `GroupDivergenceError` and that
+  message when it ends, after its bots finish or fail, often on
+  `max_wait_time` first.
 - When a fixed group plays a loop of rounds, pass the loop value as
   `round=` (`Trial.cue({"question": i}, round=i)`): late joiners then skip
   the rounds the group finished without them, and players who leave
