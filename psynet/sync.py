@@ -102,7 +102,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import timedelta
 from math import ceil, floor
-from typing import Callable, List, Literal, Optional, Union
+from typing import Callable, Dict, List, Literal, Optional, Union
 
 from dallinger import db
 from dallinger.models import timenow
@@ -1496,8 +1496,10 @@ class GroupBarrier(Barrier):
         ``"notice"`` is the progress-bar notice for members who have not
         reached the barrier yet. It defaults to "Your partner is ready." in
         pairs and ``"{ARRIVED}/{TOTAL} of your group are ready."`` in larger
-        groups. Notices stay on one line (overflow ellipsizes), so keep them
-        to a short sentence.
+        groups. It is called whenever the recipient's browser fetches its
+        notice, which can be several times per arrival, so it should depend
+        only on its arguments and have no side effects. Notices stay on one
+        line (overflow ellipsizes), so keep them to a short sentence.
 
         ``"removed"`` is the progress-bar notice for someone kicked by
         ``timeout_between_barriers_action="kick"``, shown until they leave
@@ -1689,11 +1691,12 @@ class GroupBarrier(Barrier):
             return
         members = group.active_participants
         waiting = [m for m in members if self._participant_is_waiting(m)]
-        waiting_count = len(waiting)
-        group_size = len(members)
-        counts = {"waiting_count": waiting_count, "group_size": group_size}
+        counts = {"waiting_count": len(waiting), "group_size": len(members)}
         if self._uses_timeline_hold:
             _prime_timeline_hold_records(waiting, self.id)
+        # Arrivals in concurrent requests don't see each other, so the browser
+        # fetches the notice and ready seats after the commit instead of being
+        # sent the counts this request sees.
         for member in members:
             if member.failed:
                 continue
@@ -1706,13 +1709,9 @@ class GroupBarrier(Barrier):
                     ) and hold_page._is_silent_for(member):
                         continue
                     hold_html = hold_page.overlay_html(member, counts=counts)
-                _queue_arrival_update(member.id, hold_message=hold_html)
+                _queue_arrival_update(member.id, hold_message=hold_html, refresh=True)
                 continue
-            text = self._call_arrival_message(
-                kind="notice", recipient=member, group=group, **counts
-            )
-            if text:
-                _queue_arrival_update(member.id, notice=str(text))
+            _queue_arrival_update(member.id, refresh=True)
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Kick from the sync group when requested, then release the barrier link."""
@@ -1887,7 +1886,7 @@ class GroupBarrier(Barrier):
             "page_uuid": participant.page_uuid,
             "text": text,
         }
-        _queue_arrival_update(participant.id, notice=text)
+        _queue_arrival_update(participant.id, notice=text, removed=True)
 
     def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
         """Return active members past the between-barrier timeout who are not waiting.
@@ -2893,6 +2892,22 @@ class Regrouper(Grouper):
         return group
 
 
+def group_seats(group) -> Dict[int, int]:
+    """Return ``{participant_id: seat}`` for everyone who has been in ``group``.
+
+    Seats number members in the order they first joined. Links are kept when
+    members leave, so seats never change while the group exists, and pages
+    can refer to members without their IDs.
+    """
+    seats = {}
+    links = sorted(
+        group.participant_links, key=lambda link: (link.id is None, link.id or 0)
+    )
+    for link in links:
+        seats.setdefault(link.participant_id, len(seats))
+    return seats
+
+
 @register_table
 class SyncGroup(SQLBase, SQLMixin):
     """
@@ -2937,7 +2952,14 @@ class SyncGroup(SQLBase, SQLMixin):
         return _ReadOnlyParticipantList(link.participant for link in links)
 
     def add_participant(self, participant: Participant):
-        """Add a participant to the group (creates an active link)."""
+        """Add a participant to the group (creates an active link).
+
+        If an active member already has the newcomer's pseudonym and this is
+        the newcomer's first group, the newcomer is given a free one, so
+        members can tell each other apart. Later groups never rename anyone,
+        so a pseudonym stays the same once others have seen it.
+        """
+        self._give_distinct_pseudonym(participant)
         _forget_active_sync_group(participant)
         # Setting ``sync_group`` also appends to ``participant_links``, and lets
         # ``participant.active_sync_groups`` see the group before a flush.
@@ -2947,10 +2969,39 @@ class SyncGroup(SQLBase, SQLMixin):
             active=True,
             arrival_time=timenow(),
         )
+        _notify_membership_change(self, newcomer=participant)
 
     @property
     def active_participants(self) -> List[Participant]:
         return [p for p in self.participants if not p.failed and p.status == "working"]
+
+    def _give_distinct_pseudonym(self, participant):
+        """Store a free pseudonym for ``participant`` if an active member has theirs.
+
+        Only in the participant's first group; see :meth:`add_participant`.
+        """
+        # Cached for this transaction, so forming a large group stays linear.
+        transaction = db.session().get_transaction()
+        cached = self.__dict__.get("_pseudonym_keys")
+        if cached is not None and transaction is not None and cached[0] is transaction:
+            taken = cached[1]
+        else:
+            others = [p for p in self.active_participants if p.id != participant.id]
+            taken = {(p.pseudonym.color, p.pseudonym.animal) for p in others}
+            self.__dict__["_pseudonym_keys"] = (transaction, taken)
+        pseudonym = participant.pseudonym
+        keys = (pseudonym.color, pseudonym.animal)
+        first_group = not participant.sync_group_links
+        if keys in taken and first_group:
+            from .experiment import get_experiment
+
+            replacement = get_experiment().pseudonym_scheme.replacement(
+                taken, participant
+            )
+            if replacement is not None:
+                participant.set_pseudonym(*replacement)
+                keys = replacement
+        taken.add(keys)
 
     leader = relationship(
         "psynet.participant.Participant",
@@ -3003,6 +3054,7 @@ class SyncGroup(SQLBase, SQLMixin):
             if link.participant_id == participant.id:
                 link.active = False
         self.check_numbers()
+        _notify_membership_change(self)
         if self.n_active_participants == 0 and not getattr(
             self, "accepts_top_ups", False
         ):
@@ -3551,7 +3603,7 @@ def _time_out_overdue_waiters(sweep_ends):
 
 
 def arrival_notice_payload(unique_id):
-    """Return the partner-ready notice snapshot for one participant.
+    """Return the partner-ready notice and ready seats for one participant.
 
     Redis arrival wakes are fire-and-forget. The browser fetches this when
     the arrival websocket opens so a partner who arrived during connect is
@@ -3560,11 +3612,57 @@ def arrival_notice_payload(unique_id):
     from psynet.participant import Participant
 
     if not unique_id:
-        return {"notice": None}
+        return {"notice": None, "group_ready": []}
     participant = Participant.query.filter_by(unique_id=unique_id).one_or_none()
     if participant is None:
-        return {"notice": None}
-    return {"notice": pending_arrival_notice_for(participant)}
+        return {"notice": None, "group_ready": []}
+    return {
+        **_arrival_notice_fields(participant),
+        "group_ready": _ready_seats_for(participant),
+    }
+
+
+def _ready_seats_for(participant):
+    """Return ``{group_id, seats, members}`` for each of the participant's groups.
+
+    ``seats`` (see :func:`group_seats`) are those of the members waiting at
+    a barrier of the group, as :class:`~psynet.group_prompt.GroupPrompt`
+    ticks them, and ``members`` those of all active members, so that it can
+    redraw the group when someone joins or leaves.
+    """
+    ready = []
+    for group in participant.active_sync_groups.values():
+        seats = group_seats(group)
+        members = group.active_participants
+        waiting = [seats[m.id] for m in members if waiting_barrier_ids(m, group)]
+        ready.append(
+            {
+                "group_id": group.id,
+                "seats": sorted(waiting),
+                "members": sorted(seats[m.id] for m in members),
+            }
+        )
+    return ready
+
+
+def _notify_membership_change(group, newcomer=None):
+    """Have the other members of ``group`` fetch their notice and group again."""
+    if getattr(group, "_dissolving_below_min_size", False):
+        return
+    for member in group.active_participants:
+        if member is not newcomer:
+            _queue_arrival_update(member.id, refresh=True)
+
+
+def waiting_barrier_ids(participant, group):
+    """Return the IDs of the barriers of ``group`` that ``participant`` is waiting at."""
+    return [
+        barrier_id
+        for barrier_id, link in participant.active_barriers.items()
+        if not link.released
+        and link.barrier_instance is not None
+        and link.barrier_instance.group_id == group.id
+    ]
 
 
 def _interruptible_waiting_barrier(page, participant):
@@ -3755,6 +3853,18 @@ def _removed_from_group_notice(participant) -> Optional[str]:
     if stored is None or stored["page_uuid"] != participant.page_uuid:
         return None
     return stored["text"]
+
+
+def _arrival_notice_fields(participant):
+    """Return ``{"notice": ...}``, adding ``"removed": True`` for a removal notice.
+
+    Pages that hide arrival notices, such as live-tick GroupPrompt pages,
+    still show a removal notice.
+    """
+    notice = pending_arrival_notice_for(participant)
+    if notice is not None and _removed_from_group_notice(participant) is not None:
+        return {"notice": notice, "removed": True}
+    return {"notice": notice}
 
 
 def pending_arrival_notice_for(participant):
