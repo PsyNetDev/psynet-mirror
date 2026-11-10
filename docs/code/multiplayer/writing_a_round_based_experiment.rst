@@ -384,8 +384,7 @@ stores their ID for every member's trial and for the export:
 The writer gets the writing page before the turn's barrier; the others go
 straight to the barrier, whose ``waiting_screen`` shows them the story so
 far. The barrier closes the round, and its ``on_release`` saves the writer's
-sentence in ``node.var``. Its ``on_dissolve`` does the same if the group
-dissolves while members wait there:
+sentence in ``node.var``:
 
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
    :pyobject: StoryTurn.show_trial
@@ -393,9 +392,10 @@ dissolves while members wait there:
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
    :pyobject: StoryTurn.save_sentence
 
-``on_dissolve`` only runs for members waiting at the barrier, so if the
-group dissolves while the writer is still writing, the writer's own trial
-saves their sentence when it finishes:
+Nothing runs when a group dissolves, so if the group dissolves before the
+turn's barrier releases, whether the writer is still writing or already
+waiting there, the writer's own trial saves their sentence when it
+finishes:
 
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
    :pyobject: StoryTurn.on_finalized

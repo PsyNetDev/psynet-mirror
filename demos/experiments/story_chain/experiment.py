@@ -14,11 +14,11 @@ Everything the story needs is stored rather than worked out later:
   members joined, and stores their ID as ``writer_id`` in the node's
   definition. If the member in that seat has left, the member in the next
   seat writes instead, so turns become uneven (for example A, C, C).
-- The barrier's ``on_release``, or its ``on_dissolve`` if the group
-  dissolves while members wait there, saves the writer's sentence in
-  ``node.var.sentence``, or ``None`` if none arrived. If the group dissolves
-  while the writer is still writing, nobody is waiting, so the writer's own
-  trial saves it when it finishes. Why a sentence didn't arrive is the
+- The barrier's ``on_release`` saves the writer's sentence in
+  ``node.var.sentence``, or ``None`` if none arrived. Nothing runs when a
+  group dissolves, so if the group dissolves before the turn's barrier
+  releases, the writer's own trial saves its sentence when it finishes.
+  Why a sentence didn't arrive is the
   writer trial's ``sync_group_outcome``: ``"stayed"`` if they ran out of
   time, or why they left the group.
 - The last page reads the story from the nodes of the group whose ID each
@@ -170,8 +170,6 @@ class StoryTurn(Trial):
             late_after=LATE_AFTER,
             late_action="leave_group",
             on_release=self.save_sentence,
-            # The last member left still saves a sentence that arrived.
-            on_dissolve=self.save_sentence,
         )
         if not self.is_writer:
             return barrier
@@ -205,9 +203,9 @@ class StoryTurn(Trial):
 
     def on_finalized(self):
         super().on_finalized()
-        # Only a writer whose group dissolved while they wrote saves their own
-        # sentence: no barrier hook ran for the turn. A writer removed as
-        # "late" doesn't, and a value a barrier hook saved is never replaced.
+        # Only a writer whose group dissolved before the turn's barrier
+        # released saves their own sentence, because on_release never ran.
+        # A writer removed as "late" doesn't.
         if (
             self.is_writer
             and self.sync_group_outcome == "group_dissolved"
@@ -398,8 +396,8 @@ class Exp(psynet.experiment.Experiment):
 
     def _test_group_dissolving_while_writing(self, bots: List[BotDriver]):
         # Both others wait at the barrier and then return the study while the
-        # first writes, so no remaining member is waiting there, on_dissolve
-        # doesn't run, and the writer's own trial saves the sentence.
+        # first writes, so the barrier never releases and the writer's own
+        # trial saves the sentence.
         first, second, third = _seated(bots)
         second.drop_out()
         third.drop_out()
@@ -439,7 +437,7 @@ class Exp(psynet.experiment.Experiment):
         # The third writes their own turn and, after the first's, the
         # second's. The first returns the study before the last turn, while
         # the third waits at its barrier, so the group dissolves there and
-        # saves the third's sentence.
+        # the third's own trial saves their sentence.
         third.take_page(response="A dragon appeared.")
         advance_past_wait_pages([first, third], stop_at=TURN_BARRIER)
         first.take_page(response="It was hungry.")
