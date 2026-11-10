@@ -1,9 +1,11 @@
+import itertools
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+import psynet.pseudonym
 from psynet.experiment import get_experiment
 from psynet.pseudonym import PseudonymScheme
 from psynet.pytest_psynet import path_to_test_experiment
@@ -58,10 +60,12 @@ def test_schemes_and_stored_pseudonyms_can_be_customized():
         def animals(self):
             return {"lion": ("lion", "🦁"), "bear": ("bear", "🐻")}
 
-        def format_name(self, color_label, animal_label):
-            return f"{animal_label.title()} ({color_label})"
+    class NamedTeams(Teams):
+        def format_name(self, color, animal):
+            return f"{self.animals()[animal][0].title()} ({self.colors()[color][0]})"
 
-    scheme = Teams("deployment-a")
+    assert Teams("deployment-a")._make("red", "bear").name == "Red bear"
+    scheme = NamedTeams("deployment-a")
     stored = scheme._pseudonym(_participant(1, ("red", "bear")))
 
     assert stored.name == "Bear (red)"
@@ -71,6 +75,26 @@ def test_schemes_and_stored_pseudonyms_can_be_customized():
     assert scheme._pseudonym(_participant(2)).animal in {"lion", "bear"}
     with pytest.raises(ValueError, match="Unknown pseudonym animal 'fox'"):
         scheme._make("red", "fox")
+
+
+def test_built_in_names_are_translated_whole(monkeypatch):
+    """Translators see "Blue fox" as one message, so the colour can agree with the animal."""
+    french = {"Blue fox": "Renard bleu", "{COLOR} {ANIMAL}": "{ANIMAL} {COLOR}"}
+    monkeypatch.setattr(
+        psynet.pseudonym,
+        "get_translator",
+        lambda context=True: lambda _context, message: french.get(message, message),
+    )
+
+    class Lions(PseudonymScheme):
+        def animals(self):
+            return {**super().animals(), "lion": ("lion", "🦁")}
+
+    assert set(psynet.pseudonym._BUILTIN_NAMES) == set(
+        itertools.product(PseudonymScheme().colors(), PseudonymScheme().animals())
+    )
+    assert Lions()._make("blue", "fox").name == "Renard bleu"
+    assert Lions()._make("blue", "lion").name == "Lion blue"
 
 
 @pytest.mark.parametrize(
@@ -91,7 +115,11 @@ def test_stored_deployment_id_and_overrides_decide_pseudonyms(
 
     participants[0].set_pseudonym("red", "whale")
     assert participants[0].pseudonym.name == "Red whale"
-    assert participants[0].to_dict()["pseudonym"] == "Red whale"
+    assert "pseudonym_color" not in participants[0].to_dict()
+    rows = exp.table_data(0, 10, table="participant")["data"]
+    assert {row["id"]: row["pseudonym"] for row in rows}[participants[0].id] == (
+        "Red whale"
+    )
     (column,) = [
         c for c in exp.table_columns("participant") if c["data"] == "pseudonym"
     ]

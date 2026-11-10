@@ -874,6 +874,14 @@ class Control(JavaScriptContributor):
         """
         return None
 
+    def _reject_impossible_answer(self, answer):
+        """Return a :class:`~psynet.timeline.FailedValidation` for an answer the control cannot produce.
+
+        The experiment runs this check on every submitted response before the page's
+        :meth:`validate`, so overriding :meth:`validate` does not remove it.
+        """
+        return None
+
     def visualize_response(self, answer, response, trial):
         return ""
 
@@ -943,7 +951,39 @@ class OptionControl(Control):
     The saved answer is the element of ``choices`` that the participant picked,
     with its original type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``.
     NumPy scalars in ``choices`` become the equivalent Python values.
+
+    By default the experiment rejects a formatted answer that is neither one of ``choices``
+    nor the control's empty answer, such as ``None``, before running any ``validate``;
+    ``force_selection`` decides whether an empty answer is accepted.
+    The browser cannot submit such an answer, but a tampered request can,
+    and so can a bot whose ``bot_response`` has the wrong type, such as ``"3"`` for the choice ``3``,
+    or a subclass that overrides :meth:`format_answer` without setting ``restrict_to_choices = False``.
+    The rejection message is the generic "You need to select an answer!",
+    and the server logs a warning with the page label, the answer and the choices.
+
+    The experiment builds the page again when the response arrives, re-running a
+    :class:`~psynet.timeline.PageMaker` function or a trial's ``show_trial``,
+    and checks the answer against the choices of that new page.
+    So the choices must be the same each time the page is built:
+    choose random choices once, for example in ``finalize_definition``,
+    or store them in ``participant.var``.
+    Otherwise a genuine click can be rejected; if you cannot keep the choices stable,
+    pass ``restrict_to_choices=False``.
+
+    Parameters
+    ----------
+
+    restrict_to_choices :
+        Whether to reject answers that are not one of ``choices``.
+        Default: ``None``, meaning the class attribute ``restrict_to_choices``,
+        which is ``True`` except on :class:`TimedPushButtonControl`.
+        Set it to ``False`` when the saved answer is something else,
+        such as a dictionary of the choice and a reaction time from an overridden
+        :meth:`format_answer` on the control or the page.
+        A subclass that always saves something else can set the class attribute instead.
     """
+
+    restrict_to_choices = True
 
     def __init__(
         self,
@@ -951,12 +991,15 @@ class OptionControl(Control):
         labels: Optional[List[str]] = None,
         style: str = "",
         bot_response=NoArgumentProvided,
+        restrict_to_choices: Optional[bool] = None,
         **kwargs,
     ):
         super().__init__(bot_response=bot_response, **kwargs)
         self.choices = [_as_python_value(choice) for choice in choices]
         self.labels = self.choices if labels is None else labels
         self.style = style
+        if restrict_to_choices is not None:
+            self.restrict_to_choices = restrict_to_choices
 
         assert isinstance(self.labels, list)
         assert len(self.choices) == len(self.labels)
@@ -988,6 +1031,21 @@ class OptionControl(Control):
         are returned unchanged.
         """
         return self._choice_for_text(raw_answer)
+
+    def _is_choice(self, answer):
+        # Matching the type stops True or 1.0 from passing as the choice 1.
+        return any(
+            type(answer) is type(choice) and answer == choice for choice in self.choices
+        )
+
+    def _is_possible_answer(self, answer):
+        return answer is None or self._is_choice(answer)
+
+    def _reject_impossible_answer(self, answer):
+        if not self.restrict_to_choices or self._is_possible_answer(answer):
+            return None
+        _p = get_translator(context=True)
+        return FailedValidation(_p("validation", "You need to select an answer!"))
 
     def validate_name(self, name):
         if not isinstance(name, str):
@@ -1072,6 +1130,10 @@ class CheckboxControl(OptionControl):
 
     show_reset_button
         Whether to display a 'Reset' button to allow for unsetting ticked checkboxes. Possible values are: `never`, `always`, and `on_selection`, the latter meaning that the button is displayed only when at least one checkbox is ticked. Default: ``never``.
+
+    restrict_to_choices
+        Whether to reject answers that are not a list of ``choices``. Default: ``None``, which uses the class attribute (``True``).
+        See :class:`OptionControl`.
     """
 
     input_type = "checkbox"
@@ -1085,12 +1147,19 @@ class CheckboxControl(OptionControl):
         arrange_vertically: bool = True,
         force_selection: bool = False,
         show_reset_button: str = "never",
+        restrict_to_choices: Optional[bool] = None,
     ):
         if show_reset_button != "never":
             buttons = [ResetButton()]
         else:
             buttons = []
-        super().__init__(choices, labels, style, buttons=buttons)
+        super().__init__(
+            choices,
+            labels,
+            style,
+            buttons=buttons,
+            restrict_to_choices=restrict_to_choices,
+        )
         self.validate_name(name)
         self.name = name
         self.arrange_vertically = arrange_vertically
@@ -1128,11 +1197,16 @@ class CheckboxControl(OptionControl):
 
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
-        if self.force_selection and len(response.answer) == 0:
+        if self.force_selection and not response.answer:
             return FailedValidation(
                 _p("validation", "You need to check at least one answer!")
             )
         return None
+
+    def _is_possible_answer(self, answer):
+        return answer is None or (
+            isinstance(answer, list) and all(self._is_choice(a) for a in answer)
+        )
 
     def format_answer(self, raw_answer, **kwargs):
         """Return the ticked choices named by the browser's list of ids."""
@@ -1179,6 +1253,10 @@ class DropdownControl(OptionControl):
 
     force_selection
         Determines if an answer has to be selected. Default: True.
+
+    restrict_to_choices
+        Whether to reject answers that are not one of ``choices``. Default: ``None``, which uses the class attribute (``True``).
+        See :class:`OptionControl`.
     """
 
     def __init__(
@@ -1189,8 +1267,11 @@ class DropdownControl(OptionControl):
         name: str = "dropdown",
         force_selection: bool = True,
         default_text="Select an option",
+        restrict_to_choices: Optional[bool] = None,
     ):
-        super().__init__(choices, labels, style)
+        super().__init__(
+            choices, labels, style, restrict_to_choices=restrict_to_choices
+        )
         self.validate_name(name)
         self.name = name
         self.force_selection = force_selection
@@ -1224,9 +1305,13 @@ class DropdownControl(OptionControl):
 
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
-        if self.force_selection and response.answer == "":
+        if self.force_selection and response.answer in ("", None):
             return FailedValidation(_p("validation", "You need to select an answer!"))
         return None
+
+    def _is_possible_answer(self, answer):
+        # The browser submits "" when nothing is selected.
+        return answer == "" or super()._is_possible_answer(answer)
 
 
 class DropdownOption:
@@ -1255,6 +1340,9 @@ class PushButtonControl(OptionControl):
 
     arrange_vertically:
         Whether to arrange the buttons vertically. Default: ``True``.
+
+    **kwargs
+        Other arguments to pass to :class:`OptionControl`, such as ``restrict_to_choices``.
     """
 
     def __init__(
@@ -1399,6 +1487,8 @@ class TimedPushButtonControl(PushButtonControl):
     """
 
     timed = True
+    # The answer is the browser's event log, not a choice.
+    restrict_to_choices = False
 
     def __init__(
         self,
@@ -1531,6 +1621,13 @@ class RadioButtonControl(OptionControl):
 
     show_free_text_option
         Appends a free text option to the radiobuttons. Default: ``False``.
+        The page then accepts any text as an answer.
+
+    restrict_to_choices
+        Whether to reject answers that are not one of ``choices``
+        (or text, with ``show_free_text_option``).
+        Default: ``None``, which uses the class attribute (``True``).
+        See :class:`OptionControl`.
     """
 
     input_type = "radio"
@@ -1546,12 +1643,19 @@ class RadioButtonControl(OptionControl):
         show_reset_button: str = "never",
         show_free_text_option: bool = False,
         placeholder_text_free_text: str = None,
+        restrict_to_choices: Optional[bool] = None,
     ):
         if show_reset_button != "never":
             buttons = [ResetButton()]
         else:
             buttons = []
-        super().__init__(choices, labels, style, buttons=buttons)
+        super().__init__(
+            choices,
+            labels,
+            style,
+            buttons=buttons,
+            restrict_to_choices=restrict_to_choices,
+        )
         self.validate_name(name)
         self.name = name
         self.arrange_vertically = arrange_vertically
@@ -1603,6 +1707,11 @@ class RadioButtonControl(OptionControl):
         if self.force_selection and response.answer is None:
             return FailedValidation(_p("validation", "You need to select an answer!"))
         return None
+
+    def _is_possible_answer(self, answer):
+        if self.show_free_text_option and isinstance(answer, str):
+            return True
+        return super()._is_possible_answer(answer)
 
 
 class RadioButton:
@@ -2213,6 +2322,21 @@ class ModularPage(Page):
             return self.control.validate(response, **kwargs)
         else:
             return super().validate(response, **kwargs)
+
+    def _reject_impossible_answer(self, answer):
+        """Delegate to the control, logging a warning when it rejects the answer."""
+        rejection = self.control._reject_impossible_answer(answer)
+        if rejection is not None:
+            logger.warning(
+                "Page %r rejected the answer %r because it is not one of the control's "
+                "choices %r. If the page or control reformats the answer, or the choices "
+                "change each time the page is built, pass restrict_to_choices=False "
+                "or keep the choices stable.",
+                self.label,
+                answer,
+                getattr(self.control, "choices", None),
+            )
+        return rejection
 
     def prepare_default_events(self):
         events = super().prepare_default_events()
