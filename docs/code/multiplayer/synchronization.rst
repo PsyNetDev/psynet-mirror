@@ -709,6 +709,10 @@ decisions each one needs. These settings carry them out:
   takes them out of both (see :ref:`rounds-slow-players`).
 
 Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
+:doc:`catch_up_case_studies` follows these settings through eight concrete
+cases.
+
+.. _sync-timeouts:
 
 Timeouts
 ~~~~~~~~

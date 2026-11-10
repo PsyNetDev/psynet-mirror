@@ -154,7 +154,9 @@ and the pass counts for ``left`` and ``late_after``. For example:
 A late joiner skips the rounds that have closed, joins the open one, and
 ``estimates`` waits for them there. A member who skipped a round never
 visits its barriers, and one who is already in the next round has no trial
-on this one, so neither holds it up.
+on this one, so neither holds it up. :doc:`catch_up_case_studies` follows
+these and other cases, such as players leaving or reading slowly, step by
+step.
 
 .. _rounds-group-barriers-in-loops:
 
