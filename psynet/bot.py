@@ -10,7 +10,7 @@ from dallinger import db
 
 from psynet.db import transaction
 
-from .participant import Participant, ParticipantDriver
+from .participant import Participant, ParticipantDriver, _status_is_waiting
 from .utils import NoArgumentProvided, get_logger, log_time_taken, wait_until
 
 logger = get_logger()
@@ -266,7 +266,7 @@ def advance_past_wait_pages(
             page = bot.status.get("page") or {}
             if page.get("barrier_id") in stop_at and not page.get("can_resume"):
                 continue
-            if page.get("is_wait_page") or page.get("is_timeline_hold"):
+            if _status_is_waiting(bot.status):
                 waiting.append(bot)
                 bot.take_page()
         if not waiting:
@@ -371,20 +371,12 @@ def run_bots_to_completion(bots: List["BotDriver"], timeout: Optional[float] = 6
         if deadline is not None and time.monotonic() > deadline:
             ids = [bot.id for bot in working]
             raise RuntimeError(f"Bots {ids} are still working after {timeout} s.")
-        if not first_pass and all(_is_waiting(bot) for bot in working):
+        if not first_pass and all(_status_is_waiting(bot.status) for bot in working):
             # Everyone waits, for example for a clock tick, so poll as a browser would.
             time.sleep(0.5)
         first_pass = False
         for bot in working:
             bot.take_page()
-
-
-def _is_waiting(bot) -> bool:
-    """Return whether the bot's current page, as last refreshed, is a waiting page."""
-    page = bot.status.get("page")
-    return isinstance(page, dict) and bool(
-        page.get("is_wait_page") or page.get("is_timeline_hold")
-    )
 
 
 def bots_by_sync_group(bots: List["BotDriver"], group_type: str):
