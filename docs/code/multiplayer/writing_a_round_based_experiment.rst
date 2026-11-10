@@ -129,8 +129,8 @@ skipper who reaches a barrier after the loop is released with the players,
 or alone if they have already passed it.
 
 A barrier before a late joiner's first cue in the module, such as one at
-the start of each iteration, waits for every member only if the group
-hasn't cued a round in the module yet. Once it has, it waits only for the
+the start of each iteration, waits for every member still in the module
+only if the group hasn't cued a round in it yet. Once it has, it waits only for the
 members who haven't cued one there either, are still in the module and
 haven't passed it yet, so the late joiner moves on to their cue and joins
 the open round or skips the closed one. A release of only such members
@@ -138,10 +138,15 @@ catching up, late joiners or skippers, isn't the group's pass:
 ``on_release`` doesn't run, and it doesn't count for ``left`` or
 ``late_after``.
 
-These rules use the rounds members have cued in the barrier's module, and
-in a module that a loop repeats, only those of the waiting members' run of
-it or a later one: a barrier at the start of the next run waits for every
-member again, until someone cues that run's first round. So
+In a module that a loop repeats, a barrier at the start of the next run
+waits for every member still in this module (including one still
+finishing the previous run, and a newcomer starting their first run), until
+someone cues that run's first round; it doesn't wait for a member whose
+loop has ended. A member on a page between the module and its next run,
+inside the loop but outside the module, counts as having left it, so keep
+the loop's pages inside the module.
+
+These rules use the rounds members have cued in the barrier's module, so
 they don't cover a barrier in a module where the group cues no rounds, such
 as one before a separate module of rounds: a newcomer who reaches it after
 the group has gone waits there for members who are further on, until the
