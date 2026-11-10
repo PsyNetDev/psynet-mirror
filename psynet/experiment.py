@@ -939,6 +939,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         that the app's data may be deleted.
         Default: ``False``.
 
+    performance_test_local_packages : ``str``
+        The packages, ``psynet`` and/or ``dallinger`` separated by commas, that
+        ``psynet performance-test ssh`` built into the app's image from local
+        checkouts (``--use-local-psynet``, ``--use-local-dallinger``). It sets
+        this when it deploys the app, and later updates of the app build them
+        in again. Don't set it yourself.
+        Default: unset.
+
 
 
     Parameters
@@ -5011,6 +5019,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             config.register("docker_ssh_monitoring_path", str)
         config.register("check_participant_opened_devtools", bool)
         config.register("performance_test_app", bool)
+        config.register("performance_test_local_packages", str)
         config.register("debug_ssh_app", bool)
         config.register("currency", str)
         config.register("default_translator", str)
