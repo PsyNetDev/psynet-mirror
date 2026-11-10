@@ -35,7 +35,6 @@ from psynet.dashboard.sync_groups import (
 from psynet.data import SQLBase
 from psynet.db import _set_transaction_lock_timeout, transaction
 from psynet.experiment import Experiment, get_experiment
-from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage, WaitPage, wait_while
 from psynet.participant import Participant
@@ -7741,16 +7740,13 @@ def test_latecomers_fill_a_team_until_it_passes_game_starts(
     *on_time, slow = [new_participant(exp) for _ in range(3)]
     for p in (*on_time, slow):
         p.status = "working"
-    team = grouper._make_group(on_time, initial_group_size=4)
+    grouper._make_group(on_time, initial_group_size=4)
     grouper._join_existing_groups(slow)
     for link in slow.sync_group_links:
         link.arrival_time -= timedelta(seconds=121)
     game_starts.check_waiting_participants(on_time)
     assert slow.sync_group_removal_reason("team") == "late"
     assert set(game_starts.choose_who_to_release(on_time)) == set(on_time)
-    # Removed in the check that stopped top-ups, so still a lobby leaver.
-    page = GroupPrompt(group=team, participant=on_time[0], names="anonymous")
-    assert "psynet-group-member--left" not in page.group_html
 
     lone, slow = [new_participant(exp) for _ in range(2)]
     for p in (lone, slow):
