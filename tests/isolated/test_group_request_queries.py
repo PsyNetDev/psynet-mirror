@@ -1,11 +1,12 @@
-"""SQL budgets for leaving or dissolving a sync group and for the pollers.
+"""SQL budgets for grouped participant requests, leaving or dissolving a group, and the pollers.
 
 ``test_barrier_arrival_queries`` pins the post-commit barrier check. These
 tests drive real ``/timeline`` and ``/response`` requests from a cold session
-to form a group, then pin what it costs for a member to leave, for a group to
-dissolve, and for one idle sweep of each poller. Leaving compares two group
-sizes, so a statement that runs once per member fails; dissolving and the
-sweeps pin their per-member or per-group slope. Fewer statements are an
+to form a group, then pin the requests around the barrier (arriving from a
+page and the hold poll while waiting), what it costs for a member to leave,
+for a group to dissolve, and for one idle sweep of each poller. Arriving and
+leaving compare two group sizes, so a statement that runs once per member
+fails; dissolving and the sweeps pin their per-member or per-group slope. Fewer statements are an
 improvement: lower the numbers here and in
 ``docs/developer/sqlalchemy_performance.rst`` (Grouped request budgets).
 """
@@ -24,7 +25,7 @@ from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sqlalchemy_profiling import sqlalchemy_profile
-from psynet.sync import GroupBarrier, SimpleGrouper
+from psynet.sync import GroupBarrier, ParticipantLinkBarrier, SimpleGrouper
 from psynet.timeline import Timeline
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -121,6 +122,13 @@ def _count(fn):
     return profiler.total_count
 
 
+def _released_count(barrier_id):
+    db.session.remove()
+    return ParticipantLinkBarrier.query.filter_by(
+        barrier_id=barrier_id, released=True
+    ).count()
+
+
 def _group_on_choose_page(exp, group_size):
     """Form a group through real requests; everyone ends on the choose page."""
     ids = [p.id for p in _working_participants(exp, group_size)]
@@ -183,3 +191,47 @@ def test_poller_sweeps_cost_a_fixed_amount_per_group(exp, monkeypatch):
         groups[n_groups] = _count(sync.check_sync_groups)
     assert barriers[3] - barriers[1] == 2 * _SWEEP_PER_VISIT, barriers
     assert groups[3] - groups[1] == 2 * _SYNC_GROUPS_PER_GROUP, groups
+
+
+def test_barrier_requests_do_not_grow_with_group_size(exp):
+    """Arriving from a page, polling the hold and the last arrival cost the same for 3 and 7."""
+    counts = {}
+    for group_size in (3, 7):
+        db.session.remove()
+        group_type = f"room{group_size}"
+        barrier_id = f"{group_type}_gate"
+        # No hold timeouts, so slow profiled requests cannot dissolve the group.
+        exp.timeline = Timeline(
+            SimpleGrouper(
+                group_type, initial_group_size=group_size, max_wait_time=None
+            ),
+            ModularPage(
+                "choose", "Choose", PushButtonControl(["a", "b"]), time_estimate=1
+            ),
+            GroupBarrier(id_=barrier_id, group_type=group_type, max_wait_time=None),
+            ModularPage("result", "Result", time_estimate=1),
+        )
+        ids = [p.id for p in _working_participants(exp, group_size)]
+        for participant_id in ids:
+            _get(participant_id)
+        for participant_id in ids[:-1]:
+            _post(participant_id, resume=True)
+        for participant_id in ids[:-2]:
+            _post(participant_id, "a")
+        counts[group_size] = {
+            "arrival_post": _count(lambda: _post(ids[-2], "a")),
+            "hold_poll_post": _count(lambda: _post(ids[0], resume=True)),
+        }
+        assert _released_count(barrier_id) == 0
+        counts[group_size]["last_arrival_post"] = _count(lambda: _post(ids[-1], "a"))
+        assert _released_count(barrier_id) == group_size
+        assert not any(Participant.query.get(i).failed for i in ids)
+        counts[group_size]["released_poll_post"] = _count(
+            lambda: _post(ids[0], resume=True)
+        )
+    grown = {
+        key: (counts[3][key], counts[7][key])
+        for key in counts[3]
+        if counts[7][key] > counts[3][key] + _JITTER
+    }
+    assert not grown, f"grew with group size: {grown}; all counts: {counts}"
