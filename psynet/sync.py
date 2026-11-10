@@ -4462,7 +4462,6 @@ class SyncGroup(SQLBase, SQLMixin):
     leader = relationship(
         Participant,
         primaryjoin=lambda: foreign(SyncGroup.leader_id) == Participant.id,
-        cascade="all",
     )
 
     def check_leader(self):
