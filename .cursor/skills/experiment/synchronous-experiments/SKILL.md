@@ -364,7 +364,12 @@ silent member, and for how long to wait out timeouts in bot tests.
 - Do not leave default wait limits in place for real recruitment sessions
   without checking whether they are appropriate.
 - Do not assume top-ups are safe; define exactly which groups may accept late
-  participants.
+  participants. Top-ups never stop by themselves: stop them explicitly with
+  `group.stop_top_ups()`, `GroupBarrier(stop_top_ups=True)` or
+  `Regrouper(stop_top_ups_after_rounds=n)`, or set the grouper's
+  `top_up_wait`: a group below its quorum for that long is closed to top-ups
+  and dissolved at the next check of the `GroupBarrier` its members wait at.
+  A `join_criterion` only turns newcomers away.
 - Do not set recruitment targets that leave stranded participants unable to form
   a full group.
 - Do not auto-reject participants who waited or were stranded by no-shows; plan

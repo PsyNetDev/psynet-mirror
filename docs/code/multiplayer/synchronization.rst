@@ -43,10 +43,11 @@ the grouper has a ``waiting_screen`` (see below).
     If ``True``, an arriving participant first joins an existing group that
     is below ``max_group_size``, preferring the smallest and then the oldest
     group. Participants already waiting at the grouper join such a group on
-    the next barrier check after one has room. Closed groups and groups with
-    no active members are not joined. Groups formed with this option accept
-    *top-ups*; see `Groups below quorum`_ for how they stop and what they
-    change when a member drops out.
+    the next barrier check after one has room. Groups that have closed or
+    stopped accepting top-ups, and groups with no active members, are not
+    joined. Groups formed with this option accept *top-ups* until you stop
+    them; see `Groups below quorum`_ for how and for what top-ups change
+    when a member drops out.
 
 ``max_group_size`` (default: ``initial_group_size``)
     The largest size a group can reach through ``join_existing_groups``;
@@ -63,7 +64,8 @@ the grouper has a ``waiting_screen`` (see below).
     A function of ``group`` and ``participant`` that returns whether the
     participant may join that group. Only used with
     ``join_existing_groups=True``. Returning ``False`` only turns that
-    newcomer away (see `Groups below quorum`_).
+    newcomer away; the group keeps accepting top-ups (see
+    `Groups below quorum`_).
 
 ``start_short_after`` (default: ``None``)
     Seconds after which a smaller group may start. Once the longest-waiting
@@ -875,13 +877,16 @@ Two separate settings decide what happens when someone leaves a group:
     ``max_wait_time``, or without a limit if the barrier sets
     ``late_after``. If every member leaves, the group closes at the next
     periodic sync-group check (every few seconds), and later arrivals form a
-    new one. A ``join_criterion`` that returns ``False`` only turns that
-    newcomer away; it doesn't stop top-ups.
-  - Top-ups stop in four ways, and from then on the group is treated as
-    one without top-ups:
+    new one.
+  - Top-ups never stop by themselves: a ``join_criterion`` that returns
+    ``False`` only turns that newcomer away, and a group at its
+    ``max_group_size`` takes newcomers again once a member leaves. They stop
+    only in one of these ways, and from then on the group is treated as one
+    without top-ups:
 
-    - ``group.stop_top_ups()`` stops them at once; a group already below
-      its quorum is then dissolved, however its members left.
+    - :meth:`group.stop_top_ups() <psynet.sync.SimpleSyncGroup.stop_top_ups>`
+      stops them at once; a group already below its quorum is then
+      dissolved, however its members left.
     - ``stop_top_ups=True`` on a :class:`~psynet.sync.GroupBarrier` stops
       them when the group passes that barrier, for example at the start of
       the game, so nobody joins a game already under way. A group below its
@@ -894,9 +899,13 @@ Two separate settings decide what happens when someone leaves a group:
       its quorum at that split is dissolved with nobody grouped; with
       ``below_quorum="continue_without_group"``, its waiting players are
       released ungrouped and ``on_release`` isn't called.
-    - The grouper's ``top_up_wait=seconds`` limits that wait: once the
-      group has been below its quorum that long, the barrier it is waiting
-      at stops top-ups and dissolves it. This only helps members who are
+    - The grouper's ``top_up_wait=seconds`` limits the wait below quorum:
+      once the group has been below its quorum that long without a newcomer
+      bringing it back up, the next check of the
+      :class:`~psynet.sync.GroupBarrier` its members are waiting at stops
+      top-ups and dissolves it. Only such a barrier applies the limit, so a
+      group whose members are all still on other pages keeps accepting
+      top-ups until one of them reaches it. This only helps members who are
       still waiting, so give that barrier a ``max_wait_time`` (20 seconds
       by default) longer than ``top_up_wait``, or ``late_after``, which
       removes the limit.

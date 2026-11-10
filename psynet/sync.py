@@ -2806,14 +2806,17 @@ class SimpleGrouper(Grouper):
         groups that aren't full (e.g. because some participants left the experiment early).
         If so, the arriving participant will be assigned to one of these groups instead.
         Participants already waiting at the grouper join such a group on the next barrier check.
-        Closed groups and groups with no active members are not joined.
+        Groups that have closed or stopped accepting top-ups, and groups with no
+        active members, are not joined. Groups keep accepting top-ups until you stop
+        them (see :ref:`groups_below_min_size`).
         This behavior can be further customized via the ``join_criterion`` argument.
 
     join_criterion
         A callable that takes ``group`` and ``participant`` as arguments, and returns ``True``
         if the participant should be allowed to join the group, and ``False`` otherwise.
         To be used in conjunction with ``join_existing_groups=True``. Returning ``False``
-        only turns that newcomer away (see :ref:`groups_below_min_size`).
+        only turns that newcomer away; the group keeps accepting top-ups (see
+        :ref:`groups_below_min_size`).
 
     below_quorum
         What happens to the members left when a group is dissolved below its ``quorum``
@@ -2829,9 +2832,10 @@ class SimpleGrouper(Grouper):
 
     top_up_wait
         With ``join_existing_groups=True``, how many seconds a group below its
-        ``quorum`` waits for newcomers. Then the barrier its members are waiting at
-        stops top-ups and dissolves it. The time counts from when the group fell below
-        its quorum. Members who reach that barrier's ``max_wait_time`` first are timed
+        ``quorum`` waits for newcomers. Then the next check of the :class:`GroupBarrier`
+        its members are waiting at stops top-ups and dissolves it; until a member
+        reaches such a barrier, the group keeps accepting top-ups. The time counts
+        from when the group fell below its quorum. Members who reach that barrier's ``max_wait_time`` first are timed
         out, so give it a longer one, or ``late_after`` (see :ref:`groups_below_min_size`).
         Default: ``None``, waiting for newcomers without a limit.
 
@@ -4517,8 +4521,13 @@ class SimpleSyncGroup(SyncGroup):
         the game has started, so nobody joins it under way. From then on it
         is treated as a group without top-ups (see
         :ref:`groups_below_min_size`); a group already below its
-        quorum is dissolved, usually at once. To stop top-ups when the group passes a
-        barrier instead, pass ``stop_top_ups=True`` to that :class:`GroupBarrier`.
+        quorum is dissolved, usually at once.
+
+        Top-ups only stop explicitly: by this method, by a :class:`GroupBarrier`
+        with ``stop_top_ups=True`` when the group passes it, by a :class:`Regrouper`
+        with ``stop_top_ups_after_rounds``, or when the grouper's ``top_up_wait``
+        runs out below quorum (see :ref:`groups_below_min_size`). A ``join_criterion``
+        only turns newcomers away.
         """
         if not self.accepts_top_ups:
             return

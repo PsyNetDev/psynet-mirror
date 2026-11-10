@@ -213,7 +213,8 @@ in ``tests/isolated/test_trial_cue_groups.py``, and the stored estimates by
 Members end up at different barriers
 ------------------------------------
 
-The pair still takes newcomers during the game, and each question starts
+Nothing stops the pair's top-ups, so it still takes newcomers during the
+game, and each question starts
 with a ``GroupBarrier(id_="ready", group_type="team")`` before the cue.
 Ann and Ben are in a round when Cat joins. Cat goes through the game from
 its start, so she waits at ``ready`` while Ann waits for her at
