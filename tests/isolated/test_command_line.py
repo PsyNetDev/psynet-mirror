@@ -1801,10 +1801,13 @@ _PERF_DEPLOY_RESULT = {
 }
 
 
-def _invoke_performance_test_ssh(args, *, apps, app_info, calls=None):
+def _invoke_performance_test_ssh(
+    args, *, apps, app_info, calls=None, compose="services:\n"
+):
     """Invoke ``performance-test ssh`` on a fake server with ``apps``, whose web containers report ``app_info``.
 
-    ``calls`` records the experiment directory check and the server's app listing.
+    ``calls`` records the experiment directory check and the server's app
+    listing, and ``compose`` is the app's compose file.
     """
     from types import SimpleNamespace
 
@@ -1824,6 +1827,7 @@ def _invoke_performance_test_ssh(args, *, apps, app_info, calls=None):
             calls.check_experiment_directory,
         ),
         patch("psynet.command_line._ssh_executor"),
+        patch("psynet.command_line._read_ssh_compose_file", return_value=compose),
         patch("psynet.command_line._awaken_ssh_app"),
         patch("psynet.perf_ssh.RemoteApp.run_psynet", return_value=app_info),
         patch(
@@ -1935,6 +1939,54 @@ def test_performance_test_ssh_scaffolds_before_contacting_the_server():
     assert deploy.call_args.kwargs["use_local_psynet"] is True
 
 
+@pytest.mark.parametrize(
+    "recorded, args, reused",
+    [
+        ("psynet", [], "--use-local-psynet"),
+        ("psynet", ["--use-local-psynet"], None),
+        ("dallinger", [], "--use-local-dallinger"),
+        ("psynet,dallinger", [], "--use-local-psynet and --use-local-dallinger"),
+        ("psynet,dallinger", ["--use-local-psynet"], "--use-local-dallinger"),
+        (None, ["--use-local-psynet", "--use-local-dallinger"], None),
+    ],
+)
+def test_performance_test_ssh_updates_reuse_the_deploys_local_packages(
+    recorded, args, reused
+):
+    result, deploy, _ = _invoke_performance_test_ssh(
+        args,
+        apps=["my-app"],
+        app_info=_MARKED,
+        compose=(
+            None
+            if recorded is None
+            else f'      performance_test_local_packages: "{recorded}"\n'
+        ),
+    )
+
+    assert result.exit_code == 0, result.output
+    for package in ("psynet", "dallinger"):
+        expected = f"--use-local-{package}" in args or package in (
+            recorded or ""
+        ).split(",")
+        assert deploy.call_args.kwargs[f"use_local_{package}"] is expected
+    if reused:
+        assert f"Using {reused}, as when my-app was deployed." in result.output
+    else:
+        assert ", as when" not in result.output
+
+
+@pytest.mark.parametrize("args", [[], ["--use-local-psynet"]])
+def test_performance_test_ssh_updates_need_the_compose_file_for_local_packages(args):
+    result, deploy, _ = _invoke_performance_test_ssh(
+        args, apps=["my-app"], app_info=_MARKED, compose=None
+    )
+
+    assert result.exit_code == 1
+    assert "Could not read my-app's compose file" in result.output
+    deploy.assert_not_called()
+
+
 @pytest.mark.parametrize("args", [[], ["--reset-database"]])
 def test_performance_test_ssh_refuses_apps_it_did_not_deploy(args):
     result, deploy, run = _invoke_performance_test_ssh(
@@ -1972,7 +2024,18 @@ def test_performance_test_ssh_needs_the_apps_experiment_to_load():
     run.assert_not_called()
 
 
-def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
+@pytest.mark.parametrize(
+    "use_local_psynet, use_local_dallinger, recorded",
+    [
+        (False, False, {}),
+        (True, False, {"performance_test_local_packages": "psynet"}),
+        (False, True, {"performance_test_local_packages": "dallinger"}),
+        (True, True, {"performance_test_local_packages": "psynet,dallinger"}),
+    ],
+)
+def test_performance_test_deploys_mark_the_app(
+    use_local_psynet, use_local_dallinger, recorded, capsys, fresh_dallinger_config
+):
     from psynet.command_line import _debug_ssh
 
     ctx = Mock()
@@ -1987,6 +2050,10 @@ def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
         patch("psynet.command_line._pre_launch", return_value="my-app") as pre_launch,
         patch("psynet.command_line._post_deploy"),
         patch("psynet.command_line._cleanup_exp_directory"),
+        patch(
+            "psynet.command_line._local_image_packages",
+            return_value=contextlib.nullcontext(),
+        ),
         patch("dallinger.command_line.docker_ssh.sandbox", click.Command("sandbox")),
     ):
         deployed = _debug_ssh(
@@ -1995,6 +2062,8 @@ def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
             server="server",
             dns_host=None,
             update=True,
+            use_local_psynet=use_local_psynet,
+            use_local_dallinger=use_local_dallinger,
             performance_test_app=True,
         )
 
@@ -2002,6 +2071,7 @@ def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
     assert ctx.invoke.call_args.kwargs["config_options"] == {
         "debug_ssh_app": "true",
         "performance_test_app": "true",
+        **recorded,
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
     assert pre_launch.call_args.kwargs["confirm_update"] is False
