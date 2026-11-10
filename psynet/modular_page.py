@@ -11,6 +11,7 @@ completion hooks or navigation run; rejected answers must not create upload slot
 
 import json
 import math
+import numbers
 import os
 import random
 import shutil
@@ -28,7 +29,7 @@ from markupsafe import Markup
 
 from .asset import _PERSONAL_ARG_REMOVED, Asset, LocalStorage, _reject_personal_arg
 from .background_recording import VideoRecordConfig  # noqa: F401
-from .bot import BotResponse
+from .bot import BotResponse, _as_browser_json
 from .chatroom import ChatRoom  # noqa: F401
 from .javascript_hooks import JavaScriptContributor
 from .static_resources import package_static_url
@@ -915,10 +916,14 @@ class Control(JavaScriptContributor):
         """
         This function is used when a bot simulates a participant responding to a given page.
         In the simplest form, the function just returns the value of the
-        answer that the bot returns.
+        answer that the bot returns, which is saved without passing through :meth:`format_answer`.
         For more sophisticated treatment, the function can return a
         ``BotResponse`` object which contains other parameters
         such as ``blobs`` and ``metadata``.
+        PsyNet's built-in answer controls return ``BotResponse(raw_answer=...)`` with
+        what the browser would submit, so that bot answers pass through the same
+        ``format_answer`` methods as browser answers and are saved with the same type and shape.
+        Controls without a meaningful answer, such as :class:`NullControl`, return the answer directly.
         """
         raise NotImplementedError(
             f"The get_bot_response method for class {self.__class__.__name__} has yet to be implemented."
@@ -1729,6 +1734,14 @@ class NumberControl(Control):
     """
     This control interface solicits number input from the participant.
 
+    The answer is saved as a number: an ``int`` for a whole number such as ``100``
+    and a ``float`` otherwise, for browsers and default bots alike.
+    The browser submits the typed text, which :meth:`format_answer` converts;
+    text that is not a number, including a decimal comma such as ``1,5``,
+    fails validation. Because the answer is a number, the typed text is lost:
+    ``02139`` is saved as ``2139``. Use :class:`TextControl` for codes such as
+    postcodes or IDs where the exact text matters.
+
     Parameters
     ----------
 
@@ -1755,16 +1768,42 @@ class NumberControl(Control):
     def metadata(self):
         return {"width": self.width, "text_align": self.text_align}
 
-    def validate(self, response, **kwargs):
-        _p = get_translator(context=True)
+    def format_answer(self, raw_answer, **kwargs):
+        """Return the answer as an ``int`` if it is a whole number, otherwise a ``float``.
+
+        Only text is converted. Anything else, and text that is not a finite
+        number (including digits grouped with ``_`` such as ``1_000``), is
+        returned unchanged, so that :meth:`validate` can reject it.
+        """
+        if not isinstance(raw_answer, str) or "_" in raw_answer:
+            return raw_answer
         try:
-            float(response.answer)
+            return int(raw_answer)
         except ValueError:
+            pass
+        try:
+            number = float(raw_answer)
+        except ValueError:
+            return raw_answer
+        if not math.isfinite(number):
+            return raw_answer
+        return int(number) if number.is_integer() else number
+
+    def validate(self, response, **kwargs):
+        """Accept a finite real number, including NumPy numbers; reject strings and booleans."""
+        _p = get_translator(context=True)
+        answer = response.answer
+        if not (
+            isinstance(answer, numbers.Real)
+            and not isinstance(answer, bool)
+            and math.isfinite(answer)
+        ):
             return FailedValidation(_p("validation", "You need to provide a number!"))
         return None
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        return random.randint(20, 100)
+        """Answer with a random whole number, as text like the browser submits."""
+        return BotResponse(raw_answer=str(random.randint(20, 100)))
 
 
 class TextControl(Control):
@@ -1822,7 +1861,7 @@ class TextControl(Control):
         }
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        return "Hello, I am a bot!"
+        return BotResponse(raw_answer="Hello, I am a bot!")
 
 
 class MonitorControl(Control):
@@ -1835,8 +1874,8 @@ class MonitorControl(Control):
     macro = "monitor"
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        return json.loads(
-            """
+        return BotResponse(
+            raw_answer=json.loads("""
 {
     "currentScreen": {
         "left": -959,
@@ -1898,7 +1937,7 @@ class MonitorControl(Control):
         "top": -1393
     }
 }
-"""
+""")
         )
 
 
@@ -2851,7 +2890,7 @@ class SliderControl(Control):
             )
         else:
             candidates = self.snap_values
-        return random.sample(candidates, 1)[0]
+        return BotResponse(raw_answer=float(random.choice(candidates)))
 
 
 EXTENSIONS = {
@@ -4528,7 +4567,7 @@ class FrameSliderControl(Control):
         )
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        return random.uniform(0, 1)
+        return BotResponse(raw_answer=random.uniform(0, 1))
 
 
 class SurveyJSControl(Control):
@@ -4739,10 +4778,12 @@ class MultiRatingControl(SurveyJSControl):
         )
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        return {
+        """Answer each scale, as the SurveyJS results text that the browser submits."""
+        results = {
             scale.name: scale.get_bot_response(experiment, bot, page, prompt)
             for scale in self.scales
         }
+        return BotResponse(raw_answer=json.dumps(_as_browser_json(results)))
 
     def format_answer(self, raw_answer, **kwargs):
         answer = super().format_answer(raw_answer, **kwargs)
@@ -4938,7 +4979,7 @@ class RatingScale:
         return design
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        possible_responses = self.values
+        possible_responses = list(self.values)
         if not self.required:
             possible_responses.append(None)
         return random.choice(possible_responses)
