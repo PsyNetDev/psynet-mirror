@@ -17,7 +17,9 @@ without a group. Each question is one cued trial per player
 (`Trial.cue(..., round=question)` on a trial class with `sync_group_type`):
 the barrier that scores the question saves the group's estimates and median
 on the node its members' trials share, and on each trial whether its
-estimate is in the median. A player without a group gets an ungrouped trial
+estimate is in the median. Nothing runs when a group ends, so a round whose
+group ended at that barrier keeps only each player's estimate on their
+trial (`accumulate_answers = True`). A player without a group gets an ungrouped trial
 that asks only for their estimate. `get_basic_data` exports a row for every
 trial, including answers given alone and trials whose player left before
 answering, and one per group and question from the nodes.

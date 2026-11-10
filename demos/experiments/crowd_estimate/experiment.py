@@ -31,9 +31,12 @@ Dropout decisions
   barrier, but not before their current page's time limit plus 10 seconds
   (see "Timeouts" in ``docs/code/multiplayer/synchronization.rst``).
 - A group that falls below three once the game has started ends.
-- A median needs three estimates. When fewer arrive, because players ran
-  out of time or the group ended while they waited for it, the group's
-  estimates are saved without a median and there is nothing to revise.
+- A median needs three estimates. When fewer arrive because players ran
+  out of time, the group's estimates are saved without a median and there
+  is nothing to revise. Nothing runs when a group ends, so if it ends while
+  its members wait for the median, the round has no group estimates or
+  median, only each player's estimate on their trial, and there is nothing
+  to revise either.
 - Nobody is failed for what another player did, or for waiting: anyone
   without a group, because none formed within ``LOBBY_WAIT`` seconds, their
   group ended, or they were removed, answers the remaining questions alone.
@@ -149,7 +152,6 @@ class EstimateTrial(Trial):
                 late_after=LATE_AFTER,
                 late_action="leave_group",
                 on_release=self.score_round,
-                on_dissolve=self.score_round,
             ),
             # show_trial runs when the trial starts, so the page that shows the
             # median is built later, once the barrier has saved it.
@@ -179,7 +181,7 @@ class EstimateTrial(Trial):
         estimates = {}
         for t in trials:
             # The answer so far; running out of time saves None.
-            estimate = _number(t, "estimate")
+            estimate = t.answer.get("estimate")
             if estimate is not None:
                 estimates[str(t.participant_id)] = estimate
         node.var.estimates = estimates
@@ -190,7 +192,8 @@ class EstimateTrial(Trial):
             t.var.in_median = str(t.participant_id) in estimates if has_median else None
 
     def revise_page(self, participant):
-        # No median if too few estimates arrived, or the group ended unscored.
+        # No median if too few estimates arrived, or if the group ended before
+        # the barrier released it, so score_round didn't run.
         if self.node.var.get("median") is None:
             return InfoPage(
                 "Too few estimates arrived for a group median, so there is "
@@ -218,15 +221,6 @@ class EstimateTrial(Trial):
             time_limit=ANSWER_SECONDS,
             time_estimate=ANSWER_SECONDS,
         )
-
-
-def _number(trial, page):
-    """Return the trial's ``NumberControl`` answer on ``page`` as a float, or None if there is none.
-
-    Browsers submit the number as a string, while bots submit a number.
-    """
-    answer = (trial.answer or {}).get(page)
-    return None if answer is None else float(answer)
 
 
 class Exp(psynet.experiment.Experiment):
@@ -258,11 +252,11 @@ class Exp(psynet.experiment.Experiment):
                     # "group_dissolved"; None alone.
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or left first.
-                    "estimate": _number(t, "estimate"),
+                    "estimate": t.answer.get("estimate"),
                     # Whether the estimate counted towards the group's median;
                     # None for an answer given alone or a group without one.
                     "in_median": t.var.get("in_median"),
-                    "revised": _number(t, "revised"),
+                    "revised": t.answer.get("revised"),
                 }
                 for t in trials
             ],
@@ -271,8 +265,8 @@ class Exp(psynet.experiment.Experiment):
                     "crowd_id": n.sync_group_id,
                     "question": n.definition["question"],
                     "node_id": n.id,
-                    # The estimates that arrived in time; None if no member
-                    # was waiting for them.
+                    # The estimates that arrived in time; None if the group
+                    # ended before the barrier released it.
                     "estimates": n.var.get("estimates"),
                     # None if fewer than three estimates arrived.
                     "median": n.var.get("median"),
@@ -300,8 +294,7 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(group)
 
         # One member goes silent; the other three carry on above quorum.
-        # Browsers submit estimates as strings.
-        for bot, estimate in zip(players, [100, 200, "600.5"]):
+        for bot, estimate in zip(players, [100, 200, 600.5]):
             bot.take_page(response=estimate)
         advance_past_wait_pages(players, timeout=ANSWER_SECONDS + LATE_AFTER + 10)
         for bot in players:
@@ -378,18 +371,19 @@ class Exp(psynet.experiment.Experiment):
         assert not any(bot.failed for bot in finishers)
 
         # The first group played both questions without the silent member;
-        # the last one's estimates were saved without a median.
+        # the last one ended before its barrier released, so it has no
+        # group estimates, only each player's estimate.
         data = self.get_basic_data()
         player_ids = sorted(str(bot.id) for bot in players)
         crowds = data["crowd_round"]
         assert [
-            (c["question"], c["median"], sorted(c["estimates"])) for c in crowds
+            (c["question"], c["median"], sorted(c["estimates"] or [])) for c in crowds
         ] == [
             (0, 200, player_ids),
-            (0, None, sorted(str(bot.id) for bot in waiting)),
+            (0, None, []),
             (1, 1400, player_ids),
         ], crowds
-        # Estimates are numbers, whether a browser or a bot sent them.
+        assert crowds[1]["estimates"] is None, crowds
         assert sorted(crowds[0]["estimates"].values()) == [100, 200, 600.5]
         answers = {
             (r["participant_id"], r["question"]): r for r in data["player_round"]
@@ -416,7 +410,7 @@ class Exp(psynet.experiment.Experiment):
             row = answers[(bot.id, 0)]
             outcome = "left_experiment" if bot is quitter_c else "group_dissolved"
             assert (row["outcome"], row["in_median"]) == (outcome, None), row
-        assert answers[(quitter_c.id, 0)]["estimate"] is None
+        assert [answers[(bot.id, 0)]["estimate"] for bot in group_c] == [None, 10, 20]
         # Answers given alone have no revision.
         alone = (
             [(silent.id, 1)]
