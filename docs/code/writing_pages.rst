@@ -112,9 +112,12 @@ Pass ``save_answer`` to store the answer in a participant variable:
 The most recent answer is also available as ``participant.answer``. Every
 response is a row of the ``response`` table: ``question`` holds the page's
 label, alongside ``answer``, ``metadata`` (including ``time_taken``), and
-``successful_validation``. For the pages of a trial, PsyNet also stores the
-summed time in the trial's ``time_taken`` column and links the last page's
-response as its ``response``; see :class:`~psynet.trial.main.Trial`.
+``successful_validation``. Responses submitted on the pages of a trial also
+store that trial's ID in ``trial_id`` (feedback pages are not part of the
+trial), so you can group a trial's responses in the export. PsyNet stores the
+summed time of the trial's accepted pages in the trial's ``time_taken`` column
+and links the last page's response as its ``response``; see
+:class:`~psynet.trial.main.Trial` and :class:`~psynet.timeline.Response`.
 
 Choice controls save the element of ``choices`` that the participant picked,
 keeping its type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``, and
@@ -122,7 +125,8 @@ keeping its type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``, and
 :class:`~psynet.modular_page.TimedPushButtonControl` is the exception; it saves
 the timing of each button press. The browser submits choices as text, so a
 control whose choices share the same text, such as ``1`` and ``"1"``, raises
-``ValueError``.
+``ValueError``. :class:`~psynet.modular_page.NumberControl` saves an ``int``
+for a whole number such as ``100`` and a ``float`` otherwise.
 
 The experiment rejects an answer that is not one of the control's choices, such
 as an offer of 11 from a tampered request in a 0–10 game, so you don't need to
