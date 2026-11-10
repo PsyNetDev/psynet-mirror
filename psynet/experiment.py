@@ -4385,11 +4385,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     client_ip_address=client_ip_address,
                     answer=answer,
                 )
-                if (response.metadata or {}).get("time_limit_reached") is True:
+                # Time-outs skip ``validate``, but an answer from the browser
+                # must still be one of the page's choices.
+                timed_out = (response.metadata or {}).get("time_limit_reached") is True
+                if timed_out and getattr(response, "_server_time_limit_answer", False):
                     validation = None
                 else:
                     validation = event._reject_impossible_answer(response.answer)
-                    if validation is None:
+                    if validation is None and not timed_out:
                         validation = event.validate(
                             response=response,
                             answer=response.answer,

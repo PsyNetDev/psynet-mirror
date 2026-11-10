@@ -1952,6 +1952,8 @@ class Page(Elt):
 
         if self._time_limit_reached(metadata, participant):
             answer = self.time_limit_answer
+            # Only an answer the server supplies may skip the choices check.
+            resp._server_time_limit_answer = True
             metadata = {**metadata, "time_limit_reached": True}
         else:
             # The flag skips validation, so only the server may set it.
