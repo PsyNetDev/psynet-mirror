@@ -41,9 +41,10 @@ Round visit and group visit
     waiters by that column, and ``_waited_for`` reads whom each part waits
     for from stored facts: trial rows on the node, its ``sync_group_closed``
     flag and the members' ``ModuleState`` rows. The release check, the
-    ``would_release`` peek, ``late_after``, hold counts and ``on_dissolve``
-    all go through these two helpers, so they can't disagree about who
-    waits together; change who waits there, not in one caller.
+    ``would_release`` peek, ``late_after`` and hold counts go through both
+    helpers, and ``on_dissolve`` through ``_group_visits``, so they can't
+    disagree about who waits together; change who waits there, not in one
+    caller.
 
 Where this shows up in a timeline
 ---------------------------------

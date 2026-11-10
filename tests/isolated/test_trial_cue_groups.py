@@ -1286,6 +1286,30 @@ def test_on_dissolve_gets_the_waiting_members_trials_and_node(
     ]
 
 
+@in_consents_experiment
+def test_on_dissolve_runs_once_per_visit_kind_of_a_barrier_id(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    (in_round, outside, quitter), group = _sync_group_of(exp, db_session, 3)
+    group.below_quorum = "continue_without_group"
+    TeamTrial.cue({})[0].consume(exp, in_round)
+    db.session.commit()
+    _dissolved.clear()
+    barrier = GroupBarrier(
+        "team_done", group_type="main", on_dissolve=TeamTrial.record_dissolve
+    )
+    _arrive(exp, barrier, [in_round, outside])
+
+    quitter.fail("returned")
+    db.session.commit()
+
+    by_kind = {node is None: trials for trials, node in _dissolved}
+    assert len(_dissolved) == 2
+    assert [t.participant_id for t in by_kind[False]] == [in_round.id]
+    assert by_kind[True] == [None]
+
+
 def _late_at_barrier(late_action):
     def remove(exp, group, stayer, leaver):
         barrier = GroupBarrier(
