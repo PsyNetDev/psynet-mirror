@@ -1203,7 +1203,7 @@ def _dissolved_after_complete(exp, group, stayer, leaver):
         (_removed_without_reason, "removed", 2, False),
         (_dissolved_before_the_barrier, "group_dissolved", 2, False),
         (_dissolved_and_failed, "group_dissolved", 2, True),
-        (_late_after_complete, "late", 2, False),
+        (_late_after_complete, None, 2, False),
         (_dissolved_after_complete, "stayed", 2, False),
     ],
     ids=[

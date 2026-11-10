@@ -338,8 +338,6 @@ def test_simple_grouper_quorum():
         assert lobby(min_group_size=0).quorum == 1
     with pytest.raises(ValueError, match="never reach"):
         lobby(quorum=6, join_existing_groups=True, max_group_size=5)
-    with pytest.raises(ValueError, match="not a lambda"):
-        lobby(quorum=4, below_quorum=lambda participant, group: "fail")
     with pytest.raises(TypeError, match="below_quorum='continue_without_group'"):
         lobby(quorum=4, fail_participants_below_min_size=False)
 

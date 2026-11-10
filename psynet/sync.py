@@ -175,7 +175,7 @@ from psynet.db import (
     _set_transaction_lock_timeout,
     is_transient_transaction_error,
 )
-from psynet.field import PythonClass, PythonObject
+from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
 from psynet.participant import Participant, _lock_and_load_participant
 from psynet.serialize import SerializedCallable, serialize_callable
@@ -184,6 +184,7 @@ from psynet.timeline import (
     CodeBlock,
     EltCollection,
     _is_timeline_hold,
+    _trial_owning_page,
     conditional,
     join,
 )
@@ -1022,9 +1023,14 @@ class Barrier(EltCollection):
         Seconds a participant on a ``waiting_logic`` page has to finish it
         once they are released; the page then ends without an answer,
         recorded with ``"interrupted": True`` in its response metadata.
-        ``None`` lets each waiting page run to its end. Pages inside trials
-        always run to their end. Default: 3 seconds. Only used with
-        ``waiting_logic``; passing it without raises an error.
+        This includes the pages of trials in ``waiting_logic``, such as
+        filler trials from a trial maker: a trial whose page ends this way
+        is failed with ``failed_reason="interrupted_by_release"``, so it isn't
+        finalized and doesn't count towards the trial maker's targets.
+        ``None`` lets each waiting page run to its end. Default: 3 seconds.
+        Only used with ``waiting_logic``; passing it without raises an error.
+        A barrier with ``waiting_logic`` can't be inside a trial's own pages,
+        such as in ``Trial.show_trial``; use ``waiting_screen`` there.
     """
 
     # Reconstructed barriers skip ``__init__`` and never render a hold page.
@@ -1198,6 +1204,12 @@ class Barrier(EltCollection):
         """
         if object_session(participant) is None:
             db.session.add(participant)
+        if not self._uses_timeline_hold and _trial_owning_page(participant):
+            raise ValueError(
+                f"Barrier '{self.id}' has waiting_logic but is inside the pages "
+                "of a trial, whose release would end that trial without an "
+                "answer. Use waiting_screen for a barrier inside a trial."
+            )
 
         barrier_instance = BarrierInstance.for_arrival(self, participant)
 
@@ -2187,8 +2199,7 @@ class GroupBarrier(Barrier):
             # Closes the round to newcomers: their cues start the next.
             node.sync_group_closed = True
             for trial in trials:
-                if trial.sync_group_outcome is None:
-                    trial.sync_group_outcome = "stayed"
+                trial.sync_group_outcome = "stayed"
         if self.on_release:
             try:
                 self.on_release(
@@ -2340,7 +2351,7 @@ class GroupBarrier(Barrier):
                 self._tell_removed_participant(participant, group, group_size)
 
     def _dissolve_after_late_removal(self, group, late):
-        """Dissolve ``group`` if losing ``late`` left it below quorum, warning if that may fail the rest."""
+        """Dissolve ``group`` if losing ``late`` left it below quorum, logging a warning if that fails the rest."""
         had_others = group.n_active_participants > 0
         if hasattr(group, "dissolve_if_below_quorum"):
             group.dissolve_if_below_quorum()
@@ -2353,8 +2364,9 @@ class GroupBarrier(Barrier):
         ):
             logger.warning(
                 "GroupBarrier '%s': removing late members %s dissolves group %s "
-                "(now, or once its members' requests finish), so its below_quorum "
-                "may fail its other members while the late ones carry on. Set "
+                "(now, or once its members' requests finish), so its "
+                "below_quorum='fail' fails its other members while the late ones "
+                "carry on. Set "
                 "below_quorum='continue_without_group' on the grouper to let them "
                 "carry on too.",
                 self.id,
@@ -2737,13 +2749,10 @@ class SimpleGrouper(Grouper):
         failure). ``"fail"`` (default) fails them, telling them "Too few members of your
         group remained to continue, so we ended your session." ``"continue_without_group"``
         lets them carry on with the experiment without the group, and their next page says
-        that their group ended (see :ref:`sync-leaving-a-group`). A module-level function
-        ``f(participant, group)`` returning ``"fail"`` or ``"continue_without_group"`` decides member by member, for
-        example from how many rounds they played. It is called while the group is being
-        dissolved, so base the decision on the participant, not on who else is still in
-        ``group``; if it raises or returns anything else, the error is logged and the member
-        is failed. See :ref:`groups_below_min_size` for when the group is
-        dissolved.
+        that their group ended (see :ref:`sync-leaving-a-group`). With the default, one
+        member who is late or leaves can end the session of everyone who was on time,
+        as in a pair, so pass ``"continue_without_group"`` unless that is what you want.
+        See :ref:`groups_below_min_size` for when the group is dissolved.
 
     top_up_wait
         With ``join_existing_groups=True``, how many seconds a group below its
@@ -2788,7 +2797,7 @@ class SimpleGrouper(Grouper):
         batch_size: Union[int, str] = "initial_group_size",
         join_existing_groups: bool = False,
         join_criterion: Optional[Callable] = None,
-        below_quorum: Union[str, Callable] = "fail",
+        below_quorum: str = "fail",
         start_short_after: Optional[float] = None,
         start_short_with: Optional[int] = None,
         quorum: Optional[int] = None,
@@ -2838,16 +2847,7 @@ class SimpleGrouper(Grouper):
         self.batch_size = batch_size
         self.join_existing_groups = join_existing_groups
         self.join_criterion = join_criterion
-        if callable(below_quorum):
-            if getattr(below_quorum, "__name__", None) == "<lambda>":
-                raise ValueError(
-                    "below_quorum must be a module-level function, not a lambda, "
-                    "because PsyNet stores it with each group."
-                )
-            below_quorum = serialize_callable(
-                below_quorum, "SimpleGrouper.below_quorum"
-            )
-        elif below_quorum not in ("fail", "continue_without_group"):
+        if below_quorum not in ("fail", "continue_without_group"):
             hint = (
                 " The remaining members don't leave the group; it ends around them, "
                 "so use 'continue_without_group'."
@@ -2855,8 +2855,8 @@ class SimpleGrouper(Grouper):
                 else ""
             )
             raise ValueError(
-                "below_quorum must be 'fail', 'continue_without_group' or a function "
-                f"returning one of these, got {below_quorum!r}.{hint}"
+                "below_quorum must be 'fail' or 'continue_without_group', "
+                f"got {below_quorum!r}.{hint}"
             )
         self.below_quorum = below_quorum
         if top_up_wait is not None and not join_existing_groups:
@@ -4019,81 +4019,6 @@ class _RegroupHistory(NamedTuple):
     role_counts: Dict[int, Dict[str, int]]
 
 
-def warn_if_late_removal_fails_group(barriers):
-    """Warn if removing one late member would fail the members who were on time.
-
-    That happens when a :class:`GroupBarrier` has ``late_action="leave_group"``
-    and a :class:`SimpleGrouper` of its group type has ``below_quorum="fail"``
-    and a ``quorum`` that the loss of one member can break, as in a pair or a
-    group that started short. With ``late_action="leave_all_groups"`` such a
-    grouper of any group type counts, such as one forming the cohort that a
-    :class:`Regrouper` splits into pairs. A grouper with ``join_existing_groups=True``
-    only counts once its groups can stop taking newcomers, through a barrier
-    with ``stop_top_ups=True`` or a ``top_up_wait``, because until then the
-    group can top up instead.
-
-    Parameters
-    ----------
-    barriers : iterable of Barrier
-        The barriers in the timeline. Barriers created inside a trial, such as
-        in ``Trial.show_trial``, are not visible here.
-    """
-    barriers = list(barriers)
-    frozen_types = {
-        barrier.group_type
-        for barrier in barriers
-        if isinstance(barrier, GroupBarrier) and barrier.stop_top_ups
-    }
-    fragile_groupers = {}
-    for grouper in barriers:
-        if (
-            isinstance(grouper, SimpleGrouper)
-            and grouper.below_quorum == "fail"
-            and (
-                not grouper.join_existing_groups
-                or grouper.top_up_wait is not None
-                or grouper.group_type in frozen_types
-            )
-            # The quorum is the smallest size a group can start at.
-            and grouper.quorum
-            >= (grouper.start_short_with or grouper.initial_group_size)
-        ):
-            fragile_groupers.setdefault(grouper.group_type, grouper)
-    for barrier in barriers:
-        if not (
-            isinstance(barrier, GroupBarrier)
-            and barrier.late_after is not None
-            and barrier.late_action in ("leave_group", "leave_all_groups")
-        ):
-            continue
-        if barrier.late_action == "leave_all_groups":
-            groupers = list(fragile_groupers.values())
-        else:
-            groupers = [fragile_groupers.get(barrier.group_type)]
-        for grouper in filter(None, groupers):
-            warn_from_caller(
-                f"GroupBarrier '{barrier.id}' removes late members"
-                + (
-                    " from all their groups"
-                    if barrier.late_action == "leave_all_groups"
-                    else ""
-                )
-                + f", but grouper '{grouper.id}' fails the members left behind "
-                "when that leaves the group below its quorum"
-                + (
-                    " (after top_up_wait, if no newcomer joins)"
-                    if grouper.top_up_wait is not None
-                    and grouper.group_type not in frozen_types
-                    else ""
-                )
-                + ". So a single late member fails everyone who "
-                "was on time, while the late one carries on. Pass "
-                "below_quorum='continue_without_group' to the grouper to let everyone carry on, "
-                "or late_action='fail' to end the session for the whole group.",
-                UserWarning,
-            )
-
-
 def warn_if_newcomers_can_strand_group(barriers):
     """Warn about group barriers that a newcomer can reach after their group passed it.
 
@@ -4468,12 +4393,12 @@ class SyncGroup(SQLBase, SQLMixin):
                 return []
             _run_on_dissolve(self, removed)
             group_size = len(group_seats(self))
+            fail = (getattr(self, "below_quorum", None) or "fail") == "fail"
             for participant in removed:
-                action = self._below_quorum_action(participant)
                 self._remove_without_quorum_check(participant, "group_dissolved")
-                if action == "fail":
+                if fail:
                     participant.fail("sync group below minimum size")
-                if action == "continue_without_group":
+                else:
                     _tell_group_ended(participant, group_size)
             self.check_numbers()
             self.dissolving = False
@@ -4482,33 +4407,6 @@ class SyncGroup(SQLBase, SQLMixin):
         finally:
             self._dissolving_below_quorum = False
         return removed
-
-    def _below_quorum_action(self, participant):
-        """Return ``"fail"`` or ``"continue_without_group"`` for a member of this group as it dissolves."""
-        policy = getattr(self, "below_quorum", None) or "fail"
-        if not callable(policy):
-            return policy
-        try:
-            action = policy(participant=participant, group=self)
-        except Exception as err:
-            if is_transient_transaction_error(err):
-                raise
-            logger.exception(
-                "below_quorum of group %s raised for participant %s; failing them.",
-                self.id,
-                participant.id,
-            )
-            return "fail"
-        if action not in ("fail", "continue_without_group"):
-            logger.error(
-                "below_quorum of group %s returned %r for participant %s instead of "
-                "'fail' or 'continue_without_group'; failing them.",
-                self.id,
-                action,
-                participant.id,
-            )
-            return "fail"
-        return action
 
 
 class SimpleSyncGroup(SyncGroup):
@@ -4526,9 +4424,9 @@ class SimpleSyncGroup(SyncGroup):
     top_up_wait = Column(Float)
     #: When the group last fell below its quorum while accepting newcomers.
     below_quorum_since = Column(DateTime)
-    #: What happens to members when the group dissolves below quorum: ``"fail"``,
-    #: ``"continue_without_group"``, or a serialized function returning one of these.
-    below_quorum = Column(PythonObject, default="fail")
+    #: What happens to members when the group dissolves below quorum: ``"fail"``
+    #: or ``"continue_without_group"``.
+    below_quorum = Column(String, default="fail")
 
     def remove_participant(
         self,
@@ -4578,22 +4476,14 @@ class SimpleSyncGroup(SyncGroup):
 
 
 def _record_leaving_the_round(group, participant, reason):
-    """Set ``sync_group_outcome`` of the participant's current cued trial in ``group``.
+    """Record why the participant left ``group`` on the round they are playing in it, if any.
 
-    Leaving before the trial's pages end replaces ``"stayed"``; after they end,
-    only a trial without an outcome records it, and moving on or finishing
-    never does. A trial from an earlier module, or an earlier run of the
-    same module (another ``ModuleState``), records nothing, as leaving in a
-    later module or run belongs to no round of it.
+    That is their unfinished cued trial of ``group`` (see :func:`_round_trial`),
+    so leaving between rounds, after the trial's pages end, records nothing.
     """
     trial = _round_trial(group, participant)
-    if trial is None:
-        return
-    if trial.complete and (
-        trial.sync_group_outcome is not None or reason in _KEEPS_GROUP_REASONS
-    ):
-        return
-    trial.sync_group_outcome = reason or "removed"
+    if trial is not None and not trial.complete:
+        trial.sync_group_outcome = reason or "removed"
 
 
 def _round_trial(group, participant):
@@ -5456,12 +5346,7 @@ def reached_barrier_after_time_limit(participant, group) -> bool:
 def _interruptible_waiting_barrier(page, participant):
     """Return the barrier whose ``waiting_logic`` this page belongs to, if a release may end it.
 
-    Pages of a trial that is still waiting for its answer are left to run
-    to their end, so that the trial is not finalized without an answer.
-    Waiting logic only times out between passes, so a trial started there
-    is finished before the participant leaves it.
-    ``participant.current_trial`` is not cleared after a trial, so an
-    earlier, answered trial doesn't count.
+    Every such page may end, including a trial's; see :func:`_end_waiting_page`.
     """
     barrier = (getattr(page, "links", None) or {}).get("barrier")
     if not isinstance(barrier, Barrier) or barrier.release_grace is None:
@@ -5470,10 +5355,23 @@ def _interruptible_waiting_barrier(page, participant):
         return None
     if participant.failed:
         return None
-    trial = participant.current_trial
-    if trial is not None and not trial.complete:
-        return None
     return barrier
+
+
+#: ``failed_reason`` of a trial whose page a barrier's release ended before it was answered.
+INTERRUPTED_BY_RELEASE = "interrupted_by_release"
+
+
+def _end_waiting_page(participant):
+    """Fail the trial of the waiting page a release is ending, if it has not been answered.
+
+    A barrier with ``waiting_logic`` is never inside a trial's pages (see
+    :meth:`Barrier.receive_participant`), so an unanswered trial here was
+    started in the waiting logic.
+    """
+    trial = _trial_owning_page(participant)
+    if trial is not None:
+        trial.fail(reason=INTERRUPTED_BY_RELEASE)
 
 
 def _forget_time_out(participant):
@@ -5548,7 +5446,7 @@ def waiting_status_payload(unique_id, barrier_id):
     Waiting pages fetch this about every 2 seconds. ``ends_page`` tells
     whether the participant's current page would now accept an interrupt
     (see :func:`released_waiting_barrier`); a released participant whose
-    page may not be ended, for example inside an unfinished trial, gets
+    page may not be ended, for example with ``release_grace=None``, gets
     ``released`` without ``ends_page`` and finishes the page normally.
     ``release_in_ms`` is the time left until
     :meth:`Barrier.expected_release_time`, or ``None``.

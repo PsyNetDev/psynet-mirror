@@ -50,6 +50,7 @@ from ..field import PythonDict, PythonObject, VarStore
 from ..page import InfoPage, UnsuccessfulEndPage, WaitPage, wait_while
 from ..participant import Participant
 from ..sync import (
+    INTERRUPTED_BY_RELEASE,
     GroupBarrier,
     LateAction,
     ParticipantLinkSyncGroup,
@@ -413,27 +414,18 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         doc=(
             "How the group's round ended for this player, for a trial made by "
             ":meth:`Trial.cue` on a :class:`SyncGroupNode`, one of "
-            ':data:`~psynet.sync.SyncGroupOutcome`: ``"stayed"`` '
-            "once a :class:`~psynet.sync.GroupBarrier` releases the group while "
-            "this is the player's current trial and is on the node of the round "
-            "that barrier visit belongs to (a barrier before the first cue of "
-            "this run of the module belongs to no round and stores nothing, "
-            "and released members "
-            "whose current trial is not on that node, such as a newcomer who "
-            "skipped the round, get nothing), or why the player left the "
-            "group, one of the reasons of "
+            ":data:`~psynet.sync.SyncGroupOutcome`. It is written during "
+            "the trial's pages, that is, before :attr:`complete` is set: "
+            '``"stayed"`` when a :class:`~psynet.sync.GroupBarrier` in those '
+            "pages, such as in :meth:`show_trial`, releases the group with the "
+            "player in it, and why the player left the group when they leave "
+            "it there, one of the reasons of "
             ":meth:`~psynet.sync.SyncGroup.remove_participant`, such as "
-            '``"late"``, ``"left_experiment"`` or ``"group_dissolved"`` (for '
-            "members still in the group when it dissolves, including "
-            'those ``below_quorum="fail"`` fails, unless the trial is already '
-            '``"stayed"`` with :attr:`complete` set), or '
-            '``"removed"`` without a reason. The first of these is kept, '
-            "except that leaving before :attr:`complete` is set replaces "
-            '``"stayed"``, and ``"moved_on"`` or ``"finished"`` after it is set '
-            "stores nothing. Leaving the group once the player is in a later "
-            "module, or a later run of the same module (another "
-            "``ModuleState``), stores nothing either. ``None`` while nothing has happened "
-            "yet, and for ungrouped trials."
+            '``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or '
+            '``"removed"`` without a reason. The latest of these is kept. '
+            "Barriers and departures after the trial's pages, such as in "
+            ":meth:`show_feedback` or between rounds, write nothing. ``None`` "
+            "while nothing has happened yet, and for ungrouped trials."
         ),
     )
     definition = Column(PythonObject)
@@ -1303,8 +1295,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           Once started, the trial runs to its end even if they leave the
           group, so :meth:`show_feedback` can explain every outcome.
         - :attr:`sync_group_outcome` records how the round ended for the
-          player: ``"stayed"`` once a barrier released the group with
-          them in it, or why they left the group.
+          player: ``"stayed"`` once a barrier in the trial's pages released
+          the group with them in it, or why they left the group during
+          those pages.
           A partner's is on their trial in
           ``self.node.all_trials``.
 
@@ -1649,7 +1642,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         trial.time_credit_from_trial = (
             trial.time_credit_after_trial - trial.time_credit_before_trial
         )
-        if trial.check_time_credit_received and trial.sync_group_id is None:
+        if (
+            trial.check_time_credit_received
+            and trial.sync_group_id is None
+            and not trial.failed
+        ):
             original_estimate = cls._get_trial_time_estimate(
                 trial_maker=trial.trial_maker
             )
@@ -1684,6 +1681,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                     "(for example participant.fail() while this page was open).",
                     getattr(trial, "id", None),
                 )
+                return
+            if trial.failed_reason == INTERRUPTED_BY_RELEASE:
+                # A barrier's release ended the trial's page before it was answered.
+                trial.complete = True
                 return
 
             answer = participant.answer

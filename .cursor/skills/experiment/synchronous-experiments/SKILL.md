@@ -84,9 +84,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   any member who is in the middle of another request. Members still on an earlier page get
   neither callback, so
   check their cued trial's `sync_group_outcome == "group_dissolved"` in a
-  step after the barrier if they need a result too. A trial whose pages
-  already ended with `"stayed"` keeps it, so for a barrier after
-  `show_trial` check `participant.sync_group_removal_reason(...)` instead.
+  step after the barrier if they need a result too. The outcome is only
+  written during the trial's pages, so for a barrier after `show_trial`
+  check `participant.sync_group_removal_reason(...)` instead.
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries
@@ -262,7 +262,8 @@ Module("game", for_loop(
   group, so its `show_feedback` explains every outcome, including being
   removed for lateness. Read how the round ended for each player from
   `trial.sync_group_outcome` (`"stayed"`, or why they left, such as
-  `"late"`), a partner's from their trial in `self.node.all_trials`, rather
+  `"late"`; written only during the trial's pages, so put the scoring
+  barrier in `show_trial`), a partner's from their trial in `self.node.all_trials`, rather
   than from current group membership. A barrier's `waiting_screen` can take
   `trial` and `node` to show the round's state.
 

@@ -3006,15 +3006,9 @@ class Timeline:
         self.check_group_policies()
 
     def check_group_policies(self):
-        """Warn about grouper and barrier settings that fail members who were on time, or strand newcomers."""
-        from .sync import (
-            warn_if_late_removal_fails_group,
-            warn_if_newcomers_can_strand_group,
-        )
+        """Warn about grouper and barrier settings that strand newcomers."""
+        from .sync import warn_if_newcomers_can_strand_group
 
-        warn_if_late_removal_fails_group(
-            {id(barrier): barrier for barrier in self._barriers()}.values()
-        )
         warn_if_newcomers_can_strand_group(self._barriers_in_order())
 
     def _barriers_in_order(self):

@@ -171,6 +171,7 @@ from .timeline import (
     WebSocketElt,
     _is_timeline_hold,
     _timeline_step_name,
+    _trial_owning_page,
     new_page_uuid,
 )
 from .translation.check import check_translations
@@ -4358,13 +4359,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     page=page,
                 )
             if interrupted:
-                from .sync import released_waiting_barrier
+                from .sync import _end_waiting_page, released_waiting_barrier
 
                 if released_waiting_barrier(event, participant) is None:
                     return ResponseResult(
                         payload={"submission": "rejected", "message": ""}
                     )
                 Experiment._record_interrupted_response(event, participant, metadata)
+                _end_waiting_page(participant)
                 participant.inc_time_credit(event.time_estimate)
                 participant.inc_progress(event.time_estimate)
                 self.timeline.advance_page(self, participant)
@@ -4491,11 +4493,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         A ``while_loop`` only checks its condition before each pass, so the
         pages left in the current pass would otherwise each show briefly
         and then be interrupted. Skipped pages were never seen, so they get
-        no response, time credit or progress.
+        no response, time credit or progress, and a trial skipped before it
+        was answered is failed.
         """
         from .sync import (
             _MAX_BARRIER_WALK_PASSES,
             _barrier_walk_budget,
+            _end_waiting_page,
             released_waiting_barrier,
         )
 
@@ -4506,6 +4510,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 return page
             if not can_work:
                 break
+            _end_waiting_page(participant)
             self.timeline.advance_page(self, participant)
         raise RuntimeError(
             f"Skipping the waiting pages of barrier '{barrier.id}' did not settle "
@@ -4524,6 +4529,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             participant=participant,
             label=page.label,
             page_type=type(page).__name__,
+            trial=_trial_owning_page(participant),
         )
         response.answer = None
         # Only the server may say that a time limit ran out.

@@ -338,17 +338,13 @@ later:
   :data:`~psynet.sync.SyncGroupOutcome`);
 - ``None`` before either happens, and for a trial played without a group.
 
-The first of these to happen is stored, even after the trial's pages
-(``show_trial``) have ended, for example when the player leaves the group
-in ``show_feedback``.
-:attr:`~psynet.trial.main.Trial.complete` says whether those pages have
-ended. Two things differ: leaving before they have ended replaces
-``"stayed"`` from an earlier barrier of the round, and moving on
-(``"moved_on"``, for example at the next round's regrouper) or finishing
-(``"finished"``) after they have ended stores nothing. Nor does leaving the
-group once the player is in a later module or a later run of the same
-module, for example by failing a questionnaire there. A partner's outcome is on their trial in
-``node.all_trials``:
+The outcome is only written during the trial's pages (``show_trial``), while
+:attr:`~psynet.trial.main.Trial.complete` is ``False``; the latest event
+there is kept, so leaving after an earlier barrier of the round replaces
+``"stayed"``. Once the pages have ended, the outcome is final: leaving the
+group in ``show_feedback``, between rounds or in a later module stores
+nothing, so put the barrier that decides the round in ``show_trial``.
+A partner's outcome is on their trial in ``node.all_trials``:
 
 .. code-block:: python
 
@@ -390,8 +386,8 @@ the group dissolves get neither callback: they pass the barrier without
 waiting. If they need a result too, give them one in a step after the
 barrier, for example when their trial's ``sync_group_outcome`` is
 ``"group_dissolved"``, as it is for every member still in the group when it
-dissolves, waiting or not, unless the trial's pages had already ended with
-``"stayed"`` (see :ref:`round outcomes <sync-round-outcome>`). For a barrier
+dissolves, waiting or not, unless the trial's pages had already ended
+(see :ref:`round outcomes <sync-round-outcome>`). For a barrier
 after ``show_trial``, such as in ``show_feedback``, check
 ``participant.sync_group_removal_reason(group_type) == "group_dissolved"``
 instead.
@@ -863,9 +859,9 @@ Two separate settings decide what happens when someone leaves a group:
     lets them carry on without the group, and their next page says "Your
     partner is no longer in your group. Please continue." (or "Too few
     members of your group remained. Please continue." in larger groups; see
-    :ref:`sync-leaving-a-group`). A module-level function of
-    ``participant`` and ``group`` that returns one of these decides member
-    by member. All the members leave together: if another member is in the
+    :ref:`sync-leaving-a-group`). So by default, one member who quits or is
+    late ends the session of everyone who was on time. All the members
+    leave together: if another member is in the
     middle of a request at that moment (for example submitting a page),
     nobody is removed yet, and the background barrier check dissolves the
     group usually within a second or two of that request finishing.
@@ -898,14 +894,21 @@ settings together decide both fates:
      - late member carries on alone, partner who was on time failed
      - both carry on alone
 
-The last row is rarely what a pair wants, so PsyNet warns about it when the
-experiment loads, and logs a warning when it happens. To let the partner who was on time carry on, set
-``below_quorum="continue_without_group"``; ``late_action="fail"`` instead ends the
-session for both. With ``late_action="leave_all_groups"`` the same applies to
-the late member's other groups: a cohort without top-ups that one departure
-takes below its quorum fails all its other members, including those in other
-pairs, unless its grouper has ``below_quorum="continue_without_group"``. PsyNet
-warns about this too.
+The default fails the members who were on time, so that a pair or group
+doesn't carry on short-handed without you deciding that it should. The last
+row is rarely what a pair wants, and PsyNet logs a warning when it happens.
+To let the members who were on time carry on, set
+``below_quorum="continue_without_group"`` on the grouper:
+
+.. code-block:: python
+
+    SimpleGrouper("pair", initial_group_size=2, below_quorum="continue_without_group")
+
+``late_action="fail"`` instead ends the session for both. With
+``late_action="leave_all_groups"`` the same applies to the late member's other
+groups: a cohort without top-ups that one departure takes below its quorum
+fails all its other members, including those in other pairs, unless its
+grouper has ``below_quorum="continue_without_group"``.
 
 For example, a group of four that may start with two after a minute, and
 whose members carry on when others are slow or leave, combines these
@@ -1160,10 +1163,9 @@ For the rest of the timeline:
   :class:`~psynet.sync.Regrouper` took them out of their previous group, and
   they are waiting there or sitting the round out),
   ``"finished"`` or ``"left_experiment"`` (they failed or returned the study).
-  A cued trial they were playing in that group keeps the reason in
-  ``sync_group_outcome``, even after they join another group, unless the
-  trial's pages had already ended with an outcome stored (see
-  :ref:`round outcomes <sync-round-outcome>` for the rule).
+  A cued trial whose pages they were on in that group keeps the reason in
+  ``sync_group_outcome``, even after they join another group (see
+  :ref:`round outcomes <sync-round-outcome>`).
 - An answer submitted on the page where a member was removed for being late
   has ``response.too_late_for_group`` set, so analysis can leave it out.
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only
@@ -1211,8 +1213,14 @@ Any other waiting pages left in the same pass of ``waiting_logic`` are
 skipped, and so are all of them for the participant whose arrival completes
 the group. Pass ``release_grace=None`` to :class:`~psynet.sync.Barrier`,
 :class:`~psynet.sync.GroupBarrier` or a grouper to let every waiting page
-run to its end. Pages inside a trial, as in ``sync_quorum``, always run to
-their end, so that the trial is not left without an answer.
+run to its end.
+
+A release ends trial pages too, such as the animal trials in
+``sync_quorum``. A trial whose page ends, or is skipped, before it is
+answered is failed with ``failed_reason="interrupted_by_release"``. It is not
+finalized, so it doesn't count towards the trial maker's targets, and its
+node doesn't wait for it. A barrier with ``waiting_logic`` can't be inside a
+trial's own pages, such as in ``show_trial``; use ``waiting_screen`` there.
 
 During the grace period, the top of the page shows a countdown such as
 "Your group is ready. Moving on in 3 s.", so the participant isn't
