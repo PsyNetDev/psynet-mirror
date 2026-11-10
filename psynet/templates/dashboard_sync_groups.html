@@ -164,6 +164,11 @@ async function failSyncGroupParticipant(button) {
                         {% if g.initial_group_size is not none %}
                         <span class="text-muted">(init: {{ g.initial_group_size }})</span>
                         {% endif %}
+                        {% if g.accepts_top_ups %}
+                        <br><span class="text-muted">Accepts top-ups</span>
+                        {% elif g.top_ups_stopped_at %}
+                        <br><span class="text-muted">Top-ups stopped {{ g.top_ups_stopped_at.strftime("%Y-%m-%d %H:%M:%S") }}</span>
+                        {% endif %}
                         {% else %}
                         —
                         {% endif %}

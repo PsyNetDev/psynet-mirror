@@ -13,9 +13,17 @@ from psynet.modular_page import ModularPage
 from psynet.page import WaitPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.sync import SimpleGrouper, waiting_status_payload
-from psynet.timeline import PageMaker, Response, Timeline, for_loop, join
-from psynet.trial.main import GenericTrialNode, Trial
+from psynet.sync import GroupBarrier, SimpleGrouper, waiting_status_payload
+from psynet.timeline import (
+    CodeBlock,
+    PageMaker,
+    Response,
+    Timeline,
+    for_loop,
+    join,
+    while_loop,
+)
+from psynet.trial.main import GenericTrialNode, Trial, TrialMaker
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -121,24 +129,7 @@ def _release_pair(exp):
     return Participant.query.get(first_id), waiting
 
 
-def _set_current_trial(exp, participant, complete):
-    """Make an unfinalized trial the participant's current trial."""
-    trial = Trial(
-        exp,
-        GenericTrialNode("earlier_trial", exp),
-        participant,
-        propagate_failure=False,
-        is_repeat_trial=False,
-        definition={},
-    )
-    trial.complete = complete
-    participant.current_trial = trial
-    db.session.commit()
-
-
-@pytest.mark.parametrize(
-    "make_uninterruptible", ["no_release_grace", "failed", "unanswered_trial"]
-)
+@pytest.mark.parametrize("make_uninterruptible", ["no_release_grace", "failed"])
 @in_consents_experiment
 def test_release_does_not_end_an_uninterruptible_waiting_page(
     in_experiment_directory, db_session, make_uninterruptible
@@ -153,8 +144,6 @@ def test_release_does_not_end_an_uninterruptible_waiting_page(
         if make_uninterruptible == "failed":
             first.failed = True
             db.session.commit()
-        if make_uninterruptible == "unanswered_trial":
-            _set_current_trial(exp, first, complete=False)
         status = waiting_status_payload(first.unique_id, waiting["barrier_id"])
         assert (status["released"], status["ends_page"]) == (True, False)
         assert _post_response(first, interrupted=True).get_json()["submission"] == (
@@ -164,39 +153,258 @@ def test_release_does_not_end_an_uninterruptible_waiting_page(
         exp.timeline = original
 
 
+class FillerTrial(Trial):
+    time_estimate = 5
+    check_time_credit_received = False
+
+    def show_trial(self, experiment, participant):
+        return _filler("filler_trial")
+
+    def show_feedback(self, experiment, participant):
+        return _filler(f"You said {self.answer['choice']}")
+
+
+def _start_filler_trial(experiment, participant):
+    participant.current_trial = FillerTrial(
+        experiment,
+        GenericTrialNode("filler", experiment),
+        participant,
+        propagate_failure=False,
+        is_repeat_trial=False,
+        definition={},
+    )
+
+
+class _CountingTrialMaker:
+    n_finalized = 0
+
+    def with_namespace(self, name):
+        return f"counting__{name}"
+
+    def finalize_trial(self, answer, trial, experiment, participant):
+        type(self).n_finalized += 1
+
+
 @in_consents_experiment
-def test_an_unanswered_trial_page_only_counts_down(in_experiment_directory, db_session):
+def test_a_release_fails_the_unanswered_filler_trials_it_ends(
+    in_experiment_directory, db_session
+):
+    """The first's trial page is interrupted, the last's is skipped.
+
+    The rest of each pass, here a long ``for_loop`` of trials, is walked
+    through, so its unseen trials are created and failed too.
+    """
     exp = get_experiment()
     original = exp.timeline
-    _use_timeline(exp, _filler("filler"))
+    _CountingTrialMaker.n_finalized = 0
+    filler = join(
+        CodeBlock(_start_filler_trial),
+        FillerTrial.trial_logic(trial_maker=_CountingTrialMaker()),
+    )
+    _use_timeline(exp, for_loop(label="fillers", iterate_over=range(40), logic=filler))
     try:
-        (participant,) = _working_participants(exp, 1)
-        _json_timeline(exp, participant)
-        _set_current_trial(exp, participant, complete=False)
-        waiting = _json_timeline(exp, participant).get_json()["attributes"]["waiting"]
-        assert waiting["release_grace_ms"] is None and waiting["barrier_id"]
+        first, waiting = _release_pair(exp)
+        first_id = first.id
+        assert waiting["release_grace_ms"] == 3000
+        first.answer = "answer to an earlier page"
+        db.session.commit()
+        response = _post_response(first, interrupted=True).get_json()
+        assert response["submission"] == "approved"
+        db.session.expire_all()
+        first = Participant.query.get(first_id)
+        assert exp.timeline.get_current_elt(exp, first).label == "after"
+        assert first.for_loops == {}
+        trials = FillerTrial.query.all()
+        assert len(trials) == 2 * 40
+        for trial in trials:
+            assert trial.failed_reason == "interrupted_by_release"
+            assert trial.complete and not trial.finalized
+            assert trial.answer is None
+            assert trial not in trial.node.pending_trials
+        assert _CountingTrialMaker.n_finalized == 0
+        interrupted = Response.query.filter_by(question="filler_trial").one()
+        assert interrupted.trial.failed
+        assert interrupted.trial.response == interrupted
     finally:
         exp.timeline = original
 
 
 @in_consents_experiment
-def test_an_answered_earlier_trial_does_not_stop_the_interrupt(
+def test_a_release_ends_while_loops_inside_the_pass(
     in_experiment_directory, db_session
 ):
-    """``current_trial`` outlives its trial, and may stay unfinalized, e.g. awaiting async processing."""
+    """A loop ending on completed trials, which the walk never completes, still ends."""
     exp = get_experiment()
     original = exp.timeline
-    _use_timeline(exp, _filler("filler"))
+    _CountingTrialMaker.n_finalized = 0
+    filler = while_loop(
+        "three_completed",
+        lambda: _CountingTrialMaker.n_finalized < 3,
+        logic=join(
+            CodeBlock(_start_filler_trial),
+            FillerTrial.trial_logic(trial_maker=_CountingTrialMaker()),
+        ),
+        expected_repetitions=3,
+    )
+    _use_timeline(exp, filler)
     try:
-        first, waiting = _release_pair(exp)
-        _set_current_trial(exp, first, complete=True)
-        status = waiting_status_payload(first.unique_id, waiting["barrier_id"])
-        assert (status["released"], status["ends_page"]) == (True, True)
+        first, _ = _release_pair(exp)
+        _post_response(first, interrupted=True)
+        db.session.expire_all()
+        for participant in Participant.query.all():
+            assert exp.timeline.get_current_elt(exp, participant).label == "after"
+        for trial in FillerTrial.query.all():
+            assert trial.failed_reason == "interrupted_by_release"
+            assert trial.complete and not trial.finalized
+        assert FillerTrial.query.count() == 2
+    finally:
+        exp.timeline = original
+
+
+class _WaitingTrialMaker(_CountingTrialMaker):
+    sync_group_type = None
+    max_time_waiting_for_trial = 60
+    expected_trials_per_participant = 3
+    check_performance_every_trial = False
+    trial_class = FillerTrial
+    _wait_for_trial = TrialMaker._wait_for_trial
+    _trial_loop = TrialMaker._trial_loop
+    cue_trial = TrialMaker.cue_trial
+    trial_available = False
+
+    def _try_to_prepare_trial_solo(self, experiment, participant):
+        if self.trial_available:
+            _start_filler_trial(experiment, participant)
+        participant.trial_status = "available" if self.trial_available else "wait"
+
+
+@in_consents_experiment
+def test_a_release_while_waiting_for_a_trial_skips_the_trial(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    original = exp.timeline
+    # Drop cue_trial's select_module: this stub trial maker isn't a module.
+    _use_timeline(exp, _WaitingTrialMaker().cue_trial()[1:])
+    try:
+        first, _ = _release_pair(exp)
         assert _post_response(first, interrupted=True).get_json()["submission"] == (
             "approved"
         )
+        db.session.expire_all()
+        for participant in Participant.query.all():
+            assert exp.timeline.get_current_elt(exp, participant).label == "after"
     finally:
         exp.timeline = original
+
+
+@in_consents_experiment
+def test_a_release_fails_the_trial_a_trial_loop_prepared_for_its_next_pass(
+    in_experiment_directory, db_session
+):
+    """The prepared trial isn't left as the current trial at the next barrier."""
+    exp = get_experiment()
+    original = exp.timeline
+    maker = _WaitingTrialMaker()
+    maker.trial_available = True
+    exp.timeline = Timeline(
+        SimpleGrouper(
+            f"a_{uuid.uuid4().hex[:8]}",
+            initial_group_size=2,
+            waiting_logic=maker._trial_loop(),
+        ),
+        SimpleGrouper(
+            f"b_{uuid.uuid4().hex[:8]}",
+            initial_group_size=3,
+            quorum=3,
+            waiting_logic=_filler("filler_b"),
+        ),
+        ModularPage("after", "Your partner is here", time_estimate=1),
+    )
+    try:
+        first, _ = _release_pair(exp)
+        first_id = first.id
+        assert _post_response(first, interrupted=True).get_json()["submission"] == (
+            "approved"
+        )
+        db.session.expire_all()
+        first = Participant.query.get(first_id)
+        assert exp.timeline.get_current_elt(exp, first).label == "filler_b"
+        trials = FillerTrial.query.all()
+        assert len({trial.participant_id for trial in trials}) == 2
+        for trial in trials:
+            assert trial.failed_reason == "interrupted_by_release"
+            assert trial.complete and not trial.finalized
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
+def test_answering_a_filler_trial_in_the_grace_period_finalizes_it(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    original = exp.timeline
+    _WaitingTrialMaker.n_finalized = 0
+    maker = _WaitingTrialMaker()
+    maker.trial_available = True
+    _use_timeline(exp, PageMaker(lambda: maker.cue_trial()[1:], time_estimate=5))
+    try:
+        first, _ = _release_pair(exp)
+        first_id = first.id
+        answer = _post_response(first, raw_answer={"choice": "yes"}).get_json()
+        assert answer["submission"] == "approved"
+        db.session.expire_all()
+        first = Participant.query.get(first_id)
+        assert exp.timeline.get_current_elt(exp, first).label == "after"
+        (trial,) = FillerTrial.query.filter_by(participant_id=first_id).all()
+        assert trial.complete and trial.finalized and not trial.failed
+        assert _WaitingTrialMaker.n_finalized == 1
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
+def test_re_entering_a_barrier_in_its_released_pass_waits_again(
+    in_experiment_directory, db_session
+):
+    """The first passes round 0's barrier, then waits at round 1's."""
+    exp = get_experiment()
+    original = exp.timeline
+    exp.timeline = Timeline(
+        SimpleGrouper("pair", initial_group_size=2, waiting_logic=_filler("g")),
+        for_loop(
+            label="rounds",
+            iterate_over=range(2),
+            logic=GroupBarrier(
+                id_="turn", group_type="pair", waiting_logic=_filler("turn_filler")
+            ),
+        ),
+        ModularPage("after", "Your partner is here", time_estimate=1),
+    )
+    try:
+        first, _ = _release_pair(exp)
+        first_id = first.id
+        _post_response(first, interrupted=True)
+        db.session.expire_all()
+        first = Participant.query.get(first_id)
+        assert exp.timeline.get_current_elt(exp, first).label == "turn_filler"
+        assert first.for_loops["rounds"]["index"] == 1
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
+def test_only_waiting_logic_is_refused_inside_a_trial(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    (participant,) = _working_participants(exp, 1)
+    _start_filler_trial(exp, participant)
+    grouper = SimpleGrouper("pair", initial_group_size=2, waiting_logic=_filler("x"))
+    with pytest.raises(ValueError, match="waiting_screen"):
+        grouper.receive_participant(participant)
+    SimpleGrouper("pair", initial_group_size=2).receive_participant(participant)
 
 
 @in_consents_experiment
@@ -250,12 +458,17 @@ def test_waiting_pages_after_an_inner_barrier_belong_to_the_outer_one(
     inner = SimpleGrouper("inner", initial_group_size=1, waiting_logic=_filler("x"))
     _use_timeline(exp, join(inner, _filler("filler")))
     try:
-        (participant,) = _working_participants(exp, 1)
-        waiting = _json_timeline(exp, participant).get_json()["attributes"]["waiting"]
-        page = exp.timeline.get_current_elt(exp, participant)
+        first, last = _working_participants(exp, 2)
+        waiting = _json_timeline(exp, first).get_json()["attributes"]["waiting"]
+        page = exp.timeline.get_current_elt(exp, first)
         assert page.label == "filler"
         assert waiting["barrier_id"] == page.links["barrier"].id
         assert waiting["release_grace_ms"] == 3000
+
+        _json_timeline(exp, last)
+        db.session.expire_all()
+        last = Participant.query.get(last.id)
+        assert exp.timeline.get_current_elt(exp, last).label == "after"
     finally:
         exp.timeline = original
 
@@ -278,9 +491,10 @@ def test_hold_pages_get_no_waiting_config(in_experiment_directory, db_session):
     [
         ({"waiting_logic": _filler("filler"), "release_grace": -1}, "non-negative"),
         ({"release_grace": 5}, "only applies with waiting_logic"),
+        ({"below_quorum": lambda participant, group: "fail"}, "Functions aren't"),
     ],
 )
-def test_release_grace_is_checked(kwargs, message):
+def test_grouper_arguments_are_checked(kwargs, message):
     with pytest.raises(ValueError, match=message):
         SimpleGrouper("pair", initial_group_size=2, **kwargs)
 

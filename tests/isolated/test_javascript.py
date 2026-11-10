@@ -503,6 +503,8 @@ def test_process_response_reraises_transient_lock_errors(monkeypatch):
     handled = {}
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             return self
 
