@@ -53,9 +53,7 @@ class CreateRateTrial(StaticTrial):
             ModularPage(
                 "create",
                 # Ticks appear as the others finish.
-                GroupPrompt(
-                    prompt, group=self.group(participant), participant=participant
-                ),
+                GroupPrompt(prompt, group=self.sync_group, participant=participant),
                 TextControl(),
                 time_estimate=5,
                 save_answer="create",
@@ -70,9 +68,7 @@ class CreateRateTrial(StaticTrial):
         return join(
             ModularPage(
                 "rate",
-                GroupPrompt(
-                    prompt, group=self.group(participant), participant=participant
-                ),
+                GroupPrompt(prompt, group=self.sync_group, participant=participant),
                 PushButtonControl(
                     choices=self.find_creations(participant),
                 ),
@@ -90,9 +86,6 @@ class CreateRateTrial(StaticTrial):
         ]
         random.shuffle(creations)
         return creations
-
-    def group(self, participant):
-        return participant.active_sync_groups["create_rate"]
 
     def show_ratings(self, participant):
         result = participant.var.last_trial
@@ -115,7 +108,7 @@ class CreateRateTrial(StaticTrial):
             "show_ratings",
             GroupPrompt(
                 prompt,
-                group=self.group(participant),
+                group=self.sync_group,
                 participant=participant,
                 answers=creations,
                 highlight=highlight,

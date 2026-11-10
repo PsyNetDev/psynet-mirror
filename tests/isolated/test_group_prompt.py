@@ -125,6 +125,91 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     html = GroupPrompt(group=group, participant=early, anonymous=True).group_html
     assert ">Your partner<" in html
 
+    # Without ``group``, the prompt shows the participant's group, or just its
+    # text if they aren't in one, for example after being removed from it.
+    assert GroupPrompt(participant=early, group_type="room").group == group
+    prompt = GroupPrompt("Choose", participant=third)
+    assert prompt.group is None and prompt.group_html == ""
+    # group=None, as trial.sync_group is after a removal, shows no group
+    # even if the participant is in one.
+    assert GroupPrompt("Hi", group=None, participant=early).group_html == ""
+    with pytest.raises(ValueError, match="not both"):
+        GroupPrompt("Hi", group=None, group_type="room", participant=early)
+
+    # A removed member stays in their seat, faded and labelled by why they went.
+    group.accepts_top_ups = False
+    group.min_group_size = 1
+    group.remove_participant(late, reason="out_of_time")
+    db_session.flush()
+
+    def html():
+        return GroupPrompt(group=group, participant=early, anonymous=True).group_html
+
+    assert 'psynet-group-member--left" data-seat="0"' in html()
+    assert ">Your partner (out of time)<" in html()
+    # Joining another room doesn't hide the seat they ran out of time in.
+    other = SimpleSyncGroup(group_type="room", initial_group_size=2, min_group_size=1)
+    db_session.add(other)
+    other.add_participant(late)
+    db_session.flush()
+    assert ">Your partner (out of time)<" in html()
+    other.remove_participant(late)
+    late.status = "returned"
+    assert ">Your partner (left)<" in html()
+    # An open-ended group, like a lobby, doesn't show who left.
+    group.accepts_top_ups = True
+    assert "(left)" not in html()
+    group.accepts_top_ups = False
+    late.status = "working"
+    for reason, label in [(None, "(dropped out)"), ("moved_on", None)]:
+        group.add_participant(late)
+        group.remove_participant(late, reason=reason)
+        db_session.flush()
+        if label:
+            assert f">Your partner {label}<" in html()
+    # Members who moved on to their next group are not shown, except with
+    # their answer on a results page, which reads the same after a reload.
+    assert "psynet-group-member--left" not in html()
+    results = GroupPrompt(
+        group=group, participant=early, anonymous=True, answers={late.id: "3"}
+    ).group_html
+    assert ">3</span>" in results and "psynet-group-member--left" not in results
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_removed_partner_stays_in_the_viewers_subgroup(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    viewer, partner, other = _working_participants(exp, 3)
+    room, pair, other_pair = [
+        SimpleSyncGroup(group_type=group_type, initial_group_size=3, min_group_size=1)
+        for group_type in ("room", "pair", "pair")
+    ]
+    db_session.add_all([room, pair, other_pair])
+    for member in (viewer, partner, other):
+        room.add_participant(member)
+    pair.add_participant(viewer)
+    pair.add_participant(partner)
+    other_pair.add_participant(other)
+    room.remove_participant(partner, reason="out_of_time")
+    pair.remove_participant(partner, reason="out_of_time")
+    next_pair = SimpleSyncGroup(
+        group_type="pair", initial_group_size=2, min_group_size=1
+    )
+    db_session.add(next_pair)
+    next_pair.add_participant(partner)
+    db_session.flush()
+
+    html = GroupPrompt(
+        group=room, participant=viewer, subgroups="pair", anonymous=True
+    ).group_html
+    clusters = html.split('class="psynet-group-cluster"')[1:]
+    assert len(clusters) == 2
+    assert ">Your partner (out of time)<" in clusters[0]
+
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
@@ -137,7 +222,7 @@ def test_live_pages_redraw_the_group_when_someone_joins(
     published = []
     monkeypatch.setattr(timeline_hold, "_publish_wakes", published.extend)
     first, late, other = _working_participants(exp, 3)
-    group = SimpleSyncGroup(group_type="room", initial_group_size=3)
+    group = SimpleSyncGroup(group_type="room", initial_group_size=3, min_group_size=1)
     db_session.add(group)
     group.add_participant(first)
     db_session.flush()
@@ -167,3 +252,6 @@ def test_live_pages_redraw_the_group_when_someone_joins(
     # Tokens only work for the participant they were made for, unchanged.
     assert redrawn_group_html(other.unique_id, named) == {"html": None}
     assert redrawn_group_html(first.unique_id, named[:-2]) == {"html": None}
+    # A removed viewer keeps their drawing rather than one without "You".
+    group.remove_participant(first)
+    assert redrawn_group_html(first.unique_id, named) == {"html": None}

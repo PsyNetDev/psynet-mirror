@@ -756,7 +756,8 @@ class _BarrierHoldPage(_TimelineHoldPage):
         content_is_function = isinstance(content, SerializedCallable)
         if not content_is_function and "{SECONDS}" not in str(content or ""):
             return compose_hold_overlay_html(
-                self.translated_content(), self.hold_progress_text(participant, counts)
+                self.translated_content(participant),
+                self.hold_progress_text(participant, counts),
             )
         if release_time is NoArgumentProvided:
             release_time = (
@@ -914,8 +915,9 @@ class Barrier(EltCollection):
         pass ``markupsafe.Markup`` or a dominate tag for HTML. A ``{SECONDS}``
         placeholder counts down to :meth:`expected_release_time`, showing "…"
         while it is unknown. ``content`` can also be a module-level function
-        that returns the message; it may take ``seconds_left`` (whole seconds,
-        or ``None`` while the release time is unknown), ``participant`` and
+        that returns the message, for example one that depends on the
+        participant's role; it may take ``participant``, ``seconds_left``
+        (whole seconds, or ``None`` while the release time is unknown) and
         ``barrier``, and on a :class:`GroupBarrier` also ``waiting_count``
         and ``group_size`` (both ``None`` if the participant has no group).
         Return :func:`hold_message` to set the progress
@@ -1443,7 +1445,8 @@ class GroupBarrier(Barrier):
     timeout_between_barriers_action
         When a participant exceeds ``timeout_between_barriers_time``: ``"kick"`` removes them from the group (so the
         rest can proceed without them), or ``"fail"`` fails the participant and sends them to the end of the experiment.
-        Default is ``"fail"``.
+        Default is ``"fail"``. A kicked participant is no longer in the group when they reach the barrier, so
+        ``"kick"`` also makes ``skip_if_not_in_group`` default to ``True``.
 
     on_release
         Optional callback invoked when the barrier releases participants.
@@ -1464,7 +1467,9 @@ class GroupBarrier(Barrier):
         Message displayed by the default timeline hold overlay. Only used when
         ``waiting_logic`` is omitted. If omitted, participants see
         "Waiting for other participants…". Plain strings are shown as text;
-        pass ``markupsafe.Markup`` or a dominate tag for HTML. Independent of
+        pass ``markupsafe.Markup`` or a dominate tag for HTML, or a
+        module-level function ``content(participant)`` returning either (see
+        :class:`Barrier`). Independent of
         a preceding :class:`~psynet.sync.Grouper`'s ``content`` and of
         trial-maker ``sync_group_wait_content``.
 
@@ -1472,16 +1477,19 @@ class GroupBarrier(Barrier):
         If ``True`` (default), group members who have not reached this barrier
         yet see a pill on the progress bar, and waiting participants in groups
         of three or more see remaining-not-ready copy on the hold overlay.
-        Pairs show only the message. Set ``False`` to disable both. To
-        change the waiting indicator's progress line, return
-        :func:`hold_message` from a ``content`` function.
-        Passing ``on_arrival_message`` implies ``True``.
+        Pairs show only the message. Set ``False`` to disable both. A
+        member removed by ``timeout_between_barriers_action="kick"`` is told
+        either way; return ``None`` from ``on_arrival_message`` for
+        ``kind="removed"`` to hide it. To change the waiting indicator's
+        progress line, return :func:`hold_message` from a ``content``
+        function.
 
     skip_if_not_in_group
         If ``True``, a participant who is not in a group of this ``group_type``
         passes straight through, for example after being kicked by a timeout in
-        a round-based design. If ``False`` (default), they get an error, which
-        usually means a grouper is missing from the timeline.
+        a round-based design. If ``False``, they get an error, which usually
+        means a grouper is missing from the timeline. Defaults to ``True`` when
+        ``timeout_between_barriers_action="kick"``, and ``False`` otherwise.
 
     release_grace
         See :class:`Barrier`. Default: 3 seconds.
@@ -1565,7 +1573,7 @@ class GroupBarrier(Barrier):
         content=None,
         notify_arrivals: bool = True,
         on_arrival_message: Optional[Callable] = None,
-        skip_if_not_in_group: bool = False,
+        skip_if_not_in_group: Optional[bool] = None,
         release_grace: Optional[float] = 3,
     ):
         self._validate_max_wait_action(max_wait_action)
@@ -1586,7 +1594,7 @@ class GroupBarrier(Barrier):
         self.group_type = group_type
         self.on_release = on_release
         self.on_arrival_message = on_arrival_message
-        self.notify_arrivals = bool(notify_arrivals) or on_arrival_message is not None
+        self.notify_arrivals = bool(notify_arrivals)
         self.timeout_between_barriers_time = timeout_between_barriers_time
         if timeout_between_barriers_action not in ("kick", "fail"):
             raise ValueError(
@@ -1594,6 +1602,8 @@ class GroupBarrier(Barrier):
                 f"got {timeout_between_barriers_action!r}"
             )
         self.timeout_between_barriers_action = timeout_between_barriers_action
+        if skip_if_not_in_group is None:
+            skip_if_not_in_group = timeout_between_barriers_action == "kick"
         self.skip_if_not_in_group = skip_if_not_in_group
 
     def resolve(self):
@@ -1838,12 +1848,8 @@ class GroupBarrier(Barrier):
                     participant.id,
                     group.id,
                 )
-                group.remove_participant(participant)
-            if (
-                self.notify_arrivals
-                and group.n_active_participants > 0
-                and not group.dissolving
-            ):
+                group.remove_participant(participant, reason="out_of_time")
+            if group.n_active_participants > 0 and not group.dissolving:
                 for participant in late:
                     self._tell_removed_participant(participant, group, group_size)
             return
@@ -2469,6 +2475,41 @@ class SimpleGrouper(Grouper):
         return [lst[i::n_groups] for i in range(n_groups)]
 
 
+def pairs_avoiding_repeats(members, last_partner_id: Callable, attempts: int = 50):
+    """Pair members at random, repeating a previous partnership as rarely as possible.
+
+    A building block for :class:`Regrouper`'s ``form_groups``. With an odd
+    number of members, one is left over.
+
+    Parameters
+    ----------
+    members : list of Participant
+        The participants to pair.
+    last_partner_id : callable
+        ``last_partner_id(participant)`` returns the ID of the participant's
+        previous partner, or ``None``.
+    attempts : int
+        Random pairings to try before taking the one with the fewest repeats.
+
+    Returns
+    -------
+    list of list of Participant
+        The pairs.
+    """
+    best, best_repeats = [], None
+    for _ in range(attempts):
+        shuffled = random.sample(members, len(members))
+        pairs = [shuffled[i : i + 2] for i in range(0, len(shuffled) - 1, 2)]
+        repeats = sum(
+            last_partner_id(a) == b.id or last_partner_id(b) == a.id for a, b in pairs
+        )
+        if best_repeats is None or repeats < best_repeats:
+            best, best_repeats = pairs, repeats
+        if repeats == 0:
+            break
+    return best
+
+
 class Clock:
     """A :class:`Regrouper` deadline that falls every ``period`` seconds of wall-clock time.
 
@@ -2650,7 +2691,7 @@ class Regrouper(Grouper):
     def receive_participant(self, participant: Participant):
         previous = participant.active_sync_groups.get(self.group_type)
         if previous is not None:
-            previous.remove_participant(participant)
+            previous.remove_participant(participant, reason="moved_on")
         Barrier.receive_participant(self, participant)
 
     def form_groups(self, members, within_group=None):
@@ -3048,11 +3089,29 @@ class SyncGroup(SQLBase, SQLMixin):
     def check_numbers(self):
         self.n_active_participants = len(self.active_participants)
 
-    def remove_participant(self, participant: Participant):
+    def remove_participant(
+        self, participant: Participant, reason: Optional[str] = None
+    ):
+        """Remove a participant from the group.
+
+        Parameters
+        ----------
+        participant
+            The member to remove.
+        reason
+            Optional reason stored on their link, such as ``"moved_on"`` for a
+            member who went on to their next group or ``"out_of_time"`` for one
+            kicked by a timeout. :class:`~psynet.group_prompt.GroupPrompt`
+            uses it to label former members.
+        """
         _forget_active_sync_group(participant)
         for link in self.participant_links:
-            if link.participant_id == participant.id:
+            is_member = (
+                link.participant is participant or link.participant_id == participant.id
+            )
+            if is_member and link.active:
                 link.active = False
+                link.removal_reason = reason
         self.check_numbers()
         _notify_membership_change(self)
         if self.n_active_participants == 0 and not getattr(
@@ -3104,8 +3163,10 @@ class SimpleSyncGroup(SyncGroup):
     accepts_top_ups = Column(Boolean)
     fail_participants_below_min_size = Column(Boolean, default=True)
 
-    def remove_participant(self, participant: Participant):
-        super().remove_participant(participant)
+    def remove_participant(
+        self, participant: Participant, reason: Optional[str] = None
+    ):
+        super().remove_participant(participant, reason=reason)
         self.dissolve_if_below_min_size()
 
     def dissolve_if_below_min_size(self):
@@ -3376,6 +3437,7 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
 
     arrival_time = Column(DateTime)
     active = Column(Boolean, default=True)
+    removal_reason = Column(String)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
     participant = relationship(

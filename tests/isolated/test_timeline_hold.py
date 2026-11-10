@@ -189,6 +189,20 @@ def test_wait_while_accepts_custom_hold_content():
     assert hold.content == "Custom hold message"
 
 
+def _waiting_for_role(participant):
+    return f"Waiting for the {participant.var.role}"
+
+
+def test_wait_while_content_can_depend_on_the_participant():
+    logic = wait_while(lambda: True, expected_wait=1, content=_waiting_for_role)
+    hold = next(elt for elt in logic if getattr(elt, "is_timeline_hold", False))
+    participant = SimpleNamespace(
+        var=SimpleNamespace(role="proposer"), module_state=None
+    )
+
+    assert hold.translated_content(participant) == "Waiting for the proposer"
+
+
 def test_wait_while_rejects_content_with_wait_page():
     with pytest.raises(
         ValueError, match="content only applies when wait_page is omitted"
@@ -263,13 +277,13 @@ def test_hold_overlay_html_matches_markup_and_plain_text():
         if getattr(elt, "is_timeline_hold", False)
     )
 
-    assert plain.overlay_html() == (
+    assert plain.overlay_html(None) == (
         '<span class="psynet-timeline-hold-title">'
         f"{escape('<strong>Waiting</strong>')}"
         "</span>"
     )
     assert (
-        trusted.overlay_html()
+        trusted.overlay_html(None)
         == '<span class="psynet-timeline-hold-title"><strong>Waiting</strong></span>'
     )
 

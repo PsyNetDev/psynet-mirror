@@ -49,7 +49,7 @@ def make_state(block_order):
 def test_next_block_moves_the_sync_group_and_clears_plans():
     states = [make_state(["A", "B"]), make_state(["A", "B"])]
     participants = [SimpleNamespace(module_state=state) for state in states]
-    group = SimpleNamespace(active_participants=participants)
+    group = SimpleNamespace(participants=participants, active_participants=participants)
     for participant in participants:
         participant.id = 1
         participant.active_sync_groups = {"sync": group}

@@ -73,15 +73,12 @@ class CustomTrial(GibbsTrial):
     time_estimate = 5
 
     def show_trial(self, experiment, participant):
-        group = participant.active_sync_groups["gibbs"]
         return join(
-            self.see_last_trial_responses(participant, group)
-            if self.degree > 0
-            else None,
-            self.choose_response(participant, group),
+            self.see_last_trial_responses(participant) if self.degree > 0 else None,
+            self.choose_response(participant),
         )
 
-    def choose_response(self, participant: Participant, group: SyncGroup):
+    def choose_response(self, participant: Participant):
         target = self.context["target"]
 
         prompt = tags.span()
@@ -94,14 +91,14 @@ class CustomTrial(GibbsTrial):
         return ColorSliderPage(
             "color_trial",
             # Ticks appear as the others submit.
-            GroupPrompt(prompt, group=group, participant=participant),
+            GroupPrompt(prompt, group=self.sync_group, participant=participant),
             starting_values=self.initial_vector,
             selected_idx=self.active_index,
             reverse_scale=self.reverse_scale,
             directional=False,
         )
 
-    def see_last_trial_responses(self, participant: Participant, group: SyncGroup):
+    def see_last_trial_responses(self, participant: Participant):
         last_node = self.node.parent
         # Members who joined since have no answer, so they get no bubble.
         answers = {
@@ -114,7 +111,7 @@ class CustomTrial(GibbsTrial):
             GroupPrompt(
                 f"Here is how your group set the {color} slider. "
                 f"The summarized response was {round(last_node.var.summarize_trials_output)}.",
-                group=group,
+                group=self.sync_group,
                 participant=participant,
                 answers=answers,
             ),
@@ -214,7 +211,7 @@ class Exp(psynet.experiment.Experiment):
 
         # Going now to the next trial;
         # Trial 2 (degree = 1)
-        advance_past_wait_pages(original_bots, max_iterations=30)
+        advance_past_wait_pages(original_bots)
 
         # Check that the trials have been aggregated appropriately
         page = bots[0].get_current_page()
@@ -257,7 +254,7 @@ class Exp(psynet.experiment.Experiment):
         # Trial 3 (degree = 2)
         bots = [bots[1], bots[2], new_bot]
 
-        advance_past_wait_pages(bots, max_iterations=30)
+        advance_past_wait_pages(bots)
 
         for bot in bots:
             assert bot.current_trial is not None
@@ -282,7 +279,7 @@ class Exp(psynet.experiment.Experiment):
                 page = bot.get_current_page()
                 assert page.label == "color_trial"
                 bot.take_page()
-            advance_past_wait_pages(bots, max_iterations=30)
+            advance_past_wait_pages(bots)
 
         for bot in bots:
             page = bot.get_current_page()

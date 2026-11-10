@@ -86,15 +86,8 @@ class RockPaperScissorsTrial(StaticTrial):
                 + f"your partner chose {last_trial['action_other']}. "
                 + outcome
             )
-        # Stored vars are JSON, so the player IDs are strings here.
-        actions = {int(pid): a for pid, a in last_trial["action_by_player"].items()}
-        partner_id = next(pid for pid in actions if pid != participant.id)
-        winner = participant.id if score == 1 else partner_id
-
-        # Derive the room from this trial's sync group (``self.sync_group``)
-        # rather than ``participant.sync_group``, which raises an error if the
-        # participant belongs to more than one active sync group. Both members
-        # share the same ``self.sync_group.id``, so they meet in the same room.
+        actions = last_trial["action_by_player"]
+        winning_action = last_trial["action_self" if score == 1 else "action_other"]
         return ModularPage(
             "results",
             GroupPrompt(
@@ -102,10 +95,16 @@ class RockPaperScissorsTrial(StaticTrial):
                 group=self.sync_group,
                 participant=participant,
                 answers=actions,
-                highlight={} if score == 0 else {winner: "winner"},
+                highlight={}
+                if score == 0
+                else {
+                    pid: "winner" for pid, a in actions.items() if a == winning_action
+                },
                 note="Now chat with your partner about the round you just played!",
             ),
             chatroom=ChatRoom(
+                # Both members share this trial's sync group, so they meet in
+                # the same room.
                 room_id=f"rps_room_{self.sync_group.id}",
                 show_participants=True,
                 show_history=True,
