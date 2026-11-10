@@ -189,9 +189,13 @@ they and the group then wait for each other until ``late_after`` or
     # Instead, keep the break inside the module.
     while_loop("runs", play_again, Module("game", rounds, break_page), 2)
 
-PsyNet warns when a timeline with a grouper has a ``while_loop`` with pages
-outside the module it repeats. It can't see inside a ``for_loop``, whose
-logic is built when the participant reaches it.
+A ``GroupBarrier`` or grouper between runs is fine, because a barrier
+outside the module waits for every member. PsyNet warns when a timeline
+with a grouper has a ``while_loop`` with content pages (not a barrier's
+waiting page) outside the module it repeats. It can't tell whether the
+module is grouped, so the warning may name a module that isn't, and it
+can't see inside a ``for_loop``, whose logic is built when the participant
+reaches it.
 
 A barrier in a module where the group cues no rounds, such as one before a
 separate module of rounds, waits for every member too: a newcomer who

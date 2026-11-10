@@ -7265,15 +7265,35 @@ def test_timeline_warns_about_barriers_newcomers_can_reach_after_their_group():
     assert warned_barriers(rounds(pass_newcomers=True), stop_top_ups=True) == ["round"]
 
 
-@pytest.mark.parametrize("page_inside", [False, True])
-def test_timeline_warns_about_pages_between_runs_of_a_looped_module(page_inside):
-    run = [GroupBarrier(id_="run_start", group_type="pair")]
-    between = [InfoPage("Break", time_estimate=1)]
-    body = (
-        Module("game", *run, *between)
-        if page_inside
-        else join(Module("game", *run), *between)
-    )
+@pytest.mark.parametrize(
+    "shape, warns",
+    [
+        ("module, page", True),
+        ("module, loop of pages", True),
+        ("module with page", False),
+        ("barrier, module", False),
+        ("module, barrier", False),
+    ],
+)
+def test_timeline_warns_about_pages_between_runs_of_a_looped_module(shape, warns):
+    def game(*extra):
+        return Module("game", GroupBarrier(id_="run_start", group_type="pair"), *extra)
+
+    def page():
+        return InfoPage("Break", time_estimate=1)
+
+    def barrier():
+        return GroupBarrier(id_="ready", group_type="pair")
+
+    body = {
+        "module, page": lambda: join(game(), page()),
+        "module, loop of pages": lambda: join(
+            game(), while_loop("breaks", lambda: False, page(), 1)
+        ),
+        "module with page": lambda: game(page()),
+        "barrier, module": lambda: join(barrier(), game()),
+        "module, barrier": lambda: join(game(), barrier()),
+    }[shape]()
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         Timeline(
@@ -7282,7 +7302,7 @@ def test_timeline_warns_about_pages_between_runs_of_a_looped_module(page_inside)
             InfoPage("Done", time_estimate=1),
         )
     warned = any("repeats module 'game'" in str(w.message) for w in caught)
-    assert warned != page_inside
+    assert warned == warns
 
 
 @pytest.mark.parametrize(

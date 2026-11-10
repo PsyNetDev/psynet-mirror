@@ -39,8 +39,10 @@ Round visit and group visit
     unfinished cued trial the member is in, or ``NULL`` for a visit by the
     whole group (``_visit_round_id``). ``_group_visits`` splits a group's
     waiters by that column, and ``_waited_for`` reads whom each part waits
-    for from stored facts: trial rows on the node, its ``sync_group_closed``
-    flag and the members' ``ModuleState`` rows. The release check, the
+    for from stored facts: the members' current trials
+    (``Participant.current_trial_id``) on the node, its
+    ``sync_group_closed`` flag, trial rows on it (to find members with no
+    trial yet while it is open) and the members' ``ModuleState`` rows. The release check, the
     ``would_release`` peek, ``late_after`` and hold counts go through both
     helpers, and ``on_dissolve`` through ``_group_visits``, so they can't
     disagree about who waits together; change who waits there, not in one
@@ -2209,9 +2211,10 @@ class GroupBarrier(Barrier):
         """Warn if a visit by the whole group waits for a round of the group that waits for it.
 
         This visit waits for members waiting inside a round. If that round
-        is open, or waits for one of this visit's members, as for a newcomer
-        who hasn't cued yet, neither passes until a time-out removes
-        someone. Warns once per barrier, round barrier and group type.
+        waits for one of this visit's members, as an open round does for a
+        member of its module who hasn't cued yet, neither passes until a
+        time-out removes someone. Warns once per barrier, round barrier and
+        group type.
         """
         waiting_ids = {p.id for p in visit.waiting}
         for participant in waited_for:
@@ -2226,9 +2229,7 @@ class GroupBarrier(Barrier):
                 ):
                     continue
                 round_visit = _Visit(link.round_node_id, [])
-                if round_visit.node.sync_group_closed and not waiting_ids & {
-                    p.id for p in _waited_for(group, round_visit)
-                }:
+                if not waiting_ids & {p.id for p in _waited_for(group, round_visit)}:
                     continue
                 _warned_round_waits.add(key)
                 logger.warning(
@@ -4219,27 +4220,29 @@ def warn_if_newcomers_can_strand_group(barriers):
 
 
 def warn_if_looped_module_has_pages_outside(loops):
-    """Warn about a loop that repeats a module and has pages outside it.
+    """Warn about a loop that repeats a module and has content pages outside it.
 
     A member on such a page, between two runs of the module, counts as
     having left the module, so the next run starts without them, and they
     and the group then wait for each other until ``late_after`` or
-    ``max_wait_time`` acts. Only called for timelines with a grouper.
+    ``max_wait_time`` acts. A barrier's waiting page doesn't count. Only
+    called for timelines with a grouper; whether the module itself is
+    grouped can't be seen at load, so the message is conditional.
 
     Parameters
     ----------
     loops : iterable of list
-        The module ids of each loop with pages outside its modules.
+        The module ids of each loop with content pages outside its modules.
     """
     for module_ids in loops:
         names = ", ".join(f"'{module_id}'" for module_id in module_ids)
         warn_from_caller(
-            f"A while_loop repeats module {names} and has pages outside it. If a "
-            "group plays cued rounds or waits at GroupBarriers in the module, a "
-            "member on one of those pages counts as having left the module, so "
-            "the next run starts without them, and they and the group wait for "
-            "each other until late_after or max_wait_time acts. Keep the loop's "
-            "pages inside the module.",
+            f"A while_loop repeats module {names} and has content pages outside "
+            "it. If a group plays cued rounds or waits at GroupBarriers in the "
+            "module, a member on one of those pages counts as having left the "
+            "module, so the next run starts without them, and they and the group "
+            "wait for each other until late_after or max_wait_time acts. Keep the "
+            "loop's pages inside the module.",
             UserWarning,
         )
 

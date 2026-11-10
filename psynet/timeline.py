@@ -2991,7 +2991,11 @@ class Timeline:
         self.check_group_policies()
 
     def check_group_policies(self):
-        """Warn about grouper and barrier settings that fail members who were on time, or strand newcomers."""
+        """Warn about grouper and barrier settings that fail members who were on time, or strand newcomers or slower members.
+
+        The last check, only for timelines with a grouper, flags a
+        ``while_loop`` with content pages outside the module it repeats.
+        """
         from .sync import (
             Grouper,
             warn_if_late_removal_fails_group,
@@ -3009,16 +3013,21 @@ class Timeline:
             )
 
     def _looped_modules_with_pages_outside(self):
-        """Yield the ids of the modules in each ``while_loop`` whose body also has pages outside them.
+        """Yield the ids of the modules in each ``while_loop`` whose body also has content pages outside them.
 
-        Only modules and pages directly in the loop's body count, not those
-        in a module nested in one of them. A ``for_loop`` builds its logic
+        Only modules and pages in the loop's body count, not those in a
+        module nested in one of them. Pages of a nested loop without a module
+        count for the enclosing loop. A barrier's elts, such as its waiting
+        page, are skipped: a barrier outside the module waits for every
+        member, so it doesn't strand anyone. A ``for_loop`` builds its logic
         when the participant reaches it, so loops of one aren't seen.
         """
         for branch_elts in self.elts.values():
             loops = []
             module_depth = 0
             for elt in branch_elts:
+                if elt.links.get("barrier") is not None:
+                    continue
                 at_loop_level = bool(loops) and module_depth == loops[-1]["depth"]
                 if isinstance(elt, StartWhile):
                     loops.append({"depth": module_depth, "modules": [], "page": False})
@@ -3026,6 +3035,8 @@ class Timeline:
                     loop = loops.pop()
                     if loop["modules"] and loop["page"]:
                         yield loop["modules"]
+                    elif loop["page"] and loops and loops[-1]["depth"] == module_depth:
+                        loops[-1]["page"] = True
                 elif isinstance(elt, StartModule):
                     if at_loop_level:
                         loops[-1]["modules"].append(elt.module.id)
