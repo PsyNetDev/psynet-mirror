@@ -3594,7 +3594,7 @@ class Regrouper(Grouper):
         ).count()
 
     def sat_out(self, participant) -> bool:
-        """Return whether ``participant``'s latest visit here ended without a group (see ``left_over``)."""
+        """Return whether ``participant`` sat out their latest visit here (see ``left_over``)."""
         latest_visit = self._latest_visit(participant)
         return latest_visit is not None and bool(latest_visit.sat_out)
 

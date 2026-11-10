@@ -1,1 +1,1 @@
-Dissolving a sync group, or marking it to be dissolved, no longer waits for its leader's other requests to finish, and a group whose leader leaves now always gets a new leader at once, even if the new leader is busy in another request.
+Dissolving a sync group, or marking it to be dissolved, no longer waits for its leader's other requests to finish.

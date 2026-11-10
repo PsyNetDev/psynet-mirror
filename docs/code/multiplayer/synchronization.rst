@@ -210,8 +210,8 @@ rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
 ``roles``, :meth:`~psynet.sync.Regrouper.role`.
 
 When the cohorts take latecomers (``join_existing_groups=True`` on their
-grouper), ``stop_top_ups_after_rounds=n`` lets them join only until the
-regrouper has started ``n`` rounds in the cohort: the next split, even one in
+grouper), ``stop_top_ups_after_rounds=n`` lets them join only during
+the cohort's first ``n`` rounds: the next split, even one in
 which everyone waiting sits out, stops the cohort's top-ups (see
 :ref:`groups_below_min_size`). A cohort below its quorum at that split is
 dissolved instead, with nobody grouped; with the cohort grouper's
