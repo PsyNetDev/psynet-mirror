@@ -4525,12 +4525,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         not updated, but is marked as not fresh.
         """
         participant.answer_is_fresh = False
+        trial = _trial_owning_page(participant)
         response = Response(
             participant=participant,
             label=page.label,
             page_type=type(page).__name__,
-            trial=_trial_owning_page(participant),
+            trial=trial,
         )
+        if trial is not None:
+            trial.response = response
         response.answer = None
         # Only the server may say that a time limit ran out.
         metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}

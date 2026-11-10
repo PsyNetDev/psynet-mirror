@@ -209,7 +209,9 @@ def test_a_release_fails_the_unanswered_filler_trials_it_ends(
             assert trial.answer is None
             assert trial not in trial.node.pending_trials
         assert _CountingTrialMaker.n_finalized == 0
-        assert Response.query.filter_by(question="filler_trial").one().trial.failed
+        interrupted = Response.query.filter_by(question="filler_trial").one()
+        assert interrupted.trial.failed
+        assert interrupted.trial.response == interrupted
     finally:
         exp.timeline = original
 

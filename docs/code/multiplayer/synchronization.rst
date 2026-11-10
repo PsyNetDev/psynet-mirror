@@ -1222,7 +1222,11 @@ finalized, so it doesn't count towards the trial maker's targets of
 completed trials, and its node doesn't wait for it. Its ``show_feedback``
 page isn't shown either. It was still created, so
 it counts towards caps on created trials such as ``max_trials_per_block``
-and ``n_created_trials``. A barrier with ``waiting_logic`` can't be inside a
+and ``n_created_trials``. Its answer is ``None`` and it is still among
+:meth:`~psynet.trial.main.TrialMaker.get_participant_trials`, so a trial
+maker whose filler trials can be interrupted should not also run an
+end-of-module performance check or repeat trials. A barrier with
+``waiting_logic`` can't be inside a
 trial's own pages, such as in ``show_trial``; use ``waiting_screen`` there.
 
 During the grace period, the top of the page shows a countdown such as
