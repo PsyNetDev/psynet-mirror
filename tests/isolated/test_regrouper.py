@@ -1,5 +1,7 @@
+import random
 import sys
 import time
+import types
 from datetime import timedelta
 from pathlib import Path
 
@@ -12,7 +14,14 @@ from psynet import timeline_hold
 from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.sync import Clock, GroupBarrier, Regrouper, SimpleGrouper, _latest_tick
+from psynet.sync import (
+    Clock,
+    GroupBarrier,
+    Regrouper,
+    SimpleGrouper,
+    _latest_tick,
+    pairs_avoiding_repeats,
+)
 from psynet.timeline import Timeline
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -264,6 +273,12 @@ def test_regrouper_left_over_waits_for_teammates_still_in_the_round(
     _arrive(exp, pairs, paired)
     assert _waiting(pairs, team) == []
     assert _count_releases.calls == 2
+    # Leaving their pair for the next round counts as moving on, not dropping out.
+    assert "moved_on" in [
+        link.removal_reason
+        for link in paired[0].sync_group_links
+        if link.sync_group.group_type == "pair"
+    ]
 
 
 @in_consents_experiment
@@ -311,7 +326,10 @@ def test_group_barrier_can_let_ungrouped_participants_through(
     exp = get_experiment()
     original = exp.timeline
     exp.timeline = Timeline(
-        GroupBarrier("round_end", group_type="pair", skip_if_not_in_group=True),
+        # A barrier that kicks late members lets ungrouped participants through.
+        GroupBarrier(
+            "round_end", group_type="pair", timeout_between_barriers_action="kick"
+        ),
         ModularPage("after", "Round over", time_estimate=1),
     )
     try:
@@ -342,3 +360,12 @@ def test_a_busy_player_does_not_hold_up_other_teams(
         _arrive(exp, pairs, team_b)
 
     assert _waiting(pairs, team_b) == []
+
+
+def test_pairs_avoiding_repeats_never_repeats_when_it_can_avoid_it():
+    a, b, c, d, e = (types.SimpleNamespace(id=i) for i in range(5))
+    last = {a.id: b.id, b.id: a.id, c.id: d.id, d.id: c.id}
+    random.seed(1)
+    pairs = pairs_avoiding_repeats([a, b, c, d, e], lambda p: last.get(p.id))
+    assert len(pairs) == 2
+    assert all(last.get(x.id) != y.id for x, y in pairs)

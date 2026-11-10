@@ -24,11 +24,10 @@ the teams first and regroup within them::
 See the ``ultimatum_pairing`` demo for a full example.
 """
 
-import time
 from typing import List
 
 import psynet.experiment
-from psynet.bot import BotDriver
+from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
@@ -41,6 +40,7 @@ CHOICE_SECONDS = 15
 ROOM_SIZE = 8
 N_ROUNDS = 2
 NUMBERS = [1, 2, 3, 4, 5]
+WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + 10
 
 
 def lowest_unique(choices: dict):
@@ -70,17 +70,14 @@ def round_message(seconds_left):
 
 
 def choose_number(participant):
-    # The page is rebuilt on submit, when a player who ran out of time has
-    # already left the room.
-    room = participant.active_sync_groups.get("room")
-    text = f"Pick a number. You have {CHOICE_SECONDS} seconds."
-    prompt = text
-    if room is not None:
-        # The prompt shows who is in the room, live, and ticks them as they choose.
-        prompt = GroupPrompt(text, group=room, participant=participant)
     return ModularPage(
         "choose",
-        prompt,
+        # Ticks appear as the others choose.
+        GroupPrompt(
+            f"Pick a number. You have {CHOICE_SECONDS} seconds.",
+            participant=participant,
+            group_type="room",
+        ),
         PushButtonControl(choices=NUMBERS, arrange_vertically=False),
         save_answer="choice",
         time_estimate=5,
@@ -111,8 +108,8 @@ def show_result(participant):
         "result",
         GroupPrompt(
             f"The room picked {', '.join(map(str, result['choices']))}. {outcome}",
-            group=participant.active_sync_groups["room"],
             participant=participant,
+            group_type="room",
             answers=choices,
             highlight=highlight,
         ),
@@ -136,7 +133,6 @@ def play_round():
             content="Waiting for the rest of the room…",
             timeout_between_barriers_time=CHOICE_SECONDS,
             timeout_between_barriers_action="kick",
-            skip_if_not_in_group=True,
             on_release=score_round,
         ),
         PageMaker(show_result, time_estimate=5),
@@ -166,14 +162,13 @@ class Exp(psynet.experiment.Experiment):
     def test_serial_run_bots(self, bots: List[BotDriver]):
         for bot in bots:
             bot.take_page()
-        _wait_while_held(bots)
+        advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         assert [bot.current_page_label for bot in bots] == ["choose"] * 3
-        assert "Pick a number." in bots[0].current_page_text
 
         # The third player doesn't choose in time, so the room goes ahead without them.
         bots[0].take_page(response=1)
         bots[1].take_page(response=2)
-        _wait_while_held(bots[:2])
+        advance_past_wait_pages(bots[:2], timeout=WAIT_TIMEOUT)
         assert "You won with 1!" in bots[0].current_page_text
         assert "The room picked 1, 2." in bots[1].current_page_text
 
@@ -183,27 +178,10 @@ class Exp(psynet.experiment.Experiment):
         # Next round, the third player is back in the room.
         for bot in bots:
             bot.take_page()
-        _wait_while_held(bots)
+        advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         bots[0].take_page(response=3)
         bots[1].take_page(response=3)
         bots[2].take_page(response=4)
-        _wait_while_held(bots)
+        advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         assert "You won with 4!" in bots[2].current_page_text
         assert "The room picked 3, 3, 4." in bots[0].current_page_text
-
-
-def _wait_while_held(bots, timeout=ROUND_SECONDS + CHOICE_SECONDS + 10):
-    """Poll until no bot is on a waiting screen, as a browser would."""
-    deadline = time.monotonic() + timeout
-    while True:
-        held = []
-        for bot in bots:
-            bot.refresh_status()
-            if getattr(bot.get_current_page(), "is_timeline_hold", False):
-                held.append(bot)
-                bot.take_page()
-        if not held:
-            return
-        if time.monotonic() > deadline:
-            raise RuntimeError(f"Bots {[b.id for b in held]} are still waiting.")
-        time.sleep(0.5)

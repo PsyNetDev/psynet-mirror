@@ -25,6 +25,7 @@ from datetime import timedelta
 
 from dallinger import db
 from dallinger.models import timenow
+from dominate.dom_tag import dom_tag
 from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
@@ -246,6 +247,11 @@ def default_group_barrier_arrival_message(
         ARRIVED=waiting_count,
         TOTAL=group_size,
     )
+
+
+def _is_content_function(content):
+    """Return whether hold ``content`` is a function of the participant (dominate tags are callable too)."""
+    return callable(content) and not isinstance(content, dom_tag)
 
 
 def default_hold_progress(waiting_count, group_size):
@@ -686,8 +692,8 @@ class _TimelineHoldPage(Page):
         record = self.get_hold_record(participant)
         return bool(record is not None and record.silent)
 
-    def translated_content(self):
-        """Translate framework-provided hold messages for this participant."""
+    def translated_content(self, participant):
+        """Return the hold message for this participant, translating framework-provided ones."""
         _p = get_translator(context=True)
         if self.message_kind == "barrier":
             return _p("timeline_hold", "Waiting for other participants…")
@@ -696,9 +702,11 @@ class _TimelineHoldPage(Page):
                 "timeline_hold",
                 "Please wait, the experiment should continue shortly...",
             )
+        if _is_content_function(self.content):
+            return call_function_with_context(self.content, participant=participant)
         return self.content
 
-    def overlay_html(self, participant=None):
+    def overlay_html(self, participant):
         """Return hold copy as HTML for both Jinja and the dynamic overlay.
 
         Trusted ``Markup`` is preserved; plain strings are escaped so a refresh
@@ -707,7 +715,7 @@ class _TimelineHoldPage(Page):
         if self._is_silent_for(participant):
             return compose_hold_overlay_html("", None)
         return compose_hold_overlay_html(
-            self.translated_content(), self.hold_progress_text(participant)
+            self.translated_content(participant), self.hold_progress_text(participant)
         )
 
     def hold_progress_text(self, participant):

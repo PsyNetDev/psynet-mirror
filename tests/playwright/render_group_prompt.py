@@ -45,7 +45,10 @@ def _render(case):
         id=1,
         active_participants=members,
         participant_links=[
-            SimpleNamespace(id=m.id, participant_id=m.id) for m in members
+            SimpleNamespace(
+                id=m.id, participant_id=m.id, participant=m, removal_reason=None
+            )
+            for m in members
         ],
     )
     answers = highlight = None
