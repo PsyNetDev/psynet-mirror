@@ -7803,8 +7803,8 @@ def _reuse_local_packages(server, app, deploy_options):
     if compose is None:
         raise click.ClickException(
             f"Could not read {app}'s compose file to check which local checkouts "
-            "its deploy used; rerun, or pass --use-local-psynet/"
-            "--use-local-dallinger explicitly."
+            "its deploy used. Rerun, or pass both --use-local-psynet and "
+            "--use-local-dallinger to skip the check."
         )
     (local_packages,) = _compose_settings(compose, "performance_test_local_packages")
     recorded = [package.strip() for package in (local_packages or "").split(",")]
