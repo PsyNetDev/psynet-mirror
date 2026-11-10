@@ -84,8 +84,12 @@ browser then rechecks the authoritative link state. See "Timeline holds" in
 arrival transaction commits, the response route evaluates the barrier in a
 short coordination transaction before rendering. That lets a ``Grouper`` form
 groups and a ``GroupBarrier`` release the group without waiting for the poller.
-Arrivals at a ``Regrouper`` with ``every`` are the exception: they cannot make
-the pool ready, so they queue no check and the poller enacts each due tick.
+Arrivals at a ``Regrouper`` with ``every`` are usually the exception: they
+cannot make the pool ready, so they queue no check and the poller normally
+enacts each due tick, though a page reload (``GET /timeline``) also checks.
+Ungrouped arrivals at a ``within`` regrouper, and subclasses that override the
+release rule, keep the arrival check; see
+:meth:`Regrouper._queue_check_on_arrival`.
 Last-arrival does not skip partner timeline cursors after that commit; partners
 leave on overlay wake (or this poller, if it won the release). Waiter rows stay
 ``NOWAIT`` during the check so a locked partner cannot stall that request for
@@ -3484,15 +3488,19 @@ class Regrouper(Grouper):
         :meth:`check_waiting_participants` keep the check, since their rule
         might release on arrival.
         """
-        if (
+        if self._skips_arrival_release_check(barrier_instance):
+            return
+        super()._queue_check_on_arrival(barrier_instance)
+
+    def _skips_arrival_release_check(self, barrier_instance):
+        """Return whether an arrival at ``barrier_instance`` cannot release anyone."""
+        return (
             self.every is not None
             and (self.within is None or barrier_instance.group_id is not None)
             and type(self).choose_who_to_release is Regrouper.choose_who_to_release
             and type(self).check_waiting_participants
             is Regrouper.check_waiting_participants
-        ):
-            return
-        super()._queue_check_on_arrival(barrier_instance)
+        )
 
     def form_groups(self, members, within_group=None):
         """Return the groups to form from one pool's waiting members.

@@ -229,11 +229,14 @@ lines like this, each followed by the statement that caused it:
 
     ERROR:  could not obtain lock on row in relation "participant"
 
-These errors are expected and need no action. A barrier check locks the
-waiting participants' rows without waiting (``NOWAIT``); if another request
-holds one of them, PostgreSQL reports this error (SQLSTATE ``55P03``), and
-PsyNet checks the barrier again a moment later. With many participants
-waiting, there can be several such errors a second. Look instead for errors
+These errors are expected and need no action. They usually come from a
+barrier check, which locks the waiting participants' rows without waiting
+(``NOWAIT``); if another request holds one of them, PostgreSQL reports this
+error (SQLSTATE ``55P03``), and PsyNet checks the barrier again a moment later.
+With many participants waiting, there can be several such errors a second. A
+participant's browser resuming from a wait page also locks that participant's
+row with ``NOWAIT`` and can log the same error; the server then answers with
+HTTP 503 and the browser retries. Look instead for errors
 in the ``web`` service's logs, such as tracebacks or HTTP 500 responses. See
 :ref:`the barrier poller <sync-barrier-poller>` for how deferred checks are
 retried.
