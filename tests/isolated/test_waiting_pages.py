@@ -181,7 +181,10 @@ class _CountingTrialMaker:
 def test_a_release_fails_the_unanswered_filler_trials_it_ends(
     in_experiment_directory, db_session
 ):
-    """As in the sync_quorum demo: the first's trial page is interrupted, the last's is skipped."""
+    """As in the sync_quorum demo: the first's trial page is interrupted, the last's is skipped.
+
+    The rest of the pass is skipped without starting the loop's later trials.
+    """
     exp = get_experiment()
     original = exp.timeline
     _CountingTrialMaker.n_finalized = 0
@@ -189,7 +192,7 @@ def test_a_release_fails_the_unanswered_filler_trials_it_ends(
         CodeBlock(_start_filler_trial),
         FillerTrial.trial_logic(trial_maker=_CountingTrialMaker()),
     )
-    _use_timeline(exp, filler)
+    _use_timeline(exp, for_loop(label="fillers", iterate_over=range(40), logic=filler))
     try:
         first, waiting = _release_pair(exp)
         first_id = first.id
@@ -201,8 +204,9 @@ def test_a_release_fails_the_unanswered_filler_trials_it_ends(
         db.session.expire_all()
         first = Participant.query.get(first_id)
         assert exp.timeline.get_current_elt(exp, first).label == "after"
+        assert first.for_loops == {}
         trials = FillerTrial.query.all()
-        assert len(trials) == 2
+        assert len({trial.participant_id for trial in trials}) == len(trials) == 2
         for trial in trials:
             assert trial.failed_reason == "interrupted_by_release"
             assert trial.complete and not trial.finalized

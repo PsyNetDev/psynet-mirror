@@ -349,6 +349,10 @@ class Elt:
     expected_repetitions = None
     id = None
     created_within_page_maker = False
+    # "open" or "close" for elements that set up and tear down participant
+    # state around nested logic; Timeline.skip_to_end_of_while_loop still
+    # runs the "close" elements of constructs that it leaves.
+    _scope = None
 
     def __init__(self):
         self.links = {}
@@ -504,6 +508,13 @@ class CodeBlock(Elt):
             experiment=experiment,
             participant=participant,
         )
+
+
+def _scoped_code_block(function, scope):
+    """Return a code block that opens or closes a construct (see ``Elt._scope``)."""
+    code_block = CodeBlock(function)
+    code_block._scope = scope
+    return code_block
 
 
 class AsyncCodeBlock(EltCollection):
@@ -705,6 +716,8 @@ class StartFixElt(Elt):
     ``with_fixed_time_credit`` and ``with_fixed_progress``.
     """
 
+    _scope = "open"
+
     def __init__(self, time_credit: float, end_fix: "EndFixElt"):
         super().__init__()
         self.time_credit = time_credit
@@ -713,6 +726,8 @@ class StartFixElt(Elt):
 
 
 class EndFixElt(Elt):
+    _scope = "close"
+
     def __init__(self, time_credit: float):
         super().__init__()
         self.time_credit = time_credit
@@ -3228,6 +3243,40 @@ class Timeline:
         finally:
             participant._in_advance_page = False
 
+    def skip_to_end_of_while_loop(self, experiment, participant, label):
+        """Move the participant to the end of the enclosing ``while_loop`` called ``label``.
+
+        Nothing left in the current pass runs: pages, code blocks and page
+        makers are passed over, so for example no further trial is created.
+        Constructs that the participant is inside still end, so their fixed
+        time credit and progress, modules, answer accumulation, ``for_loop``
+        and ``sequence`` are closed. The next :meth:`advance_page` continues
+        after the loop.
+        """
+        depth = 0
+        while True:
+            participant.elt_id[-1] += 1
+            try:
+                elt = self.get_current_elt(experiment, participant)
+            except PageMakerFinishedError:
+                participant.elt_id = participant.elt_id[:-1]
+                participant.elt_id_max = participant.elt_id_max[:-1]
+                continue
+            except IndexError as err:
+                raise RuntimeError(
+                    f"The participant is not inside a while_loop called {label!r}."
+                ) from err
+            if isinstance(elt, EndWhile) and elt.label == label and not depth:
+                return
+            if elt._scope == "open":
+                depth += 1
+            elif elt._scope == "close":
+                if depth:
+                    depth -= 1
+                else:
+                    with forbid_commits(_timeline_step_name(elt)):
+                        elt.consume(experiment, participant)
+
     def estimated_max_reward(self, wage_per_hour):
         return self.estimated_time_credit.get_max("reward", wage_per_hour=wage_per_hour)
 
@@ -3538,6 +3587,8 @@ def join(*args, stop_if: Optional[Callable] = None):
 
 
 class StartWhile(NullElt):
+    _scope = "open"
+
     def __init__(self, label):
         # targets = {
         #     True: self,
@@ -3549,6 +3600,8 @@ class StartWhile(NullElt):
 
 
 class EndWhile(NullElt):
+    _scope = "close"
+
     def __init__(self, label):
         super().__init__()
         self.label = label
@@ -4465,6 +4518,8 @@ class Module(EltCollection):
 
 
 class StartModule(NullElt):
+    _scope = "open"
+
     def __init__(self, label, module):
         super().__init__()
         self.label = label
@@ -4478,6 +4533,8 @@ class StartModule(NullElt):
 
 
 class EndModule(NullElt):
+    _scope = "close"
+
     def __init__(self, label, module):
         super().__init__()
         self.label = label
@@ -4494,6 +4551,8 @@ class StartAccumulateAnswers(NullElt):
     flattened into it.
     """
 
+    _scope = "open"
+
     def consume(self, experiment, participant):
         if not participant.answer_accumulation_depth:
             participant.answer = {}
@@ -4504,6 +4563,8 @@ class StartAccumulateAnswers(NullElt):
 
 
 class EndAccumulateAnswers(NullElt):
+    _scope = "close"
+
     def consume(self, experiment, participant):
         participant.answer_accumulation_depth -= 1
 
@@ -4708,7 +4769,7 @@ def for_loop(
         flag_modified(participant, "for_loops")
 
     return join(
-        CodeBlock(setup),
+        _scoped_code_block(setup, "open"),
         while_loop(
             "for_loop",
             should_stay_in_loop,
@@ -4723,7 +4784,7 @@ def for_loop(
             ),
             fix_time_credit=False,
         ),
-        CodeBlock(wrapup),
+        _scoped_code_block(wrapup, "close"),
     )
 
 
@@ -4794,7 +4855,7 @@ def sequence(
     label = f"sequence_{label}"
 
     return join(
-        CodeBlock(initialize_sequence),
+        _scoped_code_block(initialize_sequence, "open"),
         while_loop(
             label=label,
             condition=sequence_is_not_finished,
@@ -4809,7 +4870,7 @@ def sequence(
             expected_repetitions=sequence_length,
             fix_time_credit=False,
         ),
-        CodeBlock(tear_down_sequence),
+        _scoped_code_block(tear_down_sequence, "close"),
     )
 
 

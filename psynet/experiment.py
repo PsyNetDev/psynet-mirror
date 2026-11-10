@@ -4359,20 +4359,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     page=page,
                 )
             if interrupted:
-                from .sync import _end_waiting_page, released_waiting_barrier
+                from .sync import released_waiting_barrier
 
                 if released_waiting_barrier(event, participant) is None:
                     return ResponseResult(
                         payload={"submission": "rejected", "message": ""}
                     )
                 Experiment._record_interrupted_response(event, participant, metadata)
-                _end_waiting_page(participant)
                 participant.inc_time_credit(event.time_estimate)
                 participant.inc_progress(event.time_estimate)
-                self.timeline.advance_page(self, participant)
-                page = self._advance_past_ready_holds(
-                    participant, self.timeline.get_current_elt(self, participant)
-                )
+                page = self._advance_past_ready_holds(participant, event)
                 return ResponseResult(
                     payload=self._approved_payload(participant, page), page=page
                 )
@@ -4488,34 +4484,23 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     def _skip_released_waiting_pages(self, participant, barrier):
-        """Skip the rest of a released barrier's waiting pages and return the next element.
+        """Leave a released barrier's waiting logic from its current page and return the next page.
 
         A ``while_loop`` only checks its condition before each pass, so the
-        pages left in the current pass would otherwise each show briefly
-        and then be interrupted. Skipped pages were never seen, so they get
-        no response, time credit or progress, and a trial skipped before it
-        was answered is failed.
+        rest of the current pass would otherwise still run. Instead the
+        participant moves straight past the barrier's loop (see
+        :meth:`~psynet.timeline.Timeline.skip_to_end_of_while_loop`), so no
+        later page, code block or trial of the pass runs. The current page's
+        trial, if not yet answered, is failed.
         """
-        from .sync import (
-            _MAX_BARRIER_WALK_PASSES,
-            _barrier_walk_budget,
-            _end_waiting_page,
-            released_waiting_barrier,
-        )
+        from .sync import _end_waiting_page
 
-        for can_work in _barrier_walk_budget():
-            page = self.timeline.get_current_elt(self, participant)
-            released = released_waiting_barrier(page, participant)
-            if released is None or released.id != barrier.id:
-                return page
-            if not can_work:
-                break
-            _end_waiting_page(participant)
-            self.timeline.advance_page(self, participant)
-        raise RuntimeError(
-            f"Skipping the waiting pages of barrier '{barrier.id}' did not settle "
-            f"after {_MAX_BARRIER_WALK_PASSES} steps."
+        _end_waiting_page(participant)
+        self.timeline.skip_to_end_of_while_loop(
+            self, participant, barrier.waiting_loop_label
         )
+        self.timeline.advance_page(self, participant)
+        return self.timeline.get_current_elt(self, participant)
 
     @staticmethod
     def _record_interrupted_response(page, participant, metadata):

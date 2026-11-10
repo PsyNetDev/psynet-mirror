@@ -1029,6 +1029,10 @@ class Barrier(EltCollection):
         Seconds a participant on a ``waiting_logic`` page has to finish it
         once they are released; the page then ends without an answer,
         recorded with ``"interrupted": True`` in its response metadata.
+        The participant then moves straight past the waiting logic: nothing
+        else in that pass runs, neither its later pages and trials nor its
+        code blocks, such as a trial maker's ``on_complete`` and performance
+        checks (per trial or at the end of the module).
         This includes the pages of trials in ``waiting_logic``, such as
         filler trials from a trial maker: a trial whose page ends this way
         is failed with ``failed_reason="interrupted_by_release"``, so it isn't
@@ -1155,6 +1159,11 @@ class Barrier(EltCollection):
         """
         return bool(waiting_participants)
 
+    @property
+    def waiting_loop_label(self):
+        """Label of the ``while_loop`` that repeats ``waiting_logic``."""
+        return f"barrier:{self.id}"
+
     def resolve(self):
         from psynet.timeline import while_loop
 
@@ -1166,7 +1175,7 @@ class Barrier(EltCollection):
             waiting_elts = self.waiting_logic
         else:
             waiting_elts = while_loop(
-                label=f"barrier:{self.id}",
+                label=self.waiting_loop_label,
                 condition=lambda participant: (
                     not self.can_participant_exit(participant)
                 ),
@@ -1621,8 +1630,9 @@ RemovalReason = Literal[
 ]
 REMOVAL_REASONS = (None, *get_args(RemovalReason))
 #: Values of :attr:`~psynet.trial.main.Trial.sync_group_outcome` other than
-#: ``None``: ``"stayed"`` once a barrier releases the group with the player
-#: in it, a :data:`RemovalReason`, or ``"removed"`` for a removal without one.
+#: ``None``: ``"stayed"`` once a barrier in the trial's pages releases the
+#: group with the player in it, a :data:`RemovalReason`, or ``"removed"`` for
+#: a removal without one.
 SyncGroupOutcome = Literal["stayed", "removed", RemovalReason]
 # Reasons for leaving that don't dissolve a group below its quorum.
 _KEEPS_GROUP_REASONS = ("finished", "moved_on")
@@ -4496,8 +4506,9 @@ class SimpleSyncGroup(SyncGroup):
 def _record_leaving_the_round(group, participant, reason):
     """Record why the participant left ``group`` on the round they are playing in it, if any.
 
-    That is their unfinished cued trial of ``group`` (see :func:`_round_trial`),
-    so leaving between rounds, after the trial's pages end, records nothing.
+    That is their cued trial of ``group`` (see :func:`_round_trial`), if it
+    is not complete yet, so leaving between rounds, after the trial's pages
+    end, records nothing.
     """
     trial = _round_trial(group, participant)
     if trial is not None and not trial.complete:
@@ -5492,15 +5503,17 @@ INTERRUPTED_BY_RELEASE = "interrupted_by_release"
 
 
 def _end_waiting_page(participant):
-    """Fail the trial of the waiting page a release is ending, if it has not been answered.
+    """End the trial of the waiting page a release is ending, failing it if not already failed.
 
     A barrier with ``waiting_logic`` is never inside a trial's pages (see
     :meth:`Barrier.receive_participant`), so an unanswered trial here was
-    started in the waiting logic.
+    started in the waiting logic. The rest of its logic, including
+    finalizing and feedback, is skipped.
     """
     trial = _trial_owning_page(participant)
-    if trial is not None and not trial.failed:
+    if trial is not None:
         trial.fail(reason=INTERRUPTED_BY_RELEASE)
+        trial.complete = True
 
 
 def _forget_time_out(participant):

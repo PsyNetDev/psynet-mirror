@@ -50,7 +50,6 @@ from ..field import PythonDict, PythonObject, VarStore
 from ..page import InfoPage, UnsuccessfulEndPage, WaitPage, wait_while
 from ..participant import Participant
 from ..sync import (
-    INTERRUPTED_BY_RELEASE,
     GroupBarrier,
     LateAction,
     ParticipantLinkSyncGroup,
@@ -1646,11 +1645,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         trial.time_credit_from_trial = (
             trial.time_credit_after_trial - trial.time_credit_before_trial
         )
-        if (
-            trial.check_time_credit_received
-            and trial.sync_group_id is None
-            and not trial.failed
-        ):
+        if trial.check_time_credit_received and trial.sync_group_id is None:
             original_estimate = cls._get_trial_time_estimate(
                 trial_maker=trial.trial_maker
             )
@@ -1686,10 +1681,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                     getattr(trial, "id", None),
                 )
                 return
-            if trial.failed_reason == INTERRUPTED_BY_RELEASE:
-                # A barrier's release ended the trial's page before it was answered.
-                trial.complete = True
-                return
 
             answer = participant.answer
 
@@ -1723,7 +1714,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             label=label,
             condition=lambda experiment, participant: (
                 not participant.current_trial._recording_failed
-                and participant.current_trial.failed_reason != INTERRUPTED_BY_RELEASE
                 and participant.current_trial.gives_feedback(experiment, participant)
             ),
             logic_if_true=join(

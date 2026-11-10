@@ -1209,14 +1209,20 @@ is usually within about 2 seconds, unless they submit it first. The page's
 answer is then not saved: its response is stored with ``"interrupted": True``
 in ``metadata``, its ``on_complete`` doesn't run, and ``participant.answer``
 keeps its previous value (``participant.answer_is_fresh`` is ``False``).
-Any other waiting pages left in the same pass of ``waiting_logic`` are
-skipped, and so are all of them for the participant whose arrival completes
-the group. Pass ``release_grace=None`` to :class:`~psynet.sync.Barrier`,
+The participant then moves straight past ``waiting_logic``: nothing else in
+that pass runs, neither its later pages and trials nor its code blocks, such
+as a trial maker's ``on_complete`` and performance checks (per trial or at
+the end of the module). Modules, loops and fixed time credit that the
+participant is inside still end as usual. The participant whose arrival
+completes the group moves past ``waiting_logic`` in the same way from its
+first page, which was already built when they arrived: if that page is a
+trial's, the trial was created and is failed as below. Pass
+``release_grace=None`` to :class:`~psynet.sync.Barrier`,
 :class:`~psynet.sync.GroupBarrier` or a grouper to let every waiting page
 run to its end.
 
 A release ends trial pages too, such as the animal trials in
-``sync_quorum``. A trial whose page ends, or is skipped, before it is
+``sync_quorum``. A trial whose page ends this way before it is
 answered is failed with ``failed_reason="interrupted_by_release"``. It is not
 finalized, so it doesn't count towards the trial maker's targets of
 completed trials, and its node doesn't wait for it. Its ``show_feedback``
@@ -1224,8 +1230,9 @@ page isn't shown either. It was still created, so
 it counts towards caps on created trials such as ``max_trials_per_block``
 and ``n_created_trials``. Its answer is ``None`` and it is still among
 :meth:`~psynet.trial.main.TrialMaker.get_participant_trials`, so a trial
-maker whose filler trials can be interrupted should not also run an
-end-of-module performance check or repeat trials. A barrier with
+maker whose filler trials can be interrupted should not also run
+performance checks (per trial or at the end of the module) or repeat
+trials. A barrier with
 ``waiting_logic`` can't be inside a
 trial's own pages, such as in ``show_trial``; use ``waiting_screen`` there.
 
