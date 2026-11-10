@@ -8,8 +8,7 @@ and platform docs when a study is near deployment.
 
 - `psynet.sync.Barrier` holds participants in a waiting area until
   `choose_who_to_release` releases them. It supports `waiting_logic`,
-  `waiting_logic_expected_repetitions`, `max_wait_time`, and time-credit
-  handling.
+  `expected_wait`, `max_wait_time`, and time-credit handling.
 - `psynet.sync.GroupBarrier` releases all active members of a `SyncGroup` once
   they are waiting at the same barrier. The last arrival runs framework-owned
   evaluation (`check_waiting_participants()` / `choose_who_to_release()`) in

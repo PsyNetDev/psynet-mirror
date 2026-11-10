@@ -350,7 +350,7 @@ button (``NullControl(show_next_button=False)``), or a module-level
 function of the participant that returns one of these, or ``None`` to keep
 the last page. The participant can't submit a waiting screen, so a page
 with a Next button, push buttons or ``auto_advance`` raises an error; use
-a control that doesn't submit, such as ``NullControl``. Groupers take ``waiting_screen`` too,
+a control that doesn't submit, such as ``NullControl``. Groupers and :func:`~psynet.page.wait_while` take ``waiting_screen`` too,
 for example to replace the instructions while a team forms. A barrier
 without a waiting screen (or one whose function returns ``None``) that
 follows another barrier's waiting screen shows a plain waiting page, since
@@ -596,8 +596,15 @@ participant is released. In ``sync_quorum``, waiting participants answer
 trials from another trial maker:
 
 .. literalinclude:: ../../../demos/experiments/sync_quorum/experiment.py
-   :start-at: waiting_logic = PageMaker(
+   :start-at: def waiting_logic(
    :end-before: class Exp
+
+``expected_wait`` says how long participants are expected to wait, in
+seconds. With ``waiting_logic``, progress estimates assume the waiting pages
+repeat often enough to fill that time, rounded up to whole passes; here,
+``expected_wait=10 * AnimalTrial.time_estimate`` expects ten trials. Without
+``expected_wait``, three passes are expected. The older
+``waiting_logic_expected_repetitions`` argument is deprecated.
 
 When the barrier releases a participant who is on a waiting page, the page
 ends ``release_grace`` seconds (default 3; see
@@ -639,8 +646,9 @@ Time credit
 By default, participants are credited for the time they actually wait, up to
 ``max_wait_time``. Set ``fix_time_credit=True`` to credit every participant
 ``expected_wait`` seconds instead (1.5 seconds by default). With
-``waiting_logic``, the waiting pages are credited by their own time
-estimates.
+``waiting_logic``, participants are credited for the waiting pages they
+complete, by those pages' own time estimates; with ``fix_time_credit=True``,
+they are credited for the expected passes instead.
 
 .. seealso::
 

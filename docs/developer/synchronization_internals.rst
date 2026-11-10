@@ -95,8 +95,9 @@ supported callables, classes, or persisted PsyNet ORM records.
 
 The reconstructed barrier has ``id``, custom release state, scalar
 presentation fields (``content`` and the timeouts) and notification
-settings. Wait-page construction (``waiting_logic``, ``_uses_timeline_hold``,
-``waiting_logic_expected_repetitions``) stays on the live timeline object, as
+settings. Wait-page construction (``waiting_logic``, ``waiting_screen``,
+``_uses_timeline_hold`` and the expected repetitions of ``waiting_logic``)
+stays on the live timeline object, as
 do :meth:`~psynet.sync.Barrier.receive_participant` and arrival
 notification. :class:`~psynet.sync.Barrier` documents which methods are
 live-only.
@@ -132,5 +133,7 @@ Default holds credit the visible waiting time, including the interval
 between the server release and the browser resuming, up to
 ``max_wait_time``. Progress uses the estimated duration, so participants who
 arrive early do not appear further through the experiment. When
-``expected_wait`` is omitted, it is ``0.5 * waiting_logic_expected_repetitions``
-seconds (1.5 seconds by default).
+``expected_wait`` is omitted, a default hold expects 1.5 seconds and
+``waiting_logic`` three passes. A given ``expected_wait`` sets the expected
+repetitions of ``waiting_logic`` to ``ceil(expected_wait / estimate_duration(waiting_logic))``
+(at least one), so progress can slightly exceed ``expected_wait``.

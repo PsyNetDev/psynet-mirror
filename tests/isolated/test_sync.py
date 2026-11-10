@@ -218,18 +218,19 @@ def test_max_wait_action_kick_requires_group_barrier():
 
 
 def test_group_barrier_preserves_positional_timeout_arguments():
-    barrier = GroupBarrier(
-        "group_barrier",
-        "main",
-        None,
-        3,
-        20,
-        "fail",
-        None,
-        False,
-        5,
-        "kick",
-    )
+    with pytest.warns(FutureWarning, match="waiting_logic_expected_repetitions"):
+        barrier = GroupBarrier(
+            "group_barrier",
+            "main",
+            None,
+            3,
+            20,
+            "fail",
+            None,
+            False,
+            5,
+            "kick",
+        )
 
     assert barrier.timeout_between_barriers_time == 5
     assert barrier.timeout_between_barriers_action == "kick"
@@ -291,15 +292,6 @@ def test_explicit_barrier_waiting_logic_is_preserved():
     barrier = ReleaseAllBarrier(id_="page_wait", waiting_logic=waiting_logic)
 
     assert barrier.waiting_logic is waiting_logic
-
-
-def test_expected_wait_rejects_explicit_waiting_logic():
-    with pytest.raises(ValueError, match="expected_wait"):
-        ReleaseAllBarrier(
-            id_="page_wait",
-            waiting_logic=WaitPage(wait_time=1),
-            expected_wait=2,
-        )
 
 
 def test_content_rejects_explicit_waiting_logic():
