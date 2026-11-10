@@ -1982,6 +1982,12 @@ class Page(Elt):
 
             _browser_config(self, experiment, participant)
 
+        from .sync import _removed_late_on_current_page
+
+        too_late_for_group = bool(
+            participant.sync_group_links
+        ) and _removed_late_on_current_page(participant)
+
         resp = Response(
             participant=participant,
             label=self.label,
@@ -2002,10 +2008,8 @@ class Page(Elt):
         else:
             # The flag skips validation, so only the server may set it.
             metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
-        from .sync import _removed_late_on_current_page
-
         metadata = {k: v for k, v in metadata.items() if k != "too_late_for_group"}
-        if participant.sync_group_links and _removed_late_on_current_page(participant):
+        if too_late_for_group:
             metadata = {**metadata, "too_late_for_group": True}
         # Untimed pages, such as feedback or a framework wait, keep the flag.
         if participant.waiting_barrier_id is None and self.time_limit is not None:
