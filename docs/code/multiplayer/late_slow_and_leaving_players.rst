@@ -12,7 +12,7 @@ behaviour changes, the test fails until the page is updated.
 
 All the cases share one design, a fixed group answering a loop of
 questions, unless the case says otherwise. Each question is one round: a
-cued trial whose ``show_trial`` ends with a :class:`~psynet.sync.GroupBarrier`,
+cued trial whose ``show_trial`` includes a :class:`~psynet.sync.GroupBarrier`,
 so the barrier waits for every member of the group and its release closes
 the round (see :ref:`rounds-cued-trials`). With ``accumulate_answers``,
 ``trial.answer`` keeps each page's answer under its label, so the answer of

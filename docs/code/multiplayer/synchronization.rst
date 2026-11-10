@@ -391,15 +391,16 @@ was still on the question page may not have answered yet when a member's
 ``show_feedback`` runs, so a result that must be the same for the whole
 group belongs in the export, or in code that runs once every trial on the
 node is complete. A quiz can still score the last question for those who
-answered it:
+answered it. With ``accumulate_answers``, an unanswered trial's ``answer`` is
+``{}`` (without it, ``None``), so skip the missing estimates:
 
 .. code-block:: python
 
     def show_feedback(self, experiment, participant):
         score = self.var.get("score")
         if score is None and self.sync_group_outcome == "group_dissolved":
-            answers = [t.answer for t in self.node.all_trials if t.answer is not None]
-            score = score_answers(answers)
+            estimates = [t.answer.get("estimate") for t in self.node.all_trials]
+            score = score_answers([e for e in estimates if e is not None])
         ...
 
 If the barrier that didn't release is after ``show_trial``, for example in

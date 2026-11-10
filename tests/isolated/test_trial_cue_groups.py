@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 from dallinger import db
-from flask import Flask
 from sqlalchemy import text
 
 from psynet.db import _set_transaction_lock_timeout
@@ -42,7 +41,11 @@ from test_sync import (  # noqa: E402
     _backdate_group,
     _sync_group_of,
 )
-from timeline_hold_helpers import _json_timeline, _working_participants  # noqa: E402
+from timeline_hold_helpers import (  # noqa: E402
+    _json_timeline,
+    _process_response,
+    _working_participants,
+)
 
 in_consents_experiment = pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
@@ -1197,10 +1200,7 @@ class EstimateTrial(Trial):
 
 
 def _submit(exp, participant, raw_answer):
-    with Flask(__name__).test_request_context("/response"):
-        exp.process_response(
-            participant.id, raw_answer, {}, {}, participant.page_uuid, "127.0.0.1"
-        )
+    _process_response(exp, participant, participant.page_uuid, raw_answer=raw_answer)
     db.session.commit()
 
 
