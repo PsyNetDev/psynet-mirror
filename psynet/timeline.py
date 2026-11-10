@@ -1874,11 +1874,11 @@ class Page(Elt):
             participant=participant,
             label=self.label,
             page_type=type(self).__name__,
+            trial=_trial_owning_page(participant),
         )
         db.session.add(resp)
 
-        trial = participant.current_trial
-        resp._background_parent = trial or participant
+        resp._background_parent = participant.current_trial or participant
 
         if answer == NoArgumentProvided:
             answer = self.format_answer(
@@ -1936,14 +1936,8 @@ class Page(Elt):
 
     def _accept_response(self, resp, experiment, participant):
         """Save an answer that passed validation and run ``on_complete``."""
-        from psynet.trial.main import Trial
-
-        trial = participant.current_trial
-        # Pages after _finalize_trial (feedback, or pages before the next
-        # trial is prepared) leave current_trial set but don't belong to it.
-        # A failed participant's trial never completes, and their remaining
-        # pages (such as the unsuccessful-end page) don't belong to it either.
-        if isinstance(trial, Trial) and not trial.complete and not participant.failed:
+        trial = resp.trial
+        if trial is not None:
             trial.response = resp
             page_time = resp.metadata.get("time_taken")
             if page_time is not None:
@@ -3118,6 +3112,20 @@ def estimate_duration(logic):
     return CreditEstimate(elts).get_max("time")
 
 
+def _trial_owning_page(participant):
+    """Return the trial whose pages the participant is on, or ``None``."""
+    from psynet.trial.main import Trial
+
+    trial = participant.current_trial
+    # Pages after _finalize_trial (feedback, or pages before the next
+    # trial is prepared) leave current_trial set but don't belong to it.
+    # A failed participant's trial never completes, and their remaining
+    # pages (such as the unsuccessful-end page) don't belong to it either.
+    if isinstance(trial, Trial) and not trial.complete and not participant.failed:
+        return trial
+    return None
+
+
 class FailedValidation:
     def __init__(self, message="Invalid response, please try again."):
         self.message = message
@@ -3156,6 +3164,16 @@ class Response(_Response):
     successful_validation: bool
         Whether the response validation was successful,
         allowing the participant to advance to the next page.
+
+    trial_id: int
+        ID of :attr:`trial`.
+
+    trial
+        The :class:`~psynet.trial.main.Trial` whose pages
+        (:meth:`~psynet.trial.main.Trial.show_trial`) the participant
+        submitted this response on, including submissions rejected by
+        validation. ``None`` for pages outside a trial, including feedback
+        pages and pages submitted after the participant failed.
     """
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
@@ -3164,6 +3182,8 @@ class Response(_Response):
         back_populates="all_responses",
         foreign_keys=[participant_id],
     )
+    trial_id = Column(Integer, ForeignKey("trial.id"), index=True)
+    trial = relationship("psynet.trial.main.Trial", foreign_keys=[trial_id])
 
     question = Column(String)
     answer = Column(PythonObject)
@@ -3203,11 +3223,12 @@ class Response(_Response):
         page_type,
         answer=None,
         metadata=None,
+        trial=None,
     ):
         self.participant_id = participant.id
+        self.trial = trial
         self.question = label
         self.page_type = page_type
-        self.metadata = metadata
         self.answer = answer
         self.metadata = metadata
 
