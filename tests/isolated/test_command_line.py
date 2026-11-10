@@ -1801,10 +1801,11 @@ _PERF_DEPLOY_RESULT = {
 }
 
 
-def _invoke_performance_test_ssh(args, *, apps, app_info, calls=None):
+def _invoke_performance_test_ssh(args, *, apps, app_info, calls=None, compose=None):
     """Invoke ``performance-test ssh`` on a fake server with ``apps``, whose web containers report ``app_info``.
 
-    ``calls`` records the experiment directory check and the server's app listing.
+    ``calls`` records the experiment directory check and the server's app
+    listing, and ``compose`` is the app's compose file.
     """
     from types import SimpleNamespace
 
@@ -1824,6 +1825,7 @@ def _invoke_performance_test_ssh(args, *, apps, app_info, calls=None):
             calls.check_experiment_directory,
         ),
         patch("psynet.command_line._ssh_executor"),
+        patch("psynet.command_line._read_ssh_compose_file", return_value=compose),
         patch("psynet.command_line._awaken_ssh_app"),
         patch("psynet.perf_ssh.RemoteApp.run_psynet", return_value=app_info),
         patch(
@@ -1935,15 +1937,19 @@ def test_performance_test_ssh_scaffolds_before_contacting_the_server():
     assert deploy.call_args.kwargs["use_local_psynet"] is True
 
 
-def test_performance_test_ssh_updates_reuse_the_deploys_local_packages():
+@pytest.mark.parametrize("args, reused", [([], True), (["--use-local-psynet"], False)])
+def test_performance_test_ssh_updates_reuse_the_deploys_local_packages(args, reused):
     result, deploy, _ = _invoke_performance_test_ssh(
-        [], apps=["my-app"], app_info={**_MARKED, "local_packages": "psynet"}
+        args,
+        apps=["my-app"],
+        app_info=_MARKED,
+        compose='      performance_test_local_packages: "psynet"\n',
     )
 
     assert result.exit_code == 0, result.output
     assert deploy.call_args.kwargs["use_local_psynet"] is True
     assert deploy.call_args.kwargs["use_local_dallinger"] is False
-    assert "Using --use-local-psynet, as when my-app was deployed" in result.output
+    assert ("Using --use-local-psynet, as when" in result.output) is reused
 
 
 @pytest.mark.parametrize("args", [[], ["--reset-database"]])
@@ -1981,22 +1987,6 @@ def test_performance_test_ssh_needs_the_apps_experiment_to_load():
     assert "Could not load the experiment in my-app" in result.output
     assert "passwords are saved in launch-info.json" in result.output
     run.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "config, local_packages",
-    [({}, ""), ({"performance_test_local_packages": "psynet"}, "psynet")],
-)
-def test_performance_test_app_info_reports_local_packages(config, local_packages):
-    from psynet.command_line import _performance_test_app_info
-
-    with patch(
-        "psynet.command_line.load_runtime_server_config",
-        return_value={"performance_test_app": True, **config},
-    ):
-        info = _performance_test_app_info()
-
-    assert info == {"performance_test_app": True, "local_packages": local_packages}
 
 
 @pytest.mark.parametrize(

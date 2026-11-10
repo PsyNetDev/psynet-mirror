@@ -7487,12 +7487,9 @@ def _run_performance_test_with_new_server(
 
 
 def _performance_test_app_info():
-    """Return whether the running experiment is a performance-test app, and the local packages built into it."""
+    """Return whether the running experiment is a performance-test app."""
     config = load_runtime_server_config()
-    return {
-        "performance_test_app": bool(config.get("performance_test_app", False)),
-        "local_packages": config.get("performance_test_local_packages", ""),
-    }
+    return {"performance_test_app": bool(config.get("performance_test_app", False))}
 
 
 @performance_test.command("app-info", hidden=True)
@@ -7757,8 +7754,8 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     _check_ssh_deploy_credentials(server, deploy_options.get("ingress"))
     update = app in {entry.name for entry in get_apps(server)}
     if update:
-        info = _require_performance_test_app(server, app)
-        _reuse_local_packages(app, info, deploy_options)
+        _require_performance_test_app(server, app)
+        _reuse_local_packages(server, app, deploy_options)
         print(f"Updating {app} on {server}, keeping its database...")
     else:
         print(f"Deploying {app} on {server} for performance tests...")
@@ -7783,15 +7780,18 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     return info["experiment"], (result, launch_info, update)
 
 
-def _reuse_local_packages(app, info, deploy_options):
+def _reuse_local_packages(server, app, deploy_options):
     """Build the local packages that ``app``'s deploy used into its update too.
 
-    ``info`` is the app's :func:`_performance_test_app_info`, and
-    ``deploy_options`` the ``use_local_*`` options to turn on, in place.
+    The record is read from the app's compose file rather than from its web
+    container, whose PsyNet may come from ``requirements.txt`` and be too old
+    to report it. ``deploy_options`` holds the ``use_local_*`` options to turn
+    on, in place.
     """
-    recorded = [
-        package.strip() for package in (info.get("local_packages") or "").split(",")
-    ]
+    (local_packages,) = _compose_settings(
+        _read_ssh_compose_file(server, app), "performance_test_local_packages"
+    )
+    recorded = [package.strip() for package in (local_packages or "").split(",")]
     reused = [
         package
         for package in recorded
