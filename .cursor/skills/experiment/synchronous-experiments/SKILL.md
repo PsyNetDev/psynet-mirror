@@ -110,10 +110,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   background tab can notice the round has started.
 - The regrouper groups players at random, sits out whoever has played most,
   and counts rounds (`rounds_played`, `rounds_sat_out`); pass `roles=[...]`
-  (roles alternate) and read `regrouper.role(participant)` instead of
-  assigning roles yourself. To avoid last round's partner, copy
-  `NewPartnerRegrouper` from the `ultimatum_pairing` demo, which overrides
-  `form_groups`; override it likewise for other pairing rules. With `left_over="sit_out"`, odd
+  (given out at random by default) and read `regrouper.role(participant)`
+  instead of assigning roles yourself. To avoid last round's partner or to
+  alternate roles, copy `PairingRegrouper` from the `ultimatum_pairing`
+  demo, which overrides `form_groups` and `assign_roles`; override them
+  likewise for other rules. With `left_over="sit_out"`, odd
   players out sit out the round; with `within`, a player waiting alone first
   waits one more period for cohort members. The default `max_wait_time`
   allows for this; an explicit one must then exceed twice the `deadline` or

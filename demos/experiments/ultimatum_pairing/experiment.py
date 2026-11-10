@@ -236,7 +236,7 @@ def last_partner_id(participant):
     return partners[0] if partners else None
 
 
-class NewPartnerRegrouper(Regrouper):
+class PairingRegrouper(Regrouper):
     def form_groups(self, members, within_group=None):
         """Pair players as by default, retrying so that nobody meets last round's partner."""
         for _ in range(20):
@@ -245,8 +245,21 @@ class NewPartnerRegrouper(Regrouper):
                 break
         return pairs
 
+    def assign_roles(self, members, within_group=None):
+        """Give each role to whoever has held it least often, so roles alternate."""
+        roles = {}
+        for role in self.roles:
+            free = [m for m in members if m not in roles]
+            roles[min(free, key=lambda m: times_held(m, role))] = role
+        return roles
 
-pairing = NewPartnerRegrouper(
+
+def times_held(participant, role):
+    """Return how often the player has held ``role``, from their stored pair links."""
+    return sum(link.role == role for link in participant.sync_group_links)
+
+
+pairing = PairingRegrouper(
     "pair",
     within="cohort",
     roles=["proposer", "responder"],
@@ -462,6 +475,7 @@ class Exp(psynet.experiment.Experiment):
         _play(bots)
         assert all("The offer of" in bot.current_page_text for bot in bots)
         first_partner = {bot.id: bot.with_participant(last_partner_id) for bot in bots}
+        first_role = {bot.id: bot.with_participant(pairing.role) for bot in bots}
 
         # Round 2: one player lingers on their results, so the round starts at
         # the deadline without them, and one of the other three sits out.
@@ -477,6 +491,10 @@ class Exp(psynet.experiment.Experiment):
         stayer, leaver = [b for b in others if b not in sitting_out]
         # Any two of the three could pair, so nobody meets last round's partner.
         assert first_partner[stayer.id] != leaver.id
+        # Players who held different roles last round both switch.
+        if first_role[stayer.id] != first_role[leaver.id]:
+            for bot in (stayer, leaver):
+                assert bot.with_participant(pairing.role) != first_role[bot.id]
         _play([stayer])
         assert "Your partner was away" in stayer.current_page_text
         assert leaver.with_participant(lambda p: cohort_of(p) is None)

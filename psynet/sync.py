@@ -121,7 +121,6 @@ from typing import (
     Dict,
     List,
     Literal,
-    NamedTuple,
     Optional,
     Sequence,
     Union,
@@ -3287,20 +3286,31 @@ class Regrouper(Grouper):
         Optional role names, for example ``["proposer", "responder"]``. Each
         group then has one member per role, so groups have ``len(roles)``
         members; ``group_size``, if given, must equal it. Read a member's role
-        with :meth:`role`. By default each member gets the role they have had
-        least often, so roles alternate from round to round.
+        with :meth:`role`. Roles are given out at random by default; see
+        ``assign_roles``.
 
     form_groups
         Optional callable ``form_groups(members, within_group, barrier)``
         that returns a list of groups, each a list of participants, replacing
         the default grouping described above; ``barrier`` is this regrouper.
         Members who are not placed are left over. With ``roles``, each group
-        needs one member per role, and roles are then given out as by
-        default. Subclasses can override :meth:`form_groups` instead, for
+        needs one member per role; ``assign_roles`` then gives out the roles.
+        Subclasses can override :meth:`form_groups` instead, for
         example calling the default and retrying until no one is paired with
         last round's partner, as the ``ultimatum_pairing`` demo does. The
         callable must be a module-level function so it can be
         stored with the barrier.
+
+    assign_roles
+        Optional callable ``assign_roles(members, within_group, barrier)``
+        that returns ``{participant: role}`` for one group formed with
+        ``roles``, giving each role to one member; ``barrier`` is this
+        regrouper. It is called once per group, before the group is created,
+        replacing the default, which shuffles the roles across the group's
+        members. Subclasses can override :meth:`assign_roles` instead, for
+        example to give each role to whoever has held it least often, so that
+        roles alternate, as the ``ultimatum_pairing`` demo does. The callable
+        must be a module-level function so it can be stored with the barrier.
 
     left_over
         What participants left over after a split do: ``"wait"`` (default)
@@ -3354,6 +3364,7 @@ class Regrouper(Grouper):
         every: Optional[float] = None,
         roles: Optional[Sequence[str]] = None,
         form_groups: Optional[Callable] = None,
+        assign_roles: Optional[Callable] = None,
         left_over: Literal["wait", "sit_out"] = "wait",
         on_release: Optional[Callable] = None,
         max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
@@ -3428,6 +3439,7 @@ class Regrouper(Grouper):
         self.every = every
         self.roles = None if roles is None else list(roles)
         self.form_groups_function = form_groups
+        self.assign_roles_function = assign_roles
         self.left_over = left_over
         self.on_release = on_release
 
@@ -3448,7 +3460,7 @@ class Regrouper(Grouper):
             return self.form_groups_function(
                 members=members, within_group=within_group, barrier=self
             )
-        rounds = self._history(members).rounds
+        rounds = self._rounds(members)
         # Shuffled first, so that ties are broken at random.
         members = sorted(
             random.sample(members, len(members)), key=lambda m: rounds[m.id]
@@ -3545,42 +3557,39 @@ class Regrouper(Grouper):
         )
         return {visit.participant_id: visit for visit in visits}
 
-    def _history(self, members) -> "_RegroupHistory":
-        """Return the members' rounds and role counts, keyed by ID."""
+    def assign_roles(self, members, within_group=None) -> Dict[Participant, str]:
+        """Return ``{participant: role}`` for one group's members, one member per role.
+
+        By default the roles are shuffled across the members.
+        """
+        if self.assign_roles_function is not None:
+            return self.assign_roles_function(
+                members=members, within_group=within_group, barrier=self
+            )
+        return dict(zip(random.sample(members, len(members)), self.roles))
+
+    def _rounds(self, members) -> Dict[int, int]:
+        """Return how many groups this regrouper has put each member in, keyed by ID."""
         rounds = {m.id: 0 for m in members}
-        role_counts = {m.id: {} for m in members}
         for link in self._links(list(rounds)):
             rounds[link.participant_id] += 1
-            if link.role:
-                counts = role_counts[link.participant_id]
-                counts[link.role] = counts.get(link.role, 0) + 1
-        return _RegroupHistory(rounds, role_counts)
+        return rounds
 
-    def _planned_roles(self, plan, members) -> Dict[int, Optional[str]]:
-        """Return each planned member's role by ID, decided from the history before the split."""
+    def _planned_roles(self, plan, within_group) -> Dict[int, str]:
+        """Return each planned member's role by ID, given out before the groups exist."""
         if not self.roles:
             return {}
-        history = self._history(members)
-        return {
-            m.id: role
-            for group in plan
-            for m, role in self._least_held_roles(group, history).items()
-        }
-
-    def _least_held_roles(self, members, history) -> dict:
-        """Return ``{member: role}``, giving each role to whoever has had it least.
-
-        Ties go by member order, which ``form_groups`` shuffles.
-        """
-        unassigned = list(members)
         roles = {}
-        for role in self.roles:
-            member = min(
-                unassigned,
-                key=lambda m: history.role_counts[m.id].get(role, 0),
-            )
-            unassigned.remove(member)
-            roles[member] = role
+        for group_members in plan:
+            assigned = self.assign_roles(group_members, within_group=within_group)
+            if sorted(m.id for m in assigned) != sorted(
+                m.id for m in group_members
+            ) or sorted(assigned.values()) != sorted(self.roles):
+                raise ValueError(
+                    f"Regrouper '{self.id}': assign_roles must give each role "
+                    "to one member of the group."
+                )
+            roles.update({m.id: role for m, role in assigned.items()})
         return roles
 
     def _shows_countdown(self) -> bool:
@@ -3749,7 +3758,7 @@ class Regrouper(Grouper):
             if group_members
         ]
         self._check_plan(plan, members)
-        roles = self._planned_roles(plan, members)
+        roles = self._planned_roles(plan, within_group)
         # The split's time, not the inserts', decides which tick it used.
         split_time = timenow()
         groups = [
@@ -3827,13 +3836,6 @@ class Regrouper(Grouper):
             accepts_top_ups=False,
             below_quorum="continue_without_group",
         )
-
-
-class _RegroupHistory(NamedTuple):
-    """Regrouper history of a set of members, each field keyed by participant ID."""
-
-    rounds: Dict[int, int]
-    role_counts: Dict[int, Dict[str, int]]
 
 
 def warn_if_late_removal_fails_group(barriers):

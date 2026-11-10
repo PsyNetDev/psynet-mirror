@@ -41,7 +41,7 @@ cohort into new pairs. Each time a player reaches it, they leave last round's
 pair and wait for the next split:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :start-at: pairing = Regrouper(
+   :start-at: pairing = PairingRegrouper(
    :end-before: OUTCOME_TEXTS
 
 The round starts as soon as the whole cohort (``within``) is waiting, or at
@@ -49,8 +49,9 @@ the ``deadline`` (counted from when the first player is back) without whoever
 isn't back yet, if enough players are waiting to
 form a pair. A player who isn't back by then is still in the cohort, and
 joins the next round.
-With ``roles``, each pair has a proposer and a responder, and each player
-alternates between them. ``waiting_message`` counts down to the deadline. See
+With ``roles``, each pair has a proposer and a responder; the demo's
+regrouper gives each role to whoever has held it least often, so each
+player alternates between them. ``waiting_message`` counts down to the deadline. See
 :class:`~psynet.sync.Regrouper` for these options:
 
 .. figure:: ../../_static/images/rounds/next_round.png
@@ -544,10 +545,11 @@ to newcomers: a player who joins the pair after it starts the next round
 rather than joining a round whose first turn is over.
 
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
-example to pair players by their earlier answers. The demo's regrouper
-overrides it to keep last round's partners apart (see "Rounds with
+example to pair players by their earlier answers, and ``assign_roles``
+replaces the default random roles. The demo's regrouper overrides both, to
+keep last round's partners apart and to alternate roles (see "Rounds with
 changing groups" in :doc:`synchronization`). With roles, each group needs
-one member per role, and roles still alternate. See
+one member per role. See
 :class:`~psynet.sync.Regrouper` for this and the other settings.
 
 **A trial maker.** A trial maker with ``sync_group_type``, as in the
