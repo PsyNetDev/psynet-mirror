@@ -253,19 +253,12 @@ Barriers
 
 A :class:`~psynet.sync.GroupBarrier` holds each member until every active
 member of the group has reached it. When the last member arrives, the barrier
-calls ``on_release`` for the whole group. In or after a round of cued trials,
-it waits only for the members of that round: not for a late joiner who
-skipped it, a member already in a later round, one who has left the
-round's module, or one who has already passed it. At the start of a module,
-or of a later run of it, it waits for every member still in this module
-(including one still finishing the previous run) until a member cues the
-run's first round; after that, as before a late joiner's first cue, it
-waits only for members who haven't cued one either and are still in the
-module. A
-release of only members catching up, such as skippers, doesn't call
-``on_release`` (see
-:ref:`rounds-cued-trials` and :ref:`a fixed group's loop
-<rounds-fixed-group-loop>`). In ``rock_paper_scissors`` the
+calls ``on_release`` for the whole group. It doesn't wait for members who
+have finished the barrier's module. With rounds of cued trials, a barrier in
+a round's trial (``show_trial``) waits only for the members of that round,
+not for a late joiner who skipped it or a member already in a later round;
+any other barrier waits for the whole group (see
+:ref:`round barriers and group barriers <rounds-barrier-visits>`). In ``rock_paper_scissors`` the
 barrier after each choice scores the round and saves each player's result
 on their trial, where ``show_feedback`` reads it:
 
@@ -284,19 +277,15 @@ for compatibility).
 .. _sync-barrier-node:
 
 ``node`` is the group's :class:`~psynet.trial.main.SyncGroupNode` for the
-round the barrier is in or after: the earliest of the rounds the waiting
-members stored when they last cued (or skipped) one in their current run
-of their current module, not a node worked out from their trials. It is
-``None`` before the group's first cue in the module, including at a barrier
-at the start of a module after another module's rounds or at the start of a
-later run of the same module, and in a group that never uses
-:meth:`~psynet.trial.main.Trial.cue`. When ``node`` is set, ``trials``
-holds ``None`` for a member whose current trial is not on it, such as a
-newcomer released at a feedback barrier during a practice trial; when it is
-``None``, ``trials`` holds each member's current trial whatever its node,
-which can be a trial of an earlier module, or ``None`` for a member with
-none. At a barrier in the round's trial pages (``show_trial``) every member
-it releases is playing on the node, so ``trials`` has no ``None`` there.
+round whose trial the barrier is in, that is, a barrier in ``show_trial`` of
+a cued trial with ``sync_group_type`` (see
+:ref:`a round visit <rounds-barrier-visits>`); every member it releases is playing on that
+node. At any other barrier, including one in ``show_feedback``, between
+iterations, after the loop or at the start of a later run, and in a group
+that never uses :meth:`~psynet.trial.main.Trial.cue`, ``node`` is ``None``
+and ``trials`` holds each member's current trial whatever its node, which
+can be a trial of an earlier round or module, or ``None`` for a member with
+none.
 In ``rock_paper_scissors`` the trial maker gives every pair the same node,
 which is not a group's node, so ``node`` is ``None`` and the results go on
 the trials. Cued trials share a node per group and round, so there a
@@ -339,14 +328,10 @@ Each trial on a group's node records how the round ended for its player in
 and exports can read it rather than work it out from the player's groups
 later:
 
-- ``"stayed"``: a group barrier released the group while this was the
-  player's current trial on the round's node. A barrier after the trial,
-  between rounds or after the loop also stores it, as long as the trial is
-  still the player's current trial and has no outcome yet, but a barrier
-  of a later module, or of a later run of the same module, before its
-  first cue (where ``node`` is ``None``) does not. Members released with another current trial, such as a newcomer's
-  practice trial, don't stop it, and get nothing, as do members who
-  skipped the round;
+- ``"stayed"``: a group barrier in the trial's pages (``show_trial``)
+  released the group. Barriers after the trial, such as in
+  ``show_feedback``, don't store it, and members who skipped the round get
+  nothing;
 - why the player left the group: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
   ``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or
@@ -355,7 +340,8 @@ later:
 - ``None`` before either happens, and for a trial played without a group.
 
 The first of these to happen is stored, even after the trial's pages
-(``show_trial``) have ended, for example at a barrier in ``show_feedback``.
+(``show_trial``) have ended, for example when the player leaves the group
+in ``show_feedback``.
 :attr:`~psynet.trial.main.Trial.complete` says whether those pages have
 ended. Two things differ: leaving before they have ended replaces
 ``"stayed"`` from an earlier barrier of the round, and moving on
@@ -388,10 +374,12 @@ If the group dissolves while some members are waiting at the barrier,
 ``on_dissolve`` runs for them instead, before they leave the group, with the
 same arguments except ``leader`` and ``left``. ``participants`` are
 then the members waiting at the barrier, and ``node`` and ``trials`` follow
-the same rule as for ``on_release``, from those members' stored rounds.
+the same rule as for ``on_release``.
 Dissolving waits for any member who is in the middle of another request, so
 it may happen a second or two after that request finishes, and
-``on_dissolve`` is called once, with every member waiting at the barrier. A
+``on_dissolve`` is called once with every member waiting at the barrier
+(once per kind of visit, if members wait there both inside a round's trial
+and outside it). A
 quiz can still score the last question for those who answered it:
 
 .. code-block:: python
@@ -1039,11 +1027,8 @@ Keep these in mind:
   ``show_trial``. Everyone would skip that barrier after its first pass.
   That includes a module that runs again, for example in a loop: the team's
   pass in the first run counts for later runs too.
-- Only the team's release counts as a pass, not a member let go after
-  waiting too long, nor a release of only members catching up, such as a
-  newcomer who skipped a round, nor a release while a member who hasn't
-  left the module is in a later cued round of it (see
-  :ref:`rounds-cued-trials`). The pass still counts after everyone who
+- Every release of the team counts as a pass, but a member let go after
+  waiting too long doesn't. The pass still counts after everyone who
   waited there has left the team.
 - ``on_release`` doesn't run for those who pass through, so they must not
   need any group state it sets up. Their passing isn't the team's pass

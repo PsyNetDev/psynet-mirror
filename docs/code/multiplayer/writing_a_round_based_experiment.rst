@@ -94,14 +94,14 @@ find them by when exporting.
 ``cue`` numbers each group's rounds by itself, from 0:
 
 - A cue joins the group's newest node in the module while that round is
-  open and the player has no trial on it. A round closes when one of its
-  barriers releases the group, and only then.
+  open and the player has no trial on it. A round closes when a barrier in
+  its trial (in ``show_trial``) releases the group, and only then.
 - Otherwise it starts the group's next round.
 
 So every pair here, new each round, plays round 0, while a fixed group cued
 in a loop plays rounds 0, 1, 2 and so on, whichever trial classes it cues.
-A member who joins it late joins its current round only until any barrier
-of that round releases the group. After that, even while the others are
+A member who joins it late joins its current round only until a barrier
+in that round's trial releases the group. After that, even while the others are
 still on a page after the barrier, the newcomer starts the next round,
 which the others then join. So put a ``GroupBarrier`` in each round,
 inside ``show_trial`` after the answer page, as in the one below: it
@@ -111,43 +111,75 @@ have finished. In a module that a loop repeats, a member's first cue in
 the next run can also join the previous run's last round while it is open,
 so end each round there with a ``GroupBarrier`` that closes it.
 
-Each member's group membership records the round they last cued or
-skipped. A barrier that members reach in or after a round (in the trial,
-in its feedback, between iterations or after the loop) waits for the
-members who played that round, and for those who haven't reached it yet
-only while it is still open and they are still in its module. It doesn't
-wait for a member who skipped the round or is already in a round the group
-played after it, such as that newcomer, for one who has left the module,
-as when their loop ended earlier, nor for one who has already passed it in
-that round. When it
-releases, it also releases the round's skippers who are waiting there, so a
-skipper who reaches a barrier after the loop is released with the players,
-or alone if they have already passed it.
+.. _rounds-barrier-visits:
 
-A barrier before a late joiner's first cue in the module, such as one at
-the start of each iteration, waits for every member still in the module
-only if the group hasn't cued a round in it yet. Once it has, it waits only for the
-members who haven't cued one there either, are still in the module and
-haven't passed it yet, so the late joiner moves on to their cue and joins
-the open round or skips the closed one. A release of only such members
-catching up, late joiners or skippers, isn't the group's pass:
-``on_release`` doesn't run, and it doesn't count for ``left`` or
-``late_after``.
+When a member reaches a ``GroupBarrier``, PsyNet records which of two kinds
+of visit it is:
 
-In a module that a loop repeats, a barrier at the start of the next run
-waits for every member still in this module (including one still
-finishing the previous run, and a newcomer starting their first run), until
-someone cues that run's first round; it doesn't wait for a member whose
-loop has ended. A member on a page between the module and its next run,
-inside the loop but outside the module, counts as having left it, so keep
-the loop's pages inside the module.
+- A **round visit**, if the member is in their cued trial of the group and
+  the trial hasn't ended, that is, the barrier is in ``show_trial``. It
+  waits for the members who have a trial in that round, and, while the
+  round is open, for those who haven't cued yet, because their cue will
+  join it. Its release closes the round, and ``on_release`` gets the
+  round's node.
+- A **group visit**, from any other barrier: before the first cue, in
+  ``show_feedback``, at the start of each iteration, after the loop, or
+  where the group cues no rounds. It waits for every member, whatever
+  round they are in, and ``on_release`` gets ``node=None``.
 
-These rules use the rounds members have cued in the barrier's module, so
-they don't cover a barrier in a module where the group cues no rounds, such
-as one before a separate module of rounds: a newcomer who reaches it after
-the group has gone waits there for members who are further on, until the
-barrier's time-outs remove someone. Give such a barrier
-``pass_newcomers=True`` (see :ref:`sync-newcomers-at-passed-barriers`).
+Neither kind waits for a member who has finished the barrier's module, as
+when their loop ended earlier, and the two kinds never wait for each other,
+even at barriers with the same ID. Every release, except letting one
+member go after ``max_wait_time``, is the group's pass: ``on_release`` runs,
+and the pass counts for ``left`` and ``late_after``. For example:
+
+.. code-block:: python
+
+    class EstimateTrial(Trial):
+        sync_group_type = "team"
+
+        def show_trial(self, experiment, participant):
+            return join(
+                self.estimate_page(),
+                GroupBarrier(id_="estimates", group_type="team",
+                             on_release=self.score_round),   # round visit; closes the round
+                PageMaker(self.revise_page, time_estimate=10),
+            )
+
+    Module("game", for_loop(label="q", iterate_over=range(3),
+                            logic=lambda q: EstimateTrial.cue({"q": q}, round=q)))
+
+A late joiner skips the rounds that have closed, joins the open one, and
+``estimates`` waits for them there. A member who skipped a round never
+visits its barriers, and one who is already in the next round has no trial
+on this one, so neither holds it up.
+
+.. _rounds-group-barriers-in-loops:
+
+Keep a round's barriers in ``show_trial`` if the group can take newcomers
+during the module. A group barrier inside the loop, such as
+``GroupBarrier("ready", ...)`` at the start of each iteration or one in
+``show_feedback``, waits for every member, so a newcomer who reaches it
+waits for members who are waiting in the round's trial for them. Neither
+can pass until ``late_after`` or ``max_wait_time`` moves someone on, and
+PsyNet logs a warning naming both barriers. Move that barrier into
+``show_trial``, or stop newcomers from joining during the module with
+``stop_top_ups=True`` on a barrier before it (see the ``stop_top_ups``
+argument of :class:`~psynet.sync.GroupBarrier`).
+
+In a module that a loop repeats, a barrier at the start of the next run is
+a group visit too: it waits for every member still in the module,
+including one still finishing the previous run and a newcomer starting
+their first run, and not for a member whose loop has ended. A member on a
+page between the module and its next run, inside the loop but outside the
+module, counts as having left it, so keep the loop's pages inside the
+module.
+
+A barrier in a module where the group cues no rounds, such as one before a
+separate module of rounds, waits for every member too: a newcomer who
+reaches it after the group has gone waits there for members who are
+further on, until the barrier's time-outs remove someone. Give such a
+barrier ``pass_newcomers=True`` (see :ref:`sync-newcomers-at-passed-barriers`).
 
 So a trial has two round counters. ``sync_group_round`` counts the group's
 rounds, and is ``None`` on a trial played without a group. Use it for what
@@ -186,8 +218,9 @@ value as ``round=``:
 Each iteration is then the group's round of that number, whoever cues it
 first, so its definition can come from the loop. A member who joins late
 skips the rounds that the group finished without them: rounds where they
-have no trial and whose barrier has released the group. They play the rest, and the
-barriers of a round they skipped don't wait for them. A skipped
+have no trial and whose barrier in ``show_trial`` has released the group.
+They play the rest, and the barriers of a round they skipped don't wait for
+them. A skipped
 round shows nothing and earns no time credit, but the progress bar moves on
 as if it had been played. A skipped cue leaves ``participant.current_trial``
 as ``None``, so code after the cue in the same iteration that reads the
@@ -237,7 +270,7 @@ a trial on the round's node. Pass both cues the same ``round=``, such as
 the loop value in a fixed group's loop. A member with a trial in the round
 joins it even after its barrier has released the group, while a late
 joiner without one skips the whole round, both phases, and the second
-phase's barriers don't wait for them.
+phase's round barriers don't wait for them.
 
 The ``switch`` decides once, before the trial: a player in a pair gets
 the trial, one who sat out gets a page instead (see

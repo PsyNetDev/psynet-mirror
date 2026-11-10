@@ -4401,7 +4401,7 @@ class SyncGroupNode(GenericTrialNode):
     # No foreign key, as on Trial.sync_group_id.
     sync_group_id = Column(Integer, index=True)
     sync_group_round = Column(Integer)
-    # Set when a GroupBarrier releases the group with all its trials here,
+    # Set when a GroupBarrier in the round's trials releases the group,
     # after which the round takes no members who have no trial on it. Set
     # under the round lock that for_cue holds, so a cue reads it consistently.
     sync_group_closed = Column(Boolean, default=False)
@@ -4435,8 +4435,8 @@ class SyncGroupNode(GenericTrialNode):
 
         Without ``round_number``, this is the group's newest node in the module
         while that round is open and the participant has no trial on it. A
-        round is open until a :class:`~psynet.sync.GroupBarrier` releases the
-        group with all its trials on the node, which sets
+        round is open until a :class:`~psynet.sync.GroupBarrier` in the
+        round's trials (in ``show_trial``) releases the group, which sets
         ``sync_group_closed``; a round without such a barrier never closes.
         Otherwise the group moves on to a new node for the next round,
         counted from 0, which the others then join.
@@ -4453,8 +4453,7 @@ class SyncGroupNode(GenericTrialNode):
         ``trial_class`` is the class of the cued trial. A new node's
         definition is ``make_definition(round_number)``. Either way, the
         participant's link to ``group`` records the round as the one they
-        last cued or skipped, for :class:`~psynet.sync.GroupBarrier` to tell
-        whom a round's barriers wait for.
+        last cued or skipped, so a later cue can't name it again.
 
         The group's members cue their trials in parallel requests, so this
         holds an advisory lock on the module and group until the request
@@ -4553,17 +4552,9 @@ def _member_link(group, participant):
 
 
 def _record_round_position(group, participant, node, skipped=False):
-    """Store ``node`` as the round of ``group`` that ``participant`` last cued or skipped.
-
-    Also stores the participant's current ``ModuleState``, so a later run of
-    the same module can tell that the round belongs to an earlier run.
-    """
+    """Store ``node`` as the round of ``group`` that ``participant`` last cued or skipped."""
     link = _member_link(group, participant)
-    state = participant.module_state
-    if state is not None and state.id is None:
-        db.session.flush()
     link.round_node_id = node.id
-    link.round_module_state_id = None if state is None else state.id
     link.skipped_round = skipped
 
 

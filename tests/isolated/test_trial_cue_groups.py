@@ -4,7 +4,6 @@ import logging
 import sys
 import threading
 import time
-from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -242,7 +241,7 @@ def test_a_barrier_release_closes_the_round(in_experiment_directory, db_session)
 
 
 @in_consents_experiment
-def test_a_feedback_barrier_closes_the_round_despite_a_newcomer_s_other_trial(
+def test_a_barrier_after_the_trial_is_a_visit_by_the_whole_group(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
@@ -258,21 +257,17 @@ def test_a_feedback_barrier_closes_the_round_despite_a_newcomer_s_other_trial(
     barrier = GroupBarrier(
         "feedback", group_type="pair", on_release=PairTrial.record_release
     )
-    _arrive(exp, barrier, [*cohort, newcomer])
+    _arrive(exp, barrier, cohort)
+    assert barrier._participant_is_waiting(cohort[0])
+    _arrive(exp, barrier, [newcomer])
 
     ((participants, trials, node),) = _released
-    node_of = {p.id: p.current_trial.node for p in cohort}
-    assert node is node_of[cohort[0].id] is node_of[cohort[1].id]
+    assert node is None
     assert {p.id: t for p, t in zip(participants, trials)} == {
-        **{p.id: p.current_trial for p in cohort},
-        newcomer.id: None,
+        p.id: p.current_trial for p in [*cohort, newcomer]
     }
-    assert cohort[0].current_trial.node.sync_group_closed
-    assert [p.current_trial.sync_group_outcome for p in [*cohort, newcomer]] == [
-        "stayed",
-        "stayed",
-        None,
-    ]
+    assert not cohort[0].current_trial.node.sync_group_closed
+    assert [p.current_trial.sync_group_outcome for p in cohort] == [None, None]
 
 
 @in_consents_experiment
@@ -518,12 +513,14 @@ def test_a_later_run_s_start_does_not_wait_for_a_partner_whose_loop_ended(
     assert not barrier._participant_is_waiting(cohort[0])
 
 
+@pytest.mark.parametrize("round_closed", [False, True])
 @in_consents_experiment
 def test_a_newcomer_starts_a_later_run_with_the_group(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, round_closed
 ):
     exp = get_experiment()
-    cohort, _ = _start_a_second_run(exp)
+    cohort, trials = _start_a_second_run(exp)
+    trials[0].node.sync_group_closed = round_closed
     (newcomer,) = _working_participants(exp, 1)
     cohort[0].active_sync_groups["pair"].add_participant(newcomer)
     newcomer.start_module(Module("game", InfoPage("Hi", time_estimate=1)))
@@ -531,7 +528,9 @@ def test_a_newcomer_starts_a_later_run_with_the_group(
     barrier = GroupBarrier(
         "second_run_start", group_type="pair", on_release=PairTrial.record_release
     )
-    _arrive(exp, barrier, [*cohort, newcomer])
+    _arrive(exp, barrier, [newcomer])
+    assert barrier._participant_is_waiting(newcomer)
+    _arrive(exp, barrier, cohort)
 
     ((participants, _, _),) = _released
     assert {p.id for p in participants} == {p.id for p in [*cohort, newcomer]}
@@ -558,7 +557,7 @@ def test_a_run_s_start_waits_for_a_member_with_fewer_earlier_runs_of_the_module(
 
 
 @in_consents_experiment
-def test_a_run_s_start_releases_a_member_runs_behind_and_keeps_the_other_waiting(
+def test_a_run_s_start_releases_members_with_different_earlier_runs_together(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
@@ -571,9 +570,10 @@ def test_a_run_s_start_releases_a_member_runs_behind_and_keeps_the_other_waiting
     behind.end_module(game)
     behind.start_module(game)
     barrier = GroupBarrier("run_start", group_type="pair")
-    _arrive(exp, barrier, cohort)
+    _arrive(exp, barrier, [ahead])
     assert barrier._participant_is_waiting(ahead)
-    assert not barrier._participant_is_waiting(behind)
+    _arrive(exp, barrier, [behind])
+    assert not any(barrier._participant_is_waiting(p) for p in cohort)
 
 
 @in_consents_experiment
@@ -709,6 +709,7 @@ def test_a_skipper_doesnt_hold_up_the_round_s_later_barrier(
 
     # A barrier the skipper reaches too, such as after the loop, waits for
     # the players and then releases everyone.
+    _complete_trials(cohort)
     after_loop = GroupBarrier("after_loop", group_type="pair")
     _arrive(exp, after_loop, [newcomer])
     assert after_loop._participant_is_waiting(newcomer)
@@ -759,29 +760,6 @@ def test_an_open_round_doesnt_wait_for_a_member_who_left_the_module(
     submitted = GroupBarrier("submitted", group_type="pair")
     _arrive(exp, submitted, cohort)
     assert not any(submitted._participant_is_waiting(p) for p in cohort)
-
-
-@in_consents_experiment
-def test_a_late_joiner_doesnt_wait_before_their_first_cue_for_a_member_who_left_the_module(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    cohort, _ = _paired(exp)
-    pair = cohort[0].active_sync_groups["pair"]
-    leaver, newcomer = _working_participants(exp, 2)
-    module = Module("rounds", InfoPage("Hi", time_estimate=1))
-    for participant in [*cohort, leaver, newcomer]:
-        participant.start_module(module)
-    for participant in cohort:
-        _cue_round(exp, participant, 0)
-    pair.add_participant(leaver)
-    pair.add_participant(newcomer)
-    # The leaver's loop is empty, so they finish the module without cueing.
-    leaver.end_module(module)
-
-    ready = GroupBarrier("ready", group_type="pair")
-    _arrive(exp, ready, [newcomer])
-    assert not ready._participant_is_waiting(newcomer)
 
 
 @pytest.mark.parametrize("cued_before", [False, True])
@@ -897,10 +875,9 @@ def _record_release(participants):
     _releases.append(sorted(p.id for p in participants))
 
 
-@pytest.mark.parametrize("late_after", [None, 10])
 @in_consents_experiment
-def test_a_skipper_doesnt_wait_for_players_who_passed_a_later_barrier(
-    in_experiment_directory, db_session, late_after
+def test_a_barrier_after_the_loop_waits_for_a_skipper(
+    in_experiment_directory, db_session
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
@@ -913,33 +890,19 @@ def test_a_skipper_doesnt_wait_for_players_who_passed_a_later_barrier(
     _complete_trials(cohort)
     _releases.clear()
     after_loop = GroupBarrier(
-        "after_loop",
-        group_type="pair",
-        late_after=late_after,
-        late_action="leave_group",
-        on_release=_record_release,
+        "after_loop", group_type="pair", on_release=_record_release
     )
     _arrive(exp, after_loop, cohort)
-    if late_after:
-        # The players would be late if the skipper's visit waited for them.
-        pair.last_barrier_pass_time -= timedelta(seconds=60)
-        for link in pair.participant_links:
-            link.arrival_time -= timedelta(seconds=60)
-    pass_time = pair.last_barrier_pass_time
+    assert after_loop._participant_is_waiting(cohort[0])
 
     assert _cue_round(exp, newcomer, 0) is None
     _arrive(exp, after_loop, [newcomer])
-    assert not after_loop._participant_is_waiting(newcomer)
-    assert all("pair" in p.active_sync_groups for p in cohort)
-    # Releasing the skipper alone isn't a group pass.
-    assert _releases == [sorted(p.id for p in cohort)]
-    assert pair.last_barrier_pass_time == pass_time
+    assert _releases == [sorted(p.id for p in [*cohort, newcomer])]
 
 
-@pytest.mark.parametrize("round_closed", [False, True])
 @in_consents_experiment
-def test_a_newcomer_doesnt_wait_before_their_first_cue_for_members_in_a_round(
-    in_experiment_directory, db_session, round_closed
+def test_a_group_barrier_waiting_for_a_member_in_a_round_warns_once(
+    in_experiment_directory, db_session, caplog
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
@@ -948,79 +911,22 @@ def test_a_newcomer_doesnt_wait_before_their_first_cue_for_members_in_a_round(
     module = Module("rounds", InfoPage("Hi", time_estimate=1))
     for participant in cohort:
         participant.start_module(module)
-    # Each iteration starts with "ready", before the cue.
-    _arrive(exp, GroupBarrier("ready", group_type="pair"), cohort)
-    for participant in cohort:
         _cue_round(exp, participant, 0)
     submitted = GroupBarrier("submitted", group_type="pair")
-    if round_closed:
-        _arrive(exp, submitted, cohort)
-        for participant in cohort:
-            participant.end_module(module)
+    _arrive(exp, submitted, cohort[:1])
     pair.add_participant(newcomer)
     newcomer.start_module(module)
 
+    # "ready" starts each iteration, outside the trial, so it waits for the
+    # players, who wait in the round for the newcomer.
     ready = GroupBarrier("ready", group_type="pair")
-    _arrive(exp, ready, [newcomer])
-    assert not ready._participant_is_waiting(newcomer)
-    if not round_closed:
-        # The newcomer joins the open round, whose barrier waits for them.
-        assert _cue_round(exp, newcomer, 0).node is cohort[0].current_trial.node
-        _arrive(exp, submitted, cohort)
-        assert submitted._participant_is_waiting(cohort[0])
-        _arrive(exp, submitted, [newcomer])
-        assert not any(
-            submitted._participant_is_waiting(p) for p in [newcomer, *cohort]
-        )
-
-
-@in_consents_experiment
-def test_a_skipper_s_release_isn_t_a_pass_while_members_are_in_a_later_round(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    cohort, _ = _paired(exp)
-    pair = cohort[0].active_sync_groups["pair"]
-    for participant in cohort:
-        _cue_round(exp, participant, 0)
-    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
-    for participant in cohort:
-        _cue_round(exp, participant, 1)
-    (newcomer,) = _working_participants(exp, 1)
-    pair.add_participant(newcomer)
-    # The newcomer's shorter loop ends while the players are still in round 1.
-    assert _cue_round(exp, newcomer, 0) is None
-    game_over = GroupBarrier("game_over", group_type="pair", pass_newcomers=True)
-    _arrive(exp, game_over, [newcomer])
-    assert not game_over._participant_is_waiting(newcomer)
-    assert not game_over._lets_through(pair, newcomer)
-
-
-@pytest.mark.parametrize("ahead_left", [False, True])
-@in_consents_experiment
-def test_a_group_pass_counts_unless_a_member_still_in_the_module_is_ahead(
-    in_experiment_directory, db_session, ahead_left
-):
-    exp = get_experiment()
-    cohort, _ = _paired(exp)
-    pair = cohort[0].active_sync_groups["pair"]
-    (newcomer,) = _working_participants(exp, 1)
-    module = Module("rounds", InfoPage("Hi", time_estimate=1))
-    for participant in [*cohort, newcomer]:
-        participant.start_module(module)
-    for participant in cohort:
-        _cue_round(exp, participant, 0)
-    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
-    pair.add_participant(newcomer)
-    assert _cue_round(exp, newcomer, 0) is None
-    _cue_round(exp, newcomer, 1)
-    if ahead_left:
-        newcomer.end_module(module)
-    # The players' shorter loop ends after round 0.
-    game_over = GroupBarrier("game_over", group_type="pair", pass_newcomers=True)
-    _arrive(exp, game_over, cohort)
-    assert not any(game_over._participant_is_waiting(p) for p in cohort)
-    assert game_over._lets_through(pair, cohort[0]) is ahead_left
+    with caplog.at_level(logging.WARNING):
+        _arrive(exp, ready, [newcomer])
+        ready.choose_who_to_release([newcomer])
+    assert ready._participant_is_waiting(newcomer)
+    messages = [r.getMessage() for r in caplog.records]
+    (warning,) = [m for m in messages if "show_trial" in m]
+    assert "'ready'" in warning and "'submitted'" in warning
 
 
 @in_consents_experiment
