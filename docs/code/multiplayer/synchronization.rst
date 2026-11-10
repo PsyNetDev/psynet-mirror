@@ -46,8 +46,8 @@ the grouper has a ``waiting_screen`` (see below).
     the next barrier check after one has room. Groups that have closed or
     stopped accepting top-ups, and groups with no active members, are not
     joined. Groups formed with this option accept *top-ups* until you stop
-    them; see `Groups below quorum`_ for how and for what top-ups change
-    when a member drops out.
+    them; see `Groups below quorum`_ for how they stop, and for what they
+    change when a member drops out.
 
 ``max_group_size`` (default: ``initial_group_size``)
     The largest size a group can reach through ``join_existing_groups``;
