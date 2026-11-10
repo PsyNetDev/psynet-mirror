@@ -47,6 +47,8 @@ of waiters a sweep normally stays within its interval and later sweeps reach
 the remaining visits. One timeout or check can still overrun while it waits
 for a row lock.
 
+.. _sync-group-lock-order:
+
 Sync group lock order
 ---------------------
 
@@ -71,6 +73,10 @@ row:
 - Joining an open group (``join_existing_groups=True``) locks the group row
   with ``SKIP LOCKED`` and re-counts its members under that lock; a busy
   group is skipped for the next candidate.
+- A synchronized trial maker records each run's choices in the group's
+  ``trial_maker_runs`` and waits for the group row lock to do so, so it
+  takes that lock only after locking any participant rows it needs
+  (participants first, then the group).
 
 Two members failing at the same moment therefore do not deadlock: each
 fails itself, and the second request to reach the group, or else the

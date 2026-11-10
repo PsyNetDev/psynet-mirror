@@ -1836,7 +1836,10 @@ def _edit_group_runs(group, trial_maker_id, edit):
 
     Members' requests write the runs concurrently, so this first rereads
     them holding the group's row lock until the transaction ends;
-    otherwise one request could overwrite another's change.
+    otherwise one request could overwrite another's change. Unlike the group
+    locks that skip locked rows, this waits for the lock, so call it only
+    after taking any participant locks (participants first, then the group)
+    to avoid deadlocks.
     """
     db.session.flush()
     db.session.refresh(group, ["trial_maker_runs"], with_for_update={"key_share": True})
@@ -2746,12 +2749,16 @@ class TrialMaker(Module):
         In a synchronized trial maker, members copy it from their group's
         current run, so newcomers and a promoted leader keep the group's;
         otherwise, or for the run's first member, ``choose_participant_group``
-        chooses it.
+        chooses it. A group already set on the participant is kept, and
+        recorded as the run's if the run has none yet.
         """
-        if participant.module_state.participant_group:
+        group, run = self._group_run(participant)
+        preset = participant.module_state.participant_group
+        if preset:
+            if run is not None and "participant_group" not in run:
+                self._update_group_run(group, participant_group=preset)
             return
 
-        group, run = self._group_run(participant)
         if run is not None and "participant_group" in run:
             logger.info(
                 f"participant = {participant.id} copies the participant group "

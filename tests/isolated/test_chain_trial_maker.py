@@ -445,6 +445,23 @@ def test_a_newcomer_copies_the_run_they_are_recorded_in(monkeypatch, promoted):
     assert hasattr(newcomer, "networks") == promoted
 
 
+def test_a_preset_participant_group_is_shared_with_the_run(monkeypatch):
+    monkeypatch.setattr(db.session, "refresh", lambda *args, **kwargs: None)
+    trial_maker = make_trial_maker(
+        sync_group_type="main", choose_participant_group=lambda participant: "C"
+    )
+    group = SimpleNamespace(id=1, trial_maker_runs={trial_maker.id: [{"members": []}]})
+    first, second = (_group_member(trial_maker, group, id_) for id_ in (1, 2))
+    for participant in first, second:
+        _start_run(trial_maker, participant)
+    first.module_state.participant_group = "P"
+
+    for participant in first, second:
+        trial_maker.init_participant_group(None, participant)
+
+    assert second.module_state.participant_group == "P"
+
+
 @pytest.mark.parametrize("chain_kwargs", [WITHIN_CHAINS, {}])
 def test_participant_removed_from_their_group_initializes_alone(chain_kwargs):
     trial_maker = make_trial_maker(sync_group_type="main", **chain_kwargs)
