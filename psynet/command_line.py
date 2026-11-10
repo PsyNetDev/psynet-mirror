@@ -2734,13 +2734,15 @@ def _reject_leftover_local_image_files():
         )
 
 
+_LOCAL_PACKAGE_NAMES = ("psynet", "dallinger")
+
+
 def _local_packages(use_local_psynet, use_local_dallinger):
     """Return the names of the packages built into the image from local checkouts."""
     return tuple(
         package
-        for package, enabled in (
-            ("psynet", use_local_psynet),
-            ("dallinger", use_local_dallinger),
+        for package, enabled in zip(
+            _LOCAL_PACKAGE_NAMES, (use_local_psynet, use_local_dallinger)
         )
         if enabled
     )
@@ -7795,7 +7797,7 @@ def _reuse_local_packages(server, app, deploy_options):
     reused = [
         package
         for package in recorded
-        if package in ("psynet", "dallinger")
+        if package in _LOCAL_PACKAGE_NAMES
         and not deploy_options.get(f"use_local_{package}")
     ]
     for package in reused:

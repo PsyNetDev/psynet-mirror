@@ -1937,19 +1937,33 @@ def test_performance_test_ssh_scaffolds_before_contacting_the_server():
     assert deploy.call_args.kwargs["use_local_psynet"] is True
 
 
-@pytest.mark.parametrize("args, reused", [([], True), (["--use-local-psynet"], False)])
-def test_performance_test_ssh_updates_reuse_the_deploys_local_packages(args, reused):
+@pytest.mark.parametrize(
+    "recorded, args, reused",
+    [
+        ("psynet", [], "--use-local-psynet"),
+        ("psynet", ["--use-local-psynet"], None),
+        ("dallinger", [], "--use-local-dallinger"),
+        ("psynet,dallinger", [], "--use-local-psynet and --use-local-dallinger"),
+        ("psynet,dallinger", ["--use-local-psynet"], "--use-local-dallinger"),
+    ],
+)
+def test_performance_test_ssh_updates_reuse_the_deploys_local_packages(
+    recorded, args, reused
+):
     result, deploy, _ = _invoke_performance_test_ssh(
         args,
         apps=["my-app"],
         app_info=_MARKED,
-        compose='      performance_test_local_packages: "psynet"\n',
+        compose=f'      performance_test_local_packages: "{recorded}"\n',
     )
 
     assert result.exit_code == 0, result.output
-    assert deploy.call_args.kwargs["use_local_psynet"] is True
-    assert deploy.call_args.kwargs["use_local_dallinger"] is False
-    assert ("Using --use-local-psynet, as when" in result.output) is reused
+    for package in ("psynet", "dallinger"):
+        assert deploy.call_args.kwargs[f"use_local_{package}"] is (package in recorded)
+    if reused:
+        assert f"Using {reused}, as when my-app was deployed." in result.output
+    else:
+        assert ", as when" not in result.output
 
 
 @pytest.mark.parametrize("args", [[], ["--reset-database"]])
@@ -1990,11 +2004,16 @@ def test_performance_test_ssh_needs_the_apps_experiment_to_load():
 
 
 @pytest.mark.parametrize(
-    "use_local_psynet, recorded",
-    [(False, {}), (True, {"performance_test_local_packages": "psynet"})],
+    "use_local_psynet, use_local_dallinger, recorded",
+    [
+        (False, False, {}),
+        (True, False, {"performance_test_local_packages": "psynet"}),
+        (False, True, {"performance_test_local_packages": "dallinger"}),
+        (True, True, {"performance_test_local_packages": "psynet,dallinger"}),
+    ],
 )
 def test_performance_test_deploys_mark_the_app(
-    use_local_psynet, recorded, capsys, fresh_dallinger_config
+    use_local_psynet, use_local_dallinger, recorded, capsys, fresh_dallinger_config
 ):
     from psynet.command_line import _debug_ssh
 
@@ -2023,6 +2042,7 @@ def test_performance_test_deploys_mark_the_app(
             dns_host=None,
             update=True,
             use_local_psynet=use_local_psynet,
+            use_local_dallinger=use_local_dallinger,
             performance_test_app=True,
         )
 
