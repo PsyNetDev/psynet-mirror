@@ -1,0 +1,1 @@
+Fixed group arrival notices undercounting when several members arrive at the same moment, for example "1/6 of your group are ready." when four were. The browser now fetches the notice after each arrival is saved, so `on_arrival_message` can be called several times per arrival and should depend only on its arguments.

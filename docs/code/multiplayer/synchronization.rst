@@ -211,7 +211,7 @@ becoming known:
    :pyobject: round_message
 
 In the ``lowest_unique_number`` demo, rooms of up to eight players form every
-20 seconds. A player who doesn't choose in time is removed from their room by
+10 seconds. A player who doesn't choose in time is removed from their room by
 a :class:`~psynet.sync.GroupBarrier` with
 ``timeout_between_barriers_action="kick"``, so the rest of the room carries
 on, and they join the next round:
@@ -285,8 +285,10 @@ are not ready yet. Set ``notify_arrivals=False`` to turn both off, or pass
 ``on_arrival_message`` to change the notices. It receives ``kind``
 (``"notice"`` for the progress bar, ``"removed"`` for the notice a member
 sees after being kicked from the group), ``waiting_count`` and
-``group_size``, and returns the text or ``None`` to hide it. Notices must fit
-on one line:
+``group_size``, and returns the text or ``None`` to hide it. For a notice it
+is called whenever the browser fetches the current count, which can be
+several times per arrival, so it should depend only on its arguments and
+have no side effects. Notices must fit on one line:
 
 .. code-block:: python
 
@@ -301,6 +303,9 @@ on one line:
         content="Waiting for your partner",
         on_arrival_message=arrival_message,
     )
+
+Pages with a :class:`~psynet.group_prompt.GroupPrompt` that ticks members
+live don't show the notice, since the ticks say the same.
 
 The waiting indicator's own text comes from ``content``. A ``content``
 function on a group barrier can also take ``waiting_count`` and
@@ -319,6 +324,74 @@ or to leave it out:
         )
 
     GroupBarrier(id_="chosen", group_type="room", content=waiting_text)
+
+Showing the group
+~~~~~~~~~~~~~~~~~
+
+:class:`~psynet.group_prompt.GroupPrompt` shows the members of a small group
+by their pseudonyms (see :doc:`chatroom`), with the participant viewing the
+page labelled "You". Each member appears as their pseudonym animal, drawn
+in their colour; the other members' names are read out by screen
+readers and shown on hover, or below the animals with ``show_names=True``.
+Members sit in a row for up to four people and in a zigzag across the
+width of the page for more, so the display adapts to any screen. Joining
+their first group gives a newcomer a different pseudonym if another active
+member already has theirs; after that, pseudonyms never change, so someone
+regrouped every round keeps the name their earlier partners saw.
+
+When partners must not recognise each other across rounds, pass
+``anonymous=True``: every member is then drawn as the same grey figure,
+labelled "Your partner" in a pair and "Another player" in a larger group.
+
+``subgroups`` clusters the members, for example pairs formed within a
+room. Pass a sync group type, or a function returning a key per participant;
+the viewer's cluster comes first:
+
+.. code-block:: python
+
+    GroupPrompt("Pick a number.", group=room, participant=participant, subgroups="pair")
+
+On a decision page, members who have answered get a tick. A member has
+answered once they wait at a barrier of the group, typically the barrier
+after the decision page, and the ticks appear live as members arrive (this
+uses the barrier's arrival updates, so it needs ``notify_arrivals``). Pass
+``show_progress=False`` to hide the ticks, or ``answered`` to decide who has
+answered when the page is drawn. Members who join or leave the group appear
+or disappear live too, on any page without ``answers``, ``answered`` or
+``highlight``, unless ``subgroups`` is a function. Live redraws need the same
+``FLASK_SECRET_KEY`` on every web process; without one, PsyNet logs a warning
+and the group stays as first drawn:
+
+.. code-block:: python
+
+    from psynet.group_prompt import GroupPrompt
+
+    def choose_number(participant):
+        room = participant.active_sync_groups["room"]
+        return ModularPage(
+            "choose",
+            GroupPrompt("Pick a number.", group=room, participant=participant),
+            PushButtonControl(choices=[1, 2, 3, 4, 5]),
+            save_answer="choice",
+        )
+
+After the barrier, pass ``answers`` to show each member's answer in a speech
+bubble. Speech bubbles may overlap a neighbour; hovering over or tapping a
+member brings their bubble to the front. Answers are shown as text; pass :class:`~markupsafe.Markup` for HTML
+such as an image. ``highlight`` marks members, with built-in styles for
+``"winner"`` and ``"duplicate"``, and ``note`` adds a line of text:
+
+.. code-block:: python
+
+    GroupPrompt(
+        "The winning number was 2.",
+        group=room,
+        participant=participant,
+        answers={p.id: p.var.choice for p in room.participants},
+        highlight={winner.id: "winner"},
+    )
+
+The ``lowest_unique_number`` demo uses both.
 
 Trial makers
 ~~~~~~~~~~~~

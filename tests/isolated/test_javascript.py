@@ -114,8 +114,8 @@ def test_grouped_page_includes_arrival_updates(monkeypatch):
 
 
 def test_arrival_notice_payload_without_a_participant():
-    assert arrival_notice_payload(None) == {"notice": None}
-    assert arrival_notice_payload("") == {"notice": None}
+    assert arrival_notice_payload(None) == {"notice": None, "group_ready": []}
+    assert arrival_notice_payload("") == {"notice": None, "group_ready": []}
 
 
 def test_hold_page_omits_arrival_updates_even_when_grouped(monkeypatch):

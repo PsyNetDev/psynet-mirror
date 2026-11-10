@@ -29,13 +29,14 @@ from typing import List
 
 import psynet.experiment
 from psynet.bot import BotDriver
+from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.sync import Clock, GroupBarrier, Regrouper
 from psynet.timeline import PageMaker, Timeline, for_loop, join
 
-ROUND_SECONDS = 20
+ROUND_SECONDS = 10
 CHOICE_SECONDS = 15
 ROOM_SIZE = 8
 N_ROUNDS = 2
@@ -56,6 +57,7 @@ def score_round(participants: List[Participant]):
     for participant in participants:
         participant.var.last_round = {
             "choices": sorted(choices.values()),
+            "choice_by_player": choices,
             "winning_number": winner,
             "won": winner is not None and choices[participant.id] == winner,
         }
@@ -71,16 +73,15 @@ def choose_number(participant):
     # The page is rebuilt on submit, when a player who ran out of time has
     # already left the room.
     room = participant.active_sync_groups.get("room")
-    room_text = ""
+    text = f"Pick a number. You have {CHOICE_SECONDS} seconds."
+    prompt = text
     if room is not None:
-        others = len(room.participants) - 1
-        room_text = (
-            f"You're in a room with {others} other player{'s' * (others != 1)}. "
-        )
+        # The prompt shows who is in the room, live, and ticks them as they choose.
+        prompt = GroupPrompt(text, group=room, participant=participant)
     return ModularPage(
         "choose",
-        f"{room_text}Pick a number. You have {CHOICE_SECONDS} seconds.",
-        PushButtonControl(choices=NUMBERS),
+        prompt,
+        PushButtonControl(choices=NUMBERS, arrange_vertically=False),
         save_answer="choice",
         time_estimate=5,
     )
@@ -92,14 +93,29 @@ def show_result(participant):
             "You ran out of time, so you sat out this round.", time_estimate=5
         )
     result = participant.var.last_round
-    if result["winning_number"] is None:
+    winner = result["winning_number"]
+    if winner is None:
         outcome = "Nobody picked a unique number, so nobody won."
     elif result["won"]:
-        outcome = f"You won with {result['winning_number']}!"
+        outcome = f"You won with {winner}!"
     else:
-        outcome = f"The winning number was {result['winning_number']}."
-    return InfoPage(
-        f"The room picked {', '.join(map(str, result['choices']))}. {outcome}",
+        outcome = f"The winning number was {winner}."
+    choices = result["choice_by_player"]
+    picks = list(choices.values())
+    highlight = {
+        pid: "winner" if n == winner else "duplicate"
+        for pid, n in choices.items()
+        if n == winner or picks.count(n) > 1
+    }
+    return ModularPage(
+        "result",
+        GroupPrompt(
+            f"The room picked {', '.join(map(str, result['choices']))}. {outcome}",
+            group=participant.active_sync_groups["room"],
+            participant=participant,
+            answers=choices,
+            highlight=highlight,
+        ),
         time_estimate=5,
     )
 
@@ -152,7 +168,7 @@ class Exp(psynet.experiment.Experiment):
             bot.take_page()
         _wait_while_held(bots)
         assert [bot.current_page_label for bot in bots] == ["choose"] * 3
-        assert "You're in a room with 2 other players." in bots[0].current_page_text
+        assert "Pick a number." in bots[0].current_page_text
 
         # The third player doesn't choose in time, so the room goes ahead without them.
         bots[0].take_page(response=1)

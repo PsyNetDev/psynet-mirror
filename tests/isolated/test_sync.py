@@ -5795,8 +5795,9 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
     _arrive_at_group_barrier(exp, barrier, first)
     db_session.commit()
 
-    notices = [
-        target.get("notice")
+    # The partner's browser fetches the notice after the commit.
+    refreshed = [
+        target.get("refresh")
         for _, payload in publications
         for target in payload["targets"]
     ]
@@ -5805,16 +5806,23 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
         for _, payload in publications
         for target in payload["targets"]
     ]
-    assert "Your partner is ready." in notices
+    assert any(refreshed)
     assert all(
         not message or "psynet-timeline-hold-progress" not in message
         for message in hold_messages
     )
     assert pending_arrival_notice_for(last) == "Your partner is ready."
     assert arrival_notice_payload(last.unique_id) == {
-        "notice": "Your partner is ready."
+        "notice": "Your partner is ready.",
+        "group_ready": [
+            {
+                "group_id": first.active_sync_groups["main"].id,
+                "seats": [0],
+                "members": [0, 1],
+            }
+        ],
     }
-    assert arrival_notice_payload(None) == {"notice": None}
+    assert arrival_notice_payload(None) == {"notice": None, "group_ready": []}
     overlay = barrier.waiting_logic.overlay_html(first)
     assert "Waiting for your partner" in overlay
     assert "psynet-timeline-hold-progress" not in overlay
@@ -6570,7 +6578,7 @@ def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
 )
 @pytest.mark.parametrize("min_group_size", [2, 3])
 def test_group_barrier_timeout_between_barriers_kick_missing_participants(
-    in_experiment_directory, db_session, min_group_size
+    in_experiment_directory, db_session, monkeypatch, min_group_size
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
@@ -6601,6 +6609,7 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
         group.add_participant(p)
     _backdate_group(group, seconds=10)
     db_session.commit()
+    publications = _hold_wake_publications(monkeypatch)
 
     barrier.check_waiting_participants(waiting_participants)
     if min_group_size == 3:
@@ -6609,14 +6618,22 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
         assert all(pending_arrival_notice_for(p) is None for p in missing_participants)
         return
     released = barrier.choose_who_to_release(waiting_participants)
+    db_session.commit()
 
     assert set(released) == set(waiting_participants)
+    removal = {
+        "notice": "Your group went on without you. Please continue.",
+        "removed": True,
+    }
+    assert removal in [
+        {key: target.get(key) for key in removal}
+        for participant_id, payload in publications
+        if participant_id == missing_participants[0].id
+        for target in payload["targets"]
+    ]
     for missing_participant in missing_participants:
         assert missing_participant not in group.active_participants
-        assert (
-            pending_arrival_notice_for(missing_participant)
-            == "Your group went on without you. Please continue."
-        )
+        assert arrival_notice_payload(missing_participant.unique_id)["removed"]
     missing_participants[0].page_uuid = "next-page"
     assert pending_arrival_notice_for(missing_participants[0]) is None
 
