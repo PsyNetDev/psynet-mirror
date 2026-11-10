@@ -253,19 +253,12 @@ Barriers
 
 A :class:`~psynet.sync.GroupBarrier` holds each member until every active
 member of the group has reached it. When the last member arrives, the barrier
-calls ``on_release`` for the whole group. In or after a round of cued trials,
-it waits only for the members of that round: not for a late joiner who
-skipped it, a member already in a later round, one who has left the
-round's module, or one who has already passed it. At the start of a module,
-or of a later run of it, it waits for every member still in this module
-(including one still finishing the previous run) until a member cues the
-run's first round; after that, as before a late joiner's first cue, it
-waits only for members who haven't cued one either and are still in the
-module. A
-release of only members catching up, such as skippers, doesn't call
-``on_release`` (see
-:ref:`rounds-cued-trials` and :ref:`a fixed group's loop
-<rounds-fixed-group-loop>`). In ``rock_paper_scissors`` the
+calls ``on_release`` for the whole group. It waits for every active member
+wherever the barrier is, so a member stops being waited for only by leaving
+the group (see :ref:`sync-leaving-a-group`), and members who wait at
+different barriers of one group wait for each other, which PsyNet reports
+as an error (see :ref:`group barriers in loops
+<rounds-group-barriers-in-loops>`). In ``rock_paper_scissors`` the
 barrier after each choice scores the round and saves each player's result
 on their trial, where ``show_feedback`` reads it:
 
@@ -284,19 +277,14 @@ for compatibility).
 .. _sync-barrier-node:
 
 ``node`` is the group's :class:`~psynet.trial.main.SyncGroupNode` for the
-round the barrier is in or after: the earliest of the rounds the waiting
-members stored when they last cued (or skipped) one in their current run
-of their current module, not a node worked out from their trials. It is
-``None`` before the group's first cue in the module, including at a barrier
-at the start of a module after another module's rounds or at the start of a
-later run of the same module, and in a group that never uses
-:meth:`~psynet.trial.main.Trial.cue`. When ``node`` is set, ``trials``
-holds ``None`` for a member whose current trial is not on it, such as a
-newcomer released at a feedback barrier during a practice trial; when it is
-``None``, ``trials`` holds each member's current trial whatever its node,
-which can be a trial of an earlier module, or ``None`` for a member with
-none. At a barrier in the round's trial pages (``show_trial``) every member
-it releases is playing on the node, so ``trials`` has no ``None`` there.
+round whose trial every member it releases is in, that is, at a barrier in
+``show_trial`` of a cued trial with ``sync_group_type`` (see
+:ref:`whom a group barrier waits for <rounds-group-barrier-rule>`). At any other barrier, including one in ``show_feedback``, between
+iterations, after the loop or at the start of a later run, and in a group
+that never uses :meth:`~psynet.trial.main.Trial.cue`, ``node`` is ``None``
+and ``trials`` holds each member's current trial whatever its node, which
+can be a trial of an earlier round or module, or ``None`` for a member with
+none.
 In ``rock_paper_scissors`` the trial maker gives every pair the same node,
 which is not a group's node, so ``node`` is ``None`` and the results go on
 the trials. Cued trials share a node per group and round, so there a
@@ -339,14 +327,10 @@ Each trial on a group's node records how the round ended for its player in
 and exports can read it rather than work it out from the player's groups
 later:
 
-- ``"stayed"``: a group barrier released the group while this was the
-  player's current trial on the round's node. A barrier after the trial,
-  between rounds or after the loop also stores it, as long as the trial is
-  still the player's current trial and has no outcome yet, but a barrier
-  of a later module, or of a later run of the same module, before its
-  first cue (where ``node`` is ``None``) does not. Members released with another current trial, such as a newcomer's
-  practice trial, don't stop it, and get nothing, as do members who
-  skipped the round;
+- ``"stayed"``: a group barrier in the trial's pages (``show_trial``)
+  released the group. Barriers after the trial, such as in
+  ``show_feedback``, don't store it, and members who skipped the round get
+  nothing;
 - why the player left the group: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
   ``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or
@@ -355,7 +339,8 @@ later:
 - ``None`` before either happens, and for a trial played without a group.
 
 The first of these to happen is stored, even after the trial's pages
-(``show_trial``) have ended, for example at a barrier in ``show_feedback``.
+(``show_trial``) have ended, for example when the player leaves the group
+in ``show_feedback``.
 :attr:`~psynet.trial.main.Trial.complete` says whether those pages have
 ended. Two things differ: leaving before they have ended replaces
 ``"stayed"`` from an earlier barrier of the round, and moving on
@@ -388,7 +373,7 @@ If the group dissolves while some members are waiting at the barrier,
 ``on_dissolve`` runs for them instead, before they leave the group, with the
 same arguments except ``leader`` and ``left``. ``participants`` are
 then the members waiting at the barrier, and ``node`` and ``trials`` follow
-the same rule as for ``on_release``, from those members' stored rounds.
+the same rule as for ``on_release``.
 Dissolving waits for any member who is in the middle of another request, so
 it may happen a second or two after that request finishes, and
 ``on_dissolve`` is called once, with every member waiting at the barrier. A
@@ -469,10 +454,7 @@ role (it can also take ``seconds_left``; see :ref:`countdown messages <sync-coun
     GroupBarrier(id_="decided", group_type="pair", waiting_message=waiting_text)
 
 A ``waiting_message`` function on a group barrier can also take ``waiting_count`` and
-``group_size`` (both ``None`` if the participant has no group). They count
-the participant's own visit, so a newcomer already in the next
-:ref:`cued round <rounds-cued-trials>` doesn't see the count of members still
-waiting here in the previous one. Return
+``group_size`` (both ``None`` if the participant has no group); return
 :func:`~psynet.sync.hold_message` from it to write the second line yourself,
 or to leave it out:
 
@@ -666,28 +648,7 @@ Trial makers
 A trial maker with ``sync_group_type`` gives the whole group the same trials.
 Each group has a randomly chosen leader. PsyNet assigns the leader's next node
 as if the leader were taking the trial maker alone, and the other members get
-trials on the same node. Members copy the leader's participant group and
-block order, including the leader's position in the block order. If the
-leader leaves, another member becomes leader (see
-:meth:`~psynet.sync.SyncGroup.check_leader`); a newcomer who becomes leader
-before starting the trial maker copies these from the members already in it,
-so the group keeps them, but still gets their own within-participant chains.
-
-PsyNet numbers each participant's runs of the trial maker, as when a loop
-repeats it. At the start of a run, members wait until another member,
-normally the leader, has started a run they can copy from, then copy from
-them. On a member's first run, that is any member's current run, so a
-newcomer joins play in progress. On a later run, it is only a run with
-the same number: a member who loops quickly doesn't copy from a partner
-who is still on the last page of the previous run, but waits for them to
-start the new run. If no member who is still in the group starts it, as
-when the leader's loop ended earlier, the wait ends at
-``sync_group_max_wait_time`` with ``sync_group_max_wait_action``. Members
-who start the run together, as when the group's release lets them all
-through, copy from the leader whatever their run numbers, for example in
-groups that re-form inside the loop.
-
-The start of every trial is synchronized; add
+trials on the same node. The start of every trial is synchronized; add
 :class:`~psynet.sync.GroupBarrier` elements inside the trial, as in
 ``show_trial`` above, to synchronize other points. Each trial records the
 group, the member's role and the group's round, counted from 0, in
@@ -742,6 +703,10 @@ decisions each one needs. These settings carry them out:
   takes them out of both (see :ref:`rounds-slow-players`).
 
 Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
+:doc:`late_slow_and_leaving_players` follows these settings through concrete
+cases.
+
+.. _sync-timeouts:
 
 Timeouts
 ~~~~~~~~
@@ -882,8 +847,8 @@ Two separate settings decide what happens when someone leaves a group:
     - ``group.stop_top_ups()`` stops them at once; a group already below
       its quorum is then dissolved, however its members left.
     - ``stop_top_ups=True`` on a :class:`~psynet.sync.GroupBarrier` stops
-      them when the group passes that barrier, for example after the first
-      round, once a newcomer could no longer catch up. A group below its
+      them when the group passes that barrier, for example at the start of
+      the game, so nobody joins a game already under way. A group below its
       quorum doesn't pass, so it keeps waiting there for a newcomer.
     - The grouper's ``top_up_wait=seconds`` limits that wait: once the
       group has been below its quorum that long, the barrier it is waiting
@@ -1063,11 +1028,8 @@ Keep these in mind:
   ``show_trial``. Everyone would skip that barrier after its first pass.
   That includes a module that runs again, for example in a loop: the team's
   pass in the first run counts for later runs too.
-- Only the team's release counts as a pass, not a member let go after
-  waiting too long, nor a release of only members catching up, such as a
-  newcomer who skipped a round, nor a release while a member who hasn't
-  left the module is in a later cued round of it (see
-  :ref:`rounds-cued-trials`). The pass still counts after everyone who
+- Every release of the team counts as a pass, but a member let go after
+  waiting too long doesn't. The pass still counts after everyone who
   waited there has left the team.
 - ``on_release`` doesn't run for those who pass through, so they must not
   need any group state it sets up. Their passing isn't the team's pass
@@ -1075,6 +1037,12 @@ Keep these in mind:
 - A barrier ID used again in another module counts as a new barrier.
 - After a barrier with ``stop_top_ups=True``, nobody can join, so the two
   settings aren't needed together.
+- It covers barriers the team passes once. A newcomer still goes through
+  the game's later pages, so in a fixed team that plays a loop of rounds,
+  a barrier outside the round's trial, such as one at the start of each
+  iteration, holds the newcomer while the team waits for them in the round.
+  For such a game, stop top-ups before the game instead (see
+  :ref:`group barriers in loops <rounds-group-barriers-in-loops>`).
 
 When the experiment loads, PsyNet warns about each barrier outside a loop
 that comes after a grouper with ``join_existing_groups=True`` and has neither

@@ -1735,6 +1735,8 @@ def test_finalize_barrier_arrivals_peeks_nested_checks_before_waiting(monkeypatc
     page = Page()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             return self
 
@@ -2051,6 +2053,8 @@ def test_finalize_barrier_arrivals_commits_checks_before_participant_relock(
     page = Page()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             return self
 
@@ -2105,6 +2109,8 @@ def test_finalize_barrier_arrivals_does_not_relock_after_losing_claim(monkeypatc
     hold = Hold()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             events.append("participant_relock")
             return self
@@ -2169,6 +2175,8 @@ def test_finalize_barrier_arrivals_uses_later_hold_after_lost_claim(monkeypatch)
     page = NextHold()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             events.append("participant_relock")
             return self
@@ -2235,6 +2243,8 @@ def test_finalize_barrier_arrivals_uses_already_advanced_page_after_lost_claim(
     page = Page()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             events.append("participant_relock")
             return self
@@ -6002,10 +6012,11 @@ def test_pending_arrival_notice_for_spec_error_returns_none(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_group_hold_reports_how_many_are_not_ready_yet(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, monkeypatch
 ):
     exp = get_experiment()
     first, second, third = _sync_group_of(exp, db_session, 3)[0]
+    publications = _hold_wake_publications(monkeypatch)
     barrier = GroupBarrier(
         id_="group_hold_remaining",
         group_type="main",
@@ -6023,6 +6034,7 @@ def test_group_hold_reports_how_many_are_not_ready_yet(
     db_session.commit()
     overlay = barrier.waiting_logic.overlay_html(first)
     assert "1 of 3 not ready yet" in overlay
+    assert "1 of 3 not ready yet" in _arrival_hold_messages(publications, first.id)[-1]
     assert pending_arrival_notice_for(third) == "2/3 of your group are ready."
 
 
@@ -8080,8 +8092,10 @@ def _skips(barrier, exp, participant):
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_a_newcomer_at_a_barrier_the_group_passed_strands_the_group_unless_it_passes_newcomers(
-    in_experiment_directory, db_session, pass_newcomers
+    in_experiment_directory, db_session, monkeypatch, pass_newcomers
 ):
+    # As in production: the stranded group is only logged, until late_after.
+    monkeypatch.setattr("psynet.sync._in_tests", lambda: False)
     exp = get_experiment()
     grouper = _team_grouper()
     game_starts = GroupBarrier(

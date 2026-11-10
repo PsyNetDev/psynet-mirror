@@ -668,3 +668,26 @@ def test_regrouper_lets_a_player_waiting_alone_carry_on(
 
     assert not player.failed
     assert not player.in_sync_group("room")
+
+
+@in_consents_experiment
+def test_case_an_odd_player_out_sits_out_then_plays_the_next_round(
+    in_experiment_directory, db_session
+):
+    """Checks a case of docs/code/multiplayer/late_slow_and_leaving_players.rst."""
+    exp = get_experiment()
+    cohort, pairs = _cohort_and_pairs(exp, 3)
+    _arrive(exp, pairs, cohort)
+    (sitter,) = [p for p in cohort if "pair" not in p.active_sync_groups]
+    players = [p for p in cohort if p is not sitter]
+    assert _waiting(pairs, cohort) == []
+    assert (pairs.sat_out(sitter), pairs.role(sitter)) == (True, None)
+    assert sorted(pairs.role(p) for p in players) == ["proposer", "responder"]
+
+    # Back first, the sitter waits for the pair, then plays the next round.
+    _arrive(exp, pairs, [sitter])
+    assert _waiting(pairs, [sitter]) == [sitter]
+    _arrive(exp, pairs, players)
+    assert _waiting(pairs, cohort) == []
+    assert "pair" in sitter.active_sync_groups
+    assert [pairs.sat_out(p) for p in players].count(True) == 1

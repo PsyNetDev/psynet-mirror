@@ -1819,10 +1819,13 @@ class Page(Elt):
         """
         This function is used when a bot simulates a participant responding to a given page.
         In the simplest form, the function just returns the value of the
-        answer that the bot returns.
+        answer that the bot returns, which is saved without passing through ``format_answer``.
         For more sophisticated treatment, the function can return a
         ``BotResponse`` object which contains other parameters
         such as ``blobs`` and ``metadata``.
+        PsyNet's built-in answer controls return ``BotResponse(raw_answer=...)`` with
+        what the browser would submit, so that bot answers pass through the same
+        ``format_answer`` methods as browser answers.
         """
         raise NotImplementedError
 
@@ -1986,8 +1989,6 @@ class Page(Elt):
         client_ip_address=None,
         answer=NoArgumentProvided,
     ):
-        from psynet.trial.main import Trial
-
         if raw_answer == NoArgumentProvided and answer == NoArgumentProvided:
             raise ValueError("At least one of raw_answer and answer must be provided.")
         if blobs is None:
@@ -2000,30 +2001,36 @@ class Page(Elt):
 
             _browser_config(self, experiment, participant)
 
+        from .sync import _removed_late_on_current_page
+
+        too_late_for_group = bool(
+            participant.sync_group_links
+        ) and _removed_late_on_current_page(participant)
+
         resp = Response(
             participant=participant,
             label=self.label,
             page_type=type(self).__name__,
+            trial=_trial_owning_page(participant),
         )
         db.session.add(resp)
 
-        trial = participant.current_trial
-        resp._background_parent = trial or participant
+        resp._background_parent = participant.current_trial or participant
 
         timed_out = self._time_limit_reached(metadata, participant)
         if timed_out:
             metadata = {**metadata, "time_limit_reached": True}
             if self.time_limit_answer is not CURRENT_ANSWER:
                 answer = self.time_limit_answer
+                # Only an answer the server supplies may skip the choices check.
+                resp._server_time_limit_answer = True
             elif raw_answer is None:
                 answer = None
         else:
             # The flag skips validation, so only the server may set it.
             metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
-        from .sync import _removed_late_on_current_page
-
         metadata = {k: v for k, v in metadata.items() if k != "too_late_for_group"}
-        if participant.sync_group_links and _removed_late_on_current_page(participant):
+        if too_late_for_group:
             metadata = {**metadata, "too_late_for_group": True}
         # Untimed pages, such as feedback or a framework wait, keep the flag.
         if participant.waiting_barrier_id is None and self.time_limit is not None:
@@ -2052,13 +2059,6 @@ class Page(Elt):
         resp.answer = answer
         resp.metadata = combined_metadata
 
-        if isinstance(trial, Trial):
-            trial.response = resp
-            if trial.time_taken is None:
-                trial.time_taken = resp.metadata["time_taken"]
-            else:
-                trial.time_taken += resp.metadata["time_taken"]
-
         participant.browser_platform = metadata.get(
             "platform", "Browser platform info could not be retrieved."
         )
@@ -2081,8 +2081,23 @@ class Page(Elt):
             return list(self.background_recording.sources)
         return []
 
+    def _reject_impossible_answer(self, answer):
+        """Return a :class:`FailedValidation` for an answer the page cannot produce.
+
+        The experiment runs this check on every submitted response before
+        :meth:`validate`, so overriding :meth:`validate` does not skip it.
+        """
+        return None
+
     def _accept_response(self, resp, experiment, participant):
         """Save an answer that passed validation and run ``on_complete``."""
+        trial = resp.trial
+        if trial is not None:
+            trial.response = resp
+            page_time = resp.metadata.get("time_taken")
+            if page_time is not None:
+                trial.time_taken = (trial.time_taken or 0) + page_time
+
         if self.save_answer:
             if participant.answer_accumulation_depth:
                 answers = participant.answer
@@ -3308,6 +3323,20 @@ def estimate_duration(logic):
     return CreditEstimate(elts).get_max("time")
 
 
+def _trial_owning_page(participant):
+    """Return the trial whose pages the participant is on, or ``None``."""
+    from psynet.trial.main import Trial
+
+    trial = participant.current_trial
+    # Pages after _finalize_trial (feedback, or pages before the next
+    # trial is prepared) leave current_trial set but don't belong to it.
+    # A failed participant's trial never completes, and their remaining
+    # pages (such as the unsuccessful-end page) don't belong to it either.
+    if isinstance(trial, Trial) and not trial.complete and not participant.failed:
+        return trial
+    return None
+
+
 class FailedValidation:
     def __init__(self, message="Invalid response, please try again."):
         self.message = message
@@ -3346,6 +3375,16 @@ class Response(_Response):
     successful_validation: bool
         Whether the response validation was successful,
         allowing the participant to advance to the next page.
+
+    trial_id: int
+        ID of :attr:`trial`.
+
+    trial
+        The :class:`~psynet.trial.main.Trial` whose pages
+        (:meth:`~psynet.trial.main.Trial.show_trial`) the participant
+        submitted this response on, including submissions rejected by
+        validation. ``None`` for pages outside a trial, including feedback
+        pages and pages submitted after the participant failed.
     """
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
@@ -3354,6 +3393,8 @@ class Response(_Response):
         back_populates="all_responses",
         foreign_keys=[participant_id],
     )
+    trial_id = Column(Integer, ForeignKey("trial.id"), index=True)
+    trial = relationship("psynet.trial.main.Trial", foreign_keys=[trial_id])
 
     question = Column(String)
     answer = Column(PythonObject)
@@ -3413,11 +3454,12 @@ class Response(_Response):
         page_type,
         answer=None,
         metadata=None,
+        trial=None,
     ):
         self.participant_id = participant.id
+        self.trial = trial
         self.question = label
         self.page_type = page_type
-        self.metadata = metadata
         self.answer = answer
         self.metadata = metadata
 

@@ -125,7 +125,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   If groups keep taking newcomers after that, pass `pass_newcomers=True` to
   each `GroupBarrier` the group passes once, so a newcomer doesn't wait there
   for members further on (see "Letting latecomers join during the game").
-  Never set it on a barrier in a loop or in `show_trial`.
+  Never set it on a barrier in a loop or in `show_trial`. For a fixed group
+  that plays a loop of rounds, stop top-ups before the game instead
+  (`stop_top_ups=True` on a barrier before the first round).
   For a per-person condition (not a join window), such as a chain that is
   too far along for them to catch up with, pass `join_criterion` (see
   `join_criterion` under "Forming groups" in
@@ -228,6 +230,13 @@ Module("game", for_loop(
   barrier releases the group; a round without one never closes, and a
   latecomer can join it after the others have finished. For how
   `cue` numbers rounds and the definition rules, follow the guide above.
+- Every `GroupBarrier` waits for every active member of its group, wherever
+  it is, so put the barriers where all members reach them in the same
+  order, and have a member who stops playing early leave the group
+  (`leave_group`) first. Members waiting at different barriers of one group
+  wait for each other; PsyNet logs an error naming the barriers. In bot
+  tests it raises `GroupDivergenceError`, so the arriving bot's request
+  fails with HTTP 500.
 - When a fixed group plays a loop of rounds, pass the loop value as
   `round=` (`Trial.cue({"question": i}, round=i)`): late joiners then skip
   the rounds the group finished without them, and players who leave
