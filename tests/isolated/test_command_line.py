@@ -4614,6 +4614,7 @@ def test_test_local_existing_bypasses_scaffold_gate(tmp_path, monkeypatch):
         patch("psynet.command_line.load_runtime_server_config") as load_runtime_config,
         patch("psynet.command_line._check_existing_server_answers"),
         patch("psynet.experiment.get_experiment", return_value=mock_exp),
+        patch("psynet.sync.fail_on_group_divergence", contextlib.nullcontext),
     ):
         result = runner.invoke(psynet, ["test", "local", "--existing"])
 
