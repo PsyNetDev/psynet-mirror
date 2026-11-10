@@ -150,6 +150,18 @@ def test_advance_past_wait_pages_refreshes_before_each_wait_iteration():
     assert bot.refresh_status.call_count == 2
 
 
+def test_advance_past_wait_pages_leaves_bots_at_stop_at_barriers():
+    from psynet.bot import advance_past_wait_pages
+
+    bot, other = MagicMock(), MagicMock()
+    bot.get_current_page.return_value = SimpleNamespace(
+        is_timeline_hold=True, barrier_id="offer_made"
+    )
+    other.get_current_page.return_value = SimpleNamespace()
+    advance_past_wait_pages([bot, other], stop_at="offer_made")
+    bot.take_page.assert_not_called()
+
+
 def _driver_page_status(page_uuid, answer="ok"):
     return {
         "page_uuid": page_uuid,

@@ -65,6 +65,18 @@
             pointer-events: auto;
         }
 
+        /* A hold without a message (a brief catch-up wait) shows only the
+           spinner, so a waiting screen beneath doesn't get an empty bubble. */
+        #psynet-timeline-hold-indicator:not(:has(.psynet-timeline-hold-progress)):has(.psynet-timeline-hold-title:empty) {
+            background: transparent;
+            border-color: transparent;
+            box-shadow: none;
+        }
+
+        .psynet-timeline-hold-message:has(.psynet-timeline-hold-title:empty):not(:has(.psynet-timeline-hold-progress)) {
+            display: none;
+        }
+
         .psynet-timeline-hold-message {
             align-items: center;
             display: flex;
