@@ -73,7 +73,7 @@ has written, checking it, and changing it yourself.
    multiplayer/pseudonyms
    multiplayer/realtime_interaction
    multiplayer/synchronization
-   multiplayer/catch_up_case_studies
+   multiplayer/late_slow_and_leaving_players
 
 .. toctree::
    :caption: Database

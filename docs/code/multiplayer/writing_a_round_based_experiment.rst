@@ -148,8 +148,8 @@ need nothing special, inside the module or outside it: a member who reads
 slowly is waited for at the next barrier. A member who stops playing
 earlier than the others, for example by choosing not to play another run,
 should leave the group first, or the others wait for them at their next
-barrier. :doc:`catch_up_case_studies` follows these and other cases, such
-as players leaving or reading slowly, step by step.
+barrier. :doc:`late_slow_and_leaving_players` follows these and other
+cases, such as players leaving or reading slowly, step by step.
 
 .. _rounds-group-barriers-in-loops:
 
@@ -158,9 +158,11 @@ member reaches them in the same order. Members who wait at different
 barriers wait for each other: none of them can pass until ``late_after`` or
 ``max_wait_time`` moves someone on, and ``late_after`` on either barrier
 fails the members it waits for at the other, who were on time. PsyNet
-reports this: it logs an error naming the barriers and who waits at each,
-and in tests, such as bot tests run by ``psynet test local``, it raises a
-:class:`~psynet.sync.GroupDivergenceError`, so the test fails.
+reports this when a member arrives at a barrier: it logs an error naming
+the barriers and who waits at each. In tests, such as bot tests run by
+``psynet test local``, it raises a
+:class:`~psynet.sync.GroupDivergenceError` instead, so that arrival's
+request fails with HTTP 500 and the server log shows the error.
 
 The usual way into this is a member who joins during the game. For a
 fixed group that plays rounds, stop top-ups before the game, with

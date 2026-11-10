@@ -17,7 +17,12 @@ from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.sync import GroupBarrier
+from psynet.sync import (
+    GroupBarrier,
+    _hold_barrier_instance_claim,
+    _run_pending_barrier_checks,
+    _take_pending_barrier_checks,
+)
 from psynet.timeline import Module, Timeline
 from psynet.trial.chain import ChainNode
 from psynet.trial.main import GenericTrialNetwork, SyncGroupNode, Trial
@@ -27,7 +32,11 @@ _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
 from test_regrouper import _arrive, _cohort_and_pairs  # noqa: E402
-from test_sync import _backdate_group, _sync_group_of  # noqa: E402
+from test_sync import (  # noqa: E402
+    _arrive_at_group_barrier,
+    _backdate_group,
+    _sync_group_of,
+)
 from timeline_hold_helpers import _json_timeline, _working_participants  # noqa: E402
 
 in_consents_experiment = pytest.mark.parametrize(
@@ -853,6 +862,41 @@ def test_members_waiting_for_each_other_at_different_barriers_are_reported(
 
 
 @in_consents_experiment
+def test_divergence_is_reported_when_the_poller_holds_the_last_arrival_s_visit(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, newcomer, _ = _newcomer_in_round_0(exp)
+    in_round = GroupBarrier("submitted", group_type="pair")
+    _arrive(exp, in_round, cohort[:1])
+    _arrive(exp, GroupBarrier("ready", group_type="pair"), [newcomer])
+    _arrive_at_group_barrier(exp, in_round, cohort[1])
+    db.session.commit()
+    checks = _take_pending_barrier_checks()
+    with _hold_barrier_instance_claim(checks[0]) as claimed:
+        assert claimed
+        with pytest.raises(psynet.sync.GroupDivergenceError):
+            _run_pending_barrier_checks(checks, wait=False)
+
+
+@in_consents_experiment
+def test_a_member_who_ended_the_loop_without_leaving_is_waited_for(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    game = Module("game", InfoPage("Hi", time_estimate=1))
+    for participant in cohort:
+        participant.start_module(game)
+    stopped, playing = cohort
+    # ``stopped`` is on a page after the loop, still in the group.
+    stopped.end_module(game)
+    ready = GroupBarrier("ready", group_type="pair")
+    _arrive(exp, ready, [playing])
+    assert ready._participant_is_waiting(playing)
+
+
+@in_consents_experiment
 def test_a_barrier_repeated_in_a_round_waits_for_everyone_each_time(
     in_experiment_directory, db_session
 ):
@@ -1243,7 +1287,7 @@ def test_late_action_fail_leaves_other_groups_as_left_experiment(
 
 
 # Case studies: each test below checks one case of
-# docs/code/multiplayer/catch_up_case_studies.rst; keep the two in step.
+# docs/code/multiplayer/late_slow_and_leaving_players.rst; keep the two in step.
 
 
 def _cue_team(exp, participants, i=None):

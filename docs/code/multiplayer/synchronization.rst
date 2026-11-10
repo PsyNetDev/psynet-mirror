@@ -703,7 +703,7 @@ decisions each one needs. These settings carry them out:
   takes them out of both (see :ref:`rounds-slow-players`).
 
 Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
-:doc:`catch_up_case_studies` follows these settings through concrete
+:doc:`late_slow_and_leaving_players` follows these settings through concrete
 cases.
 
 .. _sync-timeouts:
@@ -847,8 +847,8 @@ Two separate settings decide what happens when someone leaves a group:
     - ``group.stop_top_ups()`` stops them at once; a group already below
       its quorum is then dissolved, however its members left.
     - ``stop_top_ups=True`` on a :class:`~psynet.sync.GroupBarrier` stops
-      them when the group passes that barrier, for example after the first
-      round, once a newcomer could no longer catch up. A group below its
+      them when the group passes that barrier, for example at the start of
+      the game, so nobody joins a game already under way. A group below its
       quorum doesn't pass, so it keeps waiting there for a newcomer.
     - The grouper's ``top_up_wait=seconds`` limits that wait: once the
       group has been below its quorum that long, the barrier it is waiting

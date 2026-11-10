@@ -674,7 +674,7 @@ def test_regrouper_lets_a_player_waiting_alone_carry_on(
 def test_case_an_odd_player_out_sits_out_then_plays_the_next_round(
     in_experiment_directory, db_session
 ):
-    """Checks a case of docs/code/multiplayer/catch_up_case_studies.rst."""
+    """Checks a case of docs/code/multiplayer/late_slow_and_leaving_players.rst."""
     exp = get_experiment()
     cohort, pairs = _cohort_and_pairs(exp, 3)
     _arrive(exp, pairs, cohort)
