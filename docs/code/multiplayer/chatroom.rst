@@ -72,7 +72,8 @@ Participants page and the participant table on its Database page show each
 participant's pseudonym. Exports keep the deployment ID, so after
 loading an export with the same PsyNet version, pseudonym scheme and locale,
 ``participant.pseudonym`` gives the names that participants saw, for example
-to read chat messages that mention them.
+to read chat messages that mention them. Launching the loaded experiment
+again writes a new deployment ID, and so changes the names.
 
 Use ``participant.pseudonym`` to show the same names elsewhere, for example
 on a results page. It has a ``name``, a ``css_color``, an ``emoji`` and an
@@ -110,18 +111,26 @@ the colours, animals or how names are formed, subclass
 
 Pseudonyms repeat after a number of participants equal to the least common
 multiple of the two list lengths, so lengths with no common factor (the
-default has 8 colours and 11 animals) give the most different pseudonyms. :meth:`~psynet.pseudonym.PseudonymScheme.assign`
-chooses each participant's pseudonym,
-:meth:`~psynet.pseudonym.PseudonymScheme.name` combines the colour and
-animal (override it for languages where the colour must agree with the
-animal), and :meth:`~psynet.pseudonym.PseudonymScheme.icon_html` draws the
-icon; override them for full control.
+default has 8 colours and 11 animals) give the most different pseudonyms.
+:meth:`~psynet.pseudonym.PseudonymScheme.assign` chooses each participant's
+pseudonym, :meth:`~psynet.pseudonym.PseudonymScheme.name` names the pair, and
+:meth:`~psynet.pseudonym.PseudonymScheme.icon_html` draws the icon; override
+them for full control.
 :meth:`~psynet.pseudonym.PseudonymScheme.sticker_html` draws the larger
-animal, in the participant's colour, used by :class:`~psynet.group_prompt.GroupPrompt`: the built-in
-animals use Microsoft Fluent Emoji pictures, and other animals their emoji;
-override :meth:`~psynet.pseudonym.PseudonymScheme.artwork` to supply pictures. Messages, history and occupancy updates carry each
-sender's pseudonym (``sender_pseudonym`` and ``pseudonyms``), so a custom
-chatroom widget can show it too.
+animal, in the participant's colour, used by
+:class:`~psynet.group_prompt.GroupPrompt`: the built-in animals use Microsoft
+Fluent Emoji pictures, and other animals their emoji; override
+:meth:`~psynet.pseudonym.PseudonymScheme.artwork` to supply pictures.
+
+Each built-in name, such as "Blue fox", is translated as a whole, so that
+languages can make the colour agree with the animal. A scheme's own colours
+or animals get the two words joined instead, which can't agree; override
+:meth:`~psynet.pseudonym.PseudonymScheme.name` to name such pairs in full.
+Give new words new keys, since a built-in key keeps its built-in name.
+
+Messages, history and occupancy updates carry each sender's pseudonym
+(``sender_pseudonym`` and ``pseudonyms``), so a custom chatroom widget can
+show it too.
 
 Stored data
 -----------

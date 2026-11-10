@@ -4369,14 +4369,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     client_ip_address=client_ip_address,
                     answer=answer,
                 )
-                validation = event.validate(
-                    response=response,
-                    answer=response.answer,
-                    raw_answer=raw_answer,
-                    participant=participant,
-                    experiment=self,
-                    page=event,
-                )
+                validation = event._reject_impossible_answer(response.answer)
+                if validation is None:
+                    validation = event.validate(
+                        response=response,
+                        answer=response.answer,
+                        raw_answer=raw_answer,
+                        participant=participant,
+                        experiment=self,
+                        page=event,
+                    )
                 if isinstance(validation, str):
                     validation = FailedValidation(message=validation)
 
@@ -5505,6 +5507,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 }
             )
         return columns
+
+    def table_data(self, start, length, table="participant", **kwargs):
+        """Return a page of the Database tab's rows, adding each participant's pseudonym."""
+        data = super().table_data(start, length, table=table, **kwargs)
+        if table == "participant" and data["data"]:
+            from .participant import Participant
+
+            ids = [row["id"] for row in data["data"]]
+            participants = Participant.query.filter(Participant.id.in_(ids))
+            names = {p.id: _dashboard_pseudonym_name(p) for p in participants}
+            for row in data["data"]:
+                row["pseudonym"] = names.get(row["id"])
+        return data
 
     @dashboard_tab("Participants")
     @classmethod
@@ -8547,3 +8562,14 @@ if in_deployment_package():
     _pre_deploy_constant_registry = _read_pre_deploy_constant_registry()
 else:
     _pre_deploy_constant_registry = {}
+
+
+def _dashboard_pseudonym_name(participant):
+    """Return the participant's pseudonym name, or ``None`` if the scheme no longer has its stored keys."""
+    try:
+        return participant.pseudonym.name
+    except ValueError:
+        logger.warning(
+            "Participant %s has an unknown pseudonym.", participant.id, exc_info=True
+        )
+        return None
