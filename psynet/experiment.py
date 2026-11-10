@@ -128,6 +128,8 @@ from .participant import (
     BONUS_STATUS_UNCONFIRMED,
     NO_BONUS_ATTEMPT_RESULT,
     Participant,
+    _load_participant_for_update,
+    _lock_and_load_participant,
     bonus_is_settled,
     bonus_needs_review,
     bonus_transfer_already_claimed,
@@ -939,6 +941,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         and refuses to run on apps without it. Setting it yourself declares
         that the app's data may be deleted.
         Default: ``False``.
+
+    performance_test_local_packages : ``str``
+        The packages, ``psynet`` and/or ``dallinger`` separated by commas, that
+        ``psynet performance-test ssh`` built into the app's image from local
+        checkouts (``--use-local-psynet``, ``--use-local-dallinger``). It sets
+        this when it deploys the app, and later updates of the app build them
+        in again. Don't set it yourself.
+        Default: unset.
 
 
 
@@ -4221,11 +4231,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if timeline_hold_resume:
             participant = query.populate_existing().get(participant_id)
         else:
-            participant = (
-                query.with_for_update(of=Participant)
-                .populate_existing()
-                .get(participant_id)
-            )
+            participant = _lock_and_load_participant(query, participant_id)
         if participant is None:
             return ResponseResult(
                 payload={"submission": "rejected"},
@@ -4260,11 +4266,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 still_waiting = self._unready_hold_resume_result(participant, page_uuid)
                 if still_waiting is not None:
                     return still_waiting
-                participant = (
-                    self._participant_request_query()
-                    .with_for_update(of=Participant, nowait=True)
-                    .populate_existing()
-                    .get(participant_id)
+                participant = _lock_and_load_participant(
+                    self._participant_request_query(), participant_id, nowait=True
                 )
             from .media_upload import _expire_participant_recordings
 
@@ -5102,6 +5105,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             config.register("docker_ssh_monitoring_path", str)
         config.register("check_participant_opened_devtools", bool)
         config.register("performance_test_app", bool)
+        config.register("performance_test_local_packages", str)
         config.register("debug_ssh_app", bool)
         config.register("currency", str)
         config.register("default_translator", str)
@@ -5666,10 +5670,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Pass ``for_update=True`` to lock the participant row for the rest of
         the transaction.
         """
-        query = cls._participant_request_query().filter_by(unique_id=unique_id)
+        query = cls._participant_request_query()
+        criterion = Participant.unique_id == unique_id
         if for_update:
-            query = query.with_for_update(of=Participant).populate_existing()
-        return query.one()
+            return _load_participant_for_update(query, criterion).one()
+        return query.filter(criterion).one()
 
     @classmethod
     def get_participant_from_assignment_id(
@@ -5695,10 +5700,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         The corresponding participant object.
         """
-        query = Participant.query.filter_by(assignment_id=assignment_id)
+        criterion = Participant.assignment_id == assignment_id
         if for_update:
-            query = query.with_for_update(of=Participant).populate_existing()
-        return query.one()
+            return _load_participant_for_update(Participant.query, criterion).one()
+        return Participant.query.filter(criterion).one()
 
     @classmethod
     def get_participant_from_participant_id(
@@ -5726,10 +5731,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         The corresponding participant object.
         """
         participant_id = int(participant_id)
-        query = Participant.query.filter_by(id=participant_id)
+        criterion = Participant.id == participant_id
         if for_update:
-            query = query.with_for_update(of=Participant).populate_existing()
-        return query.one()
+            return _load_participant_for_update(Participant.query, criterion).one()
+        return Participant.query.filter(criterion).one()
 
     @classmethod
     def get_participant_from_worker_id(cls, worker_id: str, for_update: bool = False):
@@ -5785,10 +5790,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         The corresponding participant object.
         """
-        query = Participant.query.filter_by(unique_id=unique_id)
+        criterion = Participant.unique_id == unique_id
         if for_update:
-            query = query.with_for_update(of=Participant).populate_existing()
-        return query.one()
+            return _load_participant_for_update(Participant.query, criterion).one()
+        return Participant.query.filter(criterion).one()
 
     @experiment_route("/google3580fca13e19b596.html")
     @staticmethod
@@ -6684,11 +6689,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if at_page_maker_start or cls._pending_redirect_replaces_open_page(participant):
             # get_current_page will move the cursor, so take the row lock. Routine
             # polls stay unlocked so they don't block barrier checks' NOWAIT locks.
-            participant = (
-                Bot.query.with_for_update(of=Participant)
-                .populate_existing()
-                .get(participant_id)
-            )
+            participant = _lock_and_load_participant(Bot.query, participant_id)
         experiment = get_experiment()
 
         status = {"status": participant.status}
@@ -6804,11 +6805,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         hooks before redirecting to the exit page.
         """
         participant_id = participant.id
-        locked = (
-            Participant.query.populate_existing()
-            .with_for_update(of=Participant)
-            .get(participant_id)
-        )
+        locked = _lock_and_load_participant(Participant.query, participant_id)
         if locked is None or locked.end_time is not None:
             return
         locked.end_time = datetime.now()
@@ -7422,11 +7419,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         from .sync import _take_pending_barrier_checks
 
         cls._reapply_timeline_lock_timeout()
-        locked = (
-            experiment._participant_request_query()
-            .with_for_update(of=Participant)
-            .populate_existing()
-            .get(participant.id)
+        locked = _lock_and_load_participant(
+            experiment._participant_request_query(), participant.id
         )
         if locked is None:
             raise RuntimeError(
@@ -7467,11 +7461,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         db.session.expire_all()
         cls._reapply_timeline_lock_timeout()
-        participant = (
-            experiment._participant_request_query()
-            .with_for_update(of=Participant)
-            .populate_existing()
-            .get(participant_id)
+        participant = _lock_and_load_participant(
+            experiment._participant_request_query(), participant_id
         )
         if participant is None:
             raise RuntimeError(
@@ -7737,7 +7728,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         The log line is at INFO only for slow requests (see ``_SLOW_REQUEST_MS``).
 
-        ``lock`` is the participant ``FOR UPDATE`` load. ``page`` is
+        ``lock`` is the participant ``FOR UPDATE`` on the bare row plus the
+        participant load that follows it (two statements). ``page`` is
         ``get_current_page`` through the first commit. ``barriers`` is hold
         skip plus last-arrival checks. ``render`` is the HTML or JSON body.
         Unclosed phases are omitted rather than reported as zero.
