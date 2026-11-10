@@ -1989,7 +1989,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             blocks = list(dict.fromkeys(block for block, _ in rows))
             self.init_block_order(experiment, participant, blocks)
         else:
-            participant.module_state.block_order = source.block_order
+            participant.module_state.block_order = list(source.block_order)
             participant.module_state.set_block_position(source.block_position)
 
     def init_block_order(self, experiment, participant, blocks):

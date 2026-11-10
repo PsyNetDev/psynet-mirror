@@ -1829,7 +1829,7 @@ def _initialized_member_state(group, trial_maker_id, participant):
     own = _latest_state(participant, trial_maker_id)
     if own is None:
         return None
-    for member in _leader_first(group):
+    for member in _leader_first(group, group.active_participants):
         if member == participant:
             continue
         state = _latest_state(member, trial_maker_id)
@@ -1842,11 +1842,9 @@ def _initialized_member_state(group, trial_maker_id, participant):
     return None
 
 
-def _leader_first(group):
-    """Return ``group``'s active members, its leader first."""
-    leader = group.leader
-    others = [p for p in group.active_participants if p != leader]
-    return others if leader is None else [leader, *others]
+def _leader_first(group, participants):
+    """Return ``participants``, ``group``'s leader first if they are among them."""
+    return sorted(participants, key=lambda p: p != group.leader)
 
 
 class _InitParticipantBarrier(GroupBarrier):
@@ -2362,24 +2360,28 @@ class TrialMaker(Module):
     def _is_initialized(self, participant):
         return _initialized_in(participant, self.id)
 
-    def _init_participants_in_sync_group(self, group: SyncGroup, experiment):
-        """Initialize the group's members in this run, leader first.
+    def _init_participants_in_sync_group(
+        self, group: SyncGroup, participants, experiment
+    ):
+        """Initialize the members released together in this run, leader first.
 
-        Skips members who aren't in a run of the trial maker, such as a
-        leader whose loop ended earlier. Everyone released together is at
-        the start of their current run, so the others copy the group's
-        choices from the first one initialized, normally the leader, even
-        if their ``run_index`` differs, as when groups re-form inside a loop.
-        A leader already initialized in their current run is that source.
+        Only ``participants``, those the group's pass released, are
+        initialized or copied from: they are all at the start of their
+        current run, so the others copy the group's choices from the first
+        one initialized, normally the leader, even if their ``run_index``
+        differs, as when groups re-form inside a loop. One of them already
+        initialized in their current run is that source. Skips members who
+        aren't in a run of the trial maker.
         """
-        leader_state = _latest_state(group.leader, self.id) if group.leader else None
-        source = (
-            leader_state
-            if leader_state is not None and leader_state.trial_maker_initialized
-            else None
+        states = [
+            (participant, _latest_state(participant, self.id))
+            for participant in _leader_first(group, participants)
+        ]
+        source = next(
+            (s for _, s in states if s is not None and s.trial_maker_initialized),
+            None,
         )
-        for participant in _leader_first(group):
-            state = _latest_state(participant, self.id)
+        for participant, state in states:
             if state is None or state.trial_maker_initialized:
                 continue
             token = _released_with_state.set(source)

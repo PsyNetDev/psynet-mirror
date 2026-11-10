@@ -472,9 +472,9 @@ def test_init_participant_copies_the_group_s_choices_from_a_member_s_matching_ru
         assert {n.participant_group for n in arriving.networks} == {expected[0]}
 
 
-@pytest.mark.parametrize("leader_initialized", [False, True])
+@pytest.mark.parametrize("leader_case", ["released", "initialized", "not_released"])
 def test_members_released_together_copy_the_leader_whatever_their_run_index(
-    leader_initialized,
+    leader_case,
 ):
     trial_maker = _synchronized_within_trial_maker(
         lambda participant: f"G{participant.id}"
@@ -495,7 +495,7 @@ def test_members_released_together_copy_the_leader_whatever_their_run_index(
     leader, follower = member(1, run_index=1), member(2, run_index=2)
     group.leader, group.active_participants = leader, [follower, leader]
     expected = ("G1", ["X", "Y"], 0)
-    if leader_initialized:
+    if leader_case != "released":
         expected = ("L", ["Y", "X"], 1)
         leader.module_state.__dict__.update(
             trial_maker_initialized=True,
@@ -503,13 +503,18 @@ def test_members_released_together_copy_the_leader_whatever_their_run_index(
             block_order=expected[1],
             block_position=expected[2],
         )
-    trial_maker._init_participants_in_sync_group(group, experiment=None)
+    # A leader not released with the others is still in another run.
+    released = [follower] if leader_case == "not_released" else [follower, leader]
+    trial_maker._init_participants_in_sync_group(group, released, experiment=None)
 
-    choices = [
-        (s.participant_group, s.block_order, s.block_position)
-        for s in (leader.module_state, follower.module_state)
-    ]
-    assert choices == [expected] * 2
+    copied = (
+        follower.module_state.participant_group,
+        follower.module_state.block_order,
+        follower.module_state.block_position,
+    )
+    assert copied == (
+        ("G2", ["X", "Y"], 0) if leader_case == "not_released" else expected
+    )
 
 
 @pytest.mark.parametrize("chain_kwargs", [WITHIN_CHAINS, {}])
