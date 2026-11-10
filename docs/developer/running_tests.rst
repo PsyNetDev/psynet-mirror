@@ -559,3 +559,9 @@ the next ``commit()`` call.
 
 Note that we almost always combine ``with_for_update`` with ``.populate_existing``;
 the latter is important for ensuring that object attributes are updated to their latest values.
+
+Participant rows are an exception: a locked participant load that waits can
+join the participant's current trial as it was before the wait. Use
+``get_participant(..., for_update=True)`` or the ``get_participant_from_*``
+getters with ``for_update=True``; see
+:ref:`sqlalchemy-lock-participant-row-first`.

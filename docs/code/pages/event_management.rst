@@ -192,6 +192,9 @@ the two:
 
 
     class TimedRatingControl(KeyboardPushButtonControl):
+        # The saved answer is a dictionary, not one of the choices.
+        restrict_to_choices = False
+
         def format_answer(self, raw_answer, **kwargs):
             event_log = kwargs["metadata"].get("event_log", [])
             return {"rating": int(raw_answer), "rt_ms": reaction_time_ms(event_log)}

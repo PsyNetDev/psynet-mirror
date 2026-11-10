@@ -11,6 +11,7 @@ completion hooks or navigation run; rejected answers must not create upload slot
 
 import json
 import math
+import numbers
 import os
 import random
 import shutil
@@ -28,7 +29,7 @@ from markupsafe import Markup
 
 from .asset import _PERSONAL_ARG_REMOVED, Asset, LocalStorage, _reject_personal_arg
 from .background_recording import VideoRecordConfig  # noqa: F401
-from .bot import BotResponse
+from .bot import BotResponse, _as_browser_json
 from .chatroom import ChatRoom  # noqa: F401
 from .javascript_hooks import JavaScriptContributor
 from .static_resources import package_static_url
@@ -874,6 +875,14 @@ class Control(JavaScriptContributor):
         """
         return None
 
+    def _reject_impossible_answer(self, answer):
+        """Return a :class:`~psynet.timeline.FailedValidation` for an answer the control cannot produce.
+
+        The experiment runs this check on every submitted response before the page's
+        :meth:`validate`, so overriding :meth:`validate` does not remove it.
+        """
+        return None
+
     def visualize_response(self, answer, response, trial):
         return ""
 
@@ -907,10 +916,14 @@ class Control(JavaScriptContributor):
         """
         This function is used when a bot simulates a participant responding to a given page.
         In the simplest form, the function just returns the value of the
-        answer that the bot returns.
+        answer that the bot returns, which is saved without passing through :meth:`format_answer`.
         For more sophisticated treatment, the function can return a
         ``BotResponse`` object which contains other parameters
         such as ``blobs`` and ``metadata``.
+        PsyNet's built-in answer controls return ``BotResponse(raw_answer=...)`` with
+        what the browser would submit, so that bot answers pass through the same
+        ``format_answer`` methods as browser answers and are saved with the same type and shape.
+        Controls without a meaningful answer, such as :class:`NullControl`, return the answer directly.
         """
         raise NotImplementedError(
             f"The get_bot_response method for class {self.__class__.__name__} has yet to be implemented."
@@ -943,7 +956,39 @@ class OptionControl(Control):
     The saved answer is the element of ``choices`` that the participant picked,
     with its original type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``.
     NumPy scalars in ``choices`` become the equivalent Python values.
+
+    By default the experiment rejects a formatted answer that is neither one of ``choices``
+    nor the control's empty answer, such as ``None``, before running any ``validate``;
+    ``force_selection`` decides whether an empty answer is accepted.
+    The browser cannot submit such an answer, but a tampered request can,
+    and so can a bot whose ``bot_response`` has the wrong type, such as ``"3"`` for the choice ``3``,
+    or a subclass that overrides :meth:`format_answer` without setting ``restrict_to_choices = False``.
+    The rejection message is the generic "You need to select an answer!",
+    and the server logs a warning with the page label, the answer and the choices.
+
+    The experiment builds the page again when the response arrives, re-running a
+    :class:`~psynet.timeline.PageMaker` function or a trial's ``show_trial``,
+    and checks the answer against the choices of that new page.
+    So the choices must be the same each time the page is built:
+    choose random choices once, for example in ``finalize_definition``,
+    or store them in ``participant.var``.
+    Otherwise a genuine click can be rejected; if you cannot keep the choices stable,
+    pass ``restrict_to_choices=False``.
+
+    Parameters
+    ----------
+
+    restrict_to_choices :
+        Whether to reject answers that are not one of ``choices``.
+        Default: ``None``, meaning the class attribute ``restrict_to_choices``,
+        which is ``True`` except on :class:`TimedPushButtonControl`.
+        Set it to ``False`` when the saved answer is something else,
+        such as a dictionary of the choice and a reaction time from an overridden
+        :meth:`format_answer` on the control or the page.
+        A subclass that always saves something else can set the class attribute instead.
     """
+
+    restrict_to_choices = True
 
     def __init__(
         self,
@@ -951,12 +996,15 @@ class OptionControl(Control):
         labels: Optional[List[str]] = None,
         style: str = "",
         bot_response=NoArgumentProvided,
+        restrict_to_choices: Optional[bool] = None,
         **kwargs,
     ):
         super().__init__(bot_response=bot_response, **kwargs)
         self.choices = [_as_python_value(choice) for choice in choices]
         self.labels = self.choices if labels is None else labels
         self.style = style
+        if restrict_to_choices is not None:
+            self.restrict_to_choices = restrict_to_choices
 
         assert isinstance(self.labels, list)
         assert len(self.choices) == len(self.labels)
@@ -988,6 +1036,21 @@ class OptionControl(Control):
         are returned unchanged.
         """
         return self._choice_for_text(raw_answer)
+
+    def _is_choice(self, answer):
+        # Matching the type stops True or 1.0 from passing as the choice 1.
+        return any(
+            type(answer) is type(choice) and answer == choice for choice in self.choices
+        )
+
+    def _is_possible_answer(self, answer):
+        return answer is None or self._is_choice(answer)
+
+    def _reject_impossible_answer(self, answer):
+        if not self.restrict_to_choices or self._is_possible_answer(answer):
+            return None
+        _p = get_translator(context=True)
+        return FailedValidation(_p("validation", "You need to select an answer!"))
 
     def validate_name(self, name):
         if not isinstance(name, str):
@@ -1072,6 +1135,10 @@ class CheckboxControl(OptionControl):
 
     show_reset_button
         Whether to display a 'Reset' button to allow for unsetting ticked checkboxes. Possible values are: `never`, `always`, and `on_selection`, the latter meaning that the button is displayed only when at least one checkbox is ticked. Default: ``never``.
+
+    restrict_to_choices
+        Whether to reject answers that are not a list of ``choices``. Default: ``None``, which uses the class attribute (``True``).
+        See :class:`OptionControl`.
     """
 
     input_type = "checkbox"
@@ -1085,12 +1152,19 @@ class CheckboxControl(OptionControl):
         arrange_vertically: bool = True,
         force_selection: bool = False,
         show_reset_button: str = "never",
+        restrict_to_choices: Optional[bool] = None,
     ):
         if show_reset_button != "never":
             buttons = [ResetButton()]
         else:
             buttons = []
-        super().__init__(choices, labels, style, buttons=buttons)
+        super().__init__(
+            choices,
+            labels,
+            style,
+            buttons=buttons,
+            restrict_to_choices=restrict_to_choices,
+        )
         self.validate_name(name)
         self.name = name
         self.arrange_vertically = arrange_vertically
@@ -1128,11 +1202,16 @@ class CheckboxControl(OptionControl):
 
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
-        if self.force_selection and len(response.answer) == 0:
+        if self.force_selection and not response.answer:
             return FailedValidation(
                 _p("validation", "You need to check at least one answer!")
             )
         return None
+
+    def _is_possible_answer(self, answer):
+        return answer is None or (
+            isinstance(answer, list) and all(self._is_choice(a) for a in answer)
+        )
 
     def format_answer(self, raw_answer, **kwargs):
         """Return the ticked choices named by the browser's list of ids."""
@@ -1179,6 +1258,10 @@ class DropdownControl(OptionControl):
 
     force_selection
         Determines if an answer has to be selected. Default: True.
+
+    restrict_to_choices
+        Whether to reject answers that are not one of ``choices``. Default: ``None``, which uses the class attribute (``True``).
+        See :class:`OptionControl`.
     """
 
     def __init__(
@@ -1189,8 +1272,11 @@ class DropdownControl(OptionControl):
         name: str = "dropdown",
         force_selection: bool = True,
         default_text="Select an option",
+        restrict_to_choices: Optional[bool] = None,
     ):
-        super().__init__(choices, labels, style)
+        super().__init__(
+            choices, labels, style, restrict_to_choices=restrict_to_choices
+        )
         self.validate_name(name)
         self.name = name
         self.force_selection = force_selection
@@ -1224,9 +1310,13 @@ class DropdownControl(OptionControl):
 
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
-        if self.force_selection and response.answer == "":
+        if self.force_selection and response.answer in ("", None):
             return FailedValidation(_p("validation", "You need to select an answer!"))
         return None
+
+    def _is_possible_answer(self, answer):
+        # The browser submits "" when nothing is selected.
+        return answer == "" or super()._is_possible_answer(answer)
 
 
 class DropdownOption:
@@ -1255,6 +1345,9 @@ class PushButtonControl(OptionControl):
 
     arrange_vertically:
         Whether to arrange the buttons vertically. Default: ``True``.
+
+    **kwargs
+        Other arguments to pass to :class:`OptionControl`, such as ``restrict_to_choices``.
     """
 
     def __init__(
@@ -1399,6 +1492,8 @@ class TimedPushButtonControl(PushButtonControl):
     """
 
     timed = True
+    # The answer is the browser's event log, not a choice.
+    restrict_to_choices = False
 
     def __init__(
         self,
@@ -1531,6 +1626,13 @@ class RadioButtonControl(OptionControl):
 
     show_free_text_option
         Appends a free text option to the radiobuttons. Default: ``False``.
+        The page then accepts any text as an answer.
+
+    restrict_to_choices
+        Whether to reject answers that are not one of ``choices``
+        (or text, with ``show_free_text_option``).
+        Default: ``None``, which uses the class attribute (``True``).
+        See :class:`OptionControl`.
     """
 
     input_type = "radio"
@@ -1546,12 +1648,19 @@ class RadioButtonControl(OptionControl):
         show_reset_button: str = "never",
         show_free_text_option: bool = False,
         placeholder_text_free_text: str = None,
+        restrict_to_choices: Optional[bool] = None,
     ):
         if show_reset_button != "never":
             buttons = [ResetButton()]
         else:
             buttons = []
-        super().__init__(choices, labels, style, buttons=buttons)
+        super().__init__(
+            choices,
+            labels,
+            style,
+            buttons=buttons,
+            restrict_to_choices=restrict_to_choices,
+        )
         self.validate_name(name)
         self.name = name
         self.arrange_vertically = arrange_vertically
@@ -1604,6 +1713,11 @@ class RadioButtonControl(OptionControl):
             return FailedValidation(_p("validation", "You need to select an answer!"))
         return None
 
+    def _is_possible_answer(self, answer):
+        if self.show_free_text_option and isinstance(answer, str):
+            return True
+        return super()._is_possible_answer(answer)
+
 
 class RadioButton:
     def __init__(
@@ -1619,6 +1733,14 @@ class RadioButton:
 class NumberControl(Control):
     """
     This control interface solicits number input from the participant.
+
+    The answer is saved as a number: an ``int`` for a whole number such as ``100``
+    and a ``float`` otherwise, for browsers and default bots alike.
+    The browser submits the typed text, which :meth:`format_answer` converts;
+    text that is not a number, including a decimal comma such as ``1,5``,
+    fails validation. Because the answer is a number, the typed text is lost:
+    ``02139`` is saved as ``2139``. Use :class:`TextControl` for codes such as
+    postcodes or IDs where the exact text matters.
 
     Parameters
     ----------
@@ -1646,16 +1768,42 @@ class NumberControl(Control):
     def metadata(self):
         return {"width": self.width, "text_align": self.text_align}
 
-    def validate(self, response, **kwargs):
-        _p = get_translator(context=True)
+    def format_answer(self, raw_answer, **kwargs):
+        """Return the answer as an ``int`` if it is a whole number, otherwise a ``float``.
+
+        Only text is converted. Anything else, and text that is not a finite
+        number (including digits grouped with ``_`` such as ``1_000``), is
+        returned unchanged, so that :meth:`validate` can reject it.
+        """
+        if not isinstance(raw_answer, str) or "_" in raw_answer:
+            return raw_answer
         try:
-            float(response.answer)
+            return int(raw_answer)
         except ValueError:
+            pass
+        try:
+            number = float(raw_answer)
+        except ValueError:
+            return raw_answer
+        if not math.isfinite(number):
+            return raw_answer
+        return int(number) if number.is_integer() else number
+
+    def validate(self, response, **kwargs):
+        """Accept a finite real number, including NumPy numbers; reject strings and booleans."""
+        _p = get_translator(context=True)
+        answer = response.answer
+        if not (
+            isinstance(answer, numbers.Real)
+            and not isinstance(answer, bool)
+            and math.isfinite(answer)
+        ):
             return FailedValidation(_p("validation", "You need to provide a number!"))
         return None
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        return random.randint(20, 100)
+        """Answer with a random whole number, as text like the browser submits."""
+        return BotResponse(raw_answer=str(random.randint(20, 100)))
 
 
 class TextControl(Control):
@@ -1713,7 +1861,7 @@ class TextControl(Control):
         }
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        return "Hello, I am a bot!"
+        return BotResponse(raw_answer="Hello, I am a bot!")
 
 
 class MonitorControl(Control):
@@ -1726,8 +1874,8 @@ class MonitorControl(Control):
     macro = "monitor"
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        return json.loads(
-            """
+        return BotResponse(
+            raw_answer=json.loads("""
 {
     "currentScreen": {
         "left": -959,
@@ -1789,7 +1937,7 @@ class MonitorControl(Control):
         "top": -1393
     }
 }
-"""
+""")
         )
 
 
@@ -2213,6 +2361,21 @@ class ModularPage(Page):
             return self.control.validate(response, **kwargs)
         else:
             return super().validate(response, **kwargs)
+
+    def _reject_impossible_answer(self, answer):
+        """Delegate to the control, logging a warning when it rejects the answer."""
+        rejection = self.control._reject_impossible_answer(answer)
+        if rejection is not None:
+            logger.warning(
+                "Page %r rejected the answer %r because it is not one of the control's "
+                "choices %r. If the page or control reformats the answer, or the choices "
+                "change each time the page is built, pass restrict_to_choices=False "
+                "or keep the choices stable.",
+                self.label,
+                answer,
+                getattr(self.control, "choices", None),
+            )
+        return rejection
 
     def prepare_default_events(self):
         events = super().prepare_default_events()
@@ -2722,7 +2885,7 @@ class SliderControl(Control):
             )
         else:
             candidates = self.snap_values
-        return random.sample(candidates, 1)[0]
+        return BotResponse(raw_answer=float(random.choice(candidates)))
 
 
 EXTENSIONS = {
@@ -4399,7 +4562,7 @@ class FrameSliderControl(Control):
         )
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        return random.uniform(0, 1)
+        return BotResponse(raw_answer=random.uniform(0, 1))
 
 
 class SurveyJSControl(Control):
@@ -4610,10 +4773,12 @@ class MultiRatingControl(SurveyJSControl):
         )
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        return {
+        """Answer each scale, as the SurveyJS results text that the browser submits."""
+        results = {
             scale.name: scale.get_bot_response(experiment, bot, page, prompt)
             for scale in self.scales
         }
+        return BotResponse(raw_answer=json.dumps(_as_browser_json(results)))
 
     def format_answer(self, raw_answer, **kwargs):
         answer = super().format_answer(raw_answer, **kwargs)
@@ -4809,7 +4974,7 @@ class RatingScale:
         return design
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        possible_responses = self.values
+        possible_responses = list(self.values)
         if not self.required:
             possible_responses.append(None)
         return random.choice(possible_responses)
