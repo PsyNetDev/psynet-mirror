@@ -648,7 +648,18 @@ Trial makers
 A trial maker with ``sync_group_type`` gives the whole group the same trials.
 Each group has a randomly chosen leader. PsyNet assigns the leader's next node
 as if the leader were taking the trial maker alone, and the other members get
-trials on the same node. The start of every trial is synchronized; add
+trials on the same node.
+
+The group starts each run of the trial maker together, also when a loop
+repeats it. The first member initialized, normally the leader, makes the
+run's choices (the participant group and the block order); the others copy
+them. PsyNet stores them, and the group's current block, in the group's
+``var`` under ``runs_of_<trial maker id>``, one entry per run. A newcomer
+who joins during a run, or a member promoted to leader, copies the current
+run's choices and block. A member who loops faster than the others waits
+for the whole group to start the next run.
+
+The start of every trial is synchronized; add
 :class:`~psynet.sync.GroupBarrier` elements inside the trial, as in
 ``show_trial`` above, to synchronize other points. Each trial records the
 group, the member's role and the group's round, counted from 0, in

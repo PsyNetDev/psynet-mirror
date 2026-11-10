@@ -1,6 +1,5 @@
 import datetime
 import random
-from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import partial
 from math import isnan
@@ -1810,79 +1809,56 @@ Index(
 )
 
 
-# While a group's release initializes its members, the state of the first
-# one initialized, whom the others copy the group's choices from.
-_released_with_state = ContextVar("psynet_released_with_state", default=None)
-
-
-def _latest_state(participant, trial_maker_id):
-    """Return the participant's state for their current run of the trial maker, or ``None``.
-
-    That is their latest state for it, unless they have finished or left
-    that run, as between the runs of a loop or after leaving the trial
-    maker.
-    """
+def _initialized_in(participant, trial_maker_id) -> bool:
+    """Return whether the participant's latest run of the trial maker has initialized them."""
     try:
         state = participant.module_states[trial_maker_id][-1]
     except (KeyError, IndexError):
-        return None
-    if state.finished or state.early_exited:
-        return None
-    return state
+        return False
+    return state.trial_maker_initialized
 
 
-def _initialized_in(participant, trial_maker_id) -> bool:
-    """Return whether the participant's current run of the trial maker has initialized them."""
-    state = _latest_state(participant, trial_maker_id)
-    return state is not None and state.trial_maker_initialized
+def _group_runs_key(trial_maker_id):
+    """Return the ``group.var`` key of a group's runs of the trial maker."""
+    return f"runs_of_{trial_maker_id}"
 
 
-def _initialized_member_state(group, trial_maker_id, participant):
-    """Return the state ``participant`` copies the group's choices from, or ``None``.
+def _current_group_run(group, trial_maker_id):
+    """Return ``group``'s current run of the trial maker, or ``None`` before its first.
 
-    That is the current-run state of another active member of ``group``
-    whom the trial maker has initialized, preferring the leader's. On their
-    first run of the trial maker, ``participant`` copies any such state,
-    joining play in progress; on a later run of a loop, only one with the
-    same ``run_index``, not that of a member still finishing the previous
-    run.
+    A run is a dict stored in ``group.var``: the group's choices for that
+    run (``participant_group``, and for chain trial makers ``block_order``
+    and ``block_position``), set by the first member initialized, and the
+    ``members`` who started it.
     """
-    own = _latest_state(participant, trial_maker_id)
-    if own is None:
-        return None
-    for member in _leader_first(group, group.active_participants):
-        if member == participant:
-            continue
-        state = _latest_state(member, trial_maker_id)
-        if (
-            state is not None
-            and state.trial_maker_initialized
-            and (own.run_index == 1 or state.run_index == own.run_index)
-        ):
-            return state
-    return None
+    runs = group.var.get(_group_runs_key(trial_maker_id), [])
+    return runs[-1] if runs else None
 
 
-def _leader_first(group, participants):
-    """Return ``participants``, ``group``'s leader first if they are among them."""
-    return sorted(participants, key=lambda p: p != group.leader)
+def _edit_group_runs(group, trial_maker_id, edit):
+    """Apply ``edit`` to the list of ``group``'s runs of the trial maker and store it.
+
+    Members' requests write the runs concurrently, so this first rereads
+    ``group.var`` holding the group's row lock until the transaction ends;
+    otherwise one request could overwrite another's change.
+    """
+    db.session.flush()
+    db.session.refresh(group, ["vars"], with_for_update={"key_share": True})
+    key = _group_runs_key(trial_maker_id)
+    runs = list(group.var.get(key, []))
+    edit(runs)
+    group.var.set(key, runs)
 
 
 class _InitParticipantBarrier(GroupBarrier):
-    """The barrier at which a synchronized trial maker initializes its group, leader first.
+    """The barrier at which a synchronized trial maker starts each run of its group.
 
-    Members wait here until another member of the group, normally the
-    leader, is initialized in a run they can copy the group's choices from
-    (see :meth:`TrialMaker._group_choices_state`): on a member's first run
-    of the trial maker, any member's current run, and on a later run of a
-    loop, only a run with the same ``run_index``, not that of a member
-    still finishing the previous run. A member who can copy passes straight
-    through and initializes alone, including a newcomer who arrived while
-    the group's release was committing or who was promoted to leader after
-    the group passed (see :meth:`~psynet.sync.SyncGroup.check_leader`).
-    Otherwise the barrier's usual rules apply, ending with its
-    ``max_wait_time`` if no member starts the run, as when the leader's
-    loop ended earlier.
+    The group's release starts the group's next run (see
+    :meth:`TrialMaker._init_participants_in_sync_group`). A member who
+    hasn't started the group's current run, such as a newcomer joining play
+    in progress, passes straight through and copies its choices. A member
+    who already played the current run, as when they loop quickly, waits
+    for the group to start the next one.
     """
 
     _lets_newcomers_through = True
@@ -1897,11 +1873,8 @@ class _InitParticipantBarrier(GroupBarrier):
         self.trial_maker_id = trial_maker.id
 
     def _lets_through(self, group, participant) -> bool:
-        return (
-            group.leader is not None
-            and _initialized_member_state(group, self.trial_maker_id, participant)
-            is not None
-        )
+        run = _current_group_run(group, self.trial_maker_id)
+        return run is not None and participant.id not in run["members"]
 
 
 class TrialMakerState(ModuleState):
@@ -2384,33 +2357,15 @@ class TrialMaker(Module):
     def _init_participants_in_sync_group(
         self, group: SyncGroup, participants, experiment
     ):
-        """Initialize the members released together in this run, leader first.
+        """Start the group's next run and initialize the members it released, leader first.
 
-        Only ``participants``, those the group's pass released, are
-        initialized or copied from: they are all at the start of their
-        current run, so the others copy the group's choices from the first
-        one initialized, normally the leader, even if their ``run_index``
-        differs, as when groups re-form inside a loop. One of them already
-        initialized in their current run is that source. Skips members who
-        aren't in a run of the trial maker.
+        The first member initialized makes the run's choices and the others
+        copy them (see :meth:`init_participant_group`).
         """
-        states = [
-            (participant, _latest_state(participant, self.id))
-            for participant in _leader_first(group, participants)
-        ]
-        source = next(
-            (s for _, s in states if s is not None and s.trial_maker_initialized),
-            None,
-        )
-        for participant, state in states:
-            if state is None or state.trial_maker_initialized:
-                continue
-            token = _released_with_state.set(source)
-            try:
+        _edit_group_runs(group, self.id, lambda runs: runs.append({"members": []}))
+        for participant in sorted(participants, key=lambda p: p != group.leader):
+            if not self._is_initialized(participant):
                 self.init_participant(experiment, participant)
-            finally:
-                _released_with_state.reset(token)
-            source = source or state
 
     @property
     def _setup_extra(self):
@@ -2747,6 +2702,11 @@ class TrialMaker(Module):
         participant.module_state.in_repeat_phase = False
         self.init_participant_group(experiment, participant)
         participant.module_state.trial_maker_initialized = True
+        group, run = self._group_run(participant)
+        if run is not None:
+            _edit_group_runs(
+                group, self.id, lambda runs: runs[-1]["members"].append(participant.id)
+            )
 
     def _active_sync_group(self, participant):
         """Return the participant's active group of ``sync_group_type``, if any."""
@@ -2754,49 +2714,38 @@ class TrialMaker(Module):
             return None
         return participant.active_sync_groups.get(self.sync_group_type)
 
-    def _group_choices_state(self, participant):
-        """Return the state to copy the group's choices from, or ``None`` to make them.
+    def _group_run(self, participant):
+        """Return the participant's group and its current run of this trial maker.
 
-        A follower copies the leader's. A leader makes them, unless they were
-        promoted after other members initialized: then they copy those
-        members', so the whole group keeps the same choices. Only members'
-        current runs of the trial maker count. On ``participant``'s first
-        run, any member's current run counts, as for a newcomer joining
-        play in progress; on a later run of a loop, only a run with the same
-        ``run_index``, so a member still finishing the previous run doesn't
-        count. If the leader has no such run, a follower copies another
-        member's, or makes the choices if no member has one. The source may
-        be in a later page than ``participant``, so this reads their state
-        for this trial maker rather than their current module state.
-
-        In a group's release, the others copy the first member initialized,
-        whatever their runs (see :meth:`_init_participants_in_sync_group`).
+        The run is ``None`` if the participant has no group or their group
+        hasn't started a run.
         """
-        sync_group = self._active_sync_group(participant)
-        if sync_group is None:
-            return None
-        released_with = _released_with_state.get()
-        if released_with is not None:
-            return released_with
-        return _initialized_member_state(sync_group, self.id, participant)
+        group = self._active_sync_group(participant)
+        run = None if group is None else _current_group_run(group, self.id)
+        return group, run
+
+    def _update_group_run(self, group, **values):
+        """Store ``values`` in ``group``'s current run of this trial maker."""
+        _edit_group_runs(group, self.id, lambda runs: runs[-1].update(values))
 
     def init_participant_group(self, experiment, participant):
         """Set the participant's group for this trial maker.
 
-        In a synchronized trial maker, members copy it from the leader, and
-        a leader promoted after other members initialized copies theirs;
-        otherwise ``choose_participant_group`` chooses it.
+        In a synchronized trial maker, members copy it from their group's
+        current run, so newcomers and a promoted leader keep the group's;
+        otherwise, or for the run's first member, ``choose_participant_group``
+        chooses it.
         """
         if participant.module_state.participant_group:
             return
 
-        source = self._group_choices_state(participant)
-        if source is not None:
+        group, run = self._group_run(participant)
+        if run is not None and "participant_group" in run:
             logger.info(
                 f"participant = {participant.id} copies the participant group "
-                f"of sync_group id = {self._active_sync_group(participant).id}"
+                f"of sync_group id = {group.id}"
             )
-            participant_group = source.participant_group
+            participant_group = run["participant_group"]
         else:
             if self.choose_participant_group is None:
                 participant_group = "default"
@@ -2804,6 +2753,8 @@ class TrialMaker(Module):
                 participant_group = self.choose_participant_group(
                     participant=participant,
                 )
+            if run is not None:
+                self._update_group_run(group, participant_group=participant_group)
         participant.module_state.participant_group = participant_group
 
     def on_complete(self, experiment, participant):
