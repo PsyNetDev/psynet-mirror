@@ -282,11 +282,12 @@ for compatibility; for a dissolved group, see :ref:`also_on_dissolve <sync-on-di
 
 ``node`` is the group's :class:`~psynet.trial.main.SyncGroupNode` for the
 round the barrier is in or after: the earliest of the rounds the waiting
-members stored when they last cued (or skipped) one in their current
-module, not a node worked out from their trials. It is ``None``
-before the group's first cue in the module, including at a barrier at the
-start of a module after another module's rounds, and in a group that never
-uses :meth:`~psynet.trial.main.Trial.cue`. When ``node`` is set, ``trials``
+members stored when they last cued (or skipped) one in their current run
+of their current module, not a node worked out from their trials. It is
+``None`` before the group's first cue in the module, including at a barrier
+at the start of a module after another module's rounds or at the start of a
+later run of the same module, and in a group that never uses
+:meth:`~psynet.trial.main.Trial.cue`. When ``node`` is set, ``trials``
 holds ``None`` for a member whose current trial is not on it, such as a
 newcomer released at a feedback barrier during a practice trial; when it is
 ``None``, ``trials`` holds each member's current trial whatever its node,
@@ -424,9 +425,9 @@ score the last question for those who answered it:
                  also_on_dissolve=True)
 
 The members waiting at the barrier when the group dissolves get one call
-together, before they leave the group. Dissolving waits until no member's
-request is in flight, usually a second at most, so that call includes
-every member waiting there. Each member who continues and wasn't waiting
+together, before they leave the group. Dissolving waits for any member who
+is in the middle of another request, so it may happen a second or two after
+that request finishes, and that call includes every member waiting there. Each member who continues and wasn't waiting
 there, such as one still answering the question or waiting at an earlier
 barrier without ``also_on_dissolve``, gets their own call when they reach
 the barrier, once their answer has arrived; barriers without
@@ -872,9 +873,9 @@ Two separate settings decide what happens when someone leaves a group:
 
 - **The member who leaves** is handled by why they left: a barrier's
   ``max_wait_action`` (they waited too long for the others) or
-  ``late_action`` (the others waited too long for them), each ``"fail"``
-  or ``"leave_group"``, or their own failure, for example when they return
-  the study.
+  ``late_action`` (the others waited too long for them), each ``"fail"``,
+  ``"leave_group"`` or ``"leave_all_groups"``, or their own failure, for
+  example when they return the study.
 - **The members left behind** carry on as before while the group still has
   its ``quorum``. Below it, what happens depends on whether the group
   accepts top-ups:
@@ -901,7 +902,7 @@ Two separate settings decide what happens when someone leaves a group:
       still waiting, so give that barrier a ``max_wait_time`` (20 seconds
       by default) longer than ``top_up_wait``, or ``late_after``, which
       removes the limit.
-  - Without top-ups, the group is dissolved at once, and the grouper's
+  - Without top-ups, the group is dissolved, and the grouper's
     ``below_quorum`` decides for each remaining member: ``"fail"`` (default)
     fails them, telling them "Too few members of your group remained to
     continue, so we ended your session."; ``"continue_without_group"``
@@ -910,9 +911,10 @@ Two separate settings decide what happens when someone leaves a group:
     members of your group remained. Please continue." in larger groups; see
     :ref:`sync-leaving-a-group`). A module-level function of
     ``participant`` and ``group`` that returns one of these decides member
-    by member. A member who is in the middle of a request at that moment
-    (for example submitting a page) is handled by the background barrier
-    check within about a second instead, once that request finishes.
+    by member. All the members leave together: if another member is in the
+    middle of a request at that moment (for example submitting a page),
+    nobody is removed yet, and the background barrier check dissolves the
+    group usually within a second or two of that request finishing.
   - Members who leave with ``reason="finished"``, or who move on at a
     :class:`~psynet.sync.Regrouper` (``"moved_on"``), don't dissolve the
     group when they leave, unlike any other
