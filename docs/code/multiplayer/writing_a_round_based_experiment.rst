@@ -183,10 +183,15 @@ module, counts as having left it. So a faster member's next run starts
 without them, and the group drifts out of step: they play rounds alone, or
 wait for each other until ``late_after`` or ``max_wait_time`` acts. PsyNet
 raises a ``ValueError`` when the experiment loads if a ``while_loop`` after
-a grouper shows content pages between runs of a module it repeats, with no
-barrier between the pages and the next run. Move the pages into the
-module, or add a ``GroupBarrier`` after them, outside the module, which
-waits for every member, so each run starts together:
+a grouper shows content pages between runs of a group module it repeats,
+with no barrier between the pages and the next run. A group module is a
+trial maker with a ``sync_group_type``, or any other module that contains
+a ``GroupBarrier``, such a trial maker, or a page maker such as a
+``for_loop`` of cued rounds. Other modules, such as a quiz each player
+takes alone, are skipped. Move the pages into the module, or add a
+``GroupBarrier`` after them, outside the module, which waits for every
+member, so each run starts together. A trial maker can't hold the pages,
+so it needs the barrier:
 
 .. code-block:: python
 
@@ -202,11 +207,16 @@ waits for every member, so each run starts together:
 
 A barrier inside the module, at its start, doesn't count, as it doesn't
 wait for members who have left the module; nor does a barrier before the
-pages. A barrier's own waiting page isn't a content page. The check has
-limits:
+pages. A barrier's own waiting page isn't a content page. Pages inside a
+``switch`` or ``conditional`` count as shown, whichever branch they are
+in, but a barrier inside one doesn't count, as members on another branch
+don't pass it. The check has limits:
 
-- It can't tell whether the module is grouped, so it may reject a module
-  that isn't; moving the pages into the module is harmless then.
+- It decides which modules are grouped from what they contain at load, so
+  a module whose page maker only builds solo pages still counts as one;
+  moving the pages into the module is harmless then.
+- A barrier in every branch of a ``switch`` still doesn't count; put one
+  barrier after the ``switch`` instead.
 - A ``for_loop`` or :class:`~psynet.timeline.PageMaker` builds its logic
   when the participant reaches it, so the check can't see what it shows.
   If one is all there is between the runs, PsyNet warns instead of

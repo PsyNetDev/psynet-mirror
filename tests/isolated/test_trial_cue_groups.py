@@ -1018,7 +1018,7 @@ def test_a_barrier_after_the_pages_between_runs_waits_for_the_slow_member(
     _arrive(exp, ready, [fast])
     assert ready._participant_is_waiting(fast)
     _arrive(exp, ready, [slow])
-    assert not ready._participant_is_waiting(fast)
+    assert not any(ready._participant_is_waiting(p) for p in cohort)
 
 
 @pytest.mark.parametrize("group_barrier_id", ["ready", "submitted"])
@@ -1573,6 +1573,13 @@ def _team_with_top_ups(exp, db_session):
     return players, late, group
 
 
+_passes = []
+
+
+def _record_pass(participants, left):
+    _passes.append(([p.id for p in participants], [p.id for p in left]))
+
+
 @in_consents_experiment
 def test_case_a_fixed_pair_waits_only_for_the_slower_partner(
     in_experiment_directory, db_session
@@ -1580,11 +1587,13 @@ def test_case_a_fixed_pair_waits_only_for_the_slower_partner(
     exp = get_experiment()
     (fast, slow), _ = _sync_group_of(exp, db_session, 2)
     _cue_team(exp, [fast, slow], 0)
-    submitted = GroupBarrier("submitted", group_type="main")
+    _passes.clear()
+    submitted = GroupBarrier("submitted", group_type="main", on_release=_record_pass)
     _arrive(exp, submitted, [fast])
     assert _waiting_at(submitted, [fast]) == [fast]
     _arrive(exp, submitted, [slow])
     assert _waiting_at(submitted, [fast, slow]) == []
+    assert len(_passes) == 1 and fast.current_trial.node.sync_group_closed
     assert [p.current_trial.sync_group_outcome for p in (fast, slow)] == [
         "stayed",
         "stayed",
@@ -1598,16 +1607,26 @@ def test_case_a_late_joiner_joins_the_open_round_and_its_barrier_waits_for_them(
     exp = get_experiment()
     (first, second), late, group = _team_with_top_ups(exp, db_session)
     _cue_team(exp, [first, second], 0)
-    submitted = GroupBarrier("submitted", group_type="main")
+    _passes.clear()
+    submitted = GroupBarrier(
+        "submitted", group_type="main", late_after=5, on_release=_record_pass
+    )
     _arrive(exp, submitted, [first])
+    _backdate_group(group, seconds=10)
     group.add_participant(late)
     _arrive(exp, submitted, [second])
+    # late_after counts for the newcomer from when they joined.
+    submitted.check_waiting_participants([first, second])
+    assert not late.failed
     assert _waiting_at(submitted, [first, second]) == [first, second]
 
     _cue_team(exp, [late], 0)
     assert late.current_trial.node is first.current_trial.node
     _arrive(exp, submitted, [late])
     assert _waiting_at(submitted, [first, second, late]) == []
+    assert [sorted(ids) for ids, _ in _passes] == [
+        sorted(p.id for p in (first, second, late))
+    ]
 
 
 @in_consents_experiment
@@ -1634,13 +1653,6 @@ def test_case_a_late_joiner_skips_a_closed_round_and_waits_in_the_next(
     _cue_team(exp, players, 1)
     _arrive(exp, submitted, players)
     assert _waiting_at(submitted, [*players, late]) == []
-
-
-_passes = []
-
-
-def _record_pass(participants, left):
-    _passes.append(([p.id for p in participants], [p.id for p in left]))
 
 
 @pytest.mark.parametrize("n", [3, 2])
@@ -1743,6 +1755,10 @@ def test_case_max_wait_time_runs_out(
     assert waiter.current_trial.sync_group_outcome == (
         "left_experiment" if waiter_fails else "waited_too_long"
     )
+    if not waiter_fails:
+        assert waiter.group_removal_notice["text"] == (
+            "Your partner didn't arrive in time. Please continue."
+        )
     assert absent.current_trial.sync_group_outcome == "group_dissolved"
 
 

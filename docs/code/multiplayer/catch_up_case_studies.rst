@@ -138,7 +138,8 @@ A slow reader between runs of a looped module
 ---------------------------------------------
 
 The pair plays the whole game several times, with a results page after
-each run. A module that runs again can't pass ``round=``, so the cues
+each run, and ``submitted`` has a ``max_wait_time`` longer than Ben's
+reading. A module that runs again can't pass ``round=``, so the cues
 don't number their rounds:
 
 .. code-block:: python
@@ -155,8 +156,9 @@ don't number their rounds:
 
 Ann waits for Ben's reading and his estimate: the round is open, and Ben is
 still in the module, on its results page, with no trial in the round yet.
-Here that is longer than the default ``max_wait_time``, so give the results
-page a ``time_limit``, or size the barrier's limits for slow readers.
+With the default ``max_wait_time`` of 20 s, Ann's wait would run out and
+fail her, so give the results page a ``time_limit``, or size the barrier's
+limits for slow readers.
 
 **With the results page outside the module**, as in
 ``while_loop("runs", play_again, join(Module("game", rounds), results_page), 2)``,
@@ -176,7 +178,8 @@ A ``GroupBarrier`` at the start of the module doesn't help, and the check
 still raises: Ben has left the module, so the barrier lets Ann through,
 and when Ben reaches it, he waits there for Ann while she waits in the
 round for him, until ``late_after`` or ``max_wait_time`` moves someone
-on. Either fix works:
+on. With ``late_after`` on that barrier, it fails Ann, who was on time,
+and lets Ben go. Either fix works:
 
 .. code-block:: python
 
@@ -188,8 +191,8 @@ on. Either fix works:
     while_loop("runs", play_again,
                join(Module("game", rounds), results_page, next_run), 2)
 
-With the barrier, Ann waits at ``next_run`` while Ben reads, and they
-start run 2 together. See :ref:`group barriers in loops
+With the barrier, Ann waits at ``next_run`` while Ben reads, and it
+releases both together when he arrives. See :ref:`group barriers in loops
 <rounds-group-barriers-in-loops>` for what the check can't see.
 
 Checked by ``test_case_a_slow_reader_between_runs_of_a_looped_module`` in
@@ -221,8 +224,8 @@ A cohort of three is split into new pairs every round:
    Their :meth:`~psynet.sync.Regrouper.role` is ``None`` and
    :meth:`~psynet.sync.Regrouper.sat_out` is ``True``.
 2. The sitter is back at the regrouper first and waits there for the pair.
-   If the pair is still playing when the ``deadline`` passes, the sitter
-   waits at most one more ``deadline``, then sits out again.
+   If the pair is still playing one ``deadline`` after the sitter arrived,
+   the sitter waits at most one more ``deadline``, then sits out again.
 3. When the pair is back, the regrouper pairs the sitter, who has played
    the fewest rounds, with one of the two. The other sits this round out.
 

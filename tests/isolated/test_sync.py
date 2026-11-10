@@ -86,8 +86,10 @@ from psynet.timeline import (
     PageMaker,
     Response,
     Timeline,
+    conditional,
     for_loop,
     join,
+    switch,
     while_loop,
 )
 from psynet.timeline_hold import (
@@ -100,6 +102,7 @@ from psynet.timeline_hold import (
     default_group_barrier_arrival_message,
     default_hold_progress,
 )
+from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 from psynet.utils import call_function_with_context, get_config
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -6040,6 +6043,29 @@ def test_group_hold_reports_how_many_are_not_ready_yet(
     assert pending_arrival_notice_for(third) == "2/3 of your group are ready."
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_pushed_hold_counts_leave_out_members_who_finished_the_module(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    members = _sync_group_of(exp, db_session, 4)[0]
+    game = Module("game", InfoPage("Hi", time_estimate=1))
+    for participant in members:
+        participant.start_module(game)
+    members[-1].end_module(game)
+    db_session.commit()
+    publications = _hold_wake_publications(monkeypatch)
+    barrier = GroupBarrier(id_="b", group_type="main", waiting_message="Waiting")
+
+    first = members[0]
+    _arrive_at_group_barrier(exp, barrier, first)
+    db_session.commit()
+    assert "2 of 3 not ready yet" in barrier.waiting_logic.overlay_html(first)
+    assert "2 of 3 not ready yet" in _arrival_hold_messages(publications, first.id)[-1]
+
+
 def _chosen_waiting_text(waiting_count, group_size):
     return hold_message(
         "Waiting for the room", f"{waiting_count} of {group_size} have chosen"
@@ -7278,6 +7304,10 @@ def test_timeline_warns_about_barriers_newcomers_can_reach_after_their_group():
     assert warned_barriers(rounds(pass_newcomers=True), stop_top_ups=True) == ["round"]
 
 
+class LoopCheckTrial(StaticTrial):
+    time_estimate = 1
+
+
 @pytest.mark.parametrize(
     "shape, outcome",
     [
@@ -7286,9 +7316,16 @@ def test_timeline_warns_about_barriers_newcomers_can_reach_after_their_group():
         ("page, loop of module", "raises"),
         ("module, barrier, page", "raises"),
         ("module, for_loop of pages", "warns"),
+        ("module, page in a conditional", "raises"),
+        ("module, page, barrier in a conditional", "raises"),
+        ("module, switch of barrier or page", "raises"),
+        ("module, switch of page or barrier", "raises"),
+        ("group trial maker, page", "raises"),
         ("module with page", None),
         ("barrier, module, page", None),
         ("module, page, before the grouper", None),
+        ("solo module, page", None),
+        ("solo trial maker, page", None),
     ],
 )
 def test_timeline_rejects_pages_between_runs_of_a_looped_module(shape, outcome):
@@ -7296,11 +7333,23 @@ def test_timeline_rejects_pages_between_runs_of_a_looped_module(shape, outcome):
     def game(*extra):
         return Module("game", GroupBarrier(id_="run_start", group_type="pair"), *extra)
 
+    def trial_maker(**options):
+        return StaticTrialMaker(
+            id_="game",
+            trial_class=LoopCheckTrial,
+            nodes=[StaticNode(definition={})],
+            expected_trials_per_participant=1,
+            **options,
+        )
+
     def page():
         return InfoPage("Break", time_estimate=1)
 
     def barrier():
         return GroupBarrier(id_="ready", group_type="pair")
+
+    def switch_of(first, second):
+        return switch("s", lambda: "a", {"a": first, "b": second})
 
     body = {
         "module, page": lambda: join(game(), page()),
@@ -7314,9 +7363,26 @@ def test_timeline_rejects_pages_between_runs_of_a_looped_module(shape, outcome):
         "module, for_loop of pages": lambda: join(
             game(), for_loop(label="breaks", iterate_over=[1], logic=page())
         ),
+        "module, page in a conditional": lambda: join(
+            game(), conditional("c", lambda: True, page())
+        ),
+        "module, page, barrier in a conditional": lambda: join(
+            game(), page(), conditional("c", lambda: True, barrier())
+        ),
+        "module, switch of barrier or page": lambda: join(
+            game(), switch_of(barrier(), page())
+        ),
+        "module, switch of page or barrier": lambda: join(
+            game(), switch_of(page(), barrier())
+        ),
+        "group trial maker, page": lambda: join(
+            trial_maker(sync_group_type="pair"), page()
+        ),
         "module with page": lambda: game(page()),
         "barrier, module, page": lambda: join(barrier(), game(), page()),
         "module, page, before the grouper": lambda: join(game(), page()),
+        "solo module, page": lambda: join(Module("game", page()), page()),
+        "solo trial maker, page": lambda: join(trial_maker(), page()),
     }[shape]()
     steps = [
         SimpleGrouper("pair", initial_group_size=2),
@@ -7327,8 +7393,11 @@ def test_timeline_rejects_pages_between_runs_of_a_looped_module(shape, outcome):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         if outcome == "raises":
-            with pytest.raises(ValueError, match="repeats module 'game' and shows"):
+            with pytest.raises(
+                ValueError, match="repeats module 'game' and shows"
+            ) as e:
                 Timeline(*steps, InfoPage("Done", time_estimate=1))
+            assert ("trial maker can't" in str(e.value)) == ("trial maker" in shape)
             return
         Timeline(*steps, InfoPage("Done", time_estimate=1))
     warned = any("repeats module 'game'" in str(w.message) for w in caught)

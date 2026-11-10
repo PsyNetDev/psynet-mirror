@@ -185,6 +185,14 @@ from psynet.timeline import (
     TIME_LIMIT_GRACE_SECONDS,
     CodeBlock,
     EltCollection,
+    EndModule,
+    EndSwitch,
+    EndWhile,
+    Page,
+    PageMaker,
+    StartModule,
+    StartSwitch,
+    StartWhile,
     _is_timeline_hold,
     conditional,
     join,
@@ -1938,16 +1946,18 @@ class GroupBarrier(Barrier):
 
     def resolve(self):
         group_type = self.group_type
-        return conditional(
+        inner = super().resolve()
+        elts = conditional(
             f"barrier:{self.id}:in_group",
             condition=lambda participant: (
                 not _removed_from_group(participant, group_type)
                 and not self._passes_straight_through(participant)
             ),
-            logic_if_true=super().resolve(),
+            logic_if_true=inner,
             logic_if_false=CodeBlock(_forget_time_out),
             log_chosen_branch=False,
         )
+        return _link_around(self, elts, inner)
 
     #: Whether this barrier lets newcomers through without ``pass_newcomers``,
     #: by overriding :meth:`_lets_through`; the load-time warning skips it.
@@ -2095,9 +2105,11 @@ class GroupBarrier(Barrier):
             round_id = _visit_round_id(group, participant)
         visits = {v.round_id: v for v in _group_visits(group, waiting, self.id)}
         same_visit = visits[round_id].waiting if round_id in visits else []
-        waited_for = _waited_for(group, _Visit(round_id, [participant, *same_visit]))
-        counted = {m.id for m in [*same_visit, *waited_for]}
-        return {"waiting_count": len(same_visit), "group_size": len(counted)}
+        visit = _Visit(round_id, [participant, *same_visit])
+        return {
+            "waiting_count": len(same_visit),
+            "group_size": _visit_group_size(group, visit),
+        }
 
     def _call_arrival_message(self, **kwargs):
         """Return author or default arrival copy for one participant.
@@ -2127,9 +2139,15 @@ class GroupBarrier(Barrier):
             return
         members = group.active_participants
         waiting = [m for m in members if self._participant_is_waiting(m)]
-        counts = {"waiting_count": len(waiting), "group_size": len(members)}
+        counts = {}
         if self._uses_timeline_hold:
             _prime_timeline_hold_records(waiting, self.id)
+            for visit in _group_visits(group, waiting, self.id):
+                visit_counts = {
+                    "waiting_count": len(visit.waiting),
+                    "group_size": _visit_group_size(group, visit),
+                }
+                counts.update({m.id: visit_counts for m in visit.waiting})
         # Arrivals in concurrent requests don't see each other, so the browser
         # fetches the notice and ready seats after the commit instead of being
         # sent the counts this request sees.
@@ -2144,7 +2162,7 @@ class GroupBarrier(Barrier):
                         hold_page, "_is_silent_for", None
                     ) and hold_page._is_silent_for(member):
                         continue
-                    hold_html = hold_page.overlay_html(member, counts=counts)
+                    hold_html = hold_page.overlay_html(member, counts=counts[member.id])
                 _queue_arrival_update(member.id, hold_message=hold_html, refresh=True)
                 continue
             _queue_arrival_update(member.id, refresh=True)
@@ -3074,7 +3092,8 @@ class SimpleGrouper(Grouper):
     def resolve(self):
         from .timeline import conditional, join
 
-        return join(
+        inner = super().resolve()
+        elts = join(
             CodeBlock(self._join_existing_groups),
             conditional(
                 "joined_an_existing_group",
@@ -3082,9 +3101,10 @@ class SimpleGrouper(Grouper):
                     self.group_type in participant.active_sync_groups
                 ),
                 logic_if_true=[],
-                logic_if_false=super().resolve(),
+                logic_if_false=inner,
             ),
         )
+        return _link_around(self, elts, inner)
 
     def _find_group_to_join(self, participant: Participant):
         """Return the open group this participant may join, or ``None``.
@@ -4265,43 +4285,179 @@ def warn_if_newcomers_can_strand_group(barriers):
             )
 
 
-def check_looped_module_has_no_pages_outside(loops):
-    """Raise if a loop shows content pages between runs of a module it repeats.
+def check_looped_module_has_no_pages_outside(branches):
+    """Raise if a loop shows content pages between runs of a group module it repeats.
 
     A member on such a page, outside the module, counts as having left it,
     so a faster member's next run starts without them: its barriers let the
     faster member through, and the group drifts out of step. A barrier
     between the pages and the next run waits for every member, so it
     prevents this. Only page makers, such as a ``for_loop``, whose logic
-    is built when the participant reaches it, warn instead.
+    is built when the participant reaches it, warn instead. Modules that
+    can't be played as a group (see :func:`_group_module_ids`) are skipped.
 
     Parameters
     ----------
-    loops : iterable of tuple
-        ``(module_ids, pages, certain)`` for each loop, as yielded by
-        ``Timeline._looped_modules_with_pages_outside``.
+    branches : iterable of list
+        The elts of each timeline branch.
 
     Raises
     ------
     ValueError
         If a loop has content pages, not just page makers, before a run.
     """
-    for module_ids, pages, certain in loops:
-        modules = ", ".join(f"'{module_id}'" for module_id in module_ids)
+    from .trial.main import TrialMaker
+
+    branches = list(branches)
+    group_modules = _group_module_ids(branches)
+    for modules, pages, certain in _looped_modules_with_pages_outside(
+        branches, group_modules
+    ):
+        module_names = ", ".join(f"'{module.id}'" for module in modules)
         page_names = ", ".join(f"'{page}'" for page in pages)
         shows = "shows pages" if certain else "has page makers (such as a for_loop)"
+        if any(isinstance(module, TrialMaker) for module in modules):
+            fix = (
+                "A trial maker can't hold the pages, so add a GroupBarrier after "
+                "them, outside it"
+            )
+        else:
+            fix = (
+                "Move the pages into the module, or add a GroupBarrier after them, "
+                "outside the module"
+            )
         message = (
-            f"A while_loop repeats module {modules} and {shows} {page_names} "
+            f"A while_loop repeats module {module_names} and {shows} {page_names} "
             "between its runs, outside the module, with no barrier after them. "
             "A member on one of those pages counts as having left the module, so "
-            "if a group plays cued rounds or waits at GroupBarriers in it, a "
-            "faster member's next run starts without them and the group drifts "
-            "out of step. Move the pages into the module, or add a GroupBarrier "
-            "after them, outside the module, so that each run starts together."
+            "a faster member's next run starts without them and the group drifts "
+            f"out of step. {fix}, so that each run starts together."
         )
         if certain:
             raise ValueError(message)
         warn_from_caller(message, UserWarning)
+
+
+def _group_module_ids(branches):
+    """Return the IDs of the modules a group can play together.
+
+    A trial maker is one if it has a ``sync_group_type``. Any other module
+    is one if it contains a :class:`GroupBarrier`, a group trial maker or a
+    page maker, whose content (such as a cued round) is only known when the
+    participant reaches it. A solo trial maker's content doesn't count.
+    """
+    from .trial.main import TrialMaker
+
+    found, open_modules = set(), []
+    for branch_elts in branches:
+        for elt in branch_elts:
+            barrier = elt if isinstance(elt, Barrier) else elt.links.get("barrier")
+            if isinstance(elt, StartModule):
+                module = elt.module
+                open_modules.append(module)
+                if (
+                    isinstance(module, TrialMaker)
+                    and module.sync_group_type is not None
+                ):
+                    found.update(m.id for m in open_modules)
+            elif isinstance(elt, EndModule):
+                open_modules.pop()
+            elif isinstance(barrier, GroupBarrier) or isinstance(elt, PageMaker):
+                if not any(isinstance(m, TrialMaker) for m in open_modules):
+                    found.update(m.id for m in open_modules)
+    return found
+
+
+def _looped_modules_with_pages_outside(branches, group_modules):
+    """Yield ``(modules, pages, certain)`` for each ``while_loop`` with pages between runs of its group modules.
+
+    A page counts if, going round the loop, a member can get from it to
+    the next run of one of the loop's modules in ``group_modules`` (IDs)
+    without passing a barrier: a barrier outside the module waits for
+    every member, so each run starts together. A barrier in a ``switch``
+    or ``conditional`` doesn't count, as members on another branch pass
+    no barrier, but its pages do. Only loops that end after a grouper in
+    timeline order count, as no one is grouped before it. Only modules,
+    pages and barriers in the loop's body count, not those in a module
+    nested in one of them, so a page in an outer module around the
+    repeated one isn't seen. A nested loop that isn't yielded itself
+    counts as its body run once. ``pages`` are the labels of the pages
+    found. ``certain`` is ``False`` if they are all page makers, such as
+    a ``for_loop``, whose logic is built when the participant reaches it
+    and might not show a page.
+    """
+    grouped = False
+    for branch_elts in branches:
+        loops = []
+        module_depth = switch_depth = 0
+        for elt in branch_elts:
+            loop = loops[-1] if loops else None
+            at_loop_level = loop is not None and module_depth == loop["depth"]
+            barrier = elt if isinstance(elt, Barrier) else elt.links.get("barrier")
+            if barrier is not None:
+                grouped |= isinstance(barrier, Grouper)
+                if at_loop_level and switch_depth == loop["switch_depth"]:
+                    loop["steps"].append(("barrier", None))
+            elif isinstance(elt, StartWhile):
+                # The loop's body is inside the switch on its condition.
+                loops.append(
+                    {
+                        "depth": module_depth,
+                        "switch_depth": switch_depth + 1,
+                        "steps": [],
+                    }
+                )
+            elif isinstance(elt, EndWhile):
+                inner = loops.pop()
+                found = _pages_before_next_run(inner["steps"]) if grouped else None
+                if found:
+                    yield found
+                elif loops and loops[-1]["depth"] == module_depth:
+                    steps = inner["steps"]
+                    if inner["switch_depth"] != loops[-1]["switch_depth"] + 1:
+                        steps = [step for step in steps if step[0] != "barrier"]
+                    loops[-1]["steps"].extend(steps)
+            elif isinstance(elt, StartSwitch):
+                switch_depth += 1
+            elif isinstance(elt, EndSwitch):
+                switch_depth -= 1
+            elif isinstance(elt, StartModule):
+                if at_loop_level and elt.module.id in group_modules:
+                    loop["steps"].append(("module", elt.module))
+                module_depth += 1
+            elif isinstance(elt, EndModule):
+                module_depth -= 1
+            elif at_loop_level and isinstance(elt, (Page, PageMaker)):
+                kind = "page" if isinstance(elt, Page) else "page_maker"
+                loop["steps"].append((kind, elt.label))
+
+
+def _pages_before_next_run(steps):
+    """Return ``(modules, pages, certain)`` for the pages in a loop body that lead to a module's next run without a barrier, or ``None``.
+
+    ``steps`` are the body's ``(kind, value)`` pairs in order, of kind
+    ``"module"`` (with the module), ``"page"`` or ``"page_maker"`` (with
+    its label) or ``"barrier"``. The body is walked twice, so that pages
+    after the last module, which lead to the first module of the next
+    iteration, are found too.
+    """
+    modules = [value for kind, value in steps if kind == "module"]
+    if not modules:
+        return None
+    found, pending = set(), []
+    for i, (kind, _) in enumerate(steps + steps):
+        if kind == "barrier":
+            pending = []
+        elif kind == "module":
+            found.update(pending)
+            pending = []
+        elif kind in ("page", "page_maker"):
+            pending.append(i % len(steps))
+    if not found:
+        return None
+    pages = [steps[i] for i in sorted(found)]
+    certain = any(kind == "page" for kind, _ in pages)
+    return modules, [label for _, label in pages], certain
 
 
 def group_seats(group) -> Dict[int, int]:
@@ -4830,6 +4986,11 @@ def _group_visits(group, waiting_participants, barrier_id) -> List[_Visit]:
         _Visit(round_id, by_round[round_id])
         for round_id in sorted(by_round, key=lambda i: (i is not None, i or 0))
     ]
+
+
+def _visit_group_size(group, visit) -> int:
+    """Return how many members a hold message counts for ``visit``: its waiters and those it waits for."""
+    return len({p.id for p in [*visit.waiting, *_waited_for(group, visit)]})
 
 
 def _waited_for(group, visit) -> List[Participant]:
@@ -5650,6 +5811,20 @@ def _interruptible_waiting_barrier(page, participant):
 def _forget_time_out(participant):
     """Skipping a barrier passes it, so a time-out before it doesn't reach the next one."""
     participant.timed_out_since_barrier = False
+
+
+def _link_around(barrier, elts, inner):
+    """Link ``barrier`` to the elts that ``elts`` adds around its ``inner`` elts, and return ``elts``.
+
+    :meth:`Barrier.resolve` links its own elts. Linking the switches a
+    subclass wraps them in too lets load-time checks tell them from a
+    ``switch`` or ``conditional`` around the barrier.
+    """
+    inner_ids = {id(elt) for elt in inner}
+    for elt in elts:
+        if id(elt) not in inner_ids:
+            elt.links.setdefault("barrier", barrier)
+    return elts
 
 
 def _leave_waiting_logic(code_block, participant):
