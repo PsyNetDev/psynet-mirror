@@ -304,6 +304,12 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
     timeout : float, optional
         Passed to :func:`advance_past_wait_pages`.
 
+    Raises
+    ------
+    ValueError
+        If the regrouper has neither ``deadline`` nor ``every``, or none of
+        the bots is waiting at it.
+
     Examples
     --------
     ::
@@ -324,7 +330,11 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
         if not waiting:
             raise ValueError(f"None of the bots is waiting at '{regrouper.id}'.")
         _backdate_arrivals(regrouper, waiting, period)
-        for within_group in {regrouper.waiting_pool_group(p) for p in waiting}:
+        pools = {}
+        for participant in waiting:
+            group = regrouper.waiting_pool_group(participant)
+            pools[group and group.id] = group
+        for within_group in pools.values():
             _backdate_splits(regrouper, within_group, period)
     advance_past_wait_pages(bots, timeout=timeout)
 

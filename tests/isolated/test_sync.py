@@ -50,6 +50,7 @@ from psynet.sync import (
     GroupBarrier,
     ParticipantLinkBarrier,
     ParticipantLinkSyncGroup,
+    Regrouper,
     SimpleGrouper,
     SimpleSyncGroup,
     SyncGroup,
@@ -7204,9 +7205,12 @@ def test_timeline_warns_when_a_late_member_would_fail_their_partner(
 
 
 @pytest.mark.parametrize(
-    "stop_top_ups, top_up_wait", [(False, None), (True, None), (False, 30)]
+    "stop_top_ups, top_up_wait, stop_top_ups_after_rounds",
+    [(False, None, None), (True, None, None), (False, 30, None), (False, None, 1)],
 )
-def test_timeline_warns_about_late_members_once_top_ups_stop(stop_top_ups, top_up_wait):
+def test_timeline_warns_about_late_members_once_top_ups_stop(
+    stop_top_ups, top_up_wait, stop_top_ups_after_rounds
+):
     def make_timeline():
         return Timeline(
             SimpleGrouper(
@@ -7216,6 +7220,12 @@ def test_timeline_warns_about_late_members_once_top_ups_stop(stop_top_ups, top_u
                 top_up_wait=top_up_wait,
             ),
             GroupBarrier(id_="start", group_type="team", stop_top_ups=stop_top_ups),
+            Regrouper(
+                "pair",
+                within="team",
+                group_size=2,
+                stop_top_ups_after_rounds=stop_top_ups_after_rounds,
+            ),
             GroupBarrier(
                 id_="round", group_type="team", late_after=30, late_action="leave_group"
             ),
@@ -7226,7 +7236,7 @@ def test_timeline_warns_about_late_members_once_top_ups_stop(stop_top_ups, top_u
         warnings.simplefilter("always")
         make_timeline()
     warned = any("single late member fails everyone" in str(w.message) for w in caught)
-    assert warned == bool(stop_top_ups or top_up_wait)
+    assert warned == bool(stop_top_ups or top_up_wait or stop_top_ups_after_rounds)
 
 
 def test_timeline_warns_about_barriers_newcomers_can_reach_after_their_group():

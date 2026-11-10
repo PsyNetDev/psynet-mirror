@@ -4115,8 +4115,9 @@ def warn_if_late_removal_fails_group(barriers):
     grouper of any group type counts, such as one forming the cohort that a
     :class:`Regrouper` splits into pairs. A grouper with ``join_existing_groups=True``
     only counts once its groups can stop taking newcomers, through a barrier
-    with ``stop_top_ups=True`` or a ``top_up_wait``, because until then the
-    group can top up instead.
+    with ``stop_top_ups=True``, a :class:`Regrouper` with
+    ``stop_top_ups_after_rounds`` within its group type, or a ``top_up_wait``,
+    because until then the group can top up instead.
 
     Parameters
     ----------
@@ -4129,6 +4130,11 @@ def warn_if_late_removal_fails_group(barriers):
         barrier.group_type
         for barrier in barriers
         if isinstance(barrier, GroupBarrier) and barrier.stop_top_ups
+    } | {
+        barrier.within
+        for barrier in barriers
+        if isinstance(barrier, Regrouper)
+        and barrier.stop_top_ups_after_rounds is not None
     }
     fragile_groupers = {}
     for grouper in barriers:

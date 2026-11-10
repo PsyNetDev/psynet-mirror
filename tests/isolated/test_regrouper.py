@@ -1,6 +1,7 @@
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from dallinger import db
@@ -9,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from psynet import sync, timeline_hold
-from psynet.bot import _backdate_arrivals, _backdate_splits
+from psynet.bot import _backdate_arrivals, _backdate_splits, regroup_now
 from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
 from psynet.pytest_psynet import path_to_test_experiment
@@ -893,3 +894,16 @@ def test_backdating_reaches_the_deadline_after_quick_splits(
     _backdate_splits(pairs, cohort, 30)
     _backdate_arrivals(pairs, present, 30)
     assert len(pairs.choose_who_to_release(present)) == 2
+
+
+@in_consents_experiment
+def test_regroup_now_needs_a_timed_regrouper_and_a_waiting_bot(
+    in_experiment_directory, db_session
+):
+    bot = SimpleNamespace(id=_working_participants(get_experiment(), 1)[0].id)
+    with pytest.raises(ValueError, match="no deadline or every"):
+        regroup_now([bot], Regrouper("pair", within="cohort", group_size=2))
+    with pytest.raises(ValueError, match="None of the bots"):
+        regroup_now(
+            [bot], Regrouper("pair", within="cohort", group_size=2, deadline=30)
+        )
