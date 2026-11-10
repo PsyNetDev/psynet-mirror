@@ -497,7 +497,8 @@ Those routes do not share a lock protocol:
   ``POST /response`` still reports ``Server-Timing`` phases
   (``process``, ``barriers``, ``render``, ``app``).
   ``GET /timeline`` reports ``lock``, ``page``, ``barriers``, ``render``, and
-  ``app``. ``lock`` is the participant ``FOR UPDATE`` load; ``page`` is
+  ``app``. ``lock`` is the participant ``FOR UPDATE`` on the bare row plus
+  the participant load that follows it (two statements); ``page`` is
   ``get_current_page`` through the first commit; ``barriers`` is hold skip
   plus last-arrival checks; ``render`` is the HTML (or JSON) body. A phase
   that never ran is omitted from the header, so a lock timeout is ``lock``
