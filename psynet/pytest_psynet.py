@@ -434,6 +434,10 @@ def experiment_directory(request):
 
 loaded_experiment_directory = None
 _active_experiment_directory = None
+# The experiment's SQLAlchemy classes stay registered after it is unimported,
+# so running experiment.py again in this process would register them twice.
+# in_experiment_directory reinstates these modules instead.
+_loaded_experiment_modules = {}
 
 
 @pytest.fixture(autouse=True)
@@ -450,7 +454,7 @@ def reset_sys_modules():
     server module, which PsyNet imports lazily to send socket messages,
     execute ``experiment.py`` again and register duplicate SQLAlchemy classes.
     :func:`in_experiment_directory` unimports the experiment on teardown
-    instead.
+    instead, and reinstates the same modules when it next sets up.
     """
     if _active_experiment_directory is None:
         clean_sys_modules()
@@ -477,6 +481,10 @@ def in_experiment_directory(experiment_directory):
             "experiment directory."
         )
     loaded_experiment_directory = experiment_directory
+    # Importing Dallinger's server outside an experiment directory, for example
+    # while collecting tests, leaves a stale dallinger_experiment package.
+    clean_sys_modules()
+    sys.modules.update(_loaded_experiment_modules)
     redis_vars.clear()
     cleanup_error = None
     with (
@@ -505,6 +513,11 @@ def in_experiment_directory(experiment_directory):
                         )
         except Exception as exc:
             cleanup_error = exc
+    _loaded_experiment_modules.update(
+        (key, module)
+        for key, module in sys.modules.items()
+        if key.startswith("dallinger_experiment")
+    )
     clean_sys_modules()
     clear_all_caches()
     if cleanup_error is not None:

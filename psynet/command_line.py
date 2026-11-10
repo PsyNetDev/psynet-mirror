@@ -330,18 +330,7 @@ def log(msg, chevrons=True, verbose=True, **kw):
 
 
 def clean_sys_modules():
-    """Unimport the experiment package and its modules.
-
-    Dallinger also registers the package under its directory name, and that
-    alias keeps the old ``experiment`` module as an attribute, which a later
-    import would otherwise return.
-    """
-    to_clear = [
-        key
-        for key, module in list(sys.modules.items())
-        if key.startswith("dallinger_experiment")
-        or getattr(module, "__package__", None) == "dallinger_experiment"
-    ]
+    to_clear = [k for k in sys.modules if k.startswith("dallinger_experiment")]
     for key in to_clear:
         del sys.modules[key]
 

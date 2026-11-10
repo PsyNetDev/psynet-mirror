@@ -1,6 +1,4 @@
-import sys
 import threading
-import types
 from unittest.mock import Mock
 
 import pytest
@@ -20,11 +18,16 @@ def test_get_experiment():
     assert isinstance(exp, Experiment)
 
 
+_loaded_experiment_classes = []
+
+
 @pytest.fixture(scope="class")
 def class_scoped_experiment_class(in_experiment_directory):
     from psynet.experiment import import_local_experiment
 
-    return import_local_experiment()["class"]
+    experiment_class = import_local_experiment()["class"]
+    _loaded_experiment_classes.append(experiment_class)
+    return experiment_class
 
 
 @pytest.mark.parametrize(
@@ -38,6 +41,25 @@ class TestExperimentStaysImportedDuringTests:
         import importlib
 
         experiment_class = class_scoped_experiment_class
+        module = importlib.import_module(experiment_class.__module__)
+        assert getattr(module, experiment_class.__name__) is experiment_class
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+class TestExperimentIsReusedByTheNextLoad:
+    def test_loading_the_experiment_again_reuses_its_classes(
+        self, class_scoped_experiment_class
+    ):
+        """Reloading the experiment in the same process must not execute experiment.py again.
+
+        Running it again would register its SQLAlchemy classes twice.
+        """
+        import importlib
+
+        experiment_class = class_scoped_experiment_class
+        assert _loaded_experiment_classes[0] is experiment_class
         module = importlib.import_module(experiment_class.__module__)
         assert getattr(module, experiment_class.__name__) is experiment_class
 
@@ -69,18 +91,3 @@ def test_dashboard_sessions_share_one_login_across_experiments_and_threads(
     assert first is second
     assert other_thread[0] is not first
     assert other_thread[0].cookies["session"] == "logged-in"
-
-
-def test_clean_sys_modules_removes_the_directory_name_alias(monkeypatch):
-    from psynet.command_line import clean_sys_modules
-
-    package = types.ModuleType("dallinger_experiment")
-    package.__package__ = "dallinger_experiment"
-    monkeypatch.setitem(sys.modules, "dallinger_experiment", package)
-    monkeypatch.setitem(sys.modules, "timeline", package)
-
-    clean_sys_modules()
-
-    assert "dallinger_experiment" not in sys.modules
-    assert "timeline" not in sys.modules
-    assert "psynet.command_line" in sys.modules
