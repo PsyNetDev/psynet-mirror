@@ -178,6 +178,7 @@ from psynet.utils import (
     get_config,
     get_logger,
     get_translator,
+    warn_from_caller,
 )
 
 logger = get_logger()
@@ -822,6 +823,22 @@ class _ReadOnlyParticipantList(list):
     __delitem__ = __iadd__ = __imul__ = __setitem__ = _raise_mutation_error
 
 
+def _expected_repetitions(waiting_logic, expected_wait, default):
+    """Return how often ``waiting_logic`` is expected to run to fill ``expected_wait``.
+
+    Called when the barrier is built, before the timeline multiplies the
+    logic's own repetition estimates.
+    """
+    from psynet.timeline import estimate_duration
+
+    if expected_wait is None:
+        return default
+    duration = estimate_duration(waiting_logic)
+    if duration <= 0:
+        return 1
+    return max(1, ceil(expected_wait / duration - 1e-9))
+
+
 def hold_message(title, progress=None):
     """Return a waiting message with its own progress line.
 
@@ -866,8 +883,9 @@ class Barrier(EltCollection):
     from :func:`~psynet.barrier_spec.barrier_from_spec_json`. That reconstructed
     object has ``id``, custom release state, scalar presentation (``content``,
     timeouts), and notification settings. It does not include wait-page
-    construction (``waiting_logic``, ``_uses_timeline_hold``,
-    ``waiting_logic_expected_repetitions``).
+    construction (``waiting_logic``, ``waiting_screen``,
+    ``_uses_timeline_hold`` and the expected repetitions of
+    ``waiting_logic``).
 
     Call :meth:`check_waiting_participants`, :meth:`choose_who_to_release`,
     and :meth:`release` on reconstructed objects. Keep
@@ -887,12 +905,13 @@ class Barrier(EltCollection):
         give participants something to do while they wait, such as filler
         trials, and ``waiting_screen`` to show them something. If left at the
         default value of ``None``, the participant sees ``waiting_screen``,
-        or their current page beneath a lightweight waiting indicator.
+        or their current page beneath a lightweight waiting indicator. Give
+        each barrier its own elements: the timeline scales their time
+        estimates in place, so shared elements inflate progress estimates.
 
     waiting_logic_expected_repetitions
-        Expected repetitions for explicit ``waiting_logic``. For a default
-        hold, this is used only to derive the legacy ``expected_wait`` when no
-        explicit estimate is supplied.
+        Deprecated; pass ``expected_wait`` instead. Expected repetitions of
+        ``waiting_logic``.
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
@@ -907,9 +926,11 @@ class Barrier(EltCollection):
         holds credit actual visible waiting time up to ``max_wait_time``.
 
     expected_wait
-        Expected duration of a default timeline hold. If omitted, preserves the
-        historical default estimate of 0.5 seconds multiplied by
-        ``waiting_logic_expected_repetitions``.
+        How long participants are expected to wait here, in seconds, for
+        progress estimates and fixed time credit. With ``waiting_logic``, the
+        waiting logic is expected to repeat often enough to fill this time,
+        rounded up to whole passes (at least one). If omitted, a default hold expects 1.5 seconds and
+        ``waiting_logic`` three repetitions.
 
     content
         Message displayed by the default timeline hold overlay. Only used when
@@ -959,7 +980,7 @@ class Barrier(EltCollection):
         self,
         id_: str,
         waiting_logic=None,
-        waiting_logic_expected_repetitions=3,
+        waiting_logic_expected_repetitions=None,
         max_wait_time=20,
         fix_time_credit=False,
         expected_wait=None,
@@ -970,30 +991,46 @@ class Barrier(EltCollection):
         self.id = id_
         self.max_wait_time = max_wait_time
         self.fix_time_credit = fix_time_credit
+        if waiting_logic_expected_repetitions is not None:
+            warn_from_caller(
+                "waiting_logic_expected_repetitions is deprecated; pass expected_wait "
+                "(in seconds) instead.",
+                FutureWarning,
+            )
+            if expected_wait is not None:
+                raise ValueError(
+                    "Pass expected_wait or waiting_logic_expected_repetitions, not both."
+                )
         self.waiting_logic_expected_repetitions = waiting_logic_expected_repetitions
         self.content = content
         self.waiting_screen = waiting_screen
         self._uses_timeline_hold = waiting_logic is None
-        if waiting_logic is not None and expected_wait is not None:
-            raise ValueError(
-                "expected_wait only applies when waiting_logic is omitted."
-            )
         if waiting_logic is not None and content is not None:
             raise ValueError("content only applies when waiting_logic is omitted.")
         if waiting_logic is not None and waiting_screen is not None:
             raise ValueError(
                 "waiting_screen only applies when waiting_logic is omitted."
             )
+        default_repetitions = (
+            3
+            if waiting_logic_expected_repetitions is None
+            else waiting_logic_expected_repetitions
+        )
         self.expected_wait = (
-            0.5 * waiting_logic_expected_repetitions
-            if expected_wait is None
-            else expected_wait
+            0.5 * default_repetitions if expected_wait is None else expected_wait
         )
         if self.expected_wait < 0:
             raise ValueError("expected_wait must be non-negative.")
         if release_grace is not None and release_grace < 0:
             raise ValueError("release_grace must be non-negative or None.")
         self.release_grace = None if waiting_logic is None else release_grace
+        self._waiting_logic_repetitions = (
+            None
+            if waiting_logic is None
+            else _expected_repetitions(
+                waiting_logic, expected_wait, default_repetitions
+            )
+        )
         if waiting_logic is None:
             waiting_logic = _BarrierHoldPage(self)
 
@@ -1050,7 +1087,7 @@ class Barrier(EltCollection):
                     not self.can_participant_exit(participant)
                 ),
                 logic=self.waiting_logic,
-                expected_repetitions=self.waiting_logic_expected_repetitions,
+                expected_repetitions=self._waiting_logic_repetitions,
                 max_loop_time=self._arrival_max_wait_time,
                 fix_time_credit=self.fix_time_credit,
                 fail_on_timeout=(self.max_wait_action == "fail"),
@@ -1447,12 +1484,11 @@ class GroupBarrier(Barrier):
         example filler trials. If left at ``None``, the participant sees
         ``waiting_screen``, or their current page beneath a lightweight
         waiting indicator. Pass ``content`` to customize that indicator's
-        message.
+        message. Give each barrier its own elements (see :class:`Barrier`).
 
     waiting_logic_expected_repetitions
-        Expected repetitions for explicit ``waiting_logic``. For a default
-        hold, this is used only to derive the legacy ``expected_wait`` when no
-        explicit estimate is supplied.
+        Deprecated; pass ``expected_wait`` instead. Expected repetitions of
+        ``waiting_logic``.
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
@@ -1491,8 +1527,7 @@ class GroupBarrier(Barrier):
         holds credit actual visible waiting time up to ``max_wait_time``.
 
     expected_wait
-        Expected duration of a default timeline hold. If omitted, preserves the
-        historical default estimate.
+        See :class:`Barrier`.
 
     content
         Message displayed by the default timeline hold overlay. Only used when
@@ -1596,7 +1631,7 @@ class GroupBarrier(Barrier):
         id_: str,
         group_type: str,
         waiting_logic=None,
-        waiting_logic_expected_repetitions=3,
+        waiting_logic_expected_repetitions=None,
         max_wait_time: Optional[float] = _DEFAULT_MAX_WAIT_TIME,
         max_wait_action: Literal["fail", "kick"] = "fail",
         on_release: Optional[Callable] = None,
@@ -1981,12 +2016,12 @@ class Grouper(Barrier):
         to the participant while they are waiting at the barrier, for
         example filler trials. If left at ``None``, the participant sees
         ``waiting_screen``, or their current page beneath a lightweight
-        waiting indicator.
+        waiting indicator. Give each grouper its own elements (see
+        :class:`Barrier`).
 
     waiting_logic_expected_repetitions
-        Expected repetitions for explicit ``waiting_logic``. For a default
-        hold, this is used only to derive the legacy ``expected_wait`` when no
-        explicit estimate is supplied.
+        Deprecated; pass ``expected_wait`` instead. Expected repetitions of
+        ``waiting_logic``.
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
@@ -1996,8 +2031,7 @@ class Grouper(Barrier):
         so make it long enough to cover long filler pages (for example trials used as filler).
 
     expected_wait
-        Expected duration of a default timeline hold. If omitted, preserves the
-        historical default estimate.
+        See :class:`Barrier`.
 
     content
         Message displayed by the default timeline hold overlay. Only used when
@@ -2033,7 +2067,7 @@ class Grouper(Barrier):
         group_type: str,
         id_: Optional[str] = None,
         waiting_logic=None,
-        waiting_logic_expected_repetitions=3,
+        waiting_logic_expected_repetitions=None,
         max_wait_time=20,
         fail_participants_below_min_size: bool = True,
         expected_wait=None,
@@ -2124,6 +2158,20 @@ class Grouper(Barrier):
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         """Return whether this grouper would form groups, without creating them."""
         return bool(self.ready_to_group(waiting_participants))
+
+    def _create_group(self, participants, **settings):
+        """Create a ``SimpleSyncGroup`` of these participants, led by :meth:`select_leader`."""
+        group = SimpleSyncGroup(
+            group_type=self.group_type,
+            n_active_participants=len(participants),
+            active=True,
+            **settings,
+        )
+        db.session.add(group)
+        for participant in participants:
+            group.add_participant(participant)
+        group.leader = self.select_leader(participants)
+        return group
 
     def select_leader(self, participants: List[Participant]) -> Participant:
         """
@@ -2490,19 +2538,14 @@ class SimpleGrouper(Grouper):
 
     def _make_group(self, participants, *, initial_group_size):
         """Create one group of these participants with this grouper's settings."""
-        group = SimpleSyncGroup(
-            group_type=self.group_type,
+        return self._create_group(
+            participants,
             initial_group_size=initial_group_size,
             max_group_size=self.max_group_size,
             min_group_size=self.min_group_size,
-            n_active_participants=len(participants),
             accepts_top_ups=self.join_existing_groups,
             fail_participants_below_min_size=self.fail_participants_below_min_size,
         )
-        for participant in participants:
-            group.add_participant(participant)
-        group.leader = self.select_leader(participants)
-        return group
 
     @staticmethod
     def randomly_partition_list(lst: list, group_size: int):
@@ -2958,21 +3001,15 @@ class Regrouper(Grouper):
             )
 
     def _make_group(self, participants):
-        group = SimpleSyncGroup(
-            group_type=self.group_type,
+        """Create a fixed group that never dissolves or fails its members."""
+        return self._create_group(
+            participants,
             initial_group_size=len(participants),
             max_group_size=len(participants),
             min_group_size=1,
-            n_active_participants=len(participants),
             accepts_top_ups=False,
             fail_participants_below_min_size=False,
-            active=True,
         )
-        db.session.add(group)
-        for participant in participants:
-            group.add_participant(participant)
-        group.leader = self.select_leader(participants)
-        return group
 
 
 def group_seats(group) -> Dict[int, int]:

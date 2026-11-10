@@ -11,6 +11,7 @@ import random
 import re
 import sys
 import time
+import warnings
 from _hashlib import HASH as Hash
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -63,10 +64,10 @@ package_root = os.path.dirname(os.path.abspath(__file__))
 def psynet_source_prefixes():
     """Return path prefixes for PsyNet's own source files.
 
-    Pass to ``warnings.warn(..., skip_file_prefixes=...)`` so a warning
-    issued behind PsyNet wrappers refers to the first caller outside this
-    package. Uses the ``psynet`` package directory, not the repository
-    root, so demos and tests still count as caller code.
+    :func:`warn_from_caller` uses these so a warning issued behind PsyNet
+    wrappers refers to the first caller outside this package. Uses the
+    ``psynet`` package directory, not the repository root, so demos and
+    tests still count as caller code.
 
     Returns
     -------
@@ -74,6 +75,26 @@ def psynet_source_prefixes():
         A one-element tuple suitable for ``warnings.warn``.
     """
     return (package_root + os.sep,)
+
+
+def warn_from_caller(message, category):
+    """Issue a warning located at the first caller outside PsyNet.
+
+    Works on every supported Python version, unlike
+    ``warnings.warn(skip_file_prefixes=...)``, which needs Python 3.12.
+
+    Parameters
+    ----------
+    message : str
+        The warning text.
+    category : Warning subclass
+        The warning class, such as ``DeprecationWarning``.
+    """
+    prefixes = psynet_source_prefixes()
+    frame, stacklevel = sys._getframe(0), 1
+    while frame is not None and frame.f_code.co_filename.startswith(prefixes):
+        frame, stacklevel = frame.f_back, stacklevel + 1
+    warnings.warn(message, category, stacklevel=stacklevel)
 
 
 def get_logger(name="psynet"):
