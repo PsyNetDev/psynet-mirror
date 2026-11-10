@@ -405,7 +405,10 @@ callbacks different IDs. Using one ID for barriers with different behavior
 (class, ``on_release`` or release settings) raises an error when the
 experiment is built. Waiting settings such as ``max_wait_time``,
 ``max_wait_action`` and ``waiting_message`` may differ, because each applies
-to the participant who waits.
+to the participant who waits. A ``GroupBarrier`` ID used both inside a
+cued trial's ``show_trial`` and outside it acts as two separate barriers
+(see :ref:`round barriers and group barriers <rounds-barrier-visits>`), so
+give them distinct IDs.
 
 Arrival notices
 ~~~~~~~~~~~~~~~

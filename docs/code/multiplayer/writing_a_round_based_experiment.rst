@@ -128,10 +128,10 @@ of visit it is:
   round they are in, and ``on_release`` gets ``node=None``.
 
 Neither kind waits for a member who has finished the barrier's module, as
-when their loop ended earlier. A group visit doesn't wait for members
-waiting in a round visit of the same ID either, so a newcomer at an
-iteration-start barrier that reuses the round's ID passes on and then
-joins or skips the round. Every release, except letting one
+when their loop ended earlier. An ID used both inside ``show_trial`` and
+outside it gives two separate barriers, one of each kind, which can wait
+for each other like any two barriers; PsyNet logs a warning when members
+visit both, so give them distinct IDs. Every release, except letting one
 member go after ``max_wait_time``, is the group's pass: ``on_release`` runs,
 and the pass counts for ``left`` and ``late_after``. For example:
 
@@ -164,7 +164,10 @@ during the module. A group barrier inside the loop, such as
 ``show_feedback``, waits for every member, so a newcomer who reaches it
 waits for members who are waiting in the round's trial for them. Neither
 can pass until ``late_after`` or ``max_wait_time`` moves someone on, and
-PsyNet logs a warning naming both barriers. Move that barrier into
+PsyNet logs a warning naming both barriers. ``late_after`` on either
+barrier fails the members it waits for at the other, so ``late_after`` on
+the round's barrier can fail a newcomer who arrived on time at the group
+barrier. Move that barrier into
 ``show_trial``, or stop newcomers from joining during the module with
 ``stop_top_ups=True`` on a barrier before it (see the ``stop_top_ups``
 argument of :class:`~psynet.sync.GroupBarrier`).
