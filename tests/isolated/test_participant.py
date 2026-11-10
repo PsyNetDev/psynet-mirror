@@ -7,6 +7,7 @@ from psynet.bot import Bot, BotDriver
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import SimpleSyncGroup
+from psynet.timeline import Response
 from psynet.trial.main import GenericTrialNode, Trial
 
 
@@ -334,6 +335,7 @@ class TestParticipantFailure:
         db.session.refresh(trial)
         assert trial.response is None
         assert trial.time_taken is None
+        assert Response.query.filter_by(trial_id=trial.id).count() == 0
 
     def test_assignment_returned_can_fail_sync_group_partners(
         self, launched_experiment, participant
