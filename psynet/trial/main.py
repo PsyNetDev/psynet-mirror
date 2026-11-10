@@ -329,13 +329,32 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         barriers credit the time actually spent waiting for the others.
 
     response_id : int
-        ID of the associated :class:`~psynet.timeline.Response` object.
-        Equals ``None`` if no such object has been created yet.
+        ID of :attr:`response`.
 
     response :
-        The associated :class:`~psynet.timeline.Response` object,
-        which records in detail the response received from the participant's web browser.
-        Equals ``None`` if no such object has been created yet.
+        The :class:`~psynet.timeline.Response` from the last accepted page of
+        :meth:`~psynet.trial.main.Trial.show_trial` (normally the one that
+        completed the trial), which records in detail what the participant's
+        web browser sent. With several pages (for example with
+        ``accumulate_answers``), the responses of earlier pages are not linked
+        to the trial.
+        Equals ``None`` until the participant submits a trial page.
+
+    time_taken : float
+        Time in seconds that the participant spent on the pages of
+        :meth:`~psynet.trial.main.Trial.show_trial`, summed over its pages.
+        Each page counts from when it loaded to when its answer was accepted,
+        so a submission rejected by validation adds nothing of its own, and a
+        page that submits itself (for example when a recording or countdown
+        ends) counts up to that submission. Feedback pages are not included.
+        A trial failed by :attr:`~psynet.trial.main.TrialMaker.response_timeout_sec`
+        keeps the time of the pages answered so far, and of any the participant
+        answers afterwards. Pages submitted after the participant fails, such as
+        the unsuccessful-end page, are not included.
+        Bots report each page's ``time_estimate``. A page that reports no time,
+        such as ``UnityPage``, adds nothing, so a trial whose pages are all of
+        that kind keeps ``None``.
+        Equals ``None`` until the participant submits a trial page.
     """
 
     __tablename__ = "trial"
