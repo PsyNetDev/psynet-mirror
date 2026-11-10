@@ -108,11 +108,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   so `late_after` need not cover the page (see "Timeouts" in
   `code/multiplayer/synchronization`); the demos use 30 s so that a
   background tab can notice the round has started.
-- The regrouper avoids last round's partners (`avoid_repeats="all_rounds"`
-  avoids everyone met before), sits out whoever has played most, and counts
-  rounds (`rounds_played`, `rounds_sat_out`); pass `roles=[...]` (with
-  `keep_roles=True` for fixed roles) and read `regrouper.role(participant)`
-  instead of assigning roles yourself. With `left_over="sit_out"`, odd
+- The regrouper groups players at random, sits out whoever has played most,
+  and counts rounds (`rounds_played`, `rounds_sat_out`); pass `roles=[...]`
+  (roles alternate) and read `regrouper.role(participant)` instead of
+  assigning roles yourself. For other pairing rules, such as avoiding last
+  round's partner, pass `form_groups`. With `left_over="sit_out"`, odd
   players out sit out the round; with `within`, a player waiting alone first
   waits one more period for cohort members. The default `max_wait_time`
   allows for this; an explicit one must then exceed twice the `deadline` or

@@ -37,8 +37,8 @@ instead: pass ``names="anonymous"`` to
 :class:`~psynet.chatroom.ChatRoom`. Both then draw every other member as the
 same grey figure, labelled "Your partner" in a pair and "Another player" in
 a larger group. On a page whose group is a pair they agree; the chat
-counts the members who have appeared in the room, so with ``subgroups`` the
-two can differ.
+counts the members who have appeared in the room, so after someone leaves
+the two can differ.
 
 Showing pseudonyms on other pages
 ---------------------------------

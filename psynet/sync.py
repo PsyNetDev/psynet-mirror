@@ -111,7 +111,6 @@ import os
 import random
 import time
 import uuid
-from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import timedelta
@@ -3234,11 +3233,9 @@ class Regrouper(Grouper):
     when a member leaves, so a member who drops out of a round leaves their
     partners in a smaller group rather than failing them.
 
-    By default, when not everyone waiting fits into a group, those who have
-    played the most rounds sit out, and members are kept apart from the
-    people they were grouped with last time where possible (see
-    ``avoid_repeats``). The regrouper
-    counts each participant's rounds (:meth:`rounds_played`,
+    By default, members are grouped at random, and when not everyone waiting
+    fits into a group, those who have played the most rounds sit out. The
+    regrouper counts each participant's rounds (:meth:`rounds_played`,
     :meth:`rounds_sat_out`, :meth:`sat_out`) and, with ``roles``, gives out roles
     (:meth:`role`), all while it holds its lock, so two splits cannot give
     out the same seat twice. Each group records the regrouper that formed
@@ -3293,31 +3290,15 @@ class Regrouper(Grouper):
         with :meth:`role`. By default each member gets the role they have had
         least often, so roles alternate from round to round.
 
-    keep_roles
-        If ``True``, a participant keeps the role they first play for the
-        rest of the experiment. Participants without a role get one when they
-        are split, choosing the role that lets the most waiting participants
-        play, or else the role that fewer participants still in the
-        experiment play. Those of a role nobody is free to pair with sit out;
-        a newcomer who sits out gets a role again at the next split.
-
     form_groups
         Optional callable ``form_groups(members, within_group, barrier)``
         that returns a list of groups, each a list of participants, replacing
         the default grouping described above; ``barrier`` is this regrouper.
         Members who are not placed are left over. With ``roles``, return each
-        group as a ``{role: participant}`` dict, which is clearest, or as a list
-        in the order of ``roles``. With ``keep_roles``, members already have
-        their roles when it is called, and each group needs one member per role.
-        Subclasses can override :meth:`form_groups` instead. The callable must be
-        a module-level function so it can be stored with the barrier.
-
-    avoid_repeats
-        Whom the default grouping keeps members apart from where possible:
-        ``"last_round"`` (default), the members of their previous group, or
-        ``"all_rounds"``, everyone they have been grouped with before,
-        preferring those they met least often, for example so that a cohort of
-        four meets each partner once in three rounds of pairs.
+        group as a list in the order of ``roles``, so that its first member
+        takes the first role. Subclasses can override :meth:`form_groups`
+        instead. The callable must be a module-level function so it can be
+        stored with the barrier.
 
     left_over
         What participants left over after a split do: ``"wait"`` (default)
@@ -3370,9 +3351,7 @@ class Regrouper(Grouper):
         deadline: Optional[float] = None,
         every: Optional[float] = None,
         roles: Optional[Sequence[str]] = None,
-        keep_roles: bool = False,
         form_groups: Optional[Callable] = None,
-        avoid_repeats: Literal["last_round", "all_rounds"] = "last_round",
         left_over: Literal["wait", "sit_out"] = "wait",
         on_release: Optional[Callable] = None,
         max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
@@ -3391,8 +3370,6 @@ class Regrouper(Grouper):
                         f"{name} must equal len(roles) or be left out."
                     )
             group_size = smallest_group = len(roles)
-        elif keep_roles:
-            raise ValueError("keep_roles needs roles.")
         elif group_size is None:
             raise ValueError("Regrouper needs group_size, or roles.")
         if smallest_group is None:
@@ -3419,11 +3396,6 @@ class Regrouper(Grouper):
                 "Regrouper groups are never dissolved when a member leaves, so "
                 "below_quorum doesn't apply; it is an option of "
                 "the SimpleGrouper that forms the groups being regrouped."
-            )
-        if avoid_repeats not in ("last_round", "all_rounds"):
-            raise ValueError(
-                "avoid_repeats must be 'last_round' or 'all_rounds', "
-                f"got {avoid_repeats!r}."
             )
         if left_over not in ("wait", "sit_out"):
             raise ValueError(
@@ -3453,9 +3425,7 @@ class Regrouper(Grouper):
         self.deadline = deadline
         self.every = every
         self.roles = None if roles is None else list(roles)
-        self.keep_roles = keep_roles
         self.form_groups_function = form_groups
-        self.avoid_repeats = avoid_repeats
         self.left_over = left_over
         self.on_release = on_release
 
@@ -3468,40 +3438,25 @@ class Regrouper(Grouper):
     def form_groups(self, members, within_group=None):
         """Return the groups to form from one pool's waiting members.
 
-        By default members are put into balanced groups of at most
+        By default members are shuffled into balanced groups of at most
         ``group_size`` and at least ``smallest_group``, or into one group per
-        set of ``roles``. Those who have played the most rounds sit out, and
-        members are kept apart from last time's group where possible.
+        set of ``roles``. Those who have played the most rounds sit out.
         """
         if self.form_groups_function is not None:
             return self.form_groups_function(
                 members=members, within_group=within_group, barrier=self
             )
-        history = self._history(members)
+        rounds = self._history(members).rounds
         # Shuffled first, so that ties are broken at random.
         members = sorted(
-            random.sample(members, len(members)), key=lambda m: history.rounds[m.id]
+            random.sample(members, len(members)), key=lambda m: rounds[m.id]
         )
-        if self.keep_roles:
-            roles = {m.id: self.role(m) for m in members}
-            by_role = [[m for m in members if roles[m.id] == r] for r in self.roles]
-            n_groups = min(len(players) for players in by_role)
-            players = [players[:n_groups] for players in by_role]
-            return self._best_groups(
-                lambda: [
-                    list(group)
-                    for group in zip(*(random.sample(p, n_groups) for p in players))
-                ],
-                history,
-            )
         n_placed = sum(
             len(group)
             for group in _balanced_groups(members, self.group_size, self.smallest_group)
         )
-        players = members[:n_placed]
-        return self._best_groups(
-            lambda: _balanced_groups(players, self.group_size, self.smallest_group),
-            history,
+        return _balanced_groups(
+            members[:n_placed], self.group_size, self.smallest_group
         )
 
     def rounds_played(self, participant) -> int:
@@ -3543,14 +3498,9 @@ class Regrouper(Grouper):
         after they were removed from that group, so a reloaded page still
         shows it. It is ``None`` once they are back at the regrouper, while
         waiting for the next split or after sitting a round out, and before
-        their first round. With ``keep_roles`` it is instead their permanent
-        role, which a newcomer gets at their first split. It is also ``None``
-        while they are in a group of this type that another grouper formed.
+        their first round. It is also ``None`` while they are in a group of this type that another grouper formed.
         """
         links = self._links([participant.id])
-        if self.keep_roles:
-            kept = next((link.role for link in links if link.role), None)
-            return kept or self._waiting_role(participant)
         current = participant.active_sync_groups.get(self.group_type)
         if not links or (current is not None and current.grouper_id != self.id):
             return None
@@ -3567,11 +3517,6 @@ class Regrouper(Grouper):
         ):
             return None
         return links[-1].role
-
-    def _waiting_role(self, participant) -> Optional[str]:
-        """Return the role given to a waiting newcomer for the coming split."""
-        visit = self._visits([participant]).get(participant.id)
-        return None if visit is None else visit.role
 
     @property
     def _custom_grouping(self) -> bool:
@@ -3606,116 +3551,20 @@ class Regrouper(Grouper):
         return {visit.participant_id: visit for visit in visits}
 
     def _history(self, members) -> "_RegroupHistory":
-        """Return the members' rounds, past group-mates and role counts, keyed by ID."""
+        """Return the members' rounds and role counts, keyed by ID."""
         rounds = {m.id: 0 for m in members}
         role_counts = {m.id: {} for m in members}
-        groups = {pid: [] for pid in rounds}
         for link in self._links(list(rounds)):
             rounds[link.participant_id] += 1
-            groups[link.participant_id].append(link.sync_group_id)
             if link.role:
                 counts = role_counts[link.participant_id]
                 counts[link.role] = counts.get(link.role, 0) + 1
-        if self.avoid_repeats == "last_round":
-            groups = {pid: group_ids[-1:] for pid, group_ids in groups.items()}
-        members_of = {}
-        group_ids = {group_id for ids in groups.values() for group_id in ids}
-        if group_ids:
-            for link in ParticipantLinkSyncGroup.query.filter(
-                ParticipantLinkSyncGroup.sync_group_id.in_(group_ids)
-            ):
-                members_of.setdefault(link.sync_group_id, set()).add(
-                    link.participant_id
-                )
-        times_met = {pid: Counter() for pid in rounds}
-        for pid, ids in groups.items():
-            for group_id in ids:
-                times_met[pid].update(members_of.get(group_id, set()) - {pid})
-        return _RegroupHistory(rounds, times_met, role_counts)
-
-    def _best_groups(self, make_groups, history, attempts: int = 50):
-        """Return the groups from ``make_groups()`` with the fewest repeats.
-
-        A repeat is a member grouped with someone they met before (see
-        ``avoid_repeats``), counted once per earlier meeting, or, when roles
-        alternate, a member who must take a role they have had more often
-        than another.
-        """
-        best, best_cost = [], None
-        for _ in range(attempts):
-            groups = make_groups()
-            cost = sum(self._repeats(group, history) for group in groups)
-            if best_cost is None or cost < best_cost:
-                best, best_cost = groups, cost
-            if cost == 0:
-                break
-        return best
-
-    def _repeats(self, group, history) -> int:
-        """Return how many partnerships and role imbalances ``group`` repeats."""
-        repeats = sum(
-            history.times_met[member.id][other.id]
-            for member in group
-            for other in group
-        )
-        if self.roles and not self.keep_roles:
-            for member, role in self._least_held_roles(group, history).items():
-                counts = history.role_counts[member.id]
-                repeats += counts.get(role, 0) - min(
-                    counts.get(r, 0) for r in self.roles
-                )
-        return repeats
-
-    def _give_kept_roles(self, members):
-        """Give members without a role the role that lets the most of them play.
-
-        When the waiting members' roles are balanced, a newcomer takes the
-        role that fewer participants still in the experiment play.
-        """
-        roles = {member.id: self.role(member) for member in members}
-        newcomers = [m for m in members if roles[m.id] is None]
-        if not newcomers:
-            return
-        waiting = {role: 0 for role in self.roles}
-        for role in roles.values():
-            if role is not None:
-                waiting[role] += 1
-        in_game = {role: 0 for role in self.roles}
-        in_game.update(self._players_per_role())
-        visits = self._visits(newcomers)
-        for member in random.sample(newcomers, len(newcomers)):
-            tally = next(
-                (t for t in (waiting, in_game) if len(set(t.values())) > 1), waiting
-            )
-            fewest = min(tally.values())
-            role = random.choice([r for r, n in tally.items() if n == fewest])
-            visits[member.id].role = role
-            waiting[role] += 1
-            in_game[role] += 1
-
-    def _players_per_role(self) -> Dict[str, int]:
-        """Return how many participants still in the experiment have played each role."""
-        link = ParticipantLinkSyncGroup
-        rows = (
-            db.session.query(link.role, func.count(link.participant_id.distinct()))
-            .join(SyncGroup)
-            .join(Participant, Participant.id == link.participant_id)
-            .filter(
-                SyncGroup.grouper_id == self.id,
-                link.role.isnot(None),
-                Participant.status == "working",
-                Participant.failed.is_(False),
-            )
-            .group_by(link.role)
-        )
-        return dict(rows.all())
+        return _RegroupHistory(rounds, role_counts)
 
     def _planned_roles(self, plan, members) -> Dict[int, Optional[str]]:
         """Return each planned member's role by ID, decided from the history before the split."""
         if not self.roles:
             return {}
-        if self.keep_roles:
-            return {m.id: self.role(m) for group in plan for m in group}
         if self._custom_grouping:
             return {m.id: r for group in plan for m, r in zip(group, self.roles)}
         history = self._history(members)
@@ -3728,8 +3577,7 @@ class Regrouper(Grouper):
     def _least_held_roles(self, members, history) -> dict:
         """Return ``{member: role}``, giving each role to whoever has had it least.
 
-        Ties go by member order, which ``form_groups`` shuffles, so the
-        assignment scored when choosing groups is the one that is stored.
+        Ties go by member order, which ``form_groups`` shuffles.
         """
         unassigned = list(members)
         roles = {}
@@ -3902,10 +3750,8 @@ class Regrouper(Grouper):
 
     def _split(self, within_group, members):
         """Form this pool's groups and return the participants to release."""
-        if self.keep_roles:
-            self._give_kept_roles(members)
         plan = [
-            self._in_role_order(group_members)
+            list(group_members)
             for group_members in self.form_groups(members, within_group=within_group)
             if group_members
         ]
@@ -3955,24 +3801,6 @@ class Regrouper(Grouper):
         for visit in self._visits(left_over).values():
             visit.sat_out = True
 
-    def _in_role_order(self, group_members) -> list:
-        """Return a planned group as a list, putting a ``{role: participant}`` dict in role order."""
-        if not isinstance(group_members, dict):
-            return list(group_members)
-        if self.roles is None or set(group_members) != set(self.roles):
-            raise ValueError(
-                f"Regrouper '{self.id}': form_groups returned a group keyed by "
-                f"{sorted(group_members)}; key groups by the roles {self.roles}."
-            )
-        if self.keep_roles and any(
-            self.role(member) != role for role, member in group_members.items()
-        ):
-            raise ValueError(
-                f"Regrouper '{self.id}': form_groups gave a member a role other "
-                "than the one they keep."
-            )
-        return [group_members[role] for role in self.roles]
-
     def _check_plan(self, plan, members):
         """Raise if ``form_groups`` placed someone twice, placed a non-member, or broke the roles."""
         member_ids = {p.id for p in members}
@@ -3988,10 +3816,7 @@ class Regrouper(Grouper):
                 f"{sorted(outsiders)}, who are not waiting in this pool."
             )
         for group_members in plan if self.roles else []:
-            if len(group_members) != len(self.roles) or (
-                self.keep_roles
-                and {self.role(m) for m in group_members} != set(self.roles)
-            ):
+            if len(group_members) != len(self.roles):
                 raise ValueError(
                     f"Regrouper '{self.id}': with roles, form_groups must "
                     f"return groups of {len(self.roles)}, one member per role."
@@ -4015,7 +3840,6 @@ class _RegroupHistory(NamedTuple):
     """Regrouper history of a set of members, each field keyed by participant ID."""
 
     rounds: Dict[int, int]
-    times_met: Dict[int, Counter]
     role_counts: Dict[int, Dict[str, int]]
 
 
@@ -4178,8 +4002,7 @@ def leave_group(group_type: str, reason: RemovalReason = "finished"):
         The type of the group to leave.
     reason
         Passed to :meth:`SyncGroup.remove_participant`. The default,
-        ``"finished"``, shows the participant as "(finished)" and never
-        dissolves the group, even if they leave it below its quorum.
+        ``"finished"``, never dissolves the group, even if they leave it below its quorum.
 
     Returns
     -------
@@ -4366,24 +4189,20 @@ class SyncGroup(SQLBase, SQLMixin):
         reason
             Why they left, stored on their link and returned by
             :meth:`~psynet.participant.Participant.sync_group_removal_reason`.
-            It also sets the label :class:`~psynet.group_prompt.GroupPrompt`
-            gives them (for when they are shown at all, see
-            :ref:`sync-showing-the-group`):
+            A :class:`~psynet.group_prompt.GroupPrompt` that still draws them
+            for their answer labels them "(left)" unless the reason is
+            ``"moved_on"`` or ``"finished"`` (see :ref:`sync-showing-the-group`).
 
             - ``None`` (default), ``"left_experiment"``, ``"waited_too_long"`` or
-              ``"group_dissolved"``: "(dropped out)", or "(left)" once they
-              have failed, left or completed the experiment.
-            - ``"late"``: "(removed)", for a member a barrier removed for
-              being late (with any ``late_action``), or "(left)" once
-              they have failed, left or completed the experiment.
+              ``"group_dissolved"``: they dropped out.
+            - ``"late"``: a barrier removed them for being late (with any
+              ``late_action``).
             - ``"moved_on"``: for a member who left at a :class:`Regrouper`,
               for their next group or to sit the round out. A pair a :class:`SimpleGrouper`
               formed isn't dissolved, failing the partner, when the first
               member reaches a :class:`Regrouper`.
-            - ``"finished"``: "(finished)", for a member who has played their
-              part, such as a player leaving a cohort after their last round,
-              even if they then left or completed the experiment; "(left)"
-              once they have failed.
+            - ``"finished"``: for a member who has played their part, such as
+              a player leaving a cohort after their last round.
               The members finishing their own last rounds aren't told that too
               few remained.
 
@@ -5161,9 +4980,6 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     # waiting page, ended on its time limit
     # (``Participant.timed_out_since_barrier``).
     ran_out_of_time = Column(Boolean, default=False)
-    # A Regrouper with ``keep_roles`` gave a newcomer this role for the
-    # coming split; it is kept once they play it.
-    role = Column(String)
     # With explicit waiting_logic there is no hold record, so the link keeps
     # the max_wait_time deadline for the poller.
     deadline_at = Column(DateTime)

@@ -50,8 +50,7 @@ isn't back yet, if enough players are waiting to
 form a pair. A player who isn't back by then is still in the cohort, and
 joins the next round.
 With ``roles``, each pair has a proposer and a responder, and each player
-alternates between them. Partners from last round are kept apart where
-possible. ``waiting_message`` counts down to the deadline. See
+alternates between them. ``waiting_message`` counts down to the deadline. See
 :class:`~psynet.sync.Regrouper` for these options:
 
 .. figure:: ../../_static/images/rounds/next_round.png
@@ -466,7 +465,7 @@ too often, has left the cohort, or their cohort is down to one player:
 Players who finish leave the cohort with
 :func:`leave_group("cohort") <psynet.sync.leave_group>`, so that the
 regrouper doesn't wait for them in later rounds. It removes them with
-``reason="finished"``, which shows them as "(finished)" and never dissolves
+``reason="finished"``, which never dissolves
 the cohort. This cohort accepts top-ups and the demo never stops them, so
 another reason wouldn't dissolve it either, but ``"finished"`` keeps the
 recipe safe to copy into a cohort without top-ups, or one that stops them,
@@ -527,10 +526,6 @@ when the trial starts gets an ungrouped trial, with ``sync_group_id`` set to
 ``None``; ``show_trial`` can check ``self.sync_group is None`` to give them
 a solo version.
 
-**Fixed roles.** With ``keep_roles=True``, players keep the role they first
-play for the whole game, and newcomers get the role that lets the most
-waiting players play.
-
 **Turns one after the other.** In games such as a trust game, the investor
 decides before the trustee. With cued trials, the role pages and the
 barriers between turns all go in the ``show_trial`` of one trial class. Put
@@ -549,8 +544,9 @@ to newcomers: a player who joins the pair after it starts the next round
 rather than joining a round whose first turn is over.
 
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
-example to pair players by their earlier answers. With roles, return each
-group as a ``{role: participant}`` dict. See
+example to pair players by their earlier answers or to keep last round's
+partners apart. With roles, return each group as a list in the order of
+``roles``. See
 :class:`~psynet.sync.Regrouper` for this and the other settings.
 
 **A trial maker.** A trial maker with ``sync_group_type``, as in the

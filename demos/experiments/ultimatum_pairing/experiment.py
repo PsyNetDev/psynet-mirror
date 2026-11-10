@@ -4,9 +4,9 @@ Players first wait in a lobby until a cohort of ``COHORT_SIZE`` forms, or until
 at least ``MIN_COHORT_SIZE`` have waited ``SHORT_START_SECONDS``. Latecomers can
 still join a cohort until its round ``OPEN_UNTIL_ROUND`` starts.
 
-Each round, the :class:`~psynet.sync.Regrouper` pairs up the cohort's players,
-avoiding last round's partner, and gives each pair a proposer and a
-responder, alternating each player's role. It starts the round as soon as
+Each round, the :class:`~psynet.sync.Regrouper` pairs up the cohort's players
+at random and gives each pair a proposer and a responder, alternating each
+player's role. It starts the round as soon as
 the whole cohort is ready, or ``ROUND_DEADLINE_SECONDS`` after the first
 player is back, without the players who aren't ready yet. With an odd number
 of players, one who has played the most rounds sits that round out; a

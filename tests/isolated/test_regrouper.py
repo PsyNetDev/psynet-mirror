@@ -126,25 +126,6 @@ def test_regrouper_waits_for_a_late_member_until_they_leave_the_within_group(
 
 
 @in_consents_experiment
-def test_regrouper_can_avoid_everyone_met_before(in_experiment_directory, db_session):
-    exp = get_experiment()
-    cohort_grouper = SimpleGrouper("cohort", initial_group_size=4)
-    pairs = Regrouper("pair", within="cohort", group_size=2, avoid_repeats="all_rounds")
-    cohort = _working_participants(exp, 4)
-    _arrive(exp, cohort_grouper, cohort)
-
-    met = set()
-    for _ in range(3):
-        _arrive(exp, pairs, cohort)
-        met |= {
-            frozenset(p.id for p in member.active_sync_groups["pair"].participants)
-            for member in cohort
-        }
-    # Three rounds of pairs meet all six partnerships of a cohort of four.
-    assert len(met) == 6
-
-
-@in_consents_experiment
 def test_every_regrouper_splits_everyone_waiting_into_balanced_rooms(
     in_experiment_directory, db_session
 ):
@@ -543,18 +524,17 @@ def test_regrouper_keeps_a_sit_out_when_the_sitter_returns_in_the_same_request(
     assert pairs.rounds_sat_out(sitter) == 2
 
 
-def _pair_same_roles(members, barrier, **_):
-    ordered = sorted(members, key=barrier.role)
-    return [ordered[:2], ordered[2:]]
-
-
 def _lowest_id_responds(members, **_):
     responder, proposer = sorted(members, key=lambda p: p.id)
-    return [{"responder": responder, "proposer": proposer}]
+    return [[proposer, responder]]
+
+
+def _one_player(members, **_):
+    return [members[:1]]
 
 
 @in_consents_experiment
-def test_regrouper_form_groups_can_return_groups_keyed_by_role(
+def test_regrouper_form_groups_gives_roles_in_order(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
@@ -562,18 +542,9 @@ def test_regrouper_form_groups_can_return_groups_keyed_by_role(
     _arrive(exp, pairs, cohort)
     assert [pairs.role(p) for p in cohort] == ["responder", "proposer"]
 
-
-@in_consents_experiment
-def test_regrouper_keep_roles_needs_one_member_per_role(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    cohort, pairs = _cohort_and_pairs(
-        exp, 4, keep_roles=True, form_groups=_pair_same_roles
-    )
-    _arrive(exp, pairs, cohort[:3])
+    cohort, pairs = _cohort_and_pairs(exp, 2, form_groups=_one_player)
     with pytest.raises(ValueError, match="one member per role"):
-        _arrive(exp, pairs, cohort[3:])
+        _arrive(exp, pairs, cohort)
 
 
 def _partner(participant):
@@ -586,25 +557,20 @@ def _partner(participant):
 
 
 @in_consents_experiment
-def test_regrouper_alternates_roles_and_partners_and_counts_rounds(
+def test_regrouper_alternates_roles_and_counts_rounds(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
     cohort, pairs = _cohort_and_pairs(exp, 4)
 
     _arrive(exp, pairs, cohort)
-    first = {p.id: (pairs.role(p), _partner(p)) for p in cohort}
-    assert (
-        sorted(role for role, _ in first.values())
-        == ["proposer"] * 2 + ["responder"] * 2
-    )
+    first = {p.id: pairs.role(p) for p in cohort}
+    assert sorted(first.values()) == ["proposer"] * 2 + ["responder"] * 2
     assert all(pairs.role(_partner(p)) != pairs.role(p) for p in cohort)
 
     _arrive(exp, pairs, cohort)
     for p in cohort:
-        role, partner = first[p.id]
-        assert pairs.role(p) != role
-        assert _partner(p) is not partner
+        assert pairs.role(p) != first[p.id]
         assert pairs.rounds_played(p) == 2
         assert p.sync_group_removal_reason("pair") is None
     # A player removed from their pair, as by a kick, still sees their role.
@@ -624,28 +590,6 @@ def test_regrouper_alternates_roles_and_partners_and_counts_rounds(
     _arrive(exp, pairs, cohort[:3])
     assert "pair" in sitter.active_sync_groups
     assert not pairs.sat_out(sitter)
-
-
-@in_consents_experiment
-def test_regrouper_keep_roles_balances_newcomers(in_experiment_directory, db_session):
-    exp = get_experiment()
-    cohort, pairs = _cohort_and_pairs(exp, 3, keep_roles=True)
-
-    _arrive(exp, pairs, cohort)
-    (sitter,) = [p for p in cohort if "pair" not in p.active_sync_groups]
-    playing = [p for p in cohort if p is not sitter]
-    assert {pairs.role(p) for p in playing} == {"proposer", "responder"}
-    # A newcomer who sat out has not played a role yet.
-    assert pairs.role(sitter) is None
-    roles = {p.id: pairs.role(p) for p in playing}
-
-    (newcomer,) = _working_participants(exp, 1)
-    cohort[0].active_sync_groups["cohort"].add_participant(newcomer)
-    _arrive(exp, pairs, cohort + [newcomer])
-    assert {p.id: pairs.role(p) for p in playing} == roles
-    assert pairs.role(newcomer) != pairs.role(sitter)
-    assert all("pair" in p.active_sync_groups for p in cohort + [newcomer])
-    assert pairs.rounds_played(sitter) == 1
 
 
 @in_consents_experiment
