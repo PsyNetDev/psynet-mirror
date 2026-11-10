@@ -299,6 +299,8 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
     ----------
     bots : list of BotDriver
         Bots waiting at the regrouper, and any others to advance with them.
+        Only these bots' arrivals move back, so with ``every`` pass every bot
+        waiting in the pool.
     regrouper : Regrouper
         The regrouper from the timeline.
     timeout : float, optional
@@ -343,13 +345,16 @@ def _backdate_splits(regrouper, within_group, seconds):
     """Move every split ``regrouper`` made in this pool back by ``seconds``.
 
     All of them, not just the latest, because the pool's deadline counts from
-    its most recent split.
+    its most recent split. Their members' links move too, so
+    :meth:`~psynet.sync.Regrouper.role` still sees a later visit as newer.
     """
     from .sync import SyncGroup
 
     shift = timedelta(seconds=seconds)
     for group in SyncGroup.query.filter(*regrouper._pool_splits(within_group)):
         group.creation_time -= shift
+        for link in group.participant_links:
+            link.arrival_time -= shift
 
 
 def _backdate_arrivals(barrier, participants, seconds):

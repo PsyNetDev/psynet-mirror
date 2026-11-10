@@ -882,7 +882,13 @@ def test_backdating_reaches_the_deadline_after_quick_splits(
     """``regroup_now``'s backdating starts a round after two quick earlier ones."""
     exp = get_experiment()
     cohort_grouper = SimpleGrouper("cohort", initial_group_size=4, quorum=2)
-    pairs = Regrouper("pair", within="cohort", group_size=2, deadline=30)
+    pairs = Regrouper(
+        "pair",
+        within="cohort",
+        roles=["proposer", "responder"],
+        deadline=30,
+        left_over="sit_out",
+    )
     players = _working_participants(exp, 4)
     _arrive(exp, cohort_grouper, players)
     cohort = players[0].active_sync_groups["cohort"]
@@ -893,7 +899,27 @@ def test_backdating_reaches_the_deadline_after_quick_splits(
 
     _backdate_splits(pairs, cohort, 30)
     _backdate_arrivals(pairs, present, 30)
-    assert len(pairs.choose_who_to_release(present)) == 2
+    assert len(pairs.choose_who_to_release(present)) == 3
+    db_session.commit()
+    (sitter,) = [p for p in present if "pair" not in p.active_sync_groups]
+    assert pairs.role(sitter) is None
+
+
+@in_consents_experiment
+def test_backdating_reaches_the_every_tick(in_experiment_directory, db_session):
+    """``regroup_now``'s backdating reaches the next ``every`` tick."""
+    exp = get_experiment()
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=4, quorum=2)
+    pairs = Regrouper("pair", within="cohort", group_size=2, every=600)
+    players = _working_participants(exp, 4)
+    _arrive(exp, cohort_grouper, players)
+    cohort = players[0].active_sync_groups["cohort"]
+    _arrive(exp, pairs, players)
+    assert pairs.choose_who_to_release(players) == []
+
+    _backdate_splits(pairs, cohort, 600)
+    _backdate_arrivals(pairs, players, 600)
+    assert len(pairs.choose_who_to_release(players)) == 4
 
 
 @in_consents_experiment
