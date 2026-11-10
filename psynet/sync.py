@@ -242,10 +242,9 @@ def _forget_barrier_from_spec(instance_id):
 # the cap still succeeds.
 _MAX_BARRIER_WALK_PASSES = 32
 
-# Cap on the pages that a release skips in one pass of waiting_logic. Each
-# step is a page the participant would otherwise have seen, so a real pass is
-# far shorter; reaching it means the pass never ends, e.g. a nested
-# while_loop whose condition stays true.
+# Cap on the pages that a release skips in one pass of waiting_logic. While_loops
+# in the pass end at their next check during the walk, so only for_loops and
+# sequences repeat pages; reaching the cap means one of them is very long.
 _MAX_RELEASE_WALK_STEPS = 1000
 
 
@@ -965,7 +964,9 @@ class Barrier(EltCollection):
         one short trial or page per pass (the loop repeats it), such as
         ``PageMaker(trial_maker.cue_trial, ...)`` in the ``sync_quorum``
         demo: a release then fails at most the trial on screen and creates
-        no unseen trials (see ``release_grace``).
+        no unseen trials (see ``release_grace``). A barrier with
+        ``waiting_logic`` can't be inside a trial's own pages, such as in
+        ``Trial.show_trial``; use ``waiting_screen`` there.
 
     waiting_logic_expected_repetitions
         Deprecated; pass ``expected_wait`` instead. Expected repetitions of
@@ -1040,8 +1041,8 @@ class Barrier(EltCollection):
         once they are released; the page then ends without an answer,
         recorded with ``"interrupted": True`` in its response metadata.
         The rest of the participant's pass of ``waiting_logic`` is then run
-        through without showing its pages (code blocks still run).
-        This includes the pages of trials in ``waiting_logic``, such as
+        through without showing its pages (code blocks still run), and each
+        ``while_loop`` in it ends at its next check. This includes the pages of trials in ``waiting_logic``, such as
         filler trials from a trial maker: a trial whose page ends this way,
         and any trial that the rest of the pass reaches, which is created
         but never shown, is failed with
@@ -1051,8 +1052,6 @@ class Barrier(EltCollection):
         ``max_trials_per_block`` and ``n_created_trials``).
         ``None`` lets each waiting page run to its end. Default: 3 seconds.
         Only used with ``waiting_logic``; passing it without raises an error.
-        A barrier with ``waiting_logic`` can't be inside a trial's own pages,
-        such as in ``Trial.show_trial``; use ``waiting_screen`` there.
     """
 
     # Reconstructed barriers skip ``__init__`` and never render a hold page.
@@ -1730,8 +1729,7 @@ class GroupBarrier(Barrier):
         example filler trials. If left at ``None``, the participant sees
         ``waiting_screen``, or their current page beneath a lightweight
         waiting indicator. Pass ``waiting_message`` to customize that indicator's
-        message. A barrier with ``waiting_logic`` can't be inside a trial's own
-        pages, such as in ``Trial.show_trial``; use ``waiting_screen`` there.
+        message. See :class:`Barrier` for where ``waiting_logic`` can go.
 
     waiting_logic_expected_repetitions
         Deprecated; pass ``expected_wait`` instead. Expected repetitions of
@@ -2228,7 +2226,9 @@ class GroupBarrier(Barrier):
             # Closes the round to newcomers: their cues start the next.
             node.sync_group_closed = True
             for participant in released:
-                _round_trial(group, participant).sync_group_outcome = "stayed"
+                trial = _round_trial(group, participant)
+                if trial is not None:
+                    trial.sync_group_outcome = "stayed"
         if self.on_release:
             try:
                 self.on_release(
@@ -2501,8 +2501,8 @@ class Grouper(Barrier):
         to the participant while they are waiting at the barrier, for
         example filler trials. If left at ``None``, the participant sees
         ``waiting_screen``, or their current page beneath a lightweight
-        waiting indicator. A grouper with ``waiting_logic`` can't be inside a
-        trial's own pages; use ``waiting_screen`` there.
+        waiting indicator. See :class:`Barrier` for where ``waiting_logic``
+        can go.
 
     waiting_logic_expected_repetitions
         Deprecated; pass ``expected_wait`` instead. Expected repetitions of

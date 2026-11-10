@@ -14,7 +14,15 @@ from psynet.page import WaitPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import SimpleGrouper, waiting_status_payload
-from psynet.timeline import CodeBlock, PageMaker, Response, Timeline, for_loop, join
+from psynet.timeline import (
+    CodeBlock,
+    PageMaker,
+    Response,
+    Timeline,
+    for_loop,
+    join,
+    while_loop,
+)
 from psynet.trial.main import GenericTrialNode, Trial
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -217,6 +225,35 @@ def test_a_release_fails_the_unanswered_filler_trials_it_ends(
         interrupted = Response.query.filter_by(question="filler_trial").one()
         assert interrupted.trial.failed
         assert interrupted.trial.response == interrupted
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
+def test_a_release_ends_while_loops_inside_the_pass(
+    in_experiment_directory, db_session
+):
+    """A loop ending on completed trials, which the walk never completes, still ends."""
+    exp = get_experiment()
+    original = exp.timeline
+    _CountingTrialMaker.n_finalized = 0
+    filler = while_loop(
+        "three_completed",
+        lambda: _CountingTrialMaker.n_finalized < 3,
+        logic=join(
+            CodeBlock(_start_filler_trial),
+            FillerTrial.trial_logic(trial_maker=_CountingTrialMaker()),
+        ),
+        expected_repetitions=3,
+    )
+    _use_timeline(exp, filler)
+    try:
+        first, _ = _release_pair(exp)
+        _post_response(first, interrupted=True)
+        db.session.expire_all()
+        for participant in Participant.query.all():
+            assert exp.timeline.get_current_elt(exp, participant).label == "after"
+        assert FillerTrial.query.count() == 2
     finally:
         exp.timeline = original
 

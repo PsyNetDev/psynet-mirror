@@ -14,6 +14,8 @@ import time
 import uuid
 import warnings
 from collections import Counter
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 from functools import cached_property
 from importlib import resources
@@ -3582,6 +3584,25 @@ def _while_loop_timed_out(participant, label, max_loop_time, now=None):
     )
 
 
+_released_pass_barrier_id = ContextVar("psynet_released_pass_barrier_id", default=None)
+
+
+@contextmanager
+def _ending_released_pass(barrier_id):
+    """End each ``while_loop`` reached in the released waiting pass of this barrier."""
+    token = _released_pass_barrier_id.set(barrier_id)
+    try:
+        yield
+    finally:
+        _released_pass_barrier_id.reset(token)
+
+
+def _in_released_pass(participant):
+    """Return whether this request is skipping the participant's released waiting pass."""
+    barrier_id = _released_pass_barrier_id.get()
+    return barrier_id is not None and participant.waiting_barrier_id == barrier_id
+
+
 def while_loop(
     label: str,
     condition: Callable,
@@ -3592,10 +3613,13 @@ def while_loop(
     fail_on_timeout=True,
     on_timeout: Optional[Callable] = None,
     extend_while: Optional[Callable] = None,
+    _ends_in_released_pass=True,
 ):
     """
     Loops a series of elts while a given criterion is satisfied.
     The criterion function is evaluated once at the beginning of each loop.
+    Inside a barrier's ``waiting_logic``, the loop ends at its next check
+    once the barrier releases the participant.
 
     Parameters
     ----------
@@ -3658,6 +3682,8 @@ def while_loop(
     logic = multiply_expected_repetitions(_copy_elts(join(logic)), expected_repetitions)
 
     def condition_wrapped(participant, experiment):
+        if _ends_in_released_pass and _in_released_pass(participant):
+            return False
         result = call_function_with_context(
             condition, participant=participant, experiment=experiment
         )
@@ -4722,6 +4748,7 @@ def for_loop(
                 else estimate_num_repetitions(iterate_over)
             ),
             fix_time_credit=False,
+            _ends_in_released_pass=False,
         ),
         CodeBlock(wrapup),
     )
@@ -4808,6 +4835,7 @@ def sequence(
             ),
             expected_repetitions=sequence_length,
             fix_time_credit=False,
+            _ends_in_released_pass=False,
         ),
         CodeBlock(tear_down_sequence),
     )

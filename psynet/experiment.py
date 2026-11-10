@@ -169,6 +169,7 @@ from .timeline import (
     Response,
     Timeline,
     WebSocketElt,
+    _ending_released_pass,
     _is_timeline_hold,
     _timeline_step_name,
     _trial_owning_page,
@@ -4361,7 +4362,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if interrupted:
                 from .sync import _end_waiting_page, released_waiting_barrier
 
-                if released_waiting_barrier(event, participant) is None:
+                released = released_waiting_barrier(event, participant)
+                if released is None:
                     return ResponseResult(
                         payload={"submission": "rejected", "message": ""}
                     )
@@ -4369,7 +4371,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 _end_waiting_page(participant)
                 participant.inc_time_credit(event.time_estimate)
                 participant.inc_progress(event.time_estimate)
-                self.timeline.advance_page(self, participant)
+                with _ending_released_pass(released.id):
+                    self.timeline.advance_page(self, participant)
                 page = self._advance_past_ready_holds(
                     participant, self.timeline.get_current_elt(self, participant)
                 )
@@ -4494,10 +4497,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         pages left in the current pass would otherwise each show briefly
         and then be interrupted. Instead the participant is advanced through
         the rest of the pass without seeing it, until they leave the
-        barrier's waiting loop. Code blocks and the ends of modules, loops
-        and fixed time credit run as usual. Skipped pages get no response,
-        time credit or progress, and the trial owning each page, including
-        trials created during the walk, is failed.
+        barrier's waiting loop. Each ``while_loop`` in the pass ends at its
+        next check, because its condition may wait for answers that skipped
+        pages never give. Code blocks, ``for_loop`` iterations and the ends
+        of modules, loops and fixed time credit run as usual. Skipped pages
+        get no response, time credit or progress, and the trial owning each
+        page, including trials created during the walk, is failed.
         """
         from .sync import (
             _MAX_RELEASE_WALK_STEPS,
@@ -4513,11 +4518,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if step == _MAX_RELEASE_WALK_STEPS:
                 break
             _end_waiting_page(participant)
-            self.timeline.advance_page(self, participant)
+            with _ending_released_pass(barrier.id):
+                self.timeline.advance_page(self, participant)
         raise RuntimeError(
             f"Skipping the waiting pages of barrier '{barrier.id}' did not leave "
-            f"its waiting loop after {_MAX_RELEASE_WALK_STEPS} pages; does "
-            "waiting_logic contain a loop that never ends?"
+            f"its waiting loop after {_MAX_RELEASE_WALK_STEPS} pages; is there "
+            "a very long for_loop in waiting_logic?"
         )
 
     @staticmethod
