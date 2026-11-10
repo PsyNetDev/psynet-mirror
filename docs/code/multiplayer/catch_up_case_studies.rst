@@ -171,8 +171,8 @@ timeline when the experiment loads:
 
     ValueError: A while_loop repeats module 'game' and shows pages 'results'
     between its runs, outside the module, with no barrier after them. [...]
-    Move the pages into the module, or add a GroupBarrier after them, outside
-    the module, so that each run starts together.
+    Move the pages into module 'game', or add a GroupBarrier right after
+    them, so that each run starts together.
 
 A ``GroupBarrier`` at the start of the module doesn't help, and the check
 still raises: Ben has left the module, so the barrier lets Ann through,

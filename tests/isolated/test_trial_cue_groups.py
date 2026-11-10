@@ -1015,6 +1015,7 @@ def test_a_barrier_after_the_pages_between_runs_waits_for_the_slow_member(
         participant.end_module(game)
     fast, slow = cohort
     ready = GroupBarrier("ready", group_type="pair")
+    # The slow member is still on the page between runs, not yet at "ready".
     _arrive(exp, ready, [fast])
     assert ready._participant_is_waiting(fast)
     _arrive(exp, ready, [slow])

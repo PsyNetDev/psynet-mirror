@@ -7321,7 +7321,12 @@ class LoopCheckTrial(StaticTrial):
         ("module, switch of barrier or page", "raises"),
         ("module, switch of page or barrier", "raises"),
         ("group trial maker, page", "raises"),
+        ("wrapper of group trial maker, page", "raises"),
+        ("wrapper of group trial maker and page", "raises"),
+        ("wrapper of module, page", "raises"),
         ("module with page", None),
+        ("module, page, barrier", None),
+        ("wrapper of module, page and barrier", None),
         ("barrier, module, page", None),
         ("module, page, before the grouper", None),
         ("solo module, page", None),
@@ -7378,7 +7383,18 @@ def test_timeline_rejects_pages_between_runs_of_a_looped_module(shape, outcome):
         "group trial maker, page": lambda: join(
             trial_maker(sync_group_type="pair"), page()
         ),
+        "wrapper of group trial maker, page": lambda: join(
+            Module("session", trial_maker(sync_group_type="pair")), page()
+        ),
+        "wrapper of group trial maker and page": lambda: Module(
+            "session", trial_maker(sync_group_type="pair"), page()
+        ),
+        "wrapper of module, page": lambda: join(Module("session", game()), page()),
         "module with page": lambda: game(page()),
+        "module, page, barrier": lambda: join(game(), page(), barrier()),
+        "wrapper of module, page and barrier": lambda: Module(
+            "session", game(), page(), barrier()
+        ),
         "barrier, module, page": lambda: join(barrier(), game(), page()),
         "module, page, before the grouper": lambda: join(game(), page()),
         "solo module, page": lambda: join(Module("game", page()), page()),
@@ -7397,7 +7413,13 @@ def test_timeline_rejects_pages_between_runs_of_a_looped_module(shape, outcome):
                 ValueError, match="repeats module 'game' and shows"
             ) as e:
                 Timeline(*steps, InfoPage("Done", time_estimate=1))
-            assert ("trial maker can't" in str(e.value)) == ("trial maker" in shape)
+            # The advice names the innermost module, which can't hold pages if
+            # it is a trial maker.
+            is_trial_maker = "trial maker" in shape
+            assert ("Trial maker 'game' can't" in str(e.value)) == is_trial_maker
+            assert ("Move the pages into module 'game'" in str(e.value)) != (
+                is_trial_maker
+            )
             return
         Timeline(*steps, InfoPage("Done", time_estimate=1))
     warned = any("repeats module 'game'" in str(w.message) for w in caught)

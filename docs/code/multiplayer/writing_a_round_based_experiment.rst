@@ -185,18 +185,25 @@ wait for each other until ``late_after`` or ``max_wait_time`` acts. PsyNet
 raises a ``ValueError`` when the experiment loads if a ``while_loop`` after
 a grouper shows content pages between runs of a group module it repeats,
 with no barrier between the pages and the next run. A group module is a
-trial maker with a ``sync_group_type``, or any other module that contains
-a ``GroupBarrier``, such a trial maker, or a page maker such as a
-``for_loop`` of cued rounds. Other modules, such as a quiz each player
-takes alone, are skipped. Move the pages into the module, or add a
-``GroupBarrier`` after them, outside the module, which waits for every
-member, so each run starts together. A trial maker can't hold the pages,
-so it needs the barrier:
+trial maker with a ``sync_group_type``, or any other module that directly
+contains a ``GroupBarrier`` or a page maker such as a ``for_loop`` of
+cued rounds. A module around one, such as a ``"session"`` module around
+the game, isn't, as a barrier waits only for the members still in its own
+module, and a round for those in its trial maker. Other modules, such as
+a quiz each player takes alone, aren't checked themselves, but their
+pages count as pages between runs, as do pages in an outer module after
+the game. The error names the group module. Move the pages into it, or
+add a ``GroupBarrier`` right after them, outside it, which waits for the
+members on the pages too, so each run starts together. A trial maker
+can't hold the pages, so it needs the barrier:
 
 .. code-block:: python
 
     # Raises: a member on "Break" has left "game", so the next run starts without them.
     while_loop("runs", play_again, join(Module("game", rounds), break_page), 2)
+
+    # Raises too: "session" doesn't count, so a member on "Break" has left "game".
+    while_loop("runs", play_again, Module("session", Module("game", rounds), break_page), 2)
 
     # Keep the break inside the module...
     while_loop("runs", play_again, Module("game", rounds, break_page), 2)
@@ -207,10 +214,11 @@ so it needs the barrier:
 
 A barrier inside the module, at its start, doesn't count, as it doesn't
 wait for members who have left the module; nor does a barrier before the
-pages. A barrier's own waiting page isn't a content page. Pages inside a
-``switch`` or ``conditional`` count as shown, whichever branch they are
-in, but a barrier inside one doesn't count, as members on another branch
-don't pass it. The check has limits:
+pages, or one in a module that the pages aren't in. A barrier's own
+waiting page isn't a content page. Pages inside a ``switch`` or
+``conditional`` count as shown, whichever branch they are in, but a
+barrier inside one doesn't count, as members on another branch don't pass
+it. The check has limits:
 
 - It decides which modules are grouped from what they contain at load, so
   a module whose page maker only builds solo pages still counts as one;
@@ -221,8 +229,6 @@ don't pass it. The check has limits:
   when the participant reaches it, so the check can't see what it shows.
   If one is all there is between the runs, PsyNet warns instead of
   raising, and doesn't see a module inside it.
-- It doesn't see a page in an outer module around the repeated one, as in
-  ``while_loop(..., Module("session", Module("game", rounds), break_page))``.
 
 The warning at run time, when the group and a member wait for each other,
 still catches the cases the check misses.
