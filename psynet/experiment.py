@@ -943,7 +943,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         checkouts (``--use-local-psynet``, ``--use-local-dallinger``). It sets
         this when it deploys the app, and later updates of the app build them
         in again. Don't set it yourself.
-        Default: ``""``.
+        Default: unset.
 
 
 
@@ -2636,7 +2636,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "needs_internet_access": True,
             "check_participant_opened_devtools": False,
             "performance_test_app": False,
-            "performance_test_local_packages": "",
             "debug_ssh_app": False,
             "supported_locales": "[]",
             "wage_per_hour": 9.0,

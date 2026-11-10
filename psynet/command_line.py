@@ -7789,9 +7789,12 @@ def _reuse_local_packages(app, info, deploy_options):
     ``info`` is the app's :func:`_performance_test_app_info`, and
     ``deploy_options`` the ``use_local_*`` options to turn on, in place.
     """
+    recorded = [
+        package.strip() for package in (info.get("local_packages") or "").split(",")
+    ]
     reused = [
         package
-        for package in (info.get("local_packages") or "").split(",")
+        for package in recorded
         if package in ("psynet", "dallinger")
         and not deploy_options.get(f"use_local_{package}")
     ]

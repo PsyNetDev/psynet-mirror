@@ -351,7 +351,9 @@ later run updates the app in place from the current directory before
 testing, so it always tests your current code, and keeps its database.
 If the deploy used ``--use-local-psynet`` or ``--use-local-dallinger``, the
 app's config records it (``performance_test_local_packages``), and later
-runs build the local checkouts in again without the option, saying so. To
+runs build the local checkouts in again without the option, saying so.
+Apps deployed before PsyNet recorded this have no record, so pass the
+option once more on their next run; it is remembered from then on. To
 build from ``requirements.txt`` instead, destroy the app first.
 An update doesn't deposit new assets, so destroy the app if you add assets
 or want a fresh launch. The app stays on the server

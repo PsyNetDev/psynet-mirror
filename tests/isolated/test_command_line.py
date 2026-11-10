@@ -1983,7 +1983,29 @@ def test_performance_test_ssh_needs_the_apps_experiment_to_load():
     run.assert_not_called()
 
 
-def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
+@pytest.mark.parametrize(
+    "config, local_packages",
+    [({}, ""), ({"performance_test_local_packages": "psynet"}, "psynet")],
+)
+def test_performance_test_app_info_reports_local_packages(config, local_packages):
+    from psynet.command_line import _performance_test_app_info
+
+    with patch(
+        "psynet.command_line.load_runtime_server_config",
+        return_value={"performance_test_app": True, **config},
+    ):
+        info = _performance_test_app_info()
+
+    assert info == {"performance_test_app": True, "local_packages": local_packages}
+
+
+@pytest.mark.parametrize(
+    "use_local_psynet, recorded",
+    [(False, {}), (True, {"performance_test_local_packages": "psynet"})],
+)
+def test_performance_test_deploys_mark_the_app(
+    use_local_psynet, recorded, capsys, fresh_dallinger_config
+):
     from psynet.command_line import _debug_ssh
 
     ctx = Mock()
@@ -2010,7 +2032,7 @@ def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
             server="server",
             dns_host=None,
             update=True,
-            use_local_psynet=True,
+            use_local_psynet=use_local_psynet,
             performance_test_app=True,
         )
 
@@ -2018,7 +2040,7 @@ def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
     assert ctx.invoke.call_args.kwargs["config_options"] == {
         "debug_ssh_app": "true",
         "performance_test_app": "true",
-        "performance_test_local_packages": "psynet",
+        **recorded,
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
     assert pre_launch.call_args.kwargs["confirm_update"] is False
