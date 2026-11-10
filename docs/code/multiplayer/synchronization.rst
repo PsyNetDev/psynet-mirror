@@ -1189,7 +1189,7 @@ By default, a waiting participant stays on their current page, with input
 disabled and a small waiting indicator showing ``waiting_message``. To show dedicated
 pages instead, pass them as ``waiting_logic``; they repeat until the
 participant is released. In ``sync_quorum``, waiting participants answer
-trials from another trial maker:
+trials from another trial maker, one trial per pass:
 
 .. literalinclude:: ../../../demos/experiments/sync_quorum/experiment.py
    :start-at: filler = PageMaker(
@@ -1202,6 +1202,11 @@ repeat often enough to fill that time, rounded up to whole passes; here,
 ``expected_wait``, three passes are expected. The older
 ``waiting_logic_expected_repetitions`` argument is deprecated.
 
+Keep ``waiting_logic`` atomic, as in ``sync_quorum``: one short trial or
+page per pass, letting the loop repeat it, rather than several trials per
+pass. A release then fails at most the trial on screen and creates no
+unseen trials (see below).
+
 When the barrier releases a participant who is on a waiting page, the page
 ends ``release_grace`` seconds (default 3; see
 :class:`~psynet.sync.Barrier`) after the browser notices the release, which
@@ -1209,21 +1214,19 @@ is usually within about 2 seconds, unless they submit it first. The page's
 answer is then not saved: its response is stored with ``"interrupted": True``
 in ``metadata``, its ``on_complete`` doesn't run, and ``participant.answer``
 keeps its previous value (``participant.answer_is_fresh`` is ``False``).
-The participant then moves straight past ``waiting_logic``: nothing else in
-that pass runs, neither its later pages and trials nor its code blocks, such
-as a trial maker's ``on_complete`` and performance checks (per trial or at
-the end of the module). Modules, loops and fixed time credit that the
-participant is inside still end as usual. The participant whose arrival
-completes the group moves past ``waiting_logic`` in the same way from its
-first page, which was already built when they arrived: if that page is a
-trial's, the trial was created and is failed as below. Pass
+The rest of the participant's pass of ``waiting_logic`` is then run through
+without showing its pages, and so is the whole pass for the participant
+whose arrival completes the group. Code blocks in it still run, and so do
+the ends of modules, loops and fixed time credit. Pass
 ``release_grace=None`` to :class:`~psynet.sync.Barrier`,
 :class:`~psynet.sync.GroupBarrier` or a grouper to let every waiting page
 run to its end.
 
 A release ends trial pages too, such as the animal trials in
-``sync_quorum``. A trial whose page ends this way before it is
-answered is failed with ``failed_reason="interrupted_by_release"``. It is not
+``sync_quorum``. A trial whose page ends before it is answered is failed
+with ``failed_reason="interrupted_by_release"``, and so is every trial
+that the run through the rest of the pass reaches: it is created, and
+failed without being shown. Such a trial is not
 finalized, so it doesn't count towards the trial maker's targets of
 completed trials, and its node doesn't wait for it. Its ``show_feedback``
 page isn't shown either. It was still created, so

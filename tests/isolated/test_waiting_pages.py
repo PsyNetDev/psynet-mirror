@@ -181,9 +181,10 @@ class _CountingTrialMaker:
 def test_a_release_fails_the_unanswered_filler_trials_it_ends(
     in_experiment_directory, db_session
 ):
-    """As in the sync_quorum demo: the first's trial page is interrupted, the last's is skipped.
+    """The first's trial page is interrupted, the last's is skipped.
 
-    The rest of the pass is skipped without starting the loop's later trials.
+    The rest of each pass, here a long ``for_loop`` of trials, is walked
+    through, so its unseen trials are created and failed too.
     """
     exp = get_experiment()
     original = exp.timeline
@@ -206,7 +207,7 @@ def test_a_release_fails_the_unanswered_filler_trials_it_ends(
         assert exp.timeline.get_current_elt(exp, first).label == "after"
         assert first.for_loops == {}
         trials = FillerTrial.query.all()
-        assert len({trial.participant_id for trial in trials}) == len(trials) == 2
+        assert len(trials) == 2 * 40
         for trial in trials:
             assert trial.failed_reason == "interrupted_by_release"
             assert trial.complete and not trial.finalized

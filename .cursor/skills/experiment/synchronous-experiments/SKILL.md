@@ -163,7 +163,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `p.sync_group_removal_reason("pair")` tells the one who stayed whether
   their partner returned the study or was too slow.
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with
-  filler work via `trial_maker.custom(...)`, as in `sync_quorum`.
+  filler work via `trial_maker.custom(...)`, as in `sync_quorum`. Keep
+  `waiting_logic` atomic, one short trial per pass
+  (`PageMaker(trial_maker.cue_trial, ...)`), and let the loop repeat it: a
+  release fails the trial on screen and creates and fails, unseen, every
+  later trial left in the pass.
 - For chain or Gibbs designs, distinguish true co-presence from async
   across-participant chains. Use `wait_for_networks=True` when participants may
   otherwise exit while async network growth is still pending.

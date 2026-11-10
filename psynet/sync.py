@@ -242,6 +242,12 @@ def _forget_barrier_from_spec(instance_id):
 # the cap still succeeds.
 _MAX_BARRIER_WALK_PASSES = 32
 
+# Cap on the pages that a release skips in one pass of waiting_logic. Each
+# step is a page the participant would otherwise have seen, so a real pass is
+# far shorter; reaching it means the pass never ends, e.g. a nested
+# while_loop whose condition stays true.
+_MAX_RELEASE_WALK_STEPS = 1000
+
 
 # The 0.5 s poller stops starting overdue timeouts, and separately visit
 # checks, once each step has run this long; the rest wait for later sweeps.
@@ -955,7 +961,11 @@ class Barrier(EltCollection):
         trials, and ``waiting_screen`` to show them something. If left at the
         default value of ``None``, the participant sees ``waiting_screen``,
         or their current page beneath a lightweight waiting indicator.
-        Several barriers can share the same elements.
+        Several barriers can share the same elements. Keep it atomic, with
+        one short trial or page per pass (the loop repeats it), such as
+        ``PageMaker(trial_maker.cue_trial, ...)`` in the ``sync_quorum``
+        demo: a release then fails at most the trial on screen and creates
+        no unseen trials (see ``release_grace``).
 
     waiting_logic_expected_repetitions
         Deprecated; pass ``expected_wait`` instead. Expected repetitions of
@@ -1029,16 +1039,16 @@ class Barrier(EltCollection):
         Seconds a participant on a ``waiting_logic`` page has to finish it
         once they are released; the page then ends without an answer,
         recorded with ``"interrupted": True`` in its response metadata.
-        The participant then moves straight past the waiting logic: nothing
-        else in that pass runs, neither its later pages and trials nor its
-        code blocks, such as a trial maker's ``on_complete`` and performance
-        checks (per trial or at the end of the module).
+        The rest of the participant's pass of ``waiting_logic`` is then run
+        through without showing its pages (code blocks still run).
         This includes the pages of trials in ``waiting_logic``, such as
-        filler trials from a trial maker: a trial whose page ends this way
-        is failed with ``failed_reason="interrupted_by_release"``, so it isn't
-        finalized, shows no feedback, and doesn't count towards the trial
-        maker's targets of completed trials (it still counts towards
-        ``max_trials_per_block``).
+        filler trials from a trial maker: a trial whose page ends this way,
+        and any trial that the rest of the pass reaches, which is created
+        but never shown, is failed with
+        ``failed_reason="interrupted_by_release"``, so it isn't finalized,
+        shows no feedback, and doesn't count towards the trial maker's
+        targets of completed trials (it still counts towards
+        ``max_trials_per_block`` and ``n_created_trials``).
         ``None`` lets each waiting page run to its end. Default: 3 seconds.
         Only used with ``waiting_logic``; passing it without raises an error.
         A barrier with ``waiting_logic`` can't be inside a trial's own pages,
@@ -1159,11 +1169,6 @@ class Barrier(EltCollection):
         """
         return bool(waiting_participants)
 
-    @property
-    def waiting_loop_label(self):
-        """Label of the ``while_loop`` that repeats ``waiting_logic``."""
-        return f"barrier:{self.id}"
-
     def resolve(self):
         from psynet.timeline import while_loop
 
@@ -1175,7 +1180,7 @@ class Barrier(EltCollection):
             waiting_elts = self.waiting_logic
         else:
             waiting_elts = while_loop(
-                label=self.waiting_loop_label,
+                label=f"barrier:{self.id}",
                 condition=lambda participant: (
                     not self.can_participant_exit(participant)
                 ),
@@ -5503,17 +5508,15 @@ INTERRUPTED_BY_RELEASE = "interrupted_by_release"
 
 
 def _end_waiting_page(participant):
-    """End the trial of the waiting page a release is ending, failing it if not already failed.
+    """Fail the trial of the waiting page a release is ending, if it has not been answered.
 
     A barrier with ``waiting_logic`` is never inside a trial's pages (see
     :meth:`Barrier.receive_participant`), so an unanswered trial here was
-    started in the waiting logic. The rest of its logic, including
-    finalizing and feedback, is skipped.
+    started in the waiting logic.
     """
     trial = _trial_owning_page(participant)
-    if trial is not None:
+    if trial is not None and not trial.failed:
         trial.fail(reason=INTERRUPTED_BY_RELEASE)
-        trial.complete = True
 
 
 def _forget_time_out(participant):
