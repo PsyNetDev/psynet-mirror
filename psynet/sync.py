@@ -714,7 +714,8 @@ class _BarrierHoldPage(_TimelineHoldPage):
             Epoch seconds, or ``None`` if unknown. Defaults to the barrier's
             :meth:`~Barrier.expected_release_time`.
         counts : dict, optional
-            The barrier's hold message counts for ``participant``. Callers
+            The barrier's hold message counts for ``participant``
+            (``waiting_count`` and ``group_size``). Callers
             that render the overlay for every member of a group pass them,
             so the group is not recounted per member.
         """
