@@ -68,6 +68,7 @@ Bot tests wait out the real timeouts, so pass `advance_past_wait_pages` a
 `timeout` longer than the `late_after` or `max_wait_time` being tested. The
 default `test_check_bot` accepts bots that called `drop_out()` or
 `allow_failure()`; call `allow_failure()` for every bot the design fails on
-purpose, such as a partner left behind under `below_quorum="fail"`. If
-PsyNet warns at load time that a late member would fail the partners who
-were on time, fix the settings rather than the test.
+purpose, such as a partner left behind under the default
+`below_quorum="fail"`. If a late member fails the partners who were on time
+(PsyNet logs a warning when that happens) and the design didn't mean to,
+pass `below_quorum="continue_without_group"` rather than changing the test.

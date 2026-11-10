@@ -113,9 +113,7 @@ class TestExp(object):
             db_session.commit()
             participant = Participant.query.filter_by(id=1).one()
 
-            assert (
-                participant.var.weight == "78.5"
-            )  # ideally, NumberControl should really return a number, not a string!
+            assert participant.var.weight == 78.5
 
             event_log = participant.last_response.metadata["event_log"]
             event_ids = [e["eventType"] for e in event_log]

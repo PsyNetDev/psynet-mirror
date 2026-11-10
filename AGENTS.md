@@ -301,6 +301,10 @@ Non-trivial code changes should be tested.
 Prefer red/green test-driven development, but avoid committing overly verbose tests in the final PR.
 Implement sensible unit tests where appropriate.
 Verify changes end-to-end by running `psynet test local` within a relevant demo.
+Each `psynet test local` run gets its own database, Redis server and port, so
+several can run at once, including from agents working in other worktrees.
+Runs in the same experiment directory wait for each other automatically. Don't
+queue test runs behind your own lock or wait for other agents' tests to finish.
 Prefer concise tests that exercise real/public interfaces.
 Avoid very long tests with extensive monkeypatching unless there is no practical
 alternative; if monkeypatching is necessary, keep it minimal and focused on

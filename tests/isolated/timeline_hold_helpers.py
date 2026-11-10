@@ -90,7 +90,9 @@ def _json_timeline_via_route(participant):
         return Experiment.route_timeline()
 
 
-def _process_response(exp, participant, page_uuid, *, timeline_hold_resume=False):
+def _process_response(
+    exp, participant, page_uuid, *, raw_answer=None, timeline_hold_resume=False
+):
     """Run ``process_response`` for ``participant`` in a request context."""
     with Flask(__name__).test_request_context(
         "/response",
@@ -98,7 +100,7 @@ def _process_response(exp, participant, page_uuid, *, timeline_hold_resume=False
     ):
         return exp.process_response(
             participant.id,
-            None,
+            raw_answer,
             {},
             {},
             page_uuid,
