@@ -507,6 +507,76 @@ def test_a_barrier_before_a_later_run_s_first_cue_waits_for_a_partner_still_in_t
 
 
 @in_consents_experiment
+def test_a_later_run_s_start_does_not_wait_for_a_partner_whose_loop_ended(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _start_a_second_run(exp, restarting=1)
+    cohort[1].end_module(Module("game", InfoPage("Hi", time_estimate=1)))
+    barrier = GroupBarrier("second_run_start", group_type="pair")
+    _arrive(exp, barrier, cohort[:1])
+    assert not barrier._participant_is_waiting(cohort[0])
+
+
+@in_consents_experiment
+def test_a_newcomer_starts_a_later_run_with_the_group(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _start_a_second_run(exp)
+    (newcomer,) = _working_participants(exp, 1)
+    cohort[0].active_sync_groups["pair"].add_participant(newcomer)
+    newcomer.start_module(Module("game", InfoPage("Hi", time_estimate=1)))
+    _released.clear()
+    barrier = GroupBarrier(
+        "second_run_start", group_type="pair", on_release=PairTrial.record_release
+    )
+    _arrive(exp, barrier, [*cohort, newcomer])
+
+    ((participants, _, _),) = _released
+    assert {p.id for p in participants} == {p.id for p in [*cohort, newcomer]}
+
+
+@in_consents_experiment
+def test_a_run_s_start_waits_for_a_member_with_fewer_earlier_runs_of_the_module(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    game = Module("game", InfoPage("Hi", time_estimate=1))
+    practiced, new = cohort
+    practiced.start_module(game)
+    PairTrial.cue({})[0].consume(exp, practiced)
+    practiced.end_module(game)
+    for participant in cohort:
+        participant.start_module(game)
+    barrier = GroupBarrier("start", group_type="pair")
+    _arrive(exp, barrier, [practiced])
+    assert barrier._participant_is_waiting(practiced)
+    _arrive(exp, barrier, [new])
+    assert not any(barrier._participant_is_waiting(p) for p in cohort)
+
+
+@in_consents_experiment
+def test_a_run_s_start_releases_a_member_runs_behind_and_keeps_the_other_waiting(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _start_a_second_run(exp, restarting=1)
+    ahead, behind = cohort
+    game = Module("game", InfoPage("Hi", time_estimate=1))
+    PairTrial.cue({})[0].consume(exp, ahead)
+    ahead.end_module(game)
+    ahead.start_module(game)
+    behind.end_module(game)
+    behind.start_module(game)
+    barrier = GroupBarrier("run_start", group_type="pair")
+    _arrive(exp, barrier, cohort)
+    assert barrier._participant_is_waiting(ahead)
+    assert not barrier._participant_is_waiting(behind)
+
+
+@in_consents_experiment
 def test_leaving_in_a_later_run_does_not_record_on_the_earlier_round(
     in_experiment_directory, db_session
 ):
