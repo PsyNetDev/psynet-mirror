@@ -551,6 +551,17 @@ def _demo_roles(members, barrier, **_):
     return _load_demo_pairing().PairingRegrouper.assign_roles(barrier, members)
 
 
+def _proposers_meet_responders(members, barrier, **_):
+    """Pair former proposers with former responders; those with most rounds sit out."""
+    times_held = _load_demo_pairing().times_held
+    ordered = sorted(
+        members,
+        key=lambda p: (barrier.rounds_played(p), times_held(p, "proposer"), p.id),
+    )
+    placed = ordered[: len(ordered) // 2 * 2]
+    return [[placed[i], placed[-1 - i]] for i in range(len(placed) // 2)]
+
+
 @in_consents_experiment
 def test_regrouper_gives_one_member_per_role(in_experiment_directory, db_session):
     exp = get_experiment()
@@ -586,7 +597,9 @@ def test_regrouper_alternates_roles_and_counts_rounds(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    cohort, pairs = _cohort_and_pairs(exp, 4, assign_roles=_demo_roles)
+    cohort, pairs = _cohort_and_pairs(
+        exp, 4, form_groups=_proposers_meet_responders, assign_roles=_demo_roles
+    )
 
     _arrive(exp, pairs, cohort)
     first = {p.id: pairs.role(p) for p in cohort}
