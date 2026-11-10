@@ -810,7 +810,11 @@ def test_closing_a_cohort_below_quorum_dissolves_it_without_a_split(
 ):
     exp = get_experiment()
     cohort_grouper, pairs = _open_cohorts(
-        0, initial_group_size=3, below_quorum=below_quorum, on_release=_count_releases
+        0,
+        initial_group_size=3,
+        below_quorum=below_quorum,
+        on_release=_count_releases,
+        roles=["proposer", "responder"],
     )
     *present, gone = _working_participants(exp, 3)
     _arrive(exp, cohort_grouper, [*present, gone])
@@ -823,7 +827,7 @@ def test_closing_a_cohort_below_quorum_dissolves_it_without_a_split(
 
     assert set(pairs.choose_who_to_release(present)) == set(present)
     assert not cohort.active and _count_releases.calls == 0
-    assert all(pairs.rounds_played(p) == 0 for p in present)
+    assert all(pairs.rounds_played(p) == 0 and pairs.role(p) is None for p in present)
     expected_tags = ["sync group below minimum size"] if below_quorum == "fail" else []
     assert all(p.failure_tags == expected_tags for p in present)
 

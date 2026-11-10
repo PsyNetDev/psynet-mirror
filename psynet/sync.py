@@ -3345,7 +3345,8 @@ class Regrouper(Grouper):
         is then dissolved instead of split, as its ``below_quorum`` says.
         With ``0`` the cohort closes when its first round starts. ``None``
         (default) leaves top-ups to the grouper and the barriers. Needs
-        ``within``.
+        ``within``, and only applies to ``within`` groups that accept
+        top-ups; it does nothing for others.
 
     max_wait_time
         Longest a participant waits at the regrouper before ``max_wait_action``
@@ -3547,13 +3548,7 @@ class Regrouper(Grouper):
 
     def sat_out(self, participant) -> bool:
         """Return whether ``participant``'s latest visit here ended without a group (see ``left_over``)."""
-        latest_visit = (
-            ParticipantLinkBarrier.query.filter_by(
-                barrier_id=self.id, participant_id=participant.id
-            )
-            .order_by(ParticipantLinkBarrier.id.desc())
-            .first()
-        )
+        latest_visit = self._latest_visit(participant)
         return latest_visit is not None and bool(latest_visit.sat_out)
 
     def role(self, participant) -> Optional[str]:
@@ -3576,13 +3571,7 @@ class Regrouper(Grouper):
         current = participant.active_sync_groups.get(self.group_type)
         if current is not None and current.grouper_id != self.id:
             return None
-        latest_visit = (
-            ParticipantLinkBarrier.query.filter_by(
-                barrier_id=self.id, participant_id=participant.id
-            )
-            .order_by(ParticipantLinkBarrier.id.desc())
-            .first()
-        )
+        latest_visit = self._latest_visit(participant)
         if latest_visit is None or latest_visit.sync_group is None:
             return None
         return next(
@@ -3592,6 +3581,16 @@ class Regrouper(Grouper):
                 if link.participant_id == participant.id
             ),
             None,
+        )
+
+    def _latest_visit(self, participant) -> Optional["ParticipantLinkBarrier"]:
+        """Return ``participant``'s latest visit to this regrouper, if any."""
+        return (
+            ParticipantLinkBarrier.query.filter_by(
+                barrier_id=self.id, participant_id=participant.id
+            )
+            .order_by(ParticipantLinkBarrier.id.desc())
+            .first()
         )
 
     def _waiting_role(self, participant) -> Optional[str]:

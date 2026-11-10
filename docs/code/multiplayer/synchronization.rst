@@ -873,7 +873,7 @@ Two separate settings decide what happens when someone leaves a group:
       quorum doesn't pass, so it keeps waiting there for a newcomer.
     - ``stop_top_ups_after_rounds=n`` on a :class:`~psynet.sync.Regrouper`
       that regroups within this group (``within``) stops them when the
-      regrouper starts its next split of the group after ``n``, for
+      regrouper starts its next split after ``n`` rounds in the group, for
       example ``1`` to let latecomers join a cohort only during its first
       round (see :ref:`sync-rounds-with-changing-groups`). A cohort below
       its quorum at that split is dissolved with nobody grouped; with

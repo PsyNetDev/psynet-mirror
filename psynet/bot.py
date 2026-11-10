@@ -292,10 +292,8 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
     regrouper and the creation times of the groups their pools' earlier
     splits formed. The next check then splits the pools as the deadline or
     tick would. Group memberships and roles are untouched, so a player not
-    passed in keeps their role from the last round. Each call moves the
-    clocks back by one more period, so calling it again, without the bots
-    advancing, tests what happens after a second period, such as a player
-    waiting alone sitting out with ``left_over="sit_out"``.
+    passed in keeps their role from the last round. ``max_wait_time`` doesn't
+    move: it counts from the bots' real arrivals.
 
     Parameters
     ----------
