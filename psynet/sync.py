@@ -87,8 +87,9 @@ groups and a ``GroupBarrier`` release the group without waiting for the poller.
 Arrivals at a ``Regrouper`` with ``every`` are usually the exception: they
 cannot make the pool ready, so they queue no check and the poller normally
 enacts each due tick, though a page reload (``GET /timeline``) also checks.
-Ungrouped arrivals at a ``within`` regrouper, and subclasses that override the
-release rule, keep the arrival check; see
+Ungrouped arrivals at a ``within`` regrouper, and subclasses that override
+``choose_who_to_release`` or ``check_waiting_participants``, keep the arrival
+check; see
 :meth:`Regrouper._queue_check_on_arrival`.
 Last-arrival does not skip partner timeline cursors after that commit; partners
 leave on overlay wake (or this poller, if it won the release). Waiter rows stay
