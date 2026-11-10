@@ -82,6 +82,13 @@ def _page_participant(**overrides):
     return participant
 
 
+@pytest.fixture
+def outside_waiting_logic(monkeypatch):
+    """Skip the barrier waiting-page lookup, which needs a loaded experiment."""
+    monkeypatch.setattr("psynet.sync.waiting_page_config", lambda *_args: None)
+
+
+@pytest.mark.usefixtures("outside_waiting_logic")
 def test_ungrouped_page_omits_arrival_updates(monkeypatch):
     """Solo pages must not open the partner-ready websocket."""
 
@@ -93,6 +100,7 @@ def test_ungrouped_page_omits_arrival_updates(monkeypatch):
     assert "arrival_updates" not in page.attributes(_page_participant())
 
 
+@pytest.mark.usefixtures("outside_waiting_logic")
 def test_grouped_page_includes_arrival_updates(monkeypatch):
     monkeypatch.setattr(
         "psynet.sync.pending_arrival_notice_for",
