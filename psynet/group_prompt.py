@@ -279,16 +279,7 @@ class GroupPrompt(Prompt):
         """HTML for the group display, or nothing without a group."""
         if self.group is None:
             return Markup("")
-        _p = get_translator(context=True)
-        seats = _group_seats(self.group)
-        members = self._members()
-        viewer_present = any(m.id == self.participant.id for m in members)
-        label = (
-            _p("group prompt", "Your group")
-            if viewer_present
-            else _p("group prompt", "Group")
-        )
-        body = self._members_html(members, seats, label)
+        body = self._members_html(self._members(), _group_seats(self.group))
         note = (
             Markup('<p class="psynet-group-note">{}</p>').format(self.note)
             if self.note
@@ -310,12 +301,18 @@ class GroupPrompt(Prompt):
             classes, body, note, announcer
         )
 
-    def _members_html(self, members, seats, label):
+    def _members_html(self, members, seats):
+        _p = get_translator(context=True)
         layout = "row" if len(members) <= _MAX_ROW_MEMBERS else "zigzag"
         # Balanced rows: 8 members as 4 + 4 rather than 7 + 1.
         rows = max(1, math.ceil(len(members) / _MAX_ZIGZAG_COLUMNS))
         columns = math.ceil(len(members) / rows)
         with_viewer = any(m.id == self.participant.id for m in members)
+        label = (
+            _p("group prompt", "Your group")
+            if with_viewer
+            else _p("group prompt", "Group")
+        )
         partner_label = with_viewer and len(members) == 2
         items = Markup("").join(
             self._member_html(member, seats[member.id], index, partner_label)

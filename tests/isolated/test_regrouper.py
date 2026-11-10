@@ -542,17 +542,13 @@ def _everyone_proposes(members, **_):
     return {member: "proposer" for member in members}
 
 
-def _least_held(members, barrier, **_):
-    """Give each role to whoever has held it least often, as in ultimatum_pairing."""
-    roles = {}
-    for role in barrier.roles:
-        free = [m for m in members if m not in roles]
-        roles[min(free, key=lambda m: _times_held(m, role))] = role
-    return roles
+def _roles_by_id(members, barrier, **_):
+    return {member.id: role for member, role in zip(members, barrier.roles)}
 
 
-def _times_held(participant, role):
-    return sum(link.role == role for link in participant.sync_group_links)
+def _demo_roles(members, barrier, **_):
+    """The demo's role rule, without its rematch avoidance, which can repeat a role."""
+    return _load_demo_pairing().PairingRegrouper.assign_roles(barrier, members)
 
 
 @in_consents_experiment
@@ -571,6 +567,9 @@ def test_regrouper_gives_one_member_per_role(in_experiment_directory, db_session
     cohort, pairs = _cohort_and_pairs(exp, 2, assign_roles=_everyone_proposes)
     with pytest.raises(ValueError, match="each role to one member"):
         _arrive(exp, pairs, cohort)
+    cohort, pairs = _cohort_and_pairs(exp, 2, assign_roles=_roles_by_id)
+    with pytest.raises(TypeError, match="keyed by participants"):
+        _arrive(exp, pairs, cohort)
 
 
 def _partner(participant):
@@ -587,7 +586,7 @@ def test_regrouper_alternates_roles_and_counts_rounds(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    cohort, pairs = _cohort_and_pairs(exp, 4, assign_roles=_least_held)
+    cohort, pairs = _cohort_and_pairs(exp, 4, assign_roles=_demo_roles)
 
     _arrive(exp, pairs, cohort)
     first = {p.id: pairs.role(p) for p in cohort}

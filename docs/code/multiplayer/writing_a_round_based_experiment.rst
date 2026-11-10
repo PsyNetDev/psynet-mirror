@@ -551,8 +551,8 @@ rather than joining a round whose first turn is over.
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
 example to pair players by their earlier answers, and ``assign_roles``
 replaces the default random roles. The demo's regrouper overrides both, to
-keep last round's partners apart and to alternate roles (see "Rounds with
-changing groups" in :doc:`synchronization`). With roles, each group needs
+keep last round's partners apart and to alternate roles (see
+:ref:`sync-regrouper-recipe`). With roles, each group needs
 one member per role. See
 :class:`~psynet.sync.Regrouper` for this and the other settings.
 

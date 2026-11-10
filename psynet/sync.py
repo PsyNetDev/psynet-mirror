@@ -3594,6 +3594,11 @@ class Regrouper(Grouper):
         roles = {}
         for group_members in plan:
             assigned = self.assign_roles(group_members, within_group=within_group)
+            if not all(isinstance(m, Participant) for m in assigned):
+                raise TypeError(
+                    f"Regrouper '{self.id}': assign_roles must return "
+                    "{participant: role}, keyed by participants rather than IDs."
+                )
             if sorted(m.id for m in assigned) != sorted(
                 m.id for m in group_members
             ) or sorted(assigned.values()) != sorted(self.roles):
