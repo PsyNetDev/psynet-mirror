@@ -3586,9 +3586,12 @@ class Regrouper(Grouper):
         if latest_visit is None or latest_visit.sync_group is None:
             return None
         return next(
-            link.role
-            for link in latest_visit.sync_group.participant_links
-            if link.participant_id == participant.id
+            (
+                link.role
+                for link in latest_visit.sync_group.participant_links
+                if link.participant_id == participant.id
+            ),
+            None,
         )
 
     def _waiting_role(self, participant) -> Optional[str]:
