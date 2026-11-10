@@ -133,7 +133,9 @@ Group membership, for groups formed by a grouper (see
     ``end_time`` (set when the group is closed) and
     ``n_active_participants``. Groups formed by a
     :class:`~psynet.sync.SimpleGrouper` also record ``initial_group_size``,
-    ``min_group_size``, ``max_group_size`` and ``accepts_top_ups``.
+    ``min_group_size``, ``max_group_size``, ``accepts_top_ups`` and
+    ``top_ups_stopped_at`` (when a group that accepted top-ups stopped
+    accepting them).
 
 ``participant_link_sync_group``
     One row per member of each group: ``participant_id``, ``sync_group_id``,

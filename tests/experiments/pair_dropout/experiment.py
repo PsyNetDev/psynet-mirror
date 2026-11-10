@@ -22,11 +22,6 @@ def _in_pair(participant):
     return participant.in_sync_group("pair")
 
 
-def _finish_round_1(participants):
-    for participant in participants:
-        participant.var.finished_round_1 = True
-
-
 class Exp(psynet.experiment.Experiment):
     label = "Pair dropout"
 
@@ -43,8 +38,6 @@ class Exp(psynet.experiment.Experiment):
             group_type="pair",
             late_after=LATE_AFTER,
             late_action="leave_group",
-            on_release=_finish_round_1,
-            on_dissolve=_finish_round_1,
         ),
         conditional(
             "round_2",
@@ -85,13 +78,6 @@ class Exp(psynet.experiment.Experiment):
 
         advance_past_wait_pages([on_time], timeout=LATE_AFTER + 10)
         self._assert_carries_on_alone(on_time)
-        # Their pair dissolved while they waited, so on_dissolve ended the round
-        # for them; the stayer arrived after their pair had gone.
-        finished = [
-            bot.with_participant(lambda p: p.var.get("finished_round_1", False))
-            for bot in (on_time, stayer)
-        ]
-        assert finished == [True, False]
 
         assert (
             silent.with_participant(

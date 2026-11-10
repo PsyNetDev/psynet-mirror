@@ -17,11 +17,8 @@ function member(seat) {
   };
 }
 
-function groupRoot(seats, leftSeats = []) {
+function groupRoot(seats) {
   const members = seats.map(member);
-  members
-    .filter((m) => leftSeats.includes(Number(m.dataset.seat)))
-    .forEach((m) => m.classList.add("psynet-group-member--left"));
   return {
     querySelector(selector) {
       const seat = selector.match(/data-seat="(\d+)"/);
@@ -35,9 +32,7 @@ function groupRoot(seats, leftSeats = []) {
             m.classList.contains("psynet-group-member--ran-out-of-time")
         );
       }
-      return selector.endsWith(":not(.psynet-group-member--left)")
-        ? members.filter((m) => !m.classList.contains("psynet-group-member--left"))
-        : members;
+      return members;
     },
     ticked: () =>
       members
@@ -110,10 +105,10 @@ function mockAjax() {
 
 const LIVE_MEMBERS = { group_prompt: { group_id: 7, live_members: true, redraw_token: "t" } };
 
-it("doesn't redraw for a member who left and is still drawn", async () => {
+it("redraws only when the members change", async () => {
   const { send } = setUp();
   const requests = mockAjax();
-  await activate({ root: groupRoot([0, 1, 2], [2]), vars: LIVE_MEMBERS });
+  await activate({ root: groupRoot([0, 1]), vars: LIVE_MEMBERS });
 
   send({ groupId: 7, seats: [], members: [0, 1] });
   assert.equal(requests.length, 0);

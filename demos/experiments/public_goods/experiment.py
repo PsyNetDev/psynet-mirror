@@ -110,7 +110,6 @@ class ContributionTrial(Trial):
                 late_action="leave_group",
                 # Releasing the team closes the round and scores it.
                 on_release=self.score_round,
-                on_dissolve=self.cancel_round,
             ),
         )
 
@@ -135,7 +134,8 @@ class ContributionTrial(Trial):
     @classmethod
     def score_round(cls, trials: List["ContributionTrial"], node: SyncGroupNode):
         """Share the multiplied pot between the members who played the round."""
-        contributions = _contributions_by_player(trials)
+        # String keys, because node.var stores JSON.
+        contributions = {str(t.participant_id): t.answer or 0 for t in trials}
         pot = sum(contributions.values())
         multiplied_pot = MULTIPLIER * pot
         share = multiplied_pot / len(trials)
@@ -146,11 +146,6 @@ class ContributionTrial(Trial):
         for trial in trials:
             # An answer of None means the player ran out of time.
             trial.var.payoff = ENDOWMENT - (trial.answer or 0) + share
-
-    @classmethod
-    def cancel_round(cls, trials: List["ContributionTrial"], node: SyncGroupNode):
-        """Record the contributions of a round cancelled while its last member waited."""
-        node.var.contributions = _contributions_by_player(trials)
 
     def score_answer(self, answer, definition):
         """Return the tokens the player earned in the round."""
@@ -204,11 +199,6 @@ class ContributionTrial(Trial):
             ),
             time_estimate=10,
         )
-
-
-def _contributions_by_player(trials):
-    """Return each player's tokens in the pot, keyed by participant ID as a string."""
-    return {str(t.participant_id): t.answer or 0 for t in trials}
 
 
 def your_contribution(participant, trial):
@@ -289,8 +279,9 @@ class Exp(psynet.experiment.Experiment):
                     "round": n.sync_group_round,
                     "team_id": n.sync_group_id,
                     "node_id": n.id,
+                    # These are None if the round was cancelled; each
+                    # player's contribution is also in player_round.
                     "contributions": n.var.get("contributions"),
-                    # None if the round was cancelled.
                     "pot": n.var.get("pot"),
                     "multiplied_pot": n.var.get("multiplied_pot"),
                     "share": n.var.get("share"),
@@ -309,20 +300,25 @@ class Exp(psynet.experiment.Experiment):
         self._test_others_leave_before_contributing(*bots[7:10])
 
         data = self.get_basic_data()
-        # The full game's team, then the late players' team, whose last
-        # round was cancelled with only the stayer's 5 tokens in.
-        teams = [t for t in data["team_round"] if t["contributions"] is not None]
+        # Per round: the full game's team, the late players' team, whose last
+        # round was cancelled, and the quitters' team, cancelled in round 0.
+        teams = data["team_round"]
         assert [(t["round"], t["pot"]) for t in teams] == [
             (0, 18),
             (0, 18),
+            (0, None),
             (1, 12),
             (1, 4),
             (2, 12),
             (2, None),
         ], teams
-        assert teams[-1]["contributions"] == {str(bots[5].id): 5}, teams[-1]
 
         rows = data["player_round"]
+        contributions = {
+            (r["participant_id"], r["round"]): r["contribution"] for r in rows
+        }
+        assert contributions[(bots[5].id, 2)] == 5, contributions
+        assert contributions[(bots[9].id, 0)] == 3, contributions
         # Only a player who returned the study leaves their trial incomplete.
         left = {
             (r["participant_id"], r["round"]): (r["outcome"], r["complete"], r["bonus"])
@@ -417,8 +413,8 @@ class Exp(psynet.experiment.Experiment):
         bot.run_to_completion()
 
     def _test_others_leave_before_contributing(self, quitter_1, quitter_2, stayer):
-        # The group dissolves before the stayer reaches the barrier, so the
-        # round is cancelled without on_dissolve; they still keep their tokens.
+        # The group dissolves before the stayer reaches the barrier; the
+        # round is cancelled and they still keep their tokens.
         _start([quitter_1, quitter_2, stayer])
         quitter_1.drop_out()
         quitter_2.drop_out()

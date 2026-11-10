@@ -31,6 +31,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     desc,
+    select,
 )
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import relationship
@@ -266,6 +267,12 @@ def _status_is_timeline_hold(status):
     """Return whether cached driver status is a timeline hold overlay."""
     page = (status or {}).get("page") or {}
     return bool(page.get("is_timeline_hold"))
+
+
+def _status_is_waiting(status):
+    """Return whether cached driver status is a waiting page or a timeline hold."""
+    page = (status or {}).get("page") or {}
+    return bool(page.get("is_wait_page")) or _status_is_timeline_hold(status)
 
 
 def _retry_busy_http(send, sleep=time.sleep):
@@ -647,18 +654,15 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.pseudonym_animal = animal
 
     def to_dict(self):
-        """Return the participant's dashboard fields, including the name others see them by."""
+        """Return the participant's fields without the raw pseudonym keys.
+
+        The Database tab adds the pseudonym itself (see
+        :meth:`psynet.experiment.Experiment.table_data`), so participant JSON
+        responses don't depend on translations.
+        """
         x = super().to_dict()
         x.pop("pseudonym_color", None)
         x.pop("pseudonym_animal", None)
-        try:
-            x["pseudonym"] = self.pseudonym.name
-        except ValueError:
-            # Stored keys the current pseudonym scheme no longer has.
-            logger.warning(
-                "Participant %s has an unknown pseudonym.", self.id, exc_info=True
-            )
-            x["pseudonym"] = None
         return x
 
     # all_trials = relationship("psynet.trial.main.Trial")
@@ -747,16 +751,16 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         ``late_after``, with any ``late_action``), ``"waited_too_long"`` (by its
         ``max_wait_action="leave_group"``), ``"no_group_formed"`` (a grouper
         with ``max_wait_action="continue_without_group"`` found them no group
-        in time), ``"group_dissolved"`` (released
-        when the group was dissolved, with
-        ``below_quorum="continue_without_group"``), ``"moved_on"`` (a
+        in time), ``"group_dissolved"`` (still in the group when it was
+        dissolved below its quorum, with any ``below_quorum``), ``"moved_on"`` (a
         :class:`~psynet.sync.Regrouper` took them out of their previous group:
         seen while they wait at the regrouper, and after they sit a round out,
         even if they then fail there; once they are in the next group this
         returns ``None``), ``"finished"`` (left after playing
         their part), ``"left_experiment"`` (failed,
         including returning the study, and for a member's other groups
-        when a barrier's ``late_action="fail"`` fails them), or ``None`` if no
+        when a barrier's ``late_action="fail"`` or a dissolving group's
+        ``below_quorum="fail"`` fails them), or ``None`` if no
         reason was recorded, for example after removal from the dashboard.
         A player sat out of their first round was never in a group, so this
         returns ``None`` for them; check :meth:`~psynet.sync.Regrouper.sat_out`
@@ -783,7 +787,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         """Return whether the participant is in an active group of ``group_type``.
 
         This becomes ``False`` once they leave the group, for example after a
-        barrier's ``late_action="leave_group"`` or ``"leave_all_groups"``, or when
+        barrier removes them for being late (with any ``late_action``), or when
         their group is dissolved.
         """
         return group_type in self.active_sync_groups
@@ -878,7 +882,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
     def start_module(self, module: "Module"):
         self.check_module_not_already_started(module)
+        run_index = len(self.module_states.get(module.id, [])) + 1
         state = module.state_class(module, self)
+        state.run_index = run_index
         state.start()
         self.module_state = state
 
@@ -1308,9 +1314,11 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 def get_participant(participant_id: int, for_update: bool = False) -> Participant:
     """
     Returns the participant with a given ID.
-    Warning: we recommend just using SQLAlchemy directly instead of using this function.
-    When doing so, use ``with_for_update().populate_existing()`` if you plan to update
-    this Participant object, that way the database row will be locked appropriately.
+    For loads that don't lock, we recommend just using SQLAlchemy directly
+    instead of this function. If you plan to update this Participant object,
+    use ``for_update=True`` here rather than a plain ``with_for_update()``
+    query: one that waits for the lock can join the participant's current
+    trial as it was before the wait.
 
     Parameters
     ----------
@@ -1329,10 +1337,78 @@ def get_participant(participant_id: int, for_update: bool = False) -> Participan
     :class:`psynet.participant.Participant`
         The requested participant.
     """
-    query = Participant.query.filter_by(id=participant_id)
+    criterion = Participant.id == participant_id
     if for_update:
-        query = query.with_for_update(of=Participant).populate_existing()
-    return query.one()
+        return _load_participant_for_update(Participant.query, criterion).one()
+    return Participant.query.filter(criterion).one()
+
+
+def _lock_and_load_participant(query, participant_id, *, nowait=False):
+    """Lock participant ``participant_id`` and load it fresh through ``query``.
+
+    The by-id form of :func:`_load_participant_for_update`; see there for why
+    the lock comes first.
+
+    Parameters
+    ----------
+    query :
+        Unfiltered participant query, such as ``Participant.query``.
+    participant_id :
+        ID of the participant to lock.
+    nowait :
+        As in :func:`_load_participant_for_update`.
+
+    Returns
+    -------
+    Participant or None
+        The locked participant, or ``None`` if ``query`` has no such row.
+    """
+    return _lock_for_load(query, Participant.id == participant_id, nowait).get(
+        participant_id
+    )
+
+
+def _load_participant_for_update(query, criterion, *, nowait=False):
+    """Return ``query`` filtered by ``criterion``, locked and reloaded fresh.
+
+    Use this, or :func:`_lock_and_load_participant` for loads by id, for every
+    locking participant load. ``Participant.query`` joins
+    ``_current_trial``, and under READ COMMITTED a statement that waited for
+    a row lock re-reads only the rows it locks; the trial it joins still
+    comes from before the wait. A barrier release writes the waiters' trials
+    while it holds their rows, so a load that queued behind it would see
+    those trials as they were before the release. Unless ``nowait`` is set,
+    this therefore first locks the bare row in a statement of its own, so
+    the load itself never waits.
+
+    Parameters
+    ----------
+    query :
+        Unfiltered participant query, such as ``Participant.query``.
+    criterion :
+        SQLAlchemy criterion selecting the participant row(s) to load.
+    nowait :
+        Fail at once with ``LockNotAvailable`` instead of waiting. A load
+        that cannot wait cannot read stale rows, so it skips the extra lock.
+
+    Returns
+    -------
+    sqlalchemy.orm.Query
+        ``query`` filtered by ``criterion``, with ``FOR UPDATE OF
+        participant`` and ``populate_existing``.
+    """
+    return _lock_for_load(query, criterion, nowait).filter(criterion)
+
+
+def _lock_for_load(query, criterion, nowait):
+    """Lock the rows matching ``criterion`` and set ``query`` to load them.
+
+    Leaves ``query`` unfiltered so :meth:`~sqlalchemy.orm.Query.get` still
+    works on it.
+    """
+    if not nowait:
+        query.session.execute(select(Participant.id).where(criterion).with_for_update())
+    return query.with_for_update(of=Participant, nowait=nowait).populate_existing()
 
 
 class DriverStopped(Exception):
@@ -1433,6 +1509,15 @@ class ParticipantDriver:
     def current_page_label(self):
         """Label of the current page, or ``None`` once the participant has left."""
         return self._current_page.get("label")
+
+    @property
+    def is_waiting(self):
+        """Whether the current page is a waiting page, such as one at a barrier.
+
+        Like the other ``current_page_*`` properties, this reads the status as
+        of the last :meth:`take_page` or :meth:`refresh_status`.
+        """
+        return _status_is_waiting(self.status)
 
     @property
     def current_page_text(self):

@@ -87,7 +87,7 @@ def warn_from_caller(message, category):
     ----------
     message : str
         The warning text.
-    category : type
+    category : Warning subclass
         The warning class, such as ``DeprecationWarning``.
     """
     prefixes = psynet_source_prefixes()
