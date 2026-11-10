@@ -35,6 +35,7 @@ _PAGE_FIELDS = {
     "_waiting_loop_markers",
     "waiting_logic",
     "waiting_logic_expected_repetitions",
+    "waiting_screen",
 }
 
 _PRESENTATION_FIELDS = {

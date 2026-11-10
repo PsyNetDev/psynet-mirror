@@ -98,6 +98,20 @@ def choose_number(participant):
     )
 
 
+def your_pick(participant):
+    """Replace the number buttons with the player's pick while the rest of the room chooses."""
+    if participant.var.choice is None:
+        text = "You ran out of time, so you'll sit out this round."
+    else:
+        text = f"You picked {participant.var.choice}."
+    # Ticks appear as the others choose.
+    return GroupPrompt(
+        text,
+        participant=participant,
+        group_type="room",
+    )
+
+
 def show_result(participant):
     if "room" not in participant.active_sync_groups or participant.var.choice is None:
         return InfoPage(
@@ -139,12 +153,14 @@ def play_round():
             min_group_size=2,
             deadline=Clock(ROUND_SECONDS),
             content=round_message,
+            waiting_screen="Getting the next round ready.",
         ),
         PageMaker(choose_number, time_estimate=5),
         GroupBarrier(
             id_="round_finished",
             group_type="room",
             content="Waiting for the rest of the room…",
+            waiting_screen=your_pick,
             timeout_between_barriers_time=CHOICE_SECONDS + LEFT_PAGE_SECONDS,
             timeout_between_barriers_action="kick",
             on_release=score_round,
@@ -195,6 +211,11 @@ class Exp(psynet.experiment.Experiment):
             bot.take_page()
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         bots[0].take_page(response=3)
+        # While the others choose, the waiting screen shows the player's pick.
+        advance_past_wait_pages(
+            bots[:1], stop_at="round_finished", timeout=WAIT_TIMEOUT
+        )
+        assert "You picked 3." in bots[0].current_page_text
         bots[1].take_page(response=3)
         bots[2].take_page(response=4)
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)

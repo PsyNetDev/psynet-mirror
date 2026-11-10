@@ -680,6 +680,7 @@ class _BarrierHoldPage(_TimelineHoldPage):
             content=barrier.content,
             message_kind="barrier" if barrier.content is None else None,
             on_timeout=barrier.handle_max_wait_timeout,
+            waiting_screen=barrier.waiting_screen,
         )
 
     @property
@@ -882,9 +883,11 @@ class Barrier(EltCollection):
 
     waiting_logic
         Either a single timeline element or a list of timeline elements (created by ``join``) that is to be displayed
-        to the participant while they are waiting at the barrier. If left at the
-        default value of ``None``, the current page remains visible beneath a
-        lightweight waiting indicator.
+        to the participant while they are waiting at the barrier. Use it to
+        give participants something to do while they wait, such as filler
+        trials, and ``waiting_screen`` to show them something. If left at the
+        default value of ``None``, the participant sees ``waiting_screen``,
+        or their current page beneath a lightweight waiting indicator.
 
     waiting_logic_expected_repetitions
         Expected repetitions for explicit ``waiting_logic``. For a default
@@ -923,6 +926,24 @@ class Barrier(EltCollection):
         Return :func:`hold_message` to set the progress
         line under the message yourself.
 
+    waiting_screen
+        What to show in place of the current page while the participant
+        waits: a prompt, text or HTML (shown without a Next button), or a
+        :class:`~psynet.modular_page.ModularPage` that nothing submits, for
+        example with ``NullControl(show_next_button=False)``. Pass a
+        module-level function ``waiting_screen(participant)`` to show each
+        participant their own screen. It runs on each request (a page load
+        or a check for the release), sometimes more than once, so base it on
+        the participant's state
+        rather than on chance. Returning ``None`` keeps the current page, as
+        omitting ``waiting_screen`` does; if that page is another barrier's
+        waiting screen, a plain waiting page replaces it. The ``content`` message still shows
+        on top. A page with a Next button, push buttons or ``auto_advance``,
+        or one that needs a full page reload (for
+        example deprecated ``js_links``) while
+        ``inplace_timeline_transitions`` is on, raises ``ValueError`` when
+        it is shown. Only used when ``waiting_logic`` is omitted.
+
     release_grace
         Seconds a participant on a ``waiting_logic`` page has to finish it
         once they are released; the page then ends without an answer,
@@ -930,6 +951,9 @@ class Barrier(EltCollection):
         ``None`` lets each waiting page run to its end. Pages inside trials
         always run to their end. Default: 3 seconds.
     """
+
+    # Reconstructed barriers skip ``__init__`` and never render a hold page.
+    waiting_screen = None
 
     def __init__(
         self,
@@ -941,12 +965,14 @@ class Barrier(EltCollection):
         expected_wait=None,
         content=None,
         release_grace: Optional[float] = 3,
+        waiting_screen=None,
     ):
         self.id = id_
         self.max_wait_time = max_wait_time
         self.fix_time_credit = fix_time_credit
         self.waiting_logic_expected_repetitions = waiting_logic_expected_repetitions
         self.content = content
+        self.waiting_screen = waiting_screen
         self._uses_timeline_hold = waiting_logic is None
         if waiting_logic is not None and expected_wait is not None:
             raise ValueError(
@@ -954,6 +980,10 @@ class Barrier(EltCollection):
             )
         if waiting_logic is not None and content is not None:
             raise ValueError("content only applies when waiting_logic is omitted.")
+        if waiting_logic is not None and waiting_screen is not None:
+            raise ValueError(
+                "waiting_screen only applies when waiting_logic is omitted."
+            )
         self.expected_wait = (
             0.5 * waiting_logic_expected_repetitions
             if expected_wait is None
@@ -1413,8 +1443,9 @@ class GroupBarrier(Barrier):
 
     waiting_logic
         Either a single timeline element or a list of timeline elements (created by ``join``) that is to be displayed
-        to the participant while they are waiting at the barrier. If left at
-        ``None``, the current page remains visible beneath a lightweight
+        to the participant while they are waiting at the barrier, for
+        example filler trials. If left at ``None``, the participant sees
+        ``waiting_screen``, or their current page beneath a lightweight
         waiting indicator. Pass ``content`` to customize that indicator's
         message.
 
@@ -1493,6 +1524,9 @@ class GroupBarrier(Barrier):
 
     release_grace
         See :class:`Barrier`. Default: 3 seconds.
+
+    waiting_screen
+        See :class:`Barrier`.
 
     on_arrival_message
         Optional callable that returns copy for one recipient. It receives
@@ -1575,6 +1609,7 @@ class GroupBarrier(Barrier):
         on_arrival_message: Optional[Callable] = None,
         skip_if_not_in_group: Optional[bool] = None,
         release_grace: Optional[float] = 3,
+        waiting_screen=None,
     ):
         self._validate_max_wait_action(max_wait_action)
         max_wait_time = self._check_max_wait_time(
@@ -1589,6 +1624,7 @@ class GroupBarrier(Barrier):
             expected_wait=expected_wait,
             content=content,
             release_grace=release_grace,
+            waiting_screen=waiting_screen,
         )
         self.max_wait_action = max_wait_action
         self.group_type = group_type
@@ -1942,8 +1978,9 @@ class Grouper(Barrier):
 
     waiting_logic
         Either a single timeline element or a list of timeline elements (created by ``join``) that is to be displayed
-        to the participant while they are waiting at the barrier. If left at
-        ``None``, the current page remains visible beneath a lightweight
+        to the participant while they are waiting at the barrier, for
+        example filler trials. If left at ``None``, the participant sees
+        ``waiting_screen``, or their current page beneath a lightweight
         waiting indicator.
 
     waiting_logic_expected_repetitions
@@ -1986,6 +2023,9 @@ class Grouper(Barrier):
     release_grace
         See :class:`Barrier`. Default: 3 seconds.
 
+    waiting_screen
+        See :class:`Barrier`.
+
     """
 
     def __init__(
@@ -2000,6 +2040,7 @@ class Grouper(Barrier):
         fix_time_credit=False,
         content=None,
         release_grace: Optional[float] = 3,
+        waiting_screen=None,
     ):
         if not id_:
             id_ = f"{group_type}_grouper"
@@ -2012,6 +2053,7 @@ class Grouper(Barrier):
             fix_time_credit=fix_time_credit,
             content=content,
             release_grace=release_grace,
+            waiting_screen=waiting_screen,
         )
         self.group_type = group_type
         self.fail_participants_below_min_size = fail_participants_below_min_size

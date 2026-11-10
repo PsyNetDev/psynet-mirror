@@ -17,7 +17,8 @@ Forming groups
 
 :class:`~psynet.sync.SimpleGrouper` waits until enough participants are
 waiting, then randomly splits them into groups. Participants stay on their
-current page, under a waiting indicator, until their group is formed.
+current page, under a waiting indicator, until their group is formed, unless
+the grouper has a ``waiting_screen`` (see below).
 
 ``group_type``
     A label for the groups. Barriers and trial makers refer to the groups by
@@ -339,6 +340,41 @@ or to leave it out:
         )
 
     GroupBarrier(id_="chosen", group_type="room", content=waiting_text)
+
+By default the participant's last page stays on screen, greyed out, while
+they wait. To show something else instead, pass ``waiting_screen``; to give
+them something to do, such as filler trials, pass ``waiting_logic``
+instead. A waiting screen can be text,
+a prompt, or a :class:`~psynet.modular_page.ModularPage` without a Next
+button (``NullControl(show_next_button=False)``), or a module-level
+function of the participant that returns one of these, or ``None`` to keep
+the last page. The participant can't submit a waiting screen, so a page
+with a Next button, push buttons or ``auto_advance`` raises an error; use
+a control that doesn't submit, such as ``NullControl``. Groupers take ``waiting_screen`` too,
+for example to replace the instructions while a team forms. A barrier
+without a waiting screen (or one whose function returns ``None``) that
+follows another barrier's waiting screen shows a plain waiting page, since
+the last page is no longer on screen. In the following example, the
+participant's own choice replaces the buttons they chose it with.
+``show_progress=False`` hides the answer ticks, which would otherwise
+also tick a partner who reached the barrier because their page timed out:
+
+.. code-block:: python
+
+    def your_choice(participant):
+        return GroupPrompt(
+            f"You offer {participant.var.decision} coins.",
+            participant=participant,
+            group_type="pair",
+            show_progress=False,
+        )
+
+    GroupBarrier(
+        id_="decided",
+        group_type="pair",
+        content="Waiting for your partner…",
+        waiting_screen=your_choice,
+    )
 
 Showing the group
 ~~~~~~~~~~~~~~~~~

@@ -11,13 +11,11 @@ const SOURCE = fs.readFileSync(
 );
 
 function extractFunction(name) {
-  const start = SOURCE.indexOf(`psynet.${name} = function`);
-  assert.notEqual(start, -1, `missing psynet.${name}`);
-  const match = SOURCE.slice(start).match(
-    new RegExp(`psynet\\.${name} = function[\\s\\S]*?\\n    \\};`)
+  const match = SOURCE.match(
+    new RegExp(`psynet\\.${name} = (async )?function[\\s\\S]*?\\n    \\};`)
   );
   assert.ok(match, `could not extract psynet.${name}`);
-  return match[0].replace(`psynet.${name} = function`, `function ${name}`);
+  return match[0].replace(`psynet.${name} = `, "").replace("function", `function ${name}`);
 }
 
 function createDom({ commentDisabled = false } = {}) {
@@ -183,6 +181,76 @@ describe("timeline hold overlay reuse", () => {
   });
 });
 
+describe("approved response into a waiting screen", () => {
+  function loadHandler(shownHoldUuid, shownReplacesPage = true) {
+    const calls = [];
+    const record = (name) => async () => calls.push(name);
+    const psynet = {
+      log: { debug() {} },
+      page: {
+        attributes: {
+          timeline_hold: { page_uuid: shownHoldUuid, replaces_page: shownReplacesPage },
+        },
+      },
+      isSameSessionPageUpdate: () => false,
+      requiresFullPageReloadTransition: () => false,
+      endPageRecording: record("endPageRecording"),
+      updatePageForTimelineHold: record("updatePageForTimelineHold"),
+      beginTimelineHold: record("beginTimelineHold"),
+      stopTimelineHold: record("stopTimelineHold"),
+      clearSubmissionControlState: record("clearSubmissionControlState"),
+      requireTimelineFragmentPayload: (response) => response.timeline_fragment,
+      loadNextTimelinePageFromResponse: record("loadNextTimelinePageFromResponse"),
+      loadNextTimelinePageWithReload: record("loadNextTimelinePageWithReload"),
+      timelineHold: {},
+    };
+    const templateData = { flags: { inplaceTimelineTransitions: true } };
+    const handle = new Function(
+      "psynet",
+      "psynetTemplateData",
+      `${extractFunction("handleApprovedResponse")}; return handleApprovedResponse;`
+    )(psynet, templateData);
+    return { handle, calls };
+  }
+
+  function holdResponse(pageUuid, replacesPage = true) {
+    const hold = { page_uuid: pageUuid, replaces_page: replacesPage };
+    return {
+      page: { attributes: { timeline_hold: hold } },
+      timeline_fragment: { page_uuid: pageUuid, html: "<div></div>" },
+    };
+  }
+
+  it("keeps waiting on the waiting screen it already shows", async () => {
+    const { handle, calls } = loadHandler("hold-1");
+    await handle(holdResponse("hold-1"));
+    assert.ok(calls.includes("beginTimelineHold"));
+    assert.ok(!calls.includes("loadNextTimelinePageFromResponse"));
+    assert.ok(!calls.includes("loadNextTimelinePageWithReload"));
+  });
+
+  it("renders the waiting screen of a different hold", async () => {
+    const { handle, calls } = loadHandler("hold-1");
+    await handle(holdResponse("hold-2"));
+    assert.ok(!calls.includes("beginTimelineHold"));
+    assert.ok(calls.includes("loadNextTimelinePageFromResponse"));
+  });
+
+  it("reloads into a hold without a waiting screen from a waiting screen", async () => {
+    const { handle, calls } = loadHandler("hold-1");
+    await handle(holdResponse("hold-2", false));
+    assert.ok(!calls.includes("beginTimelineHold"));
+    assert.ok(calls.includes("loadNextTimelinePageWithReload"));
+  });
+
+  it("keeps the participant's page under a hold without a waiting screen", async () => {
+    const { handle, calls } = loadHandler(undefined, false);
+    await handle(holdResponse("hold-2", false));
+    assert.ok(calls.includes("beginTimelineHold"));
+    assert.ok(!calls.includes("loadNextTimelinePageWithReload"));
+  });
+});
+
 it("ignores directed messages that are not hold wakes", () => {
   let options;
   const calls = [];
@@ -200,6 +268,29 @@ it("ignores directed messages that are not hold wakes", () => {
 
   options.onDirect({ type: "message", targets: [{ wake_token: "w", hold_message: "<b>" }] });
   assert.deepEqual(calls, []);
+});
+
+it("fetches who has arrived once a waiting screen's hold socket opens", () => {
+  let options;
+  const calls = [];
+  const psynet = {
+    fetchArrivalNotice: () => calls.push("fetch"),
+    resumeTimelineHold: () => calls.push("resume"),
+  };
+  const channel = { connect: (opts) => (options = opts) };
+  const connect = new Function(
+    "psynet",
+    "PsyNetWebSocketChannel",
+    `${extractFunction("_connectTimelineHoldSocket")}; return _connectTimelineHoldSocket;`
+  )(psynet, channel);
+  connect({ stopped: false, hold: { channel: "c", wake_token: "w", replaces_page: true } });
+  options.onOpen();
+  assert.deepEqual(calls, ["fetch", "resume"]);
+
+  calls.length = 0;
+  connect({ stopped: false, hold: { channel: "c", wake_token: "w", replaces_page: false } });
+  options.onOpen();
+  assert.deepEqual(calls, ["resume"]);
 });
 
 describe("timeline hold countdown", () => {

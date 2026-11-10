@@ -460,6 +460,56 @@ def test_timeline_hold_payload_is_omitted_without_a_record():
     assert page.timeline_hold_payload(participant) is None
 
 
+def _waiting_screen(participant):
+    return None if participant.var.keep_page else "You offered 5 coins."
+
+
+def _waiting_participant(keep_page):
+    return SimpleNamespace(
+        var=SimpleNamespace(keep_page=keep_page), module_state=None, page_uuid="a"
+    )
+
+
+def test_barrier_waiting_screen_replaces_the_page_unless_it_returns_none():
+    from psynet.modular_page import ModularPage, NullControl, PushButtonControl
+
+    def hold(waiting_screen):
+        return GroupBarrier(
+            "decided", group_type="pair", waiting_screen=waiting_screen
+        ).waiting_logic
+
+    screen = hold(_waiting_screen).waiting_screen_page(_waiting_participant(False))
+    assert isinstance(screen, ModularPage)
+    assert screen.prompt.text == "You offered 5 coins."
+    assert not screen.buttons
+    assert hold(_waiting_screen).waiting_screen_page(_waiting_participant(True)) is None
+    constant = hold("Getting the next round ready.")
+    assert constant.waiting_screen_page(_waiting_participant(False)).prompt.text == (
+        "Getting the next round ready."
+    )
+    page = ModularPage(
+        "markup", Markup("<b>Wait</b>"), NullControl(show_next_button=False)
+    )
+    assert hold(page).waiting_screen_page(_waiting_participant(False)).label == (
+        "markup"
+    )
+    with pytest.raises(ValueError, match="shows a Next button"):
+        hold(ModularPage("next", "Wait")).waiting_screen_page(
+            _waiting_participant(False)
+        )
+    with pytest.raises(ValueError, match="PushButtonControl that submits it"):
+        hold(
+            ModularPage("push", "Wait", PushButtonControl(["OK"]))
+        ).waiting_screen_page(_waiting_participant(False))
+    with pytest.raises(ValueError, match="waiting_screen only applies"):
+        GroupBarrier(
+            "decided",
+            group_type="pair",
+            waiting_logic=WaitPage(1),
+            waiting_screen=_waiting_screen,
+        )
+
+
 def test_compose_hold_overlay_html_always_emits_the_title_span():
     assert (
         compose_hold_overlay_html("Waiting for your partner")
@@ -469,6 +519,9 @@ def test_compose_hold_overlay_html_always_emits_the_title_span():
     assert 'class="psynet-timeline-hold-title"' in html
     assert 'class="psynet-timeline-hold-progress"' in html
     assert "1 of 3 not ready yet" in html
+    assert compose_hold_overlay_html("") == (
+        '<span class="psynet-timeline-hold-title"></span>'
+    )
     assert "progress" not in compose_hold_overlay_html(
         hold_message("Waiting for your group"), "1 of 3 not ready yet"
     )
