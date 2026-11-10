@@ -138,8 +138,9 @@ bots play against each other and check each result:
             assert "You chose paper, your partner chose rock. You won!" in bots[1].current_page_text
 
 Each element of ``bots`` is a :class:`~psynet.bot.BotDriver`. Its methods and
-properties, such as ``take_page``, ``current_page_label`` and
-``current_page_text``, are documented under
+properties, such as ``take_page``, ``current_page_label``,
+``current_page_text`` and ``is_waiting`` (whether the bot is on a waiting
+page, for example at a barrier), are documented under
 :class:`~psynet.participant.ParticipantDriver`.
 
 Bots that fail a prescreener

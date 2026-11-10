@@ -107,7 +107,9 @@ which the others then join. So put a ``GroupBarrier`` in each round,
 inside ``show_trial`` after the answer page, as in the one below: it
 keeps the members in step, and its release closes the round. A round
 without one never closes, so a latecomer can join it after the others
-have finished.
+have finished. In a module that a loop repeats, a member's first cue in
+the next run can also join the previous run's last round while it is open,
+so end each round there with a ``GroupBarrier`` that closes it.
 
 Each member's group membership records the round they last cued or
 skipped. A barrier that members reach in or after a round (in the trial,
