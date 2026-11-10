@@ -313,7 +313,7 @@ live don't show the notice, since the ticks say the same.
 
 ``content`` can also be a module-level function of the participant, so that
 members waiting at the same barrier see different messages, for example by
-role (it can also take ``seconds_left``; see :ref:`sync-countdown-messages`):
+role (it can also take ``seconds_left``; see :ref:`countdown messages <sync-countdown-messages>`):
 
 .. code-block:: python
 
