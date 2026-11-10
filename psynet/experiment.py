@@ -2019,17 +2019,25 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         os.environ["PASSTHROUGH_ERRORS"] = "True"
         self._check_static_spa_contracts()
 
-        if self.test_mode == "serial" or self.test_n_bots == 1:
-            self._test_experiment_serial()
-        elif self.test_mode == "parallel":
-            _run_parallel_test(
-                n_bots=self.test_n_bots,
-                time_factor=self.test_time_factor,
-                stagger_interval_s=self.test_parallel_stagger_interval_s,
-                check_bots=self.test_check_bots,
-            )
-        else:
-            raise ValueError(f"Invalid test mode: {self.test_mode}")
+        try:
+            if self.test_mode == "serial" or self.test_n_bots == 1:
+                self._test_experiment_serial()
+            elif self.test_mode == "parallel":
+                _run_parallel_test(
+                    n_bots=self.test_n_bots,
+                    time_factor=self.test_time_factor,
+                    stagger_interval_s=self.test_parallel_stagger_interval_s,
+                    check_bots=self.test_check_bots,
+                )
+            else:
+                raise ValueError(f"Invalid test mode: {self.test_mode}")
+        finally:
+            # Bots stuck at diverged barriers fail on max_wait_time; the
+            # divergence the poller recorded says why.
+            from .sync import _raise_recorded_divergences
+
+            with transaction():
+                _raise_recorded_divergences()
 
         self._report_request_statistics()
         self._report_async_job_cpu_time()
