@@ -288,7 +288,8 @@
         let jsSynthState = psynet.getJsSynthState();
         jsSynthState.stimulus = stimulus;
         jsSynthState.options = options;
-        psynet.media.requireAudio();
+        // Tone.js plays through an AudioContext of its own.
+        psynet.media.requireAudio(Tone.getContext().rawContext);
 
         jsSynthState.defaultParams = { // Default parameters to use if not otherwise specified by backend.
             "attack": 0.2, // Attack phase duration in seconds

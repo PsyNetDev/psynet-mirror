@@ -570,6 +570,13 @@ async function waitForNextEnabled(page, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await assertNoBackendError(page);
+    // Pages that use audio ask to turn on sound when the browser blocks it;
+    // click as a participant would.
+    const soundButton = page.locator("#resume-button");
+    if (await soundButton.isVisible().catch(() => false)) {
+      await soundButton.click().catch(() => {});
+      continue;
+    }
     const isEnabled = await page
       .evaluate(() => {
         const btn = document.getElementById("next-button");

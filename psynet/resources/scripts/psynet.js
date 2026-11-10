@@ -532,9 +532,9 @@
       psynet.pageLoaded = false;
       psynet.nextPagePending = false;
       psynet.media.audioRequired = false;
+      psynet.media.otherAudioContexts = [];
       // A sound dialog left open by the previous page belongs to it.
-      $("#resume-modal").css("display", "none");
-      $("#resume-button").off("click");
+      psynet.media.cancelAudioPrompt();
       psynet.clearStageResponseHandler();
       psynet.response.staged = {
         rawAnswer: null,
@@ -2332,11 +2332,28 @@
     // Page code that plays or records audio without an audio media request
     // (through psynet.media.audioContext, Tone.js or an unmuted <video>) calls
     // this before trialConstruct, so psynet.media.init() makes sure audio can
-    // start. Pages that preload audio need no call. resetPageState clears the
-    // flag between pages.
+    // start. Code with an AudioContext of its own, such as Tone.js, passes it
+    // so that it starts too. Pages that preload audio need no call.
+    // resetPageState clears both between pages.
     psynet.media.audioRequired = false;
-    psynet.media.requireAudio = function () {
+    psynet.media.otherAudioContexts = [];
+    psynet.media.requireAudio = function (context) {
       psynet.media.audioRequired = true;
+      if (context) {
+        psynet.media.otherAudioContexts.push(context);
+      }
+    };
+
+    let audioContexts = function () {
+      return [psynet.media.audioContext, ...psynet.media.otherAudioContexts];
+    };
+
+    let audioSuspended = function () {
+      return audioContexts().some((context) => context.state === "suspended");
+    };
+
+    let resumeAudio = function () {
+      return Promise.all(audioContexts().map((context) => context.resume()));
     };
 
     let pageNeedsAudio = function () {
@@ -2347,11 +2364,12 @@
     };
 
     // Browsers keep an AudioContext suspended until the participant interacts
-    // with the document. Firefox and Chrome then allow resume() at any time;
-    // Safari only inside the click handler itself, so a resume() that does not
-    // settle quickly is treated as refused. Audio can also start late, for
-    // example while the browser opens the audio output, so the dialog closes
-    // by itself once the context runs.
+    // with the document, unless their autoplay policy allows audio anyway.
+    // Firefox and Chrome then allow resume() at any time; Safari only inside
+    // the click handler itself, so a resume() that does not settle quickly is
+    // treated as refused. Audio can also start late, for example while the
+    // browser opens the audio output, so the dialog closes by itself once the
+    // context runs.
     const AUDIO_RESUME_WAIT_MS = 500;
 
     let waitForResume = function (resumed) {
@@ -2361,32 +2379,47 @@
       ]);
     };
 
+    // Closes the dialog of a page that is being replaced, without letting
+    // that page continue.
+    psynet.media.cancelAudioPrompt = function () {};
+
     let askUserToEnableAudio = function () {
-      let context = psynet.media.audioContext;
+      let contexts = audioContexts();
       return new Promise((resolve) => {
         let modal = $("#resume-modal");
         let button = $("#resume-button");
-        let close = function () {
-          context.removeEventListener("statechange", closeWhenRunning);
+        let cancelled = false;
+        let hide = function () {
+          contexts.forEach((context) =>
+            context.removeEventListener("statechange", closeWhenRunning),
+          );
           button.off("click");
           modal.css("display", "none");
+        };
+        let close = function () {
+          if (cancelled) {
+            return;
+          }
+          hide();
           $("#js-psych").trigger("focus");
           resolve();
         };
+        psynet.media.cancelAudioPrompt = function () {
+          cancelled = true;
+          hide();
+        };
         let closeWhenRunning = function () {
-          if (context.state === "running") {
+          if (!audioSuspended()) {
             close();
           }
         };
-        context.addEventListener("statechange", closeWhenRunning);
+        contexts.forEach((context) =>
+          context.addEventListener("statechange", closeWhenRunning),
+        );
         modal.css("display", "block");
         button.one("click", async function () {
           // resume() must run synchronously inside the click for Safari.
-          // Tone.js keeps its own AudioContext, so resume that one too.
-          let resumed = context.resume();
-          if (window.Tone) {
-            Tone.start().catch(() => {});
-          }
+          let resumed = resumeAudio();
           modal.css("display", "none");
           await waitForResume(resumed);
           close();
@@ -2397,15 +2430,12 @@
 
     let ensureAudioRunning = async function () {
       psynet.media.initAudioContext();
-      let context = psynet.media.audioContext;
-      if (context.state !== "suspended") {
+      if (!audioSuspended()) {
         return;
       }
-      if (navigator.userActivation?.hasBeenActive !== false) {
-        await waitForResume(context.resume());
-      }
+      await waitForResume(resumeAudio());
       // Ask again if the browser still refuses after a click.
-      while (context.state === "suspended") {
+      while (audioSuspended()) {
         psynet.log.info(
           "The browser blocked audio until the participant clicks; " +
             "asking them to enable sound.",

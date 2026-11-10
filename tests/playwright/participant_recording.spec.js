@@ -50,15 +50,10 @@ function maxVolumeDb(file) {
   return Number(match[1]);
 }
 
-test("participant recording helper writes an MP4 with audio", { tag: "@both" }, async ({
-  context,
-  browserName
+// The helper records the page's audio with MediaRecorder.
+test("participant recording helper writes an MP4 with audio", { tag: ["@both", "@media"] }, async ({
+  context
 }, testInfo) => {
-  test.fail(
-    browserName === "webkit",
-    "Found with Dallinger#10095: on WebKit, the volume calibration page " +
-      "never enables Next."
-  );
   const absDir = path.resolve("demos/experiments/static_audio");
   const outPath = testInfo.outputPath("participant.mp4");
   const recording = await startParticipantRecording(context, {

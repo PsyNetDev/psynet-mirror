@@ -164,6 +164,13 @@ unmuted ``<video>``, should declare it in its page script, before
 
     psynet.media.requireAudio();
 
+Code that plays through an ``AudioContext`` of its own passes it, so that the
+participant's click starts it too:
+
+.. code-block:: javascript
+
+    psynet.media.requireAudio(myAudioContext);
+
 Measuring reaction time
 -----------------------
 
