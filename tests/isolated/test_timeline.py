@@ -727,7 +727,7 @@ def test_finalize_pending_hold_without_checks_relocks_the_participant(monkeypatc
         Experiment._finalize_pending_timeline_barriers(experiment, participant, hold)
     )
 
-    query.with_for_update.assert_called_once_with(of=Participant)
+    query.with_for_update.assert_called_once_with(of=Participant, nowait=False)
     experiment._advance_past_ready_holds.assert_called_once_with(participant, hold)
     assert returned_participant is participant
     assert returned_page is hold
@@ -790,7 +790,7 @@ def test_finalize_pending_ready_hold_does_not_prepare_before_relock(monkeypatch)
         "timeout",
         "prepare",
     ]
-    query.with_for_update.assert_called_once_with(of=Participant)
+    query.with_for_update.assert_called_once_with(of=Participant, nowait=False)
 
 
 def test_finalize_pending_skips_relock_when_the_page_is_not_a_hold(monkeypatch):
@@ -1053,7 +1053,7 @@ def test_finalize_pending_ready_hold_commits_before_arrival_checks(monkeypatch):
 
     Experiment._finalize_pending_timeline_barriers(experiment, participant, hold)
 
-    query.with_for_update.assert_called_once_with(of=Participant)
+    query.with_for_update.assert_called_once_with(of=Participant, nowait=False)
     assert captured["checks"] == ["instance-1"]
     assert captured["commits_before"] == ["commit"]
     assert captured["pre_render_before"] == 0

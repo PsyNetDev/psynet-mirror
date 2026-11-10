@@ -29,6 +29,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     desc,
+    select,
 )
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import relationship
@@ -396,6 +397,12 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         The server-owned :class:`~psynet.exit.ExitPlan` snapshot for this
         participant's terminal outcome.
 
+    group_removal_notice : dict or None
+        The progress-bar notice for a participant whom a
+        :class:`~psynet.sync.GroupBarrier` removed from their group, with the
+        ``page_uuid`` of the page it belongs to.
+        Should not be modified directly.
+
     answer : object
         The most recent answer submitted by the participant.
         Can take any form that can be automatically serialized to JSON.
@@ -471,6 +478,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     exit_plan = Column(PythonDict)
     complete = Column(Boolean)
     pending_redirect = Column(String)
+    group_removal_notice = Column(PythonDict)
     answer = Column(PythonObject)
     answer_accumulation_depth = Column(Integer)
     sequences = Column(PythonList)
@@ -1193,9 +1201,11 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 def get_participant(participant_id: int, for_update: bool = False) -> Participant:
     """
     Returns the participant with a given ID.
-    Warning: we recommend just using SQLAlchemy directly instead of using this function.
-    When doing so, use ``with_for_update().populate_existing()`` if you plan to update
-    this Participant object, that way the database row will be locked appropriately.
+    For loads that don't lock, we recommend just using SQLAlchemy directly
+    instead of this function. If you plan to update this Participant object,
+    use ``for_update=True`` here rather than a plain ``with_for_update()``
+    query: one that waits for the lock can join the participant's current
+    trial as it was before the wait.
 
     Parameters
     ----------
@@ -1214,10 +1224,78 @@ def get_participant(participant_id: int, for_update: bool = False) -> Participan
     :class:`psynet.participant.Participant`
         The requested participant.
     """
-    query = Participant.query.filter_by(id=participant_id)
+    criterion = Participant.id == participant_id
     if for_update:
-        query = query.with_for_update(of=Participant).populate_existing()
-    return query.one()
+        return _load_participant_for_update(Participant.query, criterion).one()
+    return Participant.query.filter(criterion).one()
+
+
+def _lock_and_load_participant(query, participant_id, *, nowait=False):
+    """Lock participant ``participant_id`` and load it fresh through ``query``.
+
+    The by-id form of :func:`_load_participant_for_update`; see there for why
+    the lock comes first.
+
+    Parameters
+    ----------
+    query :
+        Unfiltered participant query, such as ``Participant.query``.
+    participant_id :
+        ID of the participant to lock.
+    nowait :
+        As in :func:`_load_participant_for_update`.
+
+    Returns
+    -------
+    Participant or None
+        The locked participant, or ``None`` if ``query`` has no such row.
+    """
+    return _lock_for_load(query, Participant.id == participant_id, nowait).get(
+        participant_id
+    )
+
+
+def _load_participant_for_update(query, criterion, *, nowait=False):
+    """Return ``query`` filtered by ``criterion``, locked and reloaded fresh.
+
+    Use this, or :func:`_lock_and_load_participant` for loads by id, for every
+    locking participant load. ``Participant.query`` joins
+    ``_current_trial``, and under READ COMMITTED a statement that waited for
+    a row lock re-reads only the rows it locks; the trial it joins still
+    comes from before the wait. A barrier release writes the waiters' trials
+    while it holds their rows, so a load that queued behind it would see
+    those trials as they were before the release. Unless ``nowait`` is set,
+    this therefore first locks the bare row in a statement of its own, so
+    the load itself never waits.
+
+    Parameters
+    ----------
+    query :
+        Unfiltered participant query, such as ``Participant.query``.
+    criterion :
+        SQLAlchemy criterion selecting the participant row(s) to load.
+    nowait :
+        Fail at once with ``LockNotAvailable`` instead of waiting. A load
+        that cannot wait cannot read stale rows, so it skips the extra lock.
+
+    Returns
+    -------
+    sqlalchemy.orm.Query
+        ``query`` filtered by ``criterion``, with ``FOR UPDATE OF
+        participant`` and ``populate_existing``.
+    """
+    return _lock_for_load(query, criterion, nowait).filter(criterion)
+
+
+def _lock_for_load(query, criterion, nowait):
+    """Lock the rows matching ``criterion`` and set ``query`` to load them.
+
+    Leaves ``query`` unfiltered so :meth:`~sqlalchemy.orm.Query.get` still
+    works on it.
+    """
+    if not nowait:
+        query.session.execute(select(Participant.id).where(criterion).with_for_update())
+    return query.with_for_update(of=Participant, nowait=nowait).populate_existing()
 
 
 class DriverStopped(Exception):
