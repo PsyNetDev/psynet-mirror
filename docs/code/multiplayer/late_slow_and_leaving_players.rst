@@ -14,12 +14,16 @@ All the cases share one design, a fixed group answering a loop of
 questions, unless the case says otherwise. Each question is one round: a
 cued trial whose ``show_trial`` ends with a :class:`~psynet.sync.GroupBarrier`,
 so the barrier waits for every member of the group and its release closes
-the round (see :ref:`rounds-cued-trials`):
+the round (see :ref:`rounds-cued-trials`). With ``accumulate_answers``,
+``trial.answer`` keeps each page's answer under its label, so the answer of
+the estimate page, labelled ``"estimate"``, stays in
+``trial.answer["estimate"]`` after the revise page:
 
 .. code-block:: python
 
     class EstimateTrial(Trial):
         sync_group_type = "team"
+        accumulate_answers = True
 
         def show_trial(self, experiment, participant):
             return join(
@@ -77,8 +81,8 @@ study.
   ``"stayed"``.
 - **The group falls below its quorum** (a pair): it is dissolved. Ann is
   released without ``on_release`` running, her trial records
-  ``"group_dissolved"``, so ``show_feedback`` can score her answer from
-  ``trial.answer`` (see :ref:`round outcomes <sync-round-outcome>`), and her next page says "Your
+  ``"group_dissolved"``, so ``show_feedback`` can score her estimate from
+  ``trial.answer["estimate"]`` (see :ref:`round outcomes <sync-round-outcome>`), and her next page says "Your
   partner is no longer in your group. Please continue." She plays the rest
   of the timeline without a group (see :ref:`sync-leaving-a-group`).
 
@@ -192,16 +196,18 @@ below its quorum of three and is dissolved:
   continue." (in a pair: "Your partner is no longer in your group. Please
   continue.").
 
-Both answers stay on their trials, so ``show_feedback``, an export or
-``on_finalized`` can score the round from ``node.all_trials`` (see
-:ref:`round outcomes <sync-round-outcome>`).
+Both estimates stay on their trials, in ``trial.answer["estimate"]``, so an
+export or ``on_finalized`` can score the round from ``node.all_trials`` (see
+:ref:`round outcomes <sync-round-outcome>`). Ann's ``show_feedback`` may run
+before Ben has submitted his.
 
 Ben's trial runs to its end, so he still sees the revise page. To skip the
 rest of the round once he has left, wrap its steps in ``join(...,
 stop_if=...)`` (see :ref:`sync-leaving-a-group`).
 
 Checked by ``test_case_a_group_dissolves_under_a_member_on_a_round_page``
-in ``tests/isolated/test_trial_cue_groups.py``.
+in ``tests/isolated/test_trial_cue_groups.py``, and the stored estimates by
+``test_a_dissolved_round_keeps_its_answers_and_outcomes``.
 
 Members end up at different barriers
 ------------------------------------

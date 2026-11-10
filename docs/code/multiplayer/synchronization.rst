@@ -370,17 +370,28 @@ the results it would have stored, so read them with ``.get``, which returns
 ``None`` when they aren't set: ``trial.var.get("score")`` for results saved on
 the trial, or ``participant.var.get("score")`` when there is no trial.
 
-Nothing runs when a group dissolves, but the round's results are still
-stored: each trial's ``answer`` holds what the player answered, the round's
-trials are in ``node.all_trials``, and each trial's ``sync_group_outcome`` is
+Nothing runs when a group dissolves, but with
+``below_quorum="continue_without_group"`` the members carry on and the
+round's results are still stored (with the default ``"fail"``, the members
+are failed and ``show_feedback`` doesn't run). Each trial's ``answer`` holds
+the player's latest answer, the round's trials are in ``node.all_trials``,
+and each trial's ``sync_group_outcome`` is
 ``"group_dissolved"`` for every member still in the group when it dissolved,
 waiting at the barrier or still on a page, unless the trial's pages had
 already ended with ``"stayed"`` (see :ref:`round outcomes <sync-round-outcome>`).
+If ``show_trial`` has pages after the barrier, set ``accumulate_answers =
+True`` on the trial class and read the answer given before the barrier by
+its page label, for example ``trial.answer["estimate"]``, so a later page
+doesn't replace it.
 Members who were waiting at the barrier pass it at once, and so do those
 still on an earlier page, such as the question itself. Code that needs the
 round's result, such as ``show_feedback``, an export or ``on_finalized``,
-computes it from those facts when ``on_release`` didn't run. A quiz can
-still score the last question for those who answered it:
+computes it from those facts when ``on_release`` didn't run. A partner who
+was still on the question page may not have answered yet when a member's
+``show_feedback`` runs, so a result that must be the same for the whole
+group belongs in the export, or in code that runs once every trial on the
+node is complete. A quiz can still score the last question for those who
+answered it:
 
 .. code-block:: python
 

@@ -8,12 +8,13 @@ from pathlib import Path
 
 import pytest
 from dallinger import db
+from flask import Flask
 from sqlalchemy import text
 
 from psynet.db import _set_transaction_lock_timeout
 from psynet.error import ErrorRecord
 from psynet.experiment import get_experiment
-from psynet.modular_page import ModularPage
+from psynet.modular_page import ModularPage, TextControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
@@ -27,7 +28,7 @@ from psynet.sync import (
     fail_on_group_divergence,
     leave_group,
 )
-from psynet.timeline import Module, Timeline
+from psynet.timeline import Module, Timeline, join
 from psynet.trial.chain import ChainNode
 from psynet.trial.main import GenericTrialNetwork, SyncGroupNode, Trial
 from psynet.trial.static import StaticNode, StaticTrialMaker
@@ -1182,32 +1183,59 @@ class TeamTrial(Trial):
     sync_group_type = "main"
 
 
+class EstimateTrial(Trial):
+    time_estimate = 1
+    sync_group_type = "main"
+    accumulate_answers = True
+
+    def show_trial(self, experiment, participant):
+        return join(
+            ModularPage("estimate", "Estimate", TextControl(), time_estimate=1),
+            GroupBarrier("submitted", group_type="main"),
+            ModularPage("revise", "Revise", TextControl(), time_estimate=1),
+        )
+
+
+def _submit(exp, participant, raw_answer):
+    with Flask(__name__).test_request_context("/response"):
+        exp.process_response(
+            participant.id, raw_answer, {}, {}, participant.page_uuid, "127.0.0.1"
+        )
+    db.session.commit()
+
+
 @in_consents_experiment
 def test_a_dissolved_round_keeps_its_answers_and_outcomes(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    (waiter, quitter), group = _sync_group_of(exp, db_session, 2)
+    (waiter, reader, quitter), group = _sync_group_of(exp, db_session, 3)
     group.below_quorum = "continue_without_group"
-    logic = TeamTrial.cue({})
-    for participant in (waiter, quitter):
-        logic[0].consume(exp, participant)
-    waiter.current_trial.answer = 7
-    db.session.commit()
-    barrier = GroupBarrier("team_done", group_type="main")
-    _arrive(exp, barrier, [waiter])
-
-    quitter.fail("returned")
-    db.session.commit()
+    original = exp.timeline
+    exp.timeline = Timeline(*EstimateTrial.cue({}), InfoPage("Done", time_estimate=1))
+    try:
+        for participant in (waiter, reader, quitter):
+            _json_timeline(exp, participant)
+        _submit(exp, waiter, "5")
+        quitter.fail("returned")
+        db.session.commit()
+        # The reader was on the estimate page; the revision doesn't replace it.
+        _submit(exp, reader, "3")
+        _submit(exp, reader, "4")
+    finally:
+        exp.timeline = original
 
     node = waiter.current_trial.node
     assert isinstance(node, SyncGroupNode)
     assert {
-        (t.participant_id, t.answer, t.sync_group_outcome) for t in node.all_trials
+        (t.participant_id, t.answer.get("estimate"), t.sync_group_outcome)
+        for t in node.all_trials
     } == {
-        (waiter.id, 7, "group_dissolved"),
+        (waiter.id, "5", "group_dissolved"),
+        (reader.id, "3", "group_dissolved"),
         (quitter.id, None, "left_experiment"),
     }
+    assert reader.current_trial.answer == {"estimate": "3", "revise": "4"}
 
 
 def _late_at_barrier(late_action):

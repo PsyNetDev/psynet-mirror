@@ -79,10 +79,14 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   for members who left before the release or whose group dissolved, so read
   what it stores with `trial.var.get("score")` (or `participant.var.get`),
   which returns `None` when it isn't set. Nothing runs when a group
-  dissolves, so where members still need a result (`show_feedback`, an
-  export or `on_finalized`), compute it from the stored answers:
-  `trial.answer` on each of `node.all_trials`, when their cued trial's
-  `sync_group_outcome == "group_dissolved"`. A trial whose pages
+  dissolves, so with `below_quorum="continue_without_group"`, when a
+  member's cued trial has `sync_group_outcome == "group_dissolved"`,
+  compute their result where it is needed (`show_feedback`, an export or
+  `on_finalized`) from every stored `trial.answer` on `node.all_trials`.
+  `trial.answer` is the trial's latest answer, so if `show_trial` has pages
+  after the barrier, set `accumulate_answers = True` and read the answer by
+  page label. A partner still on the question page may not have answered
+  yet when `show_feedback` runs. A trial whose pages
   already ended with `"stayed"` keeps it, so for a barrier after
   `show_trial` check `participant.sync_group_removal_reason(...)` instead.
 - Sort `sync_group.participants` by participant ID before deterministic role
