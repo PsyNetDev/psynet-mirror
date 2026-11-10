@@ -431,7 +431,10 @@ that request finishes, and that call includes every member waiting there. Each m
 there, such as one still answering the question or waiting at an earlier
 barrier without ``also_on_dissolve``, gets their own call when they reach
 the barrier, once their answer has arrived; barriers without
-``also_on_dissolve`` on the way don't use the call up. ``participants`` are
+``also_on_dissolve`` on the way don't use the call up. An error in
+``on_release`` is only logged in the call made as the group dissolves,
+since that can run in another member's request, such as one returning the
+study; in a member's own later call it raises, as at a release. ``participants`` are
 the members of the call, ``leader`` is ``None``, since a dissolved group has
 no leader, and ``participant`` is the first of ``participants``. ``node``
 and ``trials`` follow the same rule as for a release, from the members'

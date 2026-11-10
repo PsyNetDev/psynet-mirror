@@ -4439,14 +4439,13 @@ class SyncGroupNode(GenericTrialNode):
     def trial_of(self, participant) -> Optional["Trial"]:
         """Return the participant's trial in this round, or ``None`` if they have none.
 
-        Reads ``all_trials``, so the trial can be a failed one.
+        Reads ``all_trials``, so the trial can be a failed one. A participant
+        who cued two trial classes in the round gets the one cued first.
 
         Parameters
         ----------
         participant
             A :class:`~psynet.participant.Participant` or a participant ID.
-            A participant who cued two trial classes in the round gets the
-            one cued first.
         """
         participant_id = getattr(participant, "id", participant)
         return min(

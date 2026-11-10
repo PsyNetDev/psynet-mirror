@@ -54,6 +54,7 @@ from psynet.sync import (
     SimpleSyncGroup,
     SyncGroup,
     _advance_released_hold_waiters_after_commit,
+    _BarrierAuthorHookError,
     _check_and_skip_held_instance,
     _check_claimed_barrier_instance,
     _check_held_instance,
@@ -7401,6 +7402,38 @@ def test_also_on_dissolve_calls_on_release_once_for_each_member(
     answering.var.scored_at = None
     _pass_barrier(exp, barrier, answering)
     assert answering.var.get("scored_at") is None
+
+
+def _fail_on_dissolve(participants):
+    raise RuntimeError("scoring failed")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_late_also_on_dissolve_call_raises_only_in_the_member_s_own_request(
+    in_experiment_directory, db_session, caplog
+):
+    """The call made while dissolving in another's request is logged; the late call raises like a release."""
+    exp = get_experiment()
+    (waiter, answering, quitter), group = _sync_group_of(exp, db_session, 3)
+    group.below_quorum = "continue_without_group"
+    barrier = GroupBarrier(
+        id_="question_4",
+        group_type="main",
+        on_release=_fail_on_dissolve,
+        also_on_dissolve=True,
+    )
+    _arrive_at_group_barrier(exp, barrier, waiter)
+    _commit_barrier_arrivals()
+
+    with caplog.at_level("ERROR", logger="psynet"):
+        quitter.fail("returned")
+    db_session.commit()
+    assert "on_release failed for dissolved group" in caplog.text
+
+    with pytest.raises(_BarrierAuthorHookError):
+        _pass_barrier(exp, barrier, answering)
 
 
 def test_also_on_dissolve_needs_on_release():

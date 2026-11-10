@@ -5050,7 +5050,18 @@ def _run_on_dissolve(group, members, continuing):
             group_link.dissolution_round_node_id = None if node is None else node.id
     for barrier, participants in waiting.values():
         node = _barrier_round(group, participants, group_links)
-        _call_on_release_for_dissolved(barrier, group, participants, node)
+        try:
+            _call_on_release_for_dissolved(barrier, group, participants, node)
+        except Exception as err:
+            # Dissolving runs in other participants' requests, such as one
+            # returning the study, which must not fail because of this hook.
+            if is_transient_transaction_error(err):
+                raise
+            logger.exception(
+                "Barrier '%s' on_release failed for dissolved group %s.",
+                barrier.id,
+                group.id,
+            )
 
 
 def _call_on_release_after_dissolving(barrier, participant):
@@ -5060,16 +5071,19 @@ def _call_on_release_after_dissolving(barrier, participant):
     the run of the module (``ModuleState``) the member was in when the group
     dissolved; other barriers leave it for a later one. A current trial in a later round, played alone
     or in another group, uses the call up without making it. ``node`` is the
-    member's round stored when the group dissolved.
+    member's round stored when the group dissolved. The call runs in the
+    member's own request, so an error in ``on_release`` raises, as at a
+    release, instead of being logged.
     """
     from .trial.main import SyncGroupNode
 
+    if not barrier.also_on_dissolve:
+        return
     link = _latest_sync_group_link(participant, barrier.group_type)
     if (
         link is None
         or link.active
         or not link.dissolution_pending
-        or not barrier.also_on_dissolve
         or link.dissolution_module_state_id != _module_state_id(participant)
     ):
         return
@@ -5090,7 +5104,14 @@ def _call_on_release_after_dissolving(barrier, participant):
         # Members arriving at once take turns, each seeing what the others saved.
         _execute_advisory_xact_lock(db.session, key, wait=True)
         db.session.refresh(node)
-    _call_on_release_for_dissolved(barrier, group, [participant], node)
+    try:
+        _call_on_release_for_dissolved(barrier, group, [participant], node)
+    except Exception as err:
+        if is_transient_transaction_error(err):
+            raise
+        raise _BarrierAuthorHookError(
+            f"Barrier '{barrier.id}' on_release failed for dissolved group {group.id}."
+        ) from err
 
 
 def _call_on_release(barrier, group, participants, trials, node, left, dissolved):
@@ -5128,26 +5149,15 @@ def _call_on_release_for_dissolved(barrier, group, participants, node):
         )
         if participant.id not in dissolved
     ]
-    try:
-        _call_on_release(
-            barrier,
-            group,
-            participants,
-            _round_trials(participants, node),
-            node,
-            left,
-            dissolved=True,
-        )
-    except Exception as err:
-        # Dissolving runs in other participants' requests, such as one
-        # returning the study, which must not fail because of this hook.
-        if is_transient_transaction_error(err):
-            raise
-        logger.exception(
-            "Barrier '%s' on_release failed for dissolved group %s.",
-            barrier.id,
-            group.id,
-        )
+    _call_on_release(
+        barrier,
+        group,
+        participants,
+        _round_trials(participants, node),
+        node,
+        left,
+        dissolved=True,
+    )
 
 
 def _top_up_wait_over(group) -> bool:
