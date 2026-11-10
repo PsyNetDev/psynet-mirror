@@ -731,9 +731,9 @@ def test_a_closed_round_s_later_barrier_doesnt_wait_for_a_newcomer_yet_to_cue(
     (newcomer,) = _working_participants(exp, 1)
     pair.add_participant(newcomer)
 
-    feedback = GroupBarrier("feedback", group_type="pair")
-    _arrive(exp, feedback, cohort)
-    assert not any(feedback._participant_is_waiting(p) for p in cohort)
+    revealed = GroupBarrier("revealed", group_type="pair")
+    _arrive(exp, revealed, cohort)
+    assert not any(revealed._participant_is_waiting(p) for p in cohort)
 
 
 @in_consents_experiment
@@ -901,32 +901,92 @@ def test_a_barrier_after_the_loop_waits_for_a_skipper(
 
 
 @in_consents_experiment
-def test_a_group_barrier_waiting_for_a_member_in_a_round_warns_once(
-    in_experiment_directory, db_session, caplog
-):
-    exp = get_experiment()
+def _newcomer_in_round_0(exp, round_closed=False):
+    """Pair a cohort in round 0 of module ``rounds``, then add a newcomer starting the module."""
     cohort, _ = _paired(exp)
     pair = cohort[0].active_sync_groups["pair"]
-    (newcomer,) = _working_participants(exp, 1)
     module = Module("rounds", InfoPage("Hi", time_estimate=1))
     for participant in cohort:
         participant.start_module(module)
         _cue_round(exp, participant, 0)
-    submitted = GroupBarrier("submitted", group_type="pair")
-    _arrive(exp, submitted, cohort[:1])
+    if round_closed:
+        _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort)
+    (newcomer,) = _working_participants(exp, 1)
     pair.add_participant(newcomer)
     newcomer.start_module(module)
+    return cohort, newcomer, pair
+
+
+@pytest.mark.parametrize("round_closed", [False, True])
+@in_consents_experiment
+def test_a_group_barrier_waiting_for_a_member_in_a_round_warns_once(
+    in_experiment_directory, db_session, caplog, round_closed
+):
+    exp = get_experiment()
+    cohort, newcomer, pair = _newcomer_in_round_0(exp, round_closed)
+    in_round = GroupBarrier("revealed" if round_closed else "submitted", "pair")
+    _arrive(exp, in_round, cohort[:1])
 
     # "ready" starts each iteration, outside the trial, so it waits for the
-    # players, who wait in the round for the newcomer.
-    ready = GroupBarrier("ready", group_type="pair")
+    # player in the round, who (in an open round) waits for the newcomer.
+    ready = GroupBarrier("ready", group_type="pair", late_after=5)
     with caplog.at_level(logging.WARNING):
         _arrive(exp, ready, [newcomer])
-        ready.choose_who_to_release([newcomer])
+        for _ in range(2):
+            ready.choose_who_to_release([newcomer])
     assert ready._participant_is_waiting(newcomer)
     messages = [r.getMessage() for r in caplog.records]
     (warning,) = [m for m in messages if "show_trial" in m]
-    assert "'ready'" in warning and "'submitted'" in warning
+    assert "'ready'" in warning and f"'{in_round.id}'" in warning
+
+    # late_after on "ready" ends the wait.
+    _backdate_group(pair, seconds=10)
+    ready.check_waiting_participants([newcomer])
+    assert all(p.failed for p in cohort)
+
+
+@pytest.mark.parametrize("late_after", [None, 5])
+@in_consents_experiment
+def test_a_newcomer_at_a_barrier_sharing_the_round_s_id_passes_on_their_own(
+    in_experiment_directory, db_session, late_after
+):
+    exp = get_experiment()
+    cohort, newcomer, pair = _newcomer_in_round_0(exp)
+    sync = GroupBarrier("sync", group_type="pair", late_after=late_after)
+    _arrive(exp, sync, cohort[:1])
+    # The newcomer reaches "sync" outside the trial, at the iteration's start.
+    _arrive(exp, sync, [newcomer])
+    assert sync._participant_is_waiting(newcomer)
+    # Once both players wait in the round, the newcomer passes on their own.
+    _arrive(exp, sync, cohort[1:])
+    assert not sync._participant_is_waiting(newcomer)
+    assert all(sync._participant_is_waiting(p) for p in cohort)
+
+    # They then join the open round, whose "sync" waits for them.
+    _cue_round(exp, newcomer, 0)
+    _arrive(exp, sync, [newcomer])
+    assert not any(sync._participant_is_waiting(p) for p in [*cohort, newcomer])
+
+
+@in_consents_experiment
+def test_a_round_s_barrier_waits_for_members_at_an_earlier_round_s_with_the_same_id(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    for participant in cohort:
+        _cue_round(exp, participant, 0)
+    sync = GroupBarrier("sync", group_type="pair")
+    _arrive(exp, sync, cohort)
+    (newcomer,) = _working_participants(exp, 1)
+    cohort[0].active_sync_groups["pair"].add_participant(newcomer)
+    assert _cue_round(exp, newcomer, 0) is None
+    _cue_round(exp, newcomer, 1)
+    _arrive(exp, sync, [newcomer])
+    # The players reach round 0's "sync" again; round 1's waits for them.
+    _arrive(exp, sync, cohort)
+    assert not any(sync._participant_is_waiting(p) for p in cohort)
+    assert sync._participant_is_waiting(newcomer)
 
 
 @in_consents_experiment

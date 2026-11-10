@@ -128,8 +128,10 @@ of visit it is:
   round they are in, and ``on_release`` gets ``node=None``.
 
 Neither kind waits for a member who has finished the barrier's module, as
-when their loop ended earlier, and the two kinds never wait for each other,
-even at barriers with the same ID. Every release, except letting one
+when their loop ended earlier. A group visit doesn't wait for members
+waiting in a round visit of the same ID either, so a newcomer at an
+iteration-start barrier that reuses the round's ID passes on and then
+joins or skips the round. Every release, except letting one
 member go after ``max_wait_time``, is the group's pass: ``on_release`` runs,
 and the pass counts for ``left`` and ``late_after``. For example:
 
