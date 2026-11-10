@@ -30,6 +30,7 @@ Interpretation shortcuts:
 - `TypeError: sequence item 0: expected str instance, list found` in `Experiment.run_recruiter_checks` points to a PsyNet notifier combine/list bug.
 - `We found no assignment data for participant <id> with assignment ID <assignment_id> on Prolific!` should be cross-checked against the participant dashboard row for `status`, `failed`, `failed_reason`, and `failure_tags`.
 - `Prolific session not yet submitted (current status is 'ACTIVE')` during `approve_participant_submission` can be non-fatal if the worker continues to pay bonuses and later state is consistent.
+- `ERROR: could not obtain lock on row in relation "participant"` (SQLSTATE 55P03) in the app's PostgreSQL logs is expected in group experiments: a barrier check that finds a waiter's row locked defers and retries. Report it only if the `web` logs also show failed requests or stuck waiters (see `deploy/reference/troubleshooting`).
 - `Session idle in transaction!` warnings are worth noting, but are lower priority unless paired with deadlocks, stuck jobs, or failed requests.
 - Scanner-style 404s for random assets and manually probed invalid dashboard URLs are not PsyNet/Dallinger product failures.
 

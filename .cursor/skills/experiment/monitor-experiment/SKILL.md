@@ -67,7 +67,9 @@ Check participant flow:
 Check operational health:
 
 - app/server names match logs and deployment records;
-- no obvious error loop in logs;
+- no obvious error loop in logs (in group experiments, PostgreSQL's
+  `could not obtain lock on row` errors are expected; see
+  `deploy/reference/troubleshooting`);
 - participant counts move as expected;
 - trial, module, and network tables grow coherently;
 - assets are not missing from the deployed environment;

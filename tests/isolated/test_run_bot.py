@@ -54,6 +54,7 @@ class TestRunBot:
         assert status["page"]["label"] == "favourite_colour"
         assert status["page"]["time_estimate"] == 5
         assert status["page"]["is_timeline_hold"] is False
+        assert not bot.is_waiting
         assert status["page"]["bot_response"]["answer"] == "red"
         assert len(response_files) == 0
 

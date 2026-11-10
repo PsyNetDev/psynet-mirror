@@ -32,7 +32,11 @@ How bots answer
 ---------------
 
 By default, a bot gives a valid answer to each page, such as a random choice
-from the options or a number in the allowed range. The ``bot_response``
+from the options or a number in the allowed range. Most built-in controls
+submit these default answers as the browser would, so they pass through the
+page's and the control's ``format_answer`` and are saved with the same type as
+a participant's answer: a ``NumberControl`` bot answer is a number, and a
+``RatingControl`` bot answer is the rating itself. The ``bot_response``
 argument of a page or control overrides this, either with a fixed value or with a
 function called each time a bot reaches the page. The function can take any
 of these arguments, which PsyNet passes by name: ``bot`` (the
@@ -138,8 +142,9 @@ bots play against each other and check each result:
             assert "You chose paper, your partner chose rock. You won!" in bots[1].current_page_text
 
 Each element of ``bots`` is a :class:`~psynet.bot.BotDriver`. Its methods and
-properties, such as ``take_page``, ``current_page_label`` and
-``current_page_text``, are documented under
+properties, such as ``take_page``, ``current_page_label``,
+``current_page_text`` and ``is_waiting`` (whether the bot is on a waiting
+page, for example at a barrier), are documented under
 :class:`~psynet.participant.ParticipantDriver`.
 
 Bots that fail a prescreener
@@ -235,6 +240,11 @@ Other helpers ask about a bot's group or act in it:
   each bot while they still wait for each other, as players a
   :class:`~psynet.sync.Regrouper` keeps pairing do: one bot run to the end
   alone would wait at the next barrier for the others.
+- :func:`~psynet.bot.regroup_now` makes a
+  :class:`~psynet.sync.Regrouper` split the bots' pools as its ``deadline``
+  or next ``every`` tick would, then advances them, so the test doesn't
+  wait for it, for example ``regroup_now(bots[:3], pairing)`` to start a
+  round without a fourth player who is still reading their results.
 
 When several groups play in one test, finish one group's story before driving
 the next: a barrier's ``late_after`` clock keeps running for a group while the

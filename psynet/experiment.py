@@ -128,6 +128,8 @@ from .participant import (
     BONUS_STATUS_UNCONFIRMED,
     NO_BONUS_ATTEMPT_RESULT,
     Participant,
+    _load_participant_for_update,
+    _lock_and_load_participant,
     bonus_is_settled,
     bonus_needs_review,
     bonus_transfer_already_claimed,
@@ -167,8 +169,10 @@ from .timeline import (
     Response,
     Timeline,
     WebSocketElt,
+    _ending_released_pass,
     _is_timeline_hold,
     _timeline_step_name,
+    _trial_owning_page,
     new_page_uuid,
 )
 from .translation.check import check_translations
@@ -940,6 +944,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         and refuses to run on apps without it. Setting it yourself declares
         that the app's data may be deleted.
         Default: ``False``.
+
+    performance_test_local_packages : ``str``
+        The packages, ``psynet`` and/or ``dallinger`` separated by commas, that
+        ``psynet performance-test ssh`` built into the app's image from local
+        checkouts (``--use-local-psynet``, ``--use-local-dallinger``). It sets
+        this when it deploys the app, and later updates of the app build them
+        in again. Don't set it yourself.
+        Default: unset.
 
 
 
@@ -4235,11 +4247,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if timeline_hold_resume:
             participant = query.populate_existing().get(participant_id)
         else:
-            participant = (
-                query.with_for_update(of=Participant)
-                .populate_existing()
-                .get(participant_id)
-            )
+            participant = _lock_and_load_participant(query, participant_id)
         if participant is None:
             return ResponseResult(
                 payload={"submission": "rejected"},
@@ -4274,11 +4282,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 still_waiting = self._unready_hold_resume_result(participant, page_uuid)
                 if still_waiting is not None:
                     return still_waiting
-                participant = (
-                    self._participant_request_query()
-                    .with_for_update(of=Participant, nowait=True)
-                    .populate_existing()
-                    .get(participant_id)
+                participant = _lock_and_load_participant(
+                    self._participant_request_query(), participant_id, nowait=True
                 )
             from .media_upload import _expire_participant_recordings
 
@@ -4355,16 +4360,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     page=page,
                 )
             if interrupted:
-                from .sync import released_waiting_barrier
+                from .sync import _end_waiting_page, released_waiting_barrier
 
-                if released_waiting_barrier(event, participant) is None:
+                released = released_waiting_barrier(event, participant)
+                if released is None:
                     return ResponseResult(
                         payload={"submission": "rejected", "message": ""}
                     )
                 Experiment._record_interrupted_response(event, participant, metadata)
+                _end_waiting_page(participant)
                 participant.inc_time_credit(event.time_estimate)
                 participant.inc_progress(event.time_estimate)
-                self.timeline.advance_page(self, participant)
+                with _ending_released_pass(released.id):
+                    self.timeline.advance_page(self, participant)
                 page = self._advance_past_ready_holds(
                     participant, self.timeline.get_current_elt(self, participant)
                 )
@@ -4399,17 +4407,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     client_ip_address=client_ip_address,
                     answer=answer,
                 )
-                if (response.metadata or {}).get("time_limit_reached") is True:
+                # Time-outs skip ``validate``, but an answer from the browser
+                # must still be one of the page's choices.
+                timed_out = (response.metadata or {}).get("time_limit_reached") is True
+                if timed_out and getattr(response, "_server_time_limit_answer", False):
                     validation = None
                 else:
-                    validation = event.validate(
-                        response=response,
-                        answer=response.answer,
-                        raw_answer=raw_answer,
-                        participant=participant,
-                        experiment=self,
-                        page=event,
-                    )
+                    validation = event._reject_impossible_answer(response.answer)
+                    if validation is None and not timed_out:
+                        validation = event.validate(
+                            response=response,
+                            answer=response.answer,
+                            raw_answer=raw_answer,
+                            participant=participant,
+                            experiment=self,
+                            page=event,
+                        )
                 if isinstance(validation, str):
                     validation = FailedValidation(message=validation)
 
@@ -4482,26 +4495,37 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         A ``while_loop`` only checks its condition before each pass, so the
         pages left in the current pass would otherwise each show briefly
-        and then be interrupted. Skipped pages were never seen, so they get
-        no response, time credit or progress.
+        and then be interrupted. Instead the participant is advanced through
+        the rest of the pass without seeing it, until they leave the
+        barrier's waiting loop. Each ``while_loop`` in the pass ends at its
+        next check, because its condition may wait for answers that skipped
+        pages never give. Code blocks, ``for_loop`` iterations and the ends
+        of modules, loops and fixed time credit run as usual. Skipped pages
+        get no response, time credit or progress, and the trial owning each
+        page, including trials created during the walk, is failed.
+        ``participant.answer`` is marked as not fresh, as after an interrupt.
         """
         from .sync import (
-            _MAX_BARRIER_WALK_PASSES,
-            _barrier_walk_budget,
+            _MAX_RELEASE_WALK_STEPS,
+            _end_waiting_page,
             released_waiting_barrier,
         )
 
-        for can_work in _barrier_walk_budget():
+        participant.answer_is_fresh = False
+        for step in range(_MAX_RELEASE_WALK_STEPS + 1):
             page = self.timeline.get_current_elt(self, participant)
             released = released_waiting_barrier(page, participant)
             if released is None or released.id != barrier.id:
                 return page
-            if not can_work:
+            if step == _MAX_RELEASE_WALK_STEPS:
                 break
-            self.timeline.advance_page(self, participant)
+            _end_waiting_page(participant)
+            with _ending_released_pass(barrier.id):
+                self.timeline.advance_page(self, participant)
         raise RuntimeError(
-            f"Skipping the waiting pages of barrier '{barrier.id}' did not settle "
-            f"after {_MAX_BARRIER_WALK_PASSES} steps."
+            f"Skipping the waiting pages of barrier '{barrier.id}' did not leave "
+            f"its waiting loop after {_MAX_RELEASE_WALK_STEPS} pages; is there "
+            "a very long for_loop or sequence in waiting_logic?"
         )
 
     @staticmethod
@@ -4512,11 +4536,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         not updated, but is marked as not fresh.
         """
         participant.answer_is_fresh = False
+        trial = _trial_owning_page(participant)
         response = Response(
             participant=participant,
             label=page.label,
             page_type=type(page).__name__,
+            trial=trial,
         )
+        if trial is not None:
+            trial.response = response
         response.answer = None
         # Only the server may say that a time limit ran out.
         metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
@@ -4653,8 +4681,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         the lock stops other sessions from moving the cursor, so ``page`` is
         still the live hold when it is not ready. Consecutive holds can share
         a ``hold_id`` (every ``wait_while`` does), so an id is not a visit
-        identity. After the last allowed skip, this walk observes the landing
-        page so settling on the cap still succeeds.
+        identity. The rest of a released barrier's waiting pass counts as one
+        step, so after a nested barrier's pass the enclosing barrier's pass,
+        if also released, is skipped as well. After the last allowed skip,
+        this walk observes the landing page so settling on the cap still
+        succeeds.
         """
         from .sync import (
             _MAX_BARRIER_WALK_PASSES,
@@ -4666,7 +4697,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         for can_work in _barrier_walk_budget():
             released = released_waiting_barrier(page, participant)
             if released is not None:
+                if not can_work:
+                    break
                 page = self._skip_released_waiting_pages(participant, released)
+                continue
             if not _is_timeline_hold(page):
                 return page
             if not page.prepare_resume_if_ready(self, participant):
@@ -5135,6 +5169,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             config.register("docker_ssh_monitoring_path", str)
         config.register("check_participant_opened_devtools", bool)
         config.register("performance_test_app", bool)
+        config.register("performance_test_local_packages", str)
         config.register("debug_ssh_app", bool)
         config.register("currency", str)
         config.register("default_translator", str)
@@ -5541,6 +5576,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
         return columns
 
+    def table_data(self, start, length, table="participant", **kwargs):
+        """Return a page of the Database tab's rows, adding each participant's pseudonym."""
+        data = super().table_data(start, length, table=table, **kwargs)
+        if table == "participant" and data["data"]:
+            from .participant import Participant
+
+            ids = [row["id"] for row in data["data"]]
+            participants = Participant.query.filter(Participant.id.in_(ids))
+            names = {p.id: _dashboard_pseudonym_name(p) for p in participants}
+            for row in data["data"]:
+                row["pseudonym"] = names.get(row["id"])
+        return data
+
     @dashboard_tab("Participants")
     @classmethod
     def dashboard_participants(cls):
@@ -5686,10 +5734,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Pass ``for_update=True`` to lock the participant row for the rest of
         the transaction.
         """
-        query = cls._participant_request_query().filter_by(unique_id=unique_id)
+        query = cls._participant_request_query()
+        criterion = Participant.unique_id == unique_id
         if for_update:
-            query = query.with_for_update(of=Participant).populate_existing()
-        return query.one()
+            return _load_participant_for_update(query, criterion).one()
+        return query.filter(criterion).one()
 
     @classmethod
     def get_participant_from_assignment_id(
@@ -5715,10 +5764,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         The corresponding participant object.
         """
-        query = Participant.query.filter_by(assignment_id=assignment_id)
+        criterion = Participant.assignment_id == assignment_id
         if for_update:
-            query = query.with_for_update(of=Participant).populate_existing()
-        return query.one()
+            return _load_participant_for_update(Participant.query, criterion).one()
+        return Participant.query.filter(criterion).one()
 
     @classmethod
     def get_participant_from_participant_id(
@@ -5746,10 +5795,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         The corresponding participant object.
         """
         participant_id = int(participant_id)
-        query = Participant.query.filter_by(id=participant_id)
+        criterion = Participant.id == participant_id
         if for_update:
-            query = query.with_for_update(of=Participant).populate_existing()
-        return query.one()
+            return _load_participant_for_update(Participant.query, criterion).one()
+        return Participant.query.filter(criterion).one()
 
     @classmethod
     def get_participant_from_worker_id(cls, worker_id: str, for_update: bool = False):
@@ -5805,10 +5854,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         The corresponding participant object.
         """
-        query = Participant.query.filter_by(unique_id=unique_id)
+        criterion = Participant.unique_id == unique_id
         if for_update:
-            query = query.with_for_update(of=Participant).populate_existing()
-        return query.one()
+            return _load_participant_for_update(Participant.query, criterion).one()
+        return Participant.query.filter(criterion).one()
 
     @experiment_route("/google3580fca13e19b596.html")
     @staticmethod
@@ -6704,11 +6753,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if at_page_maker_start or cls._pending_redirect_replaces_open_page(participant):
             # get_current_page will move the cursor, so take the row lock. Routine
             # polls stay unlocked so they don't block barrier checks' NOWAIT locks.
-            participant = (
-                Bot.query.with_for_update(of=Participant)
-                .populate_existing()
-                .get(participant_id)
-            )
+            participant = _lock_and_load_participant(Bot.query, participant_id)
         experiment = get_experiment()
 
         status = {"status": participant.status}
@@ -6837,11 +6882,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         hooks before redirecting to the exit page.
         """
         participant_id = participant.id
-        locked = (
-            Participant.query.populate_existing()
-            .with_for_update(of=Participant)
-            .get(participant_id)
-        )
+        locked = _lock_and_load_participant(Participant.query, participant_id)
         if locked is None or locked.end_time is not None:
             return
         locked.end_time = datetime.now()
@@ -7461,11 +7502,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         from .sync import _take_pending_barrier_checks
 
         cls._reapply_timeline_lock_timeout()
-        locked = (
-            experiment._participant_request_query()
-            .with_for_update(of=Participant)
-            .populate_existing()
-            .get(participant.id)
+        locked = _lock_and_load_participant(
+            experiment._participant_request_query(), participant.id
         )
         if locked is None:
             raise RuntimeError(
@@ -7506,11 +7544,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         db.session.expire_all()
         cls._reapply_timeline_lock_timeout()
-        participant = (
-            experiment._participant_request_query()
-            .with_for_update(of=Participant)
-            .populate_existing()
-            .get(participant_id)
+        participant = _lock_and_load_participant(
+            experiment._participant_request_query(), participant_id
         )
         if participant is None:
             raise RuntimeError(
@@ -7569,13 +7604,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def _run_queued_barrier_checks(cls, checks, *, wait=True):
-        """Run queued checks, retrying waiter ``NOWAIT`` immediately once.
+        """Run queued checks, retrying a waiter or top-up group ``NOWAIT`` miss immediately once.
 
         Each attempt tries the extra-connection instance claim, then waits
         only if ``wait`` is true and another worker already holds it. Waiter
-        rows stay ``NOWAIT``. A blocking claim wait that times out raises
-        (HTTP 503). The second attempt does not wait for a partner transaction
-        to commit; it only retries waiter ``NOWAIT``. Reinstall
+        and top-up group rows stay ``NOWAIT``. A blocking claim wait that
+        times out raises (HTTP 503). The second attempt does not wait for a
+        partner transaction to commit; it only retries the waiter or top-up
+        group ``NOWAIT``. Reinstall
         ``lock_timeout`` before that retry because ``SET LOCAL`` ends at the
         check commit. If those misses continue, the caller first-paints the
         live cursor. Partners catch up on overlay wake; the 0.5s poller skips
@@ -7776,7 +7812,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         The log line is at INFO only for slow requests (see ``_SLOW_REQUEST_MS``).
 
-        ``lock`` is the participant ``FOR UPDATE`` load. ``page`` is
+        ``lock`` is the participant ``FOR UPDATE`` on the bare row plus the
+        participant load that follows it (two statements). ``page`` is
         ``get_current_page`` through the first commit. ``barriers`` is hold
         skip plus last-arrival checks. ``render`` is the HTML or JSON body.
         Unclosed phases are omitted rather than reported as zero.
@@ -8601,3 +8638,14 @@ if in_deployment_package():
     _pre_deploy_constant_registry = _read_pre_deploy_constant_registry()
 else:
     _pre_deploy_constant_registry = {}
+
+
+def _dashboard_pseudonym_name(participant):
+    """Return the participant's pseudonym name, or ``None`` if the scheme no longer has its stored keys."""
+    try:
+        return participant.pseudonym.name
+    except ValueError:
+        logger.warning(
+            "Participant %s has an unknown pseudonym.", participant.id, exc_info=True
+        )
+        return None
