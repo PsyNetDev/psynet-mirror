@@ -230,7 +230,8 @@ lines like this, each followed by the statement that caused it:
     ERROR:  could not obtain lock on row in relation "participant"
 
 These errors are expected and need no action. They usually come from a
-barrier check, which locks the waiting participants' rows without waiting
+barrier check, which locks the waiting participants' rows, and the rows of
+their groups that accept newcomers (``"sync_group"``), without waiting
 (``NOWAIT``); if another request holds one of them, PostgreSQL reports this
 error (SQLSTATE ``55P03``), and PsyNet checks the barrier again a moment later.
 With many participants waiting, there can be several such errors a second. A
