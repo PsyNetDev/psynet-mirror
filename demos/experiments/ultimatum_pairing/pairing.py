@@ -36,7 +36,11 @@ def is_rematch(a, b):
 
 def times_held(participant, role):
     """Return how often the player has held ``role``, from their stored pair links."""
-    return sum(link.role == role for link in participant.sync_group_links)
+    return sum(
+        link.role == role
+        for link in participant.sync_group_links
+        if link.sync_group.group_type == "pair"
+    )
 
 
 class PairingRegrouper(Regrouper):

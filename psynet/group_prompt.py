@@ -26,7 +26,8 @@ Design constraints:
   removal reason (:meth:`psynet.sync.SyncGroup.remove_participant`) is
   moving on or finishing (see :ref:`sync-showing-the-group`).
 - The HTML is built on the server; ``static/scripts/group-prompt.js`` only
-  updates ticks and dashes, so pages without JavaScript still show the group.
+  updates it live (ticks, dashes and joining or leaving members), so pages
+  without JavaScript still show the group.
 """
 
 import math
