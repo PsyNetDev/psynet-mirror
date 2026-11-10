@@ -132,10 +132,7 @@ class Exp(psynet.experiment.Experiment):
         assert bots[1].get_current_page().label == "animal_trial"
 
         assert isinstance(bots[2].get_current_page(), InfoPage)
-        # The grouper's waiting_logic gives the last arriver a filler trial too,
-        # and they are released when they finish it.
-        bots[2].take_page()
-        assert bots[2].current_page_label == "animal_trial"
+        # The last arriver completes the group, so they skip the filler trial.
         bots[2].take_page()
         assert bots[2].current_page_label == "quorate"
         assert "We are now quorate." in bots[2].current_page_text
@@ -168,8 +165,9 @@ class Exp(psynet.experiment.Experiment):
 def _join_quorate_group(bot):
     """Take a new bot past the intro page and into the quorate group.
 
-    Newcomers usually join on arrival, but if the group is busy, they take a
-    filler trial until the background barrier check adds them.
+    Newcomers join on arrival, waiting up to a second if another request is
+    changing the group. If it stays busy for longer, they take a filler trial
+    until the background barrier check adds them.
     """
     assert isinstance(bot.get_current_page(), InfoPage)
     bot.take_page()
