@@ -97,6 +97,7 @@ methods are live-only.
 """
 
 import inspect
+import logging
 import random
 import time
 import uuid
@@ -1314,11 +1315,16 @@ class Barrier(EltCollection):
         waiting_participants.sort(key=lambda p: p.id)
 
         logger.info(
-            "Barrier '%s' currently has %i participant(s) waiting (ids = %s)",
+            "Barrier '%s' currently has %i participant(s) waiting",
             self.id,
             len(waiting_participants),
-            ", ".join([str(p.id) for p in waiting_participants]),
         )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Barrier '%s' waiting participant ids: %s",
+                self.id,
+                ", ".join([str(p.id) for p in waiting_participants]),
+            )
 
         instance = BarrierInstance.query.get(barrier_instance_id)
         other = self._other_active_pool(instance)
@@ -3277,8 +3283,10 @@ class Regrouper(Grouper):
     every
         Seconds between fixed wall-clock ticks. The pool is split only at a
         tick, even when everyone is already waiting, if at least
-        ``smallest_group`` members were waiting at the tick. Pass either
-        ``deadline`` or ``every``, not both.
+        ``smallest_group`` members were waiting at the tick. The background
+        barrier check makes the split within about half a second of the
+        tick, so arriving participants don't wait for a check of the whole
+        pool. Pass either ``deadline`` or ``every``, not both.
 
     roles
         Optional role names, for example ``["proposer", "responder"]``. Each
@@ -3458,6 +3466,24 @@ class Regrouper(Grouper):
         if previous is not None:
             previous.remove_participant(participant, reason="moved_on")
         Barrier.receive_participant(self, participant)
+
+    def _queue_check_on_arrival(self, barrier_instance):
+        """Leave a pool with ``every`` ticks to the barrier poller.
+
+        Such a pool is split only at a tick, among the members who were
+        already waiting then, so a later arrival cannot release anyone, and
+        checking the pool would only lock every waiter. Ungrouped arrivals at
+        a ``within`` regrouper are still checked, because they are released
+        at once. Subclasses that choose who to release themselves keep the
+        check.
+        """
+        if (
+            self.every is not None
+            and (self.within is None or barrier_instance.group_id is not None)
+            and type(self).choose_who_to_release is Regrouper.choose_who_to_release
+        ):
+            return
+        super()._queue_check_on_arrival(barrier_instance)
 
     def form_groups(self, members, within_group=None):
         """Return the groups to form from one pool's waiting members.
@@ -5975,7 +6001,9 @@ def _evaluate_held_instance(instance_id):
     except Exception as err:
         if is_transient_transaction_error(err):
             logger.debug(
-                "Barrier '%s' instance %s deferred because a waiter is locked.",
+                "Barrier '%s' instance %s deferred because another request holds "
+                "a waiter's row (expected under load; PostgreSQL logs it as "
+                "'could not obtain lock on row').",
                 instance.barrier_id if instance is not None else None,
                 instance_id,
             )

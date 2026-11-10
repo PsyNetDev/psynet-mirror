@@ -173,6 +173,30 @@ def test_every_regrouper_splits_everyone_waiting_into_balanced_rooms(
 
 
 @in_consents_experiment
+def test_every_regrouper_leaves_the_split_to_the_poller(
+    in_experiment_directory, db_session
+):
+    """Arrivals between ticks can't release anyone, so only the poller splits the pool."""
+    exp = get_experiment()
+    rooms = Regrouper("room", group_size=2, every=45)
+    players = _working_participants(exp, 3)
+    _arrive(exp, rooms, players[:2])
+    _backdate_arrivals(rooms, players[:2], 60)
+    _arrive(exp, rooms, players[2:])
+    assert _waiting(rooms, players) == players
+
+    sync.check_barriers()
+    db_session.expire_all()
+    assert _waiting(rooms, players) == players[2:]
+
+    # Without a cohort, a player is released on arrival, as no tick is needed.
+    pairs = Regrouper("pair", within="cohort", group_size=2, every=45)
+    loner = _working_participants(exp, 1)
+    _arrive(exp, pairs, loner)
+    assert _waiting(pairs, loner) == []
+
+
+@in_consents_experiment
 def test_regrouper_countdown_after_a_concurrent_release(
     in_experiment_directory, db_session, monkeypatch
 ):
@@ -425,10 +449,12 @@ def test_every_regrouper_left_over_waits_one_more_tick(
     )
     cohort = _working_participants(exp, 3)
     _arrive(exp, cohort_grouper, cohort)
-    # Two were waiting at the last tick, so they pair up when the third arrives.
+    # Two were waiting at the last tick, so the poller pairs them up, not the third.
     _arrive(exp, pairs, cohort[:2])
     _backdate_arrivals(pairs, cohort[:2], 16)
     _arrive(exp, pairs, cohort[2:])
+    sync.check_barriers()
+    db_session.expire_all()
     assert _waiting(pairs, cohort) == cohort[2:]
     _backdate_splits(pairs, 32)
 

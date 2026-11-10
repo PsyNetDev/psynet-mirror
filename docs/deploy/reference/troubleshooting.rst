@@ -217,6 +217,26 @@ If the disk keeps filling up, increase its size (see
 experiment's assets to S3. For the same error during a **local** Docker build,
 see :ref:`Docker no space left on device <develop_troubleshooting_docker_space>`.
 
+.. _deploy_troubleshooting_lock_errors:
+
+PostgreSQL logs ``could not obtain lock on row``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In group experiments, the logs of the app's PostgreSQL service can show many
+lines like this, each followed by the statement that caused it:
+
+.. code:: text
+
+    ERROR:  could not obtain lock on row in relation "participant"
+
+These errors are expected and need no action. A barrier check locks the
+waiting participants' rows without waiting (``NOWAIT``); if another request
+holds one of them, PostgreSQL reports this error (SQLSTATE ``55P03``), and
+PsyNet checks the barrier again a moment later. With many participants
+waiting, there can be several such errors a second. Look instead for errors
+in the ``web`` service's logs, such as tracebacks or HTTP 500 responses (see
+:ref:`synchronization internals <sync-group-lock-order>`).
+
 My server restarted and my experiment is no longer running
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
