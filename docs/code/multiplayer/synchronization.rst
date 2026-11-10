@@ -392,9 +392,13 @@ was still on the question page may not have answered yet when a member's
 group belongs in the export, or in code that runs once every trial on the
 node is complete. A quiz can still score the last question for those who
 answered it. With ``accumulate_answers``, an unanswered trial's ``answer`` is
-``{}`` (without it, ``None``), so skip the missing estimates:
+``{}`` (without it, ``None``), so skip the missing estimates.
+``node.all_trials`` includes the failed trial of a member who left; use
+``node.alive_trials`` to leave their answer out:
 
 .. code-block:: python
+
+    accumulate_answers = True
 
     def show_feedback(self, experiment, participant):
         score = self.var.get("score")

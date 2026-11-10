@@ -82,7 +82,8 @@ study.
 - **The group falls below its quorum** (a pair): it is dissolved. Ann is
   released without ``on_release`` running, her trial records
   ``"group_dissolved"``, so ``show_feedback`` can score her estimate from
-  ``trial.answer["estimate"]`` (see :ref:`round outcomes <sync-round-outcome>`), and her next page says "Your
+  ``trial.answer["estimate"]`` (see
+  :ref:`round outcomes <sync-round-outcome>`), and her next page says "Your
   partner is no longer in your group. Please continue." She plays the rest
   of the timeline without a group (see :ref:`sync-leaving-a-group`).
 
@@ -192,8 +193,8 @@ below its quorum of three and is dissolved:
 - Ann is released, and ``on_release`` doesn't run. Her trial records
   ``"group_dissolved"``.
 - Ben's trial records ``"group_dissolved"`` too. When he submits his
-  estimate, ``submitted`` lets him straight through, and his next page says "Too few members of your group remained. Please
-  continue." (in a pair: "Your partner is no longer in your group. Please
+  estimate, ``submitted`` lets him straight through, and his next page says
+  "Too few members of your group remained. Please continue." (in a pair: "Your partner is no longer in your group. Please
   continue.").
 
 Both estimates stay on their trials, in ``trial.answer["estimate"]``, so an
