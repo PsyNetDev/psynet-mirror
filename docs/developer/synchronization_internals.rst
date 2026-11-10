@@ -31,7 +31,8 @@ deferred or lost, for barriers with explicit ``waiting_logic`` (whose wait
 pages don't check the barrier), and for waiters who have left. A waiter whose
 browser is still open also checks their own visit on each hold poll.
 
-Each sweep first applies ``max_wait_time`` to waiters whose deadline has
+Each sweep first tries again to dissolve groups marked ``dissolving``. It
+then applies ``max_wait_time`` to waiters whose deadline has
 passed, since nobody else would: their own request normally does it. This
 covers waiters at the default wait indicator and at explicit
 ``waiting_logic`` pages, whose link records its own deadline, even if they
@@ -76,7 +77,8 @@ So, in framework code, a request holding a sync group row takes other
 participants' rows only with ``SKIP LOCKED`` or ``NOWAIT``:
 
 - Group dissolution locks the members' rows with ``SKIP LOCKED`` and is all
-  or nothing. If a member's own request holds their row, nobody is removed:
+  or nothing. If another member's request holds their row, nobody is removed
+  (the rows that were free are unlocked again, by rolling back a savepoint):
   the group is marked ``dissolving`` and the barrier poller tries the whole
   dissolution again on each sweep, so ``on_dissolve`` runs once, with every
   member waiting at the barrier. A group back at its quorum by then is no

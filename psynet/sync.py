@@ -1634,8 +1634,8 @@ class GroupBarrier(Barrier):
     In or after a round of :meth:`~psynet.trial.main.Trial.cue`, it waits only for the members
     of that round, not for those who skipped it, are in a later round or have already passed it
     (see :ref:`rounds-cued-trials` and :ref:`a fixed group's loop <rounds-fixed-group-loop>`).
-    Before a late joiner's first cue, once the group has cued a round in the module, it waits
-    only for members who haven't cued one there either.
+    Before a late joiner's first cue, once the group has cued a round in this run of the module,
+    it waits only for members who haven't cued one there either.
     When the trials of the members it releases are all on one cued round's node, the release
     closes that round to newcomers, whose cues then start the next round.
 
@@ -1725,7 +1725,7 @@ class GroupBarrier(Barrier):
         ``sync_group_type`` that the barrier is part of), ``node`` (the
         group's :class:`~psynet.trial.main.SyncGroupNode` for the round the
         barrier is in or after, or ``None`` before the group's first cue in
-        the module; see :ref:`the barrier's node <sync-barrier-node>` for how it is chosen and how
+        this run of the module; see :ref:`the barrier's node <sync-barrier-node>` for how it is chosen and how
         it affects ``trials``), ``leader`` (the
         group's leader, who may be missing from ``participants``),
         ``participant`` (the same object as ``leader``, kept for
@@ -1771,8 +1771,9 @@ class GroupBarrier(Barrier):
         ``participants`` are the members waiting here, and ``node`` and
         ``trials`` follow the same rule as for ``on_release``, from their
         stored rounds. The same serialization rules
-        apply. Dissolving waits until no member's request is in flight, so
-        ``on_dissolve`` is called once, with every member waiting here.
+        apply. Dissolving waits for any member who is in the middle of another
+        request, so ``on_dissolve`` is called once, with every member waiting
+        here.
 
     stop_top_ups
         If ``True``, the group stops accepting newcomers once it passes this
@@ -2167,7 +2168,8 @@ class GroupBarrier(Barrier):
             if outcome == "dissolve":
                 # The group can never reach its quorum, so remove everyone
                 # and release whoever is waiting here, after the grouper's
-                # below_quorum has failed or released each of them.
+                # below_quorum has failed or released each of them (or
+                # nobody yet, if a member is busy; see _dissolve).
                 if group.accepts_top_ups:
                     group._close_to_top_ups()
                 participants_to_release.extend(
@@ -2375,18 +2377,19 @@ class GroupBarrier(Barrier):
         """Dissolve ``group`` if losing ``late`` left it below quorum, warning if that may fail the rest."""
         had_others = group.n_active_participants > 0
         group.dissolve_if_below_quorum()
-        dissolved = group.n_active_participants == 0 or group.dissolving
+        dissolves = group.n_active_participants == 0 or group.dissolving
         if (
             self.late_action != "fail"
             and had_others
-            and dissolved
+            and dissolves
             and getattr(group, "below_quorum", None) != "continue_without_group"
         ):
             logger.warning(
-                "GroupBarrier '%s': removing late members %s dissolved group %s, "
-                "so its below_quorum may have failed its other members while the "
-                "late ones carry on. Set below_quorum='continue_without_group' on "
-                "the grouper to let them carry on too.",
+                "GroupBarrier '%s': removing late members %s dissolves group %s "
+                "(now, or once its members' requests finish), so its below_quorum "
+                "may fail its other members while the late ones carry on. Set "
+                "below_quorum='continue_without_group' on the grouper to let them "
+                "carry on too.",
                 self.id,
                 [p.id for p in late],
                 group.id,
@@ -2776,8 +2779,8 @@ class SimpleGrouper(Grouper):
         example from how many rounds they played. It is called while the group is being
         dissolved, so base the decision on the participant, not on who else is still in
         ``group``; if it raises or returns anything else, the error is logged and the member
-        is failed. A member whose own request is in progress is handled within
-        about a second by the barrier poller instead.
+        is failed. See :ref:`groups_below_min_size` for when the group is
+        dissolved.
 
     top_up_wait
         With ``join_existing_groups=True``, how many seconds a group below its
@@ -4275,8 +4278,8 @@ class SyncGroup(SQLBase, SQLMixin):
     end_time = Column(DateTime)
     last_barrier_pass_time = Column(DateTime, nullable=True)
     leader_id = Column(Integer, ForeignKey("participant.id"))
-    # Dissolution started but skipped members whose rows were busy; the
-    # barrier poller finishes it.
+    # Dissolution is queued because a member's row was busy; nobody has been
+    # removed yet, and the barrier poller dissolves the group all at once.
     dissolving = Column(Boolean, default=False)
     # The grouper that formed the group, and for a Regrouper with ``within``,
     # the group it regrouped within.
@@ -4465,8 +4468,8 @@ class SyncGroup(SQLBase, SQLMixin):
             )
         _forget_active_sync_group(participant)
         for link in self.participant_links:
-            is_member = (
-                link.participant is participant or link.participant_id == participant.id
+            is_member = link.participant_id == participant.id or (
+                link.participant_id is None and link.participant is participant
             )
             if is_member and link.active:
                 link.active = False
@@ -4622,7 +4625,7 @@ class SimpleSyncGroup(SyncGroup):
         the game has started and a newcomer couldn't catch up. From then on it
         is treated as a group without top-ups (see
         :ref:`groups_below_min_size`); a group already below its
-        quorum is dissolved now. To stop top-ups when the group passes a
+        quorum is dissolved, usually at once. To stop top-ups when the group passes a
         barrier instead, pass ``stop_top_ups=True`` to that :class:`GroupBarrier`.
         """
         if not self.accepts_top_ups:
@@ -4767,14 +4770,23 @@ def _round_this_run(link, participant):
     return link.round_node_id
 
 
-def _in_latest_run(link, participant, module_id):
-    """Return whether ``link``'s stored round is from ``participant``'s latest run of module ``module_id``.
+def _round_run_index(link, participant, module_id):
+    """Return the ``run_index`` of ``participant``'s run of module ``module_id`` in which they cued or skipped ``link``'s stored round.
 
-    Unlike :func:`_round_this_run`, this holds for a member who has finished
-    that run, but not for one who has started the module again.
+    Unlike :func:`_round_this_run`, this compares runs across members, who
+    may be in different runs of a looped module. ``0`` if the round's
+    ``ModuleState`` isn't one of theirs for the module.
     """
-    states = participant.module_states.get(module_id, [])
-    return bool(states) and states[-1].id == link.round_module_state_id
+    for state in participant.module_states.get(module_id, []):
+        if state.id == link.round_module_state_id:
+            return state.run_index or 0
+    return 0
+
+
+def _current_run_index(participant):
+    """Return the ``run_index`` of ``participant``'s current module run, ``0`` outside a module."""
+    state = participant.module_state
+    return 0 if state is None else state.run_index or 0
 
 
 def _barrier_scope(group, waiting_participants, barrier_id, node) -> _BarrierScope:
@@ -4791,12 +4803,12 @@ def _barrier_scope(group, waiting_participants, barrier_id, node) -> _BarrierSco
 
     A visit with no round comes before the waiting members' first cue in
     this run of their module (see :func:`_round_this_run`). If no member
-    has cued a round in their latest run of that module (see
-    :func:`_in_latest_run`), as in a group that never
-    uses :meth:`~psynet.trial.main.Trial.cue`, it waits for every member.
-    Otherwise the group has started its rounds, so the visit is a late
-    joiner catching up: it waits only for the members who haven't cued a
-    round in it either, are still in it (see
+    has cued a round in that module, in the waiting members' run of it or a
+    later one (see :func:`_round_run_index`), as in a group that never uses
+    :meth:`~psynet.trial.main.Trial.cue` or at the start of a loop's next
+    run, it waits for every member. Otherwise the group has started its
+    rounds, so the visit is a late joiner catching up: it waits only for the
+    members who haven't cued such a round either, are still in it (see
     :func:`_still_in_module`, as for members behind a round) and haven't
     passed this visit yet.
 
@@ -4868,7 +4880,14 @@ def _scope_before_rounds(group, waiting_participants, barrier_id, links):
     from .trial.main import SyncGroupNode
 
     members = group.active_participants
-    module_ids = {p.module_id for p in waiting_participants if p.id in links}
+    # The earliest run of each module that a waiting member is in; a round
+    # cued in an earlier run of a looped module doesn't count.
+    visit_runs = {}
+    for participant in waiting_participants:
+        if participant.id in links:
+            run = _current_run_index(participant)
+            module_id = participant.module_id
+            visit_runs[module_id] = min(run, visit_runs.get(module_id, run))
     in_rounds = set()
     for participant in members:
         link = links.get(participant.id)
@@ -4877,8 +4896,9 @@ def _scope_before_rounds(group, waiting_participants, barrier_id, links):
         node = db.session.get(SyncGroupNode, link.round_node_id)
         if (
             node is not None
-            and node.module_id in module_ids
-            and _in_latest_run(link, participant, node.module_id)
+            and node.module_id in visit_runs
+            and _round_run_index(link, participant, node.module_id)
+            >= visit_runs[node.module_id]
         ):
             in_rounds.add(participant.id)
     if not in_rounds:
@@ -4887,7 +4907,7 @@ def _scope_before_rounds(group, waiting_participants, barrier_id, links):
         p
         for p in members
         if p.id not in in_rounds
-        and any(_still_in_module(p, module_id) for module_id in module_ids)
+        and any(_still_in_module(p, module_id) for module_id in visit_runs)
     ]
     waiting = [p.id for p in waiting_participants if p.id in links]
     # A catch-up: no players, so its release does no group bookkeeping.
@@ -5084,12 +5104,16 @@ def _lock_free_participants(participants):
 def _lock_all_participants(participants):
     """Lock every participant's row without waiting, or return ``None`` if another transaction holds one.
 
-    Like :func:`_lock_free_participants`, but all or nothing. The rows it did
-    lock stay locked until this transaction ends.
+    Like :func:`_lock_free_participants`, but all or nothing. The locks are
+    taken in a savepoint, rolled back if any row was skipped, so the free
+    members' requests are not held up until this transaction ends. Opening
+    the savepoint flushes pending changes, so rolling it back keeps them.
     """
-    locked = _skip_locked_participant_ids(participants)
-    if any(participant.id not in locked for participant in participants):
-        return None
+    with db.session.begin_nested() as savepoint:
+        locked = _skip_locked_participant_ids(participants)
+        if any(participant.id not in locked for participant in participants):
+            savepoint.rollback()
+            return None
     return _still_working(participants)
 
 
