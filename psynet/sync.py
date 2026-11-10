@@ -3342,9 +3342,10 @@ class Regrouper(Grouper):
         latecomers while the others are still playing. The next split, even
         one in which everyone waiting sits out, stops the cohort's top-ups, as
         :meth:`SimpleSyncGroup.stop_top_ups` does; a cohort below its quorum
-        is then dissolved instead of split, as its ``below_quorum`` says. With ``0`` the cohort closes when
-        its first round starts. ``None`` (default) leaves top-ups to the
-        grouper and the barriers. Needs ``within``.
+        is then dissolved instead of split, as its ``below_quorum`` says.
+        With ``0`` the cohort closes when its first round starts. ``None``
+        (default) leaves top-ups to the grouper and the barriers. Needs
+        ``within``.
 
     max_wait_time
         Longest a participant waits at the regrouper before ``max_wait_action``
@@ -3771,6 +3772,8 @@ class Regrouper(Grouper):
         within_group = self._within_group(participant)
         if self.within is not None and within_group is None:
             return None
+        if _is_dissolving(within_group):
+            return None
         if self.every is None and self.deadline is None:
             return None
         waiting = self.get_waiting_participants(participant)
@@ -3803,6 +3806,8 @@ class Regrouper(Grouper):
             if self.within is not None and within_group is None:
                 released += pool
                 continue
+            if _is_dissolving(within_group):
+                continue
             members = self._members_to_split(within_group, pool)
             if members is None:
                 continue
@@ -3817,8 +3822,9 @@ class Regrouper(Grouper):
                     continue
                 if len(within_group.active_participants) < within_group.quorum:
                     # Dissolving releases the members its below_quorum let
-                    # carry on; one deferred by a busy member releases nobody
-                    # until the poller finishes it.
+                    # carry on. One deferred by a busy member marks the cohort
+                    # dissolving, so later checks skip its pool until the
+                    # poller dissolves it.
                     within_group.stop_top_ups()
                     released += [p for p in pool if self._within_group(p) is None]
                     continue
@@ -3852,7 +3858,10 @@ class Regrouper(Grouper):
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         return any(
             (self.within is not None and within_group is None)
-            or self._pool_is_ready(within_group, members)
+            or (
+                not _is_dissolving(within_group)
+                and self._pool_is_ready(within_group, members)
+            )
             for within_group, members in self._pools(waiting_participants)
         )
 
@@ -3960,22 +3969,6 @@ class Regrouper(Grouper):
             if within_group is None
             else SyncGroup.within_group_id == within_group.id,
         ]
-
-    def _backdate_last_split(self, within_group, seconds):
-        """Move this pool's latest split back by ``seconds``, for tests (see :func:`psynet.bot.regroup_now`)."""
-        criteria = self._pool_splits(within_group)
-        latest = (
-            SyncGroup.query.filter(*criteria)
-            .order_by(SyncGroup.creation_time.desc())
-            .first()
-        )
-        if latest is None:
-            return
-        shift = timedelta(seconds=seconds)
-        for group in SyncGroup.query.filter(
-            *criteria, SyncGroup.split_id == latest.split_id
-        ):
-            group.creation_time -= shift
 
     def _split(self, within_group, members, stop_top_ups=False):
         """Form this pool's groups and return the participants to release.
@@ -4097,6 +4090,11 @@ class Regrouper(Grouper):
             accepts_top_ups=False,
             below_quorum="continue_without_group",
         )
+
+
+def _is_dissolving(within_group) -> bool:
+    """Return whether a regrouper pool's ``within`` group waits to be dissolved, so it isn't split."""
+    return within_group is not None and bool(within_group.dissolving)
 
 
 class _RegroupHistory(NamedTuple):

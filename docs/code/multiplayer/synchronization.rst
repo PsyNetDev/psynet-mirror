@@ -213,7 +213,10 @@ When the cohorts take latecomers (``join_existing_groups=True`` on their
 grouper), ``stop_top_ups_after_rounds=n`` lets them join only until the
 regrouper has started ``n`` rounds in the cohort: the next split, even one in
 which everyone waiting sits out, stops the cohort's top-ups (see
-:ref:`groups_below_min_size`).
+:ref:`groups_below_min_size`). A cohort below its quorum at that split is
+dissolved instead, with nobody grouped; with the cohort grouper's
+``below_quorum="continue_without_group"``, its waiting players are released
+ungrouped, without calling ``on_release``.
 Every split that forms groups in the cohort counts as a round, even one that
 pairs only latecomers while the others are still playing.
 
@@ -872,7 +875,10 @@ Two separate settings decide what happens when someone leaves a group:
       that regroups within this group (``within``) stops them when the
       regrouper starts its next split of the group after ``n``, for
       example ``1`` to let latecomers join a cohort only during its first
-      round (see :ref:`sync-rounds-with-changing-groups`).
+      round (see :ref:`sync-rounds-with-changing-groups`). A cohort below
+      its quorum at that split is dissolved with nobody grouped; with
+      ``below_quorum="continue_without_group"``, its waiting players are
+      released ungrouped and ``on_release`` isn't called.
     - The grouper's ``top_up_wait=seconds`` limits that wait: once the
       group has been below its quorum that long, the barrier it is waiting
       at stops top-ups and dissolves it. This only helps members who are
