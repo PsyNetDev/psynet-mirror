@@ -218,18 +218,19 @@ def test_max_wait_action_kick_requires_group_barrier():
 
 
 def test_group_barrier_preserves_positional_timeout_arguments():
-    barrier = GroupBarrier(
-        "group_barrier",
-        "main",
-        None,
-        3,
-        20,
-        "fail",
-        None,
-        False,
-        5,
-        "kick",
-    )
+    with pytest.warns(FutureWarning, match="waiting_logic_expected_repetitions"):
+        barrier = GroupBarrier(
+            "group_barrier",
+            "main",
+            None,
+            3,
+            20,
+            "fail",
+            None,
+            False,
+            5,
+            "kick",
+        )
 
     assert barrier.timeout_between_barriers_time == 5
     assert barrier.timeout_between_barriers_action == "kick"
