@@ -12,8 +12,9 @@ bubbles; partners appear as the same grey figure, so nobody recognises a
 partner from an earlier round.
 
 Good reference for nesting a `Regrouper` inside persistent cohorts made by a
-`SimpleGrouper` with `start_short_after` and top-ups, with the default
-random re-pairing with alternating roles and a `join_criterion` that turns
+`SimpleGrouper` with `start_short_after` and top-ups, with re-pairing that
+avoids last round's partner (a short `form_groups` override) and a
+`join_criterion` that turns
 latecomers away once the cohort's second round starts.
 Each round is one cued trial per player (`Trial.cue(...)` with
 `sync_group_type = "pair"`, inside a `conditional` on being in a pair), so the pair's offer and

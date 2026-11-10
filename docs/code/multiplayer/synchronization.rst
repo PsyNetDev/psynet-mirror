@@ -198,9 +198,17 @@ the round on their own.
     )
 
 By default, players are grouped at random, those who have played the most
-rounds sit out when not everyone fits, and roles alternate. Pass
-``form_groups`` for other rules, such as keeping last round's partners
-apart. The regrouper counts each participant's rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
+rounds sit out when not everyone fits, and roles alternate. Override
+:meth:`~psynet.sync.Regrouper.form_groups` for other rules. The
+``ultimatum_pairing`` demo does so to keep last round's partners apart:
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+   :pyobject: NewPartnerRegrouper
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+   :pyobject: last_partner_id
+
+ The regrouper counts each participant's rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
 :meth:`~psynet.sync.Regrouper.rounds_sat_out`,
 :meth:`~psynet.sync.Regrouper.sat_out` (for the latest round) and, with
 ``roles``, :meth:`~psynet.sync.Regrouper.role`.

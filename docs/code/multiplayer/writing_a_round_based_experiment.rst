@@ -544,9 +544,10 @@ to newcomers: a player who joins the pair after it starts the next round
 rather than joining a round whose first turn is over.
 
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
-example to pair players by their earlier answers or to keep last round's
-partners apart. With roles, return each group as a list in the order of
-``roles``. See
+example to pair players by their earlier answers. The demo's regrouper
+overrides it to keep last round's partners apart (see "Rounds with
+changing groups" in :doc:`synchronization`). With roles, each group needs
+one member per role, and roles still alternate. See
 :class:`~psynet.sync.Regrouper` for this and the other settings.
 
 **A trial maker.** A trial maker with ``sync_group_type``, as in the

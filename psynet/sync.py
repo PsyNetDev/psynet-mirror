@@ -3294,10 +3294,12 @@ class Regrouper(Grouper):
         Optional callable ``form_groups(members, within_group, barrier)``
         that returns a list of groups, each a list of participants, replacing
         the default grouping described above; ``barrier`` is this regrouper.
-        Members who are not placed are left over. With ``roles``, return each
-        group as a list in the order of ``roles``, so that its first member
-        takes the first role. Subclasses can override :meth:`form_groups`
-        instead. The callable must be a module-level function so it can be
+        Members who are not placed are left over. With ``roles``, each group
+        needs one member per role, and roles are then given out as by
+        default. Subclasses can override :meth:`form_groups` instead, for
+        example calling the default and retrying until no one is paired with
+        last round's partner, as the ``ultimatum_pairing`` demo does. The
+        callable must be a module-level function so it can be
         stored with the barrier.
 
     left_over
@@ -3518,13 +3520,6 @@ class Regrouper(Grouper):
             return None
         return links[-1].role
 
-    @property
-    def _custom_grouping(self) -> bool:
-        return (
-            self.form_groups_function is not None
-            or type(self).form_groups is not Regrouper.form_groups
-        )
-
     def _links(self, participant_ids) -> List["ParticipantLinkSyncGroup"]:
         """Return these participants' links to groups this regrouper formed, oldest first."""
         if not participant_ids:
@@ -3565,8 +3560,6 @@ class Regrouper(Grouper):
         """Return each planned member's role by ID, decided from the history before the split."""
         if not self.roles:
             return {}
-        if self._custom_grouping:
-            return {m.id: r for group in plan for m, r in zip(group, self.roles)}
         history = self._history(members)
         return {
             m.id: role

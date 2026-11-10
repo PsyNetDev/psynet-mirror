@@ -524,9 +524,8 @@ def test_regrouper_keeps_a_sit_out_when_the_sitter_returns_in_the_same_request(
     assert pairs.rounds_sat_out(sitter) == 2
 
 
-def _lowest_id_responds(members, **_):
-    responder, proposer = sorted(members, key=lambda p: p.id)
-    return [[proposer, responder]]
+def _by_id(members, **_):
+    return [sorted(members, key=lambda p: p.id)]
 
 
 def _one_player(members, **_):
@@ -534,13 +533,16 @@ def _one_player(members, **_):
 
 
 @in_consents_experiment
-def test_regrouper_form_groups_gives_roles_in_order(
+def test_regrouper_form_groups_keeps_alternating_roles(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    cohort, pairs = _cohort_and_pairs(exp, 2, form_groups=_lowest_id_responds)
+    cohort, pairs = _cohort_and_pairs(exp, 2, form_groups=_by_id)
     _arrive(exp, pairs, cohort)
-    assert [pairs.role(p) for p in cohort] == ["responder", "proposer"]
+    first = [pairs.role(p) for p in cohort]
+    assert sorted(first) == ["proposer", "responder"]
+    _arrive(exp, pairs, cohort)
+    assert [pairs.role(p) for p in cohort] == first[::-1]
 
     cohort, pairs = _cohort_and_pairs(exp, 2, form_groups=_one_player)
     with pytest.raises(ValueError, match="one member per role"):
