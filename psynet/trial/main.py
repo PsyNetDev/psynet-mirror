@@ -296,8 +296,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         :meth:`~psynet.trial.main.Trial.show_trial` (normally the one that
         completed the trial), which records in detail what the participant's
         web browser sent. With several pages (for example with
-        ``accumulate_answers``), the responses of earlier pages are not linked
-        to the trial.
+        ``accumulate_answers``), find every response of the trial, including
+        rejected submissions, through :attr:`psynet.timeline.Response.trial_id`.
         Equals ``None`` until the participant submits a trial page.
 
     time_taken : float
@@ -442,7 +442,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     parent_trial = relationship(
         "psynet.trial.main.Trial", foreign_keys=[parent_trial_id], uselist=False
     )
-    response = relationship("psynet.timeline.Response")
+    response = relationship(
+        "psynet.timeline.Response", foreign_keys=[response_id], post_update=True
+    )
 
     async_jobs = relationship("AsyncJob")
     async_processes = _deprecated_async_processes
