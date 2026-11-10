@@ -438,7 +438,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             "ended, before :meth:`show_feedback`, and also when a barrier's "
             "release ends the trial's page in ``waiting_logic`` before it is "
             "answered, in which case the trial is failed with "
-            '``failed_reason="interrupted_by_release"`` and not finalized. '
+            '``failed_reason="interrupted_by_release"``, not finalized, and '
+            "gets no :meth:`show_feedback`. "
             "The user should not typically change this directly."
         ),
     )
@@ -1722,6 +1723,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             label=label,
             condition=lambda experiment, participant: (
                 not participant.current_trial._recording_failed
+                and participant.current_trial.failed_reason != INTERRUPTED_BY_RELEASE
                 and participant.current_trial.gives_feedback(experiment, participant)
             ),
             logic_if_true=join(

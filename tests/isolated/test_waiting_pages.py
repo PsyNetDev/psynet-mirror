@@ -152,6 +152,9 @@ class FillerTrial(Trial):
     def show_trial(self, experiment, participant):
         return _filler("filler_trial")
 
+    def show_feedback(self, experiment, participant):
+        return _filler(f"You said {self.answer['choice']}")
+
 
 def _start_filler_trial(experiment, participant):
     participant.current_trial = FillerTrial(
@@ -189,11 +192,15 @@ def test_a_release_fails_the_unanswered_filler_trials_it_ends(
     _use_timeline(exp, filler)
     try:
         first, waiting = _release_pair(exp)
+        first_id = first.id
         assert waiting["release_grace_ms"] == 3000
         first.answer = "answer to an earlier page"
         db.session.commit()
         response = _post_response(first, interrupted=True).get_json()
         assert response["submission"] == "approved"
+        db.session.expire_all()
+        first = Participant.query.get(first_id)
+        assert exp.timeline.get_current_elt(exp, first).label == "after"
         trials = FillerTrial.query.all()
         assert len(trials) == 2
         for trial in trials:

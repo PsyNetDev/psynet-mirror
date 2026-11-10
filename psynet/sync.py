@@ -1032,8 +1032,9 @@ class Barrier(EltCollection):
         This includes the pages of trials in ``waiting_logic``, such as
         filler trials from a trial maker: a trial whose page ends this way
         is failed with ``failed_reason="interrupted_by_release"``, so it isn't
-        finalized and doesn't count towards the trial maker's targets of
-        completed trials (it still counts towards ``max_trials_per_block``).
+        finalized, shows no feedback, and doesn't count towards the trial
+        maker's targets of completed trials (it still counts towards
+        ``max_trials_per_block``).
         ``None`` lets each waiting page run to its end. Default: 3 seconds.
         Only used with ``waiting_logic``; passing it without raises an error.
         A barrier with ``waiting_logic`` can't be inside a trial's own pages,
@@ -5498,7 +5499,7 @@ def _end_waiting_page(participant):
     started in the waiting logic.
     """
     trial = _trial_owning_page(participant)
-    if trial is not None:
+    if trial is not None and not trial.failed:
         trial.fail(reason=INTERRUPTED_BY_RELEASE)
 
 
