@@ -1,3 +1,13 @@
+"""Let participants into the main part of the experiment only while enough others are present.
+
+A :class:`~psynet.sync.SimpleGrouper` with ``join_existing_groups=True`` forms
+a group once ``QUORUM`` participants are waiting, and newcomers join it
+later. While a participant waits, and whenever the group is below its quorum,
+they take filler trials from the ``animals`` trial maker, so they don't waste
+their time. A multiplayer game could use this to start only once enough players
+are present.
+"""
+
 import time
 from typing import List
 
@@ -7,8 +17,12 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
-from psynet.timeline import PageMaker, Timeline, conditional, for_loop, join
+from psynet.timeline import PageMaker, Timeline, conditional, for_loop
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
+
+GROUP = "quorum"
+QUORUM = 3
+N_QUORATE_VISITS = 3
 
 nodes = [
     StaticNode(
@@ -57,6 +71,11 @@ def show_quorum(participant):
     )
 
 
+def is_quorate(participant):
+    group = participant.sync_group
+    return group.n_active_participants >= group.quorum
+
+
 filler = PageMaker(trial_maker.cue_trial, time_estimate=AnimalTrial.time_estimate)
 
 
@@ -70,17 +89,17 @@ class Exp(psynet.experiment.Experiment):
                 "In particular, there is a central part of the timeline that participants "
                 "can only access once sufficiently many other participants are present at "
                 "the same time. This would be useful for e.g. a multiplayer game. "
-                "While participants are waiting for other participants, they take trials "
-                "from another trial maker, so they don't waste their time."
+                "While participants are waiting for other participants, they answer "
+                "filler questions about animals, so they don't waste their time."
             ),
             time_estimate=5,
         ),
         trial_maker.custom(
             SimpleGrouper(
-                "quorum",
-                initial_group_size=3,
+                GROUP,
+                initial_group_size=QUORUM,
                 max_group_size=None,
-                quorum=3,
+                quorum=QUORUM,
                 join_existing_groups=True,
                 waiting_logic=filler,
                 expected_wait=10 * AnimalTrial.time_estimate,
@@ -88,19 +107,12 @@ class Exp(psynet.experiment.Experiment):
             ),
             for_loop(
                 label="quorate",
-                iterate_over=range(
-                    3
-                ),  # Participant will only be allowed to visit the quorate page 3 times
-                logic=join(
-                    conditional(
-                        "check_quorate",
-                        condition=lambda participant: (
-                            participant.sync_group.n_active_participants
-                            >= participant.sync_group.quorum
-                        ),
-                        logic_if_true=PageMaker(show_quorum, time_estimate=5),
-                        logic_if_false=filler,
-                    ),
+                iterate_over=range(N_QUORATE_VISITS),
+                logic=conditional(
+                    "check_quorate",
+                    condition=is_quorate,
+                    logic_if_true=PageMaker(show_quorum, time_estimate=5),
+                    logic_if_false=filler,
                 ),
             ),
         ),
@@ -120,20 +132,8 @@ class Exp(psynet.experiment.Experiment):
         assert bots[1].get_current_page().label == "animal_trial"
 
         assert isinstance(bots[2].get_current_page(), InfoPage)
+        # The last arriver completes the group, so they skip the filler trial.
         bots[2].take_page()
-
-        # Currently barriers are checked in a background process, so
-        # a participant should never be released instantly from a grouper,
-        # even if they are the last participant to arrive.
-        # We may change this in due course, once we're satisfied we're not going
-        # to run into deadlocks.
-
-        page = bots[2].get_current_page()
-        if isinstance(page, ModularPage) and page.label == "animal_trial":
-            # 2 seconds should be enough for the background process to run once
-            time.sleep(2)
-            bots[2].take_page()
-
         assert bots[2].current_page_label == "quorate"
         assert "We are now quorate." in bots[2].current_page_text
         assert bots[2].sync_group_n_active_participants == 3
@@ -150,24 +150,28 @@ class Exp(psynet.experiment.Experiment):
             page = bot.get_current_page()
             assert page.label == "animal_trial"
 
-        # Bring in a new bot to join the group
-        bots[3].take_page()
-
-        # As before, because of the background processes, bot 3 will probably need to
-        # take one trial before they can continue.
-        page = bots[3].get_current_page()
-        if isinstance(page, ModularPage) and page.label == "animal_trial":
-            time.sleep(2)
-            bots[3].take_page()
-
-        assert "We are now quorate." in bots[3].current_page_text
+        # A new bot joins the existing group, making it quorate again.
+        _join_quorate_group(bots[3])
         assert bots[3].sync_group_n_active_participants == 3
 
-        # If we bring in a 5th participant, they should be able to join the main room right away.
-        assert isinstance(bots[4].get_current_page(), InfoPage)
-        bots[4].take_page()
-        assert "We are now quorate." in bots[4].current_page_text
+        # A 5th participant joins the quorate group too.
+        _join_quorate_group(bots[4])
         assert bots[4].sync_group_n_active_participants == 4
 
         for bot in [bots[1], bots[2], bots[3]]:
             bot.run_to_completion(render_pages=True)
+
+
+def _join_quorate_group(bot):
+    """Take a new bot past the intro page and into the quorate group.
+
+    Newcomers join on arrival, waiting up to a second if another request is
+    changing the group. If it stays busy for longer, they take a filler trial
+    until the background barrier check adds them.
+    """
+    assert isinstance(bot.get_current_page(), InfoPage)
+    bot.take_page()
+    if bot.current_page_label == "animal_trial":
+        time.sleep(2)
+        bot.take_page()
+    assert "We are now quorate." in bot.current_page_text

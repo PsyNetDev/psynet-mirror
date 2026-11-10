@@ -100,7 +100,7 @@ round 0. The group's trials with the same
 the group ends. Cued trials of one group and round also share a
 :class:`~psynet.trial.main.SyncGroupNode`, which can hold the group's results;
 the ``lowest_unique_number`` demo builds a table per player and round and
-one per room from them (see :ref:`rounds-cued-trials`).
+one per room from them (see :ref:`rounds-one-trial-per-player`).
 
 Group membership, for groups formed by a grouper (see
 :doc:`/code/multiplayer/synchronization`), is stored in two tables:
@@ -175,7 +175,7 @@ Games with a regrouper
 
 In games that re-pair players with a :class:`~psynet.sync.Regrouper`, each
 group the regrouper forms is one round of one group. With one cued trial per
-player per round (see :ref:`rounds-cued-trials`), each trial records the pair
+player per round (see :ref:`rounds-one-trial-per-player`), each trial records the pair
 and the player's role, and the pair's node holds its results. The
 ``ultimatum_pairing`` demo reads one table from the trials, one from the
 nodes and one per player:

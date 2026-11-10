@@ -194,11 +194,11 @@ The simplest design forms a group once and keeps it to the end, with barriers
 wherever the members must be in step.
 
 In ``demos/experiments/chatroom_simple``, pairs discuss a topic in a chatroom.
-The barriers make sure both partners are there before the chat starts and both
-have finished before either moves on.
+The trial maker starts both partners on the chat together, and a barrier after
+the chat waits until both have finished before either moves on.
 
 .. figure:: ../_static/images/design/groups/chatroom_simple.svg
-   :alt: A grouper forms pairs, then a barrier waits for the partner, both chat on a group page, and a final barrier waits until both have finished.
+   :alt: A grouper forms pairs, both chat on a group page, and a barrier waits until both have finished.
 
 In ``demos/experiments/rock_paper_scissors``, the same pair plays three rounds.
 Each player chooses within a time limit, a barrier scores the round, and both
@@ -297,7 +297,8 @@ holds up their partners. Give decision pages a time limit. A player who runs
 out of time moves on, and their partners see that they ran out of time instead
 of waiting. A player who falls further behind, for example because they closed
 the tab, is late at the barrier after the decision: they are removed from
-the group and can rejoin in the next round.
+the group, and either rejoin in the next round or, as in
+``ultimatum_pairing``, end their game.
 
 Decide when the game ends: after a fixed number of rounds, when a player has
 sat out too often, or when too few players remain to form a group.

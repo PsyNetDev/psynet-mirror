@@ -98,9 +98,10 @@ browser then rechecks the authoritative link state. See "Timeline holds" in
 arrival transaction commits, the response route evaluates the barrier in a
 short coordination transaction before rendering. That lets a ``Grouper`` form
 groups and a ``GroupBarrier`` release the group without waiting for the poller.
-Arrivals at a ``Regrouper`` with ``every`` are usually the exception: they
-cannot make the pool ready, so they queue no check and the poller normally
-enacts each due tick, though a page reload (``GET /timeline``) also checks.
+Arrivals submitted with Next at a ``Regrouper`` with ``every`` are usually the
+exception: they cannot make the pool ready, so they queue no check and the
+poller normally enacts each due tick. An arrival or reload in ``GET /timeline``
+still checks the waiter's visit (see PsyNet issue #1159).
 Ungrouped arrivals at a ``within`` regrouper, and subclasses that override
 ``choose_who_to_release`` or ``check_waiting_participants``, keep the arrival
 check; see
@@ -3385,8 +3386,10 @@ class Regrouper(Grouper):
         tick, even when everyone is already waiting, if at least
         ``smallest_group`` members were waiting at the tick. The background
         barrier check makes the split at its next check after the tick,
-        normally within a second, so arriving participants don't wait for a
-        check of the whole pool. Pass either ``deadline`` or ``every``, not both.
+        normally within a second, so participants arriving with Next don't
+        wait for a check of the whole pool; an arrival or reload in
+        ``GET /timeline`` still checks the waiter's visit. Pass either
+        ``deadline`` or ``every``, not both.
 
     roles
         Optional role names, for example ``["proposer", "responder"]``. Each
@@ -3590,8 +3593,9 @@ class Regrouper(Grouper):
         check on the arrival would enact a tick that is already due and not
         yet used, but it locks every waiter to do so. Skipping it leaves that
         split to the barrier poller, at its next check and normally within a
-        second, for real browsers; a page reload (``GET /timeline``) or a
-        bot's poll also checks the waiter's visit. Ungrouped arrivals at a
+        second. This only covers arrivals submitted with Next
+        (``POST /response``): an arrival or reload in ``GET /timeline``, or a
+        bot's poll, still checks the waiter's visit. Ungrouped arrivals at a
         ``within`` regrouper are still checked, because they are released at
         once. Subclasses that override :meth:`choose_who_to_release` or
         :meth:`check_waiting_participants` keep the check, since their rule

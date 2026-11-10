@@ -41,13 +41,13 @@ from psynet.sync import GroupBarrier, Regrouper
 from psynet.timeline import Module, Timeline, conditional, for_loop, join
 from psynet.trial.main import SyncGroupNode, Trial
 
+GROUP = "room"
 ROUND_SECONDS = 10
 CHOICE_SECONDS = 15
 ROOM_SIZE = 8
 N_ROUNDS = 2
 NUMBERS = [1, 2, 3, 4, 5]
 WIN_BONUS = 0.10
-WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + 20
 # Longer than the others can take to finish a round (the choice page plus the
 # barrier's late_after) and reach the next split. The feedback pages have no
 # time_limit, so a latecomer can still skip a round while the others read
@@ -69,7 +69,7 @@ def get_timeline():
                 iterate_over=range(N_ROUNDS),
                 logic=join(
                     Regrouper(
-                        "room",
+                        GROUP,
                         group_size=ROOM_SIZE,
                         smallest_group=2,
                         every=ROUND_SECONDS,
@@ -85,8 +85,8 @@ def get_timeline():
                         InfoPage(NO_ROOM_TEXT, time_estimate=5),
                     ),
                 ),
-                time_estimate_per_iteration=PickTrial.time_estimate + 5,
-                expected_repetitions=N_ROUNDS,
+                # Players wait for the next tick, on average half a round.
+                time_estimate_per_iteration=PickTrial.time_estimate + ROUND_SECONDS / 2,
             ),
         ),
     )
@@ -97,7 +97,7 @@ NO_ROOM_TEXT = "Nobody else was left to play this round with, so you skip it."
 
 
 def in_room(participant):
-    return participant.in_sync_group("room")
+    return participant.in_sync_group(GROUP)
 
 
 def lowest_unique(choices: dict):
@@ -114,7 +114,7 @@ def round_message(seconds_left):
 
 
 class PickTrial(Trial):
-    sync_group_type = "room"
+    sync_group_type = GROUP
     time_estimate = 15
 
     def show_trial(self, experiment, participant):
@@ -122,7 +122,7 @@ class PickTrial(Trial):
             self.choose_number(participant),
             GroupBarrier(
                 id_="round_finished",
-                group_type="room",
+                group_type=GROUP,
                 waiting_message="Waiting for the rest of the room…",
                 waiting_screen=your_pick,
                 # A player is taken out 30 s after the round starts (long enough
@@ -224,7 +224,10 @@ def your_pick(participant, trial):
     else:
         text = f"You picked {choice}."
     # Ticks appear as the others choose.
-    return GroupPrompt(text, participant=participant, group_type="room")
+    return GroupPrompt(text, participant=participant, group=trial.sync_group)
+
+
+WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + 20
 
 
 def _arrive_together(bots):
