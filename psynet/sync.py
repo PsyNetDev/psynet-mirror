@@ -702,7 +702,7 @@ class _BarrierHoldPage(_TimelineHoldPage):
         return self.barrier._hold_progress_text(participant, counts)
 
     def overlay_html(
-        self, participant=None, release_time=NoArgumentProvided, counts=None
+        self, participant=None, release_time=NoArgumentProvided, *, counts=None
     ):
         """Return hold copy, calling a ``content`` function and filling in ``{SECONDS}``.
 
@@ -1651,11 +1651,7 @@ class GroupBarrier(Barrier):
                 _queue_arrival_update(member.id, hold_message=hold_html)
                 continue
             text = self._call_arrival_message(
-                kind="notice",
-                waiting_count=waiting_count,
-                group_size=group_size,
-                recipient=member,
-                group=group,
+                kind="notice", recipient=member, group=group, **counts
             )
             if text:
                 _queue_arrival_update(member.id, notice=str(text))

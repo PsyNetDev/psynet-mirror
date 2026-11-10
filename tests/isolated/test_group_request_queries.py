@@ -20,7 +20,7 @@ from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sqlalchemy_profiling import sqlalchemy_profile
-from psynet.sync import GroupBarrier, SimpleGrouper
+from psynet.sync import GroupBarrier, ParticipantLinkBarrier, SimpleGrouper
 from psynet.timeline import Timeline
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -82,6 +82,13 @@ def _count(fn):
     return profiler.total_count
 
 
+def _released_count(barrier_id):
+    db.session.remove()
+    return ParticipantLinkBarrier.query.filter_by(
+        barrier_id=barrier_id, released=True
+    ).count()
+
+
 @pytest.fixture
 def exp(db_session, deployment_info):
     experiment = get_experiment()
@@ -95,12 +102,17 @@ def test_barrier_requests_do_not_grow_with_group_size(exp):
     counts = {}
     for group_size in (3, 7):
         db.session.remove()
+        group_type = f"room{group_size}"
+        barrier_id = f"{group_type}_gate"
+        # No hold timeouts, so slow profiled requests cannot dissolve the group.
         exp.timeline = Timeline(
-            SimpleGrouper("room", initial_group_size=group_size),
+            SimpleGrouper(
+                group_type, initial_group_size=group_size, max_wait_time=None
+            ),
             ModularPage(
                 "choose", "Choose", PushButtonControl(["a", "b"]), time_estimate=1
             ),
-            GroupBarrier(id_="room_gate", group_type="room"),
+            GroupBarrier(id_=barrier_id, group_type=group_type, max_wait_time=None),
             ModularPage("result", "Result", time_estimate=1),
         )
         ids = [p.id for p in _working_participants(exp, group_size)]
@@ -113,9 +125,14 @@ def test_barrier_requests_do_not_grow_with_group_size(exp):
         counts[group_size] = {
             "arrival_post": _count(lambda: _post(ids[-2], "a")),
             "hold_poll_post": _count(lambda: _post(ids[0], resume=True)),
-            "last_arrival_post": _count(lambda: _post(ids[-1], "a")),
-            "released_poll_post": _count(lambda: _post(ids[0], resume=True)),
         }
+        assert _released_count(barrier_id) == 0
+        counts[group_size]["last_arrival_post"] = _count(lambda: _post(ids[-1], "a"))
+        assert _released_count(barrier_id) == group_size
+        assert not any(Participant.query.get(i).failed for i in ids)
+        counts[group_size]["released_poll_post"] = _count(
+            lambda: _post(ids[0], resume=True)
+        )
     grown = {
         key: (counts[3][key], counts[7][key])
         for key in counts[3]
