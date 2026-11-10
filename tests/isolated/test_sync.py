@@ -7270,6 +7270,7 @@ def test_timeline_warns_about_barriers_newcomers_can_reach_after_their_group():
     [
         ("module, page", True),
         ("module, loop of pages", True),
+        ("page, loop of module", True),
         ("module with page", False),
         ("barrier, module", False),
         ("module, barrier", False),
@@ -7289,6 +7290,9 @@ def test_timeline_warns_about_pages_between_runs_of_a_looped_module(shape, warns
         "module, page": lambda: join(game(), page()),
         "module, loop of pages": lambda: join(
             game(), while_loop("breaks", lambda: False, page(), 1)
+        ),
+        "page, loop of module": lambda: join(
+            page(), while_loop("rounds", lambda: True, game(), 2)
         ),
         "module with page": lambda: game(page()),
         "barrier, module": lambda: join(barrier(), game()),

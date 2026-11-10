@@ -3016,11 +3016,13 @@ class Timeline:
         """Yield the ids of the modules in each ``while_loop`` whose body also has content pages outside them.
 
         Only modules and pages in the loop's body count, not those in a
-        module nested in one of them. Pages of a nested loop without a module
-        count for the enclosing loop. A barrier's elts, such as its waiting
-        page, are skipped: a barrier outside the module waits for every
-        member, so it doesn't strand anyone. A ``for_loop`` builds its logic
-        when the participant reaches it, so loops of one aren't seen.
+        module nested in one of them, so a page in an outer module around
+        the repeated one isn't seen. The modules and pages of a nested loop
+        that doesn't warn itself count for the enclosing loop. A barrier's
+        elts, such as its waiting page, are skipped: a barrier outside the
+        module waits for every member, so it doesn't strand anyone. A
+        ``for_loop`` builds its logic when the participant reaches it, so
+        the walk treats it as a page, and doesn't see modules in it.
         """
         for branch_elts in self.elts.values():
             loops = []
@@ -3035,8 +3037,9 @@ class Timeline:
                     loop = loops.pop()
                     if loop["modules"] and loop["page"]:
                         yield loop["modules"]
-                    elif loop["page"] and loops and loops[-1]["depth"] == module_depth:
-                        loops[-1]["page"] = True
+                    elif loops and loops[-1]["depth"] == module_depth:
+                        loops[-1]["modules"].extend(loop["modules"])
+                        loops[-1]["page"] |= loop["page"]
                 elif isinstance(elt, StartModule):
                     if at_loop_level:
                         loops[-1]["modules"].append(elt.module.id)

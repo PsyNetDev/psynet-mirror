@@ -1039,6 +1039,25 @@ def test_a_skipper_at_a_barrier_after_the_loop_waits_for_a_closed_round_without_
 
 
 @in_consents_experiment
+def test_a_member_after_the_module_waits_for_an_open_round_without_a_warning(
+    in_experiment_directory, db_session, caplog, fresh_barrier_warnings
+):
+    """The open round waits for the newcomer, not for the member who finished the module."""
+    exp = get_experiment()
+    cohort, newcomer, pair = _newcomer_in_round_0(exp)
+    finished, player = cohort
+    _complete_trials([finished])
+    finished.end_module(Module("rounds", InfoPage("Hi", time_estimate=1)))
+    after_module = GroupBarrier("after_module", group_type="pair")
+    with caplog.at_level(logging.WARNING):
+        _arrive(exp, GroupBarrier("submitted", group_type="pair"), [player])
+        _arrive(exp, after_module, [finished])
+        after_module.choose_who_to_release([finished])
+    assert after_module._participant_is_waiting(finished)
+    assert not _barrier_warnings(caplog)
+
+
+@in_consents_experiment
 def test_a_barrier_after_the_loop_sharing_a_closed_round_s_id_waits_for_the_round(
     in_experiment_directory, db_session
 ):
