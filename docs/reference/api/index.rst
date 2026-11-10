@@ -67,6 +67,8 @@ They are generated from the source code and grouped like the
 
    sync
    chatroom
+   pseudonym
+   group_prompt
 
 .. toctree::
    :caption: Database

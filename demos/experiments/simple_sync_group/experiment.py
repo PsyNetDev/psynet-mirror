@@ -3,7 +3,9 @@ from typing import List
 
 import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages
-from psynet.page import InfoPage, WaitPage
+from psynet.group_prompt import GroupPrompt
+from psynet.modular_page import ModularPage
+from psynet.page import WaitPage
 from psynet.participant import Participant
 from psynet.sync import GroupBarrier, GroupCloser, SimpleGrouper, SyncGroup
 from psynet.timeline import PageMaker, Timeline
@@ -50,20 +52,27 @@ def format_group_message(participant: Participant) -> str:
     )
     participants_text = ", ".join(
         [
-            f"{participant.id} ({participant.var.role})"
-            for participant in ordered_participants
+            f"{member.pseudonym.name} ({member.var.role})"
+            for member in ordered_participants
         ]
     )
-    return (
-        f"You are now in group {participant.sync_group.id} with participants "
-        f"{participants_text}"
-    )
+    return f"You are now in a group with {participants_text}."
 
 
 def show_current_group():
     return PageMaker(
-        lambda participant: InfoPage(
-            format_group_message(participant),
+        lambda participant: ModularPage(
+            "current_group",
+            GroupPrompt(
+                format_group_message(participant),
+                group=participant.sync_group,
+                participant=participant,
+                # Each member's role in their speech bubble.
+                answers={
+                    p.id: p.var.role for p in participant.sync_group.active_participants
+                },
+                show_names=True,
+            ),
         ),
         time_estimate=5,
     )
@@ -111,7 +120,7 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(bots)
 
         for bot in bots:
-            assert bot.current_page_text.startswith("You are now in group")
+            assert bot.current_page_text.startswith("You are now in a group with")
 
         first_groups = SyncGroup.query.filter_by(active=True).all()
         assert len(first_groups) == 2
@@ -130,7 +139,7 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(bots)
 
         for bot in bots:
-            assert bot.current_page_text.startswith("You are now in group")
+            assert bot.current_page_text.startswith("You are now in a group with")
             assert bot.sync_group_n_active_participants == 2
 
         second_groups = SyncGroup.query.filter_by(active=True).all()

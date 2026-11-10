@@ -74,12 +74,21 @@ def _page_participant(**overrides):
         unique_id="participant-1",
         page_uuid="page-1",
         id=7,
+        failed=False,
+        active_barriers={},
         active_sync_groups={},
     )
     participant.__dict__.update(overrides)
     return participant
 
 
+@pytest.fixture
+def outside_waiting_logic(monkeypatch):
+    """Skip the barrier waiting-page lookup, which needs a loaded experiment."""
+    monkeypatch.setattr("psynet.sync.waiting_page_config", lambda *_args: None)
+
+
+@pytest.mark.usefixtures("outside_waiting_logic")
 def test_ungrouped_page_omits_arrival_updates(monkeypatch):
     """Solo pages must not open the partner-ready websocket."""
 
@@ -91,6 +100,7 @@ def test_ungrouped_page_omits_arrival_updates(monkeypatch):
     assert "arrival_updates" not in page.attributes(_page_participant())
 
 
+@pytest.mark.usefixtures("outside_waiting_logic")
 def test_grouped_page_includes_arrival_updates(monkeypatch):
     monkeypatch.setattr(
         "psynet.sync.pending_arrival_notice_for",
@@ -104,8 +114,8 @@ def test_grouped_page_includes_arrival_updates(monkeypatch):
 
 
 def test_arrival_notice_payload_without_a_participant():
-    assert arrival_notice_payload(None) == {"notice": None}
-    assert arrival_notice_payload("") == {"notice": None}
+    assert arrival_notice_payload(None) == {"notice": None, "group_ready": []}
+    assert arrival_notice_payload("") == {"notice": None, "group_ready": []}
 
 
 def test_hold_page_omits_arrival_updates_even_when_grouped(monkeypatch):
