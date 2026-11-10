@@ -1959,9 +1959,9 @@ class ChainTrialMaker(NetworkTrialMaker):
             return
         is_follower = participant != sync_group.leader if sync_group else False
         _, run = self._group_run(participant)
-        copies = run is not None and "block_order" in run
+        copies_block_order = run is not None and "block_order" in run
 
-        if not is_follower or not copies:
+        if not (is_follower and copies_block_order):
             if self.chain_type == "within":
                 networks = self.create_networks_within(experiment, participant)
                 rows = [(n.block, n.participant_group) for n in networks]
@@ -1985,7 +1985,7 @@ class ChainTrialMaker(NetworkTrialMaker):
                     )
             self.check_participant_groups({group for _, group in rows})
 
-        if copies:
+        if copies_block_order:
             participant.module_state.block_order = list(run["block_order"])
             participant.module_state.set_block_position(run["block_position"])
         else:

@@ -98,6 +98,7 @@ from psynet.timeline_hold import (
     default_group_barrier_arrival_message,
     default_hold_progress,
 )
+from psynet.trial.main import _edit_group_runs
 from psynet.utils import call_function_with_context, get_config
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -374,6 +375,22 @@ def test_pending_barrier_checks_are_discarded_on_rollback(
     db_session.rollback()
 
     assert _take_pending_barrier_checks() == []
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_nested_edits_to_a_group_s_trial_maker_runs_are_saved(
+    in_experiment_directory, db_session
+):
+    group = _pair_sync_group(get_experiment(), db_session)[1]
+    _edit_group_runs(group, "tm", lambda runs: runs.append({"members": []}))
+    db_session.commit()
+    _edit_group_runs(group, "tm", lambda runs: runs[-1]["members"].append(1))
+    db_session.commit()
+    db_session.expire_all()
+
+    assert group.trial_maker_runs == {"tm": [{"members": [1]}]}
 
 
 @pytest.mark.parametrize(

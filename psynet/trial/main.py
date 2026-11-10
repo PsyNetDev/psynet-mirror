@@ -2335,7 +2335,7 @@ class TrialMaker(Module):
         )
 
     def _init_participant(self):
-        # The barrier makes sure the group's leader is initialized first.
+        # The barrier's release starts each run of the group.
         barrier = [] if self.sync_group_type is None else _InitParticipantBarrier(self)
         return join(
             barrier,
@@ -2698,13 +2698,27 @@ class TrialMaker(Module):
         participant.select_module(self.id)
         participant.module_state.n_completed_trials = 0
         participant.module_state.in_repeat_phase = False
+        self._join_group_run(participant)
         self.init_participant_group(experiment, participant)
         participant.module_state.trial_maker_initialized = True
-        group, run = self._group_run(participant)
-        if run is not None:
-            _edit_group_runs(
-                group, self.id, lambda runs: runs[-1]["members"].append(participant.id)
-            )
+
+    def _join_group_run(self, participant):
+        """Record the participant as a member of their group's current run.
+
+        This rereads the group's runs under its row lock, which is held until
+        the transaction ends, so the run whose choices they then copy or make
+        is the one they joined, even if the group's release was starting a
+        new run meanwhile.
+        """
+        group = self._active_sync_group(participant)
+        if group is None:
+            return
+
+        def join(runs):
+            if runs:
+                runs[-1]["members"].append(participant.id)
+
+        _edit_group_runs(group, self.id, join)
 
     def _active_sync_group(self, participant):
         """Return the participant's active group of ``sync_group_type``, if any."""
