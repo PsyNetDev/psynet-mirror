@@ -33,20 +33,15 @@ Barrier definition and instance
     identities separate lets multiple worker processes cooperate without using
     mutable metadata as a mutex.
 
-Round visit and group visit
-    On arrival at a ``GroupBarrier``, ``receive_participant`` stores on the
-    ``ParticipantLinkBarrier`` row the round (``SyncGroupNode`` id) whose
-    unfinished cued trial the member is in, or ``NULL`` for a visit by the
-    whole group (``_visit_round_id``). ``_group_visits`` splits a group's
-    waiters by that column, and ``_waited_for`` reads whom each part waits
-    for from stored facts: the members' current trials
-    (``Participant.current_trial_id``) on the node, its
-    ``sync_group_closed`` flag, trial rows on it (to find members with no
-    trial yet while it is open) and the members' ``ModuleState`` rows. The release check, the
-    ``would_release`` peek, ``late_after`` and hold counts go through both
-    helpers, and ``on_dissolve`` through ``_group_visits``, so they can't
-    disagree about who waits together; change who waits there, not in one
-    caller.
+Whom a group barrier waits for
+    A ``GroupBarrier`` waits for every active member of its group, wherever
+    they are in the timeline; nothing about their position is inferred. A
+    member stops being waited for only by leaving the group (``leave_group``,
+    ``late_action``, ``max_wait_action``, failing or finishing). The
+    release's round, if any, is the node that every released member's
+    unfinished cued trial is on (``_common_round_node``). If every member is
+    waiting, but no barrier of the group has them all, nothing can pass:
+    ``_report_divergence`` logs that as an error, and raises it in tests.
 
 Where this shows up in a timeline
 ---------------------------------
@@ -112,11 +107,13 @@ methods are live-only.
 """
 
 import inspect
+import os
 import random
 import time
 import uuid
 from collections import Counter
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import timedelta
 from functools import partial
 from math import ceil, floor
@@ -145,6 +142,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    and_,
     func,
     or_,
     select,
@@ -1509,20 +1507,18 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
             raise
 
 
-def _group_barrier_outcome(group, members, waiting, waited_for):
+def _group_barrier_outcome(group, members, waiting_ids):
     """Return ``"dissolve"``, ``"release"`` or ``"wait"`` for one visit of ``group``.
 
     Pure: ``GroupBarrier.would_release`` passes the members it projects will
     remain, and ``choose_who_to_release`` the live ones, so the peek and the
-    real release share one decision. ``members`` count towards the quorum;
-    the visit releases its ``waiting`` members once all of ``waited_for``
-    (see :func:`_waited_for`) are among them.
+    real release share one decision. ``members`` count towards the quorum,
+    and the visit releases once all of them are waiting.
     """
     if len(members) < group.min_group_size:
         waits_for_top_ups = group.accepts_top_ups and not _top_up_wait_over(group)
         return "wait" if waits_for_top_ups else "dissolve"
-    waiting_ids = {p.id for p in waiting}
-    if all(p.id in waiting_ids for p in waited_for):
+    if all(p.id in waiting_ids for p in members):
         return "release"
     return "wait"
 
@@ -1654,24 +1650,21 @@ class GroupBarrier(Barrier):
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
     have reached the Barrier. It also checks the group against its ``quorum``: a group below it
     can't proceed, and waits for newcomers or is dissolved (see :ref:`groups_below_min_size`).
-    It doesn't wait for members who have finished the barrier's module.
 
-    Each member's visit is one of two kinds, stored when they arrive (see
-    :ref:`round barriers and group barriers <rounds-barrier-visits>`). A
-    *round visit* comes from inside the member's unfinished trial of a
+    It waits for every active member of the group, wherever they are in the
+    timeline, until they leave the group: with :func:`leave_group`,
+    ``late_action`` or ``max_wait_action``, or by failing or finishing the
+    experiment. So a member whose part ends before the group's, such as at
+    the end of a loop that runs a different number of times for each member,
+    must leave the group there (see :ref:`sync-leaving-a-group`). When every
+    member it releases is inside the same round's trial of a
     :meth:`~psynet.trial.main.Trial.cue` with ``sync_group_type``, that is,
-    a barrier in ``show_trial``. It waits for the members whose current
-    trial is in that round and, while the round is open, for those who
-    haven't cued it yet; its release closes the round to newcomers, whose cues then start
-    the next round. Any other visit, such as before the first cue, in
-    ``show_feedback`` or after the loop, is a *group visit*, which waits for
-    every member still in the module. One ``id_`` used both inside and outside ``show_trial``
-    acts as two separate barriers, and PsyNet logs a warning: give them
-    distinct IDs. A group visit can wait for a member inside a round that
-    waits for the group visit's members, as for a newcomer who hasn't cued
-    yet. Neither then passes until ``late_after`` or ``max_wait_time``
-    moves someone on, and PsyNet logs a warning naming both barriers: move
-    the barrier into ``show_trial`` or stop top-ups before the module (see :ref:`group barriers in a loop <rounds-group-barriers-in-loops>`).
+    at a barrier in ``show_trial``, the release closes that round to
+    newcomers, whose cues then start the next round. If every member is
+    waiting but at different barriers of the group, none of them can ever
+    pass: PsyNet logs an error naming the barriers, and raises it in tests,
+    and ``late_after`` or ``max_wait_time`` ends the wait (see
+    :ref:`rounds-group-barriers-in-loops`).
 
     After the arrival write commits, the same request evaluates the barrier in
     a short transaction so partners are released without waiting for the 0.5 s
@@ -1749,13 +1742,13 @@ class GroupBarrier(Barrier):
 
     on_release
         Optional callback invoked when the barrier releases the group. It may take
-        ``group``, ``participants`` (the members it releases: those waiting
-        at this visit), ``trials``
+        ``group``, ``participants`` (the members it releases: the group's
+        active members), ``trials``
         (each member's ``current_trial``, in the same order as ``participants``,
         for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
         ``sync_group_type`` that the barrier is part of), ``node`` (the
-        group's :class:`~psynet.trial.main.SyncGroupNode` for a round visit,
-        or ``None`` for a group visit; see :ref:`the barrier's node <sync-barrier-node>`), ``leader`` (the
+        group's :class:`~psynet.trial.main.SyncGroupNode` of the round whose
+        trial every released member is in, or ``None``; see :ref:`the barrier's node <sync-barrier-node>`), ``leader`` (the
         group's leader, who may be missing from ``participants``),
         ``participant`` (the same object as ``leader``, kept for
         compatibility), ``left`` (the members who left the group since its
@@ -1796,7 +1789,7 @@ class GroupBarrier(Barrier):
         ``trials`` follow the same rule as for ``on_release``. The same
         serialization rules apply. Dissolving waits for any member who is in
         the middle of another request, so ``on_dissolve`` is called once,
-        with every member waiting here (once per kind of visit).
+        with every member waiting here.
 
     stop_top_ups
         If ``True``, the group stops accepting newcomers once it passes this
@@ -2018,35 +2011,6 @@ class GroupBarrier(Barrier):
             )
         return group
 
-    def receive_participant(self, participant: Participant):
-        """Register the arrival, storing on the visit which round it belongs to, if any (see :func:`_visit_round_id`)."""
-        super().receive_participant(participant)
-        group = participant.active_sync_groups[self.group_type]
-        round_id = _visit_round_id(group, participant)
-        participant.active_barriers[self.id].round_node_id = round_id
-        self._warn_if_id_reused_around_trial(round_id is not None)
-
-    def _warn_if_id_reused_around_trial(self, in_round):
-        """Warn once per barrier ID and group type when it is visited both inside a cued trial and outside it.
-
-        Barriers in ``show_trial`` aren't in the timeline, so this can only
-        be seen when members arrive.
-        """
-        key = (self.id, self.group_type)
-        kinds = _visit_kinds_seen.setdefault(key, set())
-        if in_round in kinds:
-            return
-        kinds.add(in_round)
-        if len(kinds) == 2:
-            logger.warning(
-                "GroupBarrier '%s' (group type '%s') is used both inside a "
-                "cued trial's show_trial and outside it. The two are separate "
-                "barriers that can wait for each other, until late_after or "
-                "max_wait_time moves someone on. Give them distinct IDs.",
-                self.id,
-                self.group_type,
-            )
-
     def get_waiting_participants(self, participant=None, *, for_update: bool = False):
         """Return people waiting at this group visit.
 
@@ -2074,11 +2038,7 @@ class GroupBarrier(Barrier):
         return default_hold_progress(**counts)
 
     def _hold_message_counts(self, participant):
-        """Return ``waiting_count`` and ``group_size`` for the participant's visit, both ``None`` without a group.
-
-        The visit is the one the participant waits at, or, before they
-        arrive, the one their arrival would join (see :func:`_visit_round_id`).
-        """
+        """Return ``waiting_count`` and ``group_size``, both ``None`` without a group."""
         group = (
             None
             if participant is None
@@ -2086,19 +2046,10 @@ class GroupBarrier(Barrier):
         )
         if group is None:
             return {"waiting_count": None, "group_size": None}
-        waiting = [
-            m for m in group.active_participants if self._participant_is_waiting(m)
-        ]
-        if participant in waiting:
-            round_id = participant.active_barriers[self.id].round_node_id
-        else:
-            round_id = _visit_round_id(group, participant)
-        visits = {v.round_id: v for v in _group_visits(group, waiting, self.id)}
-        same_visit = visits[round_id].waiting if round_id in visits else []
-        visit = _Visit(round_id, [participant, *same_visit])
+        members = group.active_participants
         return {
-            "waiting_count": len(same_visit),
-            "group_size": _visit_group_size(group, visit),
+            "waiting_count": sum(self._participant_is_waiting(m) for m in members),
+            "group_size": len(members),
         }
 
     def _call_arrival_message(self, **kwargs):
@@ -2129,15 +2080,9 @@ class GroupBarrier(Barrier):
             return
         members = group.active_participants
         waiting = [m for m in members if self._participant_is_waiting(m)]
-        counts = {}
+        counts = {"waiting_count": len(waiting), "group_size": len(members)}
         if self._uses_timeline_hold:
             _prime_timeline_hold_records(waiting, self.id)
-            for visit in _group_visits(group, waiting, self.id):
-                visit_counts = {
-                    "waiting_count": len(visit.waiting),
-                    "group_size": _visit_group_size(group, visit),
-                }
-                counts.update({m.id: visit_counts for m in visit.waiting})
         # Arrivals in concurrent requests don't see each other, so the browser
         # fetches the notice and ready seats after the commit instead of being
         # sent the counts this request sees.
@@ -2152,7 +2097,7 @@ class GroupBarrier(Barrier):
                         hold_page, "_is_silent_for", None
                     ) and hold_page._is_silent_for(member):
                         continue
-                    hold_html = hold_page.overlay_html(member, counts=counts[member.id])
+                    hold_html = hold_page.overlay_html(member, counts=counts)
                 _queue_arrival_update(member.id, hold_message=hold_html, refresh=True)
                 continue
             _queue_arrival_update(member.id, refresh=True)
@@ -2176,31 +2121,32 @@ class GroupBarrier(Barrier):
         for group in groups.values():
             if self._skips_busy_group(group):
                 continue
-            for visit in _group_visits(group, waiting_participants, self.id):
-                if not _lock_round(group, visit.node):
-                    continue
-                group.check_numbers()
-                waited_for = _waited_for(group, visit)
-                outcome = _group_barrier_outcome(
-                    group, group.active_participants, visit.waiting, waited_for
+            node = _common_round_node(
+                group, self._waiting_members(group, waiting_participants)
+            )
+            if not _lock_round(group, node):
+                continue
+            group.check_numbers()
+            members = group.active_participants
+            outcome = _group_barrier_outcome(group, members, waiting_participant_ids)
+
+            if outcome == "dissolve":
+                # The group can never reach its quorum, so remove everyone
+                # and release whoever is waiting here, after the grouper's
+                # below_quorum has failed or released each of them (or
+                # nobody yet, if a member is busy; see _dissolve).
+                group.accepts_top_ups = False
+                participants_to_release.extend(
+                    participant
+                    for participant in group._dissolve()
+                    if participant.id in waiting_participant_ids
                 )
-                if outcome == "dissolve":
-                    # The group can never reach its quorum, so remove everyone
-                    # and release whoever is waiting here, after the grouper's
-                    # below_quorum has failed or released each of them (or
-                    # nobody yet, if a member is busy; see _dissolve).
-                    group.accepts_top_ups = False
-                    participants_to_release.extend(
-                        participant
-                        for participant in group._dissolve()
-                        if participant.id in waiting_participant_ids
-                    )
-                    break
-                if outcome == "release":
-                    participants_to_release.extend(visit.waiting)
-                    self._pass(group, visit, waited_for)
-                elif visit.node is None:
-                    self._warn_if_waiting_for_a_round(group, visit, waited_for)
+            elif outcome == "release":
+                released = self._waiting_members(group, waiting_participants)
+                participants_to_release.extend(released)
+                self._pass(group, released, node)
+            elif len(members) >= group.min_group_size and not _in_poller_sweep.get():
+                _report_divergence(group)
 
         participants_to_release_ids = {p.id for p in participants_to_release}
         for participant in waiting_participants:
@@ -2215,9 +2161,14 @@ class GroupBarrier(Barrier):
 
         return participants_to_release
 
-    def _pass(self, group, visit, waited_for):
-        """Do the group's bookkeeping for releasing ``visit``, close its round, if any, and call ``on_release``."""
-        released = visit.waiting
+    @staticmethod
+    def _waiting_members(group, waiting_participants):
+        """Return the active members of ``group`` among ``waiting_participants``."""
+        member_ids = {p.id for p in group.active_participants}
+        return [p for p in waiting_participants if p.id in member_ids]
+
+    def _pass(self, group, released, node):
+        """Do the group's bookkeeping for releasing ``released``, close round ``node``, if any, and call ``on_release``."""
         group.check_leader()
         for participant in released:
             link = participant.active_barriers.get(self.id)
@@ -2227,17 +2178,15 @@ class GroupBarrier(Barrier):
             group.last_barrier_pass_time or group.creation_time
         )
         group.last_barrier_pass_time = timenow()
-        passed_ids = {p.id for p in [*released, *waited_for]}
         for link in group.participant_links:
-            if link.participant_id in passed_ids:
-                link.page_deadline = None
+            link.page_deadline = None
         if self.stop_top_ups and hasattr(group, "stop_top_ups"):
             group.stop_top_ups()
 
         trials = [p.current_trial for p in released]
-        if visit.node is not None:
+        if node is not None:
             # Closes the round to newcomers: their cues start the next.
-            visit.node.sync_group_closed = True
+            node.sync_group_closed = True
             for trial in trials:
                 if trial.sync_group_outcome is None:
                     trial.sync_group_outcome = "stayed"
@@ -2247,7 +2196,7 @@ class GroupBarrier(Barrier):
                     group=group,
                     participants=released,
                     trials=trials,
-                    node=visit.node,
+                    node=node,
                     leader=group.leader,
                     participant=group.leader,
                     left=left,
@@ -2260,49 +2209,6 @@ class GroupBarrier(Barrier):
                     f"Barrier '{self.id}' on_release failed."
                 ) from err
 
-    def _warn_if_waiting_for_a_round(self, group, visit, waited_for):
-        """Warn if a visit by the whole group waits for a round of the group that waits for it.
-
-        This visit waits for members waiting inside a round. If that round
-        waits for one of this visit's members, as an open round does for a
-        member of its module who hasn't cued yet, neither passes until a
-        time-out removes someone. Warns once per barrier, round barrier and
-        group type.
-        """
-        waiting_ids = {p.id for p in visit.waiting}
-        for participant in waited_for:
-            for link in participant.active_barriers.values():
-                key = (self.id, link.barrier_id, group.group_type)
-                if (
-                    link.released
-                    or link.round_node_id is None
-                    or key in _warned_round_waits
-                    or link.barrier_instance is None
-                    or link.barrier_instance.group_id != group.id
-                ):
-                    continue
-                round_visit = _Visit(link.round_node_id, [])
-                if not waiting_ids & {p.id for p in _waited_for(group, round_visit)}:
-                    continue
-                _warned_round_waits.add(key)
-                logger.warning(
-                    "GroupBarrier '%s' waits for the whole '%s' group %s, "
-                    "including participant %s, who waits inside a cued round "
-                    "at GroupBarrier '%s', which waits for members waiting "
-                    "here. Neither can pass until late_after or max_wait_time "
-                    "moves someone on. If '%s' is inside the loop of rounds, "
-                    "move it into the trial's show_trial, or stop top-ups "
-                    "(stop_top_ups=True) before the module. If it starts a run "
-                    "of a looped module, move the loop's pages into the module, "
-                    "or add a GroupBarrier right after them.",
-                    self.id,
-                    group.group_type,
-                    group.id,
-                    participant.id,
-                    link.barrier_id,
-                    self.id,
-                )
-
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         """Return whether this group visit would release, without mutating state.
 
@@ -2311,40 +2217,38 @@ class GroupBarrier(Barrier):
         timeout would remove or fail count as already gone, and group size is
         recounted rather than read from ``n_active_participants``.
         """
+        waiting_ids = {participant.id for participant in waiting_participants}
         if self._waiters_let_through(waiting_participants):
             return True
         for group in self.get_waiting_groups(waiting_participants).values():
+            node = _common_round_node(
+                group, self._waiting_members(group, waiting_participants)
+            )
+            if _round_is_busy(group, node):
+                # choose_who_to_release would defer this group.
+                continue
             if self.stop_top_ups and getattr(group, "accepts_top_ups", False):
                 # A peek takes no lock, but still counts newcomers who have
                 # joined since this session loaded the group.
                 db.session.expire(group, ["participant_links"])
-            visits = self._visits_with_waited_for(group, waiting_participants)
             late_ids = {
-                participant.id for participant in self._late_members(group, visits)
+                participant.id
+                for participant in self._late_between_barriers(group, waiting_ids)
             }
             members = [
                 participant
                 for participant in group.active_participants
                 if participant.id not in late_ids
             ]
-            for visit, waited_for in visits:
-                if _round_is_busy(group, visit.node):
-                    # choose_who_to_release would defer this visit.
-                    continue
-                outcome = _group_barrier_outcome(
-                    group,
-                    members,
-                    visit.waiting,
-                    [p for p in waited_for if p.id not in late_ids],
-                )
-                if outcome != "wait":
-                    return True
+            if _group_barrier_outcome(group, members, waiting_ids) != "wait":
+                return True
         return any(
             self.group_type not in participant.active_sync_groups
             for participant in waiting_participants
         )
 
     def check_waiting_participants(self, waiting_participants: List[Participant]):
+        waiting_ids = {p.id for p in waiting_participants}
         removals = []
         for group in self.get_waiting_groups(waiting_participants).values():
             if self._skips_busy_group(group):
@@ -2352,8 +2256,7 @@ class GroupBarrier(Barrier):
             group.check_numbers()
             if self.late_after is None:
                 continue
-            visits = self._visits_with_waited_for(group, waiting_participants)
-            late = self._late_members(group, visits)
+            late = self._late_between_barriers(group, waiting_ids)
             if self.late_action == "fail" and late:
                 # All or nothing, as in dissolving: a late member whose own
                 # request holds their row would otherwise stay behind in a
@@ -2364,29 +2267,6 @@ class GroupBarrier(Barrier):
             if late:
                 removals.append((group, late, len(group.active_participants)))
         self._remove_late_participants(removals)
-
-    def _visits_with_waited_for(self, group, waiting_participants):
-        """Return ``group``'s visits among ``waiting_participants``, each with whom it waits for."""
-        return [
-            (visit, _waited_for(group, visit))
-            for visit in _group_visits(group, waiting_participants, self.id)
-        ]
-
-    def _late_members(self, group, visits):
-        """Return the members whom one of ``group``'s ``visits`` (each with whom it waits for) waits for and who are late.
-
-        Each visit counts only its own waiters as there, so a member waiting
-        at the other kind of visit of this barrier ID is absent, as at any
-        other barrier.
-        """
-        late = {}
-        for visit, waited_for in visits:
-            waiting_ids = {p.id for p in visit.waiting}
-            for participant in self._late_between_barriers(
-                group, waiting_ids, waited_for
-            ):
-                late[participant.id] = participant
-        return list(late.values())
 
     def _skips_busy_group(self, group) -> bool:
         """Return whether this check must leave ``group`` alone because a newcomer may be joining it.
@@ -2523,14 +2403,10 @@ class GroupBarrier(Barrier):
         }
         _queue_arrival_update(participant.id, notice=text, removed=True)
 
-    def _late_between_barriers(
-        self, group: "SyncGroup", waiting_ids, waited_for: List[Participant]
-    ) -> list:
-        """Return members of ``waited_for`` past the between-barrier timeout who are not waiting.
+    def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
+        """Return active members past the between-barrier timeout who are not waiting.
 
-        ``waited_for`` are the active members the group's visits wait for (see
-        :func:`_waited_for`). Each member is timed from the group's last
-        barrier pass or from when they joined the group, whichever is later,
+        Each member is timed from the group's last barrier pass or from when they joined the group, whichever is later,
         so newcomers to an open group are not late as soon as they join. A
         member who has started a page with a time limit since then, outside
         waiting logic, is not late until that limit has run out and an answer
@@ -2541,7 +2417,7 @@ class GroupBarrier(Barrier):
             return []
         now = timenow()
         answer_arrival = timedelta(seconds=2 * TIME_LIMIT_GRACE_SECONDS)
-        active_ids = {p.id for p in waited_for}
+        active_ids = {p.id for p in group.active_participants}
         late = []
         for link in group.participant_links:
             participant = link.participant
@@ -4741,138 +4617,115 @@ def _round_trial(group, participant):
     return trial
 
 
-def _visit_round_id(group, participant):
-    """Return the id of the round that the participant's visit to a :class:`GroupBarrier` of ``group`` belongs to, or ``None``.
+def _common_round_node(group, participants):
+    """Return the round of ``group`` whose trial each of ``participants`` is in, as its node, or ``None``.
 
-    A visit while the participant's current trial is an unfinished cued
-    trial of ``group`` (see :func:`_round_trial`), that is, from a barrier
-    in ``show_trial``, is a visit of that trial's round, its node. Any
-    other visit, such as before the first cue, in ``show_feedback`` or
-    after the loop, is a visit by the whole group, and gives ``None``.
-    :meth:`GroupBarrier.receive_participant` stores the answer on the visit.
+    That is a node shared by every participant's current trial, an
+    unfinished cued trial of ``group`` in this run of their module (see
+    :func:`_round_trial`), as at a barrier in ``show_trial``. Anywhere else,
+    such as before the first cue, in ``show_feedback`` or after the loop,
+    or if one participant isn't in that round, it is ``None``.
     """
-    trial = _round_trial(group, participant)
-    return None if trial is None or trial.complete else trial.node_id
+    trials = [_round_trial(group, p) for p in participants]
+    node_ids = {None if t is None or t.complete else t.node_id for t in trials}
+    if len(node_ids) != 1 or None in node_ids:
+        return None
+    return trials[0].node
 
 
-class _Visit(NamedTuple):
-    """The members of a group waiting at a :class:`GroupBarrier` for one round, or for none; see :func:`_group_visits`."""
+class GroupDivergenceError(RuntimeError):
+    """A group's members wait for each other at different :class:`GroupBarrier` s, so none can pass.
 
-    #: The round's node id, or ``None`` for a visit by the whole group.
-    round_id: Optional[int]
-    waiting: List[Participant]
-
-    @property
-    def node(self):
-        """The round's :class:`~psynet.trial.main.SyncGroupNode`, or ``None``."""
-        from .trial.main import SyncGroupNode
-
-        return (
-            None
-            if self.round_id is None
-            else db.session.get(SyncGroupNode, self.round_id)
-        )
-
-
-def _group_visits(group, waiting_participants, barrier_id) -> List[_Visit]:
-    """Split the members of ``group`` among ``waiting_participants`` into visits, by the round their visit stored.
-
-    Visits to different rounds, or a round visit and a visit by the whole
-    group, wait and pass separately, though they share one waiting pool
-    (``barrier_id`` and group). Every :class:`GroupBarrier` check, peek,
-    hold count and ``on_dissolve`` call goes through this, so they agree
-    on who waits together. The group's visit comes first, then rounds in
-    play order (node ``id``). A participant with no stored visit, as when
-    a caller passes members who haven't arrived, is classified as they are now.
+    Raised only in tests; see :func:`_report_divergence`.
     """
-    member_ids = {p.id for p in group.active_participants}
-    by_round = {}
-    for participant in waiting_participants:
-        if participant.id not in member_ids:
-            continue
-        link = participant.active_barriers.get(barrier_id)
-        round_id = (
-            _visit_round_id(group, participant) if link is None else link.round_node_id
-        )
-        by_round.setdefault(round_id, []).append(participant)
-    return [
-        _Visit(round_id, by_round[round_id])
-        for round_id in sorted(by_round, key=lambda i: (i is not None, i or 0))
-    ]
 
 
-def _visit_group_size(group, visit) -> int:
-    """Return how many members a hold message counts for ``visit``: its waiters and those it waits for."""
-    return len({p.id for p in [*visit.waiting, *_waited_for(group, visit)]})
+#: (Group id, barrier IDs) pairs already logged by :func:`_report_divergence`.
+_reported_divergences = set()
+
+#: Set while :func:`check_barriers` sweeps. Arrivals and waiters' hold polls
+#: look for divergence (see :func:`_report_divergence`), so the sweeps, which
+#: recheck every waiting visit, don't add a statement per visit.
+_in_poller_sweep = ContextVar("_in_poller_sweep", default=False)
 
 
-def _waited_for(group, visit) -> List[Participant]:
-    """Return the active members of ``group`` whom ``visit`` waits for, from stored facts.
+def _in_tests() -> bool:
+    """Return whether PsyNet runs under pytest, as in ``psynet test local`` and its experiment server."""
+    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
 
-    A round visit waits for the members still in the round's module (see
-    :func:`_still_in_module`) whose current trial is on its node, and, while
-    the round is open, for those who don't have a trial on it yet, since
-    their cue will join it. So it doesn't wait for a member who skipped the
-    round, whose cue left them without a current trial, such as one who
-    joined the group after it closed, or who left and rejoined it and so
-    already has a trial on it. A visit by the whole group waits for
-    every member still in the module of a member waiting there, or for
-    every member if one of them is outside any module. A member waiting at
-    the other kind of visit of the same barrier ID is waited for like one
-    waiting at another barrier.
+
+def _report_divergence(group):
+    """Log an error, and raise :class:`GroupDivergenceError` in tests, if ``group`` can't pass any of its barriers.
+
+    That is when every active member waits at a :class:`GroupBarrier` of
+    the group, but none of those barriers has them all, as when a barrier
+    is inside a ``conditional`` that only some members take. Each barrier
+    waits for the members at the others, so only ``late_after`` or
+    ``max_wait_time`` can end the wait, which is what happens in
+    production. The members and their waits are read in one statement, so
+    they are consistent with each other. A member that a barrier lets
+    through (see :meth:`GroupBarrier._lets_through`) isn't stuck. Logged
+    once per group and set of barriers.
     """
-    from .trial.main import Trial
-
-    members = group.active_participants
-    node = visit.node
-    if node is None:
-        module_ids = {p.module_id for p in visit.waiting}
-        return [p for p in members if any(_still_in_module(p, m) for m in module_ids)]
-    in_module = [p for p in members if _still_in_module(p, node.module_id)]
-    ids = [p.id for p in in_module]
-    players = set(
-        db.session.execute(
-            select(Participant.id)
-            .join(Trial, Participant.current_trial_id == Trial.id)
-            .where(Trial.node_id == node.id, Participant.id.in_(ids))
-        ).scalars()
+    group_instances = select(BarrierInstance.id).where(
+        BarrierInstance.group_id == group.id
     )
-    if len(players) < len(in_module):
-        db.session.refresh(node, ["sync_group_closed"])
-        if not node.sync_group_closed:
-            have_trials = set(
-                db.session.execute(
-                    select(Trial.participant_id).where(
-                        Trial.node_id == node.id, Trial.participant_id.in_(ids)
-                    )
-                ).scalars()
-            )
-            players |= set(ids) - have_trials
-    return [p for p in in_module if p.id in players]
-
-
-def _still_in_module(participant, module_id):
-    """Return whether a member hasn't finished module ``module_id``, so a barrier in it waits for them.
-
-    It doesn't once they have finished the module and not started it again,
-    as when their loop ended earlier or a conditional inside the module
-    skipped the loop, reading their ``ModuleState``. A member who hasn't
-    started it yet may still come, so one whose timeline skips the whole
-    module is waited for until the barrier's ``late_after`` or
-    ``max_wait_time`` applies. ``module_id`` ``None`` (outside any module)
-    holds for everyone.
-    """
-    states = participant.module_states.get(module_id, [])
-    return not states or not all(state.finished for state in states)
-
-
-#: (Barrier ID, round barrier ID, group type) triples warned about by
-#: ``GroupBarrier._warn_if_waiting_for_a_round``.
-_warned_round_waits = set()
-
-#: Visit kinds (``True`` inside a round) seen per (barrier ID, group type); see
-#: ``GroupBarrier._warn_if_id_reused_around_trial``.
-_visit_kinds_seen = {}
+    rows = db.session.execute(
+        select(ParticipantLinkSyncGroup.participant_id, ParticipantLinkBarrier)
+        .join(Participant, Participant.id == ParticipantLinkSyncGroup.participant_id)
+        .outerjoin(
+            ParticipantLinkBarrier,
+            and_(
+                ParticipantLinkBarrier.participant_id
+                == ParticipantLinkSyncGroup.participant_id,
+                ParticipantLinkBarrier.released.is_(False),
+                ParticipantLinkBarrier.barrier_instance_id.in_(group_instances),
+            ),
+        )
+        .where(
+            ParticipantLinkSyncGroup.sync_group_id == group.id,
+            ParticipantLinkSyncGroup.active.is_(True),
+            Participant.failed.is_(False),
+            Participant.status == "working",
+        )
+    ).all()
+    members = {participant_id for participant_id, _ in rows}
+    waits = {}
+    for participant_id, link in rows:
+        if link is None:
+            return
+        barrier = link.barrier_instance.get_barrier()
+        if isinstance(barrier, GroupBarrier):
+            waits.setdefault(barrier.id, (barrier, []))[1].append(link.participant)
+    if (
+        len(waits) < 2
+        or {p.id for _, waiting in waits.values() for p in waiting} != members
+        or any(
+            {p.id for p in waiting} == members or barrier._waiters_let_through(waiting)
+            for barrier, waiting in waits.values()
+        )
+    ):
+        return
+    key = (group.id, frozenset(waits))
+    if key in _reported_divergences and not _in_tests():
+        return
+    _reported_divergences.add(key)
+    message = (
+        f"The members of '{group.group_type}' group {group.id} wait for each "
+        "other at different barriers, so none can pass: "
+        + "; ".join(
+            f"GroupBarrier '{barrier_id}' has participants "
+            + ", ".join(str(i) for i in sorted(p.id for p in waiting))
+            for barrier_id, (_, waiting) in sorted(waits.items())
+        )
+        + ". Each GroupBarrier waits for every member of its group, so put the "
+        "barriers where every member reaches them in the same order, or have "
+        "members leave the group (leave_group) before their paths diverge. "
+        "Until late_after or max_wait_time moves someone on, nobody passes."
+    )
+    if _in_tests():
+        raise GroupDivergenceError(message)
+    logger.error(message)
 
 
 def _lock_round(group, node) -> bool:
@@ -4882,9 +4735,7 @@ def _lock_round(group, node) -> bool:
     round. :meth:`~psynet.trial.main.SyncGroupNode.for_cue` holds the same
     lock while a cue runs, so a busy lock defers the release to the next
     barrier check, instead of waiting while this request holds waiter rows.
-    :func:`_waited_for` then queries the round's trials, so it counts a
-    trial that a cue committed before the lock. Visits by the whole group
-    need no lock.
+    Releases outside a round need no lock.
     """
     key = _round_lock_key(group, node)
     if key is None:
@@ -4936,25 +4787,22 @@ def _run_on_dissolve(group, members):
                 participant
             )
     for barrier, participants in waiting.values():
-        for visit in _group_visits(group, participants, barrier.id):
-            try:
-                barrier.on_dissolve(
-                    group=group,
-                    participants=visit.waiting,
-                    trials=[p.current_trial for p in visit.waiting],
-                    node=visit.node,
-                    barrier=barrier,
-                )
-            except Exception as err:
-                # Dissolving runs in other participants' requests, such as one
-                # returning the study, which must not fail because of this hook.
-                if is_transient_transaction_error(err):
-                    raise
-                logger.exception(
-                    "Barrier '%s' on_dissolve failed for group %s.",
-                    barrier.id,
-                    group.id,
-                )
+        try:
+            barrier.on_dissolve(
+                group=group,
+                participants=participants,
+                trials=[p.current_trial for p in participants],
+                node=_common_round_node(group, participants),
+                barrier=barrier,
+            )
+        except Exception as err:
+            # Dissolving runs in other participants' requests, such as one
+            # returning the study, which must not fail because of this hook.
+            if is_transient_transaction_error(err):
+                raise
+            logger.exception(
+                "Barrier '%s' on_dissolve failed for group %s.", barrier.id, group.id
+            )
 
 
 def _top_up_wait_over(group) -> bool:
@@ -5305,10 +5153,6 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     # A Regrouper with ``keep_roles`` gave a newcomer this role for the
     # coming split; it is kept once they play it.
     role = Column(String)
-    # At a GroupBarrier, the round (a SyncGroupNode id) whose unfinished
-    # trial the member was in when they arrived, or NULL for a visit by the
-    # whole group; see ``_visit_round_id``.
-    round_node_id = Column(Integer)
     # With explicit waiting_logic there is no hold record, so the link keeps
     # the max_wait_time deadline for the poller.
     deadline_at = Column(DateTime)
@@ -6135,6 +5979,15 @@ def check_barriers():
     check their own visit on each hold poll.
     """
     seen = set()
+    token = _in_poller_sweep.set(True)
+    try:
+        _check_barriers(seen)
+    finally:
+        _in_poller_sweep.reset(token)
+
+
+def _check_barriers(seen):
+    """Do the work of :func:`check_barriers`, adding each visit checked to ``seen``."""
     with _defer_timeline_hold_wakes():
         _finish_dissolving_groups()
         _time_out_overdue_waiters(time.monotonic() + _POLLER_SWEEP_BUDGET_SECONDS)

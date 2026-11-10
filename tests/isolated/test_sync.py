@@ -6038,29 +6038,6 @@ def test_group_hold_reports_how_many_are_not_ready_yet(
     assert pending_arrival_notice_for(third) == "2/3 of your group are ready."
 
 
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
-)
-def test_pushed_hold_counts_leave_out_members_who_finished_the_module(
-    in_experiment_directory, db_session, monkeypatch
-):
-    exp = get_experiment()
-    members = _sync_group_of(exp, db_session, 4)[0]
-    game = Module("game", InfoPage("Hi", time_estimate=1))
-    for participant in members:
-        participant.start_module(game)
-    members[-1].end_module(game)
-    db_session.commit()
-    publications = _hold_wake_publications(monkeypatch)
-    barrier = GroupBarrier(id_="b", group_type="main", waiting_message="Waiting")
-
-    first = members[0]
-    _arrive_at_group_barrier(exp, barrier, first)
-    db_session.commit()
-    assert "2 of 3 not ready yet" in barrier.waiting_logic.overlay_html(first)
-    assert "2 of 3 not ready yet" in _arrival_hold_messages(publications, first.id)[-1]
-
-
 def _chosen_waiting_text(waiting_count, group_size):
     return hold_message(
         "Waiting for the room", f"{waiting_count} of {group_size} have chosen"
@@ -8115,8 +8092,10 @@ def _skips(barrier, exp, participant):
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_a_newcomer_at_a_barrier_the_group_passed_strands_the_group_unless_it_passes_newcomers(
-    in_experiment_directory, db_session, pass_newcomers
+    in_experiment_directory, db_session, monkeypatch, pass_newcomers
 ):
+    # As in production: the stranded group is only logged, until late_after.
+    monkeypatch.setattr("psynet.sync._in_tests", lambda: False)
     exp = get_experiment()
     grouper = _team_grouper()
     game_starts = GroupBarrier(
