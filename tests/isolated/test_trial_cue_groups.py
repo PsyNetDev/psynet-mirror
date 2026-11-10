@@ -22,6 +22,7 @@ from psynet.sync import (
     _hold_barrier_instance_claim,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
+    leave_group,
 )
 from psynet.timeline import Module, Timeline
 from psynet.trial.chain import ChainNode
@@ -859,6 +860,18 @@ def test_members_waiting_for_each_other_at_different_barriers_are_reported(
     (error,) = [r for r in caplog.records if "wait for each other" in r.getMessage()]
     assert error.levelname == "ERROR" and "'submitted' has" in error.getMessage()
     assert all(in_round._participant_is_waiting(p) for p in cohort)
+
+
+@in_consents_experiment
+def test_divergence_is_reported_when_a_member_s_departure_completes_it(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, newcomer, _ = _newcomer_in_round_0(exp)
+    _arrive(exp, GroupBarrier("submitted", group_type="pair"), cohort[:1])
+    _arrive(exp, GroupBarrier("ready", group_type="pair"), [newcomer])
+    with pytest.raises(psynet.sync.GroupDivergenceError):
+        leave_group("pair").consume(exp, cohort[1])
 
 
 @in_consents_experiment

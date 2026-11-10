@@ -8094,8 +8094,9 @@ def _skips(barrier, exp, participant):
 def test_a_newcomer_at_a_barrier_the_group_passed_strands_the_group_unless_it_passes_newcomers(
     in_experiment_directory, db_session, monkeypatch, pass_newcomers
 ):
-    # As in production: the stranded group is only logged, until late_after.
-    monkeypatch.setattr("psynet.sync._in_tests", lambda: False)
+    if not pass_newcomers:
+        # As in production: the stranded group is only logged, until late_after.
+        monkeypatch.setattr("psynet.sync._in_tests", lambda: False)
     exp = get_experiment()
     grouper = _team_grouper()
     game_starts = GroupBarrier(

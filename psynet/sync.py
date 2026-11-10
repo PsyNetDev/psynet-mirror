@@ -2167,7 +2167,10 @@ class GroupBarrier(Barrier):
         return [p for p in waiting_participants if p.id in member_ids]
 
     def _pass(self, group, released, node):
-        """Do the group's bookkeeping for releasing ``released``, close round ``node``, if any, and call ``on_release``."""
+        """Do the group's bookkeeping for releasing ``released``.
+
+        Also closes round ``node``, if any, and calls ``on_release``.
+        """
         group.check_leader()
         for participant in released:
             link = participant.active_barriers.get(self.id)
@@ -2405,8 +2408,9 @@ class GroupBarrier(Barrier):
     def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
         """Return active members past the between-barrier timeout who are not waiting.
 
-        Each member is timed from the group's last barrier pass or from when they joined the group, whichever is later,
-        so newcomers to an open group are not late as soon as they join. A
+        Each member is timed from the group's last barrier pass or from when
+        they joined the group, whichever is later, so newcomers to an open
+        group are not late as soon as they join. A
         member who has started a page with a time limit since then, outside
         waiting logic, is not late until that limit has run out and an answer
         sent at the deadline has had time to arrive, even if they have
@@ -4194,6 +4198,7 @@ def leave_group(group_type: str, reason: RemovalReason = "finished"):
         group = participant.active_sync_groups.get(group_type)
         if group is not None:
             group.remove_participant(participant, reason=reason)
+            _report_divergence_after_leaving(group)
 
     return CodeBlock(_leave)
 
@@ -4641,7 +4646,8 @@ class GroupDivergenceError(RuntimeError):
     """
 
 
-#: Ids of the groups already logged by :func:`_report_divergence`.
+#: Ids of the groups already logged by :func:`_report_divergence`. The set is
+#: per process and never pruned, so each worker logs a group at most once.
 _reported_divergences = set()
 
 #: Set while :func:`check_barriers` sweeps. Arrivals look for divergence
@@ -4667,7 +4673,9 @@ def _report_divergence(group):
     production. The members and their waits are read in one statement, so
     they are consistent with each other. A member that a barrier lets
     through (see :meth:`GroupBarrier._lets_through`) isn't stuck. Logged
-    once per group.
+    once per group and worker. Runs when a member arrives at a group
+    barrier and when one leaves the group by failing or at ``leave_group``
+    (see :func:`_report_divergence_after_leaving`), but not in poller sweeps.
     """
     if group.id in _reported_divergences and not _in_tests():
         return
@@ -4727,6 +4735,17 @@ def _report_divergence(group):
     if _in_tests():
         raise GroupDivergenceError(message)
     logger.error(message)
+
+
+def _report_divergence_after_leaving(group):
+    """Run :func:`_report_divergence` for ``group`` once a member has left it, outside poller sweeps.
+
+    The members left behind may already wait at different barriers, which
+    no later arrival would report. A dissolving group is skipped, as its
+    members leave it anyway.
+    """
+    if group.active and not group.dissolving and not _in_poller_sweep.get():
+        _report_divergence(group)
 
 
 def _report_divergence_at(instance_id):
