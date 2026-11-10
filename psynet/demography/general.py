@@ -1,3 +1,4 @@
+import numbers
 from typing import Optional
 
 from psynet.modular_page import (
@@ -205,14 +206,13 @@ class Age(ModularPage):
             + " "
             + _p("age", "Your answer was: '{AGE}'").format(AGE=answer)
         )
-        try:
-            age = int(answer)
-            if not (0 < age < 120):
-                return FailedValidation(error_msg)
-            else:
-                return None
-        except ValueError:
+        if not (
+            isinstance(answer, numbers.Integral)
+            and not isinstance(answer, bool)
+            and 0 < answer < 120
+        ):
             return FailedValidation(error_msg)
+        return None
 
 
 class CountryDropdown(ModularPage):
