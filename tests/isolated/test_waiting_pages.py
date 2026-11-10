@@ -13,7 +13,7 @@ from psynet.modular_page import ModularPage
 from psynet.page import WaitPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.sync import SimpleGrouper, waiting_status_payload
+from psynet.sync import GroupBarrier, SimpleGrouper, waiting_status_payload
 from psynet.timeline import (
     CodeBlock,
     PageMaker,
@@ -330,9 +330,41 @@ def test_a_release_fails_the_trial_a_trial_loop_prepared_for_its_next_pass(
         db.session.expire_all()
         first = Participant.query.get(first_id)
         assert exp.timeline.get_current_elt(exp, first).label == "filler_b"
-        for trial in FillerTrial.query.filter_by(participant_id=first_id):
+        trials = FillerTrial.query.all()
+        assert len({trial.participant_id for trial in trials}) == 2
+        for trial in trials:
             assert trial.failed_reason == "interrupted_by_release"
             assert trial.complete and not trial.finalized
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
+def test_re_entering_a_barrier_in_its_released_pass_waits_again(
+    in_experiment_directory, db_session
+):
+    """The first passes round 0's barrier, then waits at round 1's."""
+    exp = get_experiment()
+    original = exp.timeline
+    exp.timeline = Timeline(
+        SimpleGrouper("pair", initial_group_size=2, waiting_logic=_filler("g")),
+        for_loop(
+            label="rounds",
+            iterate_over=range(2),
+            logic=GroupBarrier(
+                id_="turn", group_type="pair", waiting_logic=_filler("turn_filler")
+            ),
+        ),
+        ModularPage("after", "Your partner is here", time_estimate=1),
+    )
+    try:
+        first, _ = _release_pair(exp)
+        first_id = first.id
+        _post_response(first, interrupted=True)
+        db.session.expire_all()
+        first = Participant.query.get(first_id)
+        assert exp.timeline.get_current_elt(exp, first).label == "turn_filler"
+        assert first.for_loops["rounds"]["index"] == 1
     finally:
         exp.timeline = original
 

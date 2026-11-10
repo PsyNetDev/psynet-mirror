@@ -4503,6 +4503,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         of modules, loops and fixed time credit run as usual. Skipped pages
         get no response, time credit or progress, and the trial owning each
         page, including trials created during the walk, is failed.
+        ``participant.answer`` is marked as not fresh, as after an interrupt.
         """
         from .sync import (
             _MAX_RELEASE_WALK_STEPS,
@@ -4510,6 +4511,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             released_waiting_barrier,
         )
 
+        participant.answer_is_fresh = False
         for step in range(_MAX_RELEASE_WALK_STEPS + 1):
             page = self.timeline.get_current_elt(self, participant)
             released = released_waiting_barrier(page, participant)

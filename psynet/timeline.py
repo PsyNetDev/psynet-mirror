@@ -3598,9 +3598,19 @@ def _ending_released_pass(barrier_id):
 
 
 def _in_released_pass(participant):
-    """Return whether this request is skipping the participant's released waiting pass."""
+    """Return whether this request is skipping the participant's released waiting pass.
+
+    Re-entering the same barrier in this request starts a new, unreleased
+    visit, whose waiting logic runs as usual.
+    """
+    from .sync import _has_left_barrier
+
     barrier_id = _released_pass_barrier_id.get()
-    return barrier_id is not None and participant.waiting_barrier_id == barrier_id
+    return (
+        barrier_id is not None
+        and participant.waiting_barrier_id == barrier_id
+        and _has_left_barrier(participant, barrier_id)
+    )
 
 
 def while_loop(

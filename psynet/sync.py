@@ -5533,9 +5533,9 @@ def _leave_waiting_logic(code_block, participant):
     from .timeline import _in_released_pass
 
     if _in_released_pass(participant):
+        _end_waiting_page(participant)
         trial = _trial_owning_page(participant)
         if trial is not None:
-            trial.fail(reason=INTERRUPTED_BY_RELEASE)
             trial.complete = True
     outer = code_block.links.get("barrier")
     participant.waiting_barrier_id = None if outer is None else outer.id
