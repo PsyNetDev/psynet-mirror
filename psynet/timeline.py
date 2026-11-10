@@ -13,7 +13,7 @@ import time
 import uuid
 import warnings
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import cached_property
 from importlib import resources
 from statistics import median
@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Unio
 
 from bs4 import BeautifulSoup
 from dallinger import db
+from dallinger.models import timenow
 from dominate import tags
 from jsonpickle.util import importable_name
 from markupsafe import Markup
@@ -37,7 +38,7 @@ from .data import SQLBase, SQLMixin, register_table
 from .db import forbid_commits
 from .field import PythonObject
 from .serialize import is_lambda_function, prepare_function_for_serialization
-from .static_resources import version_static_urls
+from .static_resources import package_static_url, version_static_urls
 from .utils import (
     NoArgumentProvided,
     call_function,
@@ -46,6 +47,7 @@ from .utils import (
     get_args,
     get_locale,
     get_logger,
+    get_translator,
     log_time_taken,
     merge_dicts,
     pretty_format_seconds,
@@ -58,6 +60,11 @@ if TYPE_CHECKING:
     from .participant import Participant
 
 logger = get_logger()
+
+# Seconds after a page's ``time_limit`` that an answer still counts as given in time.
+TIME_LIMIT_GRACE_SECONDS = 5
+# Seconds before a page's ``time_limit`` that the browser may already report it reached.
+TIME_LIMIT_EARLY_SECONDS = 2
 
 
 def _normalize_javascript_urls(urls, argument_name):
@@ -1417,6 +1424,21 @@ class Page(Elt):
         For example, a validation function testing that the answer contains exactly 3 characters might look like this:
         ``lambda answer: "Answer must contain exactly 3 characters!" if len(answer) != 3 else None``.
 
+    time_limit
+        Optional seconds the participant has on this page, counted on the
+        server from when they reach it, so reloading the page does not
+        restart the clock. The page shows a countdown and, when it reaches
+        zero, submits ``time_limit_answer``. An element with the attribute
+        ``data-psynet-seconds-left`` in the page's content shows the countdown
+        instead of the default "N s left" line. An answer that reaches the
+        server more than ``TIME_LIMIT_GRACE_SECONDS`` (5) after the limit is
+        replaced by ``time_limit_answer`` too. Answers given because of the
+        time limit skip validation and have ``time_limit_reached`` in their
+        metadata. Cannot be combined with ``session_id``.
+
+    time_limit_answer
+        The answer recorded when ``time_limit`` runs out (default ``None``).
+
 
     Attributes
     ----------
@@ -1477,6 +1499,8 @@ class Page(Elt):
         expect_scrolling: Optional[bool] = None,
         delegated_render: bool = False,
         background_recording=None,
+        time_limit: Optional[float] = None,
+        time_limit_answer=None,
     ):
         super().__init__()
 
@@ -1625,6 +1649,14 @@ class Page(Elt):
         self.session_id = session_id
         self.save_answer = save_answer
         self.start_trial_automatically = start_trial_automatically
+        if time_limit is not None and time_limit < 0:
+            raise ValueError(f"time_limit must not be negative, got {time_limit}.")
+        if time_limit is not None and session_id is not None:
+            # Same-session updates keep the page's scripts, so the countdown
+            # would not restart and could submit the next page.
+            raise ValueError("A page cannot have both time_limit and session_id.")
+        self.time_limit = time_limit
+        self.time_limit_answer = time_limit_answer
         if show_abort_button is not None:
             warnings.warn(
                 "Page(show_abort_button=...) is deprecated; "
@@ -1851,6 +1883,39 @@ class Page(Elt):
     def consume(self, experiment, participant):
         participant.page_uuid = new_page_uuid()
         participant.page_count += 1
+        participant.page_deadline = (
+            None
+            if self.time_limit is None
+            else timenow() + timedelta(seconds=self.time_limit)
+        )
+
+    def time_limit_seconds_left(self, participant) -> Optional[float]:
+        """Return the seconds left before this page's ``time_limit``, or ``None`` without one."""
+        if self.time_limit is None or participant.page_deadline is None:
+            return None
+        return max(0.0, (participant.page_deadline - timenow()).total_seconds())
+
+    def _time_limit_seconds_to_wait(self, metadata, participant) -> Optional[float]:
+        """Return the seconds left if the browser reports the time limit too early.
+
+        The browser's flag is trusted only around the deadline, so an edited
+        or early page cannot end the time limit early.
+        """
+        if metadata.get("time_limit_reached") is not True:
+            return None
+        seconds_left = self.time_limit_seconds_left(participant)
+        if seconds_left is None or seconds_left <= TIME_LIMIT_EARLY_SECONDS:
+            return None
+        return seconds_left
+
+    def _time_limit_reached(self, metadata, participant) -> bool:
+        """Return whether this answer is given because the time limit ran out."""
+        if self.time_limit is None or participant.page_deadline is None:
+            return False
+        if metadata.get("time_limit_reached") is True:
+            return self._time_limit_seconds_to_wait(metadata, participant) is None
+        grace = timedelta(seconds=TIME_LIMIT_GRACE_SECONDS)
+        return timenow() > participant.page_deadline + grace
 
     def on_complete(self, experiment, participant):
         pass
@@ -1888,6 +1953,14 @@ class Page(Elt):
 
         resp._background_parent = participant.current_trial or participant
 
+        if self._time_limit_reached(metadata, participant):
+            answer = self.time_limit_answer
+            # Only an answer the server supplies may skip the choices check.
+            resp._server_time_limit_answer = True
+            metadata = {**metadata, "time_limit_reached": True}
+        else:
+            # The flag skips validation, so only the server may set it.
+            metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
         if answer == NoArgumentProvided:
             answer = self.format_answer(
                 raw_answer,
@@ -2151,6 +2224,13 @@ class Page(Elt):
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
             "recordingCaptureSources": self._recording_capture_sources(),
         }
+        seconds_left = self.time_limit_seconds_left(participant)
+        if seconds_left is not None:
+            _p = get_translator(context=True)
+            internal_js_vars["timeLimit"] = {
+                "secondsLeft": seconds_left,
+                "text": _p("time_limit", "{SECONDS} s left"),
+            }
         control = getattr(self, "control", None)
         if isinstance(control, RecordControl):
             internal_js_vars["asynchronousUploadSources"] = (
@@ -2176,7 +2256,13 @@ class Page(Elt):
         css_links = version_static_urls(self.css_links + experiment.css_links)
         legacy_js_links = version_static_urls(self.legacy_js_links)
         js_dependencies = version_static_urls(self.js_dependencies)
-        js_page_modules = version_static_urls(self.js_page_modules)
+        js_page_modules = self.js_page_modules
+        if seconds_left is not None:
+            js_page_modules = [
+                *js_page_modules,
+                package_static_url("psynet", "scripts/time-limit.js"),
+            ]
+        js_page_modules = version_static_urls(js_page_modules)
 
         all_template_args = {
             **self.template_arg,

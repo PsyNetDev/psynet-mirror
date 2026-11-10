@@ -204,6 +204,13 @@
   syncJsVars();
 
   let beforeunloadFunction = function () {};
+
+  function psynetNavigationResponseStart() {
+    let entry = performance.getEntriesByType?.("navigation")?.[0];
+    if (!performance.timeOrigin) return Date.now();
+    return performance.timeOrigin + (entry?.responseStart || 0);
+  }
+
   var psynet = (function () {
     /**
      * @namespace
@@ -221,6 +228,9 @@
       comments: [],
       var: psynetTemplateData.jsVars,
       submissionPageUuid: psynetTemplateData.jsVars.pageUuid,
+      // When the current page left the server, in Date.now() milliseconds; the
+      // first response byte on a full load, otherwise when /response answered.
+      pageReceivedAt: psynetNavigationResponseStart(),
     };
     psynet.SUBMISSION_HANDLED = Symbol("psynet.SUBMISSION_HANDLED");
 
@@ -3666,6 +3676,7 @@
 
     psynet.handleApprovedResponse = async function (response) {
       psynet.log.debug("Response received successfully.");
+      psynet.pageReceivedAt = Date.now();
 
       if (response.page?.attributes?.requires_full_page_reload && !psynet.isSameSessionPageUpdate(response)) {
         psynet.stopTimelineHold();
@@ -3758,6 +3769,9 @@
       } else if (options.interrupted) {
         // This page is stale, e.g. another tab already moved on.
         await psynet.loadNextTimelinePageWithReload();
+      } else if (response.time_limit_seconds_left !== undefined) {
+        // The time limit's countdown resubmits when the server's deadline arrives.
+        psynet.restoreSubmissionControlState();
       } else {
         psynet.alert(response.message);
         psynet.restoreSubmissionControlState();

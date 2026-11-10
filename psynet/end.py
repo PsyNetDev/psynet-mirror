@@ -1,8 +1,10 @@
+import math
 from typing import Callable, List, Optional, Union
 
 import dominate
 from dominate import tags
 from jinja2.utils import htmlsafe_json_dumps
+from markupsafe import Markup, escape
 
 from psynet import exit as exit_domain
 from psynet.modular_page import NullControl
@@ -36,9 +38,24 @@ class ExitLogic(EltCollection):
 
 
 class EndLogic(ExitLogic):
-    """Show a terminal debrief before recruiter release."""
+    """Show a terminal debrief before recruiter release.
+
+    Parameters
+    ----------
+    auto_continue_seconds
+        If given, the debrief page continues by itself after this many
+        seconds, as if the participant had clicked Finish, and says so with
+        a countdown. Useful when participants should not wait on the last
+        page, for example in multiplayer games.
+    """
 
     exit_context: exit_domain.ExitContext
+
+    def __init__(self, auto_continue_seconds: Optional[float] = None):
+        super().__init__()
+        if auto_continue_seconds is not None and auto_continue_seconds < 0:
+            raise ValueError("auto_continue_seconds must be non-negative.")
+        self.auto_continue_seconds = auto_continue_seconds
 
     def resolve(self) -> Union[Elt, List[Elt]]:
         return join(
@@ -94,10 +111,12 @@ class EndLogic(ExitLogic):
         # Todo - Once automatic translation is updated, revisit the logic in
         # RejectedConsentPage and ask the participant to return their platform
         # submission if appropriate.
+        time_limit = None
         if show_finish_button:
             # The choice key "Finish" stays untranslated so that recorded answers
             # are locale-independent; only the visible label is translated.
             control = PushButtonControl(["Finish"], labels=[_("Finish")])
+            time_limit = self.auto_continue_seconds
         else:
             control = NullControl()
 
@@ -106,6 +125,8 @@ class EndLogic(ExitLogic):
             content,
             control,
             show_next_button=False,
+            time_limit=time_limit,
+            time_limit_answer="Finish",
         )
 
     @property
@@ -151,12 +172,22 @@ class EndLogic(ExitLogic):
 
         return dominate.util.raw(text)
 
-    def _finish_next_step(self, experiment) -> str:
+    def _finish_next_step(self, experiment):
         """Tell the participant what Finish does on this debrief."""
         _ = get_translator()
         if experiment.with_lucid_recruitment():
-            return _("Click Finish to return to your panel.")
-        return _("Click Finish to finalize the session.")
+            text = _("Click Finish to return to your panel.")
+        else:
+            text = _("Click Finish to finalize the session.")
+        if self.auto_continue_seconds is None:
+            return text
+        countdown = Markup("<span data-psynet-seconds-left>{}</span>").format(
+            math.ceil(self.auto_continue_seconds)
+        )
+        auto_continue = _("This page continues by itself in {SECONDS} s.")
+        return dominate.util.raw(
+            escape(text) + " " + escape(auto_continue).replace("{SECONDS}", countdown)
+        )
 
 
 class SuccessfulEndLogic(EndLogic):
@@ -280,6 +311,8 @@ class UnsuccessfulEndLogic(EndLogic):
     ----------
     failure_tags
         Tags appended to the participant's ``failure_tags`` on this page.
+    auto_continue_seconds
+        See :class:`EndLogic`.
     failure_message
         Optional line that says why the participant stopped early, or a
         function of ``participant`` (and, if it asks for them, other context
@@ -300,9 +333,10 @@ class UnsuccessfulEndLogic(EndLogic):
         failure_tags: Optional[List] = None,
         *,
         failure_message: Optional[Union[str, Callable]] = None,
+        auto_continue_seconds: Optional[float] = None,
         **kwargs,
     ):
-        super().__init__()
+        super().__init__(auto_continue_seconds=auto_continue_seconds)
         self.failure_message = failure_message
 
         if failure_tags is None:

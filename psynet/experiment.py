@@ -4360,6 +4360,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 return ResponseResult(
                     payload=self._approved_payload(participant, page), page=page
                 )
+            # Pages that only duck-type ``process_response`` have no time limit.
+            seconds_to_wait = (
+                event._time_limit_seconds_to_wait(metadata, participant)
+                if hasattr(event, "_time_limit_seconds_to_wait")
+                else None
+            )
+            if seconds_to_wait is not None:
+                # The browser's countdown ended before the server's; it
+                # resubmits once the server's deadline arrives.
+                return ResponseResult(
+                    payload={
+                        "submission": "rejected",
+                        "message": "",
+                        "time_limit_seconds_left": seconds_to_wait,
+                    }
+                )
             with forbid_commits(
                 f"Response processing for {_timeline_step_name(event)}"
             ):
@@ -4372,16 +4388,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     client_ip_address=client_ip_address,
                     answer=answer,
                 )
-                validation = event._reject_impossible_answer(response.answer)
-                if validation is None:
-                    validation = event.validate(
-                        response=response,
-                        answer=response.answer,
-                        raw_answer=raw_answer,
-                        participant=participant,
-                        experiment=self,
-                        page=event,
-                    )
+                # Time-outs skip ``validate``, but an answer from the browser
+                # must still be one of the page's choices.
+                timed_out = (response.metadata or {}).get("time_limit_reached") is True
+                if timed_out and getattr(response, "_server_time_limit_answer", False):
+                    validation = None
+                else:
+                    validation = event._reject_impossible_answer(response.answer)
+                    if validation is None and not timed_out:
+                        validation = event.validate(
+                            response=response,
+                            answer=response.answer,
+                            raw_answer=raw_answer,
+                            participant=participant,
+                            experiment=self,
+                            page=event,
+                        )
                 if isinstance(validation, str):
                     validation = FailedValidation(message=validation)
 
