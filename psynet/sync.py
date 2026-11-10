@@ -84,6 +84,8 @@ browser then rechecks the authoritative link state. See "Timeline holds" in
 arrival transaction commits, the response route evaluates the barrier in a
 short coordination transaction before rendering. That lets a ``Grouper`` form
 groups and a ``GroupBarrier`` release the group without waiting for the poller.
+Arrivals at a ``Regrouper`` with ``every`` are the exception: they cannot make
+the pool ready, so they queue no check and the poller enacts each due tick.
 Last-arrival does not skip partner timeline cursors after that commit; partners
 leave on overlay wake (or this poller, if it won the release). Waiter rows stay
 ``NOWAIT`` during the check so a locked partner cannot stall that request for
@@ -3471,11 +3473,13 @@ class Regrouper(Grouper):
         """Leave a pool with ``every`` ticks to the barrier poller.
 
         Such a pool is split only at a tick, among the members who were
-        already waiting then, so a later arrival cannot release anyone, and
-        checking the pool would only lock every waiter. Ungrouped arrivals at
-        a ``within`` regrouper are still checked, because they are released
-        at once. Subclasses that choose who to release themselves keep the
-        check.
+        already waiting then, so an arrival cannot make the pool ready. A
+        check on the arrival would enact a tick that is already due and not
+        yet used, but it locks every waiter to do so; skipping it leaves that
+        split to the poller (within about 0.5 s) or a waiter's hold poll.
+        Ungrouped arrivals at a ``within`` regrouper are still checked,
+        because they are released at once. Subclasses that choose who to
+        release themselves keep the check.
         """
         if (
             self.every is not None
@@ -5981,6 +5985,12 @@ def _check_claimed_barrier_instance(instance, *, wait=False, already_claimed=Fal
     return True
 
 
+_WAITER_LOCKED_DEFERRAL = (
+    "because another request holds a waiter's row (expected under load; "
+    "PostgreSQL logs it as 'could not obtain lock on row')."
+)
+
+
 def _evaluate_held_instance(instance_id):
     """Evaluate one already-claimed visit and commit.
 
@@ -6001,9 +6011,7 @@ def _evaluate_held_instance(instance_id):
     except Exception as err:
         if is_transient_transaction_error(err):
             logger.debug(
-                "Barrier '%s' instance %s deferred because another request holds "
-                "a waiter's row (expected under load; PostgreSQL logs it as "
-                "'could not obtain lock on row').",
+                "Barrier '%s' instance %s deferred " + _WAITER_LOCKED_DEFERRAL,
                 instance.barrier_id if instance is not None else None,
                 instance_id,
             )
@@ -6107,9 +6115,9 @@ def _process_barrier_instance(instance_id, *, retry=False):
     except Exception as err:
         db.session.rollback()
         if is_transient_transaction_error(err):
-            qualifier = " still locked on retry" if retry else " deferred"
+            qualifier = " deferred again on retry" if retry else " deferred"
             logger.debug(
-                "Barrier '%s' instance %s%s because a waiter is locked.",
+                "Barrier '%s' instance %s%s " + _WAITER_LOCKED_DEFERRAL,
                 barrier_id,
                 instance_id,
                 qualifier,

@@ -176,7 +176,7 @@ def test_every_regrouper_splits_everyone_waiting_into_balanced_rooms(
 def test_every_regrouper_leaves_the_split_to_the_poller(
     in_experiment_directory, db_session
 ):
-    """Arrivals between ticks can't release anyone, so only the poller splits the pool."""
+    """An arrival doesn't enact a due tick; the poller splits the pool instead."""
     exp = get_experiment()
     rooms = Regrouper("room", group_size=2, every=45)
     players = _working_participants(exp, 3)
@@ -194,6 +194,48 @@ def test_every_regrouper_leaves_the_split_to_the_poller(
     loner = _working_participants(exp, 1)
     _arrive(exp, pairs, loner)
     assert _waiting(pairs, loner) == []
+
+
+class _CustomRooms(Regrouper):
+    def choose_who_to_release(self, waiting_participants):
+        return super().choose_who_to_release(waiting_participants)
+
+
+@in_consents_experiment
+def test_every_regrouper_subclass_choosing_who_to_release_checks_on_arrival(
+    in_experiment_directory, db_session
+):
+    """A custom release rule might release on arrival, so arrivals keep the check."""
+    exp = get_experiment()
+    rooms = _CustomRooms("custom_room", group_size=2, every=45)
+    players = _working_participants(exp, 3)
+    _arrive(exp, rooms, players[:2])
+    _backdate_arrivals(rooms, players[:2], 60)
+    _arrive(exp, rooms, players[2:])
+    assert _waiting(rooms, players) == players[2:]
+
+
+@in_consents_experiment
+def test_waiting_hold_poll_splits_a_due_every_regrouper_pool(
+    in_experiment_directory, db_session
+):
+    """A waiter's hold poll is a backstop for the poller at a due tick."""
+    exp = get_experiment()
+    original = exp.timeline
+    rooms = Regrouper("poll_room", group_size=2, every=45)
+    exp.timeline = Timeline(rooms, ModularPage("after", "Grouped", time_estimate=1))
+    try:
+        players = _working_participants(exp, 2)
+        for player in players:
+            _json_timeline(exp, player)
+        assert _waiting(rooms, players) == players
+        _backdate_arrivals(rooms, players, 60)
+        db_session.commit()
+        _json_timeline(exp, players[0])
+        db_session.expire_all()
+        assert _waiting(rooms, players) == []
+    finally:
+        exp.timeline = original
 
 
 @in_consents_experiment

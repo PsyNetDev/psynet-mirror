@@ -234,8 +234,9 @@ waiting participants' rows without waiting (``NOWAIT``); if another request
 holds one of them, PostgreSQL reports this error (SQLSTATE ``55P03``), and
 PsyNet checks the barrier again a moment later. With many participants
 waiting, there can be several such errors a second. Look instead for errors
-in the ``web`` service's logs, such as tracebacks or HTTP 500 responses (see
-:ref:`synchronization internals <sync-group-lock-order>`).
+in the ``web`` service's logs, such as tracebacks or HTTP 500 responses. See
+:ref:`the barrier poller <sync-barrier-poller>` for how deferred checks are
+retried.
 
 My server restarted and my experiment is no longer running
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

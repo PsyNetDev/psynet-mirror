@@ -21,13 +21,16 @@ partners without waiting for the poller. The last participant to arrive
 skips the wait indicator and continues to the next page. If a partner's wait row is locked,
 the regular 0.5-second barrier check completes the release instead.
 
+.. _sync-barrier-poller:
+
 The barrier poller
 ------------------
 
 The clock process runs :func:`~psynet.sync.check_barriers` every
 0.5 seconds. It splits the pools of a :class:`~psynet.sync.Regrouper` with
-``every``: arrivals there don't check the pool, because only a tick can
-split it. It is also a backstop: for a release whose request-side check was
+``every``: an arrival there cannot make the pool ready, so it doesn't check
+the pool, and a tick that is due waits for the poller or a waiter's hold
+poll. It is also a backstop: for a release whose request-side check was
 deferred or lost, for barriers with explicit ``waiting_logic`` (whose wait
 pages don't check the barrier), and for waiters who have left. A waiter whose
 browser is still open also checks their own visit on each hold poll.
@@ -48,8 +51,6 @@ the two steps stops starting new work after 0.2 seconds, so with thousands
 of waiters a sweep normally stays within its interval and later sweeps reach
 the remaining visits. One timeout or check can still overrun while it waits
 for a row lock.
-
-.. _sync-group-lock-order:
 
 Sync group lock order
 ---------------------
