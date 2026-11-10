@@ -256,9 +256,12 @@ member of the group has reached it. When the last member arrives, the barrier
 calls ``on_release`` for the whole group. In or after a round of cued trials,
 it waits only for the members of that round: not for a late joiner who
 skipped it, a member already in a later round, one who has left the
-round's module, or one who has already passed it. Before a late joiner's
-first cue, once the group has cued a round in the module, it waits only for
-members who haven't cued one there either and are still in the module. A
+round's module, or one who has already passed it. At the start of a module,
+or of a later run of it, it waits for every member still in this module
+(including one still finishing the previous run) until a member cues the
+run's first round; after that, as before a late joiner's first cue, it
+waits only for members who haven't cued one either and are still in the
+module. A
 release of only members catching up, such as skippers, doesn't call
 ``on_release`` (see
 :ref:`rounds-cued-trials` and :ref:`a fixed group's loop
