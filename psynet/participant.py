@@ -1265,11 +1265,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
             hold=cached_hold,
         )
 
-        from psynet.sync import _report_divergence_after_leaving
-
         for group in list(self.active_sync_groups.values()):
             group.remove_participant(self, reason="left_experiment")
-            _report_divergence_after_leaving(group)
 
         if redirect_to_end:
             self._redirect_to_unsuccessful_end(exp)

@@ -197,3 +197,26 @@ stop_if=...)`` (see :ref:`sync-leaving-a-group`).
 
 Checked by ``test_case_a_group_dissolves_under_a_member_on_a_round_page``
 in ``tests/isolated/test_trial_cue_groups.py``.
+
+Members end up at different barriers
+------------------------------------
+
+The pair still takes newcomers during the game, and each question starts
+with a ``GroupBarrier(id_="ready", group_type="team")`` before the cue.
+Ann and Ben are in a round when Cat joins. Cat goes through the game from
+its start, so she waits at ``ready`` while Ann waits for her at
+``submitted``. Ben then submits, or leaves the pair, or is removed as late:
+
+- Each barrier waits for the members at the other, so nobody passes until
+  ``late_after`` or ``max_wait_time`` moves someone on.
+- Within a second or so, the background barrier check records one error
+  for the pair that names both barriers and who waits at each, logs it and
+  lists it under the dashboard's Errors tab. A bot test fails with
+  :class:`~psynet.sync.GroupDivergenceError` and that message.
+
+To avoid this, stop top-ups before the game with ``stop_top_ups=True``
+(see :ref:`sync-lobby-top-ups`), and see :ref:`members at different
+barriers <rounds-group-barriers-in-loops>`.
+
+Checked by ``test_a_sweep_reports_members_waiting_for_each_other_at_different_barriers``
+in ``tests/isolated/test_trial_cue_groups.py``, for each way Ben goes.

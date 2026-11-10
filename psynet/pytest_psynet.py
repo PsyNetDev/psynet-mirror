@@ -664,7 +664,15 @@ def stop_debug_experiment_process(process):
 
 @pytest.fixture(scope="class")
 def launched_experiment(debug_experiment):
-    return get_experiment()
+    """Return the experiment running on the debug server.
+
+    The teardown fails with :class:`~psynet.sync.GroupDivergenceError` if
+    the server recorded one while the fixture was in use.
+    """
+    from .sync import fail_on_group_divergence
+
+    with fail_on_group_divergence():
+        yield get_experiment()
 
 
 @pytest.fixture(scope="class")
