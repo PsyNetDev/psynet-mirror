@@ -78,13 +78,15 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   (see "Release callbacks"). `on_release` doesn't run
   for members who left before the release or whose group dissolved, so read
   what it stores with `trial.var.get("score")` (or `participant.var.get`),
-  which returns `None` when it isn't set. Pass the same function as `on_dissolve` too when members
-  waiting at the barrier as the group dissolves should still get their
-  result; it is called once, with all of them, because dissolving waits for
-  any member who is in the middle of another request. Members still on an earlier page get
-  neither callback, so
-  check their cued trial's `sync_group_outcome == "group_dissolved"` in a
-  step after the barrier if they need a result too. A trial whose pages
+  which returns `None` when it isn't set. Nothing runs when a group
+  dissolves, so with `below_quorum="continue_without_group"`, when a
+  member's cued trial has `sync_group_outcome == "group_dissolved"`,
+  compute their result where it is needed (`show_feedback`, an export or
+  `on_finalized`) from every stored `trial.answer` on `node.all_trials`.
+  `trial.answer` is the trial's latest answer, so if `show_trial` has pages
+  after the barrier, set `accumulate_answers = True` and read the answer by
+  page label. A partner still on the question page may not have answered
+  yet when `show_feedback` runs. A trial whose pages
   already ended with `"stayed"` keeps it, so for a barrier after
   `show_trial` check `participant.sync_group_removal_reason(...)` instead.
 - Sort `sync_group.participants` by participant ID before deterministic role
@@ -108,11 +110,13 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   so `late_after` need not cover the page (see "Timeouts" in
   `code/multiplayer/synchronization`); the demos use 30 s so that a
   background tab can notice the round has started.
-- The regrouper avoids last round's partners (`avoid_repeats="all_rounds"`
-  avoids everyone met before), sits out whoever has played most, and counts
-  rounds (`rounds_played`, `rounds_sat_out`); pass `roles=[...]` (with
-  `keep_roles=True` for fixed roles) and read `regrouper.role(participant)`
-  instead of assigning roles yourself. With `left_over="sit_out"`, odd
+- The regrouper groups players at random, sits out whoever has played most,
+  and counts rounds (`rounds_played`, `rounds_sat_out`); pass `roles=[...]`
+  (given out at random by default) and read `regrouper.role(participant)`
+  instead of assigning roles yourself. To avoid last round's partner or to
+  alternate roles, copy `PairingRegrouper` from the `ultimatum_pairing`
+  demo's `pairing.py`, which overrides `form_groups` and `assign_roles`; override them
+  likewise for other rules. With `left_over="sit_out"`, odd
   players out sit out the round; with `within`, a player waiting alone first
   waits one more period for cohort members. The default `max_wait_time`
   allows for this; an explicit one must then exceed twice the `deadline` or

@@ -61,8 +61,8 @@ row:
   or nothing. If another member's request holds their row, nobody is removed
   (the rows that were free are unlocked again, by rolling back a savepoint):
   the group is marked ``dissolving`` and the barrier poller tries the whole
-  dissolution again on each sweep, so ``on_dissolve`` runs once, with every
-  member waiting at the barrier. A group back at its quorum by then is no
+  dissolution again on each sweep, so every member leaves the group, and
+  learns why, at the same time. A group back at its quorum by then is no
   longer dissolved.
 - A between-barrier timeout with ``"fail"`` also skips busy late members;
   they are still late at the barrier's next check. ``"leave_group"`` only changes the
