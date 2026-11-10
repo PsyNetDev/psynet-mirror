@@ -2238,7 +2238,8 @@ class GroupBarrier(Barrier):
                     "here. Neither can pass until late_after or max_wait_time "
                     "moves someone on. If '%s' is inside the loop of rounds, "
                     "move it into the trial's show_trial, or stop top-ups "
-                    "(stop_top_ups=True) before the module.",
+                    "(stop_top_ups=True) before the module. If it starts a run "
+                    "of a looped module, keep the loop's pages inside the module.",
                     self.id,
                     group.group_type,
                     group.id,
@@ -4215,6 +4216,32 @@ def warn_if_newcomers_can_strand_group(barriers):
                 "to stop newcomers joining once the group passes it.",
                 UserWarning,
             )
+
+
+def warn_if_looped_module_has_pages_outside(loops):
+    """Warn about a loop that repeats a module and has pages outside it.
+
+    A member on such a page, between two runs of the module, counts as
+    having left the module, so the next run starts without them, and they
+    and the group then wait for each other until ``late_after`` or
+    ``max_wait_time`` acts. Only called for timelines with a grouper.
+
+    Parameters
+    ----------
+    loops : iterable of list
+        The module ids of each loop with pages outside its modules.
+    """
+    for module_ids in loops:
+        names = ", ".join(f"'{module_id}'" for module_id in module_ids)
+        warn_from_caller(
+            f"A while_loop repeats module {names} and has pages outside it. If a "
+            "group plays cued rounds or waits at GroupBarriers in the module, a "
+            "member on one of those pages counts as having left the module, so "
+            "the next run starts without them, and they and the group wait for "
+            "each other until late_after or max_wait_time acts. Keep the loop's "
+            "pages inside the module.",
+            UserWarning,
+        )
 
 
 def group_seats(group) -> Dict[int, int]:

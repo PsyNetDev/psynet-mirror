@@ -177,8 +177,21 @@ a group visit too: it waits for every member still in the module,
 including one still finishing the previous run and a newcomer starting
 their first run, and not for a member whose loop has ended. A member on a
 page between the module and its next run, inside the loop but outside the
-module, counts as having left it, so keep the loop's pages inside the
-module.
+module, counts as having left it. So the next run starts without them, and
+they and the group then wait for each other until ``late_after`` or
+``max_wait_time`` acts, if set. Keep the loop's pages inside the module:
+
+.. code-block:: python
+
+    # A member on "Break" has left "game", so the next run starts without them.
+    while_loop("runs", play_again, join(Module("game", rounds), break_page), 2)
+
+    # Instead, keep the break inside the module.
+    while_loop("runs", play_again, Module("game", rounds, break_page), 2)
+
+PsyNet warns when a timeline with a grouper has a ``while_loop`` with pages
+outside the module it repeats. It can't see inside a ``for_loop``, whose
+logic is built when the participant reaches it.
 
 A barrier in a module where the group cues no rounds, such as one before a
 separate module of rounds, waits for every member too: a newcomer who

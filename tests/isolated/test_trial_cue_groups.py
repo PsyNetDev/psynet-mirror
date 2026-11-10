@@ -965,6 +965,43 @@ def test_a_group_barrier_and_an_open_round_waiting_for_each_other_end_on_late_af
     assert outside.choose_who_to_release([newcomer]) == [newcomer]
 
 
+@in_consents_experiment
+def test_a_page_between_runs_leaves_the_run_start_waiting_until_late_after(
+    in_experiment_directory, db_session, caplog, fresh_barrier_warnings
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    game = Module("game", InfoPage("Hi", time_estimate=1))
+    answered = GroupBarrier("answered", group_type="pair")
+    for participant in cohort:
+        participant.start_module(game)
+        PairTrial.cue({})[0].consume(exp, participant)
+    _arrive(exp, answered, cohort)
+    _complete_trials(cohort)
+    for participant in cohort:
+        participant.end_module(game)
+    # The slow member is on a page between runs, so the fast one starts alone.
+    fast, slow = cohort
+    start = GroupBarrier("run_start", group_type="pair", late_after=5)
+    fast.start_module(game)
+    _arrive(exp, start, [fast])
+    assert not start._participant_is_waiting(fast)
+    slow.start_module(game)
+    PairTrial.cue({})[0].consume(exp, fast)
+    _arrive(exp, answered, [fast])
+    with caplog.at_level(logging.WARNING):
+        _arrive(exp, start, [slow])
+        start.choose_who_to_release([slow])
+    assert start._participant_is_waiting(slow)
+    assert answered._participant_is_waiting(fast)
+    assert any("loop's pages inside the module" in m for m in _barrier_warnings(caplog))
+
+    _backdate_group(fast.active_sync_groups["pair"], seconds=10)
+    start.check_waiting_participants([slow])
+    assert fast.failed
+    assert start.choose_who_to_release([slow]) == [slow]
+
+
 @pytest.mark.parametrize("group_barrier_id", ["ready", "submitted"])
 @in_consents_experiment
 def test_late_after_in_a_round_fails_a_newcomer_waiting_outside_it(

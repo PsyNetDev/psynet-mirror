@@ -86,6 +86,7 @@ from psynet.timeline import (
     PageMaker,
     Response,
     Timeline,
+    join,
     while_loop,
 )
 from psynet.timeline_hold import (
@@ -7262,6 +7263,26 @@ def test_timeline_warns_about_barriers_newcomers_can_reach_after_their_group():
     first = GroupBarrier(id_="round", group_type="team")
     assert warned_barriers(first, rounds(), pass_newcomers=True) == []
     assert warned_barriers(rounds(pass_newcomers=True), stop_top_ups=True) == ["round"]
+
+
+@pytest.mark.parametrize("page_inside", [False, True])
+def test_timeline_warns_about_pages_between_runs_of_a_looped_module(page_inside):
+    run = [GroupBarrier(id_="run_start", group_type="pair")]
+    between = [InfoPage("Break", time_estimate=1)]
+    body = (
+        Module("game", *run, *between)
+        if page_inside
+        else join(Module("game", *run), *between)
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Timeline(
+            SimpleGrouper("pair", initial_group_size=2),
+            while_loop("runs", lambda: True, body, expected_repetitions=2),
+            InfoPage("Done", time_estimate=1),
+        )
+    warned = any("repeats module 'game'" in str(w.message) for w in caught)
+    assert warned != page_inside
 
 
 @pytest.mark.parametrize(

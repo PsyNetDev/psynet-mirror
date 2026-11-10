@@ -2993,7 +2993,9 @@ class Timeline:
     def check_group_policies(self):
         """Warn about grouper and barrier settings that fail members who were on time, or strand newcomers."""
         from .sync import (
+            Grouper,
             warn_if_late_removal_fails_group,
+            warn_if_looped_module_has_pages_outside,
             warn_if_newcomers_can_strand_group,
         )
 
@@ -3001,6 +3003,37 @@ class Timeline:
             {id(barrier): barrier for barrier in self._barriers()}.values()
         )
         warn_if_newcomers_can_strand_group(self._barriers_in_order())
+        if any(isinstance(barrier, Grouper) for barrier in self._barriers()):
+            warn_if_looped_module_has_pages_outside(
+                self._looped_modules_with_pages_outside()
+            )
+
+    def _looped_modules_with_pages_outside(self):
+        """Yield the ids of the modules in each ``while_loop`` whose body also has pages outside them.
+
+        Only modules and pages directly in the loop's body count, not those
+        in a module nested in one of them. A ``for_loop`` builds its logic
+        when the participant reaches it, so loops of one aren't seen.
+        """
+        for branch_elts in self.elts.values():
+            loops = []
+            module_depth = 0
+            for elt in branch_elts:
+                at_loop_level = bool(loops) and module_depth == loops[-1]["depth"]
+                if isinstance(elt, StartWhile):
+                    loops.append({"depth": module_depth, "modules": [], "page": False})
+                elif isinstance(elt, EndWhile):
+                    loop = loops.pop()
+                    if loop["modules"] and loop["page"]:
+                        yield loop["modules"]
+                elif isinstance(elt, StartModule):
+                    if at_loop_level:
+                        loops[-1]["modules"].append(elt.module.id)
+                    module_depth += 1
+                elif isinstance(elt, EndModule):
+                    module_depth -= 1
+                elif at_loop_level and isinstance(elt, (Page, PageMaker)):
+                    loops[-1]["page"] = True
 
     def _barriers_in_order(self):
         """Yield ``(barrier, in_loop)`` once per barrier, in timeline order.
