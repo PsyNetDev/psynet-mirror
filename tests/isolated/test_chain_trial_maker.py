@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import pytest
 from dallinger import db
 
-from psynet.field import VarStore
 from psynet.sync import SimpleGrouper
 from psynet.timeline import ModuleState, Timeline
 from psynet.trial.chain import ChainNode, ChainTrial, ChainTrialMaker
@@ -362,8 +361,7 @@ def test_a_looped_sync_trial_maker_shares_each_run_s_choices_with_newcomers(
         **WITHIN_CHAINS,
     )
     barrier = _init_barrier(trial_maker)
-    group = SimpleNamespace(id=1, vars=None)
-    group.var = VarStore(group)
+    group = SimpleNamespace(id=1, trial_maker_runs={})
 
     def member(id_):
         return SimpleNamespace(

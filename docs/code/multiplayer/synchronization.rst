@@ -654,7 +654,7 @@ The group starts each run of the trial maker together, also when a loop
 repeats it. The first member initialized, normally the leader, makes the
 run's choices (the participant group and the block order); the others copy
 them. PsyNet stores them, and the group's current block, in the group's
-``var`` under ``runs_of_<trial maker id>``, one entry per run. A newcomer
+``trial_maker_runs`` column, keyed by trial maker id, one entry per run. A newcomer
 who joins during a run, or a member promoted to leader, copies the current
 run's choices and block. A member who loops faster than the others waits
 for the whole group to start the next run.

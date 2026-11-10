@@ -175,7 +175,7 @@ from psynet.db import (
     _set_transaction_lock_timeout,
     is_transient_transaction_error,
 )
-from psynet.field import PythonClass, PythonObject
+from psynet.field import PythonClass, PythonDict, PythonObject
 from psynet.page import UnsuccessfulEndPage
 from psynet.participant import Participant, _lock_and_load_participant
 from psynet.serialize import SerializedCallable, serialize_callable
@@ -4230,6 +4230,9 @@ class SyncGroup(SQLBase, SQLMixin):
     # the group it regrouped within.
     grouper_id = Column(String, index=True)
     within_group_id = Column(Integer, index=True)
+    # Each synchronized trial maker's runs, by trial maker id, one dict per
+    # run with the group's choices (see ``psynet.trial.main._current_group_run``).
+    trial_maker_runs = Column(PythonDict, default=lambda: {})
 
     participant_links = relationship(
         "ParticipantLinkSyncGroup",

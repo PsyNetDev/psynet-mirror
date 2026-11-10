@@ -1,3 +1,4 @@
+import copy
 import datetime
 import random
 from dataclasses import dataclass
@@ -1818,20 +1819,15 @@ def _initialized_in(participant, trial_maker_id) -> bool:
     return state.trial_maker_initialized
 
 
-def _group_runs_key(trial_maker_id):
-    """Return the ``group.var`` key of a group's runs of the trial maker."""
-    return f"runs_of_{trial_maker_id}"
-
-
 def _current_group_run(group, trial_maker_id):
     """Return ``group``'s current run of the trial maker, or ``None`` before its first.
 
-    A run is a dict stored in ``group.var``: the group's choices for that
-    run (``participant_group``, and for chain trial makers ``block_order``
-    and ``block_position``), set by the first member initialized, and the
-    ``members`` who started it.
+    A run is a dict in ``group.trial_maker_runs``: the group's choices for
+    that run (``participant_group``, and for chain trial makers
+    ``block_order`` and ``block_position``), set by the first member
+    initialized, and the ``members`` who started it.
     """
-    runs = group.var.get(_group_runs_key(trial_maker_id), [])
+    runs = (group.trial_maker_runs or {}).get(trial_maker_id, [])
     return runs[-1] if runs else None
 
 
@@ -1839,15 +1835,17 @@ def _edit_group_runs(group, trial_maker_id, edit):
     """Apply ``edit`` to the list of ``group``'s runs of the trial maker and store it.
 
     Members' requests write the runs concurrently, so this first rereads
-    ``group.var`` holding the group's row lock until the transaction ends;
+    them holding the group's row lock until the transaction ends;
     otherwise one request could overwrite another's change.
     """
     db.session.flush()
-    db.session.refresh(group, ["vars"], with_for_update={"key_share": True})
-    key = _group_runs_key(trial_maker_id)
-    runs = list(group.var.get(key, []))
+    db.session.refresh(group, ["trial_maker_runs"], with_for_update={"key_share": True})
+    # A copy, so the edit doesn't change the loaded value it is compared with.
+    all_runs = copy.deepcopy(dict(group.trial_maker_runs or {}))
+    runs = all_runs.get(trial_maker_id, [])
     edit(runs)
-    group.var.set(key, runs)
+    all_runs[trial_maker_id] = runs
+    group.trial_maker_runs = all_runs
 
 
 class _InitParticipantBarrier(GroupBarrier):
