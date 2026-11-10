@@ -66,6 +66,31 @@ detached and should retain their established eager-loading behavior.
 Barrier last-arrival checks are the opposite problem: one request locks many
 waiters. See :ref:`barrier-arrival-sql-budgets`.
 
+.. _sqlalchemy-lock-participant-row-first:
+
+Lock the participant row before loading it
+------------------------------------------
+
+An ORM load of ``Participant`` (including a join to it, as in the barrier
+waiter query) joins ``_current_trial``, which is ``lazy="joined"``. Under
+READ COMMITTED, a statement that waited for a row lock re-reads only the
+rows it locks, so a single ``with_for_update(of=Participant)`` load that
+queued behind a barrier release would join the trial as it was before the
+release. Blocking participant loads in PsyNet therefore go through
+``psynet.participant._load_participant_for_update`` (or its by-id form
+``_lock_and_load_participant``). The helper first locks the bare row with a
+``select(Participant.id)`` statement, which joins nothing, and then runs the
+``FOR UPDATE`` load with ``populate_existing``. That costs one extra
+statement per locked load. Loads that use ``NOWAIT`` never wait, so the
+helper skips the extra lock for them. The public getters
+(``get_participant_from_*`` and ``psynet.participant.get_participant`` with
+``for_update=True``) use it too. The barrier waiter query
+(``psynet.sync._get_waiting_participants``) follows the same pattern when a
+caller passes ``for_update=True`` to ``get_waiting_participants``: it locks
+the link and participant ids in a bare statement, then loads those links
+with ``NOWAIT``. Barrier checks already lock waiters with ``NOWAIT``, so they
+take no extra statement.
+
 Filter before ORM hydration
 ---------------------------
 
@@ -427,15 +452,18 @@ Finalize window (same check, then relock the last arriver)
 ----------------------------------------------------------
 
 The check, plus two ``lock_timeout`` SETs and the relock: a participant
-``FOR UPDATE`` without ``NOWAIT`` (its lazy collections load only if the next
-page reads them). Grand total: ``23``. Profiler commits: ``4`` (check + extra
-connection + queued + relock).
+``FOR UPDATE`` without ``NOWAIT`` on the bare row, then the participant load
+with its joined ``_current_trial`` (its lazy collections load only if the next
+page reads them). The lock comes first, in a statement of its own (see
+`Lock the participant row before loading it`_). Grand total: ``24``. Profiler commits: ``4`` (check +
+extra connection + queued + relock).
 The check commit is on ``_evaluate_held_instance``; the
 relock commit is on ``Experiment._relock_arriver_after_barrier_check``.
 The budget's ``finalize_commits`` count includes
 ``_attempt_queued_barrier_checks`` (the queued-check commit) and
 ``_relock_arriver_after_barrier_check``.
-Waiter-join ``NOWAIT`` stays 1. Relock ``FOR UPDATE`` stays 1.
+Waiter-join ``NOWAIT`` stays 1. Relock ``FOR UPDATE`` is now 2 (it was 1
+before the bare-row lock).
 
 Arrival notice (recipient already loaded, *N* - 1 waiters)
 ----------------------------------------------------------

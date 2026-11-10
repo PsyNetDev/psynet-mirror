@@ -1690,6 +1690,8 @@ def test_finalize_barrier_arrivals_peeks_nested_checks_before_waiting(monkeypatc
     page = Page()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             return self
 
@@ -1999,6 +2001,8 @@ def test_finalize_barrier_arrivals_commits_checks_before_participant_relock(
     page = Page()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             return self
 
@@ -2053,6 +2057,8 @@ def test_finalize_barrier_arrivals_does_not_relock_after_losing_claim(monkeypatc
     hold = Hold()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             events.append("participant_relock")
             return self
@@ -2117,6 +2123,8 @@ def test_finalize_barrier_arrivals_uses_later_hold_after_lost_claim(monkeypatch)
     page = NextHold()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             events.append("participant_relock")
             return self
@@ -2183,6 +2191,8 @@ def test_finalize_barrier_arrivals_uses_already_advanced_page_after_lost_claim(
     page = Page()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             events.append("participant_relock")
             return self
