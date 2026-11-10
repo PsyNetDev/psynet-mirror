@@ -340,6 +340,31 @@ def test_a_release_fails_the_trial_a_trial_loop_prepared_for_its_next_pass(
 
 
 @in_consents_experiment
+def test_answering_a_filler_trial_in_the_grace_period_finalizes_it(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    original = exp.timeline
+    _WaitingTrialMaker.n_finalized = 0
+    maker = _WaitingTrialMaker()
+    maker.trial_available = True
+    _use_timeline(exp, PageMaker(lambda: maker.cue_trial()[1:], time_estimate=5))
+    try:
+        first, _ = _release_pair(exp)
+        first_id = first.id
+        answer = _post_response(first, raw_answer={"choice": "yes"}).get_json()
+        assert answer["submission"] == "approved"
+        db.session.expire_all()
+        first = Participant.query.get(first_id)
+        assert exp.timeline.get_current_elt(exp, first).label == "after"
+        (trial,) = FillerTrial.query.filter_by(participant_id=first_id).all()
+        assert trial.complete and trial.finalized and not trial.failed
+        assert _WaitingTrialMaker.n_finalized == 1
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
 def test_re_entering_a_barrier_in_its_released_pass_waits_again(
     in_experiment_directory, db_session
 ):
