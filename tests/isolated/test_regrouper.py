@@ -196,18 +196,24 @@ def test_every_regrouper_leaves_the_split_to_the_poller(
     assert _waiting(pairs, loner) == []
 
 
-class _CustomRooms(Regrouper):
+class _CustomRelease(Regrouper):
     def choose_who_to_release(self, waiting_participants):
         return super().choose_who_to_release(waiting_participants)
 
 
+class _CustomCheck(Regrouper):
+    def check_waiting_participants(self, waiting_participants):
+        return super().check_waiting_participants(waiting_participants)
+
+
+@pytest.mark.parametrize("custom_rooms", [_CustomRelease, _CustomCheck])
 @in_consents_experiment
-def test_every_regrouper_subclass_choosing_who_to_release_checks_on_arrival(
-    in_experiment_directory, db_session
+def test_every_regrouper_subclass_with_custom_release_checks_on_arrival(
+    in_experiment_directory, db_session, custom_rooms
 ):
     """A custom release rule might release on arrival, so arrivals keep the check."""
     exp = get_experiment()
-    rooms = _CustomRooms("custom_room", group_size=2, every=45)
+    rooms = custom_rooms("custom_room", group_size=2, every=45)
     players = _working_participants(exp, 3)
     _arrive(exp, rooms, players[:2])
     _backdate_arrivals(rooms, players[:2], 60)
@@ -216,10 +222,10 @@ def test_every_regrouper_subclass_choosing_who_to_release_checks_on_arrival(
 
 
 @in_consents_experiment
-def test_waiting_hold_poll_splits_a_due_every_regrouper_pool(
+def test_waiter_timeline_get_splits_a_due_every_regrouper_pool(
     in_experiment_directory, db_session
 ):
-    """A waiter's hold poll is a backstop for the poller at a due tick."""
+    """A waiter's ``GET /timeline`` (a reload or a bot's poll) splits at a due tick."""
     exp = get_experiment()
     original = exp.timeline
     rooms = Regrouper("poll_room", group_size=2, every=45)

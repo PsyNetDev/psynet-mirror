@@ -29,11 +29,14 @@ The barrier poller
 The clock process runs :func:`~psynet.sync.check_barriers` every
 0.5 seconds. It splits the pools of a :class:`~psynet.sync.Regrouper` with
 ``every``: an arrival there cannot make the pool ready, so it doesn't check
-the pool, and a tick that is due waits for the poller or a waiter's hold
-poll. It is also a backstop: for a release whose request-side check was
-deferred or lost, for barriers with explicit ``waiting_logic`` (whose wait
-pages don't check the barrier), and for waiters who have left. A waiter whose
-browser is still open also checks their own visit on each hold poll.
+the pool. For real browsers the poller makes a due split at its next check,
+normally within a second; a waiter's page reload (``GET /timeline``) or a
+bot's poll also checks the waiter's visit. A browser's safety poll on the
+wait page (``timeline_hold_resume``) does not check the barrier for a hold
+that isn't released yet. The poller is also a backstop: for a release whose
+request-side check was deferred or lost, for barriers with explicit
+``waiting_logic`` (whose wait pages don't check the barrier), and for waiters
+who have left.
 
 Each sweep first tries again to dissolve groups marked ``dissolving``. It
 then applies ``max_wait_time`` to waiters whose deadline has

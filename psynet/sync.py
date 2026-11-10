@@ -3286,9 +3286,9 @@ class Regrouper(Grouper):
         Seconds between fixed wall-clock ticks. The pool is split only at a
         tick, even when everyone is already waiting, if at least
         ``smallest_group`` members were waiting at the tick. The background
-        barrier check makes the split within about half a second of the
-        tick, so arriving participants don't wait for a check of the whole
-        pool. Pass either ``deadline`` or ``every``, not both.
+        barrier check makes the split at its next check after the tick,
+        normally within a second, so arriving participants don't wait for a
+        check of the whole pool. Pass either ``deadline`` or ``every``, not both.
 
     roles
         Optional role names, for example ``["proposer", "responder"]``. Each
@@ -3475,16 +3475,21 @@ class Regrouper(Grouper):
         Such a pool is split only at a tick, among the members who were
         already waiting then, so an arrival cannot make the pool ready. A
         check on the arrival would enact a tick that is already due and not
-        yet used, but it locks every waiter to do so; skipping it leaves that
-        split to the poller (within about 0.5 s) or a waiter's hold poll.
-        Ungrouped arrivals at a ``within`` regrouper are still checked,
-        because they are released at once. Subclasses that choose who to
-        release themselves keep the check.
+        yet used, but it locks every waiter to do so. Skipping it leaves that
+        split to the barrier poller, at its next check and normally within a
+        second, for real browsers; a page reload (``GET /timeline``) or a
+        bot's poll also checks the waiter's visit. Ungrouped arrivals at a
+        ``within`` regrouper are still checked, because they are released at
+        once. Subclasses that override :meth:`choose_who_to_release` or
+        :meth:`check_waiting_participants` keep the check, since their rule
+        might release on arrival.
         """
         if (
             self.every is not None
             and (self.within is None or barrier_instance.group_id is not None)
             and type(self).choose_who_to_release is Regrouper.choose_who_to_release
+            and type(self).check_waiting_participants
+            is Regrouper.check_waiting_participants
         ):
             return
         super()._queue_check_on_arrival(barrier_instance)
@@ -6217,8 +6222,9 @@ def check_barriers():
     of the two steps stops starting new work after
     ``_POLLER_SWEEP_BUDGET_SECONDS``, so thousands of idle waiters cannot
     keep the poller busy; the rest wait for later sweeps. One item can still
-    overrun the budget while it waits for a row lock. Live waiters still
-    check their own visit on each hold poll.
+    overrun the budget while it waits for a row lock. A waiter's page reload
+    (``GET /timeline``) or a bot's poll also checks their own visit; a
+    browser's hold poll does not.
     """
     seen = set()
     with _defer_timeline_hold_wakes():
