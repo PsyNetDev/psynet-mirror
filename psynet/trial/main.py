@@ -3021,7 +3021,8 @@ class TrialMaker(Module):
             self._wait_for_trial(),
             conditional(
                 "is_trial_available",
-                condition=lambda participant: participant.trial_status != "exit",
+                # A release can end the wait for a trial while the status is "wait".
+                condition=lambda participant: participant.trial_status == "available",
                 logic_if_true=self.trial_class.trial_logic(trial_maker=self),
                 logic_if_false=CodeBlock(
                     lambda: logger.debug("No trial found, skipping")

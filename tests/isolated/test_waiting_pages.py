@@ -23,7 +23,7 @@ from psynet.timeline import (
     join,
     while_loop,
 )
-from psynet.trial.main import GenericTrialNode, Trial
+from psynet.trial.main import GenericTrialNode, Trial, TrialMaker
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -253,7 +253,86 @@ def test_a_release_ends_while_loops_inside_the_pass(
         db.session.expire_all()
         for participant in Participant.query.all():
             assert exp.timeline.get_current_elt(exp, participant).label == "after"
+        for trial in FillerTrial.query.all():
+            assert trial.failed_reason == "interrupted_by_release"
+            assert trial.complete and not trial.finalized
         assert FillerTrial.query.count() == 2
+    finally:
+        exp.timeline = original
+
+
+class _WaitingTrialMaker(_CountingTrialMaker):
+    sync_group_type = None
+    max_time_waiting_for_trial = 60
+    expected_trials_per_participant = 3
+    check_performance_every_trial = False
+    trial_class = FillerTrial
+    _wait_for_trial = TrialMaker._wait_for_trial
+    _trial_loop = TrialMaker._trial_loop
+    cue_trial = TrialMaker.cue_trial
+    trial_available = False
+
+    def _try_to_prepare_trial_solo(self, experiment, participant):
+        if self.trial_available:
+            _start_filler_trial(experiment, participant)
+        participant.trial_status = "available" if self.trial_available else "wait"
+
+
+@in_consents_experiment
+def test_a_release_while_waiting_for_a_trial_skips_the_trial(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    original = exp.timeline
+    # Drop cue_trial's select_module: this stub trial maker isn't a module.
+    _use_timeline(exp, _WaitingTrialMaker().cue_trial()[1:])
+    try:
+        first, _ = _release_pair(exp)
+        assert _post_response(first, interrupted=True).get_json()["submission"] == (
+            "approved"
+        )
+        db.session.expire_all()
+        for participant in Participant.query.all():
+            assert exp.timeline.get_current_elt(exp, participant).label == "after"
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
+def test_a_release_fails_the_trial_a_trial_loop_prepared_for_its_next_pass(
+    in_experiment_directory, db_session
+):
+    """The prepared trial isn't left as the current trial at the next barrier."""
+    exp = get_experiment()
+    original = exp.timeline
+    maker = _WaitingTrialMaker()
+    maker.trial_available = True
+    exp.timeline = Timeline(
+        SimpleGrouper(
+            f"a_{uuid.uuid4().hex[:8]}",
+            initial_group_size=2,
+            waiting_logic=maker._trial_loop(),
+        ),
+        SimpleGrouper(
+            f"b_{uuid.uuid4().hex[:8]}",
+            initial_group_size=3,
+            quorum=3,
+            waiting_logic=_filler("filler_b"),
+        ),
+        ModularPage("after", "Your partner is here", time_estimate=1),
+    )
+    try:
+        first, _ = _release_pair(exp)
+        first_id = first.id
+        assert _post_response(first, interrupted=True).get_json()["submission"] == (
+            "approved"
+        )
+        db.session.expire_all()
+        first = Participant.query.get(first_id)
+        assert exp.timeline.get_current_elt(exp, first).label == "filler_b"
+        for trial in FillerTrial.query.filter_by(participant_id=first_id):
+            assert trial.failed_reason == "interrupted_by_release"
+            assert trial.complete and not trial.finalized
     finally:
         exp.timeline = original
 

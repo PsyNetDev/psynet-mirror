@@ -4523,7 +4523,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         raise RuntimeError(
             f"Skipping the waiting pages of barrier '{barrier.id}' did not leave "
             f"its waiting loop after {_MAX_RELEASE_WALK_STEPS} pages; is there "
-            "a very long for_loop in waiting_logic?"
+            "a very long for_loop or sequence in waiting_logic?"
         )
 
     @staticmethod

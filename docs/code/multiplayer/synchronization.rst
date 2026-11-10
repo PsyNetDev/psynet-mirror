@@ -1220,7 +1220,11 @@ whose arrival completes the group. Code blocks in it still run, and so do
 the ends of modules, loops and fixed time credit. Each
 :func:`~psynet.timeline.while_loop` in the pass ends at its next check,
 since its condition might wait for answers that the skipped pages never
-give; :func:`~psynet.timeline.for_loop` runs all its iterations. Pass
+give. This includes PsyNet's own waits in the pass, such as a trial maker
+waiting for a trial to become available or for asynchronous processing.
+:func:`~psynet.timeline.for_loop` and :func:`~psynet.timeline.sequence`
+run all their iterations, so a very long one makes the release raise an
+error after 1000 skipped pages. Pass
 ``release_grace=None`` to :class:`~psynet.sync.Barrier`,
 :class:`~psynet.sync.GroupBarrier` or a grouper to let every waiting page
 run to its end.
@@ -1229,7 +1233,8 @@ A release ends trial pages too, such as the animal trials in
 ``sync_quorum``. A trial whose page ends before it is answered is failed
 with ``failed_reason="interrupted_by_release"``, and so is every trial
 that the run through the rest of the pass reaches: it is created, and
-failed without being shown. Such a trial is not
+failed without being shown. So is a trial that a trial maker had prepared
+for its next pass when the release ended its loop. Such a trial is not
 finalized, so it doesn't count towards the trial maker's targets of
 completed trials, and its node doesn't wait for it. Its ``show_feedback``
 page isn't shown either. It was still created, so

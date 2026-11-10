@@ -3619,7 +3619,9 @@ def while_loop(
     Loops a series of elts while a given criterion is satisfied.
     The criterion function is evaluated once at the beginning of each loop.
     Inside a barrier's ``waiting_logic``, the loop ends at its next check
-    once the barrier releases the participant.
+    once the barrier releases the participant. This also ends PsyNet's own
+    waits in that pass, such as waiting for a trial or for asynchronous
+    processing.
 
     Parameters
     ----------
