@@ -278,7 +278,9 @@ Module("game", for_loop(
   barrier progression. It polls for up to 10 s; pass a longer `timeout=` when
   rounds start on a clock or a deadline, or call `regroup_now(bots, regrouper)`
   to split the bots' pools at a `Regrouper` without waiting for its
-  `deadline` or tick. Use concurrent bot runs when arrival races matter.
+  `deadline` or tick; with `every`, pass every bot waiting in the pool, since
+  only the bots passed in count as having waited for the tick. Use concurrent
+  bot runs when arrival races matter.
 - Assert group formation, active group size, role assignment, shared node/trial
   IDs, barrier IDs, `on_release` side effects, and failed/overflow exits.
 - Test each kind of dropout, as described in "Test dropouts" below, and

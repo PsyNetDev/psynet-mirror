@@ -879,7 +879,10 @@ def test_a_cohort_waiting_to_dissolve_is_not_split(in_experiment_directory, db_s
 def test_backdating_reaches_the_deadline_after_quick_splits(
     in_experiment_directory, db_session
 ):
-    """``regroup_now``'s backdating starts a round after two quick earlier ones."""
+    """``regroup_now``'s backdating starts a round after two quick earlier ones.
+
+    A player still in last round's pair keeps their role meanwhile.
+    """
     exp = get_experiment()
     cohort_grouper = SimpleGrouper("cohort", initial_group_size=4, quorum=2)
     pairs = Regrouper(
@@ -894,15 +897,19 @@ def test_backdating_reaches_the_deadline_after_quick_splits(
     cohort = players[0].active_sync_groups["cohort"]
     for _ in range(2):
         _arrive(exp, pairs, players)
-    present = players[:3]
+    present, lingering = players[:3], players[3]
+    lingering_role = pairs.role(lingering)
+    assert lingering_role in ("proposer", "responder")
     _arrive(exp, pairs, present)
 
     _backdate_splits(pairs, cohort, 30)
     _backdate_arrivals(pairs, present, 30)
+    assert pairs.role(lingering) == lingering_role
     assert len(pairs.choose_who_to_release(present)) == 3
     db_session.commit()
     (sitter,) = [p for p in present if "pair" not in p.active_sync_groups]
     assert pairs.role(sitter) is None
+    assert pairs.role(lingering) == lingering_role
 
 
 @in_consents_experiment

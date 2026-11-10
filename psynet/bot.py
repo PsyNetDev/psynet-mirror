@@ -287,13 +287,15 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
 
     A bot test would otherwise wait out the regrouper's ``deadline`` or its
     next ``every`` tick, for example to test a round that starts without a
-    member who is still reading their results. This moves the bots' arrivals
-    at the regrouper, and their pools' earlier splits, back by one
-    ``deadline`` (or ``every`` period), so the next check splits the pools as
-    the deadline or tick would. Each call moves everything back by one more
-    period, so calling it again, without the bots advancing, tests what
-    happens after a second period, such as a player waiting alone sitting
-    out with ``left_over="sit_out"``.
+    member who is still reading their results. This moves two clocks back by
+    one ``deadline`` (or ``every`` period): the bots' arrival times at the
+    regrouper and the creation times of the groups their pools' earlier
+    splits formed. The next check then splits the pools as the deadline or
+    tick would. Group memberships and roles are untouched, so a player not
+    passed in keeps their role from the last round. Each call moves the
+    clocks back by one more period, so calling it again, without the bots
+    advancing, tests what happens after a second period, such as a player
+    waiting alone sitting out with ``left_over="sit_out"``.
 
     Parameters
     ----------
@@ -345,16 +347,13 @@ def _backdate_splits(regrouper, within_group, seconds):
     """Move every split ``regrouper`` made in this pool back by ``seconds``.
 
     All of them, not just the latest, because the pool's deadline counts from
-    its most recent split. Their members' links move too, so
-    :meth:`~psynet.sync.Regrouper.role` still sees a later visit as newer.
+    its most recent split.
     """
     from .sync import SyncGroup
 
     shift = timedelta(seconds=seconds)
     for group in SyncGroup.query.filter(*regrouper._pool_splits(within_group)):
         group.creation_time -= shift
-        for link in group.participant_links:
-            link.arrival_time -= shift
 
 
 def _backdate_arrivals(barrier, participants, seconds):

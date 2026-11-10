@@ -3567,12 +3567,12 @@ class Regrouper(Grouper):
         role, which a newcomer gets at their first split. It is also ``None``
         while they are in a group of this type that another grouper formed.
         """
-        links = self._links([participant.id])
         if self.keep_roles:
+            links = self._links([participant.id])
             kept = next((link.role for link in links if link.role), None)
             return kept or self._waiting_role(participant)
         current = participant.active_sync_groups.get(self.group_type)
-        if not links or (current is not None and current.grouper_id != self.id):
+        if current is not None and current.grouper_id != self.id:
             return None
         latest_visit = (
             ParticipantLinkBarrier.query.filter_by(
@@ -3581,12 +3581,13 @@ class Regrouper(Grouper):
             .order_by(ParticipantLinkBarrier.id.desc())
             .first()
         )
-        if (
-            latest_visit is not None
-            and latest_visit.arrival_time > links[-1].arrival_time
-        ):
+        if latest_visit is None or latest_visit.sync_group is None:
             return None
-        return links[-1].role
+        return next(
+            link.role
+            for link in latest_visit.sync_group.participant_links
+            if link.participant_id == participant.id
+        )
 
     def _waiting_role(self, participant) -> Optional[str]:
         """Return the role given to a waiting newcomer for the coming split."""
@@ -3993,9 +3994,11 @@ class Regrouper(Grouper):
             self._make_group(group_members, within_group, split_time, split_id)
             for group_members in plan
         ]
-        if roles:
-            for group in groups:
-                for link in group.participant_links:
+        visits = self._visits(members)
+        for group in groups:
+            for link in group.participant_links:
+                visits[link.participant.id].sync_group = group
+                if roles:
                     link.role = roles[link.participant.id]
         placed = {p.id for group in groups for p in group.participants}
         left_over = [p for p in members if p.id not in placed]
@@ -5441,6 +5444,10 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     released = Column(Boolean, default=False)
     # A Regrouper released the participant without a group.
     sat_out = Column(Boolean, default=False)
+    # The group a Regrouper split placed the participant in at this visit;
+    # empty if the visit ended without one. ``Regrouper.role`` reads it.
+    sync_group_id = Column(Integer, ForeignKey("sync_group.id"))
+    sync_group = relationship("SyncGroup")
     # The last page the participant answered before arriving, other than a
     # waiting page, ended on its time limit
     # (``Participant.timed_out_since_barrier``).
