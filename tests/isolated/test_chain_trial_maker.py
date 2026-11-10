@@ -472,7 +472,10 @@ def test_init_participant_copies_the_group_s_choices_from_a_member_s_matching_ru
         assert {n.participant_group for n in arriving.networks} == {expected[0]}
 
 
-def test_members_released_together_copy_the_leader_whatever_their_run_index():
+@pytest.mark.parametrize("leader_initialized", [False, True])
+def test_members_released_together_copy_the_leader_whatever_their_run_index(
+    leader_initialized,
+):
     trial_maker = _synchronized_within_trial_maker(
         lambda participant: f"G{participant.id}"
     )
@@ -491,13 +494,22 @@ def test_members_released_together_copy_the_leader_whatever_their_run_index():
     # Groups re-formed inside a loop: the follower is on a later run.
     leader, follower = member(1, run_index=1), member(2, run_index=2)
     group.leader, group.active_participants = leader, [follower, leader]
+    expected = ("G1", ["X", "Y"], 0)
+    if leader_initialized:
+        expected = ("L", ["Y", "X"], 1)
+        leader.module_state.__dict__.update(
+            trial_maker_initialized=True,
+            participant_group=expected[0],
+            block_order=expected[1],
+            block_position=expected[2],
+        )
     trial_maker._init_participants_in_sync_group(group, experiment=None)
 
     choices = [
         (s.participant_group, s.block_order, s.block_position)
         for s in (leader.module_state, follower.module_state)
     ]
-    assert choices == [("G1", ["X", "Y"], 0)] * 2
+    assert choices == [expected] * 2
 
 
 @pytest.mark.parametrize("chain_kwargs", [WITHIN_CHAINS, {}])

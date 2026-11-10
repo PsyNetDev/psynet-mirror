@@ -2034,8 +2034,7 @@ class GroupBarrier(Barrier):
             return _barrier_round(group, [member], links) or default
 
         node = visit(participant)
-        node_id = None if node is None else node.id
-        waiting = [m for m in all_waiting if getattr(visit(m), "id", None) == node_id]
+        waiting = [m for m in all_waiting if visit(m) == node]
         scope = _barrier_scope(group, waiting, self.id, node)
         waiting_ids = {m.id for m in waiting}
         counted = {m.id for m in scope.waited_for} | {

@@ -2370,8 +2370,14 @@ class TrialMaker(Module):
         the start of their current run, so the others copy the group's
         choices from the first one initialized, normally the leader, even
         if their ``run_index`` differs, as when groups re-form inside a loop.
+        A leader already initialized in their current run is that source.
         """
-        source = None
+        leader_state = _latest_state(group.leader, self.id) if group.leader else None
+        source = (
+            leader_state
+            if leader_state is not None and leader_state.trial_maker_initialized
+            else None
+        )
         for participant in _leader_first(group):
             state = _latest_state(participant, self.id)
             if state is None or state.trial_maker_initialized:
