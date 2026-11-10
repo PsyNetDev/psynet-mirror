@@ -118,7 +118,7 @@ of visit it is:
 
 - A **round visit**, if the member is in their cued trial of the group and
   the trial hasn't ended, that is, the barrier is in ``show_trial``. It
-  waits for the members who have a trial in that round, and, while the
+  waits for the members whose current trial is in that round, and, while the
   round is open, for those who haven't cued yet, because their cue will
   join it. Its release closes the round, and ``on_release`` gets the
   round's node.

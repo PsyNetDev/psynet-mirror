@@ -1113,6 +1113,32 @@ def test_a_member_who_rejoined_skips_a_round_they_played(
     assert PairTrial.query.filter_by(participant_id=cohort[0].id).count() == 1
 
 
+@pytest.mark.parametrize("second_phase", [False, True])
+@in_consents_experiment
+def test_a_round_barrier_doesnt_wait_for_a_rejoiner_who_skipped_the_round(
+    in_experiment_directory, db_session, second_phase
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    for participant in cohort:
+        _cue_round(exp, participant, 0)
+    if second_phase:
+        # The first phase closes the round; the second cues another class in it.
+        _arrive(exp, GroupBarrier("offer", group_type="pair"), cohort)
+    pair.remove_participant(cohort[0], reason="moved_on")
+    pair.add_participant(cohort[0])
+    if second_phase:
+        VoteTrial.cue({"target": 0}, round=0)[0].consume(exp, cohort[1])
+        VoteTrial.cue({"target": 0}, round=0)[0].consume(exp, cohort[0])
+        assert cohort[0].current_trial is None
+    else:
+        assert _cue_round(exp, cohort[0], 0) is None
+    barrier = GroupBarrier("reply", group_type="pair")
+    _arrive(exp, barrier, cohort[1:])
+    assert not barrier._participant_is_waiting(cohort[1])
+
+
 @pytest.mark.parametrize("skipper_first", [False, True])
 @in_consents_experiment
 def test_a_skipper_releases_with_the_players_at_a_barrier_s_second_pass(

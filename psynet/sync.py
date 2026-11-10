@@ -1615,9 +1615,9 @@ class GroupBarrier(Barrier):
     :ref:`round barriers and group barriers <rounds-barrier-visits>`). A
     *round visit* comes from inside the member's unfinished trial of a
     :meth:`~psynet.trial.main.Trial.cue` with ``sync_group_type``, that is,
-    a barrier in ``show_trial``. It waits for the members with a trial in
-    that round and, while the round is open, for those who haven't cued
-    yet; its release closes the round to newcomers, whose cues then start
+    a barrier in ``show_trial``. It waits for the members whose current
+    trial is in that round and, while the round is open, for those who
+    haven't cued it yet; its release closes the round to newcomers, whose cues then start
     the next round. Any other visit, such as before the first cue, in
     ``show_feedback`` or after the loop, is a *group visit*, which waits for
     every member. One ``id_`` used both inside and outside ``show_trial``
@@ -2218,7 +2218,8 @@ class GroupBarrier(Barrier):
             for link in participant.active_barriers.values():
                 key = (self.id, link.barrier_id, group.group_type)
                 if (
-                    link.round_node_id is None
+                    link.released
+                    or link.round_node_id is None
                     or key in _warned_round_waits
                     or link.barrier_instance is None
                     or link.barrier_instance.group_id != group.id
@@ -4748,10 +4749,12 @@ def _waited_for(group, visit) -> List[Participant]:
     """Return the active members of ``group`` whom ``visit`` waits for, from stored facts.
 
     A round visit waits for the members still in the round's module (see
-    :func:`_still_in_module`) who have a trial on its node, and, while the
-    round is open, for those who don't have one yet, since their cue will
-    join it. So it doesn't wait for a member who skipped the round, or who
-    joined the group after it closed. A visit by the whole group waits for
+    :func:`_still_in_module`) whose current trial is on its node, and, while
+    the round is open, for those who don't have a trial on it yet, since
+    their cue will join it. So it doesn't wait for a member who skipped the
+    round, whose cue left them without a current trial, such as one who
+    joined the group after it closed, or who left and rejoined it and so
+    already has a trial on it. A visit by the whole group waits for
     every member still in the module of a member waiting there, or for
     every member if one of them is outside any module. A member waiting at
     the other kind of visit of the same barrier ID is waited for like one
@@ -4765,17 +4768,25 @@ def _waited_for(group, visit) -> List[Participant]:
         module_ids = {p.module_id for p in visit.waiting}
         return [p for p in members if any(_still_in_module(p, m) for m in module_ids)]
     in_module = [p for p in members if _still_in_module(p, node.module_id)]
-    players = {
-        participant_id
-        for (participant_id,) in db.session.query(Trial.participant_id).filter(
-            Trial.node_id == node.id,
-            Trial.participant_id.in_([p.id for p in in_module]),
-        )
-    }
+    ids = [p.id for p in in_module]
+    players = set(
+        db.session.execute(
+            select(Participant.id)
+            .join(Trial, Participant.current_trial_id == Trial.id)
+            .where(Trial.node_id == node.id, Participant.id.in_(ids))
+        ).scalars()
+    )
     if len(players) < len(in_module):
         db.session.refresh(node, ["sync_group_closed"])
         if not node.sync_group_closed:
-            return in_module
+            have_trials = set(
+                db.session.execute(
+                    select(Trial.participant_id).where(
+                        Trial.node_id == node.id, Trial.participant_id.in_(ids)
+                    )
+                ).scalars()
+            )
+            players |= set(ids) - have_trials
     return [p for p in in_module if p.id in players]
 
 
