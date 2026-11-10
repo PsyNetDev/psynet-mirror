@@ -168,6 +168,10 @@ then groups of two, and assigns roles at a barrier each time:
 Two groupers of the same type and size share a default ID, and so a waiting
 pool. Give them different ``id_`` values if they should not.
 
+.. _sync-rounds-with-changing-groups:
+
+.. _sync-regrouper-recipe:
+
 Rounds with changing groups
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -200,15 +204,41 @@ the round on their own.
         left_over="sit_out",  # an odd player out sits the round out
     )
 
-By default, those who have played the most rounds sit out when not
-everyone fits, players are kept apart from last round's partners where
-possible, and roles alternate. With ``avoid_repeats="all_rounds"`` they are
-kept apart from everyone they have played with before, so that a cohort of
-four meets each partner once in three rounds of pairs. The regrouper counts each participant's
-rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
+By default, players are grouped at random, those who have played the most
+rounds sit out when not everyone fits, and roles are shuffled across each
+group's members. Override :meth:`~psynet.sync.Regrouper.form_groups` for
+other grouping rules and :meth:`~psynet.sync.Regrouper.assign_roles` for
+other role rules. The ``ultimatum_pairing`` demo overrides both, to keep
+last round's partners apart and to give each role to whoever has held it
+least often, so that roles alternate. Its ``pairing.py`` defines:
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
+   :pyobject: PairingRegrouper
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
+   :pyobject: is_rematch
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
+   :pyobject: last_partner_id
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
+   :pyobject: times_held
+
+The regrouper counts each participant's rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
 :meth:`~psynet.sync.Regrouper.rounds_sat_out`,
 :meth:`~psynet.sync.Regrouper.sat_out` (for the latest round) and, with
 ``roles``, :meth:`~psynet.sync.Regrouper.role`.
+
+When the cohorts take latecomers (``join_existing_groups=True`` on their
+grouper), ``stop_top_ups_after_rounds=n`` lets them join only during
+the cohort's first ``n`` rounds: the next split, even one in
+which everyone waiting sits out, stops the cohort's top-ups (see
+:ref:`groups_below_min_size`). A cohort below its quorum at that split is
+dissolved instead, with nobody grouped; with the cohort grouper's
+``below_quorum="continue_without_group"``, its waiting players are released
+ungrouped, without calling ``on_release``.
+Every split that forms groups in the cohort counts as a round, even one that
+pairs only latecomers while the others are still playing.
 
 Play each round as one trial per player, added after the regrouper with
 :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` on a trial class that sets
@@ -220,8 +250,8 @@ nodes (see :ref:`rounds-cued-trials`).
 
 :doc:`writing_a_round_based_experiment` builds a complete game this way, including moving
 slow players on and sitting out. :class:`~psynet.sync.Regrouper` lists all
-its settings, for example rounds on fixed ticks (``every``), fixed roles and
-custom grouping.
+its settings, for example rounds on fixed ticks (``every``) and custom
+grouping.
 
 ``waiting_message`` sets the message on the waiting indicator. A ``{SECONDS}``
 placeholder shows a live countdown to the deadline, for example ``"The next round starts in {SECONDS} s."``.
@@ -256,16 +286,12 @@ Barriers
 
 A :class:`~psynet.sync.GroupBarrier` holds each member until every active
 member of the group has reached it. When the last member arrives, the barrier
-calls ``on_release`` for the whole group. In or after a round of cued trials,
-it waits only for the members of that round: not for a late joiner who
-skipped it, a member already in a later round, one who has left the
-round's module, or one who has already passed it. Before a late joiner's
-first cue, once the group has cued a round in the module, it waits only for
-members who haven't cued one there either and are still in the module. A
-release of only members catching up, such as skippers, doesn't call
-``on_release`` (see
-:ref:`rounds-cued-trials` and :ref:`a fixed group's loop
-<rounds-fixed-group-loop>`). In ``rock_paper_scissors`` the
+calls ``on_release`` for the whole group. It waits for every active member
+wherever the barrier is, so a member stops being waited for only by leaving
+the group (see :ref:`sync-leaving-a-group`), and members who wait at
+different barriers of one group wait for each other, which PsyNet reports
+as an error (see :ref:`group barriers in loops
+<rounds-group-barriers-in-loops>`). In ``rock_paper_scissors`` the
 barrier after each choice scores the round and saves each player's result
 on their trial, where ``show_feedback`` reads it:
 
@@ -284,19 +310,14 @@ for compatibility).
 .. _sync-barrier-node:
 
 ``node`` is the group's :class:`~psynet.trial.main.SyncGroupNode` for the
-round the barrier is in or after: the earliest of the rounds the waiting
-members stored when they last cued (or skipped) one in their current run
-of their current module, not a node worked out from their trials. It is
-``None`` before the group's first cue in the module, including at a barrier
-at the start of a module after another module's rounds or at the start of a
-later run of the same module, and in a group that never uses
-:meth:`~psynet.trial.main.Trial.cue`. When ``node`` is set, ``trials``
-holds ``None`` for a member whose current trial is not on it, such as a
-newcomer released at a feedback barrier during a practice trial; when it is
-``None``, ``trials`` holds each member's current trial whatever its node,
-which can be a trial of an earlier module, or ``None`` for a member with
-none. At a barrier in the round's trial pages (``show_trial``) every member
-it releases is playing on the node, so ``trials`` has no ``None`` there.
+round whose trial every member it releases is in, that is, at a barrier in
+``show_trial`` of a cued trial with ``sync_group_type`` (see
+:ref:`whom a group barrier waits for <rounds-group-barrier-rule>`). At any other barrier, including one in ``show_feedback``, between
+iterations, after the loop or at the start of a later run, and in a group
+that never uses :meth:`~psynet.trial.main.Trial.cue`, ``node`` is ``None``
+and ``trials`` holds each member's current trial whatever its node, which
+can be a trial of an earlier round or module, or ``None`` for a member with
+none.
 In ``rock_paper_scissors`` the trial maker gives every pair the same node,
 which is not a group's node, so ``node`` is ``None`` and the results go on
 the trials. Cued trials share a node per group and round, so there a
@@ -339,14 +360,10 @@ Each trial on a group's node records how the round ended for its player in
 and exports can read it rather than work it out from the player's groups
 later:
 
-- ``"stayed"``: a group barrier released the group while this was the
-  player's current trial on the round's node. A barrier after the trial,
-  between rounds or after the loop also stores it, as long as the trial is
-  still the player's current trial and has no outcome yet, but a barrier
-  of a later module, or of a later run of the same module, before its
-  first cue (where ``node`` is ``None``) does not. Members released with another current trial, such as a newcomer's
-  practice trial, don't stop it, and get nothing, as do members who
-  skipped the round;
+- ``"stayed"``: a group barrier in the trial's pages (``show_trial``)
+  released the group. Barriers after the trial, such as in
+  ``show_feedback``, don't store it, and members who skipped the round get
+  nothing;
 - why the player left the group: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
   ``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or
@@ -354,16 +371,13 @@ later:
   :data:`~psynet.sync.SyncGroupOutcome`);
 - ``None`` before either happens, and for a trial played without a group.
 
-The first of these to happen is stored, even after the trial's pages
-(``show_trial``) have ended, for example at a barrier in ``show_feedback``.
-:attr:`~psynet.trial.main.Trial.complete` says whether those pages have
-ended. Two things differ: leaving before they have ended replaces
-``"stayed"`` from an earlier barrier of the round, and moving on
-(``"moved_on"``, for example at the next round's regrouper) or finishing
-(``"finished"``) after they have ended stores nothing. Nor does leaving the
-group once the player is in a later module or a later run of the same
-module, for example by failing a questionnaire there. A partner's outcome is on their trial in
-``node.all_trials``:
+The outcome is only written during the trial's pages (``show_trial``), while
+:attr:`~psynet.trial.main.Trial.complete` is ``False``; the latest event
+there is kept, so leaving after an earlier barrier of the round replaces
+``"stayed"``. Once the pages have ended, the outcome is final: leaving the
+group in ``show_feedback``, between rounds or in a later module stores
+nothing, so put the barrier that decides the round in ``show_trial``.
+A partner's outcome is on their trial in ``node.all_trials``:
 
 .. code-block:: python
 
@@ -384,30 +398,47 @@ leaves the group before then, or whose group is dissolved, doesn't get
 the results it would have stored, so read them with ``.get``, which returns
 ``None`` when they aren't set: ``trial.var.get("score")`` for results saved on
 the trial, or ``participant.var.get("score")`` when there is no trial.
-If the group dissolves while some members are waiting at the barrier,
-``on_dissolve`` runs for them instead, before they leave the group, with the
-same arguments except ``leader`` and ``left``. ``participants`` are
-then the members waiting at the barrier, and ``node`` and ``trials`` follow
-the same rule as for ``on_release``, from those members' stored rounds.
-Dissolving waits for any member who is in the middle of another request, so
-it may happen a second or two after that request finishes, and
-``on_dissolve`` is called once, with every member waiting at the barrier. A
-quiz can still score the last question for those who answered it:
+
+Nothing runs when a group dissolves, but with
+``below_quorum="continue_without_group"`` the members carry on and the
+round's results are still stored (with the default ``"fail"``, the members
+are failed and ``show_feedback`` doesn't run). Each trial's ``answer`` holds
+the player's latest answer, the round's trials are in ``node.all_trials``,
+and each trial's ``sync_group_outcome`` is
+``"group_dissolved"`` for every member still in the group when it dissolved,
+waiting at the barrier or still on a page, unless the trial's pages had
+already ended (see :ref:`round outcomes <sync-round-outcome>`).
+If ``show_trial`` has pages after the barrier, set ``accumulate_answers =
+True`` on the trial class and read the answer given before the barrier by
+its page label, for example ``trial.answer["estimate"]``, so a later page
+doesn't replace it.
+Members who were waiting at the barrier pass it at once, and so do those
+still on an earlier page, such as the question itself. Code that needs the
+round's result, such as ``show_feedback``, an export or ``on_finalized``,
+computes it from those facts when ``on_release`` didn't run. A partner who
+was still on the question page may not have answered yet when a member's
+``show_feedback`` runs, so a result that must be the same for the whole
+group belongs in the export, or in code that runs once every trial on the
+node is complete. A quiz can still score the last question for those who
+answered it. With ``accumulate_answers``, an unanswered trial's ``answer`` is
+``{}`` (without it, ``None``), so skip the missing estimates.
+``node.all_trials`` includes the failed trial of a member who left; use
+``node.alive_trials`` to leave their answer out:
 
 .. code-block:: python
 
-    GroupBarrier(id_="question_3", group_type="team",
-                 on_release=partial(score_question, question=3),
-                 on_dissolve=partial(score_question, question=3))
+    accumulate_answers = True
 
-Members who are still on an earlier page, such as the question itself, when
-the group dissolves get neither callback: they pass the barrier without
-waiting. If they need a result too, give them one in a step after the
-barrier, for example when their trial's ``sync_group_outcome`` is
-``"group_dissolved"``, as it is for every member still in the group when it
-dissolves, waiting or not, unless the trial's pages had already ended with
-``"stayed"`` (see :ref:`round outcomes <sync-round-outcome>`). For a barrier
-after ``show_trial``, such as in ``show_feedback``, check
+    def show_feedback(self, experiment, participant):
+        score = self.var.get("score")
+        if score is None and self.sync_group_outcome == "group_dissolved":
+            estimates = [t.answer.get("estimate") for t in self.node.all_trials]
+            score = score_answers([e for e in estimates if e is not None])
+        ...
+
+If the barrier that didn't release is after ``show_trial``, for example in
+``show_feedback``, the trial's outcome isn't updated, because it is only
+written during the trial's pages, so check
 ``participant.sync_group_removal_reason(group_type) == "group_dissolved"``
 instead.
 
@@ -548,14 +579,6 @@ rounds, with ``ChatRoom(names="anonymous")`` if the page has a chat room.
 Members sit in a row for up to four people and in a zigzag across the
 width of the page for more, so the display adapts to any screen.
 
-``subgroups`` clusters the members, for example pairs formed within a
-room. Pass a sync group type, or a function returning a key per participant;
-the viewer's cluster comes first:
-
-.. code-block:: python
-
-    GroupPrompt("Pick a number.", participant=participant, group_type="room", subgroups="pair")
-
 A page shows either progress or answers. On a decision page, members who
 have answered get a tick. A member has answered once they wait at a barrier
 of the group (:func:`~psynet.sync.is_waiting_at_barrier`), typically the barrier
@@ -564,18 +587,14 @@ page's time limit ran out gets a grey dash instead
 (:func:`~psynet.sync.reached_barrier_after_time_limit`), and screen readers announce
 that they ran out of time (see the :ref:`picture <rounds-variations>` in
 :doc:`writing_a_round_based_experiment`). Pass ``show_progress=False`` to
-hide the ticks, or ``has_answered`` to decide who gets a tick instead; it
-can call :func:`~psynet.sync.is_waiting_at_barrier` to build on the default, and
-members who ran out of time keep their dash whatever it returns.
+hide the ticks.
 
-What the page draws from the group's state updates live: ticks and dashes
-appear as members arrive at the group's barriers (this uses the barriers'
-arrival updates, so it needs ``notify_arrivals``), and members appear as
-they join and fade as they leave (see below). Only what the server can't
-work out again later is fixed when the page loads: who has answered by a
-custom ``has_answered``, clusters from a ``subgroups`` function, and the
-members shown with ``answers``. Live redraws need the same ``FLASK_SECRET_KEY`` on every web process; without
-one, PsyNet logs a warning and the group stays as first drawn:
+A page without ``answers`` updates live: ticks and dashes appear as members
+arrive at the group's barriers (this uses the barriers' arrival updates, so
+it needs ``notify_arrivals``), and members appear as they join and disappear
+as they leave. A page with ``answers`` is fixed when it loads. Live redraws
+need the same ``FLASK_SECRET_KEY`` on every web process; without one, PsyNet
+logs a warning and the group stays as first drawn:
 
 .. code-block:: python
 
@@ -590,8 +609,8 @@ one, PsyNet logs a warning and the group stays as first drawn:
 
 After the barrier, pass ``answers`` to show each member's answer in a speech
 bubble, as a dictionary from participant ID to answer; ``show_progress``
-then defaults to ``False``, and passing ``show_progress=True`` or
-``has_answered`` with ``answers`` raises an error. A member whose answer is
+then defaults to ``False``, and passing ``show_progress=True`` with
+``answers`` raises an error. A member whose answer is
 ``None``, for example because they ran out of time, keeps their seat
 without a bubble. Participant variables
 store dictionary keys as strings, so a dictionary read back from one can be
@@ -626,39 +645,24 @@ only ever been in groups of one type; otherwise, as in a cohort that pairs
 its players each round, GroupPrompt raises an error rather than switch to
 whichever group is left when a pair ends.
 
-GroupPrompt shows the group as it is now:
+GroupPrompt draws members by two rules, both based on stored facts:
 
-- A member who left stays in their seat, faded, with the first of these
-  labels that applies:
+- The group's active members, on every page.
+- On a results page, everyone in ``answers`` too, even after they left
+  the group. A member who left is faded and labelled "(left)", unless
+  they moved on, such as to next round's pair at a
+  :class:`~psynet.sync.Regrouper`, or finished
+  (``reason="moved_on"`` or ``"finished"`` in
+  :meth:`~psynet.sync.SyncGroup.remove_participant`), so that a results
+  page reads the same after a reload.
 
-  1. "(left)" if they failed;
-  2. "(finished)" if they left after playing their part
-     (``reason="finished"``), even if they then left or completed the
-     experiment;
-  3. "(left)" if they left or completed the experiment;
-  4. "(removed)" if a barrier removed them from the group for being late;
-  5. "(dropped out)" otherwise.
-
-- A member who moved on to another group, such as next round's pair at a
-  :class:`~psynet.sync.Regrouper`, is no longer shown, except on a results
-  page (one with ``answers``) that shows their answer.
-- A group that accepts top-ups shows no members who left, not even those
-  who moved on and whose answer the page shows. Once it stops accepting
-  them, only members who leave from then on are shown, so a team that lost
-  someone during its instructions (see :ref:`sync-lobby-top-ups`) doesn't
-  show them during the game. That includes members a barrier with
-  ``stop_top_ups=True`` removes for being late as it releases the group,
-  since they are removed just before top-ups stop.
-- A participant who is no longer in the group, for example because a
-  barrier removed them for being late, sees only the text when the prompt
-  is given ``group_type``. The prompt then needs no special case on pages
-  that such a player may still reach, though the page's other content, such
-  as a round's outcome, may. ``group=self.sync_group`` in trial code is the
-  group the trial was played in, which the prompt shows even after the
-  player has left it.
-
-:meth:`~psynet.sync.SyncGroup.remove_participant` takes a ``reason``
-that sets these labels, such as ``"moved_on"`` or ``"late"``.
+A participant who is no longer in the group, for example because a
+barrier removed them for being late, sees only the text when the prompt
+is given ``group_type``. The prompt then needs no special case on pages
+that such a player may still reach, though the page's other content, such
+as a round's outcome, may. ``group=self.sync_group`` in trial code is the
+group the trial was played in, which the prompt shows even after the
+player has left it.
 
 Trial makers
 ~~~~~~~~~~~~
@@ -666,7 +670,21 @@ Trial makers
 A trial maker with ``sync_group_type`` gives the whole group the same trials.
 Each group has a randomly chosen leader. PsyNet assigns the leader's next node
 as if the leader were taking the trial maker alone, and the other members get
-trials on the same node. The start of every trial is synchronized; add
+trials on the same node.
+
+The group starts each run of the trial maker together, also when a loop
+repeats it. The first member initialized, normally the leader, makes the
+run's choices (the participant group and the block order); the others copy
+them. PsyNet stores them, and the group's current block, in the group's
+``trial_maker_runs`` column, keyed by trial maker id, one entry per run. It
+writes that column under the group's row lock, which custom code must take
+only after any participant rows it locks (see :ref:`sync-group-lock-order`).
+A newcomer
+who joins during a run, or a member promoted to leader, copies the current
+run's choices and block. A member who loops faster than the others waits
+for the whole group to start the next run.
+
+The start of every trial is synchronized; add
 :class:`~psynet.sync.GroupBarrier` elements inside the trial, as in
 ``show_trial`` above, to synchronize other points. Each trial records the
 group, the member's role and the group's round, counted from 0, in
@@ -721,6 +739,10 @@ decisions each one needs. These settings carry them out:
   takes them out of both (see :ref:`rounds-slow-players`).
 
 Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
+:doc:`late_slow_and_leaving_players` follows these settings through concrete
+cases.
+
+.. _sync-timeouts:
 
 Timeouts
 ~~~~~~~~
@@ -855,15 +877,23 @@ Two separate settings decide what happens when someone leaves a group:
     periodic sync-group check (every few seconds), and later arrivals form a
     new one. A ``join_criterion`` that returns ``False`` only turns that
     newcomer away; it doesn't stop top-ups.
-  - Top-ups stop in three ways, and from then on the group is treated as
+  - Top-ups stop in four ways, and from then on the group is treated as
     one without top-ups:
 
     - ``group.stop_top_ups()`` stops them at once; a group already below
       its quorum is then dissolved, however its members left.
     - ``stop_top_ups=True`` on a :class:`~psynet.sync.GroupBarrier` stops
-      them when the group passes that barrier, for example after the first
-      round, once a newcomer could no longer catch up. A group below its
+      them when the group passes that barrier, for example at the start of
+      the game, so nobody joins a game already under way. A group below its
       quorum doesn't pass, so it keeps waiting there for a newcomer.
+    - ``stop_top_ups_after_rounds=n`` on a :class:`~psynet.sync.Regrouper`
+      that regroups within this group (``within``) stops them when the
+      regrouper starts its next split after ``n`` rounds in the group, for
+      example ``1`` to let latecomers join a cohort only during its first
+      round (see :ref:`sync-rounds-with-changing-groups`). A cohort below
+      its quorum at that split is dissolved with nobody grouped; with
+      ``below_quorum="continue_without_group"``, its waiting players are
+      released ungrouped and ``on_release`` isn't called.
     - The grouper's ``top_up_wait=seconds`` limits that wait: once the
       group has been below its quorum that long, the barrier it is waiting
       at stops top-ups and dissolves it. This only helps members who are
@@ -877,9 +907,9 @@ Two separate settings decide what happens when someone leaves a group:
     lets them carry on without the group, and their next page says "Your
     partner is no longer in your group. Please continue." (or "Too few
     members of your group remained. Please continue." in larger groups; see
-    :ref:`sync-leaving-a-group`). A module-level function of
-    ``participant`` and ``group`` that returns one of these decides member
-    by member. All the members leave together: if another member is in the
+    :ref:`sync-leaving-a-group`). So by default, one member who quits or is
+    late ends the session of everyone who was on time. All the members
+    leave together: if another member is in the
     middle of a request at that moment (for example submitting a page),
     nobody is removed yet, and the background barrier check dissolves the
     group usually within a second or two of that request finishing.
@@ -912,14 +942,21 @@ settings together decide both fates:
      - late member carries on alone, partner who was on time failed
      - both carry on alone
 
-The last row is rarely what a pair wants, so PsyNet warns about it when the
-experiment loads, and logs a warning when it happens. To let the partner who was on time carry on, set
-``below_quorum="continue_without_group"``; ``late_action="fail"`` instead ends the
-session for both. With ``late_action="leave_all_groups"`` the same applies to
-the late member's other groups: a cohort without top-ups that one departure
-takes below its quorum fails all its other members, including those in other
-pairs, unless its grouper has ``below_quorum="continue_without_group"``. PsyNet
-warns about this too.
+The default fails the members who were on time, so that a pair or group
+doesn't carry on short-handed without you deciding that it should. The last
+row is rarely what a pair wants, and PsyNet logs a warning when it happens.
+To let the members who were on time carry on, set
+``below_quorum="continue_without_group"`` on the grouper:
+
+.. code-block:: python
+
+    SimpleGrouper("pair", initial_group_size=2, below_quorum="continue_without_group")
+
+``late_action="fail"`` instead ends the session for both. With
+``late_action="leave_all_groups"`` the same applies to the late member's other
+groups: a cohort without top-ups that one departure takes below its quorum
+fails all its other members, including those in other pairs, unless its
+grouper has ``below_quorum="continue_without_group"``.
 
 For example, a group of four that may start with two after a minute, and
 whose members carry on when others are slow or leave, combines these
@@ -1042,11 +1079,8 @@ Keep these in mind:
   ``show_trial``. Everyone would skip that barrier after its first pass.
   That includes a module that runs again, for example in a loop: the team's
   pass in the first run counts for later runs too.
-- Only the team's release counts as a pass, not a member let go after
-  waiting too long, nor a release of only members catching up, such as a
-  newcomer who skipped a round, nor a release while a member who hasn't
-  left the module is in a later cued round of it (see
-  :ref:`rounds-cued-trials`). The pass still counts after everyone who
+- Every release of the team counts as a pass, but a member let go after
+  waiting too long doesn't. The pass still counts after everyone who
   waited there has left the team.
 - ``on_release`` doesn't run for those who pass through, so they must not
   need any group state it sets up. Their passing isn't the team's pass
@@ -1054,6 +1088,12 @@ Keep these in mind:
 - A barrier ID used again in another module counts as a new barrier.
 - After a barrier with ``stop_top_ups=True``, nobody can join, so the two
   settings aren't needed together.
+- It covers barriers the team passes once. A newcomer still goes through
+  the game's later pages, so in a fixed team that plays a loop of rounds,
+  a barrier outside the round's trial, such as one at the start of each
+  iteration, holds the newcomer while the team waits for them in the round.
+  For such a game, stop top-ups before the game instead (see
+  :ref:`group barriers in loops <rounds-group-barriers-in-loops>`).
 
 When the experiment loads, PsyNet warns about each barrier outside a loop
 that comes after a grouper with ``join_existing_groups=True`` and has neither
@@ -1091,8 +1131,8 @@ the notice appears on their next page.
 
 Members who stay in the group get no notice when someone leaves; members
 whose group ended under them are told on their next page. A
-:class:`~psynet.group_prompt.GroupPrompt` marks the member who left, for
-example "(dropped out)", unless the group still accepts top-ups (see
+:class:`~psynet.group_prompt.GroupPrompt` no longer draws the member who
+left, except with their answer on a results page (see
 :ref:`sync-showing-the-group`), and the barriers stop waiting for them.
 
 For the rest of the timeline:
@@ -1171,10 +1211,9 @@ For the rest of the timeline:
   :class:`~psynet.sync.Regrouper` took them out of their previous group, and
   they are waiting there or sitting the round out),
   ``"finished"`` or ``"left_experiment"`` (they failed or returned the study).
-  A cued trial they were playing in that group keeps the reason in
-  ``sync_group_outcome``, even after they join another group, unless the
-  trial's pages had already ended with an outcome stored (see
-  :ref:`round outcomes <sync-round-outcome>` for the rule).
+  A cued trial whose pages they were on in that group keeps the reason in
+  ``sync_group_outcome``, even after they join another group (see
+  :ref:`round outcomes <sync-round-outcome>`).
 - An answer submitted on the page where a member was removed for being late
   has ``response.too_late_for_group`` set, so analysis can leave it out.
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only
@@ -1198,7 +1237,7 @@ By default, a waiting participant stays on their current page, with input
 disabled and a small waiting indicator showing ``waiting_message``. To show dedicated
 pages instead, pass them as ``waiting_logic``; they repeat until the
 participant is released. In ``sync_quorum``, waiting participants answer
-trials from another trial maker:
+trials from another trial maker, one trial per pass:
 
 .. literalinclude:: ../../../demos/experiments/sync_quorum/experiment.py
    :start-at: filler = PageMaker(
@@ -1211,6 +1250,11 @@ repeat often enough to fill that time, rounded up to whole passes; here,
 ``expected_wait``, three passes are expected. The older
 ``waiting_logic_expected_repetitions`` argument is deprecated.
 
+Keep ``waiting_logic`` atomic, as in ``sync_quorum``: one short trial or
+page per pass, letting the loop repeat it, rather than several trials per
+pass. A release then fails at most the trial on screen and creates no
+unseen trials (see below).
+
 When the barrier releases a participant who is on a waiting page, the page
 ends ``release_grace`` seconds (default 3; see
 :class:`~psynet.sync.Barrier`) after the browser notices the release, which
@@ -1218,12 +1262,38 @@ is usually within about 2 seconds, unless they submit it first. The page's
 answer is then not saved: its response is stored with ``"interrupted": True``
 in ``metadata``, its ``on_complete`` doesn't run, and ``participant.answer``
 keeps its previous value (``participant.answer_is_fresh`` is ``False``).
-Any other waiting pages left in the same pass of ``waiting_logic`` are
-skipped, and so are all of them for the participant whose arrival completes
-the group. Pass ``release_grace=None`` to :class:`~psynet.sync.Barrier`,
+The rest of the participant's pass of ``waiting_logic`` is then run through
+without showing its pages, and so is the whole pass for the participant
+whose arrival completes the group. Code blocks in it still run, and so do
+the ends of modules, loops and fixed time credit. Each
+:func:`~psynet.timeline.while_loop` in the pass ends at its next check,
+since its condition might wait for answers that the skipped pages never
+give. This includes PsyNet's own waits in the pass, such as a trial maker
+waiting for a trial to become available or for asynchronous processing.
+:func:`~psynet.timeline.for_loop` and :func:`~psynet.timeline.sequence`
+run all their iterations, so a very long one makes the release raise an
+error after 1000 skipped pages. Pass
+``release_grace=None`` to :class:`~psynet.sync.Barrier`,
 :class:`~psynet.sync.GroupBarrier` or a grouper to let every waiting page
-run to its end. Pages inside a trial, as in ``sync_quorum``, always run to
-their end, so that the trial is not left without an answer.
+run to its end.
+
+A release ends trial pages too, such as the animal trials in
+``sync_quorum``. A trial whose page ends before it is answered is failed
+with ``failed_reason="interrupted_by_release"``, and so is every trial
+that the run through the rest of the pass reaches: it is created, and
+failed without being shown. So is a trial that a trial maker had prepared
+for its next pass when the release ended its loop. Such a trial is not
+finalized, so it doesn't count towards the trial maker's targets of
+completed trials, and its node doesn't wait for it. Its ``show_feedback``
+page isn't shown either. It was still created, so
+it counts towards caps on created trials such as ``max_trials_per_block``
+and ``n_created_trials``. Its answer is ``None`` and it is still among
+:meth:`~psynet.trial.main.TrialMaker.get_participant_trials`, so a trial
+maker whose filler trials can be interrupted should not also run
+performance checks (per trial or at the end of the module) or repeat
+trials. A barrier with
+``waiting_logic`` can't be inside a
+trial's own pages, such as in ``show_trial``; use ``waiting_screen`` there.
 
 During the grace period, the top of the page shows a countdown such as
 "Your group is ready. Moving on in 3 s.", so the participant isn't

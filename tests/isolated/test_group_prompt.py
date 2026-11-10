@@ -80,26 +80,13 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     assert "psynet-group-member--winner" in html
     assert "psynet-group-member--answered" not in html
 
-    html = GroupPrompt(
-        group=group, participant=first, subgroups=lambda p: p.id == second.id
-    ).group_html
-    clusters = html.split('class="psynet-group-cluster"')[1:]
-    assert len(clusters) == 2
-    assert "You" in clusters[0] and third.pseudonym.name in clusters[0]
-    assert second.pseudonym.name in clusters[1]
-
     html = GroupPrompt(group=group, participant=first, names="anonymous").group_html
     assert html.count(">Another player<") == 2 and ">You<" in html
     assert not any(p.pseudonym.name in html for p in (first, second, third))
     with pytest.raises(ValueError, match="names must be one of"):
         GroupPrompt(group=group, participant=first, names="hidden")
-    for contradictory in [
-        dict(answers={}, show_progress=True),
-        dict(answers={}, has_answered=bool),
-        dict(show_progress=False, has_answered=bool),
-    ]:
-        with pytest.raises(ValueError):
-            GroupPrompt(group=group, participant=first, **contradictory)
+    with pytest.raises(ValueError, match="either progress or answers"):
+        GroupPrompt(group=group, participant=first, answers={}, show_progress=True)
 
     # Derived pseudonyms are only made distinct in a participant's first
     # group, and pseudonyms that were set are kept there too.
@@ -158,12 +145,6 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
     assert html.count("psynet-group-member--ran-out-of-time") == 1
     assert ">ran out of time<" in html
     assert html.count("psynet-group-member--answered") == 1
-    # A custom check only decides between a tick and nothing.
-    html = GroupPrompt(
-        group=group, participant=third, has_answered=lambda p: p.id == second.id
-    ).group_html
-    assert html.count("psynet-group-member--ran-out-of-time") == 1
-    assert html.count("psynet-group-member--answered") == 1
     (ready,) = arrival_notice_payload(third.unique_id)["group_ready"]
     assert ready["ran_out_of_time"] == [group_seats(group)[first.id]]
 
@@ -180,13 +161,12 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
     html = GroupPrompt(group=group, participant=third).group_html
     assert "psynet-group-member--ran-out-of-time" not in html
 
-    # A member removed for being late is shown as having left, without a dash.
+    # A member removed for being late is no longer drawn.
     time_out(second)
     _arrive(exp, GroupBarrier("after", group_type="room"), [second])
     group.remove_participant(second, reason="late")
     html = GroupPrompt(group=group, participant=third).group_html
-    assert "psynet-group-member--left" in html
-    assert "psynet-group-member--ran-out-of-time" not in html
+    assert second.pseudonym.name not in html
 
 
 @pytest.mark.parametrize(
@@ -230,8 +210,7 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     with pytest.raises(ValueError, match="not both"):
         GroupPrompt("Hi", group=None, group_type="room", participant=early)
 
-    # A removed member stays in their seat, faded and labelled by why they went.
-    group.accepts_top_ups = False
+    # A member who left is no longer drawn on a live page.
     group.min_group_size = 1
     group.remove_participant(late, reason="late")
     db_session.flush()
@@ -246,127 +225,26 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     with pytest.raises(ValueError, match="several types"):
         GroupPrompt(participant=late)
 
-    def html():
-        return GroupPrompt(group=group, participant=early, names="anonymous").group_html
+    def html(**options):
+        return GroupPrompt(
+            group=group, participant=early, names="anonymous", **options
+        ).group_html
 
-    assert 'psynet-group-member--left" data-seat="0"' in html()
-    assert ">Your partner (removed)<" in html()
-    # Joining another room doesn't hide the seat they ran out of time in.
-    other = SimpleSyncGroup(group_type="room", initial_group_size=2, min_group_size=1)
-    db_session.add(other)
-    other.add_participant(late)
-    db_session.flush()
-    assert ">Your partner (removed)<" in html()
-    other.remove_participant(late)
-    late.status = "returned"
-    assert ">Your partner (left)<" in html()
-    # An open-ended group, like a lobby, doesn't show who left.
-    group.accepts_top_ups = True
-    assert "(left)" not in html()
-    group.accepts_top_ups = False
-    late.status = "working"
-    # The first label that applies wins: failed, finished, left, removed.
-    group.add_participant(late)
-    group.remove_participant(late, reason="finished")
-    db_session.flush()
-    late.status = "returned"
-    assert ">Your partner (finished)<" in html()
-    late.status = "working"
-    group.add_participant(late)
-    group.remove_participant(late, reason="late")
-    db_session.flush()
-    late.failed = True
-    assert ">Your partner (left)<" in html()
-    late.failed = False
-    for reason, label in [
-        (None, "(dropped out)"),
-        ("group_dissolved", "(dropped out)"),
-        ("finished", "(finished)"),
-        ("moved_on", None),
-    ]:
+    assert 'data-seat="0"' not in html()
+    # A results page draws everyone in its answers, labelled "(left)" unless
+    # they moved on or finished, and reads the same after a reload.
+    for answer in ["3", None]:
+        assert ">Your partner (left)<" in html(answers={late.id: answer})
+    assert "psynet-group-bubble--none" in html(answers={late.id: None})
+    for reason in ["moved_on", "finished"]:
         group.add_participant(late)
         group.remove_participant(late, reason=reason)
         db_session.flush()
-        if label:
-            assert f">Your partner {label}<" in html()
+        results = html(answers={late.id: "3"})
+        assert ">Your partner<" in results and 'data-seat="0"' in results
+        assert "psynet-group-member--left" not in results
     with pytest.raises(ValueError, match="reason must be"):
         group.remove_participant(late, reason="kicked")
-    # Members who moved on to their next group are not shown, except with
-    # their answer on a results page, which reads the same after a reload.
-    assert "psynet-group-member--left" not in html()
-    for answer in ["3", None]:
-        results = GroupPrompt(
-            group=group, participant=early, names="anonymous", answers={late.id: answer}
-        ).group_html
-        assert "psynet-group-member--left" not in results
-        assert 'data-seat="0"' in results
-    assert "psynet-group-bubble--none" in results
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
-)
-def test_members_who_left_the_lobby_stay_hidden_once_top_ups_stop(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    viewer, quitter, late = _working_participants(exp, 3)
-    group = SimpleSyncGroup(
-        group_type="team",
-        initial_group_size=3,
-        min_group_size=1,
-        accepts_top_ups=True,
-        below_quorum="continue_without_group",
-    )
-    db_session.add(group)
-    for member in (viewer, quitter, late):
-        group.add_participant(member)
-    group.remove_participant(quitter)
-    group.stop_top_ups()
-    group.remove_participant(late, reason="late")
-    db_session.flush()
-
-    html = GroupPrompt(group=group, participant=viewer, names="anonymous").group_html
-    assert html.count("psynet-group-member--left") == 1
-    assert ">Your partner (removed)<" in html
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
-)
-def test_a_removed_partner_stays_in_the_viewers_subgroup(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    viewer, partner, other = _working_participants(exp, 3)
-    room, pair, other_pair = [
-        SimpleSyncGroup(group_type=group_type, initial_group_size=3, min_group_size=1)
-        for group_type in ("room", "pair", "pair")
-    ]
-    db_session.add_all([room, pair, other_pair])
-    for member in (viewer, partner, other):
-        room.add_participant(member)
-    pair.add_participant(viewer)
-    pair.add_participant(partner)
-    other_pair.add_participant(other)
-    room.remove_participant(partner, reason="late")
-    pair.remove_participant(partner, reason="late")
-    next_pair = SimpleSyncGroup(
-        group_type="pair", initial_group_size=2, min_group_size=1
-    )
-    db_session.add(next_pair)
-    next_pair.add_participant(partner)
-    db_session.flush()
-
-    html = GroupPrompt(
-        group=room, participant=viewer, subgroups="pair", names="anonymous"
-    ).group_html
-    clusters = html.split('class="psynet-group-cluster"')[1:]
-    assert len(clusters) == 2
-    assert ">Your partner (removed)<" in clusters[0]
-    # Their only active group would change type as pairs end, so they must say which.
-    with pytest.raises(ValueError, match="several types"):
-        GroupPrompt(participant=viewer)
 
 
 @pytest.mark.parametrize(

@@ -48,6 +48,8 @@ of waiters a sweep normally stays within its interval and later sweeps reach
 the remaining visits. One timeout or check can still overrun while it waits
 for a row lock.
 
+.. _sync-group-lock-order:
+
 Sync group lock order
 ---------------------
 
@@ -59,12 +61,16 @@ Barrier checks and participant requests take their locks in this order:
    rows with ``NOWAIT``; a participant's own request locks their own row,
    waiting for it.
 3. The sync group row, ``FOR NO KEY UPDATE``. Joins inside barrier checks,
-   :func:`~psynet.sync.check_sync_groups` and the poller's retry of a
-   dissolution use ``SKIP LOCKED``. A :class:`~psynet.sync.GroupBarrier`
+   :func:`~psynet.sync.check_sync_groups`, the poller's retry of a
+   dissolution and a :class:`~psynet.sync.Regrouper` closing a cohort
+   (``stop_top_ups_after_rounds``) use ``SKIP LOCKED``. A :class:`~psynet.sync.GroupBarrier`
    check takes the row of each waiting group that accepts top-ups with
    ``NOWAIT``, so that a busy group defers the check. A newcomer's own
    request waits up to a second for an open group (see below). A member who leaves or fails changes the group
    with an ``UPDATE``, which waits up to ``timeline_lock_timeout_seconds``.
+   A synchronized trial maker recording a run's choices in the group's
+   ``trial_maker_runs`` also waits for the row, after locking any
+   participant rows it needs.
 4. The advisory lock of a cued round. Barriers only try it and defer if it
    is busy. A cue waits for it, but takes only a ``KEY SHARE`` lock on the
    group row, through its trial's foreign key, which doesn't conflict with
@@ -80,20 +86,21 @@ participants' rows only with ``SKIP LOCKED`` or ``NOWAIT``:
   or nothing. If another member's request holds their row, nobody is removed
   (the rows that were free are unlocked again, by rolling back a savepoint):
   the group is marked ``dissolving`` and the barrier poller tries the whole
-  dissolution again on each sweep, so ``on_dissolve`` runs once, with every
-  member waiting at the barrier. A group back at its quorum by then is no
+  dissolution again on each sweep, so every member leaves the group, and
+  learns why, at the same time. A group back at its quorum by then is no
   longer dissolved.
 - A between-barrier timeout with ``"fail"`` also skips busy late members;
   they are still late at the barrier's next check. ``"leave_group"`` only changes the
   group's links, so it does not lock the member's row.
-- Re-electing a leader picks only a member whose row is free, because the
-  foreign-key check on ``leader_id`` locks the new leader's row.
+- ``sync_group.leader_id``, like ``participant_link_barrier.sync_group_id``
+  and ``trial.sync_group_id``, has no foreign key: PostgreSQL re-checks a
+  foreign key when a row written earlier in the transaction is updated
+  again, and that check would wait for a request holding the leader's row.
 
 Two members failing at the same moment therefore do not deadlock: each
 fails itself, and the second request to reach the group, or else the
 poller, dissolves it. Author callbacks that run under these locks, such as
-``on_release``, ``on_dissolve``, ``also_on_dissolve`` and a callable
-``below_quorum``, are not bound by the rule: if one locks other rows, it
+``on_release``, are not bound by the rule: if one locks other rows, it
 can deadlock, and PostgreSQL then aborts one of the transactions. The rule
 also does not order rows of *different* sync groups, so participants in
 several groups at once, failing together, can deadlock in the same way.

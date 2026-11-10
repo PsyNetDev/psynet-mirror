@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import numpy as np
@@ -6,19 +7,37 @@ from flask import Flask
 from jinja2 import DictLoader
 from markupsafe import Markup
 
+from psynet.bot import Bot, BotResponse
+from psynet.db import transaction
+from psynet.demography.general import CountryOfBirth, MotherTongue
+from psynet.experiment import get_experiment
+from psynet.graphics import Circle, Frame, GraphicControl
 from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     AudioMeterControl,
     CheckboxControl,
     Control,
     DropdownControl,
+    FrameSliderControl,
+    KeyboardPushButtonControl,
     ModularPage,
+    MonitorControl,
+    MultiRatingControl,
     MusicNotationPrompt,
+    NumberControl,
     Prompt,
     PushButtonControl,
     RadioButtonControl,
+    RatingControl,
     RatingScale,
+    SliderControl,
+    TextControl,
     TimedPushButtonControl,
 )
+from psynet.page import InfoPage
+from psynet.pytest_psynet import path_to_test_experiment
+from psynet.redis import redis_vars
+from psynet.timeline import Response, Timeline
+from psynet.utils import NoArgumentProvided
 
 # from importlib import resources
 
@@ -455,6 +474,16 @@ def test_unset_and_explicit_none_bot_responses():
     assert response.__json__() == {"answer": None, "metadata": {}, "blobs": {}}
 
 
+def test_bot_raw_answers_are_sent_like_browser_json():
+    """Whole-number floats in raw answers become ints, as in the browser's JSON."""
+    raw = {"flag": True, "values": (1.0, 1.5, [2.0, False]), "nested": {"x": 0.0}}
+    sent = BotResponse(raw_answer=raw).__json__()["raw_answer"]
+    assert sent == {"flag": True, "values": [1, 1.5, [2, False]], "nested": {"x": 0}}
+    assert [type(x) for x in sent["values"][:2]] == [int, float]
+    assert type(sent["flag"]) is bool and type(sent["nested"]["x"]) is int
+    assert type(BotResponse(answer=1.0).__json__()["answer"]) is float
+
+
 @pytest.mark.parametrize(
     "control, expected",
     [
@@ -489,6 +518,44 @@ def test_option_controls_save_the_choice_the_browser_names(control, raw_answer, 
 
 
 @pytest.mark.parametrize(
+    "raw_answer, answer",
+    [
+        ("78.5", 78.5),
+        ("100", 100),
+        ("-3", -3),
+        ("2.0", 2),
+        ("100.00", 100),
+        ("abc", "abc"),
+        ("", ""),
+        ("nan", "nan"),
+        ("inf", "inf"),
+        ("12345678901234567890", 12345678901234567890),
+        ("02139", 2139),
+        ("1_000", "1_000"),
+        (True, True),
+    ],
+)
+def test_number_control_saves_numbers(raw_answer, answer):
+    """A number from the browser is saved as an int or float; anything else fails validation."""
+    control = NumberControl()
+    saved = control.format_answer(raw_answer)
+    assert saved == answer and type(saved) is type(answer)
+    failed = control.validate(SimpleNamespace(answer=saved)) is not None
+    assert failed == isinstance(answer, (str, bool))
+
+
+@pytest.mark.parametrize(
+    "answer, valid",
+    [(np.int64(5), True), (np.float64(2.5), True), ("25", False), (True, False)]
+    + [(float("nan"), False), (float("inf"), False)],
+)
+def test_number_control_validates_bot_answers(answer, valid):
+    """Fixed bot answers skip ``format_answer``, so they must already be finite numbers."""
+    failed = NumberControl().validate(SimpleNamespace(answer=answer)) is not None
+    assert failed != valid
+
+
+@pytest.mark.parametrize(
     "choices, raw_answer, answer",
     [(list(np.arange(1, 4)), "3", 3), ([np.float32(0.1)], "0.1", 0.1)],
 )
@@ -499,6 +566,200 @@ def test_option_controls_save_numpy_choices_as_python_values(
     saved = control.format_answer(raw_answer)
     assert saved == answer and type(saved) is type(answer)
     assert str(control.labels[-1]) == raw_answer
+
+
+class _NoGreenControl(PushButtonControl):
+    def validate(self, response, **kwargs):
+        return "No green!" if response.answer == "green" else None
+
+
+@pytest.fixture
+def submit(db_session, monkeypatch):
+    """Have a bot submit the formatted answer ``answer`` and return the outcome.
+
+    Without ``answer``, the bot submits the page's default bot response.
+    """
+    experiment = get_experiment()
+    redis_vars.set("launch_finished", True)
+
+    def _submit(page, answer=NoArgumentProvided):
+        timeline = Timeline(page, InfoPage("Done", time_estimate=1))
+        monkeypatch.setattr(experiment, "timeline", timeline)
+        bot = Bot()
+        if answer is NoArgumentProvided:
+            bot_response = page.call__get_bot_response(experiment, bot)
+        else:
+            bot_response = BotResponse(answer=answer)
+        # Real bots receive the response as JSON from /participant_status and post it back.
+        data = json.loads(bot_response.to_json())
+        with transaction():
+            result = experiment.process_response(
+                participant_id=bot.id,
+                raw_answer=data.get("raw_answer", NoArgumentProvided),
+                answer=data.get("answer", NoArgumentProvided),
+                blobs={},
+                metadata={"time_taken": 0, **data["metadata"]},
+                page_uuid=bot.page_uuid,
+                client_ip_address="127.0.0.1",
+            )
+        return result.payload["submission"]
+
+    return _submit
+
+
+_CONSENTS = pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+
+
+@_CONSENTS
+@pytest.mark.parametrize(
+    "control, answer",
+    [
+        (PushButtonControl([0, 10]), 11),
+        (PushButtonControl([1, 2]), "1"),
+        (PushButtonControl([1]), True),
+        (KeyboardPushButtonControl(["a"], keys=["KeyA"]), "b"),
+        (_NoGreenControl(["red"]), "blue"),
+        (DropdownControl(["a"]), "b"),
+        (RadioButtonControl(["a"]), "free text"),
+        (CheckboxControl(["a", "b"]), ["a", "c"]),
+        (CheckboxControl(["a"]), "a"),
+        (CheckboxControl(["a"], force_selection=True), None),
+        (DropdownControl(["a"], force_selection=True), None),
+    ],
+)
+def test_option_controls_reject_answers_outside_their_choices(submit, control, answer):
+    page = ModularPage("test", "Hi!", control, time_estimate=1)
+    assert submit(page, answer) == "rejected"
+
+
+@_CONSENTS
+def test_rejecting_an_answer_outside_the_choices_logs_a_warning(submit, caplog):
+    page = ModularPage("pick", "Hi!", PushButtonControl(["a", "b"]), time_estimate=1)
+    submit(page, "c")
+    [record] = [r for r in caplog.records if "restrict_to_choices" in r.getMessage()]
+    assert record.levelname == "WARNING"
+    assert all(s in record.getMessage() for s in ["'pick'", "'c'", "['a', 'b']"])
+
+
+@_CONSENTS
+@pytest.mark.parametrize(
+    "control, answer",
+    [
+        (PushButtonControl([1, 2]), 2),
+        (PushButtonControl([1, 2]), None),
+        (DropdownControl(["a"], force_selection=False), ""),
+        (CheckboxControl(["a", "b"]), ["b"]),
+        (CheckboxControl(["a"]), []),
+        (RadioButtonControl(["a"], show_free_text_option=True), "free text"),
+        (PushButtonControl([0, 10], restrict_to_choices=False), 11),
+        (TimedPushButtonControl(["A"]), [{"eventType": "trialStart"}]),
+    ],
+)
+def test_option_controls_accept_their_choices_and_empty_answers(
+    submit, control, answer
+):
+    page = ModularPage("test", "Hi!", control, time_estimate=1)
+    assert submit(page, answer) == "approved"
+
+
+@_CONSENTS
+@pytest.mark.parametrize(
+    "make_page",
+    [
+        # CountryOfBirth overrides ModularPage.validate without calling super().
+        CountryOfBirth,
+        lambda: ModularPage(
+            "test",
+            "Hi!",
+            DropdownControl(["GB", "US"]),
+            validate=lambda answer: None,
+            time_estimate=1,
+        ),
+    ],
+)
+def test_page_validation_cannot_accept_answers_outside_the_choices(submit, make_page):
+    assert submit(make_page(), "XX") == "rejected"
+    assert submit(make_page(), "GB") == "approved"
+
+
+def _is_int(answer):
+    return type(answer) is int
+
+
+class _ShoutingPage(ModularPage):
+    def format_answer(self, raw_answer, **kwargs):
+        return raw_answer.upper()
+
+
+class _TextOnlyPage(ModularPage):
+    def format_answer(self, raw_answer, **kwargs):
+        assert isinstance(raw_answer, str), "The browser submits text."
+        return super().format_answer(raw_answer, **kwargs)
+
+
+def _graphic(**kwargs):
+    circle = Circle("dot", 50, 50, radius=5, click_to_answer=True)
+    return GraphicControl(
+        dimensions=[100, 100], frames=[Frame([circle], duration=1)], **kwargs
+    )
+
+
+@_CONSENTS
+@pytest.mark.parametrize(
+    "control, is_expected",
+    [
+        (NumberControl(), _is_int),
+        (RatingControl(5), _is_int),
+        (RatingControl({"low": 0.0, "high": 1.0}), _is_int),
+        (SliderControl(1, 1, 3, snap_values=[1, 2, 3]), _is_int),
+        (
+            MultiRatingControl(RatingScale("a", 3, required=False)),
+            lambda answer: answer.keys() == {"a"} and answer["a"] in {1, 2, 3, None},
+        ),
+        (_graphic(), lambda answer: answer["clicked_object"] == "dot"),
+        (
+            _graphic(auto_advance_after=1),
+            lambda answer: (
+                answer == {"clicked_object": None, "click_coordinates": None}
+            ),
+        ),
+        (MonitorControl(), lambda answer: "currentScreen" in answer),
+        (
+            FrameSliderControl(url="x.mp4", file_type="mp4", width="1", height="1"),
+            lambda answer: 0 <= answer <= 1,
+        ),
+    ],
+)
+def test_default_bot_answers_are_formatted_like_browser_answers(
+    submit, control, is_expected
+):
+    page = ModularPage("test", "Hi!", control, time_estimate=1)
+    assert submit(page) == "approved"
+    assert is_expected(Response.query.one().answer)
+
+
+@_CONSENTS
+@pytest.mark.parametrize(
+    "page_class, control, is_expected",
+    [
+        (_ShoutingPage, TextControl(), str.isupper),
+        (_TextOnlyPage, NumberControl(), _is_int),
+    ],
+)
+def test_default_bot_answers_go_through_page_format_answer(
+    submit, page_class, control, is_expected
+):
+    page = page_class("test", "Hi!", control, time_estimate=1)
+    assert submit(page) == "approved"
+    assert is_expected(Response.query.one().answer)
+
+
+@_CONSENTS
+@pytest.mark.parametrize("page_class", [CountryOfBirth, MotherTongue])
+def test_demography_dropdown_pages_require_an_answer(submit, page_class):
+    assert submit(page_class(), None) == "rejected"
 
 
 def test_option_controls_reject_choices_with_the_same_text():
@@ -620,6 +881,14 @@ def test_push_button_renders_only_valid_attributes():
 
     _Parser().feed(str(macros.push_button(button)))
     assert attributes == ["type", "class", "id", "style", "disabled"]
+
+
+def test_optional_rating_scale_bot_leaves_values_unchanged():
+    scale = RatingScale("rating", 3, required=False)
+    values = list(scale.values)
+    for _ in range(2):
+        scale.get_bot_response(experiment=None, bot=None, page=None, prompt=None)
+    assert scale.values == values
 
 
 def test_rating_scale_keeps_buttons_on_narrow_screens():
