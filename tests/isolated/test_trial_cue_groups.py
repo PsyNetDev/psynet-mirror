@@ -1290,7 +1290,7 @@ def test_case_a_fixed_pair_waits_only_for_the_slower_partner(
 
 
 @in_consents_experiment
-def test_case_a_late_joiner_joins_the_open_round_and_its_barrier_waits_for_them(
+def test_a_late_joiner_joins_the_open_round_and_its_barrier_waits_for_them(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()

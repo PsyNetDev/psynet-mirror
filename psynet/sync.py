@@ -1664,7 +1664,7 @@ class GroupBarrier(Barrier):
     waiting but at different barriers of the group, none of them can ever
     pass: PsyNet logs an error naming the barriers, and raises it in tests,
     and ``late_after`` or ``max_wait_time`` ends the wait (see
-    :ref:`rounds-group-barriers-in-loops`).
+    :ref:`members at different barriers <rounds-group-barriers-in-loops>`).
 
     After the arrival write commits, the same request evaluates the barrier in
     a short transaction so partners are released without waiting for the 0.5 s
@@ -4634,9 +4634,10 @@ def _common_round_node(group, participants):
 
 
 class GroupDivergenceError(RuntimeError):
-    """A group's members wait for each other at different :class:`GroupBarrier` s, so none can pass.
+    """A group's members wait for each other at different group barriers, so none can pass.
 
-    Raised only in tests; see :func:`_report_divergence`.
+    Raised in tests, such as bot tests; otherwise PsyNet logs the error (see
+    :ref:`members at different barriers <rounds-group-barriers-in-loops>`).
     """
 
 

@@ -1,20 +1,20 @@
 Late, slow and leaving players: case studies
 ============================================
 
-Group games rarely run as planned: a player joins after the game has
-started, another closes their tab, a third reads the results slowly. This
-page follows eight such cases through concrete designs, and says what
-each player sees, whom they wait for and when they move on. The rules
-behind them are in :ref:`round barriers and group barriers
-<rounds-barrier-visits>` and :ref:`sync-dropout-settings`; this page only
+Group games rarely run as planned: a player closes their tab, another
+reads the results slowly, a third is left over when pairs are formed. This
+page follows such cases through concrete designs, and says what each
+player sees, whom they wait for and when they move on. The rules behind
+them are in :ref:`whom a group barrier waits for
+<rounds-group-barrier-rule>` and :ref:`sync-dropout-settings`; this page only
 applies them. Each case ends with the test that checks it, so if PsyNet's
 behaviour changes, the test fails until the page is updated.
 
 All the cases share one design, a fixed group answering a loop of
 questions, unless the case says otherwise. Each question is one round: a
 cued trial whose ``show_trial`` ends with a :class:`~psynet.sync.GroupBarrier`,
-so the barrier waits for that round's players and its release closes the
-round (see :ref:`rounds-cued-trials`):
+so the barrier waits for every member of the group and its release closes
+the round (see :ref:`rounds-cued-trials`):
 
 .. code-block:: python
 
@@ -62,52 +62,6 @@ never answers from holding the other up, give the estimate page a
 Checked by ``test_case_a_fixed_pair_waits_only_for_the_slower_partner`` in
 ``tests/isolated/test_trial_cue_groups.py``.
 
-A late joiner while the round is open
--------------------------------------
-
-The grouper takes newcomers (``join_existing_groups=True``, with a
-``max_group_size`` of 3).
-
-1. Ann and Ben start round 0. Ann submits and waits at ``submitted``.
-2. Cat joins the group, and Ben submits.
-3. Cat's cue joins round 0: same node, same definition. She submits.
-
-Ben doesn't pass at step 2: the round is still open and Cat has no trial in
-it yet, so the barrier waits for her too. All three are released together
-when Cat arrives, and ``on_release`` scores the round for all three. So Ann
-and Ben wait for Cat's whole estimate page. ``late_after`` counts for Cat
-from when she joined, so a newcomer who never comes back holds the others
-up for at most ``late_after`` after joining.
-
-Checked by
-``test_case_a_late_joiner_joins_the_open_round_and_its_barrier_waits_for_them``
-in ``tests/isolated/test_trial_cue_groups.py``.
-
-A late joiner after the round has closed
-----------------------------------------
-
-The same grouper, but Cat joins later:
-
-1. Ann and Ben both submit in round 0; ``submitted`` releases them and the
-   round closes. They move on to the revise page.
-2. Cat joins the group.
-3. Cat's cue of round 0 is skipped: she sees nothing for it, and the
-   progress bar moves on. A later barrier of round 0, such as one after the
-   revise page, doesn't wait for her.
-4. Cat's cue of round 1 starts that round. She submits and waits at
-   ``submitted``.
-5. Ann and Ben finish round 0, and their cues of round 1 join Cat's round.
-   When both have submitted, all three are released.
-
-So Cat skips the round she was too late for and then waits, at round 1's
-barrier, for the others to finish round 0. Code that reads
-``participant.current_trial`` right after the cue should check it for
-``None``, which it is after a skipped cue (see
-:ref:`a fixed group's loop of rounds <rounds-fixed-group-loop>`).
-
-Checked by ``test_case_a_late_joiner_skips_a_closed_round_and_waits_in_the_next``
-in ``tests/isolated/test_trial_cue_groups.py``.
-
 A member leaves partway through a round
 ---------------------------------------
 
@@ -134,75 +88,20 @@ at the barrier for one (see :ref:`groups_below_min_size`).
 Checked by ``test_case_a_member_leaves_mid_round`` in
 ``tests/isolated/test_trial_cue_groups.py``, for both group sizes.
 
-A slow reader between runs of a looped module
----------------------------------------------
+A slow reader between runs
+--------------------------
 
-The pair plays the whole game several times, with a results page after
-each run, and ``submitted`` has a ``max_wait_time`` longer than Ben's
-reading. A module that runs again can't pass ``round=``, so the cues
-don't number their rounds:
-
-.. code-block:: python
-
-    rounds = for_loop(label="q", iterate_over=range(3),
-                      logic=lambda q: EstimateTrial.cue({"q": q}))
-    while_loop("runs", play_again, Module("game", rounds, results_page), 2)
-
-1. Ann and Ben finish run 1's last round together.
-2. Ann reads the results for 5 s, starts run 2, submits her first estimate
-   and waits at ``submitted``.
-3. Ben reads the results for 60 s. His first cue of run 2 joins Ann's
-   round, and when he submits, both are released.
-
-Ann waits for Ben's reading and his estimate: the round is open, and Ben is
-still in the module, on its results page, with no trial in the round yet.
-With the default ``max_wait_time`` of 20 s, Ann's wait would run out and
-fail her, so give the results page a ``time_limit``, or size the barrier's
-limits for slow readers.
-
-**With the results page outside the module**, as in
-``while_loop("runs", play_again, join(Module("game", rounds), results_page), 2)``,
-Ben on the results page would count as having left the module, so nothing
-would wait for him. At step 2, Ann would play run 2's first round alone,
-and the pair would drift out of step. PsyNet therefore refuses this
-timeline when the experiment loads:
-
-.. code-block:: text
-
-    ValueError: A while_loop repeats module 'game' and shows pages 'results'
-    between its runs, outside the module, with no barrier after them. [...]
-    Move the pages into module 'game', or add a GroupBarrier right after
-    them, so that each run starts together.
-
-A ``GroupBarrier`` at the start of the module doesn't help, and the check
-still raises: Ben has left the module, so the barrier lets Ann through,
-and when Ben reaches it, he waits there for Ann while she waits in the
-round for him, until ``late_after`` or ``max_wait_time`` moves someone
-on. With ``late_after`` on that barrier, it fails Ann, who was on time,
-and lets Ben go. Either fix works:
-
-.. code-block:: python
-
-    # Keep the results page inside the module, as above.
-    while_loop("runs", play_again, Module("game", rounds, results_page), 2)
-
-    # Or wait for the whole pair after the page, outside the module.
-    next_run = GroupBarrier(id_="next_run", group_type="team")
-    while_loop("runs", play_again,
-               join(Module("game", rounds), results_page, next_run), 2)
-
-With the barrier, Ann waits at ``next_run`` while Ben reads, and it
-releases both together when he arrives. See :ref:`group barriers in loops
-<rounds-group-barriers-in-loops>` for what the check can't see.
+The pair plays the whole game several times, with cues that don't pass
+``round=`` (a module that runs again can't), and a results page after each
+run, inside the game's module or outside it. Ann reads the results
+quickly and waits at run 2's first barrier; it waits for Ben, however long
+he reads, and releases both together. Size that barrier's
+``max_wait_time`` or ``late_after`` for slow readers.
 
 Checked by ``test_case_a_slow_reader_between_runs_of_a_looped_module`` in
 ``tests/isolated/test_trial_cue_groups.py`` for the page inside the module,
-by ``test_a_barrier_after_the_pages_between_runs_waits_for_the_slow_member``
-for the barrier after the page, and by
-``test_a_page_between_runs_leaves_the_run_start_waiting_until_late_after``
-for the barrier at the start of the module. The load-time error is checked
-by ``test_timeline_rejects_pages_between_runs_of_a_looped_module`` in
-``tests/isolated/test_sync.py``.
+and by ``test_a_barrier_after_the_pages_between_runs_waits_for_the_slow_member``
+for a page outside it.
 
 An odd player out with a regrouper
 ----------------------------------

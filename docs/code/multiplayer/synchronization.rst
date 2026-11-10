@@ -253,12 +253,12 @@ Barriers
 
 A :class:`~psynet.sync.GroupBarrier` holds each member until every active
 member of the group has reached it. When the last member arrives, the barrier
-calls ``on_release`` for the whole group. It doesn't wait for members who
-have finished the barrier's module. With rounds of cued trials, a barrier in
-a round's trial (``show_trial``) waits only for the members of that round,
-not for a late joiner who skipped it or a member already in a later round;
-any other barrier waits for the whole group (see
-:ref:`round barriers and group barriers <rounds-barrier-visits>`). In ``rock_paper_scissors`` the
+calls ``on_release`` for the whole group. It waits for every active member
+wherever the barrier is, so a member stops being waited for only by leaving
+the group (see :ref:`sync-leaving-a-group`), and members who wait at
+different barriers of one group wait for each other, which PsyNet reports
+as an error (see :ref:`group barriers in loops
+<rounds-group-barriers-in-loops>`). In ``rock_paper_scissors`` the
 barrier after each choice scores the round and saves each player's result
 on their trial, where ``show_feedback`` reads it:
 
@@ -277,10 +277,9 @@ for compatibility).
 .. _sync-barrier-node:
 
 ``node`` is the group's :class:`~psynet.trial.main.SyncGroupNode` for the
-round whose trial the barrier is in, that is, a barrier in ``show_trial`` of
-a cued trial with ``sync_group_type`` (see
-:ref:`a round visit <rounds-barrier-visits>`); every member it releases is playing on that
-node. At any other barrier, including one in ``show_feedback``, between
+round whose trial every member it releases is in, that is, at a barrier in
+``show_trial`` of a cued trial with ``sync_group_type`` (see
+:ref:`whom a group barrier waits for <rounds-group-barrier-rule>`). At any other barrier, including one in ``show_feedback``, between
 iterations, after the loop or at the start of a later run, and in a group
 that never uses :meth:`~psynet.trial.main.Trial.cue`, ``node`` is ``None``
 and ``trials`` holds each member's current trial whatever its node, which
@@ -377,9 +376,7 @@ then the members waiting at the barrier, and ``node`` and ``trials`` follow
 the same rule as for ``on_release``.
 Dissolving waits for any member who is in the middle of another request, so
 it may happen a second or two after that request finishes, and
-``on_dissolve`` is called once with every member waiting at the barrier
-(once per kind of visit, if members wait there both inside a round's trial
-and outside it). A
+``on_dissolve`` is called once, with every member waiting at the barrier. A
 quiz can still score the last question for those who answered it:
 
 .. code-block:: python
@@ -405,10 +402,7 @@ callbacks different IDs. Using one ID for barriers with different behavior
 (class, ``on_release`` or release settings) raises an error when the
 experiment is built. Waiting settings such as ``max_wait_time``,
 ``max_wait_action`` and ``waiting_message`` may differ, because each applies
-to the participant who waits. A ``GroupBarrier`` ID used both inside a
-cued trial's ``show_trial`` and outside it acts as two separate barriers
-(see :ref:`round barriers and group barriers <rounds-barrier-visits>`), so
-give them distinct IDs.
+to the participant who waits.
 
 Arrival notices
 ~~~~~~~~~~~~~~~
@@ -709,7 +703,7 @@ decisions each one needs. These settings carry them out:
   takes them out of both (see :ref:`rounds-slow-players`).
 
 Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
-:doc:`catch_up_case_studies` follows these settings through eight concrete
+:doc:`catch_up_case_studies` follows these settings through concrete
 cases.
 
 .. _sync-timeouts:
@@ -1043,6 +1037,12 @@ Keep these in mind:
 - A barrier ID used again in another module counts as a new barrier.
 - After a barrier with ``stop_top_ups=True``, nobody can join, so the two
   settings aren't needed together.
+- It covers barriers the team passes once. A newcomer still goes through
+  the game's later pages, so in a fixed team that plays a loop of rounds,
+  a barrier outside the round's trial, such as one at the start of each
+  iteration, holds the newcomer while the team waits for them in the round.
+  For such a game, stop top-ups before the game instead (see
+  :ref:`group barriers in loops <rounds-group-barriers-in-loops>`).
 
 When the experiment loads, PsyNet warns about each barrier outside a loop
 that comes after a grouper with ``join_existing_groups=True`` and has neither

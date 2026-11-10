@@ -94,46 +94,38 @@ find them by when exporting.
 ``cue`` numbers each group's rounds by itself, from 0:
 
 - A cue joins the group's newest node in the module while that round is
-  open and the player has no trial on it. A round closes when a barrier in
-  its trial (in ``show_trial``) releases the group, and only then.
+  open and the player has no trial on it. A round closes when a
+  ``GroupBarrier`` releases the group while every member it releases is in
+  the round's trial, that is, at a barrier in ``show_trial``, and only then.
 - Otherwise it starts the group's next round.
 
 So every pair here, new each round, plays round 0, while a fixed group cued
 in a loop plays rounds 0, 1, 2 and so on, whichever trial classes it cues.
-A member who joins it late joins its current round only until a barrier
-in that round's trial releases the group. After that, even while the others are
-still on a page after the barrier, the newcomer starts the next round,
+A member who cues late joins the current round only until a barrier in
+that round's trial releases the group. After that, even while the others
+are still on a page after the barrier, their cue starts the next round,
 which the others then join. So put a ``GroupBarrier`` in each round,
-inside ``show_trial`` after the answer page, as in the one below: it
-keeps the members in step, and its release closes the round. A round
-without one never closes, so a latecomer can join it after the others
-have finished. In a module that a loop repeats, a member's first cue in
-the next run can also join the previous run's last round while it is open,
-so end each round there with a ``GroupBarrier`` that closes it.
+inside ``show_trial`` after the answer page, as in the one below: it keeps
+the members in step, and its release closes the round. A round without
+one never closes, so a member cueing late can join it after the others
+have finished. In a module that
+a loop repeats, a member's first cue in the next run can also join the
+previous run's last round while it is open, so end each round there with a
+``GroupBarrier`` that closes it.
 
-.. _rounds-barrier-visits:
+.. _rounds-group-barrier-rule:
 
-When a member reaches a ``GroupBarrier``, PsyNet records which of two kinds
-of visit it is:
-
-- A **round visit**, if the member is in their cued trial of the group and
-  the trial hasn't ended, that is, the barrier is in ``show_trial``. It
-  waits for the members whose current trial is in that round, and, while the
-  round is open, for those who haven't cued yet, because their cue will
-  join it. Its release closes the round, and ``on_release`` gets the
-  round's node.
-- A **group visit**, from any other barrier: before the first cue, in
-  ``show_feedback``, at the start of each iteration, after the loop, or
-  where the group cues no rounds. It waits for every member, whatever
-  round they are in, and ``on_release`` gets ``node=None``.
-
-Neither kind waits for a member who has finished the barrier's module, as
-when their loop ended earlier. An ID used both inside ``show_trial`` and
-outside it gives two separate barriers, one of each kind, which can wait
-for each other like any two barriers; PsyNet logs a warning when members
-visit both, so give them distinct IDs. Every release, except letting one
-member go after ``max_wait_time``, is the group's pass: ``on_release`` runs,
-and the pass counts for ``left`` and ``late_after``. For example:
+A ``GroupBarrier`` waits for every active member of its group, wherever it
+is: in ``show_trial``, in ``show_feedback``, at the start of each
+iteration, between runs of a module or after the loop. Nobody is skipped
+for being in another round or another module: a member stops being waited
+for only by leaving the group, with :func:`~psynet.sync.leave_group` or by
+being removed, for example as late (see :ref:`sync-leaving-a-group`). Every
+release, except letting one member go after ``max_wait_time``, is the
+group's pass: ``on_release`` runs, and the pass counts for ``left`` and
+``late_after``. If every member it releases is in the same round's trial,
+the release closes that round and ``on_release`` gets its node; otherwise
+``node`` is ``None``. For example:
 
 .. code-block:: python
 
@@ -144,94 +136,43 @@ and the pass counts for ``left`` and ``late_after``. For example:
             return join(
                 self.estimate_page(),
                 GroupBarrier(id_="estimates", group_type="team",
-                             on_release=self.score_round),   # round visit; closes the round
+                             on_release=self.score_round),   # closes the round
                 PageMaker(self.revise_page, time_estimate=10),
             )
 
     Module("game", for_loop(label="q", iterate_over=range(3),
                             logic=lambda q: EstimateTrial.cue({"q": q}, round=q)))
 
-A late joiner skips the rounds that have closed, joins the open one, and
-``estimates`` waits for them there. A member who skipped a round never
-visits its barriers, and one who is already in the next round has no trial
-on this one, so neither holds it up. :doc:`catch_up_case_studies` follows
-these and other cases, such as players leaving or reading slowly, step by
-step.
+Pages between rounds, or between runs of a module that a loop repeats,
+need nothing special, inside the module or outside it: a member who reads
+slowly is waited for at the next barrier. A member who stops playing
+earlier than the others, for example by choosing not to play another run,
+should leave the group first, or the others wait for them at their next
+barrier. :doc:`catch_up_case_studies` follows these and other cases, such
+as players leaving or reading slowly, step by step.
 
 .. _rounds-group-barriers-in-loops:
 
-Keep a round's barriers in ``show_trial`` if the group can take newcomers
-during the module. A group barrier inside the loop, such as
-``GroupBarrier("ready", ...)`` at the start of each iteration or one in
-``show_feedback``, waits for every member, so a newcomer who reaches it
-waits for members who are waiting in the round's trial for them. Neither
-can pass until ``late_after`` or ``max_wait_time`` moves someone on, and
-PsyNet logs a warning naming both barriers. ``late_after`` on either
-barrier fails the members it waits for at the other, so ``late_after`` on
-the round's barrier can fail a newcomer who arrived on time at the group
-barrier. Move that barrier into
-``show_trial``, or stop newcomers from joining during the module with
-``stop_top_ups=True`` on a barrier before it (see the ``stop_top_ups``
-argument of :class:`~psynet.sync.GroupBarrier`).
+Because each barrier waits for everyone, put the barriers where every
+member reaches them in the same order. Members who wait at different
+barriers wait for each other: none of them can pass until ``late_after`` or
+``max_wait_time`` moves someone on, and ``late_after`` on either barrier
+fails the members it waits for at the other, who were on time. PsyNet
+reports this: it logs an error naming the barriers and who waits at each,
+and in tests, such as bot tests run by ``psynet test local``, it raises a
+:class:`~psynet.sync.GroupDivergenceError`, so the test fails.
 
-In a module that a loop repeats, a barrier at the start of the next run is
-a group visit too: it waits for every member still in the module,
-including one still finishing the previous run and a newcomer starting
-their first run, and not for a member whose loop has ended. A member on a
-page between the module and its next run, inside the loop but outside the
-module, counts as having left it. So a faster member's next run starts
-without them, and the group drifts out of step: they play rounds alone, or
-wait for each other until ``late_after`` or ``max_wait_time`` acts. PsyNet
-raises a ``ValueError`` when the experiment loads if a ``while_loop`` after
-a grouper shows content pages between runs of a group module it repeats,
-with no barrier between the pages and the next run. A group module is a
-trial maker with a ``sync_group_type``, or any other module that directly
-contains a ``GroupBarrier`` or a page maker such as a ``for_loop`` of
-cued rounds. A module around one, such as a ``"session"`` module around
-the game, isn't, as a barrier waits only for the members still in its own
-module, and a round for those in its trial maker. Other modules, such as
-a quiz each player takes alone, aren't checked themselves, but their
-pages count as pages between runs, as do pages in an outer module after
-the game. The error names the group module. Move the pages into it, or
-add a ``GroupBarrier`` right after them, outside it, which waits for the
-members on the pages too, so each run starts together. A trial maker
-can't hold the pages, so it needs the barrier:
-
-.. code-block:: python
-
-    # Raises: a member on "Break" has left "game", so the next run starts without them.
-    while_loop("runs", play_again, join(Module("game", rounds), break_page), 2)
-
-    # Raises too: "session" doesn't count, so a member on "Break" has left "game".
-    while_loop("runs", play_again, Module("session", Module("game", rounds), break_page), 2)
-
-    # Keep the break inside the module...
-    while_loop("runs", play_again, Module("game", rounds, break_page), 2)
-
-    # ... or wait for the group after it, outside the module.
-    ready = GroupBarrier(id_="ready", group_type="pair")
-    while_loop("runs", play_again, join(Module("game", rounds), break_page, ready), 2)
-
-A barrier inside the module, at its start, doesn't count, as it doesn't
-wait for members who have left the module; nor does a barrier before the
-pages, or one in a module that the pages aren't in. A barrier's own
-waiting page isn't a content page. Pages inside a ``switch`` or
-``conditional`` count as shown, whichever branch they are in, but a
-barrier inside one doesn't count, as members on another branch don't pass
-it. The check has limits:
-
-- It decides which modules are grouped from what they contain at load, so
-  a module whose page maker only builds solo pages still counts as one;
-  moving the pages into the module is harmless then.
-- A barrier in every branch of a ``switch`` still doesn't count; put one
-  barrier after the ``switch`` instead.
-- A ``for_loop`` or :class:`~psynet.timeline.PageMaker` builds its logic
-  when the participant reaches it, so the check can't see what it shows.
-  If one is all there is between the runs, PsyNet warns instead of
-  raising, and doesn't see a module inside it.
-
-The warning at run time, when the group and a member wait for each other,
-still catches the cases the check misses.
+The usual way into this is a member who joins during the game. For a
+fixed group that plays rounds, stop top-ups before the game, with
+``stop_top_ups=True`` on a barrier before the first round (see
+:ref:`sync-lobby-top-ups`). Otherwise a newcomer is a member like any
+other, and every barrier waits for them: their first cue joins the open
+round, or, with ``round=``, skips the rounds the group finished without
+them (see :ref:`a fixed group's loop <rounds-fixed-group-loop>`). But they
+go through the pages the group went through before they joined, so a
+barrier outside ``show_trial``, such as ``GroupBarrier("ready", ...)`` at
+the start of each iteration, holds the newcomer while the others wait for
+them in the round's trial.
 
 A barrier in a module where the group cues no rounds, such as one before a
 separate module of rounds, waits for every member too: a newcomer who
@@ -277,9 +218,11 @@ Each iteration is then the group's round of that number, whoever cues it
 first, so its definition can come from the loop. A member who joins late
 skips the rounds that the group finished without them: rounds where they
 have no trial and whose barrier in ``show_trial`` has released the group.
-They play the rest, and the barriers of a round they skipped don't wait for
-them. A skipped
-round shows nothing and earns no time credit, but the progress bar moves on
+They play the rest. A round's later barriers, such as one after the revise
+page, still wait for a member who skipped it, while that member waits at
+the next round's barrier, so stop top-ups before the game if the rounds
+have more than one barrier (see :ref:`members at different barriers <rounds-group-barriers-in-loops>`). A
+skipped round shows nothing and earns no time credit, but the progress bar moves on
 as if it had been played. A skipped cue leaves ``participant.current_trial``
 as ``None``, so code after the cue in the same iteration that reads the
 trial, such as a page showing ``participant.current_trial.answer``, should
@@ -327,8 +270,8 @@ second cue would otherwise start the next round, the player already having
 a trial on the round's node. Pass both cues the same ``round=``, such as
 the loop value in a fixed group's loop. A member with a trial in the round
 joins it even after its barrier has released the group, while a late
-joiner without one skips the whole round, both phases, and the second
-phase's round barriers don't wait for them.
+joiner without one skips the whole round, both phases, while the second
+phase's barriers wait for them.
 
 The ``switch`` decides once, before the trial: a player in a pair gets
 the trial, one who sat out gets a page instead (see
