@@ -209,9 +209,9 @@ its start, so she waits at ``ready`` while Ann waits for her at
 
 - Each barrier waits for the members at the other, so nobody passes until
   ``late_after`` or ``max_wait_time`` moves someone on.
-- Within a second or so, the background barrier check logs an error that
-  names both barriers and who waits at each, and lists it under the
-  dashboard's Errors tab. A bot test fails with
+- Within a second or so, the background barrier check records one error
+  for the pair that names both barriers and who waits at each, logs it and
+  lists it under the dashboard's Errors tab. A bot test fails with
   :class:`~psynet.sync.GroupDivergenceError` and that message.
 
 To avoid this, stop top-ups before the game with ``stop_top_ups=True``

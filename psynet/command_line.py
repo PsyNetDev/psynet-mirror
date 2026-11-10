@@ -5902,7 +5902,10 @@ def test__local(
         # previously made a remote `psynet test ssh` look like it had done
         # nothing at all.
         click.echo(f"Running {exp.test_n_bots} bot(s) against the existing server...")
-        exp.test_experiment()
+        from .sync import fail_on_group_divergence
+
+        with fail_on_group_divergence():
+            exp.test_experiment()
         click.echo(f"Bot test passed ({exp.test_n_bots} bot(s)).")
         return
 

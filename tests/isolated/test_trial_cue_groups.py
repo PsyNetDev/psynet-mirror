@@ -10,7 +10,6 @@ import pytest
 from dallinger import db
 from sqlalchemy import text
 
-import psynet.sync
 from psynet.db import _set_transaction_lock_timeout
 from psynet.error import ErrorRecord
 from psynet.experiment import get_experiment
@@ -20,10 +19,12 @@ from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     GroupBarrier,
+    GroupDivergenceError,
     _hold_barrier_instance_claim,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
     check_barriers,
+    fail_on_group_divergence,
     leave_group,
 )
 from psynet.timeline import Module, Timeline
@@ -838,19 +839,11 @@ def test_late_after_in_a_round_fails_a_newcomer_waiting_outside_it(
     assert cohort[1].failed and newcomer.failed
 
 
-@pytest.fixture
-def divergences(monkeypatch):
-    """Return a function that sweeps the barriers, as the poller does, and returns the divergences recorded."""
-    monkeypatch.setattr(psynet.sync, "_reported_divergences", set())
-
-    def sweep():
-        db.session.commit()
-        check_barriers()
-        return [
-            r.message for r in ErrorRecord.query.filter_by(kind="GroupDivergenceError")
-        ]
-
-    return sweep
+def divergences():
+    """Sweep the barriers, as the poller does, and return the divergences recorded."""
+    db.session.commit()
+    check_barriers()
+    return [r.message for r in ErrorRecord.query.filter_by(kind="GroupDivergenceError")]
 
 
 def _in_round(**kwargs):
@@ -889,7 +882,7 @@ def _is_removed_as_late(exp, pair, cohort):
 )
 @in_consents_experiment
 def test_a_sweep_reports_members_waiting_for_each_other_at_different_barriers(
-    in_experiment_directory, db_session, caplog, divergences, second_member
+    in_experiment_directory, db_session, caplog, second_member
 ):
     exp = get_experiment()
     cohort, newcomer, pair = _newcomer_in_round_0(exp)
@@ -903,6 +896,24 @@ def test_a_sweep_reports_members_waiting_for_each_other_at_different_barriers(
     assert message in [r.getMessage() for r in caplog.records]
     assert _in_round()._participant_is_waiting(cohort[0])
     assert divergences() == [message]
+    (record,) = ErrorRecord.query.filter_by(kind="GroupDivergenceError")
+    assert record.token == f"group-divergence-{pair.id}"
+    assert record.participant_id == min(newcomer.id, cohort[0].id)
+
+
+@in_consents_experiment
+def test_bot_tests_fail_with_a_divergence_recorded_while_they_run(
+    in_experiment_directory, db_session
+):
+    db.session.add(ErrorRecord(GroupDivergenceError("From an earlier run.")))
+    db.session.commit()
+    with pytest.raises(GroupDivergenceError, match="^Recorded during the run.$"):
+        with fail_on_group_divergence():
+            db.session.add(
+                ErrorRecord(GroupDivergenceError("Recorded during the run."))
+            )
+            db.session.commit()
+            raise RuntimeError("A bot timed out at its barrier.")
 
 
 def _at_a_regrouper_and_a_barrier(exp):
@@ -936,7 +947,7 @@ def _everyone_at_one_barrier(exp):
 )
 @in_consents_experiment
 def test_a_sweep_does_not_report_a_group_that_can_pass(
-    in_experiment_directory, db_session, divergences, arrange
+    in_experiment_directory, db_session, arrange
 ):
     arrange(get_experiment())
     assert divergences() == []

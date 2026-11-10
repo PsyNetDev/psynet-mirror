@@ -42,7 +42,8 @@ Whom a group barrier waits for
     unfinished cued trial is on (``_common_round_node``). If every member is
     waiting, but no barrier of the group has them all, nothing can pass:
     each ``check_barriers`` sweep looks for such groups
-    (``_report_divergences``) and records each as an error.
+    (``_report_divergences``) and records each as an error once, with a
+    token naming the group so later sweeps skip it.
 
 Where this shows up in a timeline
 ---------------------------------
@@ -125,6 +126,8 @@ from typing import (
     NamedTuple,
     Optional,
     Sequence,
+    Set,
+    Tuple,
     Union,
     get_args,
 )
@@ -143,6 +146,7 @@ from sqlalchemy import (
     String,
     Text,
     and_,
+    exists,
     func,
     or_,
     select,
@@ -174,6 +178,7 @@ from psynet.db import (
     _SessionQueue,
     _set_transaction_lock_timeout,
     is_transient_transaction_error,
+    transaction,
 )
 from psynet.error import ErrorRecord
 from psynet.field import PythonClass, PythonObject
@@ -1663,8 +1668,8 @@ class GroupBarrier(Barrier):
     at a barrier in ``show_trial``, the release closes that round to
     newcomers, whose cues then start the next round. If every member is
     waiting but at different barriers of the group, none of them can ever
-    pass: PsyNet logs an error naming the barriers, and raises it in tests,
-    and ``late_after`` or ``max_wait_time`` ends the wait (see
+    pass: PsyNet records and logs an error naming the barriers, bot tests
+    fail with it, and ``late_after`` or ``max_wait_time`` ends the wait (see
     :ref:`members at different barriers <rounds-group-barriers-in-loops>`).
 
     After the arrival write commits, the same request evaluates the barrier in
@@ -4645,14 +4650,13 @@ class GroupDivergenceError(RuntimeError):
     :func:`check_barriers` records it as an :class:`~psynet.error.ErrorRecord`
     and logs it (see
     :ref:`members at different barriers <rounds-group-barriers-in-loops>`);
-    the default :meth:`~psynet.experiment.Experiment.test_experiment` of
-    bot tests then raises it (see :func:`_raise_recorded_divergences`).
+    bot tests then fail with it (see :func:`fail_on_group_divergence`).
     """
 
 
-#: Ids of the groups already reported by :func:`_report_divergences`. The set
-#: is per process and never pruned, so a group is reported at most once.
-_reported_divergences = set()
+def _divergence_token(group_id):
+    """Return the token of the :class:`~psynet.error.ErrorRecord` of a divergence of a group."""
+    return f"group-divergence-{group_id}"
 
 
 def _report_divergences():
@@ -4664,18 +4668,31 @@ def _report_divergences():
     active member waits at a barrier of the group and those waits span two
     or more barriers; only those get the full check
     (:func:`_divergence_message`). Each group is checked and recorded in its
-    own transaction, so an error in one doesn't skip the others.
+    own transaction, so an error in one doesn't skip the others. A group's
+    record carries the token from :func:`_divergence_token`, so a group with
+    a record isn't checked again.
     """
-    for group_id in _divergence_candidates():
+    try:
+        candidates = _divergence_candidates()
+    except Exception:
+        logger.warning("Failed to look for diverged sync groups.", exc_info=True)
+        return
+    for group_id in candidates:
         try:
             group = SyncGroup.query.get(group_id)
-            message = None if group is None else _divergence_message(group)
-            if message is None:
+            divergence = None if group is None else _divergence_message(group)
+            if divergence is None:
                 db.session.rollback()
                 continue
-            db.session.add(ErrorRecord(GroupDivergenceError(message)))
+            message, participant_ids = divergence
+            db.session.add(
+                ErrorRecord(
+                    GroupDivergenceError(message),
+                    token=_divergence_token(group_id),
+                    participant_id=min(participant_ids),
+                )
+            )
             db.session.commit()
-            _reported_divergences.add(group_id)
             logger.error(message)
         except Exception:
             db.session.rollback()
@@ -4685,8 +4702,8 @@ def _report_divergences():
 def _divergence_candidates() -> List[int]:
     """Return the ids of active groups whose members all wait at two or more of the group's barriers.
 
-    Dissolving groups and groups already in :data:`_reported_divergences`
-    are left out. One statement, in its own session.
+    Dissolving groups and groups that already have a divergence record are
+    left out. One statement, in its own session.
     """
     member = and_(
         ~Participant.failed,
@@ -4726,6 +4743,10 @@ def _divergence_candidates() -> List[int]:
             member,
             SyncGroup.active.is_(True),
             SyncGroup.dissolving.isnot(True),
+            ~exists().where(
+                ErrorRecord.token
+                == func.concat(_divergence_token(""), BarrierInstance.group_id)
+            ),
         )
         .group_by(BarrierInstance.group_id)
         .having(
@@ -4737,14 +4758,14 @@ def _divergence_candidates() -> List[int]:
         )
         .order_by(BarrierInstance.group_id)
     )
-    if _reported_divergences:
-        query = query.where(BarrierInstance.group_id.notin_(_reported_divergences))
     with Session(bind=db.engine) as session:
         return list(session.scalars(query))
 
 
-def _divergence_message(group) -> Optional[str]:
+def _divergence_message(group) -> Optional[Tuple[str, Set[int]]]:
     """Describe how ``group`` can't pass any of its barriers, or return ``None`` if it can.
+
+    Returns the message and the ids of the members it names.
 
     That is when the group has its quorum and every active member waits at
     a :class:`GroupBarrier` of the group, but none of those barriers has
@@ -4796,7 +4817,7 @@ def _divergence_message(group) -> Optional[str]:
         )
     ):
         return None
-    return (
+    message = (
         f"The members of '{group.group_type}' group {group.id} wait for each "
         "other at different barriers, so none can pass: "
         + "; ".join(
@@ -4809,22 +4830,36 @@ def _divergence_message(group) -> Optional[str]:
         "members leave the group (leave_group) before their paths diverge. "
         "Until late_after or max_wait_time moves someone on, nobody passes."
     )
+    return message, members
 
 
-def _raise_recorded_divergences():
-    """Raise :class:`GroupDivergenceError` if :func:`check_barriers` recorded one.
+@contextmanager
+def fail_on_group_divergence():
+    """Raise :class:`GroupDivergenceError` after the block if :func:`check_barriers` recorded one during it.
 
-    Bot tests call this, so a divergence fails ``psynet test local`` with
-    its message even though the poller found it in another process.
+    Bot tests run inside it, so a divergence fails ``psynet test local``
+    with its message even though the poller found it in another process.
+    Records from before the block, such as an earlier run against the same
+    server, are ignored. The error is raised even if the block raised, as
+    bots stuck at diverged barriers fail on ``max_wait_time``.
     """
-    messages = [
-        message
-        for (message,) in db.session.query(ErrorRecord.message)
-        .filter(ErrorRecord.kind == GroupDivergenceError.__name__)
-        .order_by(ErrorRecord.id)
-    ]
-    if messages:
-        raise GroupDivergenceError("\n".join(messages))
+    with transaction():
+        start = db.session.query(func.max(ErrorRecord.id)).scalar() or 0
+    try:
+        yield
+    finally:
+        with transaction():
+            messages = [
+                message
+                for (message,) in db.session.query(ErrorRecord.message)
+                .filter(
+                    ErrorRecord.kind == GroupDivergenceError.__name__,
+                    ErrorRecord.id > start,
+                )
+                .order_by(ErrorRecord.id)
+            ]
+        if messages:
+            raise GroupDivergenceError("\n".join(messages))
 
 
 def _lock_round(group, node) -> bool:
