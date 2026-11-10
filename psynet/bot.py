@@ -135,6 +135,17 @@ class Bot(Participant):
         )
 
 
+def _as_browser_json(x):
+    """Return ``x`` with whole-number floats as ``int``, as the browser's ``JSON.stringify`` writes them."""
+    if isinstance(x, float) and x.is_integer():
+        return int(x)
+    if isinstance(x, dict):
+        return {key: _as_browser_json(value) for key, value in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_as_browser_json(value) for value in x]
+    return x
+
+
 class BotResponse:
     """
     Defines a bot's response to a given page.
@@ -142,7 +153,8 @@ class BotResponse:
     Parameters
     ----------
         raw_answer :
-            The raw_answer returned from the page.
+            The raw_answer returned from the page. Whole-number floats in it,
+            such as ``3.0``, are submitted as ``int``, as the browser submits them.
 
         answer :
             The version of the answer that will be stored in the database,
@@ -186,7 +198,7 @@ class BotResponse:
         data = {}
 
         if self.raw_answer != NoArgumentProvided:
-            data["raw_answer"] = self.raw_answer
+            data["raw_answer"] = _as_browser_json(self.raw_answer)
 
         if self.answer != NoArgumentProvided:
             data["answer"] = self.answer

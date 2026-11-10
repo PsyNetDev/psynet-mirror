@@ -1737,10 +1737,13 @@ class Page(Elt):
         """
         This function is used when a bot simulates a participant responding to a given page.
         In the simplest form, the function just returns the value of the
-        answer that the bot returns.
+        answer that the bot returns, which is saved without passing through ``format_answer``.
         For more sophisticated treatment, the function can return a
         ``BotResponse`` object which contains other parameters
         such as ``blobs`` and ``metadata``.
+        PsyNet's built-in answer controls return ``BotResponse(raw_answer=...)`` with
+        what the browser would submit, so that bot answers pass through the same
+        ``format_answer`` methods as browser answers.
         """
         raise NotImplementedError
 
