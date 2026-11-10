@@ -4673,8 +4673,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         the lock stops other sessions from moving the cursor, so ``page`` is
         still the live hold when it is not ready. Consecutive holds can share
         a ``hold_id`` (every ``wait_while`` does), so an id is not a visit
-        identity. After the last allowed skip, this walk observes the landing
-        page so settling on the cap still succeeds.
+        identity. The rest of a released barrier's waiting pass counts as one
+        step, so after a nested barrier's pass the enclosing barrier's pass,
+        if also released, is skipped as well. After the last allowed skip,
+        this walk observes the landing page so settling on the cap still
+        succeeds.
         """
         from .sync import (
             _MAX_BARRIER_WALK_PASSES,
@@ -4686,7 +4689,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         for can_work in _barrier_walk_budget():
             released = released_waiting_barrier(page, participant)
             if released is not None:
+                if not can_work:
+                    break
                 page = self._skip_released_waiting_pages(participant, released)
+                continue
             if not _is_timeline_hold(page):
                 return page
             if not page.prepare_resume_if_ready(self, participant):

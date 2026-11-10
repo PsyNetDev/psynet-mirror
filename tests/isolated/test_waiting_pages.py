@@ -285,12 +285,17 @@ def test_waiting_pages_after_an_inner_barrier_belong_to_the_outer_one(
     inner = SimpleGrouper("inner", initial_group_size=1, waiting_logic=_filler("x"))
     _use_timeline(exp, join(inner, _filler("filler")))
     try:
-        (participant,) = _working_participants(exp, 1)
-        waiting = _json_timeline(exp, participant).get_json()["attributes"]["waiting"]
-        page = exp.timeline.get_current_elt(exp, participant)
+        first, last = _working_participants(exp, 2)
+        waiting = _json_timeline(exp, first).get_json()["attributes"]["waiting"]
+        page = exp.timeline.get_current_elt(exp, first)
         assert page.label == "filler"
         assert waiting["barrier_id"] == page.links["barrier"].id
         assert waiting["release_grace_ms"] == 3000
+
+        _json_timeline(exp, last)
+        db.session.expire_all()
+        last = Participant.query.get(last.id)
+        assert exp.timeline.get_current_elt(exp, last).label == "after"
     finally:
         exp.timeline = original
 
