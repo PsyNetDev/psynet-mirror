@@ -943,38 +943,48 @@ def test_newcomer_waits_briefly_for_a_busy_group_instead_of_the_poller(
         join_existing_groups=True,
     )
 
-    def hold_group_row(seconds):
-        other = db.engine.connect()
+    def hold_group_row(other):
         transaction = other.begin()
         other.execute(
             text("SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"),
             {"id": group.id},
         )
+        return transaction
 
-        def finish():
-            transaction.commit()
-            other.close()
-
-        timer = threading.Timer(seconds, finish)
-        timer.start()
-        return timer
+    def release_once_blocked(other, transaction, pid):
+        deadline = time.monotonic() + 10
+        while (
+            time.monotonic() < deadline
+            and not other.execute(
+                text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"), {"pid": pid}
+            ).scalar()
+        ):
+            time.sleep(0.01)
+        transaction.commit()
 
     lock_timeout = "SELECT current_setting('lock_timeout')"
     _set_transaction_lock_timeout(5)
-    timer = hold_group_row(0.2)
-    grouper._join_on_arrival(prompt)
-    timer.join()
+    newcomer_pid = db_session.execute(text("SELECT pg_backend_pid()")).scalar()
+    with db.engine.connect() as other:
+        releaser = threading.Thread(
+            target=release_once_blocked,
+            args=(other, hold_group_row(other), newcomer_pid),
+        )
+        releaser.start()
+        grouper._join_on_arrival(prompt)
+        releaser.join(30)
     assert prompt.in_sync_group("top_up")
     assert db_session.execute(text(lock_timeout)).scalar() == "5s"
     db_session.commit()
 
     _set_transaction_lock_timeout(5)
-    timer = hold_group_row(1.5)
-    grouper._join_on_arrival(slow)
-    assert not slow.in_sync_group("top_up")
-    assert db_session.execute(text(lock_timeout)).scalar() == "5s"
-    db_session.commit()
-    timer.join()
+    with db.engine.connect() as other:
+        transaction = hold_group_row(other)
+        grouper._join_on_arrival(slow)
+        assert not slow.in_sync_group("top_up")
+        assert db_session.execute(text(lock_timeout)).scalar() == "5s"
+        db_session.commit()
+        transaction.commit()
 
 
 @pytest.mark.parametrize("request_kind", ["response", "timeline"])
@@ -7889,9 +7899,16 @@ def test_group_barrier_counts_a_newcomer_joining_in_another_request(
         db_session.expire_all()
         return [p for p in starters if not game_starts.can_participant_exit(p)]
 
+    poller_pid, deferred, errors = [], [], []
+
     def poll_barriers():
         try:
-            check_barriers()
+            poller_pid.append(
+                db.session.execute(text("SELECT pg_backend_pid()")).scalar()
+            )
+            deferred.append(_process_barrier_instance(instance_id))
+        except Exception as err:  # pragma: no cover - surfaced below
+            errors.append(err)
         finally:
             db.session.remove()
 
@@ -7899,6 +7916,7 @@ def test_group_barrier_counts_a_newcomer_joining_in_another_request(
         _arrive_at_group_barrier(exp, game_starts, participant)
     db_session.commit()
     _take_pending_barrier_checks()
+    instance_id = starters[0].active_barriers[game_starts.id].barrier_instance_id
     with Session(bind=db.engine) as joiner:
         joiner.execute(
             text("SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"),
@@ -7921,18 +7939,20 @@ def test_group_barrier_counts_a_newcomer_joining_in_another_request(
         # starters without the newcomer.
         deadline = time.monotonic() + 10
         while poller.is_alive() and time.monotonic() < deadline:
-            blocked = db_session.execute(
-                text(
-                    "SELECT count(*) FROM pg_stat_activity "
-                    "WHERE wait_event_type = 'Lock' AND datname = current_database()"
-                )
-            ).scalar()
-            db_session.rollback()
+            blocked = (
+                poller_pid
+                and joiner.execute(
+                    text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"),
+                    {"pid": poller_pid[0]},
+                ).scalar()
+            )
             if blocked:
                 break
             time.sleep(0.05)
         joiner.commit()
     poller.join(30)
+    assert errors == []
+    assert deferred == [True]
     assert still_waiting() == starters
 
     check_barriers()

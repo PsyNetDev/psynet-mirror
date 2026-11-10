@@ -2289,6 +2289,7 @@ class GroupBarrier(Barrier):
         )
 
     def check_waiting_participants(self, waiting_participants: List[Participant]):
+        """Remove members late between barriers; relies on the lock taken in :meth:`_lock_top_up_groups`."""
         waiting_ids = {p.id for p in waiting_participants}
         removals = []
         for group in self.get_waiting_groups(waiting_participants).values():
@@ -2382,7 +2383,7 @@ class GroupBarrier(Barrier):
             self.late_action != "fail"
             and had_others
             and dissolves
-            and getattr(group, "below_quorum", None) != "continue_without_group"
+            and group.below_quorum != "continue_without_group"
         ):
             logger.warning(
                 "GroupBarrier '%s': removing late members %s dissolves group %s "
@@ -4297,6 +4298,9 @@ class SyncGroup(SQLBase, SQLMixin):
     accepts_top_ups = False
     #: When the group stopped accepting top-ups; see :class:`SimpleSyncGroup`.
     top_ups_stopped_at = None
+    #: Quorum and below-quorum policy; only :class:`SimpleSyncGroup` sets them.
+    min_group_size = None
+    below_quorum = None
 
     def stop_top_ups(self):
         """Stop newcomers joining this group; a no-op for groups that never take them."""
@@ -4554,7 +4558,7 @@ class SyncGroup(SQLBase, SQLMixin):
 
     def _below_quorum_action(self, participant):
         """Return ``"fail"`` or ``"continue_without_group"`` for a member of this group as it dissolves."""
-        policy = getattr(self, "below_quorum", None) or "fail"
+        policy = self.below_quorum or "fail"
         if not callable(policy):
             return policy
         try:
@@ -6207,7 +6211,7 @@ def _finish_dissolving_groups():
             group = _lock_sync_group(group_id, skip_locked=True)
             if group is not None and group.active and group.dissolving:
                 group.check_numbers()
-                quorum = getattr(group, "min_group_size", None) or 0
+                quorum = group.min_group_size or 0
                 if 0 < quorum <= group.n_active_participants:
                     group.dissolving = False
                 else:
