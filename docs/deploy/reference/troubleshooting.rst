@@ -228,6 +228,7 @@ lines like this, each followed by the statement that caused it:
 .. code:: text
 
     ERROR:  could not obtain lock on row in relation "participant"
+    ERROR:  could not obtain lock on row in relation "sync_group"
 
 These errors are expected and need no action. They usually come from a
 barrier check, which locks the waiting participants' rows, and the rows of
