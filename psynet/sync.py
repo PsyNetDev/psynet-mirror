@@ -41,7 +41,9 @@ Whom a group barrier waits for
     release's round, if any, is the node that every released member's
     unfinished cued trial is on (``_common_round_node``). If every member is
     waiting, but no barrier of the group has them all, nothing can pass:
-    ``_report_divergence`` logs that as an error, and raises it in tests.
+    each ``check_barriers`` sweep looks for such groups
+    (``_report_divergences``) and records each as an error once, with a
+    token naming the group so later sweeps skip it.
 
 Where this shows up in a timeline
 ---------------------------------
@@ -82,6 +84,7 @@ this module. That loop:
   skips waiters **this poller** released, one row at a time, after that commit.
 - Logs and skips failures per barrier so one bad barrier does not stall others.
 - Keeps hold-wake publishes unpublished until the sweep returns.
+- Reports groups whose members wait at different barriers of the group.
 
 Each default barrier visit links to a durable ``TimelineHoldRecord``. Releasing
 the link accounts waiting through the release time and queues a targeted browser
@@ -107,13 +110,11 @@ methods are live-only.
 """
 
 import inspect
-import os
 import random
 import time
 import uuid
 from collections import Counter
 from contextlib import contextmanager
-from contextvars import ContextVar
 from datetime import timedelta
 from functools import partial
 from math import ceil, floor
@@ -125,6 +126,8 @@ from typing import (
     NamedTuple,
     Optional,
     Sequence,
+    Set,
+    Tuple,
     Union,
     get_args,
 )
@@ -143,6 +146,7 @@ from sqlalchemy import (
     String,
     Text,
     and_,
+    exists,
     func,
     or_,
     select,
@@ -174,7 +178,9 @@ from psynet.db import (
     _SessionQueue,
     _set_transaction_lock_timeout,
     is_transient_transaction_error,
+    transaction,
 )
+from psynet.error import ErrorRecord
 from psynet.field import PythonClass, PythonObject
 from psynet.page import UnsuccessfulEndPage
 from psynet.participant import Participant, _lock_and_load_participant
@@ -1662,8 +1668,8 @@ class GroupBarrier(Barrier):
     at a barrier in ``show_trial``, the release closes that round to
     newcomers, whose cues then start the next round. If every member is
     waiting but at different barriers of the group, none of them can ever
-    pass: PsyNet logs an error naming the barriers, and raises it in tests,
-    and ``late_after`` or ``max_wait_time`` ends the wait (see
+    pass: PsyNet records and logs an error naming the barriers, bot tests
+    fail with it, and ``late_after`` or ``max_wait_time`` ends the wait (see
     :ref:`members at different barriers <rounds-group-barriers-in-loops>`).
 
     After the arrival write commits, the same request evaluates the barrier in
@@ -1961,7 +1967,11 @@ class GroupBarrier(Barrier):
 
         A newcomer who arrived while their group's release was committing
         can still be waiting here; release checks let them through.
+        ``waiting_participants`` may be lazy: a barrier that lets nobody
+        through doesn't iterate it.
         """
+        if not (self.pass_newcomers or self._lets_newcomers_through):
+            return []
         return [p for p in waiting_participants if self._passes_straight_through(p)]
 
     def _release_ready_waiters(self, waiting_participants, instance):
@@ -2130,8 +2140,6 @@ class GroupBarrier(Barrier):
                 released = self._waiting_members(group, waiting_participants)
                 participants_to_release.extend(released)
                 self._pass(group, released, node)
-            elif not _in_poller_sweep.get():
-                _report_divergence(group)
 
         participants_to_release_ids = {p.id for p in participants_to_release}
         for participant in waiting_participants:
@@ -2153,7 +2161,10 @@ class GroupBarrier(Barrier):
         return [p for p in waiting_participants if p.id in member_ids]
 
     def _pass(self, group, released, node):
-        """Do the group's bookkeeping for releasing ``released``, close round ``node``, if any, and call ``on_release``."""
+        """Do the group's bookkeeping for releasing ``released``.
+
+        Also closes round ``node``, if any, and calls ``on_release``.
+        """
         group.check_leader()
         for participant in released:
             link = participant.active_barriers.get(self.id)
@@ -2391,8 +2402,9 @@ class GroupBarrier(Barrier):
     def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
         """Return active members past the between-barrier timeout who are not waiting.
 
-        Each member is timed from the group's last barrier pass or from when they joined the group, whichever is later,
-        so newcomers to an open group are not late as soon as they join. A
+        Each member is timed from the group's last barrier pass or from when
+        they joined the group, whichever is later, so newcomers to an open
+        group are not late as soon as they join. A
         member who has started a page with a time limit since then, outside
         waiting logic, is not late until that limit has run out and an answer
         sent at the deadline has had time to arrive, even if they have
@@ -4620,42 +4632,135 @@ def _common_round_node(group, participants):
 class GroupDivergenceError(RuntimeError):
     """A group's members wait for each other at different group barriers, so none can pass.
 
-    Raised in tests, such as bot tests, where the arrival's request fails
-    with HTTP 500; otherwise PsyNet logs the error (see
-    :ref:`members at different barriers <rounds-group-barriers-in-loops>`).
+    :func:`check_barriers` records it as an :class:`~psynet.error.ErrorRecord`
+    and logs it (see
+    :ref:`members at different barriers <rounds-group-barriers-in-loops>`);
+    bot tests then fail with it (see :func:`fail_on_group_divergence`).
     """
 
 
-#: Ids of the groups already logged by :func:`_report_divergence`.
-_reported_divergences = set()
-
-#: Set while :func:`check_barriers` sweeps. Arrivals look for divergence
-#: (see :func:`_report_divergence`), including those whose check misses the
-#: visit claim (see :func:`_check_held_instance_with_claim`), so the sweeps,
-#: which recheck every waiting visit, don't add a statement per visit.
-_in_poller_sweep = ContextVar("_in_poller_sweep", default=False)
+def _divergence_token(group_id):
+    """Return the token of the :class:`~psynet.error.ErrorRecord` of a divergence of a group."""
+    return f"group-divergence-{group_id}"
 
 
-def _in_tests() -> bool:
-    """Return whether PsyNet runs under pytest, as in ``psynet test local`` and its experiment server."""
-    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
+def _report_divergences():
+    """Record and log each group whose members wait for each other at different barriers.
+
+    Runs at the end of each :func:`check_barriers` sweep, after its visit
+    checks, so whatever a release or time-out could do has been done. One
+    statement (:func:`_divergence_candidates`) finds the groups where every
+    active member waits at a barrier of the group and those waits span two
+    or more barriers; only those get the full check
+    (:func:`_divergence_message`). Each group is checked and recorded in its
+    own transaction, so an error in one doesn't skip the others. A group's
+    record carries the token from :func:`_divergence_token`, so a group with
+    a record isn't checked again.
+    """
+    try:
+        candidates = _divergence_candidates()
+    except Exception:
+        logger.warning("Failed to look for diverged sync groups.", exc_info=True)
+        return
+    for group_id in candidates:
+        try:
+            group = SyncGroup.query.get(group_id)
+            divergence = None if group is None else _divergence_message(group)
+            if divergence is None:
+                db.session.rollback()
+                continue
+            message, participant_ids = divergence
+            db.session.add(
+                ErrorRecord(
+                    GroupDivergenceError(message),
+                    token=_divergence_token(group_id),
+                    participant_id=min(participant_ids),
+                )
+            )
+            db.session.commit()
+            logger.error(message)
+        except Exception:
+            db.session.rollback()
+            logger.exception("Failed to check sync group %s for divergence.", group_id)
 
 
-def _report_divergence(group):
-    """Log an error, and raise :class:`GroupDivergenceError` in tests, if ``group`` can't pass any of its barriers.
+def _divergence_candidates() -> List[int]:
+    """Return the ids of active groups whose members all wait at two or more of the group's barriers.
+
+    Dissolving groups and groups that already have a divergence record are
+    left out. One statement, in its own session.
+    """
+    member = and_(
+        ~Participant.failed,
+        Participant.status == "working",
+    )
+    n_members = (
+        select(func.count())
+        .select_from(ParticipantLinkSyncGroup)
+        .join(Participant, Participant.id == ParticipantLinkSyncGroup.participant_id)
+        .where(
+            ParticipantLinkSyncGroup.sync_group_id == BarrierInstance.group_id,
+            ParticipantLinkSyncGroup.active.is_(True),
+            member,
+        )
+        .correlate(BarrierInstance)
+        .scalar_subquery()
+    )
+    query = (
+        select(BarrierInstance.group_id)
+        .join(
+            ParticipantLinkBarrier,
+            ParticipantLinkBarrier.barrier_instance_id == BarrierInstance.id,
+        )
+        .join(SyncGroup, SyncGroup.id == BarrierInstance.group_id)
+        .join(
+            ParticipantLinkSyncGroup,
+            and_(
+                ParticipantLinkSyncGroup.sync_group_id == BarrierInstance.group_id,
+                ParticipantLinkSyncGroup.participant_id
+                == ParticipantLinkBarrier.participant_id,
+                ParticipantLinkSyncGroup.active.is_(True),
+            ),
+        )
+        .join(Participant, Participant.id == ParticipantLinkBarrier.participant_id)
+        .where(
+            ParticipantLinkBarrier.released.is_(False),
+            member,
+            SyncGroup.active.is_(True),
+            SyncGroup.dissolving.isnot(True),
+            ~exists().where(
+                ErrorRecord.token
+                == func.concat(_divergence_token(""), BarrierInstance.group_id)
+            ),
+        )
+        .group_by(BarrierInstance.group_id)
+        .having(
+            and_(
+                func.count(func.distinct(BarrierInstance.barrier_id)) >= 2,
+                func.count(func.distinct(ParticipantLinkBarrier.participant_id))
+                == n_members,
+            )
+        )
+        .order_by(BarrierInstance.group_id)
+    )
+    with Session(bind=db.engine) as session:
+        return list(session.scalars(query))
+
+
+def _divergence_message(group) -> Optional[Tuple[str, Set[int]]]:
+    """Describe how ``group`` can't pass any of its barriers, or return ``None`` if it can.
+
+    Returns the message and the ids of the members it names.
 
     That is when the group has its quorum and every active member waits at
-    a :class:`GroupBarrier` of the group, but none of those barriers has them all, as when a barrier
-    is inside a ``conditional`` that only some members take. Each barrier
-    waits for the members at the others, so only ``late_after`` or
-    ``max_wait_time`` can end the wait, which is what happens in
-    production. The members and their waits are read in one statement, so
-    they are consistent with each other. A member that a barrier lets
-    through (see :meth:`GroupBarrier._lets_through`) isn't stuck. Logged
-    once per group.
+    a :class:`GroupBarrier` of the group, but none of those barriers has
+    them all, as when a barrier is inside a ``conditional`` that only some
+    members take. Each barrier waits for the members at the others, so
+    only ``late_after`` or ``max_wait_time`` can end the wait. The members
+    and their waits are read in one statement, so they are consistent with
+    each other. A member that a barrier lets through (see
+    :meth:`GroupBarrier._lets_through`) isn't stuck.
     """
-    if group.id in _reported_divergences and not _in_tests():
-        return
     group_instances = select(BarrierInstance.id).where(
         BarrierInstance.group_id == group.id
     )
@@ -4680,48 +4785,66 @@ def _report_divergence(group):
     ).all()
     members = {participant_id for participant_id, _ in rows}
     if len(members) < group.min_group_size or any(link is None for _, link in rows):
-        return
+        return None
     waits = {}
     for _, link in rows:
         barrier = link.barrier_instance.get_barrier()
         if isinstance(barrier, GroupBarrier):
-            waits.setdefault(barrier.id, (barrier, []))[1].append(link.participant)
+            waits.setdefault(barrier.id, (barrier, []))[1].append(link)
     if (
         len(waits) < 2
-        or {p.id for _, waiting in waits.values() for p in waiting} != members
+        or {link.participant_id for _, links in waits.values() for link in links}
+        != members
         or any(
-            {p.id for p in waiting} == members or barrier._waiters_let_through(waiting)
-            for barrier, waiting in waits.values()
+            {link.participant_id for link in links} == members
+            or barrier._waiters_let_through(link.participant for link in links)
+            for barrier, links in waits.values()
         )
     ):
-        return
-    _reported_divergences.add(group.id)
+        return None
     message = (
         f"The members of '{group.group_type}' group {group.id} wait for each "
         "other at different barriers, so none can pass: "
         + "; ".join(
             f"GroupBarrier '{barrier_id}' has participants "
-            + ", ".join(str(i) for i in sorted(p.id for p in waiting))
-            for barrier_id, (_, waiting) in sorted(waits.items())
+            + ", ".join(str(i) for i in sorted(link.participant_id for link in links))
+            for barrier_id, (_, links) in sorted(waits.items())
         )
         + ". Each GroupBarrier waits for every member of its group, so put the "
         "barriers where every member reaches them in the same order, or have "
         "members leave the group (leave_group) before their paths diverge. "
         "Until late_after or max_wait_time moves someone on, nobody passes."
     )
-    if _in_tests():
-        raise GroupDivergenceError(message)
-    logger.error(message)
+    return message, members
 
 
-def _report_divergence_at(instance_id):
-    """Run :func:`_report_divergence` for the group of visit ``instance_id``, if it has one."""
-    instance = BarrierInstance.query.get(instance_id)
-    if instance is None or instance.group_id is None:
-        return
-    group = SyncGroup.query.get(instance.group_id)
-    if group is not None and group.active:
-        _report_divergence(group)
+@contextmanager
+def fail_on_group_divergence():
+    """Raise :class:`GroupDivergenceError` after the block if :func:`check_barriers` recorded one during it.
+
+    Bot tests run inside it, so a divergence fails ``psynet test local``
+    with its message even though the poller found it in another process.
+    Records from before the block, such as an earlier run against the same
+    server, are ignored. The error is raised even if the block raised, as
+    bots stuck at diverged barriers fail on ``max_wait_time``.
+    """
+    with transaction():
+        start = db.session.query(func.max(ErrorRecord.id)).scalar() or 0
+    try:
+        yield
+    finally:
+        with transaction():
+            messages = [
+                message
+                for (message,) in db.session.query(ErrorRecord.message)
+                .filter(
+                    ErrorRecord.kind == GroupDivergenceError.__name__,
+                    ErrorRecord.id > start,
+                )
+                .order_by(ErrorRecord.id)
+            ]
+        if messages:
+            raise GroupDivergenceError("\n".join(messages))
 
 
 def _lock_round(group, node) -> bool:
@@ -5773,15 +5896,11 @@ def _check_held_instance_with_claim(instance_id, *, wait):
     a held claim; unfilled waiter GET recovery must pass ``wait=False``.
     Each peek uses an extra pooled connection; last-arrival can open one
     per queued instance when the first peek misses.
-
-    A miss with ``wait=False`` still looks for divergence, since the claim's
-    holder may be a poller sweep, which doesn't (see :func:`_report_divergence`).
     """
     with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
         if claimed:
             return _check_held_instance(instance_id)
     if not wait:
-        _report_divergence_at(instance_id)
         return False
     with _hold_barrier_instance_claim(instance_id, wait=True):
         return _check_held_instance(instance_id)
@@ -5942,14 +6061,14 @@ def check_barriers():
     ``_POLLER_SWEEP_BUDGET_SECONDS``, so thousands of idle waiters cannot
     keep the poller busy; the rest wait for later sweeps. One item can still
     overrun the budget while it waits for a row lock. Live waiters still
-    check their own visit on each hold poll.
+    check their own visit on each hold poll. A sweep that found waiting
+    visits ends by reporting groups whose members wait at different
+    barriers (see :func:`_report_divergences`).
     """
     seen = set()
-    token = _in_poller_sweep.set(True)
-    try:
-        _check_barriers(seen)
-    finally:
-        _in_poller_sweep.reset(token)
+    _check_barriers(seen)
+    if seen:
+        _report_divergences()
 
 
 def _check_barriers(seen):
