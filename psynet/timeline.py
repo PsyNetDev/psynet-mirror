@@ -3006,13 +3006,8 @@ class Timeline:
         self.check_group_policies()
 
     def check_group_policies(self):
-        """Warn about grouper and barrier settings that fail members who were on time, or strand newcomers or slower members.
-
-        The last check raises if a ``while_loop`` after a grouper shows
-        content pages between runs of a group module it repeats.
-        """
+        """Warn about grouper and barrier settings that fail members who were on time, or strand newcomers."""
         from .sync import (
-            check_looped_module_has_no_pages_outside,
             warn_if_late_removal_fails_group,
             warn_if_newcomers_can_strand_group,
         )
@@ -3021,7 +3016,6 @@ class Timeline:
             {id(barrier): barrier for barrier in self._barriers()}.values()
         )
         warn_if_newcomers_can_strand_group(self._barriers_in_order())
-        check_looped_module_has_no_pages_outside(self.elts.values())
 
     def _barriers_in_order(self):
         """Yield ``(barrier, in_loop)`` once per barrier, in timeline order.

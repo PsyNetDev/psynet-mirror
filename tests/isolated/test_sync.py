@@ -86,10 +86,6 @@ from psynet.timeline import (
     PageMaker,
     Response,
     Timeline,
-    conditional,
-    for_loop,
-    join,
-    switch,
     while_loop,
 )
 from psynet.timeline_hold import (
@@ -102,7 +98,6 @@ from psynet.timeline_hold import (
     default_group_barrier_arrival_message,
     default_hold_progress,
 )
-from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 from psynet.utils import call_function_with_context, get_config
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -7302,128 +7297,6 @@ def test_timeline_warns_about_barriers_newcomers_can_reach_after_their_group():
     first = GroupBarrier(id_="round", group_type="team")
     assert warned_barriers(first, rounds(), pass_newcomers=True) == []
     assert warned_barriers(rounds(pass_newcomers=True), stop_top_ups=True) == ["round"]
-
-
-class LoopCheckTrial(StaticTrial):
-    time_estimate = 1
-
-
-@pytest.mark.parametrize(
-    "shape, outcome",
-    [
-        ("module, page", "raises"),
-        ("module, loop of pages", "raises"),
-        ("page, loop of module", "raises"),
-        ("module, barrier, page", "raises"),
-        ("module, for_loop of pages", "warns"),
-        ("module, page in a conditional", "raises"),
-        ("module, page, barrier in a conditional", "raises"),
-        ("module, switch of barrier or page", "raises"),
-        ("module, switch of page or barrier", "raises"),
-        ("group trial maker, page", "raises"),
-        ("wrapper of group trial maker, page", "raises"),
-        ("wrapper of group trial maker and page", "raises"),
-        ("wrapper of module, page", "raises"),
-        ("module with page", None),
-        ("module, page, barrier", None),
-        ("wrapper of module, page and barrier", None),
-        ("barrier, module, page", None),
-        ("module, page, before the grouper", None),
-        ("solo module, page", None),
-        ("solo trial maker, page", None),
-    ],
-)
-def test_timeline_rejects_pages_between_runs_of_a_looped_module(shape, outcome):
-    # A barrier at the start of the module doesn't wait for a member who left it.
-    def game(*extra):
-        return Module("game", GroupBarrier(id_="run_start", group_type="pair"), *extra)
-
-    def trial_maker(**options):
-        return StaticTrialMaker(
-            id_="game",
-            trial_class=LoopCheckTrial,
-            nodes=[StaticNode(definition={})],
-            expected_trials_per_participant=1,
-            **options,
-        )
-
-    def page():
-        return InfoPage("Break", time_estimate=1)
-
-    def barrier():
-        return GroupBarrier(id_="ready", group_type="pair")
-
-    def switch_of(first, second):
-        return switch("s", lambda: "a", {"a": first, "b": second})
-
-    body = {
-        "module, page": lambda: join(game(), page()),
-        "module, loop of pages": lambda: join(
-            game(), while_loop("breaks", lambda: False, page(), 1)
-        ),
-        "page, loop of module": lambda: join(
-            page(), while_loop("rounds", lambda: True, game(), 2)
-        ),
-        "module, barrier, page": lambda: join(game(), barrier(), page()),
-        "module, for_loop of pages": lambda: join(
-            game(), for_loop(label="breaks", iterate_over=[1], logic=page())
-        ),
-        "module, page in a conditional": lambda: join(
-            game(), conditional("c", lambda: True, page())
-        ),
-        "module, page, barrier in a conditional": lambda: join(
-            game(), page(), conditional("c", lambda: True, barrier())
-        ),
-        "module, switch of barrier or page": lambda: join(
-            game(), switch_of(barrier(), page())
-        ),
-        "module, switch of page or barrier": lambda: join(
-            game(), switch_of(page(), barrier())
-        ),
-        "group trial maker, page": lambda: join(
-            trial_maker(sync_group_type="pair"), page()
-        ),
-        "wrapper of group trial maker, page": lambda: join(
-            Module("session", trial_maker(sync_group_type="pair")), page()
-        ),
-        "wrapper of group trial maker and page": lambda: Module(
-            "session", trial_maker(sync_group_type="pair"), page()
-        ),
-        "wrapper of module, page": lambda: join(Module("session", game()), page()),
-        "module with page": lambda: game(page()),
-        "module, page, barrier": lambda: join(game(), page(), barrier()),
-        "wrapper of module, page and barrier": lambda: Module(
-            "session", game(), page(), barrier()
-        ),
-        "barrier, module, page": lambda: join(barrier(), game(), page()),
-        "module, page, before the grouper": lambda: join(game(), page()),
-        "solo module, page": lambda: join(Module("game", page()), page()),
-        "solo trial maker, page": lambda: join(trial_maker(), page()),
-    }[shape]()
-    steps = [
-        SimpleGrouper("pair", initial_group_size=2),
-        while_loop("runs", lambda: True, body, expected_repetitions=2),
-    ]
-    if "before the grouper" in shape:
-        steps.reverse()
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        if outcome == "raises":
-            with pytest.raises(
-                ValueError, match="repeats module 'game' and shows"
-            ) as e:
-                Timeline(*steps, InfoPage("Done", time_estimate=1))
-            # The advice names the innermost module, which can't hold pages if
-            # it is a trial maker.
-            is_trial_maker = "trial maker" in shape
-            assert ("Trial maker 'game' can't" in str(e.value)) == is_trial_maker
-            assert ("Move the pages into module 'game'" in str(e.value)) != (
-                is_trial_maker
-            )
-            return
-        Timeline(*steps, InfoPage("Done", time_estimate=1))
-    warned = any("repeats module 'game'" in str(w.message) for w in caught)
-    assert warned == (outcome == "warns")
 
 
 @pytest.mark.parametrize(
