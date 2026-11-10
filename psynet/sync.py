@@ -160,7 +160,7 @@ from psynet.db import (
 )
 from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
-from psynet.participant import Participant
+from psynet.participant import Participant, _lock_and_load_participant
 from psynet.serialize import SerializedCallable, serialize_callable
 from psynet.timeline import (
     TIME_LIMIT_GRACE_SECONDS,
@@ -444,16 +444,39 @@ def _get_waiting_participants(
 
     ``active_barriers`` and ``sync_group_links`` are populated separately;
     see ``_populate_active_barriers`` and ``_populate_sync_group_links``.
+
+    A locked load that waited would join the waiters' trials as they were
+    before the wait (see :func:`psynet.participant._load_participant_for_update`).
+    So unless ``nowait`` is set, a bare statement takes the locks first and
+    the joined load, limited to the links it locked, then runs with
+    ``NOWAIT``, which cannot fail on rows already held.
     """
+    criteria = [
+        ParticipantLinkBarrier.barrier_id == barrier_id,
+        ParticipantLinkBarrier.barrier_instance_id == barrier_instance_id,
+        ~ParticipantLinkBarrier.released,
+        ~Participant.failed,
+        Participant.status == "working",
+    ]
+    if for_update and not nowait:
+        locked_link_ids = (
+            db.session.execute(
+                select(ParticipantLinkBarrier.id)
+                .join(Participant)
+                .where(*criteria)
+                .order_by(Participant.id)
+                .with_for_update(of=[ParticipantLinkBarrier, Participant])
+            )
+            .scalars()
+            .all()
+        )
+        if not locked_link_ids:
+            return []
+        criteria.append(ParticipantLinkBarrier.id.in_(locked_link_ids))
+        nowait = True
     query = (
         ParticipantLinkBarrier.query.join(Participant)
-        .filter(
-            ParticipantLinkBarrier.barrier_id == barrier_id,
-            ParticipantLinkBarrier.barrier_instance_id == barrier_instance_id,
-            ~ParticipantLinkBarrier.released,
-            ~Participant.failed,
-            Participant.status == "working",
-        )
+        .filter(*criteria)
         .options(
             joinedload(ParticipantLinkBarrier.participant, innerjoin=True).options(
                 lazyload(Participant.active_barriers),
@@ -715,24 +738,39 @@ class _BarrierHoldPage(_TimelineHoldPage):
         self.barrier._queue_check_on_arrival(link.barrier_instance)
         self.barrier._notify_arrivals(participant)
 
-    def hold_progress_text(self, participant):
+    def hold_progress_text(self, participant, counts=None):
         """Return arrival progress for a participant waiting at this barrier."""
         if participant is None:
             return None
-        return self.barrier._hold_progress_text(participant)
+        return self.barrier._hold_progress_text(participant, counts)
 
-    def overlay_html(self, participant=None, release_time=NoArgumentProvided):
+    def overlay_html(
+        self, participant=None, release_time=NoArgumentProvided, *, counts=None
+    ):
         """Return hold copy, calling a ``content`` function and filling in ``{SECONDS}``.
 
-        ``release_time`` (epoch seconds, or ``None`` if unknown) defaults to the
-        barrier's :meth:`~Barrier.expected_release_time`.
+        Parameters
+        ----------
+        participant : Participant, optional
+            The waiting participant.
+        release_time : float or None, optional
+            Epoch seconds, or ``None`` if unknown. Defaults to the barrier's
+            :meth:`~Barrier.expected_release_time`.
+        counts : dict, optional
+            The barrier's hold message counts for ``participant``
+            (``waiting_count`` and ``group_size``). Callers
+            that render the overlay for every member of a group pass them,
+            so the group is not recounted per member.
         """
+        if self._is_silent_for(participant):
+            return compose_hold_overlay_html("", None)
         content = self.content
         content_is_function = isinstance(content, SerializedCallable)
         if not content_is_function and "{SECONDS}" not in str(content or ""):
-            return super().overlay_html(participant)
-        if self._is_silent_for(participant):
-            return compose_hold_overlay_html("", None)
+            return compose_hold_overlay_html(
+                self.translated_content(participant),
+                self.hold_progress_text(participant, counts),
+            )
         if release_time is NoArgumentProvided:
             release_time = (
                 None
@@ -744,14 +782,18 @@ class _BarrierHoldPage(_TimelineHoldPage):
         )
         seconds = None if remaining_ms is None else max(0, ceil(remaining_ms / 1000))
         if content_is_function:
+            if counts is None:
+                counts = self.barrier._hold_message_counts(participant)
             context = {} if participant is None else {"participant": participant}
             content = content(
                 barrier=self.barrier,
                 seconds_left=seconds,
                 **context,
-                **self.barrier._hold_message_counts(participant),
+                **counts,
             )
-        html = compose_hold_overlay_html(content, self.hold_progress_text(participant))
+        html = compose_hold_overlay_html(
+            content, self.hold_progress_text(participant, counts)
+        )
         if "{SECONDS}" not in html:
             return html
         if remaining_ms is None or remaining_ms <= 0:
@@ -1135,8 +1177,12 @@ class Barrier(EltCollection):
         Live timeline only. Overlay HTML comes from ``waiting_logic``.
         """
 
-    def _hold_progress_text(self, participant):
-        """Return hold-overlay progress copy, if this barrier publishes arrivals."""
+    def _hold_progress_text(self, participant, counts=None):
+        """Return hold-overlay progress copy, if this barrier publishes arrivals.
+
+        ``counts`` are :meth:`_hold_message_counts` for ``participant`` when
+        the caller already has them.
+        """
         return None
 
     def _hold_message_counts(self, participant):
@@ -1359,11 +1405,8 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            participant = (
-                experiment._participant_request_query()
-                .with_for_update(of=Participant, nowait=True)
-                .populate_existing()
-                .get(participant_id)
+            participant = _lock_and_load_participant(
+                experiment._participant_request_query(), participant_id, nowait=True
             )
         except Exception as err:
             _rollback_preserving_barrier_queues()
@@ -1697,11 +1740,12 @@ class GroupBarrier(Barrier):
             )
         return super().get_waiting_participants(participant, for_update=for_update)
 
-    def _hold_progress_text(self, participant):
+    def _hold_progress_text(self, participant, counts=None):
         """Return hold-overlay progress when arrival notices are enabled."""
         if not self.notify_arrivals or not self._participant_is_waiting(participant):
             return None
-        counts = self._hold_message_counts(participant)
+        if counts is None:
+            counts = self._hold_message_counts(participant)
         if counts["group_size"] is None:
             return None
         return default_hold_progress(**counts)
@@ -1752,6 +1796,7 @@ class GroupBarrier(Barrier):
             return
         members = group.active_participants
         waiting = [m for m in members if self._participant_is_waiting(m)]
+        counts = {"waiting_count": len(waiting), "group_size": len(members)}
         if self._uses_timeline_hold:
             _prime_timeline_hold_records(waiting, self.id)
         # Arrivals in concurrent requests don't see each other, so the browser
@@ -1768,7 +1813,7 @@ class GroupBarrier(Barrier):
                         hold_page, "_is_silent_for", None
                     ) and hold_page._is_silent_for(member):
                         continue
-                    hold_html = hold_page.overlay_html(member)
+                    hold_html = hold_page.overlay_html(member, counts=counts)
                 _queue_arrival_update(member.id, hold_message=hold_html, refresh=True)
                 continue
             _queue_arrival_update(member.id, refresh=True)
@@ -4039,11 +4084,8 @@ def _time_out_overdue_waiters(sweep_ends):
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            participant = (
-                experiment._participant_request_query()
-                .with_for_update(of=Participant, nowait=True)
-                .populate_existing()
-                .get(participant_id)
+            participant = _lock_and_load_participant(
+                experiment._participant_request_query(), participant_id, nowait=True
             )
             if participant is not None:
                 _time_out_overdue_links(participant)
