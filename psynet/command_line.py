@@ -3320,7 +3320,8 @@ def _debug_ssh(
     destroy ssh`` destroy it when its pending async jobs can't be checked.
     With ``performance_test_app``, the app is one that ``psynet
     performance-test ssh`` deploys for its tests: its environment also sets
-    ``performance_test_app``, :func:`_pre_launch` relaxes its checks, and an
+    ``performance_test_app`` and, if it uses local checkouts,
+    ``performance_test_local_packages``, :func:`_pre_launch` relaxes its checks, and an
     update isn't confirmed first, as with ``yes``.
     """
     try:
@@ -7789,10 +7790,23 @@ def _reuse_local_packages(server, app, deploy_options):
     container, whose PsyNet may come from ``requirements.txt`` and be too old
     to report it. ``deploy_options`` holds the ``use_local_*`` options to turn
     on, in place.
+
+    Raises
+    ------
+    click.ClickException
+        If the compose file can't be read and some ``use_local_*`` option is
+        off.
     """
-    (local_packages,) = _compose_settings(
-        _read_ssh_compose_file(server, app), "performance_test_local_packages"
-    )
+    if all(deploy_options.get(f"use_local_{p}") for p in _LOCAL_PACKAGE_NAMES):
+        return
+    compose = _read_ssh_compose_file(server, app)
+    if compose is None:
+        raise click.ClickException(
+            f"Could not read {app}'s compose file to check which local checkouts "
+            "its deploy used; rerun, or pass --use-local-psynet/"
+            "--use-local-dallinger explicitly."
+        )
+    (local_packages,) = _compose_settings(compose, "performance_test_local_packages")
     recorded = [package.strip() for package in (local_packages or "").split(",")]
     reused = [
         package
@@ -7805,8 +7819,8 @@ def _reuse_local_packages(server, app, deploy_options):
     if reused:
         flags = " and ".join(f"--use-local-{package}" for package in reused)
         print(
-            f"Using {flags}, as when {app} was deployed. To build it from "
-            "requirements.txt instead, destroy it first."
+            f"Using {flags}, as when {app} was deployed. To build from "
+            "requirements.txt instead, destroy the app first."
         )
 
 

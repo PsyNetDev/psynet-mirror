@@ -1801,7 +1801,9 @@ _PERF_DEPLOY_RESULT = {
 }
 
 
-def _invoke_performance_test_ssh(args, *, apps, app_info, calls=None, compose=None):
+def _invoke_performance_test_ssh(
+    args, *, apps, app_info, calls=None, compose="services:\n"
+):
     """Invoke ``performance-test ssh`` on a fake server with ``apps``, whose web containers report ``app_info``.
 
     ``calls`` records the experiment directory check and the server's app
@@ -1945,6 +1947,7 @@ def test_performance_test_ssh_scaffolds_before_contacting_the_server():
         ("dallinger", [], "--use-local-dallinger"),
         ("psynet,dallinger", [], "--use-local-psynet and --use-local-dallinger"),
         ("psynet,dallinger", ["--use-local-psynet"], "--use-local-dallinger"),
+        (None, ["--use-local-psynet", "--use-local-dallinger"], None),
     ],
 )
 def test_performance_test_ssh_updates_reuse_the_deploys_local_packages(
@@ -1954,16 +1957,34 @@ def test_performance_test_ssh_updates_reuse_the_deploys_local_packages(
         args,
         apps=["my-app"],
         app_info=_MARKED,
-        compose=f'      performance_test_local_packages: "{recorded}"\n',
+        compose=(
+            None
+            if recorded is None
+            else f'      performance_test_local_packages: "{recorded}"\n'
+        ),
     )
 
     assert result.exit_code == 0, result.output
     for package in ("psynet", "dallinger"):
-        assert deploy.call_args.kwargs[f"use_local_{package}"] is (package in recorded)
+        expected = f"--use-local-{package}" in args or package in (
+            recorded or ""
+        ).split(",")
+        assert deploy.call_args.kwargs[f"use_local_{package}"] is expected
     if reused:
         assert f"Using {reused}, as when my-app was deployed." in result.output
     else:
         assert ", as when" not in result.output
+
+
+@pytest.mark.parametrize("args", [[], ["--use-local-psynet"]])
+def test_performance_test_ssh_updates_need_the_compose_file_for_local_packages(args):
+    result, deploy, _ = _invoke_performance_test_ssh(
+        args, apps=["my-app"], app_info=_MARKED, compose=None
+    )
+
+    assert result.exit_code == 1
+    assert "Could not read my-app's compose file" in result.output
+    deploy.assert_not_called()
 
 
 @pytest.mark.parametrize("args", [[], ["--reset-database"]])
