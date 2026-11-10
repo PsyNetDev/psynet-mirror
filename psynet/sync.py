@@ -3817,10 +3817,36 @@ def waiting_page_config(page, participant):
             "release_grace_ms": round(barrier.release_grace * 1000),
             "release_notice": _release_notice(barrier),
         }
-    barrier_id = None if participant.failed else _waiting_page_barrier_id(participant)
+    if participant.failed or not any(
+        _is_inside_waiting_loop(b, participant) for b in _waiting_loop_barriers()
+    ):
+        return None
+    barrier_id = _waiting_page_barrier_id(participant)
     if barrier_id is None:
         return None
     return {"barrier_id": barrier_id, "release_grace_ms": None}
+
+
+def _waiting_loop_barriers():
+    """Return the timeline's barriers that have a ``waiting_logic`` loop, found once per timeline.
+
+    Lets ordinary pages skip loading the participant's barrier links.
+    """
+    from .experiment import get_experiment
+
+    timeline = get_experiment().timeline
+    barriers = getattr(timeline, "_waiting_loop_barriers", None)
+    if barriers is None:
+        found = {}
+        for elts in timeline.elts.values():
+            for elt in elts:
+                barrier = (getattr(elt, "links", None) or {}).get("barrier")
+                if isinstance(barrier, Barrier) and getattr(
+                    barrier, "_waiting_loop_markers", None
+                ):
+                    found[id(barrier)] = barrier
+        barriers = timeline._waiting_loop_barriers = list(found.values())
+    return barriers
 
 
 def waiting_status_payload(unique_id, barrier_id):
