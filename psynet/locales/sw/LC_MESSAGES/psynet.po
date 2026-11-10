@@ -595,14 +595,14 @@ msgstr "Rudia"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Unahitaji kuchagua angalau jibu moja!"
+msgid "You need to select an answer!"
+msgstr "Unahitaji kuchagua jibu!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Unahitaji kuchagua jibu!"
+msgid "You need to check at least one answer!"
+msgstr "Unahitaji kuchagua angalau jibu moja!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3616,10 +3616,16 @@ msgid "Resume"
 msgstr "Endelea"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} kati ya {TOTAL} bado hawako tayari"
+msgid "Your partner went on without you. Please continue."
+msgstr "Mwenza wako aliendelea bila wewe. Tafadhali endelea."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Kikundi chako kiliendelea bila wewe. Tafadhali endelea."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3632,6 +3638,12 @@ msgstr "Mwenza wako yuko tayari."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} ya kikundi chako wako tayari."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} kati ya {TOTAL} bado hawako tayari"
 
 #: psynet/timeline_hold.py
 #, fuzzy

@@ -588,14 +588,14 @@ msgstr "ວົງ"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "ທ່ານຈະຕ້ອງເລືອກຄຳຕອບຢ່າງໜ້ອຍຫນຶ່ງ!"
+msgid "You need to select an answer!"
+msgstr "ທ່ານຈະຕ້ອງເລືອກຄຳຕອບ!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "ທ່ານຈະຕ້ອງເລືອກຄຳຕອບ!"
+msgid "You need to check at least one answer!"
+msgstr "ທ່ານຈະຕ້ອງເລືອກຄຳຕອບຢ່າງໜ້ອຍຫນຶ່ງ!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3572,10 +3572,16 @@ msgid "Resume"
 msgstr "ສືບຕໍ່"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} ຈາກ {TOTAL} ຍັງບໍ່ພ້ອມ"
+msgid "Your partner went on without you. Please continue."
+msgstr "ຄູ່ຂອງທ່ານໄດ້ດຳເນີນຕໍ່ໄປໂດຍບໍ່ມີທ່ານ. ກະລຸນາດຳເນີນຕໍ່."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "ກຸ່ມຂອງທ່ານໄດ້ດຳເນີນຕໍ່ໄປໂດຍບໍ່ມີທ່ານ. ກະລຸນາດຳເນີນຕໍ່."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3588,6 +3594,12 @@ msgstr "ຄູ່ຂອງທ່ານພ້ອມແລ້ວ."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} ຂອງກຸ່ມຂອງທ່ານພ້ອມແລ້ວ."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} ຈາກ {TOTAL} ຍັງບໍ່ພ້ອມ"
 
 #: psynet/timeline_hold.py
 #, fuzzy

@@ -597,14 +597,14 @@ msgstr "লুপ"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "আপনাকে অন্তত একটি উত্তর চেক করতে হবে!"
+msgid "You need to select an answer!"
+msgstr "আপনাকে একটি উত্তর নির্বাচন করতে হবে!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "আপনাকে একটি উত্তর নির্বাচন করতে হবে!"
+msgid "You need to check at least one answer!"
+msgstr "আপনাকে অন্তত একটি উত্তর চেক করতে হবে!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3613,10 +3613,16 @@ msgid "Resume"
 msgstr "পুনরায় শুরু করুন"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} এর মধ্যে {TOTAL} এখনও প্রস্তুত নয়"
+msgid "Your partner went on without you. Please continue."
+msgstr "আপনার সঙ্গী আপনাকে ছাড়াই এগিয়ে গেছেন। অনুগ্রহ করে চালিয়ে যান।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "আপনার দল আপনাকে ছাড়াই এগিয়ে গেছে। অনুগ্রহ করে চালিয়ে যান।"
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3629,6 +3635,12 @@ msgstr "আপনার সঙ্গী প্রস্তুত।"
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "আপনার দলের {ARRIVED}/{TOTAL} জন প্রস্তুত।"
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} এর মধ্যে {TOTAL} এখনও প্রস্তুত নয়"
 
 #: psynet/timeline_hold.py
 #, fuzzy

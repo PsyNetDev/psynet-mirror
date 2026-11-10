@@ -598,14 +598,14 @@ msgstr "Irrepeti"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Għandek bżonn tiċċekkja mill-inqas tweġiba waħda!"
+msgid "You need to select an answer!"
+msgstr "Għandek bżonn tagħżel tweġiba!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Għandek bżonn tagħżel tweġiba!"
+msgid "You need to check at least one answer!"
+msgstr "Għandek bżonn tiċċekkja mill-inqas tweġiba waħda!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3688,10 +3688,16 @@ msgid "Resume"
 msgstr "Kompli"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} minn {TOTAL} għadhom mhux lesti"
+msgid "Your partner went on without you. Please continue."
+msgstr "Il-partner tiegħek kompla mingħajrek. Jekk jogħġbok kompli."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Il-grupp tiegħek kompla mingħajrek. Jekk jogħġbok kompli."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3704,6 +3710,12 @@ msgstr "Il-partner tiegħek huwa lest."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} tal-grupp tiegħek huma lesti."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} minn {TOTAL} għadhom mhux lesti"
 
 #: psynet/timeline_hold.py
 #, fuzzy

@@ -30,52 +30,52 @@ msgstr ""
 msgid "Recording stopped"
 msgstr ""
 
-#: psynet/demography/general.py:153
+#: psynet/demography/general.py:154
 msgctxt "gender"
 msgid "How do you identify yourself?"
 msgstr ""
 
-#: psynet/demography/general.py:161
+#: psynet/demography/general.py:162
 msgctxt "gender"
 msgid "Female"
 msgstr ""
 
-#: psynet/demography/general.py:162
+#: psynet/demography/general.py:163
 msgctxt "gender"
 msgid "Male"
 msgstr ""
 
-#: psynet/demography/general.py:163
+#: psynet/demography/general.py:164
 msgctxt "gender"
 msgid "Non-binary"
 msgstr ""
 
-#: psynet/demography/general.py:164
+#: psynet/demography/general.py:165
 msgctxt "gender"
 msgid "Not specified"
 msgstr ""
 
-#: psynet/demography/general.py:165
+#: psynet/demography/general.py:166
 msgctxt "gender"
 msgid "I prefer not to answer"
 msgstr ""
 
-#: psynet/demography/general.py:170
+#: psynet/demography/general.py:171
 msgctxt "gender"
 msgid "Specify yourself"
 msgstr ""
 
-#: psynet/demography/general.py:190
+#: psynet/demography/general.py:191
 msgctxt "age"
 msgid "What is your age?"
 msgstr ""
 
-#: psynet/demography/general.py:204
+#: psynet/demography/general.py:205
 msgctxt "age"
 msgid "You need to provide your age as an integer between 0 and 120!"
 msgstr ""
 
-#: psynet/demography/general.py:206
+#: psynet/demography/general.py:207
 #, python-brace-format
 msgctxt "age"
 msgid "Your answer was: '{AGE}'"
@@ -459,85 +459,86 @@ msgid ""
 "grant it."
 msgstr ""
 
-#: psynet/experiment.py:4160 psynet/experiment.py:7855
+#: psynet/experiment.py:4170 psynet/experiment.py:7849
 msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 
-#: psynet/experiment.py:4237
+#: psynet/experiment.py:4243
 msgctxt "timeline_problem"
 msgid "This session has already ended. Please reload the page."
 msgstr ""
 
-#: psynet/experiment.py:4578
+#: psynet/experiment.py:4583
 msgid "The experiment is temporarily busy. Please try again."
 msgstr ""
 
-#: psynet/experiment.py:4612
+#: psynet/experiment.py:4617
 msgctxt "error"
 msgid ""
 "This session is no longer available. It may have ended, or the study may "
 "have been restarted since you opened this page."
 msgstr ""
 
-#: psynet/modular_page.py:239
+#: psynet/modular_page.py:240
 msgid "Play"
 msgstr ""
 
-#: psynet/modular_page.py:240 psynet/templates/macros/control.html:1144
+#: psynet/modular_page.py:241 psynet/templates/macros/control.html:1144
 msgid "Stop"
 msgstr ""
 
-#: psynet/modular_page.py:241 psynet/templates/macros/control.html:1153
+#: psynet/modular_page.py:242 psynet/templates/macros/control.html:1153
 msgid "Loop"
 msgstr ""
 
-#: psynet/modular_page.py:1133
-msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr ""
-
-#: psynet/modular_page.py:1228 psynet/modular_page.py:1604
+#: psynet/modular_page.py:1053 psynet/modular_page.py:1314
+#: psynet/modular_page.py:1713
 msgctxt "validation"
 msgid "You need to select an answer!"
 msgstr ""
 
-#: psynet/modular_page.py:1654
+#: psynet/modular_page.py:1207
+msgctxt "validation"
+msgid "You need to check at least one answer!"
+msgstr ""
+
+#: psynet/modular_page.py:1801
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr ""
 
-#: psynet/modular_page.py:4069
+#: psynet/modular_page.py:4232
 msgid ""
 "Share your screen to record this answer. Continuing without recording may "
 "make this trial unsuccessful."
 msgstr ""
 
-#: psynet/modular_page.py:4071
+#: psynet/modular_page.py:4234
 msgid "Share your screen to record this answer."
 msgstr ""
 
-#: psynet/modular_page.py:4072
+#: psynet/modular_page.py:4235
 msgid "Share screen"
 msgstr ""
 
-#: psynet/modular_page.py:4073
+#: psynet/modular_page.py:4236
 msgid "Continue without recording"
 msgstr ""
 
-#: psynet/modular_page.py:4074
+#: psynet/modular_page.py:4237
 msgid "Uploading your recording, please keep this page open."
 msgstr ""
 
-#: psynet/modular_page.py:4076
+#: psynet/modular_page.py:4239
 msgid ""
 "Your recording could not be captured. Please make sure your browser can "
 "access your camera or screen, then reload the page."
 msgstr ""
 
-#: psynet/modular_page.py:4079
+#: psynet/modular_page.py:4242
 msgid ""
 "We could not confirm that your answer was received. Please check your "
 "connection and press Next again."
@@ -752,7 +753,7 @@ msgstr ""
 msgid "The test will start on the next page."
 msgstr ""
 
-#: psynet/recruiters.py:501
+#: psynet/recruiters.py:514
 #, python-brace-format
 msgctxt "early_exit_error"
 msgid ""
@@ -760,36 +761,36 @@ msgid ""
 " quote reference code {REFERENCE_CODE}."
 msgstr ""
 
-#: psynet/recruiters.py:510
+#: psynet/recruiters.py:523
 #, python-brace-format
 msgctxt "early_exit_error"
 msgid ""
 "If you need to contact the researcher about this error, write to {EMAIL}."
 msgstr ""
 
-#: psynet/recruiters.py:520
+#: psynet/recruiters.py:533
 msgctxt "early_exit_error"
 msgid "You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:532
+#: psynet/recruiters.py:545
 msgctxt "early_exit_error"
 msgid "Unfortunately an error occurred and we cannot continue."
 msgstr ""
 
-#: psynet/recruiters.py:539
+#: psynet/recruiters.py:552
 msgctxt "early_exit_error"
 msgid "However, your responses so far have been saved."
 msgstr ""
 
-#: psynet/recruiters.py:660
+#: psynet/recruiters.py:673
 msgctxt "early_exit"
 msgid ""
 "If you leave now, you will not be able to continue later. Your responses so "
 "far will still be saved."
 msgstr ""
 
-#: psynet/recruiters.py:684
+#: psynet/recruiters.py:697
 #, python-brace-format
 msgctxt "early_exit"
 msgid ""
@@ -798,32 +799,32 @@ msgid ""
 "later. Your responses so far will still be saved."
 msgstr ""
 
-#: psynet/recruiters.py:711
+#: psynet/recruiters.py:724
 msgctxt "early_exit"
 msgid "Leave without payment"
 msgstr ""
 
-#: psynet/recruiters.py:713
+#: psynet/recruiters.py:726
 msgctxt "early_exit"
 msgid "Leave"
 msgstr ""
 
-#: psynet/recruiters.py:715
+#: psynet/recruiters.py:728
 msgctxt "early_exit"
 msgid "Leave without finishing?"
 msgstr ""
 
-#: psynet/recruiters.py:718
+#: psynet/recruiters.py:731
 msgctxt "early_exit"
 msgid "Cancel"
 msgstr ""
 
-#: psynet/recruiters.py:739
+#: psynet/recruiters.py:752
 msgctxt "early_exit_unpaid"
 msgid "You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:1058
+#: psynet/recruiters.py:1071
 #, python-brace-format
 msgctxt "early_exit_prolific"
 msgid ""
@@ -833,7 +834,7 @@ msgid ""
 "will still be saved."
 msgstr ""
 
-#: psynet/recruiters.py:1071
+#: psynet/recruiters.py:1084
 #, python-brace-format
 msgctxt "early_exit_prolific"
 msgid ""
@@ -842,7 +843,7 @@ msgid ""
 "saved."
 msgstr ""
 
-#: psynet/recruiters.py:1079
+#: psynet/recruiters.py:1092
 #, python-brace-format
 msgctxt "early_exit_prolific"
 msgid ""
@@ -852,7 +853,7 @@ msgid ""
 "far will still be saved."
 msgstr ""
 
-#: psynet/recruiters.py:1088
+#: psynet/recruiters.py:1101
 #, python-brace-format
 msgctxt "early_exit_prolific"
 msgid ""
@@ -861,7 +862,7 @@ msgid ""
 "time. Your responses so far will still be saved."
 msgstr ""
 
-#: psynet/recruiters.py:1096
+#: psynet/recruiters.py:1109
 #, python-brace-format
 msgctxt "early_exit_prolific"
 msgid ""
@@ -871,19 +872,19 @@ msgid ""
 "saved."
 msgstr ""
 
-#: psynet/recruiters.py:1174
+#: psynet/recruiters.py:1187
 msgctxt "prolific_error"
 msgid "If you had already started, message the researcher through Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:1185
+#: psynet/recruiters.py:1198
 msgctxt "prolific_error"
 msgid ""
 "Please message the researcher through Prolific and describe what led to this"
 " error."
 msgstr ""
 
-#: psynet/recruiters.py:1195
+#: psynet/recruiters.py:1208
 #, python-brace-format
 msgctxt "early_exit_error_prolific"
 msgid ""
@@ -891,35 +892,35 @@ msgid ""
 "Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:1210
+#: psynet/recruiters.py:1223
 #, python-brace-format
 msgctxt "early_exit_error_prolific"
 msgid ""
 "We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
 msgstr ""
 
-#: psynet/recruiters.py:1220
+#: psynet/recruiters.py:1233
 #, python-brace-format
 msgctxt "early_exit_error_prolific"
 msgid "We will also pay your {BONUS} performance bonus."
 msgstr ""
 
-#: psynet/recruiters.py:1228
+#: psynet/recruiters.py:1241
 msgctxt "early_exit_error_prolific"
 msgid "Any additional amount you earned will be paid as a bonus."
 msgstr ""
 
-#: psynet/recruiters.py:1239
+#: psynet/recruiters.py:1252
 msgctxt "early_exit_error_prolific"
 msgid "Select Submit to Prolific to complete your submission."
 msgstr ""
 
-#: psynet/recruiters.py:1242
+#: psynet/recruiters.py:1255
 msgctxt "early_exit_error_prolific"
 msgid "Submit to Prolific"
 msgstr ""
 
-#: psynet/recruiters.py:1255
+#: psynet/recruiters.py:1268
 #, python-brace-format
 msgctxt "early_exit_error_prolific"
 msgid ""
@@ -927,69 +928,69 @@ msgid ""
 " submission on Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:1263
+#: psynet/recruiters.py:1276
 msgctxt "early_exit_error_prolific"
 msgid ""
 "To receive payment for the work you completed, you will need to return your "
 "submission on Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:1268
+#: psynet/recruiters.py:1281
 msgctxt "early_exit_error_prolific"
 msgid "Select Continue to payment instructions to complete these steps."
 msgstr ""
 
-#: psynet/recruiters.py:1278
+#: psynet/recruiters.py:1291
 msgctxt "early_exit_error_prolific"
 msgid ""
 "We could not open the payment instructions. Please try again. If this keeps "
 "happening, message the researcher through Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:1284
+#: psynet/recruiters.py:1297
 msgctxt "early_exit_error_prolific"
 msgid "Continue to payment instructions"
 msgstr ""
 
-#: psynet/recruiters.py:1299
+#: psynet/recruiters.py:1312
 msgctxt "early_exit_unpaid_prolific"
 msgid ""
 "Your responses so far have been saved. Please return your submission on "
 "Prolific. You will not receive payment. You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:1592
+#: psynet/recruiters.py:1605
 msgctxt "early_exit_error_prolific"
 msgid "Your submission has been sent to Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:1596
+#: psynet/recruiters.py:1609
 msgctxt "early_exit_error_prolific"
 msgid "You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:1605
+#: psynet/recruiters.py:1618
 msgctxt "early_exit_error_prolific"
 msgid ""
 "We could not send your submission to Prolific. Please try again. If this "
 "keeps happening, message the researcher through Prolific."
 msgstr ""
 
-#: psynet/recruiters.py:1964
+#: psynet/recruiters.py:1977
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
 "will then automatically pay you a bonus."
 msgstr ""
 
-#: psynet/recruiters.py:1999
+#: psynet/recruiters.py:2012
 msgctxt "return_for_bonus_completed"
 msgid ""
 "That worked. You have been credited for the time you spent. Thank you for "
 "taking part. You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:2008
+#: psynet/recruiters.py:2021
 msgctxt "return_for_bonus_payment_failed"
 msgid ""
 "Your return was recorded, but we could not complete the bonus payment "
@@ -997,14 +998,14 @@ msgid ""
 "You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:2020
+#: psynet/recruiters.py:2033
 msgctxt "assignment_return_retry"
 msgid ""
 "That didn't work. Are you sure you returned the submission? Return it on "
 "Prolific, then click Next."
 msgstr ""
 
-#: psynet/recruiters.py:2044
+#: psynet/recruiters.py:2057
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
 "To receive payment for the time you spent, return your submission on "
@@ -1012,7 +1013,7 @@ msgid ""
 "arrange payment if it is due. You may close this page."
 msgstr ""
 
-#: psynet/recruiters.py:3487
+#: psynet/recruiters.py:3500
 msgctxt "early_exit_lucid"
 msgid ""
 "If you leave now, you will not be able to continue later, and you will "
@@ -1021,24 +1022,24 @@ msgid ""
 "still be saved."
 msgstr ""
 
-#: psynet/recruiters.py:3544
+#: psynet/recruiters.py:3557
 msgctxt "lucid_error"
 msgid "We will return you to your panel in a few seconds."
 msgstr ""
 
-#: psynet/recruiters.py:3552
+#: psynet/recruiters.py:3565
 msgctxt "early_exit_error_lucid"
 msgid "We will return you to your panel in a few seconds."
 msgstr ""
 
-#: psynet/recruiters.py:3560
+#: psynet/recruiters.py:3573
 msgctxt "early_exit_error_lucid"
 msgid ""
 "We could not return you to your panel. Please try again. If this keeps "
 "happening, contact your panel provider."
 msgstr ""
 
-#: psynet/recruiters.py:3565
+#: psynet/recruiters.py:3578
 msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr ""
@@ -2744,37 +2745,37 @@ msgid ""
 "space. You can also come back later."
 msgstr ""
 
-#: psynet/templates/timeline-page.html:219
+#: psynet/templates/timeline-page.html:240
 msgctxt "timeline_comment"
 msgid "Leave a comment"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:220
+#: psynet/templates/timeline-page.html:241
 msgctxt "timeline_comment"
 msgid "Write a comment here"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:222
+#: psynet/templates/timeline-page.html:243
 msgctxt "timeline_comment"
 msgid "Send comment"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:233
+#: psynet/templates/timeline-page.html:254
 msgctxt "alert_ok"
 msgid "OK"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:242
+#: psynet/templates/timeline-page.html:263
 msgctxt "timeline_resume"
 msgid "Are you ready?"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:244
+#: psynet/templates/timeline-page.html:265
 msgctxt "timeline_resume"
 msgid "Click the button when you're ready to continue the experiment."
 msgstr ""
 
-#: psynet/templates/timeline-page.html:247
+#: psynet/templates/timeline-page.html:268
 msgctxt "timeline_resume"
 msgid ""
 "Note: if you see this message a lot, it might be because your browser has an"
@@ -2783,34 +2784,44 @@ msgid ""
 "from the current page), and/or try manually disabling your extensions."
 msgstr ""
 
-#: psynet/templates/timeline-page.html:250
+#: psynet/templates/timeline-page.html:271
 msgctxt "timeline_resume"
 msgid "Resume"
 msgstr ""
 
-#: psynet/timeline_hold.py:195
-#, python-brace-format
+#: psynet/timeline_hold.py:220
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
+msgid "Your partner went on without you. Please continue."
 msgstr ""
 
-#: psynet/timeline_hold.py:200
+#: psynet/timeline_hold.py:222
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr ""
+
+#: psynet/timeline_hold.py:224
 msgctxt "timeline_hold"
 msgid "Your partner is ready."
 msgstr ""
 
-#: psynet/timeline_hold.py:201
+#: psynet/timeline_hold.py:225
 #, python-brace-format
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr ""
 
-#: psynet/timeline_hold.py:625
+#: psynet/timeline_hold.py:237
+#, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr ""
+
+#: psynet/timeline_hold.py:673
 msgctxt "timeline_hold"
 msgid "Waiting for other participants…"
 msgstr ""
 
-#: psynet/timeline_hold.py:629
+#: psynet/timeline_hold.py:677
 msgctxt "timeline_hold"
 msgid "Please wait, the experiment should continue shortly..."
 msgstr ""

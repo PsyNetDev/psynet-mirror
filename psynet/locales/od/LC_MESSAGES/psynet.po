@@ -598,14 +598,14 @@ msgstr "ପୁନରାବୃତ୍ତି"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "ଆପଣକୁ ଅନ୍ୟତମ ଉତ୍ତର ଯାଞ୍ଚ କରିବାକୁ ପଡିବ!"
+msgid "You need to select an answer!"
+msgstr "ଆପଣକୁ ଏକ ଉତ୍ତର ଚୟନ କରିବାକୁ ପଡିବ!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "ଆପଣକୁ ଏକ ଉତ୍ତର ଚୟନ କରିବାକୁ ପଡିବ!"
+msgid "You need to check at least one answer!"
+msgstr "ଆପଣକୁ ଅନ୍ୟତମ ଉତ୍ତର ଯାଞ୍ଚ କରିବାକୁ ପଡିବ!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3633,10 +3633,16 @@ msgid "Resume"
 msgstr "ପୁନଃ ଆରମ୍ଭ କରନ୍ତୁ"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} ରୁ {TOTAL} ଅଭି ତିଆରି ହୋଇନାହାଁନ୍ତି"
+msgid "Your partner went on without you. Please continue."
+msgstr "ଆପଣଙ୍କ ସହଭାଗୀ ଆପଣଙ୍କ ବିନା ଆଗକୁ ବଢ଼ିଗଲେ। ଦୟାକରି ଜାରି ରଖନ୍ତୁ।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "ଆପଣଙ୍କ ଦଳ ଆପଣଙ୍କ ବିନା ଆଗକୁ ବଢ଼ିଗଲା। ଦୟାକରି ଜାରି ରଖନ୍ତୁ।"
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3649,6 +3655,12 @@ msgstr "ଆପଣଙ୍କ ସହଭାଗୀ ତିଆରି ଅଛନ୍ତି
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "ଆପଣଙ୍କ ଦଳର {ARRIVED}/{TOTAL} ଜଣ ତିଆରି ଅଛନ୍ତି।"
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} ରୁ {TOTAL} ଅଭି ତିଆରି ହୋଇନାହାଁନ୍ତି"
 
 #: psynet/timeline_hold.py
 #, fuzzy

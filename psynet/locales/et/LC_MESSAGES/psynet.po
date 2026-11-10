@@ -595,14 +595,14 @@ msgstr "Korda"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Peate märkima vähemalt ühe vastuse!"
+msgid "You need to select an answer!"
+msgstr "Peate valima vastuse!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Peate valima vastuse!"
+msgid "You need to check at least one answer!"
+msgstr "Peate märkima vähemalt ühe vastuse!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3588,10 +3588,16 @@ msgid "Resume"
 msgstr "Jätka"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} {TOTAL}-st ei ole veel valmis"
+msgid "Your partner went on without you. Please continue."
+msgstr "Teie partner läks teieta edasi. Palun jätkake."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Teie grupp läks teieta edasi. Palun jätkake."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3604,6 +3610,12 @@ msgstr "Teie partner on valmis."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} teie grupist on valmis."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} {TOTAL}-st ei ole veel valmis"
 
 #: psynet/timeline_hold.py
 #, fuzzy

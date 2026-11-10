@@ -596,14 +596,14 @@ msgstr "ಲೂಪ್"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "ನೀವು ಕನಿಷ್ಠ ಒಂದು ಉತ್ತರವನ್ನು ಪರಿಶೀಲಿಸಬೇಕು!"
+msgid "You need to select an answer!"
+msgstr "ನೀವು ಉತ್ತರವನ್ನು ಆಯ್ಕೆ ಮಾಡಬೇಕು!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "ನೀವು ಉತ್ತರವನ್ನು ಆಯ್ಕೆ ಮಾಡಬೇಕು!"
+msgid "You need to check at least one answer!"
+msgstr "ನೀವು ಕನಿಷ್ಠ ಒಂದು ಉತ್ತರವನ್ನು ಪರಿಶೀಲಿಸಬೇಕು!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3643,10 +3643,16 @@ msgid "Resume"
 msgstr "ಮತ್ತೆ ಪ್ರಾರಂಭಿಸಿ"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{TOTAL}ರಲ್ಲಿ {REMAINING} ಸಿದ್ಧವಾಗಿಲ್ಲ"
+msgid "Your partner went on without you. Please continue."
+msgstr "ನಿಮ್ಮ ಪಾಲುದಾರರು ನಿಮ್ಮಿಲ್ಲದೆ ಮುಂದುವರಿದರು. ದಯವಿಟ್ಟು ಮುಂದುವರಿಯಿರಿ."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "ನಿಮ್ಮ ಗುಂಪು ನಿಮ್ಮಿಲ್ಲದೆ ಮುಂದುವರಿಯಿತು. ದಯವಿಟ್ಟು ಮುಂದುವರಿಯಿರಿ."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3659,6 +3665,12 @@ msgstr "ನಿಮ್ಮ ಪಾಲುದಾರ ಸಿದ್ಧವಾಗಿದೆ.
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "ನಿಮ್ಮ ಗುಂಪಿನ {TOTAL}ರಲ್ಲಿ {ARRIVED} ಸಿದ್ಧವಾಗಿದೆ."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{TOTAL}ರಲ್ಲಿ {REMAINING} ಸಿದ್ಧವಾಗಿಲ್ಲ"
 
 #: psynet/timeline_hold.py
 #, fuzzy

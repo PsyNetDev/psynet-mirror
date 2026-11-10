@@ -593,14 +593,14 @@ msgstr "පිටපත් කරන්න"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "ඔබට අවම වශයෙන් එක් පිළිතුරක් තෝරාගත යුතුය!"
+msgid "You need to select an answer!"
+msgstr "ඔබට පිළිතුරක් තෝරාගත යුතුය!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "ඔබට පිළිතුරක් තෝරාගත යුතුය!"
+msgid "You need to check at least one answer!"
+msgstr "ඔබට අවම වශයෙන් එක් පිළිතුරක් තෝරාගත යුතුය!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3586,10 +3586,16 @@ msgid "Resume"
 msgstr "නැවත ආරම්භ කරන්න"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} ක {TOTAL} තවමත් සූදානම් නැත"
+msgid "Your partner went on without you. Please continue."
+msgstr "ඔබේ හවුල්කරු ඔබ නොමැතිව ඉදිරියට ගියා. කරුණාකර දිගටම කරගෙන යන්න."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "ඔබේ කණ්ඩායම ඔබ නොමැතිව ඉදිරියට ගියා. කරුණාකර දිගටම කරගෙන යන්න."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3602,6 +3608,12 @@ msgstr "ඔබේ හවුල්කරු සූදානම්."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "ඔබේ කණ්ඩායමේ {ARRIVED}/{TOTAL} දෙනා සූදානම්."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} ක {TOTAL} තවමත් සූදානම් නැත"
 
 #: psynet/timeline_hold.py
 #, fuzzy

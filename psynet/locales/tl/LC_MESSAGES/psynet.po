@@ -602,14 +602,14 @@ msgstr "Ulitin"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Kailangan mong pumili ng kahit isang sagot!"
+msgid "You need to select an answer!"
+msgstr "Kailangan mong pumili ng sagot!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Kailangan mong pumili ng sagot!"
+msgid "You need to check at least one answer!"
+msgstr "Kailangan mong pumili ng kahit isang sagot!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3744,10 +3744,16 @@ msgid "Resume"
 msgstr "Ipagpatuloy"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} sa {TOTAL} ay hindi pa handa"
+msgid "Your partner went on without you. Please continue."
+msgstr "Nagpatuloy ang iyong kasamahan nang wala ka. Mangyaring magpatuloy."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Nagpatuloy ang inyong grupo nang wala ka. Mangyaring magpatuloy."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3760,6 +3766,12 @@ msgstr "Handa na ang iyong kasamahan."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} sa inyong grupo ay handa na."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} sa {TOTAL} ay hindi pa handa"
 
 #: psynet/timeline_hold.py
 #, fuzzy

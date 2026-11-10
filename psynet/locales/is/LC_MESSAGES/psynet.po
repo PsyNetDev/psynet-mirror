@@ -597,14 +597,14 @@ msgstr "Endurtaka"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Þú þarft að haka við að minnsta kosti eitt svar!"
+msgid "You need to select an answer!"
+msgstr "Þú þarft að velja svar!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Þú þarft að velja svar!"
+msgid "You need to check at least one answer!"
+msgstr "Þú þarft að haka við að minnsta kosti eitt svar!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3647,10 +3647,16 @@ msgid "Resume"
 msgstr "Halda áfram"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} af {TOTAL} ekki tilbúnir ennþá"
+msgid "Your partner went on without you. Please continue."
+msgstr "Félagi þinn hélt áfram án þín. Vinsamlegast haltu áfram."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Hópurinn þinn hélt áfram án þín. Vinsamlegast haltu áfram."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3663,6 +3669,12 @@ msgstr "Félagi þinn er tilbúinn."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} í hópnum þínum eru tilbúnir."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} af {TOTAL} ekki tilbúnir ennþá"
 
 #: psynet/timeline_hold.py
 #, fuzzy

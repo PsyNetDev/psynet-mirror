@@ -593,14 +593,14 @@ msgstr "ᱞᱩᱯ"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "ᱵᱟᱨᱮ ᱠᱷᱚᱱ ᱟᱢ ᱠᱷᱚᱱ ᱨᱮᱠᱟᱜᱼᱟ ᱟᱢ ᱠᱷᱚᱱ ᱨᱮᱠᱟᱜᱼᱟ!"
+msgid "You need to select an answer!"
+msgstr "ᱵᱟᱨᱮ ᱠᱷᱚᱱ ᱨᱮᱠᱟᱜᱼᱟ!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "ᱵᱟᱨᱮ ᱠᱷᱚᱱ ᱨᱮᱠᱟᱜᱼᱟ!"
+msgid "You need to check at least one answer!"
+msgstr "ᱵᱟᱨᱮ ᱠᱷᱚᱱ ᱟᱢ ᱠᱷᱚᱱ ᱨᱮᱠᱟᱜᱼᱟ ᱟᱢ ᱠᱷᱚᱱ ᱨᱮᱠᱟᱜᱼᱟ!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3591,10 +3591,16 @@ msgid "Resume"
 msgstr "ᱱᱚ"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{TOTAL} ᱠᱚ {REMAINING} ᱟᱢ ᱠᱚᱱᱟᱜ ᱞᱟᱹᱜᱤ"
+msgid "Your partner went on without you. Please continue."
+msgstr "ᱟᱢ ᱵᱟᱝ ᱥᱟᱶ ᱟᱢᱟᱜ ᱞᱟᱹᱜᱤ ᱥᱮᱱ ᱮᱱᱟ। ᱫᱚᱭᱟ ᱠᱟᱛᱮ ᱞᱮᱛᱟᱲ ᱢᱮ।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "ᱟᱢ ᱵᱟᱝ ᱥᱟᱶ ᱟᱢᱟᱜ ᱫᱚᱞ ᱥᱮᱱ ᱮᱱᱟ। ᱫᱚᱭᱟ ᱠᱟᱛᱮ ᱞᱮᱛᱟᱲ ᱢᱮ।"
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3607,6 +3613,12 @@ msgstr "ᱞᱟᱹᱜᱤ ᱠᱚ ᱠᱚᱱᱟᱜ ᱞᱟᱹᱜᱤ"
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{TOTAL} ᱠᱚ {ARRIVED} ᱟᱢ ᱠᱚᱱᱟᱜ ᱞᱟᱹᱜᱤ"
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{TOTAL} ᱠᱚ {REMAINING} ᱟᱢ ᱠᱚᱱᱟᱜ ᱞᱟᱹᱜᱤ"
 
 #: psynet/timeline_hold.py
 #, fuzzy

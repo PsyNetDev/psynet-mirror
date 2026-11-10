@@ -599,14 +599,14 @@ msgstr "Bucle"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "¡Necesitas marcar al menos una respuesta!"
+msgid "You need to select an answer!"
+msgstr "¡Necesitas seleccionar una respuesta!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "¡Necesitas seleccionar una respuesta!"
+msgid "You need to check at least one answer!"
+msgstr "¡Necesitas marcar al menos una respuesta!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3683,10 +3683,16 @@ msgid "Resume"
 msgstr "Reanudar"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} de {TOTAL} aún no están listos"
+msgid "Your partner went on without you. Please continue."
+msgstr "Tu compañero siguió sin ti. Por favor, continúa."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Tu grupo siguió sin ti. Por favor, continúa."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3699,6 +3705,12 @@ msgstr "Tu compañero está listo."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} de tu grupo están listos."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} de {TOTAL} aún no están listos"
 
 #: psynet/timeline_hold.py
 #, fuzzy

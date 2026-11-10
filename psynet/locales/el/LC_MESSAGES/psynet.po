@@ -596,14 +596,14 @@ msgstr "Επανάληψη"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Πρέπει να επιλέξετε τουλάχιστον μία απάντηση!"
+msgid "You need to select an answer!"
+msgstr "Πρέπει να επιλέξετε μια απάντηση!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Πρέπει να επιλέξετε μια απάντηση!"
+msgid "You need to check at least one answer!"
+msgstr "Πρέπει να επιλέξετε τουλάχιστον μία απάντηση!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3722,10 +3722,16 @@ msgid "Resume"
 msgstr "Συνέχιση"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} από {TOTAL} δεν είναι έτοιμοι ακόμα"
+msgid "Your partner went on without you. Please continue."
+msgstr "Ο συνεργάτης σας συνέχισε χωρίς εσάς. Παρακαλώ συνεχίστε."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Η ομάδα σας συνέχισε χωρίς εσάς. Παρακαλώ συνεχίστε."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3738,6 +3744,12 @@ msgstr "Ο συνεργάτης σας είναι έτοιμος."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} από την ομάδα σας είναι έτοιμοι."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} από {TOTAL} δεν είναι έτοιμοι ακόμα"
 
 #: psynet/timeline_hold.py
 #, fuzzy

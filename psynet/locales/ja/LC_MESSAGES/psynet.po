@@ -573,14 +573,14 @@ msgstr "ループ"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "少なくとも1つの回答を選択する必要があります！"
+msgid "You need to select an answer!"
+msgstr "回答を選択する必要があります！"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "回答を選択する必要があります！"
+msgid "You need to check at least one answer!"
+msgstr "少なくとも1つの回答を選択する必要があります！"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3258,10 +3258,16 @@ msgid "Resume"
 msgstr "再開"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING}/{TOTAL} がまだ準備できていません"
+msgid "Your partner went on without you. Please continue."
+msgstr "パートナーはあなたを待たずに先に進みました。続けてください。"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "グループはあなたを待たずに先に進みました。続けてください。"
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3274,6 +3280,12 @@ msgstr "パートナーが準備できました。"
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "グループのうち {ARRIVED}/{TOTAL} が準備できました。"
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING}/{TOTAL} がまだ準備できていません"
 
 #: psynet/timeline_hold.py
 #, fuzzy

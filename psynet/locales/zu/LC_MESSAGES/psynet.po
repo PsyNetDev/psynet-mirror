@@ -597,14 +597,14 @@ msgstr "Phinda"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Udinga ukukhetha okungenani impendulo eyodwa!"
+msgid "You need to select an answer!"
+msgstr "Udinga ukukhetha impendulo!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Udinga ukukhetha impendulo!"
+msgid "You need to check at least one answer!"
+msgstr "Udinga ukukhetha okungenani impendulo eyodwa!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3659,10 +3659,16 @@ msgid "Resume"
 msgstr "Qhubeka"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} kwabangu-{TOTAL} abakalungeli"
+msgid "Your partner went on without you. Please continue."
+msgstr "Uzakwenu uqhubekile ngaphandle kwakho. Sicela uqhubeke."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Iqembu lakho liqhubekile ngaphandle kwakho. Sicela uqhubeke."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3675,6 +3681,12 @@ msgstr "Uzakwenu usukulungele."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} eqenjini lakho sebakulungele."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} kwabangu-{TOTAL} abakalungeli"
 
 #: psynet/timeline_hold.py
 #, fuzzy

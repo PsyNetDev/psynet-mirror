@@ -596,14 +596,14 @@ msgstr "Repetă"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Trebuie să bifezi cel puțin un răspuns!"
+msgid "You need to select an answer!"
+msgstr "Trebuie să selectezi un răspuns!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Trebuie să selectezi un răspuns!"
+msgid "You need to check at least one answer!"
+msgstr "Trebuie să bifezi cel puțin un răspuns!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3689,10 +3689,16 @@ msgid "Resume"
 msgstr "Reia"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} din {TOTAL} nu sunt încă gata"
+msgid "Your partner went on without you. Please continue."
+msgstr "Partenerul tău a continuat fără tine. Te rugăm să continui."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Grupul tău a continuat fără tine. Te rugăm să continui."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3705,6 +3711,12 @@ msgstr "Partenerul tău este gata."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} din grupul tău sunt gata."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} din {TOTAL} nu sunt încă gata"
 
 #: psynet/timeline_hold.py
 #, fuzzy

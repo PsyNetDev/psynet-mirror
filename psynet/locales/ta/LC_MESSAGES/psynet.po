@@ -600,14 +600,14 @@ msgstr "மீண்டும் மீண்டும்"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "நீங்கள் குறைந்தது ஒரு பதிலை தேர்வு செய்ய வேண்டும்!"
+msgid "You need to select an answer!"
+msgstr "நீங்கள் ஒரு பதிலை தேர்வு செய்ய வேண்டும்!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "நீங்கள் ஒரு பதிலை தேர்வு செய்ய வேண்டும்!"
+msgid "You need to check at least one answer!"
+msgstr "நீங்கள் குறைந்தது ஒரு பதிலை தேர்வு செய்ய வேண்டும்!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3693,10 +3693,17 @@ msgid "Resume"
 msgstr "தொடரவும்"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{TOTAL} இல் {REMAINING} இன்னும் தயாராக இல்லை"
+msgid "Your partner went on without you. Please continue."
+msgstr ""
+"உங்கள் கூட்டாளி நீங்கள் இல்லாமலேயே தொடர்ந்துவிட்டார். தயவுசெய்து தொடரவும்."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "உங்கள் குழு நீங்கள் இல்லாமலேயே தொடர்ந்துவிட்டது. தயவுசெய்து தொடரவும்."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3709,6 +3716,12 @@ msgstr "உங்கள் கூட்டாளி தயாராக உள்
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "உங்கள் குழுவில் {TOTAL} இல் {ARRIVED} பேர் தயாராக உள்ளனர்."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{TOTAL} இல் {REMAINING} இன்னும் தயாராக இல்லை"
 
 #: psynet/timeline_hold.py
 #, fuzzy

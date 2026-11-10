@@ -593,14 +593,14 @@ msgstr "دووبارەکردنەوە"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "پێویستە بەلایەنی کەم یەک وەڵام دیاری بکەیت!"
+msgid "You need to select an answer!"
+msgstr "پێویستە وەڵامێک دیاری بکەیت!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "پێویستە وەڵامێک دیاری بکەیت!"
+msgid "You need to check at least one answer!"
+msgstr "پێویستە بەلایەنی کەم یەک وەڵام دیاری بکەیت!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3615,10 +3615,16 @@ msgid "Resume"
 msgstr "بەردەوامبوون"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} لە {TOTAL} هێشتا ئامادە نین"
+msgid "Your partner went on without you. Please continue."
+msgstr "هاوڕێکەت بەبێ تۆ بەردەوام بوو. تکایە بەردەوام بە."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "گروپەکەت بەبێ تۆ بەردەوام بوو. تکایە بەردەوام بە."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3631,6 +3637,12 @@ msgstr "هاوڕێکەت ئامادەیە."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} لە گروپەکەتان ئامادەن."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} لە {TOTAL} هێشتا ئامادە نین"
 
 #: psynet/timeline_hold.py
 #, fuzzy

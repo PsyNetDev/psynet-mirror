@@ -599,14 +599,14 @@ msgstr "လှည့်ပတ်"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "အနည်းဆုံးတစ်ခုကို ရွေးချယ်ရန် လိုအပ်ပါသည်!"
+msgid "You need to select an answer!"
+msgstr "အဖြေတစ်ခုကို ရွေးချယ်ရန် လိုအပ်ပါသည်!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "အဖြေတစ်ခုကို ရွေးချယ်ရန် လိုအပ်ပါသည်!"
+msgid "You need to check at least one answer!"
+msgstr "အနည်းဆုံးတစ်ခုကို ရွေးချယ်ရန် လိုအပ်ပါသည်!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3683,10 +3683,20 @@ msgid "Resume"
 msgstr "ပြန်စတင်ပါ"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} ခု {TOTAL} ခုမှ မပြင်ဆင်ရသေးပါ"
+msgid "Your partner went on without you. Please continue."
+msgstr ""
+"သင့်အဖော်က သင့်မပါဘဲ ဆက်လက်လုပ်ဆောင်သွားပါပြီ။ ကျေးဇူးပြု၍ "
+"ဆက်လက်လုပ်ဆောင်ပါ။"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr ""
+"သင့်အဖွဲ့က သင့်မပါဘဲ ဆက်လက်လုပ်ဆောင်သွားပါပြီ။ ကျေးဇူးပြု၍ "
+"ဆက်လက်လုပ်ဆောင်ပါ။"
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3699,6 +3709,12 @@ msgstr "သင့်အဖော် ပြင်ဆင်ပြီးပါပ�
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "သင့်အဖွဲ့ဝင် {TOTAL} ယောက်ထဲမှ {ARRIVED} ယောက် ပြင်ဆင်ပြီးပါပြီ။"
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} ခု {TOTAL} ခုမှ မပြင်ဆင်ရသေးပါ"
 
 #: psynet/timeline_hold.py
 #, fuzzy

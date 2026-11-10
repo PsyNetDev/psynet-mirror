@@ -595,14 +595,14 @@ msgstr "Løkke"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Du må krysse av minst ett svar!"
+msgid "You need to select an answer!"
+msgstr "Du må velge et svar!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Du må velge et svar!"
+msgid "You need to check at least one answer!"
+msgstr "Du må krysse av minst ett svar!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3640,10 +3640,16 @@ msgid "Resume"
 msgstr "Gjenoppta"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} av {TOTAL} er ikke klare ennå"
+msgid "Your partner went on without you. Please continue."
+msgstr "Partneren din gikk videre uten deg. Vennligst fortsett."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Gruppen din gikk videre uten deg. Vennligst fortsett."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3656,6 +3662,12 @@ msgstr "Din partner er klar."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} av gruppen din er klare."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} av {TOTAL} er ikke klare ennå"
 
 #: psynet/timeline_hold.py
 #, fuzzy

@@ -595,14 +595,14 @@ msgstr "Upprepa"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Du måste markera minst ett svar!"
+msgid "You need to select an answer!"
+msgstr "Du måste välja ett svar!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Du måste välja ett svar!"
+msgid "You need to check at least one answer!"
+msgstr "Du måste markera minst ett svar!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3649,10 +3649,16 @@ msgid "Resume"
 msgstr "Återuppta"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} av {TOTAL} är inte redo än"
+msgid "Your partner went on without you. Please continue."
+msgstr "Din partner gick vidare utan dig. Vänligen fortsätt."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Din grupp gick vidare utan dig. Vänligen fortsätt."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3665,6 +3671,12 @@ msgstr "Din partner är redo."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} i din grupp är redo."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} av {TOTAL} är inte redo än"
 
 #: psynet/timeline_hold.py
 #, fuzzy

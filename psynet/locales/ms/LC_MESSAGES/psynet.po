@@ -601,14 +601,14 @@ msgstr "Ulang"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Anda perlu menandakan sekurang-kurangnya satu jawapan!"
+msgid "You need to select an answer!"
+msgstr "Anda perlu memilih jawapan!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Anda perlu memilih jawapan!"
+msgid "You need to check at least one answer!"
+msgstr "Anda perlu menandakan sekurang-kurangnya satu jawapan!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3694,10 +3694,16 @@ msgid "Resume"
 msgstr "Sambung semula"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} daripada {TOTAL} belum bersedia"
+msgid "Your partner went on without you. Please continue."
+msgstr "Rakan anda meneruskan tanpa anda. Sila teruskan."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Kumpulan anda meneruskan tanpa anda. Sila teruskan."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3710,6 +3716,12 @@ msgstr "Rakan anda sudah bersedia."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} daripada kumpulan anda sudah bersedia."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} daripada {TOTAL} belum bersedia"
 
 #: psynet/timeline_hold.py
 #, fuzzy

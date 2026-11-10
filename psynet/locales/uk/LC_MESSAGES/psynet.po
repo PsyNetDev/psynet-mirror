@@ -595,14 +595,14 @@ msgstr "Зациклити"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Вам потрібно вибрати принаймні одну відповідь!"
+msgid "You need to select an answer!"
+msgstr "Вам потрібно вибрати відповідь!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Вам потрібно вибрати відповідь!"
+msgid "You need to check at least one answer!"
+msgstr "Вам потрібно вибрати принаймні одну відповідь!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3642,10 +3642,16 @@ msgid "Resume"
 msgstr "Продовжити"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} з {TOTAL} ще не готові"
+msgid "Your partner went on without you. Please continue."
+msgstr "Ваш партнер продовжив без вас. Будь ласка, продовжуйте."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Ваша група продовжила без вас. Будь ласка, продовжуйте."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3658,6 +3664,12 @@ msgstr "Ваш партнер готовий."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED} з {TOTAL} вашої групи готові."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} з {TOTAL} ще не готові"
 
 #: psynet/timeline_hold.py
 #, fuzzy

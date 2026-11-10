@@ -575,14 +575,14 @@ msgstr "반복"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "적어도 하나의 답변을 선택해야 합니다!"
+msgid "You need to select an answer!"
+msgstr "답변을 선택해야 합니다!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "답변을 선택해야 합니다!"
+msgid "You need to check at least one answer!"
+msgstr "적어도 하나의 답변을 선택해야 합니다!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3310,10 +3310,16 @@ msgid "Resume"
 msgstr "다시 시작"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING}/{TOTAL} 아직 준비되지 않았습니다."
+msgid "Your partner went on without you. Please continue."
+msgstr "파트너가 기다리지 않고 먼저 진행했습니다. 계속 진행해 주세요."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "그룹이 기다리지 않고 먼저 진행했습니다. 계속 진행해 주세요."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3326,6 +3332,12 @@ msgstr "파트너가 준비되었습니다."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} 그룹이 준비되었습니다."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING}/{TOTAL} 아직 준비되지 않았습니다."
 
 #: psynet/timeline_hold.py
 #, fuzzy

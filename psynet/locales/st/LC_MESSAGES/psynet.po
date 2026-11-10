@@ -600,14 +600,14 @@ msgstr "Pheta-pheta"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "O hloka ho khetha bonyane karabo e le 'ngoe!"
+msgid "You need to select an answer!"
+msgstr "O hloka ho khetha karabo!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "O hloka ho khetha karabo!"
+msgid "You need to check at least one answer!"
+msgstr "O hloka ho khetha bonyane karabo e le 'ngoe!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3676,10 +3676,16 @@ msgid "Resume"
 msgstr "Tsoela pele"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} ho {TOTAL} ha ba itokisitse"
+msgid "Your partner went on without you. Please continue."
+msgstr "Molekane oa hau o tsoetse pele ntle le uena. Ka kopo tsoela pele."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Sehlopha sa hau se tsoetse pele ntle le uena. Ka kopo tsoela pele."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3692,6 +3698,12 @@ msgstr "Molekane oa hau o se a itokisitse."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} ba sehlopha sa hau ba itokisitse."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} ho {TOTAL} ha ba itokisitse"
 
 #: psynet/timeline_hold.py
 #, fuzzy

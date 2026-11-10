@@ -599,14 +599,14 @@ msgstr "Herhalen"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "U moet ten minste één antwoord aanvinken!"
+msgid "You need to select an answer!"
+msgstr "U moet een antwoord selecteren!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "U moet een antwoord selecteren!"
+msgid "You need to check at least one answer!"
+msgstr "U moet ten minste één antwoord aanvinken!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3698,10 +3698,16 @@ msgid "Resume"
 msgstr "Hervatten"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} van de {TOTAL} nog niet klaar"
+msgid "Your partner went on without you. Please continue."
+msgstr "Je partner is zonder jou verdergegaan. Ga alsjeblieft verder."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Je groep is zonder jou verdergegaan. Ga alsjeblieft verder."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3714,6 +3720,12 @@ msgstr "Je partner is klaar."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} van je groep is klaar."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} van de {TOTAL} nog niet klaar"
 
 #: psynet/timeline_hold.py
 #, fuzzy

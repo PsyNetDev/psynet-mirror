@@ -594,14 +594,14 @@ msgstr "Ponovi"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Izbrati morate vsaj en odgovor!"
+msgid "You need to select an answer!"
+msgstr "Izbrati morate odgovor!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Izbrati morate odgovor!"
+msgid "You need to check at least one answer!"
+msgstr "Izbrati morate vsaj en odgovor!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3617,10 +3617,16 @@ msgid "Resume"
 msgstr "Nadaljuj"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} od {TOTAL} še ni pripravljenih"
+msgid "Your partner went on without you. Please continue."
+msgstr "Vaš partner je nadaljeval brez vas. Prosimo, nadaljujte."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Vaša skupina je nadaljevala brez vas. Prosimo, nadaljujte."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3633,6 +3639,12 @@ msgstr "Vaš partner je pripravljen."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} vaše skupine je pripravljenih."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} od {TOTAL} še ni pripravljenih"
 
 #: psynet/timeline_hold.py
 #, fuzzy

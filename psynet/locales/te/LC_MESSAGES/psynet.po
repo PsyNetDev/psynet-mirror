@@ -593,14 +593,14 @@ msgstr "లూప్"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "మీరు కనీసం ఒక సమాధానాన్ని తనిఖీ చేయాలి!"
+msgid "You need to select an answer!"
+msgstr "మీరు సమాధానాన్ని ఎంచుకోవాలి!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "మీరు సమాధానాన్ని ఎంచుకోవాలి!"
+msgid "You need to check at least one answer!"
+msgstr "మీరు కనీసం ఒక సమాధానాన్ని తనిఖీ చేయాలి!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3621,10 +3621,16 @@ msgid "Resume"
 msgstr "పునఃప్రారంభించు"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{TOTAL} లో {REMAINING} ఇంకా సిద్ధంగా లేరు"
+msgid "Your partner went on without you. Please continue."
+msgstr "మీ భాగస్వామి మీతో లేకుండానే ముందుకు వెళ్లారు. దయచేసి కొనసాగించండి."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "మీ సమూహం మీతో లేకుండానే ముందుకు వెళ్లింది. దయచేసి కొనసాగించండి."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3637,6 +3643,12 @@ msgstr "మీ భాగస్వామి సిద్ధంగా ఉన్న
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "మీ సమూహంలో {TOTAL} లో {ARRIVED} సిద్ధంగా ఉన్నారు."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{TOTAL} లో {REMAINING} ఇంకా సిద్ధంగా లేరు"
 
 #: psynet/timeline_hold.py
 #, fuzzy

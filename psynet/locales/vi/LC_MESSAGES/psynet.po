@@ -598,14 +598,14 @@ msgstr "Lặp lại"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Bạn cần chọn ít nhất một câu trả lời!"
+msgid "You need to select an answer!"
+msgstr "Bạn cần chọn một câu trả lời!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Bạn cần chọn một câu trả lời!"
+msgid "You need to check at least one answer!"
+msgstr "Bạn cần chọn ít nhất một câu trả lời!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3655,10 +3655,16 @@ msgid "Resume"
 msgstr "Tiếp tục"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} trong số {TOTAL} chưa sẵn sàng"
+msgid "Your partner went on without you. Please continue."
+msgstr "Đối tác của bạn đã tiếp tục mà không có bạn. Vui lòng tiếp tục."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Nhóm của bạn đã tiếp tục mà không có bạn. Vui lòng tiếp tục."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3671,6 +3677,12 @@ msgstr "Đối tác của bạn đã sẵn sàng."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} trong nhóm của bạn đã sẵn sàng."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} trong số {TOTAL} chưa sẵn sàng"
 
 #: psynet/timeline_hold.py
 #, fuzzy

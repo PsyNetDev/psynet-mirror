@@ -596,14 +596,14 @@ msgstr "ٻيهر هلائڻ"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "توهان کي گهٽ ۾ گهٽ هڪ جواب چونڊڻو پوندو!"
+msgid "You need to select an answer!"
+msgstr "توهان کي هڪ جواب چونڊڻو پوندو!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "توهان کي هڪ جواب چونڊڻو پوندو!"
+msgid "You need to check at least one answer!"
+msgstr "توهان کي گهٽ ۾ گهٽ هڪ جواب چونڊڻو پوندو!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3610,10 +3610,16 @@ msgid "Resume"
 msgstr "ٻيهر شروع ڪريو"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} مان {TOTAL} اڃا تيار نه آهن"
+msgid "Your partner went on without you. Please continue."
+msgstr "توهان جو ساٿي توهان کان سواءِ اڳتي وڌي ويو. مهرباني ڪري جاري رکو."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "توهان جو گروپ توهان کان سواءِ اڳتي وڌي ويو. مهرباني ڪري جاري رکو."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3626,6 +3632,12 @@ msgstr "توهان جو ساٿي تيار آهي."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "توهان جي گروپ مان {ARRIVED}/{TOTAL} تيار آهن."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} مان {TOTAL} اڃا تيار نه آهن"
 
 #: psynet/timeline_hold.py
 #, fuzzy

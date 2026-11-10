@@ -598,14 +598,14 @@ msgstr "Widderhuelen"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Dir musst op d'mannst eng Äntwert auswielen!"
+msgid "You need to select an answer!"
+msgstr "Dir musst eng Äntwert auswielen!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Dir musst eng Äntwert auswielen!"
+msgid "You need to check at least one answer!"
+msgstr "Dir musst op d'mannst eng Äntwert auswielen!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3693,10 +3693,16 @@ msgid "Resume"
 msgstr "Weiderféieren"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} vun {TOTAL} nach net prett"
+msgid "Your partner went on without you. Please continue."
+msgstr "Äre Partner ass ouni Iech weidergaang. Fuert w.e.g. weider."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Är Grupp ass ouni Iech weidergaang. Fuert w.e.g. weider."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3709,6 +3715,12 @@ msgstr "Äre Partner ass prett."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED}/{TOTAL} vun Ärer Grupp sinn prett."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} vun {TOTAL} nach net prett"
 
 #: psynet/timeline_hold.py
 #, fuzzy

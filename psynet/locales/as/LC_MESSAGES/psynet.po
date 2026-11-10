@@ -595,14 +595,14 @@ msgstr "পুনৰাবৃত্তি"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "আপোনাক কমেও এটা উত্তৰ নিৰ্বাচন কৰিব লাগিব!"
+msgid "You need to select an answer!"
+msgstr "আপোনাক এটা উত্তৰ নিৰ্বাচন কৰিব লাগিব!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "আপোনাক এটা উত্তৰ নিৰ্বাচন কৰিব লাগিব!"
+msgid "You need to check at least one answer!"
+msgstr "আপোনাক কমেও এটা উত্তৰ নিৰ্বাচন কৰিব লাগিব!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3601,10 +3601,16 @@ msgid "Resume"
 msgstr "পুনৰ আৰম্ভ কৰক"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING}ৰ পৰা {TOTAL} জন এতিয়াও সাজু হোৱা নাই"
+msgid "Your partner went on without you. Please continue."
+msgstr "আপোনাৰ অংশীদাৰ আপোনাৰ অবিহনে আগবাঢ়ি গ’ল। অনুগ্ৰহ কৰি অব্যাহত ৰাখক।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "আপোনাৰ দল আপোনাৰ অবিহনে আগবাঢ়ি গ’ল। অনুগ্ৰহ কৰি অব্যাহত ৰাখক।"
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3617,6 +3623,12 @@ msgstr "আপোনাৰ অংশীদাৰ সাজু হৈছে।"
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "আপোনাৰ দলেৰ {ARRIVED}/{TOTAL} জন সাজু হৈছে।"
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING}ৰ পৰা {TOTAL} জন এতিয়াও সাজু হোৱা নাই"
 
 #: psynet/timeline_hold.py
 #, fuzzy

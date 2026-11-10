@@ -596,14 +596,14 @@ msgstr "লুপ"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "আপুনি কমেও এটাই উত্তৰ নিৰ্বাচন কৰিব লাগিব!"
+msgid "You need to select an answer!"
+msgstr "আপুনি এটা উত্তৰ নিৰ্বাচন কৰিব লাগিব!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "আপুনি এটা উত্তৰ নিৰ্বাচন কৰিব লাগিব!"
+msgid "You need to check at least one answer!"
+msgstr "আপুনি কমেও এটাই উত্তৰ নিৰ্বাচন কৰিব লাগিব!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3634,10 +3634,16 @@ msgid "Resume"
 msgstr "মখা চত্থো"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} তে {TOTAL} হৌদৌমখ্রে তায়মখ্রে"
+msgid "Your partner went on without you. Please continue."
+msgstr "নাক্কা অদোম বিনা মখা চত্থখ্রে। অনুগ্ৰহ কৰি মখা চত্থো।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "নাক্কা গী অদোম বিনা মখা চত্থখ্রে। অনুগ্ৰহ কৰি মখা চত্থো।"
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3650,6 +3656,12 @@ msgstr "নাক্কা পাঙথোকখ্রে।"
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "নাক্কা গী {ARRIVED}/{TOTAL} পাঙথোকখ্রে।"
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} তে {TOTAL} হৌদৌমখ্রে তায়মখ্রে"
 
 #: psynet/timeline_hold.py
 #, fuzzy

@@ -595,14 +595,14 @@ msgstr "Döngü"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "En az bir cevabı işaretlemeniz gerekiyor!"
+msgid "You need to select an answer!"
+msgstr "Bir cevap seçmeniz gerekiyor!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Bir cevap seçmeniz gerekiyor!"
+msgid "You need to check at least one answer!"
+msgstr "En az bir cevabı işaretlemeniz gerekiyor!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3613,10 +3613,16 @@ msgid "Resume"
 msgstr "Devam et"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{TOTAL} kişiden {REMAINING} henüz hazır değil"
+msgid "Your partner went on without you. Please continue."
+msgstr "Ortağınız siz olmadan devam etti. Lütfen devam edin."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Grubunuz siz olmadan devam etti. Lütfen devam edin."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3629,6 +3635,12 @@ msgstr "Ortak hazır."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "Grubunuzun {TOTAL} kişisinden {ARRIVED} hazır."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{TOTAL} kişiden {REMAINING} henüz hazır değil"
 
 #: psynet/timeline_hold.py
 #, fuzzy

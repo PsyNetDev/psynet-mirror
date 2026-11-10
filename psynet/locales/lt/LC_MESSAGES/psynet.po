@@ -596,14 +596,14 @@ msgstr "Kartoti"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Turite pažymėti bent vieną atsakymą!"
+msgid "You need to select an answer!"
+msgstr "Turite pasirinkti atsakymą!"
 
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
-msgid "You need to select an answer!"
-msgstr "Turite pasirinkti atsakymą!"
+msgid "You need to check at least one answer!"
+msgstr "Turite pažymėti bent vieną atsakymą!"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3621,10 +3621,16 @@ msgid "Resume"
 msgstr "Tęsti"
 
 #: psynet/timeline_hold.py
-#, fuzzy, python-brace-format
+#, fuzzy
 msgctxt "timeline_hold"
-msgid "{REMAINING} of {TOTAL} not ready yet"
-msgstr "{REMAINING} iš {TOTAL} dar nepasiruošę"
+msgid "Your partner went on without you. Please continue."
+msgstr "Jūsų partneris tęsė be jūsų. Prašome tęsti."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Jūsų grupė tęsė be jūsų. Prašome tęsti."
 
 #: psynet/timeline_hold.py
 #, fuzzy
@@ -3637,6 +3643,12 @@ msgstr "Jūsų partneris pasiruošęs."
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr "{ARRIVED} iš {TOTAL} jūsų grupės narių pasiruošę."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} iš {TOTAL} dar nepasiruošę"
 
 #: psynet/timeline_hold.py
 #, fuzzy
