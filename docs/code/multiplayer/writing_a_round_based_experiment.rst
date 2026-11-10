@@ -158,10 +158,10 @@ member reaches them in the same order. Members who wait at different
 barriers wait for each other: none of them can pass until ``late_after`` or
 ``max_wait_time`` moves someone on, and ``late_after`` on either barrier
 fails the members it waits for at the other, who were on time. PsyNet
-reports this when a member arrives at a barrier: it logs an error naming
-the barriers and who waits at each. In tests, such as bot tests run by
-``psynet test local``, it raises a
-:class:`~psynet.sync.GroupDivergenceError` instead, so that arrival's
+reports this when a member arrives at a barrier, or leaves the group by
+failing or at ``leave_group``: it logs an error naming the barriers and who
+waits at each. In tests, such as bot tests run by ``psynet test local``, it
+raises a :class:`~psynet.sync.GroupDivergenceError` instead, so that
 request fails with HTTP 500 and the server log shows the error.
 
 The usual way into this is a member who joins during the game. For a
