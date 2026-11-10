@@ -507,6 +507,50 @@ templates that changes the database.
   response arrives, so random choices must be picked once (for example in
   ``finalize_definition`` or ``participant.var``). See
   :class:`~psynet.modular_page.OptionControl`.
+* ``NumberControl`` now saves a number (``78.5`` or ``100``), not the
+  browser's text. Search for ``NumberControl`` and compare its answers to
+  numbers: ``answer == 100``, not ``answer == "100"``. ``float(answer)``
+  keeps working. Default bots save numbers too. A fixed bot answer, from
+  ``bot_response`` or a ``get_bot_response`` method that returns a plain
+  value, is saved as given, so give it as a number: ``bot_response=25``,
+  not ``bot_response="25"``, which now fails validation. The typed text is
+  lost (``02139`` is saved as ``2139``), so use ``TextControl`` for codes such
+  as postcodes or IDs where the exact text matters. Text with ``_``, such as
+  ``1_000``, fails validation. A ``NumberControl`` page that overrides
+  ``format_answer`` must now return a number: call
+  ``super().format_answer(raw_answer, **kwargs)`` or convert the text
+  yourself, since returned text fails validation.
+* Default bot answers now go through the page's or control's
+  ``format_answer``, as participants' answers do. Search for
+  ``def format_answer`` on pages that bots answer without ``bot_response``
+  and on subclasses of the controls listed in the next item, and check that
+  it accepts what the browser sends. For example, a ``TextControl`` page whose
+  ``format_answer`` returns ``int(raw_answer)`` used to be skipped for bots,
+  but now fails on the default answer ``"Hello, I am a bot!"``: pass
+  ``bot_response=`` with a suitable answer, or let ``format_answer`` accept
+  the default. Whole-number floats in any ``BotResponse(raw_answer=...)``,
+  including your own, are now submitted as ints, as the browser's JSON
+  does: a rating scale given as ``{"low": 0.0, "high": 1.0}`` saves ``1``,
+  not ``1.0``.
+* The built-in ``get_bot_response`` methods of ``NumberControl``,
+  ``TextControl``, ``MonitorControl``, ``SliderControl``,
+  ``FrameSliderControl``, ``MultiRatingControl`` (and so ``RatingControl``)
+  and ``GraphicControl`` now return a ``BotResponse`` holding the browser's
+  raw answer, rather than a plain value. Search for ``get_bot_response`` in
+  subclasses of these controls: code that calls ``super().get_bot_response(...)``
+  should read ``.raw_answer`` from the result. This is the browser's text for
+  ``NumberControl`` (``"57"``) and SurveyJS JSON text for ``MultiRatingControl``
+  and ``RatingControl`` (``json.loads(raw_answer)`` gives
+  ``{"rating": 3}``). Return ``BotResponse(raw_answer=...)`` in the same form,
+  so that the answer still goes through ``format_answer``; a plain return
+  value is saved as given. For example:
+
+  .. code-block:: python
+
+      class OneMoreNumberControl(NumberControl):
+          def get_bot_response(self, experiment, bot, page, prompt):
+              response = super().get_bot_response(experiment, bot, page, prompt)
+              return BotResponse(raw_answer=str(int(response.raw_answer) + 1))
 * ``LanguageVocabularyTrial`` answers are now screen positions (``"1"`` to
   ``"4"``) rather than ``"correct"``. A custom subclass that compares an
   answer with ``"correct"`` should compare it with

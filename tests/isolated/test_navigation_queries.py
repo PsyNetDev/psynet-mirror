@@ -1,6 +1,8 @@
 import io
 import json
 import re
+import threading
+import time
 import uuid
 from types import SimpleNamespace
 from urllib.parse import urlencode
@@ -9,7 +11,7 @@ import pytest
 import sqlalchemy
 from dallinger import db
 from flask import Flask
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from werkzeug.test import EnvironBuilder
 
 from psynet.exit import (
@@ -20,9 +22,10 @@ from psynet.exit import (
     PaymentState,
 )
 from psynet.experiment import Experiment, get_experiment
-from psynet.participant import Participant
+from psynet.participant import Participant, _lock_and_load_participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sqlalchemy_profiling import assert_query_count
+from psynet.sync import SimpleGrouper, SimpleSyncGroup
 from psynet.timeline import ModuleState
 
 pytestmark = [
@@ -129,13 +132,11 @@ def test_locked_request_query_keeps_relationships_unloaded(
 
     # ``process_response`` combines the request query with row locking and
     # ``populate_existing()``. Loader options are not always honored by
-    # ``Query.get()``, so assert this construct keeps them.
-    with assert_query_count(min_queries=1, max_queries=1):
-        participant = (
-            experiment._participant_request_query()
-            .with_for_update(of=Participant)
-            .populate_existing()
-            .get(participant_id)
+    # ``Query.get()``, so assert this construct keeps them. The two
+    # statements are the row lock, then the load.
+    with assert_query_count(min_queries=2, max_queries=2):
+        participant = _lock_and_load_participant(
+            experiment._participant_request_query(), participant_id
         )
 
     unloaded = inspect(participant).unloaded
@@ -150,7 +151,8 @@ def test_locked_unique_id_request_query_keeps_relationships_unloaded(
 ):
     """Cover the locking unique-id load used by ``/timeline``."""
     experiment = get_experiment()
-    with assert_query_count(min_queries=1, max_queries=1):
+    # The row lock, then the load.
+    with assert_query_count(min_queries=2, max_queries=2):
         participant = experiment._get_request_participant_from_unique_id(
             participant_with_module_state, for_update=True
         )
@@ -160,6 +162,125 @@ def test_locked_unique_id_request_query_keeps_relationships_unloaded(
 
     with assert_query_count(min_queries=1, max_queries=1):
         assert participant.module_state.module_id == "navigation"
+
+
+def _load_for_dashboard_sync_group_action(experiment, p):
+    from psynet.dashboard.sync_groups import _get_active_sync_group_participant_link
+
+    return _get_active_sync_group_participant_link(p.id, p.sync_group_id)[0]
+
+
+@pytest.mark.parametrize(
+    "load_locked",
+    [
+        lambda experiment, p: experiment._get_request_participant_from_unique_id(
+            p.unique_id, for_update=True
+        ),
+        lambda experiment, p: experiment.get_participant_from_participant_id(
+            p.id, for_update=True
+        ),
+        lambda experiment, p: experiment.get_participant_from_worker_id(
+            p.worker_id, for_update=True
+        ),
+        _load_for_dashboard_sync_group_action,
+        lambda experiment, p: SimpleGrouper(
+            group_type="waitlist", initial_group_size=2
+        ).get_waiting_participants(for_update=True)[0],
+    ],
+    ids=[
+        "request_query",
+        "public_getter",
+        "worker_id_getter",
+        "dashboard_sync_group_action",
+        "barrier_waiters",
+    ],
+)
+def test_a_locked_request_that_waited_reads_the_trial_the_lock_holder_wrote(
+    db_session, participant_with_module_state, load_locked
+):
+    # A barrier release locks the waiters and writes their trials. A request
+    # that waits for one of those rows must then read the trial as written.
+    from test_finalize_pending_trials import (
+        _add_complete_unfinalized_trial,
+        _chain_trial_maker,
+        _create_network,
+    )
+
+    experiment = get_experiment()
+    participant = experiment._get_request_participant_from_unique_id(
+        participant_with_module_state
+    )
+    network = _create_network(_chain_trial_maker(), experiment)
+    participant.current_trial = _add_complete_unfinalized_trial(
+        network.head, participant
+    )
+    group = SimpleSyncGroup(
+        group_type="main",
+        initial_group_size=1,
+        max_group_size=1,
+        min_group_size=1,
+        n_active_participants=1,
+        accepts_top_ups=False,
+    )
+    db.session.add(group)
+    group.add_participant(participant)
+    SimpleGrouper(group_type="waitlist", initial_group_size=2).receive_participant(
+        participant
+    )
+    db.session.commit()
+    participant_id = participant.id
+    ids = SimpleNamespace(
+        id=participant_id,
+        unique_id=participant.unique_id,
+        worker_id=participant.worker_id,
+        sync_group_id=group.id,
+    )
+    locked = threading.Event()
+    errors = []
+
+    def write_trial():
+        try:
+            holder = (
+                Participant.query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
+            holder.current_trial.score = 3
+            db.session.flush()
+            backend_pid = db.session.execute(text("SELECT pg_backend_pid()")).scalar()
+            locked.set()
+            deadline = time.monotonic() + 10
+            while not db.session.execute(
+                text(
+                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity "
+                    "WHERE :pid = ANY(pg_blocking_pids(pid)))"
+                ),
+                {"pid": backend_pid},
+            ).scalar():
+                if time.monotonic() > deadline:
+                    errors.append(TimeoutError("the locked load never waited"))
+                    db.session.rollback()
+                    return
+                time.sleep(0.01)
+            db.session.commit()
+        except Exception as err:  # noqa: BLE001 - reported by the assertion below
+            errors.append(err)
+            locked.set()
+        finally:
+            db.session.remove()
+
+    writer = threading.Thread(target=write_trial)
+    writer.start()
+    assert locked.wait(timeout=10)
+    db.session.expire_all()
+    try:
+        participant = load_locked(experiment, ids)
+    finally:
+        writer.join(timeout=15)
+    assert participant.id == participant_id
+    assert not writer.is_alive()
+    assert errors == []
+    assert participant.current_trial.score == 3
 
 
 def test_public_participant_getter_retains_eager_relationships_when_detached(
@@ -179,6 +300,27 @@ def test_public_participant_getter_retains_eager_relationships_when_detached(
             "navigation"
         ]
         assert participant.active_barriers == {}
+
+
+def test_locked_worker_id_getter_returns_the_latest_repeat_participant(db_session):
+    experiment = get_experiment()
+    worker_id = str(uuid.uuid4())
+    participants = [
+        Participant(
+            experiment=experiment,
+            recruiter_id="hotair",
+            worker_id=worker_id,
+            hit_id=str(uuid.uuid4()),
+            assignment_id=str(uuid.uuid4()),
+            mode="debug",
+        )
+        for _ in range(2)
+    ]
+    db.session.add_all(participants)
+    db.session.commit()
+
+    locked = experiment.get_participant_from_worker_id(worker_id, for_update=True)
+    assert locked.id == max(participant.id for participant in participants)
 
 
 @pytest.fixture
@@ -250,8 +392,9 @@ def test_timeline_handler_skips_unused_participant_relationships(
     with _timeline_request(unique_id):
         # Write/commit/read-only render plus SET LOCAL lock_timeout. The table
         # assertions below are the unused-relationship regression check.
-        # One extra statement is the arrival-websocket membership EXISTS.
-        with assert_query_count(min_queries=1, max_queries=7) as profiler:
+        # Extra statements are the participant row lock, taken before the
+        # load, and the arrival-websocket membership EXISTS.
+        with assert_query_count(min_queries=1, max_queries=8) as profiler:
             second = experiment.route_timeline()
     assert second.status_code == 200
     assert json.loads(second.get_data())["attributes"]["unique_id"] == unique_id
@@ -288,8 +431,9 @@ def test_response_handler_skips_unused_participant_relationships(
     db.session.remove()
 
     with _response_request(payload):
-        # Includes arrival-websocket membership and expired-recording checks.
-        with assert_query_count(max_queries=14) as profiler:
+        # Includes the participant row lock taken before the locked load,
+        # and arrival-websocket membership and expired-recording checks.
+        with assert_query_count(max_queries=15) as profiler:
             result = experiment.route_response()
     assert result.status_code == 200
     body = json.loads(result.get_data())
