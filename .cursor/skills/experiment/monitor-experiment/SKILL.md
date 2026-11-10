@@ -68,7 +68,8 @@ Check operational health:
 
 - app/server names match logs and deployment records;
 - no obvious error loop in logs (in group experiments, PostgreSQL's
-  `could not obtain lock on row` errors are expected; see
+  `could not obtain lock on row in relation "participant"` or
+  `"sync_group"` errors are expected; see
   `deploy/reference/troubleshooting`);
 - participant counts move as expected;
 - trial, module, and network tables grow coherently;
