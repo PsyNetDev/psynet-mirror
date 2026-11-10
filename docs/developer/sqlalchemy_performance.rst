@@ -361,8 +361,9 @@ Fewer statements, fewer commits, or fewer per-waiter lazy loads are
 improvements: update the expected numbers in that test and in this section.
 
 Use the profiler as a statement-count gate, not a duration gate. Do not put
-these budgets on Playwright or the full ``/timeline`` / ``/response`` stack.
-See :ref:`sqlalchemy_profiling`.
+these absolute budgets on Playwright or the full ``/timeline`` /
+``/response`` stack; the relative budget in `Grouped request budgets`_ is
+the exception. See :ref:`sqlalchemy_profiling`.
 
 Profile with a cold session, as a real request has: expunge the session so it
 holds none of the waiters before the profiled window. A test that keeps every
