@@ -12,14 +12,18 @@ behaviour changes, the test fails until the page is updated.
 
 All the cases share one design, a fixed group answering a loop of
 questions, unless the case says otherwise. Each question is one round: a
-cued trial whose ``show_trial`` ends with a :class:`~psynet.sync.GroupBarrier`,
+cued trial whose ``show_trial`` includes a :class:`~psynet.sync.GroupBarrier`,
 so the barrier waits for every member of the group and its release closes
-the round (see :ref:`rounds-cued-trials`):
+the round (see :ref:`rounds-cued-trials`). With ``accumulate_answers``,
+``trial.answer`` keeps each page's answer under its label, so the answer of
+the estimate page, labelled ``"estimate"``, stays in
+``trial.answer["estimate"]`` after the revise page:
 
 .. code-block:: python
 
     class EstimateTrial(Trial):
         sync_group_type = "team"
+        accumulate_answers = True
 
         def show_trial(self, experiment, participant):
             return join(
@@ -76,8 +80,10 @@ study.
   with ``left`` listing the leaver, and Ann's and Ben's trials record
   ``"stayed"``.
 - **The group falls below its quorum** (a pair): it is dissolved. Ann is
-  released, ``on_dissolve`` runs for her instead of ``on_release``, her
-  trial records ``"group_dissolved"``, and her next page says "Your
+  released without ``on_release`` running, her trial records
+  ``"group_dissolved"``, so ``show_feedback`` can score her estimate from
+  ``trial.answer["estimate"]`` (see
+  :ref:`round outcomes <sync-round-outcome>`), and her next page says "Your
   partner is no longer in your group. Please continue." She plays the rest
   of the timeline without a group (see :ref:`sync-leaving-a-group`).
 
@@ -184,19 +190,25 @@ A group of three without top-ups, whose grouper sets
 is still on the estimate page, and Cat returns the study. The group falls
 below its quorum of three and is dissolved:
 
-- Ann is released, and ``on_dissolve`` runs for her.
-- Ben gets neither callback, and his trial records ``"group_dissolved"``.
-  When he submits his estimate, ``submitted`` lets him straight through,
-  and his next page says "Too few members of your group remained. Please
-  continue." (in a pair: "Your partner is no longer in your group. Please
+- Ann is released, and ``on_release`` doesn't run. Her trial records
+  ``"group_dissolved"``.
+- Ben's trial records ``"group_dissolved"`` too. When he submits his
+  estimate, ``submitted`` lets him straight through, and his next page says
+  "Too few members of your group remained. Please continue." (in a pair: "Your partner is no longer in your group. Please
   continue.").
+
+Both estimates stay on their trials, in ``trial.answer["estimate"]``, so an
+export or ``on_finalized`` can score the round from ``node.all_trials`` (see
+:ref:`round outcomes <sync-round-outcome>`). Ann's ``show_feedback`` may run
+before Ben has submitted his.
 
 Ben's trial runs to its end, so he still sees the revise page. To skip the
 rest of the round once he has left, wrap its steps in ``join(...,
 stop_if=...)`` (see :ref:`sync-leaving-a-group`).
 
 Checked by ``test_case_a_group_dissolves_under_a_member_on_a_round_page``
-in ``tests/isolated/test_trial_cue_groups.py``.
+in ``tests/isolated/test_trial_cue_groups.py``, and the stored estimates by
+``test_a_dissolved_round_keeps_its_answers_and_outcomes``.
 
 Members end up at different barriers
 ------------------------------------

@@ -1958,8 +1958,10 @@ class ChainTrialMaker(NetworkTrialMaker):
             # so they need no networks or block order.
             return
         is_follower = participant != sync_group.leader if sync_group else False
+        _, run = self._group_run(participant)
+        copies_block_order = run is not None and "block_order" in run
 
-        if not is_follower:
+        if not (is_follower and copies_block_order):
             if self.chain_type == "within":
                 networks = self.create_networks_within(experiment, participant)
                 rows = [(n.block, n.participant_group) for n in networks]
@@ -1983,13 +1985,19 @@ class ChainTrialMaker(NetworkTrialMaker):
                     )
             self.check_participant_groups({group for _, group in rows})
 
+        if copies_block_order:
+            participant.module_state.block_order = list(run["block_order"])
+            participant.module_state.set_block_position(run["block_position"])
+        else:
             # Blocks are in network creation order, which "listed" block orders follow.
             blocks = list(dict.fromkeys(block for block, _ in rows))
             self.init_block_order(experiment, participant, blocks)
-        else:
-            leader_state = self._leader_state(sync_group)
-            participant.module_state.block_order = leader_state.block_order
-            participant.module_state.set_block_position(leader_state.block_position)
+            if run is not None:
+                self._update_group_run(
+                    sync_group,
+                    block_order=list(participant.module_state.block_order),
+                    block_position=0,
+                )
 
     def init_block_order(self, experiment, participant, blocks):
         """Choose and store the participant's block order.
@@ -3041,6 +3049,11 @@ class ChainTrialMaker(NetworkTrialMaker):
     def _go_to_next_block(self, participant):
         for state in self._group_states(participant):
             state.set_block_position(state.block_position + 1)
+        group, run = self._group_run(participant)
+        if run is not None:
+            self._update_group_run(
+                group, block_position=participant.module_state.block_position
+            )
         logger.debug(
             "Participant %i moved to block %r.",
             participant.id,

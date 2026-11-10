@@ -13,7 +13,7 @@ from sqlalchemy import text
 from psynet.db import _set_transaction_lock_timeout
 from psynet.error import ErrorRecord
 from psynet.experiment import get_experiment
-from psynet.modular_page import ModularPage
+from psynet.modular_page import ModularPage, TextControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
@@ -27,7 +27,7 @@ from psynet.sync import (
     fail_on_group_divergence,
     leave_group,
 )
-from psynet.timeline import Module, Timeline
+from psynet.timeline import Module, Timeline, join
 from psynet.trial.chain import ChainNode
 from psynet.trial.main import GenericTrialNetwork, SyncGroupNode, Trial
 from psynet.trial.static import StaticNode, StaticTrialMaker
@@ -41,7 +41,11 @@ from test_sync import (  # noqa: E402
     _backdate_group,
     _sync_group_of,
 )
-from timeline_hold_helpers import _json_timeline, _working_participants  # noqa: E402
+from timeline_hold_helpers import (  # noqa: E402
+    _json_timeline,
+    _process_response,
+    _working_participants,
+)
 
 in_consents_experiment = pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
@@ -1181,41 +1185,57 @@ class TeamTrial(Trial):
     time_estimate = 1
     sync_group_type = "main"
 
-    @classmethod
-    def record_dissolve(cls, trials, node):
-        _dissolved.append((trials, node))
+
+class EstimateTrial(Trial):
+    time_estimate = 1
+    sync_group_type = "main"
+    accumulate_answers = True
+
+    def show_trial(self, experiment, participant):
+        return join(
+            ModularPage("estimate", "Estimate", TextControl(), time_estimate=1),
+            GroupBarrier("submitted", group_type="main"),
+            ModularPage("revise", "Revise", TextControl(), time_estimate=1),
+        )
 
 
-_dissolved = []
+def _submit(exp, participant, raw_answer):
+    _process_response(exp, participant, participant.page_uuid, raw_answer=raw_answer)
+    db.session.commit()
 
 
 @in_consents_experiment
-def test_on_dissolve_gets_the_waiting_members_trials_and_node(
+def test_a_dissolved_round_keeps_its_answers_and_outcomes(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    (waiter, quitter), group = _sync_group_of(exp, db_session, 2)
+    (waiter, reader, quitter), group = _sync_group_of(exp, db_session, 3)
     group.below_quorum = "continue_without_group"
-    logic = TeamTrial.cue({})
-    for participant in (waiter, quitter):
-        logic[0].consume(exp, participant)
-    db.session.commit()
-    _dissolved.clear()
-    barrier = GroupBarrier(
-        "team_done", group_type="main", on_dissolve=TeamTrial.record_dissolve
-    )
-    _arrive(exp, barrier, [waiter])
+    original = exp.timeline
+    exp.timeline = Timeline(*EstimateTrial.cue({}), InfoPage("Done", time_estimate=1))
+    try:
+        for participant in (waiter, reader, quitter):
+            _json_timeline(exp, participant)
+        _submit(exp, waiter, "5")
+        quitter.fail("returned")
+        db.session.commit()
+        # The reader was on the estimate page; the revision doesn't replace it.
+        _submit(exp, reader, "3")
+        _submit(exp, reader, "4")
+    finally:
+        exp.timeline = original
 
-    quitter.fail("returned")
-    db.session.commit()
-
-    ((trials, node),) = _dissolved
-    assert [t.participant_id for t in trials] == [waiter.id]
-    assert node is trials[0].node and isinstance(node, SyncGroupNode)
-    assert [p.current_trial.sync_group_outcome for p in (waiter, quitter)] == [
-        "group_dissolved",
-        "left_experiment",
-    ]
+    node = waiter.current_trial.node
+    assert isinstance(node, SyncGroupNode)
+    assert {
+        (t.participant_id, t.answer.get("estimate"), t.sync_group_outcome)
+        for t in node.all_trials
+    } == {
+        (waiter.id, "5", "group_dissolved"),
+        (reader.id, "3", "group_dissolved"),
+        (quitter.id, None, "left_experiment"),
+    }
+    assert reader.current_trial.answer == {"estimate": "3", "revise": "4"}
 
 
 def _late_at_barrier(late_action):
@@ -1445,13 +1465,7 @@ def test_case_a_member_leaves_mid_round(in_experiment_directory, db_session, n):
     group.below_quorum = "continue_without_group"
     _cue_team(exp, [*stayers, leaver], 0)
     _passes.clear()
-    _dissolved.clear()
-    submitted = GroupBarrier(
-        "submitted",
-        group_type="main",
-        on_release=_record_pass,
-        on_dissolve=TeamTrial.record_dissolve,
-    )
+    submitted = GroupBarrier("submitted", group_type="main", on_release=_record_pass)
     _arrive(exp, submitted, stayers)
     assert _waiting_at(submitted, stayers) == stayers
 
@@ -1462,8 +1476,7 @@ def test_case_a_member_leaves_mid_round(in_experiment_directory, db_session, n):
         assert _passes == [([p.id for p in stayers], [leaver.id])]
         assert {p.current_trial.sync_group_outcome for p in stayers} == {"stayed"}
     else:
-        ((trials, _),) = _dissolved
-        assert _passes == [] and trials == [stayers[0].current_trial]
+        assert _passes == []
         assert stayers[0].current_trial.sync_group_outcome == "group_dissolved"
         assert stayers[0].group_removal_notice["text"] == (
             "Your partner is no longer in your group. Please continue."
@@ -1551,17 +1564,15 @@ def test_case_a_group_dissolves_under_a_member_on_a_round_page(
     (waiter, reader, quitter), group = _sync_group_of(exp, db_session, 3)
     group.below_quorum = "continue_without_group"
     _cue_team(exp, [waiter, reader, quitter], 0)
-    _dissolved.clear()
-    submitted = GroupBarrier(
-        "submitted", group_type="main", on_dissolve=TeamTrial.record_dissolve
-    )
+    submitted = GroupBarrier("submitted", group_type="main")
     _arrive(exp, submitted, [waiter])
     quitter.fail("returned")
     db.session.commit()
 
-    ((trials, _),) = _dissolved
-    assert trials == [waiter.current_trial]
-    assert reader.current_trial.sync_group_outcome == "group_dissolved"
+    assert [p.current_trial.sync_group_outcome for p in (waiter, reader)] == [
+        "group_dissolved",
+        "group_dissolved",
+    ]
     original = exp.timeline
     exp.timeline = Timeline(
         submitted, ModularPage("after", "Round over", time_estimate=1)

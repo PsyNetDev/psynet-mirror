@@ -47,6 +47,8 @@ of waiters a sweep normally stays within its interval and later sweeps reach
 the remaining visits. One timeout or check can still overrun while it waits
 for a row lock.
 
+.. _sync-group-lock-order:
+
 Sync group lock order
 ---------------------
 
@@ -59,8 +61,8 @@ row:
   or nothing. If another member's request holds their row, nobody is removed
   (the rows that were free are unlocked again, by rolling back a savepoint):
   the group is marked ``dissolving`` and the barrier poller tries the whole
-  dissolution again on each sweep, so ``on_dissolve`` runs once, with every
-  member waiting at the barrier. A group back at its quorum by then is no
+  dissolution again on each sweep, so every member leaves the group, and
+  learns why, at the same time. A group back at its quorum by then is no
   longer dissolved.
 - A between-barrier timeout with ``"fail"`` also skips busy late members;
   they are still late at the barrier's next check. ``"leave_group"`` only changes the
@@ -71,6 +73,10 @@ row:
 - Joining an open group (``join_existing_groups=True``) locks the group row
   with ``SKIP LOCKED`` and re-counts its members under that lock; a busy
   group is skipped for the next candidate.
+- A synchronized trial maker records each run's choices in the group's
+  ``trial_maker_runs`` and waits for the group row lock to do so, so it
+  takes that lock only after locking any participant rows it needs
+  (participants first, then the group).
 
 Two members failing at the same moment therefore do not deadlock: each
 fails itself, and the second request to reach the group, or else the

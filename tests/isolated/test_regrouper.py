@@ -1,3 +1,4 @@
+import importlib.util
 import sys
 import time
 from datetime import timedelta
@@ -20,6 +21,7 @@ from psynet.sync import (
     _latest_tick,
 )
 from psynet.timeline import Timeline
+from psynet.utils import get_psynet_root
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -123,25 +125,6 @@ def test_regrouper_waits_for_a_late_member_until_they_leave_the_within_group(
 
     late.active_sync_groups["cohort"].remove_participant(late, reason="late")
     assert len(pairs.choose_who_to_release(present)) == 2
-
-
-@in_consents_experiment
-def test_regrouper_can_avoid_everyone_met_before(in_experiment_directory, db_session):
-    exp = get_experiment()
-    cohort_grouper = SimpleGrouper("cohort", initial_group_size=4)
-    pairs = Regrouper("pair", within="cohort", group_size=2, avoid_repeats="all_rounds")
-    cohort = _working_participants(exp, 4)
-    _arrive(exp, cohort_grouper, cohort)
-
-    met = set()
-    for _ in range(3):
-        _arrive(exp, pairs, cohort)
-        met |= {
-            frozenset(p.id for p in member.active_sync_groups["pair"].participants)
-            for member in cohort
-        }
-    # Three rounds of pairs meet all six partnerships of a cohort of four.
-    assert len(met) == 6
 
 
 @in_consents_experiment
@@ -541,37 +524,61 @@ def test_regrouper_keeps_a_sit_out_when_the_sitter_returns_in_the_same_request(
     assert pairs.rounds_sat_out(sitter) == 2
 
 
-def _pair_same_roles(members, barrier, **_):
-    ordered = sorted(members, key=barrier.role)
-    return [ordered[:2], ordered[2:]]
+def _by_id(members, **_):
+    return [sorted(members, key=lambda p: p.id)]
 
 
-def _lowest_id_responds(members, **_):
-    responder, proposer = sorted(members, key=lambda p: p.id)
-    return [{"responder": responder, "proposer": proposer}]
+def _one_player(members, **_):
+    return [members[:1]]
 
 
-@in_consents_experiment
-def test_regrouper_form_groups_can_return_groups_keyed_by_role(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    cohort, pairs = _cohort_and_pairs(exp, 2, form_groups=_lowest_id_responds)
-    _arrive(exp, pairs, cohort)
-    assert [pairs.role(p) for p in cohort] == ["responder", "proposer"]
+def _role_dict(members, barrier, **_):
+    return [dict(zip(barrier.roles, members))]
 
 
-@in_consents_experiment
-def test_regrouper_keep_roles_needs_one_member_per_role(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    cohort, pairs = _cohort_and_pairs(
-        exp, 4, keep_roles=True, form_groups=_pair_same_roles
+def _everyone_proposes(members, **_):
+    return {member: "proposer" for member in members}
+
+
+def _roles_by_id(members, barrier, **_):
+    return {member.id: role for member, role in zip(members, barrier.roles)}
+
+
+def _demo_roles(members, barrier, **_):
+    """The demo's role rule, without its rematch avoidance, which can repeat a role."""
+    return _load_demo_pairing().PairingRegrouper.assign_roles(barrier, members)
+
+
+def _proposers_meet_responders(members, barrier, **_):
+    """Pair former proposers with former responders; those with most rounds sit out."""
+    times_held = _load_demo_pairing().times_held
+    ordered = sorted(
+        members,
+        key=lambda p: (barrier.rounds_played(p), times_held(p, "proposer"), p.id),
     )
-    _arrive(exp, pairs, cohort[:3])
+    placed = ordered[: len(ordered) // 2 * 2]
+    return [[placed[i], placed[-1 - i]] for i in range(len(placed) // 2)]
+
+
+@in_consents_experiment
+def test_regrouper_gives_one_member_per_role(in_experiment_directory, db_session):
+    exp = get_experiment()
+    cohort, pairs = _cohort_and_pairs(exp, 2, form_groups=_by_id)
+    _arrive(exp, pairs, cohort)
+    assert sorted(pairs.role(p) for p in cohort) == ["proposer", "responder"]
+
+    cohort, pairs = _cohort_and_pairs(exp, 2, form_groups=_one_player)
     with pytest.raises(ValueError, match="one member per role"):
-        _arrive(exp, pairs, cohort[3:])
+        _arrive(exp, pairs, cohort)
+    cohort, pairs = _cohort_and_pairs(exp, 2, form_groups=_role_dict)
+    with pytest.raises(TypeError, match="lists of participants"):
+        _arrive(exp, pairs, cohort)
+    cohort, pairs = _cohort_and_pairs(exp, 2, assign_roles=_everyone_proposes)
+    with pytest.raises(ValueError, match="each role to one member"):
+        _arrive(exp, pairs, cohort)
+    cohort, pairs = _cohort_and_pairs(exp, 2, assign_roles=_roles_by_id)
+    with pytest.raises(TypeError, match="keyed by participants"):
+        _arrive(exp, pairs, cohort)
 
 
 def _partner(participant):
@@ -584,25 +591,22 @@ def _partner(participant):
 
 
 @in_consents_experiment
-def test_regrouper_alternates_roles_and_partners_and_counts_rounds(
+def test_regrouper_alternates_roles_and_counts_rounds(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    cohort, pairs = _cohort_and_pairs(exp, 4)
+    cohort, pairs = _cohort_and_pairs(
+        exp, 4, form_groups=_proposers_meet_responders, assign_roles=_demo_roles
+    )
 
     _arrive(exp, pairs, cohort)
-    first = {p.id: (pairs.role(p), _partner(p)) for p in cohort}
-    assert (
-        sorted(role for role, _ in first.values())
-        == ["proposer"] * 2 + ["responder"] * 2
-    )
+    first = {p.id: pairs.role(p) for p in cohort}
+    assert sorted(first.values()) == ["proposer"] * 2 + ["responder"] * 2
     assert all(pairs.role(_partner(p)) != pairs.role(p) for p in cohort)
 
     _arrive(exp, pairs, cohort)
     for p in cohort:
-        role, partner = first[p.id]
-        assert pairs.role(p) != role
-        assert _partner(p) is not partner
+        assert pairs.role(p) != first[p.id]
         assert pairs.rounds_played(p) == 2
         assert p.sync_group_removal_reason("pair") is None
     # A player removed from their pair, as by a kick, still sees their role.
@@ -624,26 +628,34 @@ def test_regrouper_alternates_roles_and_partners_and_counts_rounds(
     assert not pairs.sat_out(sitter)
 
 
+def _scripted_pair(members, **_):
+    first, second = _scripted_pair.script.pop(0)
+    ordered = sorted(members, key=lambda p: p.id)
+    return [[ordered[first], ordered[second]]]
+
+
+def _load_demo_pairing():
+    path = get_psynet_root() / "demos/experiments/ultimatum_pairing/pairing.py"
+    spec = importlib.util.spec_from_file_location("ultimatum_pairing_pairing", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 @in_consents_experiment
-def test_regrouper_keep_roles_balances_newcomers(in_experiment_directory, db_session):
+def test_demo_pairing_spots_a_rematch_after_a_sit_out(
+    in_experiment_directory, db_session
+):
+    """A played B, then sat out while B played C: A and B are still last partners."""
+    pairing = _load_demo_pairing()
     exp = get_experiment()
-    cohort, pairs = _cohort_and_pairs(exp, 3, keep_roles=True)
-
+    cohort, pairs = _cohort_and_pairs(exp, 3, form_groups=_scripted_pair)
+    a, b, c = sorted(cohort, key=lambda p: p.id)
+    _scripted_pair.script = [(0, 1), (1, 2)]
     _arrive(exp, pairs, cohort)
-    (sitter,) = [p for p in cohort if "pair" not in p.active_sync_groups]
-    playing = [p for p in cohort if p is not sitter]
-    assert {pairs.role(p) for p in playing} == {"proposer", "responder"}
-    # A newcomer who sat out has not played a role yet.
-    assert pairs.role(sitter) is None
-    roles = {p.id: pairs.role(p) for p in playing}
-
-    (newcomer,) = _working_participants(exp, 1)
-    cohort[0].active_sync_groups["cohort"].add_participant(newcomer)
-    _arrive(exp, pairs, cohort + [newcomer])
-    assert {p.id: pairs.role(p) for p in playing} == roles
-    assert pairs.role(newcomer) != pairs.role(sitter)
-    assert all("pair" in p.active_sync_groups for p in cohort + [newcomer])
-    assert pairs.rounds_played(sitter) == 1
+    _arrive(exp, pairs, cohort)
+    assert pairing.is_rematch(a, b) and pairing.is_rematch(b, a)
+    assert not pairing.is_rematch(a, c)
 
 
 @in_consents_experiment

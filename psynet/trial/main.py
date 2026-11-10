@@ -1,3 +1,4 @@
+import copy
 import datetime
 import random
 from dataclasses import dataclass
@@ -1824,16 +1825,47 @@ def _initialized_in(participant, trial_maker_id) -> bool:
     return state.trial_maker_initialized
 
 
-class _InitParticipantBarrier(GroupBarrier):
-    """The barrier at which a synchronized trial maker initializes its group, leader first.
+def _current_group_run(group, trial_maker_id):
+    """Return ``group``'s current run of the trial maker, or ``None`` before its first.
 
-    Members wait here until the leader is initialized in this run of the
-    trial maker. After that, anyone who arrives passes straight through and
-    initializes alone, including a newcomer who arrived while the group's
-    release was committing. A newcomer promoted to leader after the group
-    passed (see :meth:`~psynet.sync.SyncGroup.check_leader`) also passes,
-    and initializes as leader; followers who arrive before that wait for
-    them, as followers copy the leader's state.
+    A run is a dict in ``group.trial_maker_runs``: the group's choices for
+    that run (``participant_group``, and for chain trial makers
+    ``block_order`` and ``block_position``), set by the first member
+    initialized, and the ``members`` who started it.
+    """
+    runs = (group.trial_maker_runs or {}).get(trial_maker_id, [])
+    return runs[-1] if runs else None
+
+
+def _edit_group_runs(group, trial_maker_id, edit):
+    """Apply ``edit`` to the list of ``group``'s runs of the trial maker and store it.
+
+    Members' requests write the runs concurrently, so this first rereads
+    them holding the group's row lock until the transaction ends;
+    otherwise one request could overwrite another's change. Unlike the group
+    locks that skip locked rows, this waits for the lock, so call it only
+    after taking any participant locks (participants first, then the group)
+    to avoid deadlocks.
+    """
+    db.session.flush()
+    db.session.refresh(group, ["trial_maker_runs"], with_for_update={"key_share": True})
+    # A copy, so the edit doesn't change the loaded value it is compared with.
+    all_runs = copy.deepcopy(dict(group.trial_maker_runs or {}))
+    runs = all_runs.get(trial_maker_id, [])
+    edit(runs)
+    all_runs[trial_maker_id] = runs
+    group.trial_maker_runs = all_runs
+
+
+class _InitParticipantBarrier(GroupBarrier):
+    """The barrier at which a synchronized trial maker starts each run of its group.
+
+    The group's release starts the group's next run (see
+    :meth:`TrialMaker._init_participants_in_sync_group`). A member who
+    hasn't started the group's current run, such as a newcomer joining play
+    in progress, passes straight through and copies its choices. A member
+    who already played the current run, as when they loop quickly, waits
+    for the group to start the next one.
     """
 
     _lets_newcomers_through = True
@@ -1848,14 +1880,8 @@ class _InitParticipantBarrier(GroupBarrier):
         self.trial_maker_id = trial_maker.id
 
     def _lets_through(self, group, participant) -> bool:
-        leader = group.leader
-        if leader is None:
-            return False
-        if _initialized_in(leader, self.trial_maker_id):
-            return True
-        return participant == leader and any(
-            _initialized_in(p, self.trial_maker_id) for p in group.active_participants
-        )
+        run = _current_group_run(group, self.trial_maker_id)
+        return run is not None and participant.id not in run["members"]
 
 
 class TrialMakerState(ModuleState):
@@ -2318,7 +2344,7 @@ class TrialMaker(Module):
         )
 
     def _init_participant(self):
-        # The barrier makes sure the group's leader is initialized first.
+        # The barrier's release starts each run of the group.
         barrier = [] if self.sync_group_type is None else _InitParticipantBarrier(self)
         return join(
             barrier,
@@ -2335,11 +2361,17 @@ class TrialMaker(Module):
     def _is_initialized(self, participant):
         return _initialized_in(participant, self.id)
 
-    def _init_participants_in_sync_group(self, group: SyncGroup, experiment):
-        if not self._is_initialized(group.leader):
-            self.init_participant(experiment, group.leader)
-        for participant in group.active_participants:
-            if participant != group.leader and not self._is_initialized(participant):
+    def _init_participants_in_sync_group(
+        self, group: SyncGroup, participants, experiment
+    ):
+        """Start the group's next run and initialize the members it released, leader first.
+
+        The first member initialized makes the run's choices and the others
+        copy them (see :meth:`init_participant_group`).
+        """
+        _edit_group_runs(group, self.id, lambda runs: runs.append({"members": []}))
+        for participant in sorted(participants, key=lambda p: p != group.leader):
+            if not self._is_initialized(participant):
                 self.init_participant(experiment, participant)
 
     @property
@@ -2675,8 +2707,27 @@ class TrialMaker(Module):
         participant.select_module(self.id)
         participant.module_state.n_completed_trials = 0
         participant.module_state.in_repeat_phase = False
+        self._join_group_run(participant)
         self.init_participant_group(experiment, participant)
         participant.module_state.trial_maker_initialized = True
+
+    def _join_group_run(self, participant):
+        """Record the participant as a member of their group's current run.
+
+        This rereads the group's runs under its row lock, which is held until
+        the transaction ends, so the run whose choices they then copy or make
+        is the one they joined, even if the group's release was starting a
+        new run meanwhile.
+        """
+        group = self._active_sync_group(participant)
+        if group is None:
+            return
+
+        def join(runs):
+            if runs:
+                runs[-1]["members"].append(participant.id)
+
+        _edit_group_runs(group, self.id, join)
 
     def _active_sync_group(self, participant):
         """Return the participant's active group of ``sync_group_type``, if any."""
@@ -2684,25 +2735,42 @@ class TrialMaker(Module):
             return None
         return participant.active_sync_groups.get(self.sync_group_type)
 
-    def _leader_state(self, sync_group):
-        """Return the group leader's state for this trial maker.
+    def _group_run(self, participant):
+        """Return the participant's group and its current run of this trial maker.
 
-        The leader may already be in a later module, so this reads their state
-        for this trial maker rather than their current module state.
+        The run is ``None`` if the participant has no group or their group
+        hasn't started a run.
         """
-        return sync_group.leader.module_states[self.id][-1]
+        group = self._active_sync_group(participant)
+        run = None if group is None else _current_group_run(group, self.id)
+        return group, run
+
+    def _update_group_run(self, group, **values):
+        """Store ``values`` in ``group``'s current run of this trial maker."""
+        _edit_group_runs(group, self.id, lambda runs: runs[-1].update(values))
 
     def init_participant_group(self, experiment, participant):
-        if participant.module_state.participant_group:
+        """Set the participant's group for this trial maker.
+
+        In a synchronized trial maker, members copy it from their group's
+        current run, so newcomers and a promoted leader keep the group's;
+        otherwise, or for the run's first member, ``choose_participant_group``
+        chooses it. A group already set on the participant is kept, and
+        recorded as the run's if the run has none yet.
+        """
+        group, run = self._group_run(participant)
+        preset = participant.module_state.participant_group
+        if preset:
+            if run is not None and "participant_group" not in run:
+                self._update_group_run(group, participant_group=preset)
             return
 
-        sync_group = self._active_sync_group(participant)
-        is_follower = sync_group and participant != sync_group.leader
-        if is_follower:
+        if run is not None and "participant_group" in run:
             logger.info(
-                f"participant = {participant.id}, sync_group id = {sync_group.id}"
+                f"participant = {participant.id} copies the participant group "
+                f"of sync_group id = {group.id}"
             )
-            participant_group = self._leader_state(sync_group).participant_group
+            participant_group = run["participant_group"]
         else:
             if self.choose_participant_group is None:
                 participant_group = "default"
@@ -2710,6 +2778,8 @@ class TrialMaker(Module):
                 participant_group = self.choose_participant_group(
                     participant=participant,
                 )
+            if run is not None:
+                self._update_group_run(group, participant_group=participant_group)
         participant.module_state.participant_group = participant_group
 
     def on_complete(self, experiment, participant):

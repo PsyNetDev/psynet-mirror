@@ -97,6 +97,7 @@ from psynet.timeline_hold import (
     default_group_barrier_arrival_message,
     default_hold_progress,
 )
+from psynet.trial.main import _edit_group_runs
 from psynet.utils import call_function_with_context, get_config
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -373,6 +374,22 @@ def test_pending_barrier_checks_are_discarded_on_rollback(
     db_session.rollback()
 
     assert _take_pending_barrier_checks() == []
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_nested_edits_to_a_group_s_trial_maker_runs_are_saved(
+    in_experiment_directory, db_session
+):
+    group = _pair_sync_group(get_experiment(), db_session)[1]
+    _edit_group_runs(group, "tm", lambda runs: runs.append({"members": []}))
+    db_session.commit()
+    _edit_group_runs(group, "tm", lambda runs: runs[-1]["members"].append(1))
+    db_session.commit()
+    db_session.expire_all()
+
+    assert group.trial_maker_runs == {"tm": [{"members": [1]}]}
 
 
 @pytest.mark.parametrize(
@@ -3720,13 +3737,6 @@ def test_waiting_page_timeout_applies_on_the_next_request(
         exp.timeline = original_timeline
 
 
-_dissolve_calls = []
-
-
-def _record_dissolve(participants):
-    _dissolve_calls.append(sorted(p.id for p in participants))
-
-
 @pytest.mark.parametrize("below_quorum", ["fail", "continue_without_group"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
@@ -3738,14 +3748,11 @@ def test_dissolution_waits_for_a_busy_member_then_removes_everyone_at_once(
     exp = get_experiment()
     (waiter, busy, quitter), group = _sync_group_of(exp, db_session, 3)
     group.below_quorum = below_quorum
-    barrier = GroupBarrier(
-        id_="dissolve_at_once", group_type="main", on_dissolve=_record_dissolve
-    )
+    barrier = GroupBarrier(id_="dissolve_at_once", group_type="main")
     for participant in (waiter, busy):
         _arrive_at_group_barrier(exp, barrier, participant)
     _commit_barrier_arrivals()
     ids, group_id = sorted([waiter.id, busy.id]), group.id
-    _dissolve_calls.clear()
 
     with db.engine.connect() as busy_request, busy_request.begin():
         busy_request.execute(
@@ -3758,12 +3765,10 @@ def test_dissolution_waits_for_a_busy_member_then_removes_everyone_at_once(
         check_barriers()
         db.session.expire_all()
         assert Participant.query.get(waiter.id).in_sync_group("main")
-        assert _dissolve_calls == []
 
     check_barriers()
 
     db.session.expire_all()
-    assert _dissolve_calls == [ids]
     for participant_id in ids:
         participant = Participant.query.get(participant_id)
         assert not participant.in_sync_group("main")
@@ -7277,33 +7282,6 @@ def test_removing_a_late_member_dissolves_a_group_without_top_ups(
 
     assert not partner.in_sync_group("cohort")
     assert partner.failed == (below_quorum == "fail")
-
-
-def _score_dissolved(participants, barrier):
-    for participant in participants:
-        participant.var.scored_at = barrier.id
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
-)
-def test_on_dissolve_runs_for_the_members_waiting_at_the_barrier(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    (waiter, answering, quitter), group = _sync_group_of(exp, db_session, 3)
-    group.below_quorum = "continue_without_group"
-    barrier = GroupBarrier(
-        id_="question_3", group_type="main", on_dissolve=_score_dissolved
-    )
-    _arrive_at_group_barrier(exp, barrier, waiter)
-    _commit_barrier_arrivals()
-
-    quitter.fail("returned")
-    db_session.commit()
-
-    assert waiter.var.get("scored_at") == "question_3"
-    assert answering.var.get("scored_at") is None
 
 
 @pytest.mark.parametrize(

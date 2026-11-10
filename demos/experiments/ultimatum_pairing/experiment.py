@@ -4,9 +4,9 @@ Players first wait in a lobby until a cohort of ``COHORT_SIZE`` forms, or until
 at least ``MIN_COHORT_SIZE`` have waited ``SHORT_START_SECONDS``. Latecomers can
 still join a cohort until its round ``OPEN_UNTIL_ROUND`` starts.
 
-Each round, the :class:`~psynet.sync.Regrouper` pairs up the cohort's players,
-avoiding last round's partner, and gives each pair a proposer and a
-responder, alternating each player's role. It starts the round as soon as
+Each round, a :class:`~psynet.sync.Regrouper` (``PairingRegrouper``, in
+``pairing.py``) pairs up the cohort's players, avoiding last round's partner,
+and gives each pair a proposer and a responder, alternating each player's role. It starts the round as soon as
 the whole cohort is ready, or ``ROUND_DEADLINE_SECONDS`` after the first
 player is back, without the players who aren't ready yet. With an odd number
 of players, one who has played the most rounds sits that round out; a
@@ -40,7 +40,6 @@ from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.sync import (
     GroupBarrier,
-    Regrouper,
     SimpleGrouper,
     leave_group,
 )
@@ -54,6 +53,8 @@ from psynet.timeline import (
     while_loop,
 )
 from psynet.trial.main import SyncGroupNode, Trial
+
+from .pairing import PairingRegrouper, last_partner_id
 
 COHORT_SIZE = 4
 MIN_COHORT_SIZE = 2
@@ -217,7 +218,7 @@ SIT_OUT_TEXT = (
 )
 
 
-pairing = Regrouper(
+pairing = PairingRegrouper(
     "pair",
     within="cohort",
     roles=["proposer", "responder"],
@@ -432,6 +433,8 @@ class Exp(psynet.experiment.Experiment):
         assert _cohort_accepts_newcomers(bots[0])
         _play(bots)
         assert all("The offer of" in bot.current_page_text for bot in bots)
+        first_partner = {bot.id: bot.with_participant(last_partner_id) for bot in bots}
+        first_role = {bot.id: bot.with_participant(pairing.role) for bot in bots}
 
         # Round 2: one player lingers on their results, so the round starts at
         # the deadline without them, and one of the other three sits out.
@@ -445,6 +448,12 @@ class Exp(psynet.experiment.Experiment):
         # One of the pair closes their page. Once late, they leave the pair and
         # the cohort, so the rest of the cohort doesn't wait for them.
         stayer, leaver = [b for b in others if b not in sitting_out]
+        # Any two of the three could pair, so nobody meets last round's partner.
+        assert first_partner[stayer.id] != leaver.id
+        # Players who held different roles last round both switch.
+        if first_role[stayer.id] != first_role[leaver.id]:
+            for bot in (stayer, leaver):
+                assert bot.with_participant(pairing.role) != first_role[bot.id]
         _play([stayer])
         assert "Your partner was away" in stayer.current_page_text
         assert leaver.with_participant(lambda p: cohort_of(p) is None)

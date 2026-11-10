@@ -20,17 +20,19 @@ Design constraints:
 - Live redraws re-create the prompt on the server from a signed token, so
   only options that can be serialized take part in them; functions and
   ``answers`` fix the display when the page loads.
-- How a member who left is shown depends on why they left (the reason given
-  to :meth:`psynet.sync.SyncGroup.remove_participant`), whether the group
-  still accepts top-ups and whether the page shows their answer (see
-  :ref:`sync-showing-the-group`).
+- Who is drawn follows two rules based on stored facts: the group's active
+  members, plus, on a results page, everyone in ``answers``. A former member
+  drawn for their answer is faded and labelled "(left)" unless their stored
+  removal reason (:meth:`psynet.sync.SyncGroup.remove_participant`) is
+  moving on or finishing (see :ref:`sync-showing-the-group`).
 - The HTML is built on the server; ``static/scripts/group-prompt.js`` only
-  updates ticks and dashes, so pages without JavaScript still show the group.
+  updates it live (ticks, dashes and joining or leaving members), so pages
+  without JavaScript still show the group.
 """
 
 import math
 import os
-from typing import Callable, Dict, Optional, Union
+from typing import Dict, Optional, Union
 
 from itsdangerous import BadSignature, URLSafeSerializer
 from markupsafe import Markup
@@ -45,6 +47,8 @@ logger = get_logger()
 _MAX_ROW_MEMBERS = 4
 _MAX_ZIGZAG_COLUMNS = 7
 _NAMES = ("on_hover", "shown", "anonymous")
+# Removal reasons for which a former member isn't drawn as having left.
+_NOT_SHOWN_AS_LEFT_REASONS = ("finished", "moved_on")
 _warned_no_secret = False
 
 
@@ -70,18 +74,15 @@ class GroupPrompt(Prompt):
     (:attr:`~psynet.pseudonym.Pseudonym.sticker_html`; see
     :doc:`/code/multiplayer/pseudonyms`): in a row for up to four people,
     and in a zigzag across the width of the page for more. Hovering over or
-    tapping a member brings their speech bubble to the front. Members who
-    left are drawn faded with the reason, such as "(dropped out)", or not at
-    all, depending on why they left and whether the group still accepts
-    top-ups (see :ref:`sync-showing-the-group`).
+    tapping a member brings their speech bubble to the front. The prompt
+    draws the group's active members, plus, with ``answers``, everyone who
+    has an entry there, even after they left the group (see
+    :ref:`sync-showing-the-group`).
 
     A page shows either progress (ticks for who has answered) or
-    ``answers``, and what it draws from the group's state updates live:
-    ticks and dashes as members reach a barrier of the group, and members as
-    they join or leave. Only what the server can't work out again later is
-    fixed when the page loads: who has answered by a custom
-    ``has_answered``, clusters from a ``subgroups`` function, and the members
-    shown with ``answers``.
+    ``answers``. A progress page updates live: ticks and dashes as members
+    reach a barrier of the group, and members as they join or leave. A page
+    with ``answers`` is fixed when it loads.
 
     Parameters
     ----------
@@ -108,10 +109,11 @@ class GroupPrompt(Prompt):
         example after the group's barrier has released. Answers are shown
         as text; pass :class:`~markupsafe.Markup` for HTML such as an image.
         Members with an entry, even ``None`` (as for a member who ran out of
-        time), keep their seat after moving on to their next group; ``None``
-        shows no bubble. Members without an entry get no bubble either, and
-        are omitted once they have moved on. A group that accepts top-ups
-        shows no members who left, even with an entry.
+        time), are drawn even after they left the group, for example for
+        their next group; ``None`` shows no bubble. A former member is faded
+        and labelled "(left)", unless they moved on or finished
+        (``reason="moved_on"`` or ``"finished"``). Active members without an
+        entry get no bubble.
     highlight
         Optional ``{participant_id: style}``. ``"winner"`` and
         ``"duplicate"`` have built-in styles; any other style becomes the
@@ -129,22 +131,6 @@ class GroupPrompt(Prompt):
         arrival notice ("2/3 of your group are ready."), which would repeat
         them. Defaults to ``True``, or ``False`` with ``answers``, which
         can't be combined with ``True``.
-    has_answered
-        Optional ``has_answered(participant) -> bool`` deciding who gets a
-        tick when the page is drawn, in place of
-        :func:`~psynet.sync.is_waiting_at_barrier`, which a custom check can call.
-        Members waiting after a time-out
-        (:func:`~psynet.sync.reached_barrier_after_time_limit`) get a dash whatever it
-        returns. Only used with ``show_progress``, so it can't be combined
-        with ``answers`` or ``show_progress=False``.
-    subgroups
-        Optional way to cluster the members: a sync group type, such as
-        ``"pair"`` for pairs formed within the group, or a function
-        ``subgroups(participant)`` returning a key, members with equal keys
-        forming a cluster. The viewer's cluster comes first. Members without a
-        subgroup (``None``) are shown together in one cluster. With a sync
-        group type, a former member who is still shown stays in the latest
-        such group that a current member is still in.
     names
         How members other than the viewer, who is labelled "You", are named:
 
@@ -152,8 +138,8 @@ class GroupPrompt(Prompt):
           and shown on hover;
         - ``"shown"``: by pseudonym, also written below each animal;
         - ``"anonymous"``: all drawn as the same neutral figure, labelled
-          below with "Your partner" in the viewer's pair (or two-member
-          subgroup) and "Another player" otherwise, so that nobody can recognise a member
+          below with "Your partner" in the viewer's pair and "Another
+          player" otherwise, so that nobody can recognise a member
           they met in an earlier group. Pair it with
           ``ChatRoom(names="anonymous")`` on pages with a chat room.
     text_align
@@ -173,8 +159,6 @@ class GroupPrompt(Prompt):
         highlight: Optional[Dict[Union[int, str], str]] = None,
         note: Optional[str] = None,
         show_progress: Optional[bool] = None,
-        has_answered: Optional[Callable] = None,
-        subgroups: Union[str, Callable, None] = None,
         names: str = "on_hover",
         text_align: str = "left",
     ):
@@ -191,11 +175,6 @@ class GroupPrompt(Prompt):
                 "GroupPrompt shows either progress or answers: "
                 "don't pass show_progress=True with answers."
             )
-        if has_answered is not None and not show_progress:
-            raise ValueError(
-                "GroupPrompt only uses has_answered to show progress, so it can't "
-                "be combined with answers or show_progress=False."
-            )
         if group is not _PARTICIPANTS_GROUP and group_type is not None:
             raise ValueError(
                 "Pass either group or group_type to GroupPrompt, not both."
@@ -210,12 +189,8 @@ class GroupPrompt(Prompt):
         self.highlight = {int(k): v for k, v in (highlight or {}).items()}
         self.note = note
         self.show_progress = show_progress
-        self.has_answered = has_answered
-        self.live_ticks = show_progress and has_answered is None
-        self.live_members = (
-            answers is None and has_answered is None and not callable(subgroups)
-        )
-        self.subgroups = subgroups
+        self.live_ticks = show_progress
+        self.live_members = answers is None
         self.names = names
 
     @property
@@ -275,7 +250,6 @@ class GroupPrompt(Prompt):
                 "group": self.group.id,
                 "participant": self.participant.id,
                 "names": self.names,
-                "subgroups": self.subgroups,
                 "show_progress": self.show_progress,
                 "highlight": {
                     seats[pid]: style
@@ -306,31 +280,7 @@ class GroupPrompt(Prompt):
         """HTML for the group display, or nothing without a group."""
         if self.group is None:
             return Markup("")
-        _p = get_translator(context=True)
-        seats = _group_seats(self.group)
-        clusters = self._clusters()
-        viewer_present = any(
-            m.id == self.participant.id for cluster in clusters[:1] for m in cluster
-        )
-        if self.subgroups is None:
-            label = (
-                _p("group prompt", "Your group")
-                if viewer_present
-                else _p("group prompt", "Group")
-            )
-            body = self._members_html(clusters[0], seats, label)
-        else:
-            labels = [_p("group prompt", "Another subgroup")] * len(clusters)
-            if viewer_present:
-                labels[0] = _p("group prompt", "Your subgroup")
-            body = Markup('<ul class="psynet-group-clusters">{}</ul>').format(
-                Markup("").join(
-                    Markup('<li class="psynet-group-cluster">{}</li>').format(
-                        self._members_html(cluster, seats, label)
-                    )
-                    for cluster, label in zip(clusters, labels)
-                )
-            )
+        body = self._members_html(self._members(), _group_seats(self.group))
         note = (
             Markup('<p class="psynet-group-note">{}</p>').format(self.note)
             if self.note
@@ -341,8 +291,6 @@ class GroupPrompt(Prompt):
             classes += " psynet-group-prompt--answers"
         if self.names in ("shown", "anonymous"):
             classes += " psynet-group-prompt--names"
-        if viewer_present:
-            classes += " psynet-group-prompt--with-viewer"
         announcer = (
             Markup(
                 '<p class="psynet-group-announcer visually-hidden" aria-live="polite"></p>'
@@ -354,12 +302,18 @@ class GroupPrompt(Prompt):
             classes, body, note, announcer
         )
 
-    def _members_html(self, members, seats, label):
+    def _members_html(self, members, seats):
+        _p = get_translator(context=True)
         layout = "row" if len(members) <= _MAX_ROW_MEMBERS else "zigzag"
         # Balanced rows: 8 members as 4 + 4 rather than 7 + 1.
         rows = max(1, math.ceil(len(members) / _MAX_ZIGZAG_COLUMNS))
         columns = math.ceil(len(members) / rows)
         with_viewer = any(m.id == self.participant.id for m in members)
+        label = (
+            _p("group prompt", "Your group")
+            if with_viewer
+            else _p("group prompt", "Group")
+        )
         partner_label = with_viewer and len(members) == 2
         items = Markup("").join(
             self._member_html(member, seats[member.id], index, partner_label)
@@ -371,107 +325,29 @@ class GroupPrompt(Prompt):
         ).format(layout, columns, label, items)
 
     def _members(self):
-        """Return the members and those who left, the viewer first and then by seat."""
+        """Return the active members and, with ``answers``, everyone in them, the viewer first and then by seat."""
         seats = _group_seats(self.group)
-        members = sorted(
-            [*self.group.active_participants, *self._left_members()],
-            key=lambda p: seats.get(p.id, len(seats)),
-        )
-        me = [m for m in members if m.id == self.participant.id]
-        return me + [m for m in members if m.id != self.participant.id]
-
-    def _left_members(self):
-        """Return former members who dropped out, and those who moved on whose answer the page shows.
-
-        Groups that take top-ups are open-ended, like a lobby, so their
-        leavers are not shown.
-        """
-        if getattr(self.group, "accepts_top_ups", False):
-            return []
-        active_ids = {p.id for p in self.group.active_participants}
-        left = {}
-        reasons = self._removal_reasons()
-        moved_on = self._moved_on_with_answers()
+        members = {p.id: p for p in self.group.active_participants}
         for link in self.group.participant_links:
-            member = link.participant
-            if (
-                member.id in active_ids
-                or member.id == self.participant.id
-                or (reasons.get(member.id) == "moved_on" and member.id not in moved_on)
-            ):
-                continue
-            left[member.id] = member
-        return list(left.values())
+            if self.answers is not None and link.participant_id in self.answers:
+                members.setdefault(link.participant_id, link.participant)
+        ordered = sorted(members.values(), key=lambda p: seats.get(p.id, len(seats)))
+        me = [m for m in ordered if m.id == self.participant.id]
+        return me + [m for m in ordered if m.id != self.participant.id]
 
-    def _moved_on_with_answers(self):
-        """Return the IDs of members who moved on but whose answers this page shows.
-
-        Results pages keep their seats, so the page reads the same for
-        players who reload it after others have gone on to the next round.
-        """
-        if self.answers is None:
-            return set()
-        reasons = self._removal_reasons()
-        return {
-            member_id
-            for member_id, reason in reasons.items()
-            if reason == "moved_on" and member_id in self.answers
-        }
-
-    def _removal_reasons(self):
-        """Return ``{participant_id: reason}`` from each member's latest link to the group."""
-        links = sorted(self.group.participant_links, key=_link_order)
-        return {link.participant_id: link.removal_reason for link in links}
-
-    def _left_label(self, member, label):
-        """Return ``label`` marked with why ``member`` is no longer in the group."""
-        _p = get_translator(context=True)
-        if member.failed:
-            return _p("group prompt", "{NAME} (left)").format(NAME=label)
-        if self._removal_reasons().get(member.id) == "finished":
-            return _p("group prompt", "{NAME} (finished)").format(NAME=label)
-        if member.status != "working":
-            return _p("group prompt", "{NAME} (left)").format(NAME=label)
-        if self._removal_reasons().get(member.id) == "late":
-            return _p("group prompt", "{NAME} (removed)").format(NAME=label)
-        return _p("group prompt", "{NAME} (dropped out)").format(NAME=label)
-
-    def _clusters(self):
-        """Return the members in subgroups, the viewer's first."""
-        members = self._members()
-        if self.subgroups is None:
-            return [members]
-        clusters = {}
-        for member in members:
-            clusters.setdefault(self._subgroup_key(member), []).append(member)
-        # The viewer is first in ``members``, so their cluster comes first.
-        return list(clusters.values())
-
-    def _subgroup_key(self, member):
-        """Return the member's subgroup.
-
-        A former member is placed in their latest subgroup that someone still
-        in the group is in now, even after joining a new one, or else with
-        the members without a subgroup.
-        """
-        if callable(self.subgroups):
-            return self.subgroups(member)
+    def _has_left(self, member) -> bool:
+        """Return whether ``member`` left the group other than by moving on or finishing."""
         if member in self.group.active_participants:
-            subgroup = member.active_sync_groups.get(self.subgroups)
-            return None if subgroup is None else subgroup.id
+            return False
         links = sorted(
             (
                 link
-                for link in member.sync_group_links
-                if link.sync_group.group_type == self.subgroups
+                for link in self.group.participant_links
+                if link.participant_id == member.id
             ),
             key=_link_order,
         )
-        current = {
-            self._subgroup_key(other) for other in self.group.active_participants
-        }
-        shared = [link for link in links if link.sync_group_id in current]
-        return shared[-1].sync_group_id if shared else None
+        return links[-1].removal_reason not in _NOT_SHOWN_AS_LEFT_REASONS
 
     def _progress(self, member):
         """Return ``(answered, timed_out)`` for a member still in the group."""
@@ -479,10 +355,7 @@ class GroupPrompt(Prompt):
 
         if reached_barrier_after_time_limit(member, self.group):
             return False, True
-        has_answered = self.has_answered or (
-            lambda m: is_waiting_at_barrier(m, self.group)
-        )
-        return bool(has_answered(member)), False
+        return bool(is_waiting_at_barrier(member, self.group)), False
 
     def _member_html(self, member, seat, index, partner_label):
         _p = get_translator(context=True)
@@ -499,21 +372,18 @@ class GroupPrompt(Prompt):
         sticker = (
             anonymous_sticker_html() if anonymous else member.pseudonym.sticker_html
         )
-        has_left = (
-            member not in self.group.active_participants
-            and member.id not in self._moved_on_with_answers()
-        )
+        has_left = self._has_left(member)
         classes = ["psynet-group-member"]
         if is_me:
             classes.append("psynet-group-member--me")
         if has_left:
             classes.append("psynet-group-member--left")
-            label = self._left_label(member, label)
+            label = _p("group prompt", "{NAME} (left)").format(NAME=label)
         style = self.highlight.get(member.id)
         if style:
             classes.append(f"psynet-group-member--{_css_identifier(style)}")
         answered = timed_out = False
-        if self.show_progress and not has_left:
+        if self.show_progress:
             answered, timed_out = self._progress(member)
         if timed_out:
             classes.append("psynet-group-member--ran-out-of-time")
@@ -613,7 +483,6 @@ def redrawn_group_html(unique_id, token):
         group=group,
         participant=participant,
         names=options["names"],
-        subgroups=options["subgroups"],
         show_progress=options["show_progress"],
         highlight={
             pid: options["highlight"][str(seat)]
