@@ -5848,10 +5848,11 @@ def test_pending_arrival_notice_for_spec_error_returns_none(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_group_hold_reports_how_many_are_not_ready_yet(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, monkeypatch
 ):
     exp = get_experiment()
     first, second, third = _sync_group_of(exp, db_session, 3)[0]
+    publications = _hold_wake_publications(monkeypatch)
     barrier = GroupBarrier(
         id_="group_hold_remaining",
         group_type="main",
@@ -5869,6 +5870,7 @@ def test_group_hold_reports_how_many_are_not_ready_yet(
     db_session.commit()
     overlay = barrier.waiting_logic.overlay_html(first)
     assert "1 of 3 not ready yet" in overlay
+    assert "1 of 3 not ready yet" in _arrival_hold_messages(publications, first.id)[-1]
     assert pending_arrival_notice_for(third) == "2/3 of your group are ready."
 
 

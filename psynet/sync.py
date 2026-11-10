@@ -718,24 +718,38 @@ class _BarrierHoldPage(_TimelineHoldPage):
         self.barrier._queue_check_on_arrival(link.barrier_instance)
         self.barrier._notify_arrivals(participant)
 
-    def hold_progress_text(self, participant):
+    def hold_progress_text(self, participant, counts=None):
         """Return arrival progress for a participant waiting at this barrier."""
         if participant is None:
             return None
-        return self.barrier._hold_progress_text(participant)
+        return self.barrier._hold_progress_text(participant, counts)
 
-    def overlay_html(self, participant=None, release_time=NoArgumentProvided):
+    def overlay_html(
+        self, participant=None, release_time=NoArgumentProvided, *, counts=None
+    ):
         """Return hold copy, calling a ``content`` function and filling in ``{SECONDS}``.
 
-        ``release_time`` (epoch seconds, or ``None`` if unknown) defaults to the
-        barrier's :meth:`~Barrier.expected_release_time`.
+        Parameters
+        ----------
+        participant : Participant, optional
+            The waiting participant.
+        release_time : float or None, optional
+            Epoch seconds, or ``None`` if unknown. Defaults to the barrier's
+            :meth:`~Barrier.expected_release_time`.
+        counts : dict, optional
+            The barrier's hold message counts for ``participant``
+            (``waiting_count`` and ``group_size``). Callers
+            that render the overlay for every member of a group pass them,
+            so the group is not recounted per member.
         """
+        if self._is_silent_for(participant):
+            return compose_hold_overlay_html("", None)
         content = self.content
         content_is_function = isinstance(content, SerializedCallable)
         if not content_is_function and "{SECONDS}" not in str(content or ""):
-            return super().overlay_html(participant)
-        if self._is_silent_for(participant):
-            return compose_hold_overlay_html("", None)
+            return compose_hold_overlay_html(
+                self.translated_content(), self.hold_progress_text(participant, counts)
+            )
         if release_time is NoArgumentProvided:
             release_time = (
                 None
@@ -747,14 +761,18 @@ class _BarrierHoldPage(_TimelineHoldPage):
         )
         seconds = None if remaining_ms is None else max(0, ceil(remaining_ms / 1000))
         if content_is_function:
+            if counts is None:
+                counts = self.barrier._hold_message_counts(participant)
             context = {} if participant is None else {"participant": participant}
             content = content(
                 barrier=self.barrier,
                 seconds_left=seconds,
                 **context,
-                **self.barrier._hold_message_counts(participant),
+                **counts,
             )
-        html = compose_hold_overlay_html(content, self.hold_progress_text(participant))
+        html = compose_hold_overlay_html(
+            content, self.hold_progress_text(participant, counts)
+        )
         if "{SECONDS}" not in html:
             return html
         if remaining_ms is None or remaining_ms <= 0:
@@ -1054,8 +1072,12 @@ class Barrier(EltCollection):
         Live timeline only. Overlay HTML comes from ``waiting_logic``.
         """
 
-    def _hold_progress_text(self, participant):
-        """Return hold-overlay progress copy, if this barrier publishes arrivals."""
+    def _hold_progress_text(self, participant, counts=None):
+        """Return hold-overlay progress copy, if this barrier publishes arrivals.
+
+        ``counts`` are :meth:`_hold_message_counts` for ``participant`` when
+        the caller already has them.
+        """
         return None
 
     def _hold_message_counts(self, participant):
@@ -1574,11 +1596,12 @@ class GroupBarrier(Barrier):
             )
         return super().get_waiting_participants(participant, for_update=for_update)
 
-    def _hold_progress_text(self, participant):
+    def _hold_progress_text(self, participant, counts=None):
         """Return hold-overlay progress when arrival notices are enabled."""
         if not self.notify_arrivals or not self._participant_is_waiting(participant):
             return None
-        counts = self._hold_message_counts(participant)
+        if counts is None:
+            counts = self._hold_message_counts(participant)
         if counts["group_size"] is None:
             return None
         return default_hold_progress(**counts)
@@ -1631,6 +1654,7 @@ class GroupBarrier(Barrier):
         waiting = [m for m in members if self._participant_is_waiting(m)]
         waiting_count = len(waiting)
         group_size = len(members)
+        counts = {"waiting_count": waiting_count, "group_size": group_size}
         if self._uses_timeline_hold:
             _prime_timeline_hold_records(waiting, self.id)
         for member in members:
@@ -1644,15 +1668,11 @@ class GroupBarrier(Barrier):
                         hold_page, "_is_silent_for", None
                     ) and hold_page._is_silent_for(member):
                         continue
-                    hold_html = hold_page.overlay_html(member)
+                    hold_html = hold_page.overlay_html(member, counts=counts)
                 _queue_arrival_update(member.id, hold_message=hold_html)
                 continue
             text = self._call_arrival_message(
-                kind="notice",
-                waiting_count=waiting_count,
-                group_size=group_size,
-                recipient=member,
-                group=group,
+                kind="notice", recipient=member, group=group, **counts
             )
             if text:
                 _queue_arrival_update(member.id, notice=str(text))
