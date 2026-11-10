@@ -149,7 +149,7 @@ from psynet.db import (
 )
 from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
-from psynet.participant import Participant
+from psynet.participant import Participant, _lock_and_load_participant
 from psynet.serialize import SerializedCallable, serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
 from psynet.timeline_hold import (
@@ -425,16 +425,39 @@ def _get_waiting_participants(
 
     ``active_barriers`` and ``sync_group_links`` are populated separately;
     see ``_populate_active_barriers`` and ``_populate_sync_group_links``.
+
+    A locked load that waited would join the waiters' trials as they were
+    before the wait (see :func:`psynet.participant._load_participant_for_update`).
+    So unless ``nowait`` is set, a bare statement takes the locks first and
+    the joined load, limited to the links it locked, then runs with
+    ``NOWAIT``, which cannot fail on rows already held.
     """
+    criteria = [
+        ParticipantLinkBarrier.barrier_id == barrier_id,
+        ParticipantLinkBarrier.barrier_instance_id == barrier_instance_id,
+        ~ParticipantLinkBarrier.released,
+        ~Participant.failed,
+        Participant.status == "working",
+    ]
+    if for_update and not nowait:
+        locked_link_ids = (
+            db.session.execute(
+                select(ParticipantLinkBarrier.id)
+                .join(Participant)
+                .where(*criteria)
+                .order_by(Participant.id)
+                .with_for_update(of=[ParticipantLinkBarrier, Participant])
+            )
+            .scalars()
+            .all()
+        )
+        if not locked_link_ids:
+            return []
+        criteria.append(ParticipantLinkBarrier.id.in_(locked_link_ids))
+        nowait = True
     query = (
         ParticipantLinkBarrier.query.join(Participant)
-        .filter(
-            ParticipantLinkBarrier.barrier_id == barrier_id,
-            ParticipantLinkBarrier.barrier_instance_id == barrier_instance_id,
-            ~ParticipantLinkBarrier.released,
-            ~Participant.failed,
-            Participant.status == "working",
-        )
+        .filter(*criteria)
         .options(
             joinedload(ParticipantLinkBarrier.participant, innerjoin=True).options(
                 lazyload(Participant.active_barriers),
@@ -1251,11 +1274,8 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            participant = (
-                experiment._participant_request_query()
-                .with_for_update(of=Participant, nowait=True)
-                .populate_existing()
-                .get(participant_id)
+            participant = _lock_and_load_participant(
+                experiment._participant_request_query(), participant_id, nowait=True
             )
         except Exception as err:
             _rollback_preserving_barrier_queues()
@@ -3450,11 +3470,8 @@ def _time_out_overdue_waiters(sweep_ends):
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            participant = (
-                experiment._participant_request_query()
-                .with_for_update(of=Participant, nowait=True)
-                .populate_existing()
-                .get(participant_id)
+            participant = _lock_and_load_participant(
+                experiment._participant_request_query(), participant_id, nowait=True
             )
             if participant is not None:
                 _time_out_overdue_links(participant)
