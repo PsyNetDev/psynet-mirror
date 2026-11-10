@@ -291,8 +291,8 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
     one ``deadline`` (or ``every`` period): the bots' arrival times at the
     regrouper and the creation times of the groups their pools' earlier
     splits formed. The next check then splits the pools as the deadline or
-    tick would. Group memberships and roles are untouched, so a player not
-    passed in keeps their role from the last round. ``max_wait_time`` doesn't
+    tick would. Group memberships and roles are untouched, so a player still
+    in last round's group keeps their role. ``max_wait_time`` doesn't
     move: it counts from the bots' real arrivals.
 
     Parameters

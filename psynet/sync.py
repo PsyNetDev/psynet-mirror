@@ -3820,6 +3820,8 @@ class Regrouper(Grouper):
             if stop_top_ups:
                 if not _lock_group_to_stop_top_ups(within_group):
                     continue
+                if _is_dissolving(within_group):
+                    continue
                 # The lock reloads the cohort's members, so a newcomer who
                 # joined in another request now keeps a complete pool waiting.
                 members = self._members_to_split(within_group, pool)
