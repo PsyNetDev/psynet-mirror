@@ -866,8 +866,6 @@ def test_a_cohort_waiting_to_dissolve_is_not_split(in_experiment_directory, db_s
     for participant in present:
         pairs.receive_participant(participant)
     _backdate_arrivals(pairs, present, 31)
-    # A busy leader would make marking the cohort wait on the leader_id foreign key.
-    cohort.leader = present[0]
     db_session.commit()
 
     with Session(bind=db.engine) as busy_request:
@@ -876,6 +874,7 @@ def test_a_cohort_waiting_to_dissolve_is_not_split(in_experiment_directory, db_s
             {"id": busy.id},
         )
         for _ in range(2):
+            # Fails rather than hangs if marking the cohort waits for a lock.
             _set_transaction_lock_timeout(1)
             assert pairs.choose_who_to_release(present) == []
             db_session.commit()

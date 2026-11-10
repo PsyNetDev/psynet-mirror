@@ -491,7 +491,7 @@ Grouped request budgets
 happens around the barrier check:
 
 * A member leaving a group above quorum costs the same for groups of four
-  and eight (``18`` statements when the leader leaves, including choosing a
+  and eight (``16`` statements when the leader leaves, including choosing a
   new leader). Removal compares link ids before identity, so it does not
   load every member.
 * Dissolving a group fails each remaining member separately: their refresh,

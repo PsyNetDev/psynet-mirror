@@ -141,6 +141,7 @@ from sqlalchemy.orm import (
     Session,
     backref,
     deferred,
+    foreign,
     joinedload,
     lazyload,
     object_session,
@@ -4318,7 +4319,9 @@ class SyncGroup(SQLBase, SQLMixin):
     active = Column(Boolean, default=True)
     end_time = Column(DateTime)
     last_barrier_pass_time = Column(DateTime, nullable=True)
-    leader_id = Column(Integer, ForeignKey("participant.id"))
+    # No foreign key, so writing the group, for example to mark it
+    # ``dissolving``, doesn't wait for a request that holds the leader's row.
+    leader_id = Column(Integer)
     # Dissolution is queued because a member's row was busy; nobody has been
     # removed yet, and the barrier poller dissolves the group all at once.
     dissolving = Column(Boolean, default=False)
@@ -4411,28 +4414,18 @@ class SyncGroup(SQLBase, SQLMixin):
         taken.add(keys)
 
     leader = relationship(
-        "psynet.participant.Participant",
+        Participant,
+        primaryjoin=lambda: foreign(SyncGroup.leader_id) == Participant.id,
         cascade="all",
     )
 
     def check_leader(self):
-        """Make the lowest-id active member leader if the leader has left.
-
-        Setting ``leader_id`` makes PostgreSQL lock the new leader's row for
-        its foreign-key check, so only a member whose row is free (or already
-        held by this transaction) is chosen, and only that member's row is
-        locked. If every remaining member is busy in their own request, the
-        old leader stays until the next call, for example the group's next
-        barrier release.
-        """
+        """Make the lowest-id active member leader if the leader has left."""
         active_participants = sorted(self.active_participants, key=lambda p: p.id)
         if len(active_participants) == 0:
             self.leader = None
         elif self.leader not in active_participants:
-            for participant in active_participants:
-                if _lock_free_participants([participant]):
-                    self.leader = participant
-                    break
+            self.leader = active_participants[0]
 
     @property
     def active_followers(self):

@@ -3858,13 +3858,13 @@ def test_two_members_failing_at_once_do_not_deadlock(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_new_leader_is_a_member_who_is_not_busy(in_experiment_directory, db_session):
-    """Re-electing a leader skips a member whose own request holds their row."""
+def test_electing_a_busy_leader_does_not_wait(in_experiment_directory, db_session):
+    """Re-electing a leader doesn't wait for the new leader's own request."""
     exp = get_experiment()
-    (leader, busy, free), group = _sync_group_of(exp, db_session, 3)
+    (leader, busy, _), group = _sync_group_of(exp, db_session, 3)
     group.min_group_size = 1
     db.session.commit()
-    busy_id, free_id, group_id = busy.id, free.id, group.id
+    busy_id, group_id = busy.id, group.id
 
     with db.engine.connect() as busy_request, busy_request.begin():
         busy_request.execute(
@@ -3875,7 +3875,7 @@ def test_new_leader_is_a_member_who_is_not_busy(in_experiment_directory, db_sess
         leader.fail("left")
         db.session.commit()
 
-    assert SyncGroup.query.get(group_id).leader_id == free_id
+    assert SyncGroup.query.get(group_id).leader_id == busy_id
 
 
 @pytest.mark.parametrize(

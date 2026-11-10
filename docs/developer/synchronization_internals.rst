@@ -65,8 +65,10 @@ row:
 - A between-barrier timeout with ``"fail"`` also skips busy late members;
   they are still late at the barrier's next check. ``"leave_group"`` only changes the
   group's links, so it does not lock the member's row.
-- Re-electing a leader picks only a member whose row is free, because the
-  foreign-key check on ``leader_id`` locks the new leader's row.
+- ``sync_group.leader_id``, like ``participant_link_barrier.sync_group_id``
+  and ``trial.sync_group_id``, has no foreign key: PostgreSQL re-checks a
+  foreign key when a row written earlier in the transaction is updated
+  again, and that check would wait for a request holding the leader's row.
 - Barrier checks lock waiters with ``NOWAIT`` and defer if one is busy.
 - Joining an open group (``join_existing_groups=True``) locks the group row
   with ``SKIP LOCKED`` and re-counts its members under that lock; a busy
