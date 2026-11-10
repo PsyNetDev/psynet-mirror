@@ -1,5 +1,5 @@
 /**
- * GroupPrompt layout: for rows and zigzags, subgroups and shown names, on a
+ * GroupPrompt layout: for rows, zigzags and shown names, on a
  * laptop and a phone, with and without answer bubbles, members must be
  * readable and visible. Animals, labels and bubbles stay inside the window
  * and off the rest of the page; animals and labels never overlap each
@@ -33,8 +33,6 @@ const SHAPES = [
   { size: 5 },
   { size: 8 },
   { size: 12 },
-  { size: 8, subgroup_size: 2 },
-  { size: 12, subgroup_size: 6 },
   { size: 6, names: "shown" },
   { size: 2, names: "anonymous" },
 ];
@@ -45,7 +43,6 @@ const CASES = SHAPES.flatMap((shape) => [
 const describeCase = (c) =>
   [
     `${c.size} members`,
-    c.subgroup_size && `in subgroups of ${c.subgroup_size}`,
     c.names === "anonymous" && "anonymous",
     c.names === "shown" && "with names",
     c.answer && "with a wrapping answer",

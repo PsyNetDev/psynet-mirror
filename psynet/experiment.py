@@ -169,8 +169,10 @@ from .timeline import (
     Response,
     Timeline,
     WebSocketElt,
+    _ending_released_pass,
     _is_timeline_hold,
     _timeline_step_name,
+    _trial_owning_page,
     new_page_uuid,
 )
 from .translation.check import check_translations
@@ -4358,16 +4360,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     page=page,
                 )
             if interrupted:
-                from .sync import released_waiting_barrier
+                from .sync import _end_waiting_page, released_waiting_barrier
 
-                if released_waiting_barrier(event, participant) is None:
+                released = released_waiting_barrier(event, participant)
+                if released is None:
                     return ResponseResult(
                         payload={"submission": "rejected", "message": ""}
                     )
                 Experiment._record_interrupted_response(event, participant, metadata)
+                _end_waiting_page(participant)
                 participant.inc_time_credit(event.time_estimate)
                 participant.inc_progress(event.time_estimate)
-                self.timeline.advance_page(self, participant)
+                with _ending_released_pass(released.id):
+                    self.timeline.advance_page(self, participant)
                 page = self._advance_past_ready_holds(
                     participant, self.timeline.get_current_elt(self, participant)
                 )
@@ -4490,26 +4495,37 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         A ``while_loop`` only checks its condition before each pass, so the
         pages left in the current pass would otherwise each show briefly
-        and then be interrupted. Skipped pages were never seen, so they get
-        no response, time credit or progress.
+        and then be interrupted. Instead the participant is advanced through
+        the rest of the pass without seeing it, until they leave the
+        barrier's waiting loop. Each ``while_loop`` in the pass ends at its
+        next check, because its condition may wait for answers that skipped
+        pages never give. Code blocks, ``for_loop`` iterations and the ends
+        of modules, loops and fixed time credit run as usual. Skipped pages
+        get no response, time credit or progress, and the trial owning each
+        page, including trials created during the walk, is failed.
+        ``participant.answer`` is marked as not fresh, as after an interrupt.
         """
         from .sync import (
-            _MAX_BARRIER_WALK_PASSES,
-            _barrier_walk_budget,
+            _MAX_RELEASE_WALK_STEPS,
+            _end_waiting_page,
             released_waiting_barrier,
         )
 
-        for can_work in _barrier_walk_budget():
+        participant.answer_is_fresh = False
+        for step in range(_MAX_RELEASE_WALK_STEPS + 1):
             page = self.timeline.get_current_elt(self, participant)
             released = released_waiting_barrier(page, participant)
             if released is None or released.id != barrier.id:
                 return page
-            if not can_work:
+            if step == _MAX_RELEASE_WALK_STEPS:
                 break
-            self.timeline.advance_page(self, participant)
+            _end_waiting_page(participant)
+            with _ending_released_pass(barrier.id):
+                self.timeline.advance_page(self, participant)
         raise RuntimeError(
-            f"Skipping the waiting pages of barrier '{barrier.id}' did not settle "
-            f"after {_MAX_BARRIER_WALK_PASSES} steps."
+            f"Skipping the waiting pages of barrier '{barrier.id}' did not leave "
+            f"its waiting loop after {_MAX_RELEASE_WALK_STEPS} pages; is there "
+            "a very long for_loop or sequence in waiting_logic?"
         )
 
     @staticmethod
@@ -4520,11 +4536,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         not updated, but is marked as not fresh.
         """
         participant.answer_is_fresh = False
+        trial = _trial_owning_page(participant)
         response = Response(
             participant=participant,
             label=page.label,
             page_type=type(page).__name__,
+            trial=trial,
         )
+        if trial is not None:
+            trial.response = response
         response.answer = None
         # Only the server may say that a time limit ran out.
         metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
@@ -4661,8 +4681,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         the lock stops other sessions from moving the cursor, so ``page`` is
         still the live hold when it is not ready. Consecutive holds can share
         a ``hold_id`` (every ``wait_while`` does), so an id is not a visit
-        identity. After the last allowed skip, this walk observes the landing
-        page so settling on the cap still succeeds.
+        identity. The rest of a released barrier's waiting pass counts as one
+        step, so after a nested barrier's pass the enclosing barrier's pass,
+        if also released, is skipped as well. After the last allowed skip,
+        this walk observes the landing page so settling on the cap still
+        succeeds.
         """
         from .sync import (
             _MAX_BARRIER_WALK_PASSES,
@@ -4674,7 +4697,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         for can_work in _barrier_walk_budget():
             released = released_waiting_barrier(page, participant)
             if released is not None:
+                if not can_work:
+                    break
                 page = self._skip_released_waiting_pages(participant, released)
+                continue
             if not _is_timeline_hold(page):
                 return page
             if not page.prepare_resume_if_ready(self, participant):
