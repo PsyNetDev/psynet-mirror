@@ -3817,6 +3817,13 @@ class Regrouper(Grouper):
 
     def _check_plan(self, plan, members):
         """Raise if ``form_groups`` placed someone twice, placed a non-member, or broke the roles."""
+        if not all(
+            isinstance(p, Participant) for group_members in plan for p in group_members
+        ):
+            raise TypeError(
+                f"Regrouper '{self.id}': form_groups must return groups as lists "
+                "of participants; give out roles with assign_roles instead."
+            )
         member_ids = {p.id for p in members}
         placed = [p.id for group_members in plan for p in group_members]
         if len(placed) != len(set(placed)):

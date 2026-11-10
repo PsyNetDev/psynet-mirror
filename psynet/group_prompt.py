@@ -46,6 +46,8 @@ logger = get_logger()
 _MAX_ROW_MEMBERS = 4
 _MAX_ZIGZAG_COLUMNS = 7
 _NAMES = ("on_hover", "shown", "anonymous")
+# Removal reasons for which a former member isn't drawn as having left.
+_NOT_SHOWN_AS_LEFT_REASONS = ("finished", "moved_on")
 _warned_no_secret = False
 
 
@@ -337,8 +339,6 @@ class GroupPrompt(Prompt):
 
     def _has_left(self, member) -> bool:
         """Return whether ``member`` left the group other than by moving on or finishing."""
-        from .sync import _KEEPS_GROUP_REASONS
-
         if member in self.group.active_participants:
             return False
         links = sorted(
@@ -349,7 +349,7 @@ class GroupPrompt(Prompt):
             ),
             key=_link_order,
         )
-        return links[-1].removal_reason not in _KEEPS_GROUP_REASONS
+        return links[-1].removal_reason not in _NOT_SHOWN_AS_LEFT_REASONS
 
     def _progress(self, member):
         """Return ``(answered, timed_out)`` for a member still in the group."""

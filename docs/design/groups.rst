@@ -248,7 +248,7 @@ group before they could be regrouped, and fail the group's members when one of
 them drops out. A **regrouper** is made for this instead. Each time
 participants reach it, it removes them from their previous group and splits
 those waiting into new groups at random and gives out roles such as
-proposer and responder in turn. If the
+proposer and responder at random. If the
 players don't divide evenly into groups, the player who has played the most
 rounds **sits out** the round; they see a page saying so and play again in a
 later round. A player who is late for a split joins the next one. If no

@@ -1,3 +1,4 @@
+import importlib.util
 import sys
 import time
 from datetime import timedelta
@@ -20,6 +21,7 @@ from psynet.sync import (
     _latest_tick,
 )
 from psynet.timeline import Timeline
+from psynet.utils import get_psynet_root
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -532,6 +534,10 @@ def _one_player(members, **_):
     return [members[:1]]
 
 
+def _role_dict(members, barrier, **_):
+    return [dict(zip(barrier.roles, members))]
+
+
 def _everyone_proposes(members, **_):
     return {member: "proposer" for member in members}
 
@@ -558,6 +564,9 @@ def test_regrouper_gives_one_member_per_role(in_experiment_directory, db_session
 
     cohort, pairs = _cohort_and_pairs(exp, 2, form_groups=_one_player)
     with pytest.raises(ValueError, match="one member per role"):
+        _arrive(exp, pairs, cohort)
+    cohort, pairs = _cohort_and_pairs(exp, 2, form_groups=_role_dict)
+    with pytest.raises(TypeError, match="lists of participants"):
         _arrive(exp, pairs, cohort)
     cohort, pairs = _cohort_and_pairs(exp, 2, assign_roles=_everyone_proposes)
     with pytest.raises(ValueError, match="each role to one member"):
@@ -607,6 +616,36 @@ def test_regrouper_alternates_roles_and_counts_rounds(
     _arrive(exp, pairs, cohort[:3])
     assert "pair" in sitter.active_sync_groups
     assert not pairs.sat_out(sitter)
+
+
+def _scripted_pair(members, **_):
+    first, second = _scripted_pair.script.pop(0)
+    ordered = sorted(members, key=lambda p: p.id)
+    return [[ordered[first], ordered[second]]]
+
+
+def _load_demo_pairing():
+    path = get_psynet_root() / "demos/experiments/ultimatum_pairing/pairing.py"
+    spec = importlib.util.spec_from_file_location("ultimatum_pairing_pairing", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@in_consents_experiment
+def test_demo_pairing_spots_a_rematch_after_a_sit_out(
+    in_experiment_directory, db_session
+):
+    """A played B, then sat out while B played C: A and B are still last partners."""
+    pairing = _load_demo_pairing()
+    exp = get_experiment()
+    cohort, pairs = _cohort_and_pairs(exp, 3, form_groups=_scripted_pair)
+    a, b, c = sorted(cohort, key=lambda p: p.id)
+    _scripted_pair.script = [(0, 1), (1, 2)]
+    _arrive(exp, pairs, cohort)
+    _arrive(exp, pairs, cohort)
+    assert pairing.is_rematch(a, b) and pairing.is_rematch(b, a)
+    assert not pairing.is_rematch(a, c)
 
 
 @in_consents_experiment

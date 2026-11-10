@@ -165,6 +165,8 @@ then groups of two, and assigns roles at a barrier each time:
 Two groupers of the same type and size share a default ID, and so a waiting
 pool. Give them different ``id_`` values if they should not.
 
+.. _sync-regrouper-recipe:
+
 Rounds with changing groups
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -203,16 +205,19 @@ group's members. Override :meth:`~psynet.sync.Regrouper.form_groups` for
 other grouping rules and :meth:`~psynet.sync.Regrouper.assign_roles` for
 other role rules. The ``ultimatum_pairing`` demo overrides both, to keep
 last round's partners apart and to give each role to whoever has held it
-least often, so that roles alternate:
+least often, so that roles alternate. Its ``pairing.py`` defines:
 
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
    :pyobject: PairingRegrouper
 
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :pyobject: times_held
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
+   :pyobject: is_rematch
 
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
    :pyobject: last_partner_id
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
+   :pyobject: times_held
 
 The regrouper counts each participant's rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
 :meth:`~psynet.sync.Regrouper.rounds_sat_out`,

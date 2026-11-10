@@ -38,7 +38,10 @@ Pairing players each round
 
 A :class:`~psynet.sync.Regrouper` at the start of each round splits the
 cohort into new pairs. Each time a player reaches it, they leave last round's
-pair and wait for the next split:
+pair and wait for the next split. ``PairingRegrouper`` is the demo's own
+subclass of :class:`~psynet.sync.Regrouper`, defined in its ``pairing.py``
+(see :ref:`sync-regrouper-recipe`), which keeps last round's
+partners apart and alternates roles:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: pairing = PairingRegrouper(

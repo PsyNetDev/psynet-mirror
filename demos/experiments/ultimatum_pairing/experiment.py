@@ -4,9 +4,9 @@ Players first wait in a lobby until a cohort of ``COHORT_SIZE`` forms, or until
 at least ``MIN_COHORT_SIZE`` have waited ``SHORT_START_SECONDS``. Latecomers can
 still join a cohort until its round ``OPEN_UNTIL_ROUND`` starts.
 
-Each round, the :class:`~psynet.sync.Regrouper` pairs up the cohort's players,
-avoiding last round's partner, and gives each pair a proposer and a
-responder, alternating each player's role. It starts the round as soon as
+Each round, a :class:`~psynet.sync.Regrouper` (``PairingRegrouper``, in
+``pairing.py``) pairs up the cohort's players, avoiding last round's partner,
+and gives each pair a proposer and a responder, alternating each player's role. It starts the round as soon as
 the whole cohort is ready, or ``ROUND_DEADLINE_SECONDS`` after the first
 player is back, without the players who aren't ready yet. With an odd number
 of players, one who has played the most rounds sits that round out; a
@@ -40,7 +40,6 @@ from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.sync import (
     GroupBarrier,
-    Regrouper,
     SimpleGrouper,
     leave_group,
 )
@@ -54,6 +53,8 @@ from psynet.timeline import (
     while_loop,
 )
 from psynet.trial.main import SyncGroupNode, Trial
+
+from .pairing import PairingRegrouper, last_partner_id
 
 COHORT_SIZE = 4
 MIN_COHORT_SIZE = 2
@@ -215,48 +216,6 @@ SIT_OUT_TEXT = (
     "You sit out this round without a partner. If you sit out "
     f"{MAX_SIT_OUTS} rounds, the game ends early for you."
 )
-
-
-def last_partner_id(participant):
-    """Return the ID of the player's partner in their latest pair, or ``None``."""
-    pairs = [
-        link.sync_group
-        for link in participant.sync_group_links
-        if link.sync_group.group_type == "pair"
-    ]
-    if not pairs:
-        return None
-    latest = max(pairs, key=lambda pair: pair.id)
-    # All links, as both players have left the pair by the next split.
-    partners = [
-        link.participant_id
-        for link in latest.participant_links
-        if link.participant_id != participant.id
-    ]
-    return partners[0] if partners else None
-
-
-class PairingRegrouper(Regrouper):
-    def form_groups(self, members, within_group=None):
-        """Pair players as by default, retrying so that nobody meets last round's partner."""
-        for _ in range(20):
-            pairs = super().form_groups(members, within_group)
-            if all(last_partner_id(a) != b.id for a, b in pairs):
-                break
-        return pairs
-
-    def assign_roles(self, members, within_group=None):
-        """Give each role to whoever has held it least often, so roles alternate."""
-        roles = {}
-        for role in self.roles:
-            free = [m for m in members if m not in roles]
-            roles[min(free, key=lambda m: times_held(m, role))] = role
-        return roles
-
-
-def times_held(participant, role):
-    """Return how often the player has held ``role``, from their stored pair links."""
-    return sum(link.role == role for link in participant.sync_group_links)
 
 
 pairing = PairingRegrouper(

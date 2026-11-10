@@ -113,7 +113,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   (given out at random by default) and read `regrouper.role(participant)`
   instead of assigning roles yourself. To avoid last round's partner or to
   alternate roles, copy `PairingRegrouper` from the `ultimatum_pairing`
-  demo, which overrides `form_groups` and `assign_roles`; override them
+  demo's `pairing.py`, which overrides `form_groups` and `assign_roles`; override them
   likewise for other rules. With `left_over="sit_out"`, odd
   players out sit out the round; with `within`, a player waiting alone first
   waits one more period for cohort members. The default `max_wait_time`
