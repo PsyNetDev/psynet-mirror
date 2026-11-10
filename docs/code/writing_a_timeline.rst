@@ -221,6 +221,27 @@ branch of end logic, which you can replace with keyword arguments to
 See :class:`~psynet.end.SuccessfulEndLogic` and
 :class:`~psynet.end.UnsuccessfulEndLogic`.
 
+When PsyNet ends a multiplayer session itself (a participant waited too long
+at a barrier, was too slow to reach the next one, or their group became too
+small), the unsuccessful end page says why, for example "We waited too long
+for other participants, so we ended your session." Other endings, such as
+failing a prescreen, get no such line. To explain your own reasons, pass a
+function of the participant that returns a line, or ``None`` to keep
+PsyNet's:
+
+.. code-block:: python
+
+    def failure_message(participant):
+        if "performance_check" in participant.failure_tags:
+            return "Your answers suggest that your headphones aren't working."
+        return None
+
+    Timeline(..., unsuccessful_end=UnsuccessfulEndLogic(failure_message=failure_message))
+
+You can also pass a plain string, but it replaces PsyNet's own lines for
+every participant, including the multiplayer ones. Returning ``""`` shows no
+line at all.
+
 Time estimates
 --------------
 

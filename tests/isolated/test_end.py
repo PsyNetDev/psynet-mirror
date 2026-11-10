@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 from flask import Flask
 
 from psynet.end import (
@@ -10,6 +11,7 @@ from psynet.end import (
     SuccessfulEndLogic,
     UnsuccessfulEndLogic,
 )
+from psynet.page import UnsuccessfulEndPage
 
 
 def _reward_html(monkeypatch, time_reward, performance_reward):
@@ -83,14 +85,83 @@ def test_lucid_debrief_uses_return_to_panel_copy():
         patch("psynet.end.get_translator", side_effect=_identity_end_translator),
     ):
         success = SuccessfulEndLogic().debrief_participant(experiment, participant)
-        unsuccessful = UnsuccessfulEndLogic().debrief_participant(
-            experiment, participant
-        )
+        unsuccessful = UnsuccessfulEndLogic(
+            failure_message="The study is full."
+        ).debrief_participant(experiment, participant)
         rejected = RejectedConsentLogic().debrief_participant(experiment, participant)
 
     assert "Click Finish to return to your panel." in success.plain_text
     assert "Click Finish to finalize the session." not in success.plain_text
     assert "Click Finish to return to your panel." in unsuccessful.plain_text
     assert "send you back to your panel" not in unsuccessful.plain_text
+    assert "The study is full." in unsuccessful.plain_text
     assert "We will return you to your panel in a few seconds." in rejected.plain_text
     assert "You may close this page." in rejected.plain_text
+
+
+def test_unsuccessful_end_explains_why_the_participant_stopped():
+    """PsyNet explains its own failure tags, and an experiment can explain its own."""
+    slow = SimpleNamespace(
+        failure_tags=["barrier:round", "timeout between barriers"], module_state=None
+    )
+    other = SimpleNamespace(failure_tags=["performance_check"], module_state=None)
+    async_job = SimpleNamespace(
+        failure_tags=["timeline_hold:wait_while", "fail_on_timeout"], module_state=None
+    )
+    barrier_wait = SimpleNamespace(
+        failure_tags=["timeline_hold:barrier:round", "fail_on_timeout"],
+        module_state=None,
+    )
+    waiting_page = SimpleNamespace(
+        failure_tags=["while_loop:barrier:round", "fail_on_timeout"],
+        module_state=None,
+    )
+    too_few = SimpleNamespace(
+        failure_tags=["sync group below minimum size"], module_state=None
+    )
+    assert UnsuccessfulEndLogic().failure_reason(async_job) is None
+    assert "waited too long" in UnsuccessfulEndLogic().failure_reason(barrier_wait)
+    assert "waited too long" in UnsuccessfulEndLogic().failure_reason(waiting_page)
+    assert "Too few members" in UnsuccessfulEndLogic().failure_reason(too_few)
+    assert "took too long" in UnsuccessfulEndLogic().failure_reason(slow)
+    assert UnsuccessfulEndLogic().failure_reason(other) is None
+    assert (
+        UnsuccessfulEndLogic(failure_message="The study is full.").failure_reason(other)
+        == "The study is full."
+    )
+
+    def failure_message(participant):
+        if "performance_check" in participant.failure_tags:
+            return "You didn't pass the hearing test."
+
+    logic = UnsuccessfulEndLogic(failure_message=failure_message)
+    assert logic.failure_reason(other) == "You didn't pass the hearing test."
+    assert "took too long" in logic.failure_reason(slow)
+
+    assert UnsuccessfulEndLogic(failure_message="").failure_reason(slow) == ""
+    silent = UnsuccessfulEndLogic(failure_message=lambda participant: "")
+    assert silent.failure_reason(slow) == ""
+
+
+def test_failure_message_errors_fall_back_to_builtin_reason(caplog):
+    def failure_message(participant):
+        raise RuntimeError("boom")
+
+    participant = SimpleNamespace(
+        id=7, failure_tags=["timeout between barriers"], module_state=None
+    )
+    reason = UnsuccessfulEndLogic(failure_message=failure_message).failure_reason(
+        participant
+    )
+    assert "took too long" in reason
+    assert "participant 7" in caplog.text
+
+
+def test_rejected_consent_logic_refuses_failure_message():
+    with pytest.raises(TypeError, match="failure_message"):
+        RejectedConsentLogic(failure_message="Bye.")
+
+
+def test_unsuccessful_end_page_points_failure_message_to_end_logic():
+    with pytest.raises(TypeError, match="UnsuccessfulEndLogic"):
+        UnsuccessfulEndPage(failure_message="You didn't pass screening.")

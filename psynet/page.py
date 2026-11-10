@@ -466,6 +466,12 @@ class EndPageRedirect(Elt):
     branch_name = None
 
     def __init__(self, failure_tags: Optional[List] = None, **kwargs):
+        if "failure_message" in kwargs:
+            raise TypeError(
+                f"{type(self).__name__} does not take failure_message; pass it to "
+                "the end logic instead, for example "
+                "Timeline(..., unsuccessful_end=UnsuccessfulEndLogic(failure_message=...))."
+            )
         super().__init__()
         if failure_tags is None:
             failure_tags = []
