@@ -435,8 +435,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         doc=(
             "Whether the trial has been completed (i.e. received a response from the "
             "participant). It is set once all of :meth:`show_trial`'s pages have "
-            "ended, before :meth:`show_feedback`. The user should not typically "
-            "change this directly."
+            "ended, before :meth:`show_feedback`, and also when a barrier's "
+            "release ends the trial's page in ``waiting_logic`` before it is "
+            "answered, in which case the trial is failed with "
+            '``failed_reason="interrupted_by_release"`` and not finalized. '
+            "The user should not typically change this directly."
         ),
     )
 

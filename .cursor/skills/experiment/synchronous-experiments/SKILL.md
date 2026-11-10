@@ -90,7 +90,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries
-  such as submit, rate, reveal, score, or bonus computation.
+  such as submit, rate, reveal, score, or bonus computation. PsyNet refuses
+  `waiting_logic` on a barrier inside `show_trial`; use `waiting_screen` there.
 - Read partner state through `participant.sync_group.participants`,
   participant vars, trial vars, node vars, or `on_release` outputs. Do not let
   the browser decide shared experiment state.

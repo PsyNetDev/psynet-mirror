@@ -164,6 +164,16 @@ def _start_filler_trial(experiment, participant):
     )
 
 
+class _CountingTrialMaker:
+    n_finalized = 0
+
+    def with_namespace(self, name):
+        return f"counting__{name}"
+
+    def finalize_trial(self, answer, trial, experiment, participant):
+        type(self).n_finalized += 1
+
+
 @in_consents_experiment
 def test_a_release_fails_the_unanswered_filler_trials_it_ends(
     in_experiment_directory, db_session
@@ -171,29 +181,43 @@ def test_a_release_fails_the_unanswered_filler_trials_it_ends(
     """As in the sync_quorum demo: the first's trial page is interrupted, the last's is skipped."""
     exp = get_experiment()
     original = exp.timeline
-    filler = join(CodeBlock(_start_filler_trial), FillerTrial.trial_logic())
+    _CountingTrialMaker.n_finalized = 0
+    filler = join(
+        CodeBlock(_start_filler_trial),
+        FillerTrial.trial_logic(trial_maker=_CountingTrialMaker()),
+    )
     _use_timeline(exp, filler)
     try:
         first, waiting = _release_pair(exp)
         assert waiting["release_grace_ms"] == 3000
+        first.answer = "answer to an earlier page"
+        db.session.commit()
         response = _post_response(first, interrupted=True).get_json()
         assert response["submission"] == "approved"
-        assert [(t.failed_reason, t.finalized) for t in FillerTrial.query.all()] == [
-            ("interrupted_by_release", False)
-        ] * 2
+        trials = FillerTrial.query.all()
+        assert len(trials) == 2
+        for trial in trials:
+            assert trial.failed_reason == "interrupted_by_release"
+            assert trial.complete and not trial.finalized
+            assert trial.answer is None
+            assert trial not in trial.node.pending_trials
+        assert _CountingTrialMaker.n_finalized == 0
         assert Response.query.filter_by(question="filler_trial").one().trial.failed
     finally:
         exp.timeline = original
 
 
 @in_consents_experiment
-def test_waiting_logic_is_refused_inside_a_trial(in_experiment_directory, db_session):
+def test_only_waiting_logic_is_refused_inside_a_trial(
+    in_experiment_directory, db_session
+):
     exp = get_experiment()
     (participant,) = _working_participants(exp, 1)
     _start_filler_trial(exp, participant)
     grouper = SimpleGrouper("pair", initial_group_size=2, waiting_logic=_filler("x"))
     with pytest.raises(ValueError, match="waiting_screen"):
         grouper.receive_participant(participant)
+    SimpleGrouper("pair", initial_group_size=2).receive_participant(participant)
 
 
 @in_consents_experiment
@@ -275,9 +299,10 @@ def test_hold_pages_get_no_waiting_config(in_experiment_directory, db_session):
     [
         ({"waiting_logic": _filler("filler"), "release_grace": -1}, "non-negative"),
         ({"release_grace": 5}, "only applies with waiting_logic"),
+        ({"below_quorum": lambda participant, group: "fail"}, "Functions aren't"),
     ],
 )
-def test_release_grace_is_checked(kwargs, message):
+def test_grouper_arguments_are_checked(kwargs, message):
     with pytest.raises(ValueError, match=message):
         SimpleGrouper("pair", initial_group_size=2, **kwargs)
 

@@ -1032,7 +1032,8 @@ class Barrier(EltCollection):
         This includes the pages of trials in ``waiting_logic``, such as
         filler trials from a trial maker: a trial whose page ends this way
         is failed with ``failed_reason="interrupted_by_release"``, so it isn't
-        finalized and doesn't count towards the trial maker's targets.
+        finalized and doesn't count towards the trial maker's targets of
+        completed trials (it still counts towards ``max_trials_per_block``).
         ``None`` lets each waiting page run to its end. Default: 3 seconds.
         Only used with ``waiting_logic``; passing it without raises an error.
         A barrier with ``waiting_logic`` can't be inside a trial's own pages,
@@ -1713,7 +1714,8 @@ class GroupBarrier(Barrier):
         example filler trials. If left at ``None``, the participant sees
         ``waiting_screen``, or their current page beneath a lightweight
         waiting indicator. Pass ``waiting_message`` to customize that indicator's
-        message.
+        message. A barrier with ``waiting_logic`` can't be inside a trial's own
+        pages, such as in ``Trial.show_trial``; use ``waiting_screen`` there.
 
     waiting_logic_expected_repetitions
         Deprecated; pass ``expected_wait`` instead. Expected repetitions of
@@ -2209,8 +2211,8 @@ class GroupBarrier(Barrier):
         if node is not None:
             # Closes the round to newcomers: their cues start the next.
             node.sync_group_closed = True
-            for trial in trials:
-                trial.sync_group_outcome = "stayed"
+            for participant in released:
+                _round_trial(group, participant).sync_group_outcome = "stayed"
         if self.on_release:
             try:
                 self.on_release(
@@ -2483,7 +2485,8 @@ class Grouper(Barrier):
         to the participant while they are waiting at the barrier, for
         example filler trials. If left at ``None``, the participant sees
         ``waiting_screen``, or their current page beneath a lightweight
-        waiting indicator.
+        waiting indicator. A grouper with ``waiting_logic`` can't be inside a
+        trial's own pages; use ``waiting_screen`` there.
 
     waiting_logic_expected_repetitions
         Deprecated; pass ``expected_wait`` instead. Expected repetitions of
@@ -2864,6 +2867,8 @@ class SimpleGrouper(Grouper):
                 " The remaining members don't leave the group; it ends around them, "
                 "so use 'continue_without_group'."
                 if below_quorum == "leave_group"
+                else " Functions aren't supported; pass one of these strings."
+                if callable(below_quorum)
                 else ""
             )
             raise ValueError(
