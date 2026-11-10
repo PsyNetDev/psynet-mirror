@@ -1782,18 +1782,6 @@ class GroupBarrier(Barrier):
 
         Barriers that share an ``id_`` must pass the same arguments.
 
-    on_dissolve
-        Optional callback invoked when the group dissolves below its quorum
-        while members are waiting at this barrier, before they are removed from
-        the group, so that what they did is not lost. For example, it can score
-        the last question for the members who answered it. It takes the same
-        arguments as ``on_release`` except ``leader`` and ``left``:
-        ``participants`` are the members waiting here, and ``node`` and
-        ``trials`` follow the same rule as for ``on_release``. The same
-        serialization rules apply. Dissolving waits for any member who is in
-        the middle of another request, so ``on_dissolve`` is called once,
-        with every member waiting here.
-
     stop_top_ups
         If ``True``, the group stops accepting newcomers once it passes this
         barrier, as :meth:`SimpleSyncGroup.stop_top_ups` does, for example at
@@ -1904,7 +1892,6 @@ class GroupBarrier(Barrier):
         on_arrival_message: Optional[Callable] = None,
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
-        on_dissolve: Optional[Callable] = None,
         stop_top_ups: bool = False,
         pass_newcomers: bool = False,
     ):
@@ -1928,7 +1915,6 @@ class GroupBarrier(Barrier):
         self.notify_arrivals = bool(notify_arrivals)
         self.late_after = late_after
         self.late_action = late_action
-        self.on_dissolve = on_dissolve
         self.stop_top_ups = bool(stop_top_ups)
         self.pass_newcomers = bool(pass_newcomers)
 
@@ -4304,7 +4290,6 @@ class SyncGroup(SQLBase, SQLMixin):
                     )
                 self.dissolving = True
                 return []
-            _run_on_dissolve(self, removed)
             group_size = len(group_seats(self))
             for participant in removed:
                 action = self._below_quorum_action(participant)
@@ -4729,40 +4714,6 @@ def _round_is_busy(group, node) -> bool:
         text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"), params
     )
     return False
-
-
-def _run_on_dissolve(group, members):
-    """Call ``on_dissolve`` of each barrier of ``group`` where some of ``members`` are waiting."""
-    reconstructed = {}
-    waiting = {}
-    for participant in members:
-        for link in list(participant.active_barriers.values()):
-            instance = link.barrier_instance
-            if instance is None or instance.group_id != group.id:
-                continue
-            barrier = _reconstructed_arrival_barrier(link, reconstructed)
-            if getattr(barrier, "on_dissolve", None) is None:
-                continue
-            waiting.setdefault(link.barrier_instance_id, (barrier, []))[1].append(
-                participant
-            )
-    for barrier, participants in waiting.values():
-        try:
-            barrier.on_dissolve(
-                group=group,
-                participants=participants,
-                trials=[p.current_trial for p in participants],
-                node=_common_round_node(group, participants),
-                barrier=barrier,
-            )
-        except Exception as err:
-            # Dissolving runs in other participants' requests, such as one
-            # returning the study, which must not fail because of this hook.
-            if is_transient_transaction_error(err):
-                raise
-            logger.exception(
-                "Barrier '%s' on_dissolve failed for group %s.", barrier.id, group.id
-            )
 
 
 def _top_up_wait_over(group) -> bool:
