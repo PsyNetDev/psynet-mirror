@@ -3348,6 +3348,10 @@ def _debug_ssh(
         config_options = {"debug_ssh_app": "true"}
         if performance_test_app:
             config_options["performance_test_app"] = "true"
+            if local_packages:
+                config_options["performance_test_local_packages"] = ",".join(
+                    local_packages
+                )
 
         with _local_image_packages(local_packages):
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
@@ -7483,9 +7487,12 @@ def _run_performance_test_with_new_server(
 
 
 def _performance_test_app_info():
-    """Return whether the running experiment is a performance-test app."""
+    """Return whether the running experiment is a performance-test app, and the local packages built into it."""
     config = load_runtime_server_config()
-    return {"performance_test_app": bool(config.get("performance_test_app", False))}
+    return {
+        "performance_test_app": bool(config.get("performance_test_app", False)),
+        "local_packages": config.get("performance_test_local_packages", ""),
+    }
 
 
 @performance_test.command("app-info", hidden=True)
@@ -7675,7 +7682,9 @@ def performance_test__docker_ssh(
     directory in debug mode, as ``psynet debug ssh`` would, and marks it as
     a performance-test app, whose data is disposable. Since only bots take
     part, the experiment needn't have a consent page. Later runs update it
-    in place from this directory before testing, keeping its database. They
+    in place from this directory before testing, keeping its database, and
+    build in the local checkouts again if the deploy used
+    --use-local-psynet or --use-local-dallinger. They
     refuse apps that this command didn't deploy, or whose deploy didn't
     finish launching the experiment. The app is kept after the run; destroy
     it with ``psynet destroy ssh``.
@@ -7748,7 +7757,8 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     _check_ssh_deploy_credentials(server, deploy_options.get("ingress"))
     update = app in {entry.name for entry in get_apps(server)}
     if update:
-        _require_performance_test_app(server, app)
+        info = _require_performance_test_app(server, app)
+        _reuse_local_packages(app, info, deploy_options)
         print(f"Updating {app} on {server}, keeping its database...")
     else:
         print(f"Deploying {app} on {server} for performance tests...")
@@ -7771,6 +7781,28 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
         e.message += f" The app's passwords are saved in {launch_info}."
         raise
     return info["experiment"], (result, launch_info, update)
+
+
+def _reuse_local_packages(app, info, deploy_options):
+    """Build the local packages that ``app``'s deploy used into its update too.
+
+    ``info`` is the app's :func:`_performance_test_app_info`, and
+    ``deploy_options`` the ``use_local_*`` options to turn on, in place.
+    """
+    reused = [
+        package
+        for package in (info.get("local_packages") or "").split(",")
+        if package in ("psynet", "dallinger")
+        and not deploy_options.get(f"use_local_{package}")
+    ]
+    for package in reused:
+        deploy_options[f"use_local_{package}"] = True
+    if reused:
+        flags = " and ".join(f"--use-local-{package}" for package in reused)
+        print(
+            f"Using {flags}, as when {app} was deployed. To build it from "
+            "requirements.txt instead, destroy it first."
+        )
 
 
 def _run_ssh_performance_test(

@@ -1,0 +1,1 @@
+`psynet performance-test ssh` remembers `--use-local-psynet` and `--use-local-dallinger` from the deploy of its app: later runs that update the app build the local checkouts in again without the options, and say so.

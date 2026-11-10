@@ -1935,6 +1935,17 @@ def test_performance_test_ssh_scaffolds_before_contacting_the_server():
     assert deploy.call_args.kwargs["use_local_psynet"] is True
 
 
+def test_performance_test_ssh_updates_reuse_the_deploys_local_packages():
+    result, deploy, _ = _invoke_performance_test_ssh(
+        [], apps=["my-app"], app_info={**_MARKED, "local_packages": "psynet"}
+    )
+
+    assert result.exit_code == 0, result.output
+    assert deploy.call_args.kwargs["use_local_psynet"] is True
+    assert deploy.call_args.kwargs["use_local_dallinger"] is False
+    assert "Using --use-local-psynet, as when my-app was deployed" in result.output
+
+
 @pytest.mark.parametrize("args", [[], ["--reset-database"]])
 def test_performance_test_ssh_refuses_apps_it_did_not_deploy(args):
     result, deploy, run = _invoke_performance_test_ssh(
@@ -1987,6 +1998,10 @@ def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
         patch("psynet.command_line._pre_launch", return_value="my-app") as pre_launch,
         patch("psynet.command_line._post_deploy"),
         patch("psynet.command_line._cleanup_exp_directory"),
+        patch(
+            "psynet.command_line._local_image_packages",
+            return_value=contextlib.nullcontext(),
+        ),
         patch("dallinger.command_line.docker_ssh.sandbox", click.Command("sandbox")),
     ):
         deployed = _debug_ssh(
@@ -1995,6 +2010,7 @@ def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
             server="server",
             dns_host=None,
             update=True,
+            use_local_psynet=True,
             performance_test_app=True,
         )
 
@@ -2002,6 +2018,7 @@ def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
     assert ctx.invoke.call_args.kwargs["config_options"] == {
         "debug_ssh_app": "true",
         "performance_test_app": "true",
+        "performance_test_local_packages": "psynet",
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
     assert pre_launch.call_args.kwargs["confirm_update"] is False
