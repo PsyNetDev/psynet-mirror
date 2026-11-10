@@ -2240,7 +2240,8 @@ class GroupBarrier(Barrier):
                     "moves someone on. If '%s' is inside the loop of rounds, "
                     "move it into the trial's show_trial, or stop top-ups "
                     "(stop_top_ups=True) before the module. If it starts a run "
-                    "of a looped module, keep the loop's pages inside the module.",
+                    "of a looped module, move the loop's pages into the module, "
+                    "or add a GroupBarrier after them, outside the module.",
                     self.id,
                     group.group_type,
                     group.id,
@@ -4219,32 +4220,43 @@ def warn_if_newcomers_can_strand_group(barriers):
             )
 
 
-def warn_if_looped_module_has_pages_outside(loops):
-    """Warn about a loop that repeats a module and has content pages outside it.
+def check_looped_module_has_no_pages_outside(loops):
+    """Raise if a loop shows content pages between runs of a module it repeats.
 
-    A member on such a page, between two runs of the module, counts as
-    having left the module, so the next run starts without them, and they
-    and the group then wait for each other until ``late_after`` or
-    ``max_wait_time`` acts. A barrier's waiting page doesn't count. Only
-    called for timelines with a grouper; whether the module itself is
-    grouped can't be seen at load, so the message is conditional.
+    A member on such a page, outside the module, counts as having left it,
+    so a faster member's next run starts without them: its barriers let the
+    faster member through, and the group drifts out of step. A barrier
+    between the pages and the next run waits for every member, so it
+    prevents this. Only page makers, such as a ``for_loop``, whose logic
+    is built when the participant reaches it, warn instead.
 
     Parameters
     ----------
-    loops : iterable of list
-        The module ids of each loop with content pages outside its modules.
+    loops : iterable of tuple
+        ``(module_ids, pages, certain)`` for each loop, as yielded by
+        ``Timeline._looped_modules_with_pages_outside``.
+
+    Raises
+    ------
+    ValueError
+        If a loop has content pages, not just page makers, before a run.
     """
-    for module_ids in loops:
-        names = ", ".join(f"'{module_id}'" for module_id in module_ids)
-        warn_from_caller(
-            f"A while_loop repeats module {names} and has content pages outside "
-            "it. If a group plays cued rounds or waits at GroupBarriers in the "
-            "module, a member on one of those pages counts as having left the "
-            "module, so the next run starts without them, and they and the group "
-            "wait for each other until late_after or max_wait_time acts. Keep the "
-            "loop's pages inside the module.",
-            UserWarning,
+    for module_ids, pages, certain in loops:
+        modules = ", ".join(f"'{module_id}'" for module_id in module_ids)
+        page_names = ", ".join(f"'{page}'" for page in pages)
+        shows = "shows pages" if certain else "has page makers (such as a for_loop)"
+        message = (
+            f"A while_loop repeats module {modules} and {shows} {page_names} "
+            "between its runs, outside the module, with no barrier after them. "
+            "A member on one of those pages counts as having left the module, so "
+            "if a group plays cued rounds or waits at GroupBarriers in it, a "
+            "faster member's next run starts without them and the group drifts "
+            "out of step. Move the pages into the module, or add a GroupBarrier "
+            "after them, outside the module, so that each run starts together."
         )
+        if certain:
+            raise ValueError(message)
+        warn_from_caller(message, UserWarning)
 
 
 def group_seats(group) -> Dict[int, int]:

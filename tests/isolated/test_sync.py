@@ -86,6 +86,7 @@ from psynet.timeline import (
     PageMaker,
     Response,
     Timeline,
+    for_loop,
     join,
     while_loop,
 )
@@ -7266,17 +7267,20 @@ def test_timeline_warns_about_barriers_newcomers_can_reach_after_their_group():
 
 
 @pytest.mark.parametrize(
-    "shape, warns",
+    "shape, outcome",
     [
-        ("module, page", True),
-        ("module, loop of pages", True),
-        ("page, loop of module", True),
-        ("module with page", False),
-        ("barrier, module", False),
-        ("module, barrier", False),
+        ("module, page", "raises"),
+        ("module, loop of pages", "raises"),
+        ("page, loop of module", "raises"),
+        ("module, barrier, page", "raises"),
+        ("module, for_loop of pages", "warns"),
+        ("module with page", None),
+        ("barrier, module, page", None),
+        ("module, page, before the grouper", None),
     ],
 )
-def test_timeline_warns_about_pages_between_runs_of_a_looped_module(shape, warns):
+def test_timeline_rejects_pages_between_runs_of_a_looped_module(shape, outcome):
+    # A barrier at the start of the module doesn't wait for a member who left it.
     def game(*extra):
         return Module("game", GroupBarrier(id_="run_start", group_type="pair"), *extra)
 
@@ -7294,19 +7298,29 @@ def test_timeline_warns_about_pages_between_runs_of_a_looped_module(shape, warns
         "page, loop of module": lambda: join(
             page(), while_loop("rounds", lambda: True, game(), 2)
         ),
+        "module, barrier, page": lambda: join(game(), barrier(), page()),
+        "module, for_loop of pages": lambda: join(
+            game(), for_loop(label="breaks", iterate_over=[1], logic=page())
+        ),
         "module with page": lambda: game(page()),
-        "barrier, module": lambda: join(barrier(), game()),
-        "module, barrier": lambda: join(game(), barrier()),
+        "barrier, module, page": lambda: join(barrier(), game(), page()),
+        "module, page, before the grouper": lambda: join(game(), page()),
     }[shape]()
+    steps = [
+        SimpleGrouper("pair", initial_group_size=2),
+        while_loop("runs", lambda: True, body, expected_repetitions=2),
+    ]
+    if "before the grouper" in shape:
+        steps.reverse()
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        Timeline(
-            SimpleGrouper("pair", initial_group_size=2),
-            while_loop("runs", lambda: True, body, expected_repetitions=2),
-            InfoPage("Done", time_estimate=1),
-        )
+        if outcome == "raises":
+            with pytest.raises(ValueError, match="repeats module 'game' and shows"):
+                Timeline(*steps, InfoPage("Done", time_estimate=1))
+            return
+        Timeline(*steps, InfoPage("Done", time_estimate=1))
     warned = any("repeats module 'game'" in str(w.message) for w in caught)
-    assert warned == warns
+    assert warned == (outcome == "warns")
 
 
 @pytest.mark.parametrize(

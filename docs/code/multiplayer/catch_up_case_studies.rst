@@ -160,27 +160,46 @@ page a ``time_limit``, or size the barrier's limits for slow readers.
 
 **With the results page outside the module**, as in
 ``while_loop("runs", play_again, join(Module("game", rounds), results_page), 2)``,
-Ben on the results page counts as having left the module, so nothing
-waits for him:
+Ben on the results page would count as having left the module, so nothing
+would wait for him. At step 2, Ann would play run 2's first round alone,
+and the pair would drift out of step. PsyNet therefore refuses this
+timeline when the experiment loads:
 
-- At step 2, Ann is released at once and plays that round alone:
-  ``on_release`` gets only her trial, and the round closes.
-- Ben's first cue then starts a new round on his own, and his barrier waits
-  for Ann, who is still in the module. Ann's next cue joins his round, so
-  they play together again from her next round.
+.. code-block:: text
 
-With a ``GroupBarrier`` at the start of each run instead, Ann waits at it
-for Ben while Ben waits in the round for Ann, until ``late_after`` or
-``max_wait_time`` moves someone on; ``late_after`` on that barrier fails
-Ann, though she was on time. PsyNet warns about this shape when the
-experiment loads (see :ref:`group barriers in loops
-<rounds-group-barriers-in-loops>`). Keep the loop's pages inside the module.
+    ValueError: A while_loop repeats module 'game' and shows pages 'results'
+    between its runs, outside the module, with no barrier after them. [...]
+    Move the pages into the module, or add a GroupBarrier after them, outside
+    the module, so that each run starts together.
+
+A ``GroupBarrier`` at the start of the module doesn't help, and the check
+still raises: Ben has left the module, so the barrier lets Ann through,
+and when Ben reaches it, he waits there for Ann while she waits in the
+round for him, until ``late_after`` or ``max_wait_time`` moves someone
+on. Either fix works:
+
+.. code-block:: python
+
+    # Keep the results page inside the module, as above.
+    while_loop("runs", play_again, Module("game", rounds, results_page), 2)
+
+    # Or wait for the whole pair after the page, outside the module.
+    next_run = GroupBarrier(id_="next_run", group_type="team")
+    while_loop("runs", play_again,
+               join(Module("game", rounds), results_page, next_run), 2)
+
+With the barrier, Ann waits at ``next_run`` while Ben reads, and they
+start run 2 together. See :ref:`group barriers in loops
+<rounds-group-barriers-in-loops>` for what the check can't see.
 
 Checked by ``test_case_a_slow_reader_between_runs_of_a_looped_module`` in
 ``tests/isolated/test_trial_cue_groups.py`` for the page inside the module,
-and by ``test_a_page_between_runs_leaves_the_run_start_waiting_until_late_after``
-for the barrier at the start of each run. The case with the page outside
-the module and no barrier is current behaviour, not checked by a test.
+by ``test_a_barrier_after_the_pages_between_runs_waits_for_the_slow_member``
+for the barrier after the page, and by
+``test_a_page_between_runs_leaves_the_run_start_waiting_until_late_after``
+for the barrier at the start of the module. The load-time error is checked
+by ``test_timeline_rejects_pages_between_runs_of_a_looped_module`` in
+``tests/isolated/test_sync.py``.
 
 An odd player out with a regrouper
 ----------------------------------

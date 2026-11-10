@@ -995,12 +995,30 @@ def test_a_page_between_runs_leaves_the_run_start_waiting_until_late_after(
         start.choose_who_to_release([slow])
     assert start._participant_is_waiting(slow)
     assert answered._participant_is_waiting(fast)
-    assert any("loop's pages inside the module" in m for m in _barrier_warnings(caplog))
+    assert any("loop's pages into the module" in m for m in _barrier_warnings(caplog))
 
     _backdate_group(fast.active_sync_groups["pair"], seconds=10)
     start.check_waiting_participants([slow])
     assert fast.failed
     assert start.choose_who_to_release([slow]) == [slow]
+
+
+@in_consents_experiment
+def test_a_barrier_after_the_pages_between_runs_waits_for_the_slow_member(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    game = Module("game", InfoPage("Hi", time_estimate=1))
+    for participant in cohort:
+        participant.start_module(game)
+        participant.end_module(game)
+    fast, slow = cohort
+    ready = GroupBarrier("ready", group_type="pair")
+    _arrive(exp, ready, [fast])
+    assert ready._participant_is_waiting(fast)
+    _arrive(exp, ready, [slow])
+    assert not ready._participant_is_waiting(fast)
 
 
 @pytest.mark.parametrize("group_barrier_id", ["ready", "submitted"])

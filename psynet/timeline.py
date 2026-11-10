@@ -2893,6 +2893,33 @@ class PageMakerFinishedError(Exception):
     pass
 
 
+def _pages_before_next_run(steps):
+    """Return ``(module_ids, pages, certain)`` for the pages in a loop body that lead to a module's next run without a barrier, or ``None``.
+
+    ``steps`` are the body's ``(kind, name)`` pairs in order, of kind
+    ``"module"``, ``"page"``, ``"page_maker"`` or ``"barrier"``. The body
+    is walked twice, so that pages after the last module, which lead to
+    the first module of the next iteration, are found too.
+    """
+    module_ids = [name for kind, name in steps if kind == "module"]
+    if not module_ids:
+        return None
+    found, pending = set(), []
+    for i, (kind, _) in enumerate(steps + steps):
+        if kind == "barrier":
+            pending = []
+        elif kind == "module":
+            found.update(pending)
+            pending = []
+        elif kind in ("page", "page_maker"):
+            pending.append(i % len(steps))
+    if not found:
+        return None
+    pages = [steps[i] for i in sorted(found)]
+    certain = any(kind == "page" for kind, _ in pages)
+    return module_ids, [name for _, name in pages], certain
+
+
 class Timeline:
     def __init__(self, *args, **branch_kwargs):
         from collections import OrderedDict
@@ -2993,13 +3020,12 @@ class Timeline:
     def check_group_policies(self):
         """Warn about grouper and barrier settings that fail members who were on time, or strand newcomers or slower members.
 
-        The last check, only for timelines with a grouper, flags a
-        ``while_loop`` with content pages outside the module it repeats.
+        The last check raises if a ``while_loop`` after a grouper shows
+        content pages between runs of a module it repeats.
         """
         from .sync import (
-            Grouper,
+            check_looped_module_has_no_pages_outside,
             warn_if_late_removal_fails_group,
-            warn_if_looped_module_has_pages_outside,
             warn_if_newcomers_can_strand_group,
         )
 
@@ -3007,47 +3033,57 @@ class Timeline:
             {id(barrier): barrier for barrier in self._barriers()}.values()
         )
         warn_if_newcomers_can_strand_group(self._barriers_in_order())
-        if any(isinstance(barrier, Grouper) for barrier in self._barriers()):
-            warn_if_looped_module_has_pages_outside(
-                self._looped_modules_with_pages_outside()
-            )
+        check_looped_module_has_no_pages_outside(
+            self._looped_modules_with_pages_outside()
+        )
 
     def _looped_modules_with_pages_outside(self):
-        """Yield the ids of the modules in each ``while_loop`` whose body also has content pages outside them.
+        """Yield ``(module_ids, pages, certain)`` for each ``while_loop`` with pages between runs of its modules.
 
-        Only modules and pages in the loop's body count, not those in a
-        module nested in one of them, so a page in an outer module around
-        the repeated one isn't seen. The modules and pages of a nested loop
-        that doesn't warn itself count for the enclosing loop. A barrier's
-        elts, such as its waiting page, are skipped: a barrier outside the
-        module waits for every member, so it doesn't strand anyone. A
-        ``for_loop`` builds its logic when the participant reaches it, so
-        the walk treats it as a page, and doesn't see modules in it.
+        A page counts if, going round the loop, a member can get from it to
+        the next run of one of the loop's modules without passing a barrier:
+        a barrier outside the module waits for every member, so each run
+        starts together. Only loops that end after a grouper in timeline
+        order count, as no one is grouped before it. Only modules, pages
+        and barriers in the loop's body count, not those in a module nested
+        in one of them, so a page in an outer module around the repeated
+        one isn't seen. A nested loop that isn't yielded itself counts as
+        its body run once. ``pages`` are the labels of the pages found.
+        ``certain`` is ``False`` if they are all page makers, such as a
+        ``for_loop``, whose logic is built when the participant reaches it
+        and might not show a page.
         """
+        from .sync import Barrier, Grouper
+
+        grouped = False
         for branch_elts in self.elts.values():
             loops = []
             module_depth = 0
             for elt in branch_elts:
-                if elt.links.get("barrier") is not None:
-                    continue
                 at_loop_level = bool(loops) and module_depth == loops[-1]["depth"]
-                if isinstance(elt, StartWhile):
-                    loops.append({"depth": module_depth, "modules": [], "page": False})
+                barrier = elt if isinstance(elt, Barrier) else elt.links.get("barrier")
+                if barrier is not None:
+                    grouped |= isinstance(barrier, Grouper)
+                    if at_loop_level:
+                        loops[-1]["steps"].append(("barrier", None))
+                elif isinstance(elt, StartWhile):
+                    loops.append({"depth": module_depth, "steps": []})
                 elif isinstance(elt, EndWhile):
-                    loop = loops.pop()
-                    if loop["modules"] and loop["page"]:
-                        yield loop["modules"]
+                    steps = loops.pop()["steps"]
+                    found = _pages_before_next_run(steps) if grouped else None
+                    if found:
+                        yield found
                     elif loops and loops[-1]["depth"] == module_depth:
-                        loops[-1]["modules"].extend(loop["modules"])
-                        loops[-1]["page"] |= loop["page"]
+                        loops[-1]["steps"].extend(steps)
                 elif isinstance(elt, StartModule):
                     if at_loop_level:
-                        loops[-1]["modules"].append(elt.module.id)
+                        loops[-1]["steps"].append(("module", elt.module.id))
                     module_depth += 1
                 elif isinstance(elt, EndModule):
                     module_depth -= 1
                 elif at_loop_level and isinstance(elt, (Page, PageMaker)):
-                    loops[-1]["page"] = True
+                    kind = "page" if isinstance(elt, Page) else "page_maker"
+                    loops[-1]["steps"].append((kind, elt.label))
 
     def _barriers_in_order(self):
         """Yield ``(barrier, in_loop)`` once per barrier, in timeline order.

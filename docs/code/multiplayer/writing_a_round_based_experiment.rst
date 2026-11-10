@@ -179,27 +179,38 @@ a group visit too: it waits for every member still in the module,
 including one still finishing the previous run and a newcomer starting
 their first run, and not for a member whose loop has ended. A member on a
 page between the module and its next run, inside the loop but outside the
-module, counts as having left it. So the next run starts without them, and
-they and the group then wait for each other until ``late_after`` or
-``max_wait_time`` acts, if set. Keep the loop's pages inside the module:
+module, counts as having left it. So a faster member's next run starts
+without them, and the group drifts out of step: they play rounds alone, or
+wait for each other until ``late_after`` or ``max_wait_time`` acts. PsyNet
+raises a ``ValueError`` when the experiment loads if a ``while_loop`` after
+a grouper shows content pages between runs of a module it repeats, with no
+barrier between the pages and the next run. Move the pages into the
+module, or add a ``GroupBarrier`` after them, outside the module, which
+waits for every member, so each run starts together:
 
 .. code-block:: python
 
-    # A member on "Break" has left "game", so the next run starts without them.
+    # Raises: a member on "Break" has left "game", so the next run starts without them.
     while_loop("runs", play_again, join(Module("game", rounds), break_page), 2)
 
-    # Instead, keep the break inside the module.
+    # Keep the break inside the module...
     while_loop("runs", play_again, Module("game", rounds, break_page), 2)
 
-A ``GroupBarrier`` or grouper between runs is fine, because a barrier
-outside the module waits for every member. PsyNet warns when a timeline
-with a grouper has a ``while_loop`` with content pages (not a barrier's
-waiting page) outside the module it repeats. The check has limits:
+    # ... or wait for the group after it, outside the module.
+    ready = GroupBarrier(id_="ready", group_type="pair")
+    while_loop("runs", play_again, join(Module("game", rounds), break_page, ready), 2)
 
-- It can't tell whether the module is grouped, so the warning may name a
-  module that isn't.
-- A ``for_loop`` builds its logic when the participant reaches it, so the
-  check treats one as a page and doesn't see a module inside it.
+A barrier inside the module, at its start, doesn't count, as it doesn't
+wait for members who have left the module; nor does a barrier before the
+pages. A barrier's own waiting page isn't a content page. The check has
+limits:
+
+- It can't tell whether the module is grouped, so it may reject a module
+  that isn't; moving the pages into the module is harmless then.
+- A ``for_loop`` or :class:`~psynet.timeline.PageMaker` builds its logic
+  when the participant reaches it, so the check can't see what it shows.
+  If one is all there is between the runs, PsyNet warns instead of
+  raising, and doesn't see a module inside it.
 - It doesn't see a page in an outer module around the repeated one, as in
   ``while_loop(..., Module("session", Module("game", rounds), break_page))``.
 
