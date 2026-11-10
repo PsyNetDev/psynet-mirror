@@ -972,8 +972,8 @@
      * participant. On release, ``psynetWaitingRelease`` is dispatched on
      * ``window`` and the page ends after the barrier's ``release_grace``,
      * unless it is submitted first. Meanwhile the header counts down to the
-     * end, unless a listener cancels the event. Pages that a release may not end (inside
-     * trials, or with ``release_grace=None``) run to their end. A page that the
+     * end, unless a listener cancels the event. Pages that a release may not end (with
+     * ``release_grace=None``) run to their end. A page that the
      * release could end but the server no longer shows, for example because
      * another tab moved on, reloads the timeline.
      * ``psynetWaitingStatus`` carries ``releaseInMs`` for countdowns.

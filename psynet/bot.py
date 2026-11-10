@@ -2,6 +2,7 @@ import json
 import time
 import uuid
 import warnings
+from datetime import timedelta
 from functools import cached_property
 from typing import List, Optional, Sequence, Union
 
@@ -9,7 +10,7 @@ from dallinger import db
 
 from psynet.db import transaction
 
-from .participant import Participant, ParticipantDriver
+from .participant import Participant, ParticipantDriver, _status_is_waiting
 from .utils import NoArgumentProvided, get_logger, log_time_taken, wait_until
 
 logger = get_logger()
@@ -137,6 +138,17 @@ class Bot(Participant):
         )
 
 
+def _as_browser_json(x):
+    """Return ``x`` with whole-number floats as ``int``, as the browser's ``JSON.stringify`` writes them."""
+    if isinstance(x, float) and x.is_integer():
+        return int(x)
+    if isinstance(x, dict):
+        return {key: _as_browser_json(value) for key, value in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_as_browser_json(value) for value in x]
+    return x
+
+
 class BotResponse:
     """
     Defines a bot's response to a given page.
@@ -144,7 +156,8 @@ class BotResponse:
     Parameters
     ----------
         raw_answer :
-            The raw_answer returned from the page.
+            The raw_answer returned from the page. Whole-number floats in it,
+            such as ``3.0``, are submitted as ``int``, as the browser submits them.
 
         answer :
             The version of the answer that will be stored in the database,
@@ -188,7 +201,7 @@ class BotResponse:
         data = {}
 
         if self.raw_answer != NoArgumentProvided:
-            data["raw_answer"] = self.raw_answer
+            data["raw_answer"] = _as_browser_json(self.raw_answer)
 
         if self.answer != NoArgumentProvided:
             data["answer"] = self.answer
@@ -265,7 +278,7 @@ def advance_past_wait_pages(
             page = bot.status.get("page") or {}
             if page.get("barrier_id") in stop_at and not page.get("can_resume"):
                 continue
-            if page.get("is_wait_page") or page.get("is_timeline_hold"):
+            if _status_is_waiting(bot.status):
                 waiting.append(bot)
                 bot.take_page()
         if not waiting:
@@ -279,6 +292,86 @@ def advance_past_wait_pages(
             raise RuntimeError(f"Bots {ids} are still waiting after {timeout} s.")
         if iteration >= 2:
             time.sleep(0.5)
+
+
+def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 10.0):
+    """Split the bots' pools at a :class:`~psynet.sync.Regrouper` now, then advance them past it.
+
+    A bot test would otherwise wait out the regrouper's ``deadline`` or its
+    next ``every`` tick, for example to test a round that starts without a
+    member who is still reading their results. This moves two clocks back by
+    one ``deadline`` (or ``every`` period): the bots' arrival times at the
+    regrouper and the creation times of the groups their pools' earlier
+    splits formed. The next check then splits the pools as the deadline or
+    tick would. Group memberships and roles are untouched, so a player still
+    in last round's group keeps their role. ``max_wait_time`` doesn't
+    move: it counts from the bots' real arrivals.
+
+    Parameters
+    ----------
+    bots : list of BotDriver
+        Bots waiting at the regrouper, and any others to advance with them.
+        Only these bots' arrivals move back, so with ``every`` pass every bot
+        waiting in the pool.
+    regrouper : Regrouper
+        The regrouper from the timeline.
+    timeout : float, optional
+        Passed to :func:`advance_past_wait_pages`.
+
+    Raises
+    ------
+    ValueError
+        If the regrouper has neither ``deadline`` nor ``every``, or none of
+        the bots is waiting at it.
+
+    Examples
+    --------
+    ::
+
+        for bot in bots[:3]:
+            bot.take_page()  # The fourth player is still reading.
+        regroup_now(bots[:3], pairing)
+    """
+    period = regrouper.deadline or regrouper.every
+    if period is None:
+        raise ValueError(
+            f"Regrouper '{regrouper.id}' has no deadline or every, so it splits "
+            "a pool as soon as it is complete; use advance_past_wait_pages."
+        )
+    with transaction():
+        participants = [Participant.query.get(bot.id) for bot in bots]
+        waiting = [p for p in participants if regrouper.id in p.active_barriers]
+        if not waiting:
+            raise ValueError(f"None of the bots is waiting at '{regrouper.id}'.")
+        _backdate_arrivals(regrouper, waiting, period)
+        pools = {}
+        for participant in waiting:
+            group = regrouper.waiting_pool_group(participant)
+            pools[group and group.id] = group
+        for within_group in pools.values():
+            _backdate_splits(regrouper, within_group, period)
+    advance_past_wait_pages(bots, timeout=timeout)
+
+
+def _backdate_splits(regrouper, within_group, seconds):
+    """Move every split ``regrouper`` made in this pool back by ``seconds``.
+
+    All of them, not just the latest, because the pool's deadline counts from
+    its most recent split.
+    """
+    from .sync import SyncGroup
+
+    shift = timedelta(seconds=seconds)
+    for group in SyncGroup.query.filter(*regrouper._pool_splits(within_group)):
+        group.creation_time -= shift
+
+
+def _backdate_arrivals(barrier, participants, seconds):
+    """Move the participants' current arrivals at ``barrier`` back by ``seconds``."""
+    for participant in participants:
+        participant.active_barriers[barrier.id].arrival_time -= timedelta(
+            seconds=seconds
+        )
 
 
 def run_bots_to_completion(bots: List["BotDriver"], timeout: Optional[float] = 60.0):
@@ -316,20 +409,12 @@ def run_bots_to_completion(bots: List["BotDriver"], timeout: Optional[float] = 6
         if deadline is not None and time.monotonic() > deadline:
             ids = [bot.id for bot in working]
             raise RuntimeError(f"Bots {ids} are still working after {timeout} s.")
-        if not first_pass and all(_is_waiting(bot) for bot in working):
+        if not first_pass and all(_status_is_waiting(bot.status) for bot in working):
             # Everyone waits, for example for a clock tick, so poll as a browser would.
             time.sleep(0.5)
         first_pass = False
         for bot in working:
             bot.take_page()
-
-
-def _is_waiting(bot) -> bool:
-    """Return whether the bot's current page, as last refreshed, is a waiting page."""
-    page = bot.status.get("page")
-    return isinstance(page, dict) and bool(
-        page.get("is_wait_page") or page.get("is_timeline_hold")
-    )
 
 
 def bots_by_sync_group(bots: List["BotDriver"], group_type: str):

@@ -21,8 +21,8 @@ Forming cohorts
 
 A :class:`~psynet.sync.SimpleGrouper` forms the cohorts. It starts a cohort
 of four as soon as four players are waiting, or a smaller one after a
-minute (``start_short_after``), and lets latecomers join the cohort
-(``join_existing_groups``; see :class:`~psynet.sync.SimpleGrouper`):
+minute (``start_short_after``), and lets latecomers join a cohort that has
+started (``join_existing_groups``; see :class:`~psynet.sync.SimpleGrouper`):
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: SimpleGrouper(
@@ -30,35 +30,38 @@ minute (``start_short_after``), and lets latecomers join the cohort
    :dedent: 8
 
 A latecomer who joined after the first rounds would soon have nobody left
-to play with, because the others finish their rounds and leave, so a
-:class:`~psynet.timeline.CodeBlock` at the start of each round closes the
-cohort once one of its players reaches the second round. It calls
-:meth:`~psynet.sync.SimpleSyncGroup.stop_top_ups`, after which nobody can
-join:
-
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :pyobject: stop_newcomers
+to play with, because the others finish their rounds and leave, so the
+regrouper below closes each cohort to latecomers when its second round
+starts (``stop_top_ups_after_rounds``).
 
 Pairing players each round
 --------------------------
 
 A :class:`~psynet.sync.Regrouper` at the start of each round splits the
 cohort into new pairs. Each time a player reaches it, they leave last round's
-pair and wait for the next split:
+pair and wait for the next split. ``PairingRegrouper`` is the demo's own
+subclass of :class:`~psynet.sync.Regrouper`, defined in its ``pairing.py``
+(see :ref:`sync-regrouper-recipe`), which keeps last round's
+partners apart and alternates roles:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :start-at: pairing = Regrouper(
+   :start-at: pairing = PairingRegrouper(
    :end-before: OUTCOME_TEXTS
 
 The round starts as soon as the whole cohort (``within``) is waiting, or at
 the ``deadline`` (counted from when the first player is back) without whoever
 isn't back yet, if enough players are waiting to
 form a pair. A player who isn't back by then is still in the cohort, and
-joins the next round.
-With ``roles``, each pair has a proposer and a responder, and each player
-alternates between them. Partners from last round are kept apart where
-possible. ``waiting_message`` counts down to the deadline. See
-:class:`~psynet.sync.Regrouper` for these options:
+joins the next round. The demo's bot test starts such a round with
+:func:`~psynet.bot.regroup_now`, so it doesn't wait for the deadline.
+With ``roles``, each pair has a proposer and a responder; the demo's
+regrouper gives each role to whoever has held it least often, so each
+player alternates between them. ``stop_top_ups_after_rounds=OPEN_FOR_ROUNDS``
+lets latecomers join the cohort only during its first round. Every split
+that forms pairs in the cohort counts as one of its rounds, even one that
+pairs only latecomers while the others are still playing, and the split
+after that stops the cohort's top-ups. ``waiting_message`` counts down to
+the deadline. See :class:`~psynet.sync.Regrouper` for these options:
 
 .. figure:: ../../_static/images/rounds/next_round.png
    :width: 700
@@ -292,9 +295,9 @@ too often, has left the cohort, or their cohort is down to one player:
 Players who finish leave the cohort with
 :func:`leave_group(COHORT) <psynet.sync.leave_group>`, so that the
 regrouper doesn't wait for them in later rounds. It removes them with
-``reason="finished"``, which shows them as "(finished)" and never dissolves
-the cohort, so players who finish first don't dissolve the closed cohort
-while others are still playing.
+``reason="finished"``, which never dissolves the cohort, so players who
+finish first don't dissolve the closed cohort while others are still
+playing (see :ref:`groups_below_min_size`).
 
 Exporting the rounds
 --------------------
@@ -349,10 +352,6 @@ whole group plays the same draw. A player who is in no group of that type
 when the trial starts gets an ungrouped trial, with ``sync_group_id`` set to
 ``None``; ``show_trial`` can check ``self.sync_group is None`` to give them
 a solo version.
-
-**Fixed roles.** With ``keep_roles=True``, players keep the role they first
-play for the whole game, and newcomers get the role that lets the most
-waiting players play.
 
 **Turns one after the other.** In games such as a trust game, the investor
 decides before the trustee. With cued trials, the role pages and the
@@ -413,8 +412,11 @@ last page can read the story from the group's nodes even after the group
 has ended.
 
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
-example to pair players by their earlier answers. With roles, return each
-group as a ``{role: participant}`` dict. See
+example to pair players by their earlier answers, and ``assign_roles``
+replaces the default random roles. The demo's regrouper overrides both, to
+keep last round's partners apart and to alternate roles (see
+:ref:`sync-regrouper-recipe`). With roles, each group needs
+one member per role. See
 :class:`~psynet.sync.Regrouper` for this and the other settings.
 
 **A trial maker.** A trial maker with ``sync_group_type``, as in the

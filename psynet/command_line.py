@@ -2734,13 +2734,15 @@ def _reject_leftover_local_image_files():
         )
 
 
+_LOCAL_PACKAGE_NAMES = ("psynet", "dallinger")
+
+
 def _local_packages(use_local_psynet, use_local_dallinger):
     """Return the names of the packages built into the image from local checkouts."""
     return tuple(
         package
-        for package, enabled in (
-            ("psynet", use_local_psynet),
-            ("dallinger", use_local_dallinger),
+        for package, enabled in zip(
+            _LOCAL_PACKAGE_NAMES, (use_local_psynet, use_local_dallinger)
         )
         if enabled
     )
@@ -3318,7 +3320,8 @@ def _debug_ssh(
     destroy ssh`` destroy it when its pending async jobs can't be checked.
     With ``performance_test_app``, the app is one that ``psynet
     performance-test ssh`` deploys for its tests: its environment also sets
-    ``performance_test_app``, :func:`_pre_launch` relaxes its checks, and an
+    ``performance_test_app`` and, if it uses local checkouts,
+    ``performance_test_local_packages``, :func:`_pre_launch` relaxes its checks, and an
     update isn't confirmed first, as with ``yes``.
     """
     try:
@@ -3348,6 +3351,10 @@ def _debug_ssh(
         config_options = {"debug_ssh_app": "true"}
         if performance_test_app:
             config_options["performance_test_app"] = "true"
+            if local_packages:
+                config_options["performance_test_local_packages"] = ",".join(
+                    local_packages
+                )
 
         with _local_image_packages(local_packages):
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
@@ -5895,7 +5902,10 @@ def test__local(
         # previously made a remote `psynet test ssh` look like it had done
         # nothing at all.
         click.echo(f"Running {exp.test_n_bots} bot(s) against the existing server...")
-        exp.test_experiment()
+        from .sync import fail_on_group_divergence
+
+        with fail_on_group_divergence():
+            exp.test_experiment()
         click.echo(f"Bot test passed ({exp.test_n_bots} bot(s)).")
         return
 
@@ -7675,7 +7685,9 @@ def performance_test__docker_ssh(
     directory in debug mode, as ``psynet debug ssh`` would, and marks it as
     a performance-test app, whose data is disposable. Since only bots take
     part, the experiment needn't have a consent page. Later runs update it
-    in place from this directory before testing, keeping its database. They
+    in place from this directory before testing, keeping its database, and
+    build in the local checkouts again if the deploy used
+    --use-local-psynet or --use-local-dallinger. They
     refuse apps that this command didn't deploy, or whose deploy didn't
     finish launching the experiment. The app is kept after the run; destroy
     it with ``psynet destroy ssh``.
@@ -7749,6 +7761,7 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     update = app in {entry.name for entry in get_apps(server)}
     if update:
         _require_performance_test_app(server, app)
+        _reuse_local_packages(server, app, deploy_options)
         print(f"Updating {app} on {server}, keeping its database...")
     else:
         print(f"Deploying {app} on {server} for performance tests...")
@@ -7771,6 +7784,47 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
         e.message += f" The app's passwords are saved in {launch_info}."
         raise
     return info["experiment"], (result, launch_info, update)
+
+
+def _reuse_local_packages(server, app, deploy_options):
+    """Build the local packages that ``app``'s deploy used into its update too.
+
+    The record is read from the app's compose file rather than from its web
+    container, whose PsyNet may come from ``requirements.txt`` and be too old
+    to report it. ``deploy_options`` holds the ``use_local_*`` options to turn
+    on, in place.
+
+    Raises
+    ------
+    click.ClickException
+        If the compose file can't be read and some ``use_local_*`` option is
+        off.
+    """
+    if all(deploy_options.get(f"use_local_{p}") for p in _LOCAL_PACKAGE_NAMES):
+        return
+    compose = _read_ssh_compose_file(server, app)
+    if compose is None:
+        raise click.ClickException(
+            f"Could not read {app}'s compose file to check which local checkouts "
+            "its deploy used. Rerun, or pass both --use-local-psynet and "
+            "--use-local-dallinger to skip the check."
+        )
+    (local_packages,) = _compose_settings(compose, "performance_test_local_packages")
+    recorded = [package.strip() for package in (local_packages or "").split(",")]
+    reused = [
+        package
+        for package in recorded
+        if package in _LOCAL_PACKAGE_NAMES
+        and not deploy_options.get(f"use_local_{package}")
+    ]
+    for package in reused:
+        deploy_options[f"use_local_{package}"] = True
+    if reused:
+        flags = " and ".join(f"--use-local-{package}" for package in reused)
+        print(
+            f"Using {flags}, as when {app} was deployed. To build from "
+            "requirements.txt instead, destroy the app first."
+        )
 
 
 def _run_ssh_performance_test(

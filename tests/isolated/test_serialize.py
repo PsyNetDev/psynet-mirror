@@ -139,6 +139,6 @@ def test_saved_class_methods_and_partial_keywords_keep_their_arguments():
     restored = unserialize(serialize(callback))
     assert restored(group="g") == ("_ScoringTrialMaker", "g", 1)
 
-    inherited = serialize_callable(_TeamScoringTrialMaker.describe, "below_quorum")
+    inherited = serialize_callable(_TeamScoringTrialMaker.describe, "on_release")
     restored = unserialize(serialize(inherited))
     assert restored(group="g", question=2) == ("_TeamScoringTrialMaker", "g", 2)
