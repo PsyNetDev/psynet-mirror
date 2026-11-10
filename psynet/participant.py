@@ -644,18 +644,15 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.pseudonym_animal = animal
 
     def to_dict(self):
-        """Return the participant's dashboard fields, including the name others see them by."""
+        """Return the participant's fields without the raw pseudonym keys.
+
+        The Database tab adds the pseudonym itself (see
+        :meth:`psynet.experiment.Experiment.table_data`), so participant JSON
+        responses don't depend on translations.
+        """
         x = super().to_dict()
         x.pop("pseudonym_color", None)
         x.pop("pseudonym_animal", None)
-        try:
-            x["pseudonym"] = self.pseudonym.name
-        except ValueError:
-            # Stored keys the current pseudonym scheme no longer has.
-            logger.warning(
-                "Participant %s has an unknown pseudonym.", self.id, exc_info=True
-            )
-            x["pseudonym"] = None
         return x
 
     # all_trials = relationship("psynet.trial.main.Trial")

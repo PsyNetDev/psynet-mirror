@@ -90,7 +90,7 @@ export async function activate({root, vars}) {
         if (String(senderId) === MY_ID) {
             // Own messages say "You", so the list spells out the participant's name.
             name = inList && pseudonym
-                ? YOU_IN_LIST_LABEL.replace("{NAME}", pseudonym.name)
+                ? YOU_IN_LIST_LABEL.replace("{NAME}", function () { return pseudonym.name; })
                 : YOU_LABEL;
         }
         label.appendChild(document.createTextNode(name));

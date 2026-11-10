@@ -1929,8 +1929,6 @@ class Page(Elt):
         client_ip_address=None,
         answer=NoArgumentProvided,
     ):
-        from psynet.trial.main import Trial
-
         if raw_answer == NoArgumentProvided and answer == NoArgumentProvided:
             raise ValueError("At least one of raw_answer and answer must be provided.")
         if blobs is None:
@@ -1987,13 +1985,6 @@ class Page(Elt):
         resp.answer = answer
         resp.metadata = combined_metadata
 
-        if isinstance(trial, Trial):
-            trial.response = resp
-            if trial.time_taken is None:
-                trial.time_taken = resp.metadata["time_taken"]
-            else:
-                trial.time_taken += resp.metadata["time_taken"]
-
         participant.browser_platform = metadata.get(
             "platform", "Browser platform info could not be retrieved."
         )
@@ -2016,8 +2007,29 @@ class Page(Elt):
             return list(self.background_recording.sources)
         return []
 
+    def _reject_impossible_answer(self, answer):
+        """Return a :class:`FailedValidation` for an answer the page cannot produce.
+
+        The experiment runs this check on every submitted response before
+        :meth:`validate`, so overriding :meth:`validate` does not skip it.
+        """
+        return None
+
     def _accept_response(self, resp, experiment, participant):
         """Save an answer that passed validation and run ``on_complete``."""
+        from psynet.trial.main import Trial
+
+        trial = participant.current_trial
+        # Pages after _finalize_trial (feedback, or pages before the next
+        # trial is prepared) leave current_trial set but don't belong to it.
+        # A failed participant's trial never completes, and their remaining
+        # pages (such as the unsuccessful-end page) don't belong to it either.
+        if isinstance(trial, Trial) and not trial.complete and not participant.failed:
+            trial.response = resp
+            page_time = resp.metadata.get("time_taken")
+            if page_time is not None:
+                trial.time_taken = (trial.time_taken or 0) + page_time
+
         if self.save_answer:
             if participant.answer_accumulation_depth:
                 answers = participant.answer

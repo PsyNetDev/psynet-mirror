@@ -7,7 +7,7 @@ from dallinger.models import timenow
 from flask import Flask
 
 from psynet.experiment import get_experiment
-from psynet.modular_page import ModularPage, TextControl
+from psynet.modular_page import ModularPage, PushButtonControl, TextControl
 from psynet.page import InfoPage
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import TIME_LIMIT_GRACE_SECONDS, Response, Timeline
@@ -91,7 +91,8 @@ def test_timeout_answers_skip_validation(in_experiment_directory, db_session):
         ModularPage(
             "guess",
             "Guess",
-            TextControl(),
+            # "timeout" is not a choice, so timeouts also skip the choices check.
+            PushButtonControl(["ok", "bad"]),
             time_limit=10,
             time_limit_answer="timeout",
             validate=lambda answer: None if answer == "ok" else "Wrong",
