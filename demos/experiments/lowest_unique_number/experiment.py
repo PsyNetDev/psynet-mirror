@@ -4,12 +4,13 @@ Every ``ROUND_SECONDS`` the :class:`~psynet.sync.Regrouper` puts everyone who
 is waiting into rooms of at most ``ROOM_SIZE`` players. Each player picks a
 number, and the lowest number that nobody else in the room picked wins.
 
-A player who doesn't choose within ``CHOICE_SECONDS`` is removed from their
-room, so the rest of the room isn't held up, and joins the next round
-instead. Missing a round doesn't fail anyone. A player who comes back after
-the others' last round has started waits alone, though, and is failed once
-they reach the regrouper's ``max_wait_time`` (300 s by default), as at any
-barrier.
+The choice page has a ``time_limit`` of ``CHOICE_SECONDS``. A player who
+doesn't choose in time sits out the round and joins the next one, so the rest
+of the room isn't held up. A player who leaves the page, for example by
+closing the tab, is removed from their room ``LEFT_PAGE_SECONDS`` later.
+Missing a round doesn't fail anyone. A player who comes back after the
+others' last round has started waits alone, though, and is failed once they
+reach the regrouper's ``max_wait_time`` (300 s by default), as at any barrier.
 
 To keep the same people together across rounds, for example in teams, form
 the teams first and regroup within them::
@@ -24,6 +25,7 @@ the teams first and regroup within them::
 See the ``ultimatum_pairing`` demo for a full example.
 """
 
+import time
 from typing import List
 
 import psynet.experiment
@@ -33,14 +35,22 @@ from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.sync import Clock, GroupBarrier, Regrouper
-from psynet.timeline import PageMaker, Timeline, for_loop, join
+from psynet.timeline import (
+    TIME_LIMIT_GRACE_SECONDS,
+    PageMaker,
+    Timeline,
+    for_loop,
+    join,
+)
 
 ROUND_SECONDS = 10
 CHOICE_SECONDS = 15
+# Extra seconds before a player who left the choice page is removed from their room.
+LEFT_PAGE_SECONDS = 15
 ROOM_SIZE = 8
 N_ROUNDS = 2
 NUMBERS = [1, 2, 3, 4, 5]
-WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + 10
+WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + LEFT_PAGE_SECONDS + 10
 
 
 def lowest_unique(choices: dict):
@@ -51,15 +61,18 @@ def lowest_unique(choices: dict):
 
 
 def score_round(participants: List[Participant]):
-    """Record the room's choices and winning number for every player in the room."""
-    choices = {p.id: p.var.choice for p in participants}
+    """Record the room's choices and winning number for every player in the room.
+
+    Players who ran out of time have no choice and sit out the round.
+    """
+    choices = {p.id: p.var.choice for p in participants if p.var.choice is not None}
     winner = lowest_unique(choices)
     for participant in participants:
         participant.var.last_round = {
             "choices": sorted(choices.values()),
             "choice_by_player": choices,
             "winning_number": winner,
-            "won": winner is not None and choices[participant.id] == winner,
+            "won": winner is not None and choices.get(participant.id) == winner,
         }
 
 
@@ -74,18 +87,19 @@ def choose_number(participant):
         "choose",
         # Ticks appear as the others choose.
         GroupPrompt(
-            f"Pick a number. You have {CHOICE_SECONDS} seconds.",
+            "Pick a number.",
             participant=participant,
             group_type="room",
         ),
         PushButtonControl(choices=NUMBERS, arrange_vertically=False),
         save_answer="choice",
+        time_limit=CHOICE_SECONDS,
         time_estimate=5,
     )
 
 
 def show_result(participant):
-    if "room" not in participant.active_sync_groups:
+    if "room" not in participant.active_sync_groups or participant.var.choice is None:
         return InfoPage(
             "You ran out of time, so you sat out this round.", time_estimate=5
         )
@@ -131,7 +145,7 @@ def play_round():
             id_="round_finished",
             group_type="room",
             content="Waiting for the rest of the room…",
-            timeout_between_barriers_time=CHOICE_SECONDS,
+            timeout_between_barriers_time=CHOICE_SECONDS + LEFT_PAGE_SECONDS,
             timeout_between_barriers_action="kick",
             on_release=score_round,
         ),
@@ -165,14 +179,15 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         assert [bot.current_page_label for bot in bots] == ["choose"] * 3
 
-        # The third player doesn't choose in time, so the room goes ahead without them.
+        # The third player doesn't choose in time, so their late answer
+        # counts as no choice and they sit out the round.
         bots[0].take_page(response=1)
         bots[1].take_page(response=2)
-        advance_past_wait_pages(bots[:2], timeout=WAIT_TIMEOUT)
+        time.sleep(CHOICE_SECONDS + TIME_LIMIT_GRACE_SECONDS + 1)
+        bots[2].take_page(response=1)
+        advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         assert "You won with 1!" in bots[0].current_page_text
         assert "The room picked 1, 2." in bots[1].current_page_text
-
-        bots[2].take_page(response=1)
         assert "sat out this round" in bots[2].current_page_text
 
         # Next round, the third player is back in the room.

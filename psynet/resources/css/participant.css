@@ -1141,3 +1141,12 @@ textarea:focus-visible,
         transition: none;
     }
 }
+
+/* Countdown added by Page(time_limit=...) when the page has no countdown of its own. */
+.psynet-time-limit {
+    font-variant-numeric: tabular-nums;
+}
+
+.psynet-time-limit[hidden] {
+    display: none;
+}

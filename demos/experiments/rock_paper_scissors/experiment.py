@@ -1,3 +1,4 @@
+import random
 from typing import List
 
 from dominate import tags
@@ -16,6 +17,8 @@ from psynet.utils import get_logger
 logger = get_logger()
 
 PARTNER_WAIT_SECONDS = 300
+CHOICE_SECONDS = 20
+ACTIONS = ["rock", "paper", "scissors"]
 
 
 def _assert_on_page(bots, expected_label):
@@ -61,11 +64,11 @@ class RockPaperScissorsTrial(StaticTrial):
             GroupPrompt(
                 "Choose your action:", group=self.sync_group, participant=participant
             ),
-            PushButtonControl(
-                choices=["rock", "paper", "scissors"],
-            ),
+            PushButtonControl(choices=ACTIONS),
             time_estimate=5,
             save_answer="last_action",
+            # Running out of time saves None; score_trial then plays a random move.
+            time_limit=CHOICE_SECONDS,
         )
 
     def show_feedback(self, experiment, participant):
@@ -78,14 +81,23 @@ class RockPaperScissorsTrial(StaticTrial):
         else:
             assert score == 1
             outcome = "You won!"
+        if last_trial["timed_out_self"]:
+            you = (
+                f"You ran out of time, so we chose {last_trial['action_self']} for you"
+            )
+        else:
+            you = f"You chose {last_trial['action_self']}"
+        if last_trial["timed_out_other"]:
+            other = (
+                "your partner ran out of time, so we chose "
+                f"{last_trial['action_other']} for them"
+            )
+        else:
+            other = f"your partner chose {last_trial['action_other']}"
         prompt = tags.div()
         with prompt:
             tags.h1("Round results")
-            tags.p(
-                f"You chose {last_trial['action_self']}, "
-                + f"your partner chose {last_trial['action_other']}. "
-                + outcome
-            )
+            tags.p(f"{you}, {other}. {outcome}")
         actions = last_trial["action_by_player"]
         winning_action = last_trial["action_self" if score == 1 else "action_other"]
         return ModularPage(
@@ -114,22 +126,24 @@ class RockPaperScissorsTrial(StaticTrial):
 
     def score_trial(self, participants: List[Participant]):
         assert len(participants) == 2
-        answers = [participant.var.last_action for participant in participants]
+        timed_out = [p.var.last_action is None for p in participants]
+        answers = [
+            random.choice(ACTIONS) if out else p.var.last_action
+            for p, out in zip(participants, timed_out)
+        ]
         score_0 = self.scoring_matrix[answers[0]][answers[1]]
-        score_1 = -score_0
         action_by_player = {p.id: a for p, a in zip(participants, answers)}
-        participants[0].var.last_trial = {
-            "action_self": answers[0],
-            "action_other": answers[1],
-            "action_by_player": action_by_player,
-            "score": score_0,
-        }
-        participants[1].var.last_trial = {
-            "action_self": answers[1],
-            "action_other": answers[0],
-            "action_by_player": action_by_player,
-            "score": score_1,
-        }
+        for i, (participant, score) in enumerate(
+            zip(participants, (score_0, -score_0))
+        ):
+            participant.var.last_trial = {
+                "action_self": answers[i],
+                "action_other": answers[1 - i],
+                "timed_out_self": timed_out[i],
+                "timed_out_other": timed_out[1 - i],
+                "action_by_player": action_by_player,
+                "score": score,
+            }
 
     scoring_matrix = {
         "rock": {
