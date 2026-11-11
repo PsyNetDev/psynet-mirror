@@ -16,7 +16,7 @@ Everything the story needs is stored rather than worked out later:
   seat writes instead, so turns become uneven (for example A, C, C).
 - The writer stores their sentence in ``node.var.sentence`` as soon as they
   submit it, before the turn's barrier, or ``None`` if they ran out of time.
-  A writer the barrier has removed as late stores nothing. When a member's
+  A writer the barrier has already removed as late stores nothing. When a member's
   trial finishes and the turn still has no sentence, because the writer was
   late or left, it stores ``None``. So every finished turn has a
   ``sentence``, whether the barrier released or the group dissolved. Why a
@@ -204,8 +204,11 @@ class StoryTurn(Trial):
 
         The sentence is ``None`` if they ran out of time. A writer whose
         group dissolved while they wrote still finishes the story. Locking
-        the trial makes a submit that races the late removal wait for it, so
-        a removed writer's sentence never lands.
+        the trial orders a submit that races the late removal, so a sentence
+        is never stored after the others have moved on and stored ``None``.
+        In a rare race the writer stores their sentence and is still removed
+        as late. PsyNet issue #1161 proposes that late removal skip members
+        busy in their own request, which would make the lock unnecessary.
         """
         db.session.refresh(self, ["sync_group_outcome"], with_for_update=True)
         if self.sync_group_outcome in (None, "group_dissolved"):
@@ -286,6 +289,8 @@ def _turn_row(node: SyncGroupNode) -> dict:
         "sentence": node.var.get("sentence"),
         # "stayed" if the writer was still in the group when the turn ended,
         # otherwise why they left; None if they never started the turn.
+        # "late" rarely comes with a sentence, when the writer submitted just
+        # as the barrier removed them.
         "writer_outcome": trial.sync_group_outcome if trial else None,
     }
 

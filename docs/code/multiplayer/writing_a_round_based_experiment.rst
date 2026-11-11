@@ -391,9 +391,15 @@ barrier closes the round:
 
 The sentence is stored in the writer's own request, so it is there before
 the barrier lets the others go on, and it is kept if the group dissolves
-while the writer is still writing. A writer the barrier has removed for
-being late stores nothing; locking their trial first makes a submit that
-races the removal wait for it:
+while the writer is still writing. A writer the barrier has already removed
+for being late stores nothing. Locking their trial first orders a submit
+that races the removal, so a sentence is never stored after the others have
+moved on and stored ``None``. In a rare race the writer still stores their
+sentence and is then removed as late, so ``"late"`` can come with a
+sentence. `PsyNet issue #1161
+<https://gitlab.com/PsyNetDev/PsyNet/-/issues/1161>`__ proposes that late
+removal skip members busy in their own request, which would make the lock
+unnecessary:
 
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
    :pyobject: StoryTurn.save_sentence
