@@ -132,10 +132,18 @@ test("default barriers hold the current page until websocket release", { tag: "@
     ).toHaveCount(0);
     // The partner is still on choose_action. Grouped pages must subscribe to
     // arrival_updates even when sync_group_links was not already loaded.
+    // Its GroupPrompt shows the arrival as a live tick instead of a notice.
+    await expect(
+      secondParticipant.locator(".psynet-group-member--answered")
+    ).toHaveCount(1, { timeout: STEP_TIMEOUT_MS });
     const arrivalNotice = secondParticipant.locator("#psynet-arrival-notice");
-    await expect(arrivalNotice).toHaveText("Your partner is ready.", {
-      timeout: STEP_TIMEOUT_MS
+    await expect(arrivalNotice).toHaveCount(0);
+    // Removal notices still show over live ticks, so they exercise the
+    // notice layout here.
+    await secondParticipant.evaluate(() => {
+      window.psynet.showArrivalNotice("Your partner is ready.", { removed: true });
     });
+    await expect(arrivalNotice).toHaveText("Your partner is ready.");
     await expect(arrivalNotice).toHaveAttribute("title", "Your partner is ready.");
     await expect(arrivalNotice).toBeVisible();
     await expect(
@@ -150,7 +158,7 @@ test("default barriers hold the current page until websocket release", { tag: "@
     const longNoticeText =
       "Your partner is ready to continue. Please wait a little longer while we get everything ready for the next trial.";
     await secondParticipant.evaluate((message) => {
-      window.psynet.showArrivalNotice(message);
+      window.psynet.showArrivalNotice(message, { removed: true });
     }, longNoticeText);
     await secondParticipant.setViewportSize({ width: 375, height: 667 });
     const longNotice = await arrivalNotice.evaluate((el) => ({
@@ -169,7 +177,7 @@ test("default barriers hold the current page until websocket release", { tag: "@
     }
     await secondParticipant.setViewportSize({ width: 1280, height: 720 });
     await secondParticipant.evaluate(() => {
-      window.psynet.showArrivalNotice("Your partner is ready.");
+      window.psynet.showArrivalNotice("Your partner is ready.", { removed: true });
     });
     await expect(secondParticipant.locator("#main-body")).toContainText(
       "Choose your action"
