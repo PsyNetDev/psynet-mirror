@@ -192,8 +192,18 @@ class EstimateTrial(Trial):
             t.var.in_median = str(t.participant_id) in estimates if has_median else None
 
     def revise_page(self, participant):
-        # No median if too few estimates arrived, or if the group ended before
-        # the barrier released it, so score_round didn't run.
+        late = InfoPage(
+            "Your estimate didn't reach your group in time, so there is "
+            "nothing to revise.",
+            time_estimate=5,
+        )
+        # A member removed from the group passes the barrier without waiting,
+        # so their own outcome comes first: the group may not be scored yet.
+        if self.sync_group_outcome == "late":
+            return late
+        # No median if too few estimates arrived, or if the group ended
+        # ("group_dissolved") before the barrier released it, so score_round
+        # didn't run.
         if self.node.var.get("median") is None:
             return InfoPage(
                 "Too few estimates arrived for a group median, so there is "
@@ -201,12 +211,8 @@ class EstimateTrial(Trial):
                 time_estimate=5,
             )
         if not self.var.get("in_median"):
-            # They ran out of time, or were removed for being late.
-            return InfoPage(
-                "Your estimate didn't reach your group in time, so there is "
-                "nothing to revise.",
-                time_estimate=5,
-            )
+            # They ran out of time.
+            return late
         estimates = self.node.var.estimates
         return ModularPage(
             "revised",

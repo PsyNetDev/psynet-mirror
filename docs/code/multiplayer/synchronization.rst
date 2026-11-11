@@ -1366,12 +1366,14 @@ For the rest of the timeline:
      :pyobject: EstimateTrial.show_trial
 
   A member removed as late on a trial that has already started keeps its
-  grouped pages. The page after the barrier is built only once the barrier
-  has let the member through, so it reads the ``median`` that ``on_release``
-  stored on the node and the trial's ``in_median``. If the group ended
-  instead, nothing stored them, and ``.get`` returns ``None``. Either way,
-  a member without a median to revise towards is told there is nothing to
-  revise:
+  grouped pages. The page after the barrier is built once the member has
+  passed it, but a member who has left the group passes without waiting, so
+  the group may not be scored yet. The page therefore reads the member's own
+  ``sync_group_outcome`` first, and only then the ``median`` that
+  ``on_release`` stored on the node and the trial's ``in_median``. If the
+  group ended instead, nothing stored them, and ``.get`` returns ``None``.
+  Either way, a member without a median to revise towards is told there is
+  nothing to revise:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
      :pyobject: EstimateTrial.revise_page
