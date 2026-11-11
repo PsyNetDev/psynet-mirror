@@ -845,8 +845,8 @@ barriers wait for each other: none of them can pass until ``late_after`` or
 ``max_wait_time`` moves someone on, and ``late_after`` on either barrier
 fails the members it waits for at the other, who were on time. The
 background barrier check reports this within a second or so, however the
-members got there: it records one error for the group naming the barriers
-and who waits at each, logs it and lists it under the dashboard's Errors
+members got there: it records one error for the group and that set of
+barriers, naming the barriers and who waits at each, logs it and lists it under the dashboard's Errors
 tab. A bot test run by ``psynet test local`` then fails with a
 :class:`~psynet.sync.GroupDivergenceError` and that message when it ends,
 after its bots have finished or failed.

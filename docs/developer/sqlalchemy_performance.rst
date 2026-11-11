@@ -540,7 +540,7 @@ happens around the barrier check:
   size. A ``check_barriers`` sweep that found waiting visits then looks for
   diverged groups in one more statement (``_divergence_candidates``), and
   runs the full check (``_divergence_message``) only for a group whose members all wait at two or more of its
-  barriers and that has no divergence record yet.
+  barriers and that has no divergence record for those barriers yet.
 
 The size comparisons allow two statements of tolerance for internal commits:
 one can drop a row such as the sync group from the weak identity map, and

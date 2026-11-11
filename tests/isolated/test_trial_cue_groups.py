@@ -941,6 +941,10 @@ def test_a_sweep_reports_members_waiting_for_each_other_at_different_barriers(
     # A barrier at the start of each iteration, which the newcomer reaches first.
     _arrive(exp, GroupBarrier("ready", group_type="pair"), [newcomer])
     second_member(exp, pair, cohort)
+    # A record of a divergence at other barriers doesn't hide this one.
+    db.session.add(
+        ErrorRecord(RuntimeError("Earlier"), token=f"group-divergence-{pair.id}:ready")
+    )
     with caplog.at_level(logging.ERROR):
         (message,) = divergences()
     assert f"'ready' has participants {newcomer.id}" in message
@@ -949,7 +953,7 @@ def test_a_sweep_reports_members_waiting_for_each_other_at_different_barriers(
     assert _in_round()._participant_is_waiting(cohort[0])
     assert divergences() == [message]
     (record,) = ErrorRecord.query.filter_by(kind="GroupDivergenceError")
-    assert record.token == f"group-divergence-{pair.id}"
+    assert record.token == f"group-divergence-{pair.id}:ready,submitted"
     assert record.participant_id == min(newcomer.id, cohort[0].id)
 
 

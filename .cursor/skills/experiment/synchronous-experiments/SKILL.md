@@ -276,7 +276,7 @@ Module("game", for_loop(
   order, and have a member who stops playing early leave the group
   (`leave_group`) first. Members waiting at different barriers of one group
   wait for each other; the background barrier check records one error for
-  the group naming the barriers, logs it and lists it on the dashboard's
+  the group and that set of barriers, logs it and lists it on the dashboard's
   Errors tab. A bot test then fails with `GroupDivergenceError` and that
   message when it ends, after its bots finish or fail, often on
   `max_wait_time` first.

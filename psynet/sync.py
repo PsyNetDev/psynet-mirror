@@ -43,7 +43,8 @@ Whom a group barrier waits for
     waiting, but no barrier of the group has them all, nothing can pass:
     each ``check_barriers`` sweep looks for such groups
     (``_report_divergences``) and records each as an error once, with a
-    token naming the group so later sweeps skip it.
+    token naming the group and the barriers, so later sweeps skip it until
+    the group diverges at other barriers.
 
 Where this shows up in a timeline
 ---------------------------------
@@ -154,6 +155,7 @@ from sqlalchemy import (
     String,
     Text,
     and_,
+    distinct,
     exists,
     func,
     or_,
@@ -161,6 +163,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import (
     Session,
@@ -4819,9 +4822,23 @@ class GroupDivergenceError(RuntimeError):
     """
 
 
-def _divergence_token(group_id):
-    """Return the token of the :class:`~psynet.error.ErrorRecord` of a divergence of a group."""
-    return f"group-divergence-{group_id}"
+def _divergence_token():
+    """Return the SQL token of the :class:`~psynet.error.ErrorRecord` of a divergence.
+
+    It names the group and the sorted ids of the barriers its members wait
+    at, such as ``group-divergence-7:ready,submitted``, so a group that
+    diverges again at other barriers is reported again. It aggregates over
+    the rows of :func:`_divergence_candidates`, grouped by group.
+    """
+    barrier_id = BarrierInstance.barrier_id
+    return func.concat(
+        "group-divergence-",
+        BarrierInstance.group_id,
+        ":",
+        func.array_to_string(
+            func.array_agg(aggregate_order_by(distinct(barrier_id), barrier_id)), ","
+        ),
+    )
 
 
 def _report_divergences():
@@ -4835,14 +4852,14 @@ def _report_divergences():
     (:func:`_divergence_message`). Each group is checked and recorded in its
     own transaction, so an error in one doesn't skip the others. A group's
     record carries the token from :func:`_divergence_token`, so a group with
-    a record isn't checked again.
+    a record for the same barriers isn't checked again.
     """
     try:
         candidates = _divergence_candidates()
     except Exception:
         logger.warning("Failed to look for diverged sync groups.", exc_info=True)
         return
-    for group_id in candidates:
+    for group_id, token in candidates:
         try:
             group = SyncGroup.query.get(group_id)
             divergence = None if group is None else _divergence_message(group)
@@ -4853,7 +4870,7 @@ def _report_divergences():
             db.session.add(
                 ErrorRecord(
                     GroupDivergenceError(message),
-                    token=_divergence_token(group_id),
+                    token=token,
                     participant_id=min(participant_ids),
                 )
             )
@@ -4864,11 +4881,11 @@ def _report_divergences():
             logger.exception("Failed to check sync group %s for divergence.", group_id)
 
 
-def _divergence_candidates() -> List[int]:
-    """Return the ids of active groups whose members all wait at two or more of the group's barriers.
+def _divergence_candidates() -> List[Tuple[int, str]]:
+    """Return the ids and divergence tokens of active groups whose members all wait at two or more of the group's barriers.
 
-    Dissolving groups and groups that already have a divergence record are
-    left out. One statement, in its own session.
+    Dissolving groups and groups that already have a divergence record for
+    the same barriers are left out. One statement, in its own session.
     """
     member = and_(
         ~Participant.failed,
@@ -4886,8 +4903,8 @@ def _divergence_candidates() -> List[int]:
         .correlate(BarrierInstance)
         .scalar_subquery()
     )
-    query = (
-        select(BarrierInstance.group_id)
+    candidates = (
+        select(BarrierInstance.group_id, _divergence_token().label("token"))
         .join(
             ParticipantLinkBarrier,
             ParticipantLinkBarrier.barrier_instance_id == BarrierInstance.id,
@@ -4908,10 +4925,6 @@ def _divergence_candidates() -> List[int]:
             member,
             SyncGroup.active.is_(True),
             SyncGroup.dissolving.isnot(True),
-            ~exists().where(
-                ErrorRecord.token
-                == func.concat(_divergence_token(""), BarrierInstance.group_id)
-            ),
         )
         .group_by(BarrierInstance.group_id)
         .having(
@@ -4921,10 +4934,15 @@ def _divergence_candidates() -> List[int]:
                 == n_members,
             )
         )
-        .order_by(BarrierInstance.group_id)
+        .subquery()
+    )
+    query = (
+        select(candidates.c.group_id, candidates.c.token)
+        .where(~exists().where(ErrorRecord.token == candidates.c.token))
+        .order_by(candidates.c.group_id)
     )
     with Session(bind=db.engine) as session:
-        return list(session.scalars(query))
+        return [tuple(row) for row in session.execute(query)]
 
 
 def _divergence_message(group) -> Optional[Tuple[str, Set[int]]]:
