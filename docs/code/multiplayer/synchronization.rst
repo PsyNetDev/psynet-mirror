@@ -974,7 +974,6 @@ with side effects.
 Waiting and dropouts
 --------------------
 
-.. _sync-dropout-settings:
 .. _sync-failure-cases:
 
 Failure cases
@@ -1024,7 +1023,7 @@ barrier settings are described in `Timeouts`_, and the grouper's
      - :func:`~psynet.bot.make_late_now`
    * - Others never arrived
      - ``"waited_too_long"``
-     - barrier ``max_wait_action``
+     - barrier ``max_wait_time``
      - wait out ``max_wait_time``
    * - Too few members left
      - ``"group_dissolved"``
@@ -1036,11 +1035,16 @@ barrier settings are described in `Timeouts`_, and the grouper's
      - :meth:`~psynet.participant.ParticipantDriver.drop_out`
    * - Removed by the experimenter
      - ``"removed"``
-     - dashboard
-     - —
+     - dashboard, or ``remove_participant``
+     - ``remove_participant``
 
 A player who comes back after being removed keeps their reason, so their
-next page can explain what happened (see `After leaving a group`_).
+next page can explain what happened (see `After leaving a group`_). Only
+with ``max_wait_action="leave_group"`` does a player who waited too long
+reach a next page. The reasons ``"moved_on"`` (a regrouper split the group)
+and ``"finished"`` (``leave_group`` after the player's part) are normal
+exits rather than failures, but a page that looks up the reason must still
+handle them if it can meet them.
 
 **Without a group.** A grouper with
 ``max_wait_action="continue_without_group"`` lets a player for whom no group
@@ -1076,8 +1080,10 @@ Telling people what happened
 
 When a barrier removes a player for being late or for waiting too long,
 PsyNet shows them a notice, such as "Your group went on without you.
-Please continue." Your pages only need to add the consequence for your
-game, as in the ``public_goods`` demo:
+Please continue.", and a dissolving group tells its remaining members that
+too few members remained. A dashboard removal shows no notice. Your pages
+only need to add the consequence for your game, as in the ``public_goods``
+demo:
 
 .. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
    :start-at: ENDED_EARLY_TEXTS = {

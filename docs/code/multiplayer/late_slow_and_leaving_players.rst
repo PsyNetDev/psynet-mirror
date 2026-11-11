@@ -6,7 +6,7 @@ reads the results slowly, a third is left over when pairs are formed. This
 page follows such cases through concrete designs, and says what each
 player sees, whom they wait for and when they move on. The rules behind
 them are in :ref:`whom a group barrier waits for
-<rounds-group-barrier-rule>` and :ref:`sync-dropout-settings`; this page only
+<rounds-group-barrier-rule>` and :ref:`sync-failure-cases`; this page only
 applies them. Each case ends with the test that checks it, so if PsyNet's
 behaviour changes, the test fails until the page is updated.
 
@@ -181,7 +181,7 @@ final page says "We waited too long for other participants, so we ended
 your session." Ben's trial records ``"group_dissolved"`` in every row. So
 with the defaults both are failed, including Ann, who was on time. To move
 on without the absent member instead, give the barrier ``late_after`` (see
-:ref:`sync-dropout-settings`).
+:ref:`sync-failure-cases`).
 
 Checked by ``test_case_max_wait_time_runs_out`` in
 ``tests/isolated/test_trial_cue_groups.py``, for all four rows, and

@@ -382,12 +382,14 @@ PsyNet already tells a player removed by a barrier that their group went on
 without them. Pay by `self.sync_group_outcome` in `score_answer`, tell the
 others who left from `on_release`'s `left` argument, and map the reasons
 your game can meet to the text of the page after an early end, as in
-`public_goods`:
+`public_goods`. Include `"removed"`, which a dashboard removal can give in
+any game; a missing reason raises `KeyError`:
 
 ```python
 ENDED_EARLY_TEXTS = {
     "late": "You were away for too long, so the game ended early for you.",
     "group_dissolved": "Too few players stayed, so the game ended early.",
+    "removed": "You were removed from the game.",
 }
 
 def game_ended_early(participant):

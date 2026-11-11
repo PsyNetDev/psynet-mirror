@@ -450,14 +450,18 @@ def make_late_now(
 def _backdate_group(group, seconds):
     """Move the group's last barrier pass, and its members' joining, leaving and page deadline times, back by ``seconds``.
 
-    Leaving times move too, so that someone who left before the last pass
-    isn't counted again in the next release's ``left``.
+    Leaving times move with the last pass, so that someone who left before it
+    isn't counted again in the next release's ``left``. Before the group's
+    first pass, ``left`` counts from the group's creation, which doesn't
+    move, so neither do leaving times.
     """
     shift = timedelta(seconds=seconds)
+    clocks = ["arrival_time", "page_deadline"]
     if group.last_barrier_pass_time is not None:
         group.last_barrier_pass_time -= shift
+        clocks.append("removal_time")
     for link in group.participant_links:
-        for clock in ("arrival_time", "removal_time", "page_deadline"):
+        for clock in clocks:
             if getattr(link, clock) is not None:
                 setattr(link, clock, getattr(link, clock) - shift)
 
