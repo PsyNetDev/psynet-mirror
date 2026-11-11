@@ -69,7 +69,7 @@ def test_revise_page_explains_each_outcome(
     _, trials = _crowd(3)
     trial = trials[0]
     trial.sync_group_outcome = outcome
-    trial.time_limit_reached = timed_out
+    trial.var.estimate_timed_out = timed_out
     trial.var.in_median = in_median
     trial.node.var.median = median
     trial.node.var.estimates = {
@@ -103,24 +103,19 @@ def test_export_says_whether_the_estimate_itself_timed_out(
     in_experiment_directory, db_session
 ):
     demo, trials = _crowd(3)
-    for trial, (estimate_timed_out, revision_timed_out) in zip(
-        trials, [(False, True), (True, False)]
-    ):
-        for label, timed_out in [
-            ("estimate", estimate_timed_out),
-            ("revised", revision_timed_out),
-        ]:
-            response = Response(
-                trial.participant,
-                label,
-                "ModularPage",
-                metadata={"time_limit_reached": timed_out},
-                trial=trial,
-            )
-            response.successful_validation = True
-            db.session.add(response)
-            # As the page does on accepting the answer.
-            trial.time_limit_reached = timed_out
+    for trial, timed_out in zip(trials, [False, True]):
+        response = Response(
+            trial.participant,
+            "estimate",
+            "ModularPage",
+            metadata={"time_limit_reached": timed_out},
+            trial=trial,
+        )
+        db.session.add(response)
+        db.session.flush()
+        trial.save_estimate_timed_out(trial.participant)
+        # The revision page, which ran out of time the other way, comes later.
+        trial.time_limit_reached = not timed_out
     db.session.commit()
 
     rows = demo.Exp.get_basic_data()["player_round"]

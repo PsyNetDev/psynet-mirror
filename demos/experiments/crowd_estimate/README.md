@@ -17,10 +17,10 @@ without a group. Each question is one cued trial per player
 (`Trial.cue(..., round=question)` on a trial class with `sync_group_type`):
 the barrier that scores the question saves the group's estimates and median
 on the node its members' trials share, and on each trial whether its
-estimate is in the median; the revise page reads whether the estimate timed
-out from `trial.time_limit_reached`, which at that point follows the
-estimate page; the export reads it from the estimate's own `Response`, as
-the trial's flag later follows the revision page. Nothing runs when a group ends, so a
+estimate is in the median. A code block right after the estimate page stores
+whether it timed out in `trial.var.estimate_timed_out`, from
+`participant.last_response`, because `trial.time_limit_reached` later follows
+the revision page. Nothing runs when a group ends, so a
 round whose group ended at that barrier keeps only each player's estimate,
 in their trial's answer. With `accumulate_answers = True`, that answer holds
 both the estimate and the revised estimate, by page label. A player without a
