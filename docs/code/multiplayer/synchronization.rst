@@ -401,7 +401,7 @@ later:
   store it, and members who skipped the round get nothing;
 - why the player left the group before such a release: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
-  ``"late"``, ``"waited_too_long"``, ``"left_experiment"`` or
+  ``"late"``, ``"waited_too_long"``, ``"left_experiment"``,
   ``"group_dissolved"`` or ``"removed"`` (the values are listed in
   :data:`~psynet.sync.SyncGroupOutcome`);
 - ``None`` before either happens, and for a trial played without a group.
@@ -1624,9 +1624,10 @@ For the rest of the timeline:
   them no group in time), ``"group_dissolved"``, ``"moved_on"`` (a
   :class:`~psynet.sync.Regrouper` took them out of their previous group, and
   they are waiting there or sitting the round out),
-  ``"finished"`` or ``"left_experiment"`` (they failed or returned the study;
+  ``"finished"``, ``"left_experiment"`` (they failed or returned the study;
   a member failed for being late or waiting too long at this group's barrier
-  records ``"late"`` or ``"waited_too_long"`` instead).
+  records ``"late"`` or ``"waited_too_long"`` instead) or ``"removed"`` (the
+  experimenter removed them on the dashboard).
   A cued trial whose pages they were on in that group keeps the reason in
   ``sync_group_outcome``, even after they join another group, unless a
   barrier in those pages had already released the group with them in it

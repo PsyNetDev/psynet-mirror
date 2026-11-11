@@ -59,6 +59,8 @@ would start short after about a minute, wait about three minutes in the
 lobby, allow about 30 seconds for `ANSWER_SECONDS` and about a minute for
 each of `TOP_UP_WAIT` and `LATE_AFTER`, which also covers reading the
 introduction.
+- A player the experimenter removes from their group on the dashboard
+  can't revise their estimate and is told they were removed.
 
 ## Usage
 

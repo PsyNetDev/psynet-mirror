@@ -19,7 +19,8 @@ ended. The bot test plays a full story in which one writer runs out of time.
   finish a turn, leaves the group and plays no more turns. If they were due to
   write, the member in the next seat writes instead, so turns become uneven
   (for example A, C, C).
-- A writer the barrier has already removed as late stores nothing. When a
+- A writer who has left the group stores nothing, unless the group dissolved
+  while they wrote, in which case their sentence ends the story. When a
   member's trial finishes and the turn still has no sentence, it stores
   `None`, so every finished turn has a `sentence`. The writer trial's
   `sync_group_outcome` says why a sentence is `None`: `"stayed"` if they ran
@@ -32,6 +33,8 @@ ended. The bot test plays a full story in which one writer runs out of time.
 
 The `turn` export has one row per turn; its `finished` column tells a turn
 that stored `None` from one that never finished.
+- A member the experimenter removes on the dashboard writes no more turns
+  and is told they were removed from the story.
 
 ## Usage
 

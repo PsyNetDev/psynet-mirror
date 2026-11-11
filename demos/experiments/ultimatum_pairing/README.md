@@ -24,6 +24,10 @@ the pair's offer and result live on a node shared by its two trials, sit-outs
 get a page instead of a trial, and the basic data is read from trials and
 nodes.
 
+A player the experimenter removes from their pair on the dashboard gets no
+coins that round; one removed from the cohort is told they were removed
+from the game.
+
 ## Usage
 
 For instructions on how to run PsyNet experiments like this one, visit the
