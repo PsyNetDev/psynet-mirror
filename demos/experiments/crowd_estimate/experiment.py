@@ -101,8 +101,7 @@ def get_timeline():
                 logic=lambda question: EstimateTrial.cue(
                     {"question": question}, round=question
                 ),
-                # An estimate and a revised estimate; alone, only the estimate.
-                time_estimate_per_iteration=2 * ANSWER_SECONDS,
+                time_estimate_per_iteration=EstimateTrial.time_estimate,
             ),
         ),
     )
@@ -114,8 +113,8 @@ def left_group(participant):
 
 class EstimateTrial(Trial):
     sync_group_type = GROUP
-    # Alone, a trial is one estimate; in a group, its pages add a revised one.
-    time_estimate = ANSWER_SECONDS
+    # An estimate and a revised estimate; alone, only the estimate.
+    time_estimate = 2 * ANSWER_SECONDS
     # The trial's answer holds both the estimate and the revised estimate.
     accumulate_answers = True
 
@@ -156,7 +155,11 @@ class EstimateTrial(Trial):
 
     @classmethod
     def score_round(cls, trials: List["EstimateTrial"], node: SyncGroupNode):
-        """Save the group's estimates on the node, with their median if there are enough, and on each trial whether its estimate is in the median."""
+        """Save the group's estimates and median on the node.
+
+        The median is ``None`` with fewer than ``QUORUM`` estimates. Each
+        trial's ``in_median`` says whether its estimate counted.
+        """
         estimates = {}
         for t in trials:
             # The answer so far; running out of time saves None.
@@ -171,40 +174,48 @@ class EstimateTrial(Trial):
             t.var.in_median = str(t.participant_id) in estimates if has_median else None
 
     def revise_page(self, participant):
-        # A member who left the group passes the barrier without waiting, so
-        # their own outcome comes first: the group may not be scored yet. A
-        # member removed as late after the release has an estimate in the
-        # median, so they are told only that they left.
-        if self.sync_group_outcome == "late" and not self.var.get("in_median"):
-            reason = "Your estimate didn't reach your group in time"
-        elif self.sync_group_outcome == "group_dissolved":
-            # The framework's notice on this page says too few members remained.
-            reason = "Your group ended before you saw its median"
-        elif self.sync_group_outcome != "stayed":
-            reason = "You left your group before you saw its median"
-        elif self.node.var.get("median") is None:
-            reason = "Too few estimates arrived for a group median"
-        # The estimate is the trial's latest timed page so far, as barriers
-        # don't count; the export reads its own response instead.
-        elif self.time_limit_reached:
-            reason = "You didn't give an estimate in time"
-        else:
-            estimates = self.node.var.estimates
-            return ModularPage(
-                "revised",
-                GroupPrompt(
-                    f"{self.question} The median of your group's {len(estimates)} "
-                    f"estimates is {self.node.var.median:.15g}. "
-                    "Give your revised estimate.",
-                    participant=participant,
-                    group=self.sync_group,
-                    answers={pid: f"{v:.15g}" for pid, v in estimates.items()},
-                ),
-                NumberControl(),
-                time_limit=ANSWER_SECONDS,
-                time_estimate=ANSWER_SECONDS,
+        reason = self._no_revision_reason()
+        if reason:
+            return InfoPage(
+                f"{reason}, so there is nothing to revise.", time_estimate=5
             )
-        return InfoPage(f"{reason}, so there is nothing to revise.", time_estimate=5)
+        estimates = self.node.var.estimates
+        return ModularPage(
+            "revised",
+            GroupPrompt(
+                f"{self.question} The median of your group's {len(estimates)} "
+                f"estimates is {self.node.var.median:.15g}. "
+                "Give your revised estimate.",
+                participant=participant,
+                group=self.sync_group,
+                answers={pid: f"{v:.15g}" for pid, v in estimates.items()},
+            ),
+            NumberControl(),
+            time_limit=ANSWER_SECONDS,
+            time_estimate=ANSWER_SECONDS,
+        )
+
+    def _no_revision_reason(self):
+        """Return why the player has nothing to revise, or ``None`` if they can revise.
+
+        The player's own outcome comes first, because a member who left the
+        group passes the barrier without waiting, before the group is scored.
+        """
+        outcome = self.sync_group_outcome
+        if outcome == "late" and not self.var.get("in_median"):
+            return "Your estimate didn't reach your group in time"
+        if outcome == "group_dissolved":
+            # The framework's notice on this page says too few members remained.
+            return "Your group ended before you saw its median"
+        if outcome != "stayed":
+            # Includes a member removed as late after their estimate counted.
+            return "You left your group before you saw its median"
+        if self.node.var.get("median") is None:
+            return "Too few estimates arrived for a group median"
+        # Barriers don't change time_limit_reached, so it is still the estimate's.
+        if self.time_limit_reached:
+            return "You didn't give an estimate in time"
+        return None
 
 
 class Exp(psynet.experiment.Experiment):
@@ -214,10 +225,11 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per question, from the trials, and one per group per question, from the nodes.
+        """Return one row per player per question and one per group per question.
 
-        Every trial gets a row, including one whose player left before
-        answering, so a missing answer is None rather than a missing row.
+        Player rows come from the trials and group rows from the nodes. Every
+        trial gets a row, including one whose player left before answering, so
+        a missing answer is None rather than a missing row.
         """
         trials = EstimateTrial.query.order_by(EstimateTrial.id)
         # trial.time_limit_reached follows the trial's latest timed page,

@@ -91,13 +91,17 @@ def in_group(participant: Participant) -> bool:
 
 
 def remember_group(participant: Participant):
-    """Store the participant's group ID, or ``None``, for the last page and the export."""
+    """Store the participant's group ID, or ``None``, for the last page and export."""
     group = participant.active_sync_groups.get(GROUP)
     participant.var.story_group_id = group.id if group else None
 
 
 def choose_writer(group, turn: int) -> int:
-    """Return the ID of the member in seat ``turn % GROUP_SIZE``, or in the next seat still in the group."""
+    """Return the ID of the member in seat ``turn % GROUP_SIZE``.
+
+    If that member has left, return the member in the next seat still in the
+    group.
+    """
     seats = group_seats(group)
     by_seat = sorted(seats, key=seats.get)
     start = turn % GROUP_SIZE
@@ -111,7 +115,10 @@ def turn_definition(group, round: int) -> dict:
 
 
 def group_turns(group_id: int) -> List[SyncGroupNode]:
-    """Return the nodes of the turns the group has started, in order, even after the group has ended."""
+    """Return the nodes of the turns the group has started, in order.
+
+    This works even after the group has ended.
+    """
     return db.session.get(SyncGroup, group_id).rounds("story")
 
 
@@ -177,16 +184,20 @@ class StoryTurn(Trial):
         )
 
     def save_sentence(self, participant):
-        """Store the writer's sentence on the turn's node, unless the barrier has removed them as late.
+        """Store the writer's sentence on the turn's node.
 
-        The sentence is ``None`` if they ran out of time. A writer whose
-        group dissolved while they wrote still finishes the story.
+        Nothing is stored if the barrier has removed them as late. The
+        sentence is ``None`` if they ran out of time. A writer whose group
+        dissolved while they wrote still finishes the story.
         """
         if self.sync_group_outcome in (None, "group_dissolved"):
             self.node.var.sentence = participant.answer
 
     def on_finalized(self):
-        """Store ``None`` as the sentence if the turn ended without one, because the writer was late or left."""
+        """Store ``None`` as the sentence if the turn ended without one.
+
+        That happens when the writer was late or left.
+        """
         super().on_finalized()
         if not self.node.var.has("sentence"):
             self.node.var.sentence = None
@@ -291,7 +302,10 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per turn, from the turns' nodes and writers' trials, and one per player."""
+        """Return one row per turn and one per player.
+
+        Turn rows come from the turns' nodes and the writers' trials.
+        """
         turns = SyncGroupNode.query.filter_by(module_id="story").order_by(
             SyncGroupNode.id
         )
