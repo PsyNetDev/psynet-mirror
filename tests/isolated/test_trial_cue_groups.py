@@ -424,6 +424,26 @@ def test_each_module_numbers_a_group_s_rounds_from_0(
 
 
 @in_consents_experiment
+def test_a_group_lists_its_rounds_of_a_module_in_order_after_it_ends(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    pair = cohort[0].active_sync_groups["pair"]
+    for participant in cohort:
+        participant.start_module(Module("story", InfoPage("Hi", time_estimate=1)))
+    for i in [1, 0]:
+        for participant in cohort:
+            PairTrial.cue({"target": i}, round=i)[0].consume(exp, participant)
+    for participant in cohort:
+        pair.remove_participant(participant, reason="finished")
+
+    assert not pair.active
+    assert [n.definition["target"] for n in pair.rounds("story")] == [0, 1]
+    assert pair.rounds("other") == []
+
+
+@in_consents_experiment
 def test_module_states_count_the_participant_s_runs_of_the_module(
     in_experiment_directory, db_session
 ):

@@ -569,6 +569,24 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     def var(self):
         return VarStore(self)
 
+    @property
+    def time_limit_reached(self) -> Optional[bool]:
+        """Whether the page's ``time_limit`` ran out before the trial's :attr:`response` was given.
+
+        Reads :attr:`psynet.timeline.Response.time_limit_reached` of
+        :attr:`response`, the latest accepted page of
+        :meth:`~psynet.trial.main.Trial.show_trial`, so with several pages it
+        describes the latest one only. It is ``None`` before the participant
+        submits a trial page, and ``False`` once a waiting page in
+        ``show_trial`` that a barrier release ended has replaced the response.
+        To keep a particular page's flag, copy it once that page is answered,
+        for example in the ``on_release`` of the barrier that follows it::
+
+            for trial in trials:
+                trial.var.timed_out = trial.time_limit_reached
+        """
+        return None if self.response is None else self.response.time_limit_reached
+
     @classmethod
     def get_for_participant(cls, participant_id: int, trial_maker_id: int = None):
         """

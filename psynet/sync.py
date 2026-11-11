@@ -4475,6 +4475,38 @@ class SyncGroup(SQLBase, SQLMixin):
             key=lambda participant: participant.id,
         )
 
+    def rounds(self, module_id: str) -> list:
+        """Return the group's rounds in a module of cued trials, in round order.
+
+        Each round is the :class:`~psynet.trial.main.SyncGroupNode` that the
+        group's :meth:`~psynet.trial.main.Trial.cue` trials share, so its
+        ``var`` holds what the round stored and ``all_trials`` its trials.
+        It also works once the group has ended or dissolved, for example to
+        show a debrief after the game::
+
+            sentences = [node.var.get("sentence") for node in group.rounds("story")]
+
+        Parameters
+        ----------
+        module_id
+            The ``id_`` of the module whose rounds to return, as in
+            ``participant.module_id``.
+
+        Returns
+        -------
+        list of SyncGroupNode
+            Ordered by ``sync_group_round``; empty if the group has cued no
+            round in the module, including a module run by a trial maker with
+            ``sync_group_type``, whose rounds have no group nodes.
+        """
+        from .trial.main import SyncGroupNode
+
+        return (
+            SyncGroupNode.query.filter_by(module_id=module_id, sync_group_id=self.id)
+            .order_by(SyncGroupNode.sync_group_round, SyncGroupNode.id)
+            .all()
+        )
+
     def dissolve_if_below_quorum(self):
         """Dissolve the group if it fell below its quorum; groups without a quorum never do."""
 

@@ -1,0 +1,1 @@
+Added `Trial.time_limit_reached`, which says whether the page's time limit ran out before the trial's latest accepted answer, and `SyncGroup.rounds(module_id)`, which returns a group's nodes for a module of cued trials in round order, also after the group has ended.

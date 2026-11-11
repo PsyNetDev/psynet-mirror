@@ -16,6 +16,7 @@ from psynet.timeline import (
     Response,
     Timeline,
 )
+from psynet.trial.main import Trial
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from timeline_hold_helpers import (  # noqa: E402
@@ -208,5 +209,42 @@ def test_browser_timeout_answers_must_be_choices(in_experiment_directory, db_ses
         # Nothing selected is still accepted, and validate is still skipped.
         payload = _submit(exp, participant, None, time_limit_reached=True)
         assert payload["submission"] == "approved"
+    finally:
+        exp.timeline = original
+
+
+class _GuessTrial(Trial):
+    time_estimate = 10
+
+    def show_trial(self, experiment, participant):
+        return [
+            ModularPage("guess", "Guess", TextControl(), time_limit=10),
+            ModularPage("confirm", "Sure?", TextControl()),
+        ]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_trial_reports_whether_its_latest_page_timed_out(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    original = exp.timeline
+    exp.timeline = Timeline(_GuessTrial.cue({}), InfoPage("Done", time_estimate=1))
+    try:
+        (participant,) = _working_participants(exp, 1)
+        _json_timeline(exp, participant)
+        trial = participant.current_trial
+        assert trial.time_limit_reached is None
+
+        participant.page_deadline = timenow()
+        assert (
+            _submit(exp, participant, None, time_limit_reached=True)["submission"]
+            == "approved"
+        )
+        assert trial.time_limit_reached is True
+        assert _submit(exp, participant, "yes")["submission"] == "approved"
+        assert trial.time_limit_reached is False
     finally:
         exp.timeline = original

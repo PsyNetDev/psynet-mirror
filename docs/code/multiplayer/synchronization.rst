@@ -355,6 +355,27 @@ slow. ``trials`` only covers the members still in the group; on a group's
 node, ``node.all_trials`` lists every trial of the round, including those of
 members who have since left, each with its ``sync_group_role``.
 
+.. _sync-reading-rounds:
+
+:attr:`trial.time_limit_reached <psynet.trial.main.Trial.time_limit_reached>`
+says whether a member's page ran out of time before their answer, so
+``on_release`` can score a timed-out answer differently. It describes the
+trial's latest accepted page, so save it in ``on_release`` if a later page of
+the trial could replace it. To read a group's rounds after the game, for
+example on a debrief page once the group has ended,
+:meth:`group.rounds(module_id) <psynet.sync.SyncGroup.rounds>` returns the
+group's nodes for that module of cued trials in round order:
+
+.. code-block:: python
+
+    def score_round(trials, node):
+        for trial in trials:
+            trial.var.timed_out = trial.time_limit_reached
+        ...
+
+    def story_so_far(group):
+        return [node.var.get("sentence") for node in group.rounds("story")]
+
 .. _sync-round-outcome:
 
 Each trial on a group's node records how the round ended for its player in
