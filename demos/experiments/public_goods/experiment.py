@@ -136,8 +136,10 @@ class ContributionTrial(Trial):
         cls, trials: List["ContributionTrial"], node: SyncGroupNode, left: list
     ):
         """Share the multiplied pot between the members who played the round."""
-        # String keys, because node.var stores JSON. An answer of None means
-        # the player ran out of time and put in nothing.
+        for trial in trials:
+            trial.var.timed_out = trial.response.time_limit_reached
+        # String keys, because node.var stores JSON. A player who ran out of
+        # time has an answer of None and puts in nothing.
         node.var.contributions = {str(t.participant_id): t.answer for t in trials}
         pot = sum(t.answer or 0 for t in trials)
         multiplied_pot = MULTIPLIER * pot
@@ -178,7 +180,7 @@ class ContributionTrial(Trial):
         node = self.node
         # A group of three plays on with two, so at most one player leaves.
         left = "One player has left the group. " if node.var.n_left else ""
-        if self.answer is None:
+        if self.var.timed_out:
             you = "You ran out of time and put in nothing"
         else:
             you = f"You put in {self.answer}"
@@ -202,7 +204,7 @@ class ContributionTrial(Trial):
 
 def your_contribution(participant, trial):
     """Replace the contribution buttons with the player's contribution while the others decide."""
-    if trial.answer is None:
+    if trial.response.time_limit_reached:
         text = "You ran out of time, so you put in nothing."
     else:
         text = f"You put in {trial.answer} tokens."
@@ -267,6 +269,9 @@ class Exp(psynet.experiment.Experiment):
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or never answered.
                     "contribution": t.answer,
+                    # Whether the player ran out of time; None until the
+                    # round is scored, so in a cancelled round.
+                    "timed_out": t.var.get("timed_out"),
                     # None if the player returned the study during the round.
                     "payoff": t.score,
                     "bonus": t.performance_reward,
@@ -282,8 +287,8 @@ class Exp(psynet.experiment.Experiment):
                     # so False if they return the study first (issue #1163).
                     "cancelled": n.var.get("cancelled", False),
                     # The rest are None until the round is scored, so in a
-                    # cancelled round; a contribution of None means the
-                    # player ran out of time.
+                    # cancelled round. A player who ran out of time has a
+                    # contribution of None.
                     "contributions": n.var.get("contributions"),
                     "pot": n.var.get("pot"),
                     "multiplied_pot": n.var.get("multiplied_pot"),
@@ -349,11 +354,11 @@ class Exp(psynet.experiment.Experiment):
             (bots[9].id, 0): ("group_dissolved", True, ENDOWMENT * TOKEN_VALUE),
         }, left
         timed_out = [
-            (r["participant_id"], r["round"], r["complete"])
+            (r["participant_id"], r["round"], r["contribution"])
             for r in rows
-            if r["outcome"] == "stayed" and r["contribution"] is None
+            if r["timed_out"]
         ]
-        assert timed_out == [(bots[2].id, 1, True), (bots[5].id, 1, True)], timed_out
+        assert timed_out == [(bots[2].id, 1, None), (bots[5].id, 1, None)], timed_out
         for bot in bots:
             paid = sum(r["bonus"] or 0 for r in rows if r["participant_id"] == bot.id)
             reward = bot.with_participant(lambda p: p.performance_reward)

@@ -107,7 +107,10 @@ Groups that stay together save their rounds the same way. The
 player who ran out of time), ``pot``, ``multiplied_pot``, ``share`` and the
 number of players who left since the previous round was scored, from
 ``on_release``'s ``left``, once per round on the node, and
-each player's ``contribution`` and ``payoff`` on their trial:
+each player's ``contribution``, ``payoff`` and ``timed_out`` on their trial.
+``timed_out`` copies :attr:`~psynet.timeline.Response.time_limit_reached`
+from the trial's response rather than inferring a time-out from a missing
+answer:
 
 .. literalinclude:: ../../demos/experiments/public_goods/experiment.py
    :pyobject: ContributionTrial.score_round
