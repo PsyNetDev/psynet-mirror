@@ -235,6 +235,7 @@ OUTCOME_TEXTS = {
         "You were away for too long, so you got no coins this round, "
         "and the game is over for you."
     ),
+    "removed": "You were removed from your pair, so you got no coins this round.",
     "own_time_out": "You ran out of time, so nobody was paid.",
     "partner_away": "Your partner was away for too long, so nobody was paid.",
     "partner_left": "Your partner left, so nobody was paid.",
@@ -334,6 +335,9 @@ class OfferTrial(Trial):
         """Return the key in ``OUTCOME_TEXTS`` that describes the round for this player."""
         if self.sync_group_outcome == "late":
             return "away"
+        # From the dashboard; the round may not have been scored yet.
+        if self.sync_group_outcome == "removed":
+            return "removed"
         if self.node.var.result == "timed_out" and self.answer is None:
             return "own_time_out"
         return self.node.var.result

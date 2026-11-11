@@ -31,6 +31,8 @@ which pays the bonus. The basic data is read from the trials and nodes.
 - Nobody is failed because others left: the last player, a player who comes
   back after being removed, and a participant for whom no group forms within
   `GROUPING_WAIT` are each told why the game ended for them.
+- A player the experimenter removes on the dashboard earns nothing for
+  that round and is told they were removed from the game.
 
 ## Usage
 

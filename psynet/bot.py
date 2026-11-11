@@ -397,7 +397,8 @@ def make_late_now(
     Parameters
     ----------
     bots : list of BotDriver
-        Bots waiting at the barrier, and any others to advance with them.
+        Bots to advance; include the ones waiting at the barrier. Quiet
+        bots may be included and stay on their page.
     barrier_id : str
         The barrier's ID.
     timeout : float, optional

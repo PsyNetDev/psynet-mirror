@@ -370,7 +370,7 @@ with a group. List the cases and your decisions in the experiment's README.
 | Returns the study | reason `"left_experiment"` | `bot.drop_out()` |
 | Is failed by the experiment | reason `"left_experiment"` | `bot.allow_failure()`, then `bot.fail("reason")` |
 | Is removed on the dashboard | reason `"removed"` | `group.remove_participant(participant)` |
-| Arrives when no group can form | reason `"no_group_formed"` | Send fewer bots than a group needs, and wait out the grouper's `max_wait_time` |
+| Arrives when no group can form (grouper `max_wait_action="continue_without_group"`; the default fails them) | reason `"no_group_formed"` | Send fewer bots than a group needs, even a short one with `quorum` or `start_short_after`, and wait out the grouper's `max_wait_time` |
 | Sits a round out at a `Regrouper` | not in a group; `regrouper.sat_out(participant)` | An odd number of bots with `left_over="sit_out"` |
 
 The reasons come from `participant.sync_group_removal_reason(group_type)`;
