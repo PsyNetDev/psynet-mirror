@@ -1002,6 +1002,65 @@ def test_newcomer_waits_briefly_for_a_busy_group_instead_of_the_poller(
         transaction.commit()
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_newcomer_waiting_for_a_busy_group_holds_no_full_groups_row(
+    in_experiment_directory, db_session
+):
+    """While a newcomer waits for a busy group, a group found full stays unlocked."""
+    exp = get_experiment()
+    _, full = _sync_group_of(exp, db_session, 4, group_type="top_up")
+    _, busy = _sync_group_of(exp, db_session, 2, group_type="top_up")
+    full.n_active_participants = 1  # stale, so it is tried first
+    for group in [full, busy]:
+        group.accepts_top_ups = True
+        group.max_group_size = 4
+    (newcomer,) = _working_participants(exp, 1)
+    grouper = SimpleGrouper(
+        group_type="top_up",
+        initial_group_size=2,
+        max_group_size=4,
+        join_existing_groups=True,
+    )
+    lock_sql = "SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"
+    full_id, busy_id = full.id, busy.id
+    full_row_free = []
+
+    def probe_full_group_then_release(other, transaction, pid):
+        deadline = time.monotonic() + 10
+        while (
+            time.monotonic() < deadline
+            and not other.execute(
+                text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"), {"pid": pid}
+            ).scalar()
+        ):
+            time.sleep(0.01)
+        with db.engine.connect() as prober, prober.begin():
+            try:
+                prober.execute(text(lock_sql + " NOWAIT"), {"id": full_id})
+                full_row_free.append(True)
+            except OperationalError:
+                full_row_free.append(False)
+        transaction.commit()
+
+    _set_transaction_lock_timeout(5)
+    newcomer_pid = db_session.execute(text("SELECT pg_backend_pid()")).scalar()
+    with db.engine.connect() as other:
+        transaction = other.begin()
+        other.execute(text(lock_sql), {"id": busy_id})
+        releaser = threading.Thread(
+            target=probe_full_group_then_release,
+            args=(other, transaction, newcomer_pid),
+        )
+        releaser.start()
+        grouper._join_on_arrival(newcomer)
+        releaser.join(30)
+    assert full_row_free == [True]
+    assert newcomer.active_sync_groups["top_up"] == busy
+    db_session.commit()
+
+
 @pytest.mark.parametrize("request_kind", ["response", "timeline"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
