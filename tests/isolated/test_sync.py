@@ -6969,7 +6969,7 @@ def test_make_late_now_keeps_who_left_since_the_last_pass(
 
     group = SyncGroup.query.get(group_id)
     since = group.last_barrier_pass_time or group.creation_time
-    left = [p.id for p in group.members_who_left_since(since)]
+    left = [p.id for p in group._members_who_left_since(since)]
     assert left == ([] if passed_before else [earlier_id])
 
 

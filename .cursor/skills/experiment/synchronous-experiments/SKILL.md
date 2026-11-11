@@ -123,8 +123,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   background tab can notice the round has started.
 - The regrouper groups players at random, sits out whoever has played most,
   and counts rounds (`rounds_played`, `rounds_sat_out`); pass `roles=[...]`
-  (given out at random by default) and read `regrouper.role(participant)`
-  instead of assigning roles yourself. To avoid last round's partner or to
+  (given out at random by default) and read `self.sync_group_role` in the
+  cued trial instead of assigning roles yourself. To avoid last round's partner or to
   alternate roles, copy `PairingRegrouper` from the `ultimatum_pairing`
   demo's `pairing.py`, which overrides `form_groups` and `assign_roles`; override them
   likewise for other rules. With `left_over="sit_out"`, odd
@@ -407,7 +407,8 @@ silent member, and for how long to wait out timeouts in bot tests.
 
 - Check why a bot left with
   `bot.with_participant(lambda p: p.sync_group_removal_reason("pair"))`, and
-  read Regrouper roles with `bot.with_participant(pairing.role)`.
+  read Regrouper roles with
+  `bot.with_participant(lambda p: p.current_trial.sync_group_role)`.
 - Post chat messages with `bot.send_chat_message("...")`.
 - Find who plays with whom with `bots_by_sync_group(bots, "pair")`, and
   finish bots that still wait for each other with

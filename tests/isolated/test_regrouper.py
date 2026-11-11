@@ -652,7 +652,7 @@ def test_regrouper_gives_one_member_per_role(in_experiment_directory, db_session
     exp = get_experiment()
     cohort, pairs = _cohort_and_pairs(exp, 2, form_groups=_by_id)
     _arrive(exp, pairs, cohort)
-    assert sorted(pairs.role(p) for p in cohort) == ["proposer", "responder"]
+    assert sorted(_role(p) for p in cohort) == ["proposer", "responder"]
 
     cohort, pairs = _cohort_and_pairs(exp, 2, form_groups=_one_player)
     with pytest.raises(ValueError, match="one member per role"):
@@ -666,6 +666,19 @@ def test_regrouper_gives_one_member_per_role(in_experiment_directory, db_session
     cohort, pairs = _cohort_and_pairs(exp, 2, assign_roles=_roles_by_id)
     with pytest.raises(TypeError, match="keyed by participants"):
         _arrive(exp, pairs, cohort)
+
+
+def _role(participant):
+    """Return the participant's role in their current pair, or ``None``."""
+    group = participant.active_sync_groups.get("pair")
+    if group is None:
+        return None
+    (link,) = [
+        link
+        for link in group.participant_links
+        if link.participant_id == participant.id and link.active
+    ]
+    return link.role
 
 
 def _partner(participant):
@@ -687,21 +700,18 @@ def test_regrouper_alternates_roles_and_counts_rounds(
     )
 
     _arrive(exp, pairs, cohort)
-    first = {p.id: pairs.role(p) for p in cohort}
+    first = {p.id: _role(p) for p in cohort}
     assert sorted(first.values()) == ["proposer"] * 2 + ["responder"] * 2
-    assert all(pairs.role(_partner(p)) != pairs.role(p) for p in cohort)
+    assert all(_role(_partner(p)) != _role(p) for p in cohort)
 
     _arrive(exp, pairs, cohort)
     for p in cohort:
-        assert pairs.role(p) != first[p.id]
+        assert _role(p) != first[p.id]
         assert pairs.rounds_played(p) == 2
         assert p.sync_group_removal_reason("pair") is None
-    # A player removed from their pair, as by a kick, still sees their role.
-    role = pairs.role(cohort[0])
     cohort[0].active_sync_groups["pair"].remove_participant(
         cohort[0], reason="removed_by_experimenter"
     )
-    assert pairs.role(cohort[0]) == role
 
     # Three players left: one sits out, and plays first next round.
     cohort[0].active_sync_groups["cohort"].remove_participant(
@@ -709,7 +719,7 @@ def test_regrouper_alternates_roles_and_counts_rounds(
     )
     _arrive(exp, pairs, cohort[:3])
     (sitter,) = [p for p in cohort[:3] if "pair" not in p.active_sync_groups]
-    assert pairs.role(sitter) is None
+    assert _role(sitter) is None
     assert (pairs.rounds_sat_out(sitter), pairs.sat_out(sitter)) == (1, True)
     # cohort[0] was removed from their pair above, so the regrouper didn't move them on.
     expected_reason = "removed_by_experimenter" if sitter is cohort[0] else "moved_on"
@@ -929,7 +939,7 @@ def test_closing_a_cohort_below_quorum_dissolves_it_without_a_split(
 
     assert set(pairs.choose_who_to_release(present)) == set(present)
     assert not cohort.active and _count_releases.calls == 0
-    assert all(pairs.rounds_played(p) == 0 and pairs.role(p) is None for p in present)
+    assert all(pairs.rounds_played(p) == 0 and _role(p) is None for p in present)
     expected_tags = ["sync group below minimum size"] if below_quorum == "fail" else []
     assert all(p.failure_tags == expected_tags for p in present)
 
@@ -1009,19 +1019,19 @@ def test_backdating_reaches_the_deadline_after_quick_splits(
     for _ in range(2):
         _arrive(exp, pairs, players)
     present, lingering = players[:3], players[3]
-    lingering_role = pairs.role(lingering)
+    lingering_role = _role(lingering)
     assert lingering_role in ("proposer", "responder")
     _arrive(exp, pairs, present)
-    assert all(pairs.role(p) is None for p in present)  # Waiting for the split.
+    assert all(_role(p) is None for p in present)  # Waiting for the split.
 
     _backdate_splits(pairs, cohort, 30)
     _backdate_arrivals(pairs, present, 30)
-    assert pairs.role(lingering) == lingering_role
+    assert _role(lingering) == lingering_role
     assert len(pairs.choose_who_to_release(present)) == 3
     db_session.commit()
     (sitter,) = [p for p in present if "pair" not in p.active_sync_groups]
-    assert pairs.role(sitter) is None
-    assert pairs.role(lingering) == lingering_role
+    assert _role(sitter) is None
+    assert _role(lingering) == lingering_role
 
 
 @in_consents_experiment
@@ -1067,8 +1077,8 @@ def test_case_an_odd_player_out_sits_out_then_plays_the_next_round(
     (sitter,) = [p for p in cohort if "pair" not in p.active_sync_groups]
     players = [p for p in cohort if p is not sitter]
     assert _waiting(pairs, cohort) == []
-    assert (pairs.sat_out(sitter), pairs.role(sitter)) == (True, None)
-    assert sorted(pairs.role(p) for p in players) == ["proposer", "responder"]
+    assert (pairs.sat_out(sitter), _role(sitter)) == (True, None)
+    assert sorted(_role(p) for p in players) == ["proposer", "responder"]
 
     # Back first, the sitter waits for the pair, then plays the next round.
     _arrive(exp, pairs, [sitter])

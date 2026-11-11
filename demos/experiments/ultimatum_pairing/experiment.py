@@ -52,7 +52,7 @@ from psynet.timeline import (
 )
 from psynet.trial.main import SyncGroupNode, Trial
 
-from .pairing import PAIR, PairingRegrouper, last_partner_id
+from .pairing import PAIR, PairingRegrouper, last_partner_id, last_role
 
 COHORT = "cohort"
 COHORT_SIZE = 4
@@ -454,7 +454,7 @@ class Exp(psynet.experiment.Experiment):
         _play(bots)
         assert all("The offer of" in bot.current_page_text for bot in bots)
         first_partner = {bot.id: bot.with_participant(last_partner_id) for bot in bots}
-        first_role = {bot.id: bot.with_participant(pairing.role) for bot in bots}
+        first_role = {bot.id: bot.with_participant(last_role) for bot in bots}
 
         # Round 2: one player lingers on their results, so the round starts at
         # the deadline without them, and one of the other three sits out.
@@ -474,7 +474,7 @@ class Exp(psynet.experiment.Experiment):
         # Players who held different roles last round both switch.
         if first_role[stayer.id] != first_role[leaver.id]:
             for bot in (stayer, leaver):
-                assert bot.with_participant(pairing.role) != first_role[bot.id]
+                assert bot.with_participant(last_role) != first_role[bot.id]
         _play([stayer])
         assert "Your partner was away" in stayer.current_page_text
         assert leaver.with_participant(lambda p: cohort_of(p) is None)

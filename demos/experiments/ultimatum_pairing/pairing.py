@@ -27,6 +27,18 @@ def last_partner_id(participant):
     return partners[0] if partners else None
 
 
+def last_role(participant):
+    """Return the player's role in their latest pair, or ``None``."""
+    links = [
+        link
+        for link in participant.sync_group_links
+        if link.sync_group.group_type == PAIR
+    ]
+    if not links:
+        return None
+    return max(links, key=lambda link: link.sync_group_id).role
+
+
 def is_rematch(a, b):
     """Return whether either player's latest partner was the other.
 

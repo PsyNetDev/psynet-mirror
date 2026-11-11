@@ -2000,7 +2000,9 @@ class ParticipantDriver:
 
         Useful for questions that take a participant, for example::
 
-            role = bot.with_participant(pairing.role)
+            reason = bot.with_participant(
+                lambda p: p.sync_group_removal_reason("pair")
+            )
             pair_id = bot.with_participant(lambda p: p.active_sync_groups["pair"].id)
 
         Return plain values rather than database objects, which expire when the

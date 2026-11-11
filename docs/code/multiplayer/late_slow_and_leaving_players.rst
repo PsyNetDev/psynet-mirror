@@ -126,7 +126,7 @@ A cohort of three is split into new pairs every round:
 1. All three reach the regrouper. It pairs two of them as proposer and
    responder. The third sits out: they move on at once without a pair, so
    the ``switch`` shows them the sit-out page (see :ref:`rounds-sitting-out`).
-   Their :meth:`~psynet.sync.Regrouper.role` is ``None`` and
+   They have no role that round, and
    :meth:`~psynet.sync.Regrouper.sat_out` is ``True``.
 2. The sitter is back at the regrouper first and waits there for the pair.
    If the pair is still playing one ``deadline`` after the sitter arrived,

@@ -232,8 +232,9 @@ least often, so that roles alternate. Its ``pairing.py`` defines:
 
 The regrouper counts each participant's rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
 :meth:`~psynet.sync.Regrouper.rounds_sat_out`,
-:meth:`~psynet.sync.Regrouper.sat_out` (for the latest round) and, with
-``roles``, :meth:`~psynet.sync.Regrouper.role`.
+:meth:`~psynet.sync.Regrouper.sat_out` (for the latest round). With
+``roles``, a cued trial reads its player's role in that round as
+:attr:`~psynet.trial.main.Trial.sync_group_role`.
 
 When the cohorts take latecomers (``join_existing_groups=True`` on their
 grouper), ``stop_top_ups_after_rounds=n`` lets them join only during

@@ -98,6 +98,17 @@ def _paired(exp):
     return cohort, pairs
 
 
+def _pair_role(participant):
+    """Return the participant's role in their current pair."""
+    group = participant.active_sync_groups["pair"]
+    (role,) = [
+        link.role
+        for link in group.participant_links
+        if link.participant_id == participant.id and link.active
+    ]
+    return role
+
+
 @in_consents_experiment
 def test_a_pair_s_cued_trials_share_one_node_per_round(
     in_experiment_directory, db_session
@@ -112,7 +123,7 @@ def test_a_pair_s_cued_trials_share_one_node_per_round(
     db.session.commit()
 
     trials = PairTrial.query.order_by(PairTrial.id).all()
-    roles = [pairs.role(p) for p in cohort]
+    roles = [_pair_role(p) for p in cohort]
     assert sorted(roles) == ["proposer", "responder"]
     assert [
         (t.participant_id, t.sync_group_id, t.sync_group_role, t.sync_group_round)
@@ -1193,7 +1204,7 @@ def test_a_synchronized_trial_maker_records_group_role_and_round(
                 p.current_trial.sync_group_round,
             )
             for p in members
-        ] == [(pair.id, pairs.role(p), round) for p in members]
+        ] == [(pair.id, _pair_role(p), round) for p in members]
     assert all(p.current_trial.is_repeat_trial for p in members)
 
     with caplog.at_level(logging.INFO):

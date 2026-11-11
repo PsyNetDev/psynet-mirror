@@ -2361,7 +2361,7 @@ class GroupBarrier(Barrier):
             link = participant.active_barriers.get(self.id)
             if link is not None:
                 link.barrier_instance.group_passed = True
-        left = group.members_who_left_since(
+        left = group._members_who_left_since(
             group.last_barrier_pass_time or group.creation_time
         )
         group.last_barrier_pass_time = timenow()
@@ -3502,7 +3502,8 @@ class Regrouper(Grouper):
     fits into a group, those who have played the most rounds sit out. The
     regrouper counts each participant's rounds (:meth:`rounds_played`,
     :meth:`rounds_sat_out`, :meth:`sat_out`) and, with ``roles``, gives out roles
-    (:meth:`role`), all while it holds its lock, so two splits cannot give
+    (read in a cued trial as :attr:`~psynet.trial.main.Trial.sync_group_role`),
+    all while it holds its lock, so two splits cannot give
     out the same seat twice. Each group records the regrouper that formed
     it, and each member's link to it records their role, so these counts
     come from the groups themselves.
@@ -3555,9 +3556,9 @@ class Regrouper(Grouper):
     roles
         Optional role names, for example ``["proposer", "responder"]``. Each
         group then has one member per role, so groups have ``len(roles)``
-        members; ``group_size``, if given, must equal it. Read a member's role
-        with :meth:`role`. Roles are given out at random by default; see
-        ``assign_roles``.
+        members; ``group_size``, if given, must equal it. A cued trial reads its
+        player's role as :attr:`~psynet.trial.main.Trial.sync_group_role`. Roles
+        are given out at random by default; see ``assign_roles``.
 
     form_groups
         Optional callable ``form_groups(members, within_group, barrier)``
@@ -3825,33 +3826,6 @@ class Regrouper(Grouper):
         """Return whether ``participant`` sat out their latest visit here (see ``left_over``)."""
         latest_visit = self._latest_visit(participant)
         return latest_visit is not None and bool(latest_visit.sat_out)
-
-    def role(self, participant) -> Optional[str]:
-        """Return ``participant``'s role (see ``roles``).
-
-        This is their role in their latest round with this regrouper, even
-        after they were removed from that group, so a reloaded page still
-        shows it. It is ``None`` once they are back at the regrouper, while
-        waiting for the next split or after a visit that ended without a
-        group (for example sitting a round out), and before their first round.
-        It is also ``None`` while they are in a group of this type that
-        another grouper formed; once they leave that group, it is their role
-        from this regrouper again.
-        """
-        current = participant.active_sync_groups.get(self.group_type)
-        if current is not None and current.grouper_id != self.id:
-            return None
-        latest_visit = self._latest_visit(participant)
-        if latest_visit is None or latest_visit.sync_group is None:
-            return None
-        return next(
-            (
-                link.role
-                for link in latest_visit.sync_group.participant_links
-                if link.participant_id == participant.id
-            ),
-            None,
-        )
 
     def _latest_visit(self, participant) -> Optional["ParticipantLinkBarrier"]:
         """Return ``participant``'s latest visit to this regrouper, if any."""
@@ -4157,10 +4131,8 @@ class Regrouper(Grouper):
             self._make_group(group_members, within_group, split_time, split_id)
             for group_members in plan
         ]
-        visits = self._visits(members)
         for group in groups:
             for link in group.participant_links:
-                visits[link.participant.id].sync_group = group
                 if roles:
                     link.role = roles[link.participant.id]
         placed = {p.id for group in groups for p in group.participants}
@@ -4652,10 +4624,10 @@ class SyncGroup(SQLBase, SQLMixin):
         else:
             self.check_leader()
 
-    def members_who_left_since(self, time) -> List[Participant]:
+    def _members_who_left_since(self, time) -> List[Participant]:
         """Return the members who left the group at or after ``time``, ordered by participant ID.
 
-        ``participant.sync_group_removal_reason(group_type)`` says why each left.
+        A :class:`GroupBarrier` passes them to ``on_release`` as ``left``.
         """
         return sorted(
             (
@@ -5549,15 +5521,6 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     released = Column(Boolean, default=False)
     # A Regrouper released the participant without a group.
     sat_out = Column(Boolean, default=False)
-    # The group a Regrouper split placed the participant in at this visit;
-    # empty if the visit ended without one. ``Regrouper.role`` reads it. No
-    # foreign key, as on Trial.sync_group_id, so writing a visit doesn't wait
-    # for a request that holds the group's row.
-    sync_group_id = Column(Integer, index=True)
-    sync_group = relationship(
-        "SyncGroup",
-        primaryjoin="foreign(ParticipantLinkBarrier.sync_group_id) == SyncGroup.id",
-    )
     # The last page the participant answered before arriving, other than a
     # waiting page, ended on its time limit
     # (``Participant.timed_out_since_barrier``).

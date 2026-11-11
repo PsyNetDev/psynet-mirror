@@ -223,8 +223,8 @@ Other helpers ask about a bot's group or act in it:
 
 - :meth:`~psynet.participant.ParticipantDriver.with_participant` calls a
   function with the bot's participant, for example
-  ``bot.with_participant(pairing.role)`` for its role from a
-  :class:`~psynet.sync.Regrouper`, or
+  ``bot.with_participant(lambda p: p.current_trial.sync_group_role)`` for
+  its role in the current round of a :class:`~psynet.sync.Regrouper`, or
   ``bot.with_participant(lambda p: p.sync_group_removal_reason("pair"))`` for
   why it left its pair.
 - :meth:`~psynet.participant.ParticipantDriver.send_chat_message` posts a
