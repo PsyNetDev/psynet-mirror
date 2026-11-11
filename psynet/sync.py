@@ -3096,6 +3096,8 @@ class SimpleGrouper(Grouper):
         holds the same lock while it counts a top-up group's members, so a
         newcomer joins either before the check or after it commits. A group
         another transaction is changing is skipped for the next candidate.
+        Each lock is taken in a savepoint, rolled back unless that group is
+        joined, so the joiner holds at most the row of the group it joins.
         The joiner already holds its own participant row (or, in a barrier
         check, the waiters' rows), so this keeps the order participants
         before group.
@@ -3109,9 +3111,9 @@ class SimpleGrouper(Grouper):
             ``_JOIN_LOCK_WAIT_SECONDS`` for the best one instead of returning
             ``None``. For the newcomer's own request, which would otherwise
             wait at the grouper for the barrier poller; barrier checks don't
-            wait. The wait can't deadlock: the newcomer has no link in the
-            group yet, so whoever holds the group's row has no reason to
-            lock the newcomer's.
+            wait. The wait can't deadlock: it holds no other group's row,
+            and the newcomer has no link in the group yet, so whoever holds
+            the group's row has no reason to lock the newcomer's.
 
         Returns
         -------
@@ -3120,11 +3122,13 @@ class SimpleGrouper(Grouper):
         """
         busy = None
         for candidate in self._groups_to_join(participant):
-            group = _lock_sync_group(candidate.id, skip_locked=True)
+            with db.session.begin_nested() as savepoint:
+                group = _lock_sync_group(candidate.id, skip_locked=True)
+                if group is not None and self._has_room_to_join(group):
+                    return group
+                savepoint.rollback()
             if group is None:
                 busy = busy or candidate
-            elif self._has_room_to_join(group):
-                return group
         if wait and busy is not None:
             group = _lock_sync_group(busy.id, wait_seconds=_JOIN_LOCK_WAIT_SECONDS)
             if group is not None and self._has_room_to_join(group):
