@@ -170,8 +170,6 @@ then groups of two, and assigns roles at a barrier each time:
 Two groupers of the same type and size share a default ID, and so a waiting
 pool. Give them different ``id_`` values if they should not.
 
-.. _sync-rounds-with-changing-groups:
-
 .. _sync-regrouper-recipe:
 
 Rounds with changing groups
@@ -390,8 +388,8 @@ later:
   nothing;
 - why the player left the group: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
-  ``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or
-  ``"removed"`` if none was given (the values are listed in
+  ``"late"``, ``"waited_too_long"``, ``"left_experiment"`` or
+  ``"group_dissolved"``, or ``"removed"`` if none was given (the values are listed in
   :data:`~psynet.sync.SyncGroupOutcome`);
 - ``None`` before either happens, and for a trial played without a group.
 
@@ -423,8 +421,24 @@ the results it would have stored, so read them with ``.get``, which returns
 ``None`` when they aren't set: ``trial.var.get("score")`` for results saved on
 the trial, or ``participant.var.get("score")`` when there is no trial.
 
-Nothing runs when a group dissolves, but with
-``below_quorum="continue_without_group"`` the members carry on and the
+.. _sync-dissolved-round:
+
+No code of yours runs when a group dissolves, but PsyNet records it on the
+round: the group's node gets
+:attr:`~psynet.trial.main.SyncGroupNode.sync_group_dissolved_at`, the time
+it dissolved, if a member still in the group was in their trial on that
+node (its pages hadn't ended) and no group barrier had released the round.
+A round that a barrier released stays ``None``, even if a member was still
+on a page after the barrier, and so does a round whose remaining members'
+trials had all ended, as when the group dissolves between rounds. A member
+still on a page after a release does get ``sync_group_outcome``
+``"group_dissolved"`` on their trial: the trial says how the player left the
+round, the node's column whether the round itself was cut short. So an export can tell a
+cancelled round from one still in progress even if no member finishes
+their trial, for example ``node.sync_group_dissolved_at is not None``,
+without storing anything of its own.
+
+With ``below_quorum="continue_without_group"`` the members carry on and the
 round's results are still stored (with the default ``"fail"``, the members
 are failed and ``show_feedback`` doesn't run). Each trial's ``answer`` holds
 the player's latest answer, the round's trials are in ``node.all_trials``,
@@ -983,9 +997,10 @@ the maximum waiting time:
     then handles late members instead; passing ``max_wait_time`` together
     with ``late_after`` raises an error. ``max_wait_action`` decides what
     happens to a participant who waits longer: ``"fail"`` (default) fails
-    them. At a :class:`~psynet.sync.GroupBarrier`, ``"leave_group"`` removes
-    them from the group (see :ref:`sync-leaving-a-group` for what they see
-    next); at a grouper, where they have no group yet,
+    them. At a :class:`~psynet.sync.GroupBarrier`, both actions first remove
+    them from the group as ``"waited_too_long"``; ``"fail"`` then fails them,
+    and with ``"leave_group"`` they carry on without it (see
+    :ref:`sync-leaving-a-group` for what they see next); at a grouper, where they have no group yet,
     ``"continue_without_group"`` lets them carry on without one, telling them
     "We couldn't find a partner for you in time. Please continue." (or "We
     couldn't form a group for you in time. Please continue." for larger
@@ -1017,6 +1032,16 @@ the maximum waiting time:
     Members who arrive on time wait for the
     others until they arrive or are late, so they need no ``max_wait_time``
     of their own.
+
+    A late member who is in the middle of a request of their own, such as
+    submitting a page, is left alone until the barrier checks again once
+    that request finishes, and so are the group's other late members, so
+    that equally late members leave together. If that request brought them
+    to the barrier they are no longer late. So a late member is never
+    removed while their own request is acting: code in their own request, such as a
+    :class:`~psynet.timeline.CodeBlock` that stores their answer, either runs
+    before the removal or sees it (``participant.sync_group_removal_reason``,
+    or a cued trial's ``sync_group_outcome``), and needs no locks of its own.
 
     A member who has started a page with a ``time_limit``, other than a
     waiting page, since the group last passed a barrier (or since joining)
@@ -1119,7 +1144,7 @@ Two separate settings decide what happens when someone leaves a group:
       that regroups within this group (``within``) stops them when the
       regrouper starts its next split after ``n`` rounds in the group, for
       example ``1`` to let latecomers join a cohort only during its first
-      round (see :ref:`sync-rounds-with-changing-groups`). A cohort below
+      round (see :ref:`sync-regrouper-recipe`). A cohort below
       its quorum at that split is dissolved with nobody grouped; with
       ``below_quorum="continue_without_group"``, its waiting players are
       released ungrouped and ``on_release`` isn't called.
@@ -1443,7 +1468,9 @@ For the rest of the timeline:
   them no group in time), ``"group_dissolved"``, ``"moved_on"`` (a
   :class:`~psynet.sync.Regrouper` took them out of their previous group, and
   they are waiting there or sitting the round out),
-  ``"finished"`` or ``"left_experiment"`` (they failed or returned the study).
+  ``"finished"`` or ``"left_experiment"`` (they failed or returned the study;
+  a member failed for being late or waiting too long at this group's barrier
+  records ``"late"`` or ``"waited_too_long"`` instead).
   A cued trial whose pages they were on in that group keeps the reason in
   ``sync_group_outcome``, even after they join another group (see
   :ref:`round outcomes <sync-round-outcome>`).

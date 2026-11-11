@@ -118,6 +118,9 @@ trial), so you can group a trial's responses in the export. PsyNet stores the
 summed time of the trial's accepted pages in the trial's ``time_taken`` column
 and links the last page's response as its ``response``; see
 :class:`~psynet.trial.main.Trial` and :class:`~psynet.timeline.Response`.
+A recording made on a feedback page
+(:meth:`~psynet.trial.main.Trial.show_feedback`) is stored with the trial that
+just finished, even though that page's response has no ``trial_id``.
 
 Choice controls save the element of ``choices`` that the participant picked,
 keeping its type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``, and

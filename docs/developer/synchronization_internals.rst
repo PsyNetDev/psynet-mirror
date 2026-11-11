@@ -81,26 +81,45 @@ Barrier checks and participant requests take their locks in this order:
    ``trial_maker_runs`` also waits for the row, after locking any
    participant rows it needs.
 4. The advisory lock of a cued round. Barriers only try it and defer if it
-   is busy. A cue waits for it, but takes only a ``KEY SHARE`` lock on the
-   group row, through its trial's foreign key, which doesn't conflict with
-   ``FOR NO KEY UPDATE``.
-5. Members' rows when dissolving the group or failing late members, with
-   ``SKIP LOCKED``, then the rows of links, trials and nodes, and of other
-   groups.
+   is busy. Group dissolution tries it too, after the members' rows of step
+   5, and waits like it does for a busy member (see below); taking it out
+   of order can't deadlock, because it doesn't wait for it. A cue waits for
+   it, but takes only a ``KEY SHARE`` lock on the group row, through its
+   trial's foreign key, which doesn't conflict with ``FOR NO KEY UPDATE``.
+5. Members' rows when dissolving the group, with ``SKIP LOCKED``, then the
+   rows of links, trials and nodes, and of other groups. A between-barrier
+   timeout locks late members' rows (also ``SKIP LOCKED``) earlier, in
+   :meth:`~psynet.sync.GroupBarrier.check_waiting_participants`, before the
+   round lock is tried. This can't deadlock: the round lock is only tried,
+   and late members' rows are skipped if busy.
 
 So, in framework code, a request holding a sync group row takes other
 participants' rows only with ``SKIP LOCKED`` or ``NOWAIT``:
 
-- Group dissolution locks the members' rows with ``SKIP LOCKED`` and is all
-  or nothing. If another member's request holds their row, nobody is removed
-  (the rows that were free are unlocked again, by rolling back a savepoint):
+- Group dissolution locks the members' rows with ``SKIP LOCKED``, then tries
+  the lock of each cued round they are still playing, and is all or nothing.
+  If another member's request holds their row, or a cue holds a round's
+  lock, nobody is removed (rolling back a savepoint unlocks the rows and
+  releases the round locks taken in it; a round lock the transaction already
+  held, as a barrier check that dissolves the group does, stays until the
+  transaction ends):
   the group is marked ``dissolving`` and the barrier poller tries the whole
   dissolution again on each sweep, so every member leaves the group, and
   learns why, at the same time. A group back at its quorum by then is no
   longer dissolved.
-- A between-barrier timeout with ``"fail"`` also skips busy late members;
-  they are still late at the barrier's next check. ``"leave_group"`` only changes the
-  group's links, so it does not lock the member's row.
+- A between-barrier timeout (``late_after``) also skips busy late members,
+  all or nothing as in dissolution, with either ``late_action``: removing
+  only the free ones could leave the group below quorum and dissolve it
+  around a busy late member, who would then leave with the group instead
+  of as late. The late members are reconsidered at the barrier's next
+  check, which the poller makes on each sweep, and the group waits for
+  them meanwhile. Lateness is decided before the rows are
+  locked, so it is decided again for the members locked: one whose request
+  brought them to the barrier, or started a timed page, in between is no
+  longer late. Removal writes
+  the member's links and trial outcome, so without the row lock a member's
+  own request could act on stale group state, for example storing an
+  answer after the rest of the group moved on without them.
 - ``sync_group.leader_id``, like ``participant_link_barrier.sync_group_id``
   and ``trial.sync_group_id``, has no foreign key: PostgreSQL re-checks a
   foreign key when a row written earlier in the transaction is updated
@@ -116,14 +135,18 @@ several groups at once, failing together, can deadlock in the same way.
 
 Joining an open group (``join_existing_groups=True``) locks the group row
 and re-counts its members under that lock, so two newcomers can't both take
-its last place; a busy group is skipped for the next candidate. A
+its last place; a busy group is skipped for the next candidate. Each
+candidate is locked in a savepoint, rolled back unless the newcomer joins
+that group, so a joiner holds at most one group row. A
 :class:`~psynet.sync.GroupBarrier` check holds the same lock, and reloads
 the group's members under it, while it decides, so a newcomer joins either
-before the check counts them or after it commits. If every open group is
-busy, the newcomer's own request waits up to a second for the best one,
-instead of waiting at the grouper for the barrier poller. That wait can't
-deadlock: the newcomer has no link in the group yet, so whoever holds the
-group's row has no reason to lock the newcomer's. Joins inside barrier
+before the check counts them or after it commits. If no free group has
+room but one was busy, the newcomer's own request waits up to a second for
+the best busy one, instead of waiting at the grouper for the barrier
+poller. That lock is taken in a savepoint too, so a busy group found full
+after the wait is released. The wait can't deadlock only because it holds
+no other group's row: the newcomer has no link in the group yet, so whoever
+holds the group's row has no reason to lock the newcomer's. Joins inside barrier
 checks don't wait. The poller can still make a join that waits: after a
 check, it moves the waiters it released on through their timelines, and a
 waiter who reaches a grouper joins as their own request would. So it can
