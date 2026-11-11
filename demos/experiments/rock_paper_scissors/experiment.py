@@ -118,7 +118,7 @@ class RockPaperScissorsTrial(Trial):
     def score_round(cls, trials: List["RockPaperScissorsTrial"]):
         """Save each player's action, their partner's action and the result on the player's trial."""
         for trial in trials:
-            trial.var.timed_out = trial.answer is None
+            trial.var.timed_out = trial.response.time_limit_reached
             trial.var.action = trial.answer or random.choice(ACTIONS)
         # A pair needs both players to pass a barrier, so there are two trials.
         first, second = trials

@@ -62,6 +62,9 @@ def get_basic_data(cls, context=None, **kwargs):
 Start from the `get_basic_data` of the demo closest to the design:
 
 - `rock_paper_scissors`: a fixed pair playing cued trials.
+- `public_goods`: a fixed group of three playing several rounds, with the
+  group's results on its `SyncGroupNode` and a group-round table from the
+  nodes.
 - `ultimatum_pairing`: pairs that change every round, with a table per
   pair from the nodes (see "Games with a regrouper" in `data/basic_data`).
 - `lowest_unique_number`: rooms that each play one round. Its `round`
@@ -82,9 +85,9 @@ data are collected.
    hidden attributes, current turn, previous actions, timers, and cumulative
    outcomes.
 3. Extract each participant's action per round, with any analysis-relevant
-   metadata: timeout status (a timed-out page saves `None`), validity,
-   submission time, revision count, duplicate submissions, or out-of-turn
-   rejections.
+   metadata: timeout status (read `trial.response.time_limit_reached`
+   rather than inferring it from a `None` answer), validity, submission
+   time, revision count, duplicate submissions, or out-of-turn rejections.
 4. Extract scores at each level the analysis uses: player-round, partner,
    group, cumulative, and bonus-relevant scores, plus score components when
    they are needed to audit the scoring rule.
