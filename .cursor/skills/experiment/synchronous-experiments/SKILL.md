@@ -369,7 +369,7 @@ with a group. List the cases and your decisions in the experiment's README.
 | Is left in a group below quorum | reason `"group_dissolved"`, from the grouper's `below_quorum` | Make enough members drop out or late |
 | Returns the study | reason `"left_experiment"` | `bot.drop_out()` |
 | Is failed by the experiment | reason `"left_experiment"` | `bot.allow_failure()`, then `bot.fail("reason")` |
-| Is removed on the dashboard | reason `"removed"` | — |
+| Is removed on the dashboard | reason `"removed"` | `group.remove_participant(participant)` |
 | Arrives when no group can form | reason `"no_group_formed"` | Send fewer bots than a group needs, and wait out the grouper's `max_wait_time` |
 | Sits a round out at a `Regrouper` | not in a group; `regrouper.sat_out(participant)` | An odd number of bots with `left_over="sit_out"` |
 

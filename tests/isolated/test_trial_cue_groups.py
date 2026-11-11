@@ -41,7 +41,7 @@ if str(_ISOLATED_DIR) not in sys.path:
 from test_regrouper import _arrive, _cohort_and_pairs  # noqa: E402
 from test_sync import (  # noqa: E402
     _arrive_at_group_barrier,
-    _backdate_group,
+    _set_group_clocks_in_the_past,
     _sync_group_of,
 )
 from timeline_hold_helpers import (  # noqa: E402
@@ -859,7 +859,7 @@ def test_late_after_in_a_round_fails_a_newcomer_waiting_outside_it(
     in_round = GroupBarrier("submitted", group_type="pair", late_after=5)
     _arrive(exp, in_round, cohort[:1])
     _arrive(exp, GroupBarrier("ready", group_type="pair", late_after=5), [newcomer])
-    _backdate_group(pair, seconds=10)
+    _set_group_clocks_in_the_past(pair, seconds=10)
     in_round.check_waiting_participants(cohort[:1])
     # The round waits for the newcomer, who isn't at its barrier.
     assert cohort[1].failed and newcomer.failed
@@ -898,7 +898,7 @@ def _is_removed_as_late(exp, pair, cohort):
     _arrive(exp, _in_round(late_after=5, late_action="leave_group"), cohort[:1])
     newcomer_link = max(pair.participant_links, key=lambda link: link.arrival_time)
     joined = newcomer_link.arrival_time
-    _backdate_group(pair, seconds=10)
+    _set_group_clocks_in_the_past(pair, seconds=10)
     newcomer_link.arrival_time = joined
 
 
@@ -1266,7 +1266,7 @@ def _late_at_barrier(late_action):
             "late", group_type="main", late_after=5, late_action=late_action
         )
         _arrive(exp, barrier, [stayer])
-        _backdate_group(group, seconds=10)
+        _set_group_clocks_in_the_past(group, seconds=10)
         barrier.check_waiting_participants([stayer])
         return leaver
 
@@ -1334,7 +1334,7 @@ def _dissolved_after_release(exp, group, stayer, leaver):
         "fail_two_of_a_trio",
         "leave_group",
         "max_wait",
-        "no_reason",
+        "default_reason",
         "dissolved",
         "dissolved_and_failed",
         "complete",
@@ -1468,7 +1468,7 @@ def test_late_removal_waits_for_a_busy_late_member_then_removes_both(
         "late", group_type="main", late_after=5, late_action=late_action
     )
     _arrive(exp, barrier, [stayer])
-    _backdate_group(group, seconds=10)
+    _set_group_clocks_in_the_past(group, seconds=10)
     db.session.commit()
     ids = [p.id for p in late]
 
@@ -1506,7 +1506,7 @@ def test_late_removal_rechecks_a_stale_list_of_waiting_members(
         "late", group_type="main", late_after=5, late_action=late_action
     )
     _arrive(exp, barrier, [stayer])
-    _backdate_group(group, seconds=10)
+    _set_group_clocks_in_the_past(group, seconds=10)
     _arrive_at_group_barrier(exp, barrier, late)
     db.session.commit()
 
@@ -1525,7 +1525,7 @@ def test_late_removal_rechecks_a_timed_page_started_meanwhile(
     (stayer, late), group = _sync_group_of(exp, db_session, 2)
     barrier = GroupBarrier("late", group_type="main", late_after=5)
     _arrive(exp, barrier, [stayer])
-    _backdate_group(group, seconds=10)
+    _set_group_clocks_in_the_past(group, seconds=10)
     db.session.commit()
     assert all(link.page_deadline is None for link in group.participant_links)
 
@@ -1552,7 +1552,7 @@ def test_late_action_fail_leaves_other_groups_as_left_experiment(
     (stayer, late), _ = _paired(exp)
     barrier = GroupBarrier("late", group_type="pair", late_after=5, late_action="fail")
     _arrive(exp, barrier, [stayer])
-    _backdate_group(stayer.active_sync_groups["pair"], seconds=10)
+    _set_group_clocks_in_the_past(stayer.active_sync_groups["pair"], seconds=10)
     barrier.check_waiting_participants([stayer])
     assert late.sync_group_removal_reason("pair") == "late"
     assert late.sync_group_removal_reason("cohort") == "left_experiment"
@@ -1617,7 +1617,7 @@ def test_a_late_joiner_joins_the_open_round_and_its_barrier_waits_for_them(
         "submitted", group_type="main", late_after=5, on_release=_record_pass
     )
     _arrive(exp, submitted, [first])
-    _backdate_group(group, seconds=10)
+    _set_group_clocks_in_the_past(group, seconds=10)
     group.add_participant(late)
     _arrive(exp, submitted, [second])
     # late_after counts for the newcomer from when they joined.
