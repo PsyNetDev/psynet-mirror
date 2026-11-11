@@ -148,7 +148,7 @@ JSON-serializable, so that datetime is exported as an ISO timestamp with
 
 .. literalinclude:: ../../demos/experiments/public_goods/experiment.py
    :start-at: "team_round": [
-   :end-at: for n in teams
+   :end-at: for r in teams
    :dedent: 12
    :append: ],
 

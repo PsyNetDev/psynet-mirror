@@ -5254,8 +5254,8 @@ class SyncGroupRound(SQLBase, SQLMixin):
     class with ``sync_group_type`` (``trial_maker_id`` is ``None``), when the
     round's first member cues it, or by a trial maker with
     ``sync_group_type`` each time it prepares the group's trials. See
-    :ref:`sync-group-rounds` and :ref:`trial-maker-rounds` for when rounds
-    open and close.
+    :ref:`sync-group-rounds` and :ref:`rounds of a trial maker
+    <trial-maker-rounds>` for when rounds open and close.
 
     Attributes
     ----------

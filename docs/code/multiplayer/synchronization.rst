@@ -804,12 +804,12 @@ across runs when a loop repeats the trial maker; a leader told to wait
 gives the group no trials and uses up no number. A round closes, setting
 its ``closed_at``:
 
-- when a ``GroupBarrier`` in the trial releases the group while every
+- When a ``GroupBarrier`` in the trial releases the group while every
   member it releases is in the round's trial. Each released member's trial
-  records ``sync_group_outcome="stayed"``;
-- otherwise when the trial preparation next releases the group, also at
-  the end of the trial maker. The trials that members still in the group
-  have completed record ``"stayed"``.
+  records ``sync_group_outcome="stayed"``.
+- Otherwise, when the trial preparation next releases the group, which it
+  also does at the end of the trial maker. The trials that members still
+  in the group have completed record ``"stayed"``.
 
 Leaving the group during the trial, and the group dissolving, are recorded
 as for cued trials (see :ref:`sync-group-rounds`). :meth:`SyncGroup.rounds()
@@ -834,7 +834,7 @@ group's results in ``group_round.var`` and the exports, see
 :ref:`rounds-one-trial-per-player` in the round-based tutorial. For a group
 that works through a stimulus set or a chain, use a trial maker with
 ``sync_group_type`` instead (see :ref:`concept_groups` for how to choose,
-and :ref:`trial-maker-rounds` for its rounds).
+and :ref:`rounds of a trial maker <trial-maker-rounds>`).
 
 ``cue`` numbers each group's rounds by itself, from 0:
 
