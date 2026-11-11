@@ -232,7 +232,7 @@ def default_group_barrier_arrival_message(
     """Return default GroupBarrier arrival copy for one participant.
 
     Notices tell people still on an earlier page that partners are already
-    waiting, ``"removed"`` tells someone who was too slow that their group
+    waiting, ``"late"`` tells someone who was too slow that their group
     went on without them, and ``"waited_too_long"`` tells someone who waited
     too long that the others didn't arrive.
     """
@@ -246,7 +246,7 @@ def default_group_barrier_arrival_message(
             "timeline_hold",
             "Not everyone in your group arrived in time. Please continue.",
         )
-    if kind == "removed":
+    if kind == "late":
         if group_size <= 2:
             return _p(
                 "timeline_hold", "Your partner went on without you. Please continue."

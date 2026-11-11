@@ -776,7 +776,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         including returning the study, and for a member's other groups
         when a barrier's ``late_action="fail"`` or ``max_wait_action="fail"``,
         or a dissolving group's ``below_quorum="fail"``, fails them), or
-        ``"removed"`` (removed from the dashboard, or by
+        ``"removed_by_experimenter"`` (removed from the dashboard, or by
         :meth:`~psynet.sync.SyncGroup.remove_participant` without a more
         specific reason).
         A player sat out of their first round was never in a group, so this
@@ -785,12 +785,12 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         To explain an early end, map the reasons your game can meet to your
         own text. A missing reason raises ``KeyError``, so include
-        ``"removed"``, which a dashboard removal can give in any game::
+        ``"removed_by_experimenter"``, which a dashboard removal can give in any game::
 
             ENDED_EARLY_TEXTS = {
                 "late": "You were away for too long, so the game ended early for you.",
                 "group_dissolved": "Too few players stayed, so the game ended early.",
-                "removed": "You were removed from the game.",
+                "removed_by_experimenter": "You were removed from the game.",
             }
             text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason("team")]
         """

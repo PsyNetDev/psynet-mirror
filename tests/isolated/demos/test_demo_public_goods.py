@@ -55,7 +55,12 @@ class TestPublicGoods:
 
     @pytest.mark.parametrize(
         "outcome, tokens",
-        [("stayed", 13.5), ("group_dissolved", 10), ("late", 0), ("removed", 0)],
+        [
+            ("stayed", 13.5),
+            ("group_dissolved", 10),
+            ("late", 0),
+            ("removed_by_experimenter", 0),
+        ],
     )
     def test_score_depends_on_how_the_round_ended(self, demo, outcome, tokens):
         trial = _trial(1, 2, sync_group_outcome=outcome)

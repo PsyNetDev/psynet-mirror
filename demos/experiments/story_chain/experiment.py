@@ -237,7 +237,7 @@ def waiting_for_writer(participant, trial):
 ENDED_EARLY_TEXTS = {
     "late": "You were away for too long, so your group went on without you.",
     "group_dissolved": "Too few members of your group stayed, so the story ended early.",
-    "removed": "You were removed from your group.",
+    "removed_by_experimenter": "You were removed from your group.",
 }
 
 

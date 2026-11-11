@@ -155,7 +155,7 @@ class ContributionTrial(Trial):
             # The last player keeps their tokens for the cancelled round,
             # whether or not they were already waiting at the barrier.
             return ENDOWMENT
-        # "late" or "removed". A player who returns the study
+        # "late" or "removed_by_experimenter". A player who returns the study
         # ("left_experiment") is never scored: their trial doesn't finish.
         return 0
 
@@ -212,7 +212,7 @@ ENDED_EARLY_TEXTS = {
     "no_group_formed": "We couldn't find two other players for you.",
     "late": "You were away for too long, so the game ended early for you.",
     "group_dissolved": "Too few players stayed, so the game ended early.",
-    "removed": "You were removed from the game.",
+    "removed_by_experimenter": "You were removed from the game.",
 }
 
 
@@ -255,7 +255,7 @@ class Exp(psynet.experiment.Experiment):
                     # the study during it.
                     "complete": t.complete,
                     # "stayed" if the round was scored; otherwise why the
-                    # player left: "late", "removed", "left_experiment" or, for the
+                    # player left: "late", "removed_by_experimenter", "left_experiment" or, for the
                     # last player of a cancelled round, "group_dissolved".
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or never answered.

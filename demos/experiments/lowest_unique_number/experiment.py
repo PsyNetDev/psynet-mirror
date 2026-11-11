@@ -182,7 +182,7 @@ class PickTrial(Trial):
         if self.sync_group_outcome == "late":
             # Taken out of the room mid-round by the barrier's late_after.
             return InfoPage(AWAY_TEXT, time_estimate=5)
-        if self.sync_group_outcome == "removed":
+        if self.sync_group_outcome == "removed_by_experimenter":
             # By the experimenter, on the dashboard.
             return InfoPage(REMOVED_TEXT, time_estimate=5)
         if self.answer is None:
@@ -272,8 +272,9 @@ class Exp(psynet.experiment.Experiment):
                     # choice is then the answer so far.
                     "complete": t.complete,
                     # "stayed" if the player was in the group when the round
-                    # was scored, "late" if they were taken out before that
-                    # for being away.
+                    # was scored; otherwise "late" if they were taken out
+                    # before that for being away, or "removed_by_experimenter" if the
+                    # experimenter removed them on the dashboard.
                     "outcome": t.sync_group_outcome,
                     "choice": t.answer,
                     # None if the player was away too long to play the round.

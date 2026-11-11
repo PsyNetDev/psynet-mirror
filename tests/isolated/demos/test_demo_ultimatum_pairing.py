@@ -19,7 +19,7 @@ pytestmark = pytest.mark.parametrize(
     "outcome, result, answer, expected",
     [
         ("late", None, None, "away"),
-        ("removed", None, None, "removed"),
+        ("removed_by_experimenter", None, None, "removed_by_experimenter"),
         ("stayed", "timed_out", None, "own_time_out"),
         ("stayed", "timed_out", 3, "timed_out"),
         ("stayed", "partner_left", 3, "partner_left"),

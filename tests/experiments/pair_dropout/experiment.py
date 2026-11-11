@@ -20,7 +20,8 @@ from psynet.page import InfoPage
 from psynet.sync import GroupBarrier, SimpleGrouper
 from psynet.timeline import Timeline, conditional
 
-LATE_AFTER = 5
+# Long, so the poller can't remove the silent member before make_late_now.
+LATE_AFTER = 60
 
 
 def _in_pair(participant):
