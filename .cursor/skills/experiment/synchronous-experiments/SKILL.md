@@ -143,13 +143,12 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `late_action="leave_group"` with `below_quorum="continue_without_group"`.
   To let
   latecomers join only before the game starts, follow "Letting latecomers
-  join before the game starts" in `code/multiplayer/synchronization`.
-  If groups keep taking newcomers after that, pass `pass_newcomers=True` to
-  each `GroupBarrier` the group passes once, so a newcomer doesn't wait there
-  for members further on (see "Letting latecomers join during the game").
-  Never set it on a barrier in a loop or in `show_trial`. For a fixed group
-  that plays a loop of rounds, stop top-ups before the game instead
-  (`stop_top_ups=True` on a barrier before the first round).
+  join before the game starts" in `code/multiplayer/synchronization`, with
+  `stop_top_ups=True` on a barrier before the first round. A newcomer goes
+  through every barrier the group passed and waits there for members further
+  on, so if groups keep taking newcomers during the game, put no barrier
+  between the grouper and the rounds and end each round at a single barrier
+  in its trial (see "Letting latecomers join during the game").
   For a per-person condition (not a join window), such as a chain that is
   too far along for them to catch up with, pass `join_criterion` (see
   `join_criterion` under "Forming groups" in

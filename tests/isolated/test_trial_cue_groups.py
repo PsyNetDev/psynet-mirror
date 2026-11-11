@@ -974,16 +974,6 @@ def _at_a_regrouper_and_a_barrier(exp):
     _arrive(exp, GroupBarrier("ready", group_type="cohort"), cohort[1:])
 
 
-def _a_newcomer_at_a_barrier_that_passes_newcomers(exp):
-    cohort, _ = _paired(exp)
-    ready = GroupBarrier("ready", group_type="pair", pass_newcomers=True)
-    _arrive(exp, ready, cohort)
-    (newcomer,) = _working_participants(exp, 1)
-    cohort[0].active_sync_groups["pair"].add_participant(newcomer)
-    _arrive(exp, _in_round(), cohort)
-    _arrive(exp, ready, [newcomer])
-
-
 def _everyone_at_one_barrier(exp):
     cohort, newcomer, _ = _newcomer_in_round_0(exp)
     _arrive(exp, _in_round(), [*cohort, newcomer])
@@ -993,7 +983,6 @@ def _everyone_at_one_barrier(exp):
     "arrange",
     [
         _at_a_regrouper_and_a_barrier,
-        _a_newcomer_at_a_barrier_that_passes_newcomers,
         _everyone_at_one_barrier,
     ],
 )

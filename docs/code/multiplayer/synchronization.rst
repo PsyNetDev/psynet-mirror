@@ -866,8 +866,8 @@ them in the round's trial.
 A barrier in a module where the group cues no rounds, such as one before a
 separate module of rounds, waits for every member too: a newcomer who
 reaches it after the group has gone waits there for members who are
-further on, until the barrier's time-outs remove someone. Give such a
-barrier ``pass_newcomers=True`` (see :ref:`sync-newcomers-at-passed-barriers`).
+further on, until the barrier's time-outs remove someone. Stop top-ups before such a
+barrier (see :ref:`sync-newcomers-at-passed-barriers`).
 
 A trial has two round counters. ``sync_group_round`` counts the group's
 rounds, and is ``None`` on a trial played without a group. Use it for what
@@ -1465,73 +1465,23 @@ their group has ended:
 Letting latecomers join during the game
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-A team that keeps accepting newcomers after its game starts needs one more
-setting. A newcomer goes through the pages the team went through before
-they joined, including the barriers the team has already passed, such as
-``game_starts``. Without the setting, the newcomer waits at such a barrier
-for members who are further on, while the team waits for the newcomer at its
-next barrier. With ``late_after``, the newcomer's barrier then removes the
-members who were on time as late.
+A newcomer goes through the pages the team went through before they joined,
+including the barriers the team has already passed, such as
+``game_starts``. Every barrier waits for every active member, so the
+newcomer waits there for members who are further on, while the team waits
+for the newcomer at its next barrier. With ``late_after``, the newcomer's
+barrier then removes the members who were on time as late.
 
-Pass ``pass_newcomers=True`` to a barrier that the team passes only once, such
-as one before the game's rounds. Anyone who reaches it after the team has
-passed it goes straight through, without waiting:
-
-.. code-block:: python
-
-    SimpleGrouper(
-        group_type="team",
-        initial_group_size=4,
-        quorum=2,
-        join_existing_groups=True,
-        below_quorum="continue_without_group",
-    )
-    InfoPage("Read the rules of the game...", time_estimate=60)
-    GroupBarrier(
-        id_="game_starts",
-        group_type="team",
-        pass_newcomers=True,
-        late_after=120,
-        late_action="leave_group",
-    )
-    # ... the game's rounds, each ending at its own barrier.
-
-Keep these in mind:
-
-- Don't use it for a barrier the team passes repeatedly, in a loop or in
-  ``show_trial``. Everyone would skip that barrier after its first pass.
-  That includes a module that runs again, for example in a loop: the team's
-  pass in the first run counts for later runs too.
-- Every release of the team counts as a pass, but a member let go after
-  waiting too long doesn't. The pass still counts after everyone who
-  waited there has left the team.
-- ``on_release`` doesn't run for those who pass through, so they must not
-  need any group state it sets up. Their passing isn't the team's pass
-  either: it doesn't count for ``left`` or ``late_after``.
-- A barrier ID used again in another module counts as a new barrier.
-- After a barrier with ``stop_top_ups=True``, nobody can join, so the two
-  settings aren't needed together.
-- It covers barriers the team passes once. A newcomer still goes through
-  the game's later pages, so in a fixed team that plays a loop of rounds,
-  a barrier outside the round's trial, such as one at the start of each
-  iteration, holds the newcomer while the team waits for them in the round.
-  For such a game, stop top-ups before the game instead (see
-  :ref:`group barriers in loops <rounds-group-barriers-in-loops>`).
-  Alternatively, end each round at a single barrier in its trial, as the
-  ``microsociety`` demo does: a newcomer's cued trial then joins the round
-  in progress, and nothing outside the round holds them.
+So stop top-ups when the game starts, with ``stop_top_ups=True`` on the
+barrier before the first round, as above. If teams must keep accepting
+newcomers during the game, put nothing that waits for the team between the
+grouper and the rounds, and end each round at a single barrier in its trial,
+as the ``microsociety`` demo does: a newcomer's cued trial then joins the
+round in progress, and nothing outside the round holds them.
 
 :meth:`group.is_newcomer(participant) <psynet.sync.SyncGroup.is_newcomer>`
 tells a member who joined after the group formed from the members it formed
 with, for example to show newcomers what the group did before they came.
-
-When the experiment loads, PsyNet warns about each barrier outside a loop
-that comes after a grouper with ``join_existing_groups=True`` and has neither
-setting, up to the first barrier with ``stop_top_ups=True``. It skips a
-barrier whose ID is also used in a loop, because barriers that share an ID
-share their waiting pool. It also warns about ``pass_newcomers=True`` on a
-barrier in a ``while_loop``, or one that shares its ID with such a barrier.
-These checks can't see barriers in a ``for_loop`` or in ``show_trial``.
 
 .. _sync-leaving-a-group:
 

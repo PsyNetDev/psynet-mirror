@@ -1,14 +1,12 @@
 import inspect
 import sys
-import warnings
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from dallinger import db
 
-from psynet.sync import SimpleGrouper
-from psynet.timeline import ModuleState, Timeline
+from psynet.timeline import ModuleState
 from psynet.trial.chain import ChainNode, ChainTrial, ChainTrialMaker
 from psynet.trial.dense import DenseTrialMaker
 from psynet.trial.main import (
@@ -1516,11 +1514,3 @@ def test_repeats_without_a_trial_limit_name_the_missing_argument():
 def test_sync_group_errors_name_the_trial_maker_options(options, message):
     with pytest.raises(ValueError, match=message):
         make_trial_maker(sync_group_type="main", **options)
-
-
-def test_a_sync_trial_maker_after_a_grouper_with_top_ups_does_not_warn_about_newcomers():
-    grouper = SimpleGrouper("main", initial_group_size=2, join_existing_groups=True)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        Timeline(grouper, make_trial_maker(sync_group_type="main"))
-    assert not [w for w in caught if "pass_newcomers" in str(w.message)]
