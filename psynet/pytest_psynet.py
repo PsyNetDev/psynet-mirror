@@ -465,6 +465,19 @@ def reset_sys_modules():
 pytest_dallinger.reset_sys_modules = reset_sys_modules
 
 
+def _experiment_modules_loaded_from(directory):
+    """Return the imported ``dallinger_experiment`` modules if they come from ``directory``."""
+    package = sys.modules.get("dallinger_experiment")
+    package_paths = {Path(p).resolve() for p in getattr(package, "__path__", [])}
+    if Path(directory).resolve() not in package_paths:
+        return {}
+    return {
+        key: module
+        for key, module in sys.modules.items()
+        if key.startswith("dallinger_experiment")
+    }
+
+
 @pytest.fixture(scope="class")
 def in_experiment_directory(experiment_directory):
     global loaded_experiment_directory, _active_experiment_directory
@@ -481,6 +494,10 @@ def in_experiment_directory(experiment_directory):
             "experiment directory."
         )
     loaded_experiment_directory = experiment_directory
+    # `psynet test local` imports the experiment before pytest starts.
+    _loaded_experiment_modules.update(
+        _experiment_modules_loaded_from(experiment_directory)
+    )
     # Importing Dallinger's server outside an experiment directory, for example
     # while collecting tests, leaves a stale dallinger_experiment package.
     clean_sys_modules()
@@ -514,9 +531,7 @@ def in_experiment_directory(experiment_directory):
         except Exception as exc:
             cleanup_error = exc
     _loaded_experiment_modules.update(
-        (key, module)
-        for key, module in sys.modules.items()
-        if key.startswith("dallinger_experiment")
+        _experiment_modules_loaded_from(experiment_directory)
     )
     clean_sys_modules()
     clear_all_caches()
