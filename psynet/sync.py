@@ -4924,7 +4924,8 @@ def _lock_round(group, node) -> bool:
     round. :meth:`~psynet.trial.main.SyncGroupNode.for_cue` holds the same
     lock while a cue runs, so a busy lock defers the release to the next
     barrier check, instead of waiting while this request holds waiter rows.
-    Releases outside a round need no lock.
+    Releases outside a round need no lock. :meth:`SyncGroup._dissolve` tries
+    it too, so a busy lock also makes a dissolution wait for the poller.
     """
     key = _round_lock_key(group, node)
     if key is None:
