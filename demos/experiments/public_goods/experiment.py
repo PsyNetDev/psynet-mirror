@@ -30,6 +30,8 @@ N_ROUNDS = 3
 ENDOWMENT = 10
 MULTIPLIER = 1.5
 TOKEN_VALUE = 0.02
+# The time a player is expected to spend reading a round's results.
+RESULTS_SECONDS = 10
 # Short so that the bot test runs quickly; with real participants, allow about
 # 30, 60 and 300 seconds. LATE_AFTER also covers reading the previous round's
 # results, which has no time limit.
@@ -84,7 +86,7 @@ def left_team(participant):
 
 class ContributionTrial(Trial):
     sync_group_type = GROUP
-    time_estimate = DECISION_SECONDS + 10
+    time_estimate = DECISION_SECONDS + RESULTS_SECONDS
 
     def show_trial(self, experiment, participant):
         return join(
@@ -183,12 +185,12 @@ class ContributionTrial(Trial):
                     for id_, tokens in node.var.contributions.items()
                 },
             ),
-            time_estimate=10,
+            time_estimate=RESULTS_SECONDS,
         )
 
 
 def your_contribution(participant, trial):
-    """Replace the contribution buttons with the player's contribution while the others decide."""
+    """Show the player's contribution in place of the buttons while others decide."""
     if trial.time_limit_reached:
         text = "You ran out of time, so you put in nothing."
     else:
@@ -226,11 +228,11 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per round, from the trials, and one per team per round, from the nodes.
+        """Return one row per player per round and one per team per round.
 
-        Every trial gets a row, including one whose player left or whose
-        round was cancelled; ``outcome`` says how the round ended for the
-        player.
+        Player rows come from the trials and team rows from the nodes. Every
+        trial gets a row, including one whose player left or whose round was
+        cancelled; ``outcome`` says how the round ended for the player.
         """
         trials = ContributionTrial.query.order_by(
             ContributionTrial.sync_group_round, ContributionTrial.id
