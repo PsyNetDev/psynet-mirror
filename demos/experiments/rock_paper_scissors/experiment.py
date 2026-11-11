@@ -171,8 +171,9 @@ class Exp(psynet.experiment.Experiment):
         """Return one row per player per round, from the trials.
 
         Every trial gets a row, including the trial of a player who left
-        during the round; the columns from ``action`` on are ``None`` for a
-        round that was never scored.
+        during the round; the stored result columns (``action``, ``partner_*``,
+        ``result`` and ``points``) are ``None`` for a round that was never
+        scored.
         """
         trials = RockPaperScissorsTrial.query.order_by(
             RockPaperScissorsTrial.sync_group_id,

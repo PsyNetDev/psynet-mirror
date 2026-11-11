@@ -25,8 +25,9 @@ on when players leave.
 - Each trial's `sync_group_outcome` (the `outcome` column of the basic data)
   is `"stayed"` if the round was scored. Otherwise it records how the player
   left the pair: when a partner goes silent, the player who waited for them
-  leaves as `"waited_too_long"` and the silent partner as
-  `"group_dissolved"`. A round that was never scored has no results page and
+  leaves as `"waited_too_long"` and the silent partner, if they had started
+  that round, as `"group_dissolved"`; a partner who went silent between
+  rounds has no row for the next round. A round that was never scored has no results page and
   `None` in the result columns.
 
 ## Usage

@@ -210,12 +210,13 @@ row, and ``partner_timed_out``):
     1        2      1               5         scissors  scissors  False      2           scissors        drew    0
     1        2      2               6         scissors  scissors  False      1           scissors        drew    0
 
-Each round has one row per member, and ``partner_id`` points in both
-directions. A round that was never scored, for example because a partner
+Each round has one row per member who started it, and ``partner_id``
+points in both directions. A round that was never scored, for example because a partner
 dropped out before choosing, has ``None`` in the result columns, and its
 ``outcome`` says how the player left the pair: when a partner goes silent,
 the player who waited for them leaves as ``"waited_too_long"`` and the
-silent partner as ``"group_dissolved"``. Participants who are regrouped have
+silent partner, if they had started that round, as ``"group_dissolved"``
+(a partner who went silent between rounds has no row for the next round). Participants who are regrouped have
 one ``sync_group_id`` per group, so their rounds with each partner stay apart.
 
 .. _basic_data_regrouper:
