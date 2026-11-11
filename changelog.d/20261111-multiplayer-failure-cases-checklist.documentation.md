@@ -1,0 +1,1 @@
+Added "Failure cases to decide" to the multiplayer synchronization docs and the `synchronous-experiments` skill: a checklist of the ways a group game can end early for a player, what to decide about pay, feedback and export for each, and how to test each with bots.

@@ -1001,6 +1001,47 @@ Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
 :doc:`late_slow_and_leaving_players` follows these settings through concrete
 cases.
 
+.. _sync-failure-cases:
+
+Failure cases to decide
+~~~~~~~~~~~~~~~~~~~~~~~
+
+For each case a group game can meet, decide what the player sees, how they
+are paid, and what the export records, then test it with bots. The
+``public_goods`` demo handles each one.
+
+- **No group forms:** the grouper's ``max_wait_action``; with
+  ``"continue_without_group"`` the reason is ``"no_group_formed"`` (see
+  `Timeouts`_). Test with fewer bots than a group needs, waiting out the
+  grouper's ``max_wait_time``.
+- **A player runs out of time:** their answer is ``None``, or the page's
+  ``time_limit_answer``, and ``trial.time_limit_reached`` is ``True``; they
+  stay in the group (see :ref:`time limits in rounds
+  <sync-timeouts-and-rounds>`). Test with
+  :meth:`~psynet.participant.ParticipantDriver.run_out_of_time`.
+- **A player goes quiet:** a barrier's ``late_after`` removes them with its
+  ``late_action``, and their round's outcome is ``"late"`` (see
+  :ref:`round outcomes <sync-round-outcome>`). Test with
+  :func:`~psynet.bot.make_late_now`.
+- **The group falls below quorum:** the grouper's ``below_quorum``
+  dissolves the group, and the outcome is ``"group_dissolved"`` (see
+  :ref:`groups_below_min_size` and :ref:`dissolved rounds
+  <sync-dissolved-round>`). Test by making enough members late or drop out.
+- **A player leaves the study:** they return it or are failed, and leave
+  their groups as ``"left_experiment"``; the others carry on as above. Test
+  with :meth:`~psynet.participant.ParticipantDriver.drop_out`.
+
+For each case, decide:
+
+- **Pay:** ``score_answer`` can pay by ``trial.sync_group_outcome``, as in
+  the ``public_goods`` demo's ``ContributionTrial.score_answer``.
+- **Feedback:** :meth:`participant.sync_group_removal_text(group_type)
+  <psynet.participant.Participant.sync_group_removal_text>` explains an early
+  end in a standard sentence; add game-specific text after it (see
+  `After leaving a group`_).
+- **Export:** export a row for every trial, with its ``sync_group_outcome``
+  and ``time_limit_reached``, so that analysis can tell the cases apart.
+
 .. _sync-timeouts:
 
 Timeouts

@@ -1,6 +1,6 @@
 # Testing dropouts: worked example
 
-A worked example for "Test dropouts" in `synchronous-experiments/SKILL.md`.
+A worked example for "Decide and test failure cases" in `synchronous-experiments/SKILL.md`.
 
 After each dropout, assert who failed (`bot.failed`), what each remaining bot
 sees (`bot.current_page_text` and `bot.current_notice`), and that branches on
@@ -47,7 +47,7 @@ class Exp(psynet.experiment.Experiment):
         ), stayer.current_notice
 
         on_time.take_page()  # silent never answers round 1
-        advance_past_wait_pages([on_time], timeout=LATE_AFTER + 10)
+        make_late_now([on_time], "round_1")  # instead of waiting LATE_AFTER
         assert on_time.current_page_text == "Round 2 on your own.", on_time.current_page_text
 
         # silent comes back after being removed, and is told on the page they are on
@@ -64,8 +64,10 @@ class Exp(psynet.experiment.Experiment):
 `tests/experiments/pair_dropout` in the PsyNet repository extends this with
 a third pair whose member is failed.
 
-Bot tests wait out the real timeouts, so pass `advance_past_wait_pages` a
-`timeout` longer than the `late_after` or `max_wait_time` being tested. The
+`make_late_now` moves the group's clocks back so that the barrier's next
+check removes the silent member as `late_after` would. Bot tests wait out
+other timeouts in real time, so pass `advance_past_wait_pages` a `timeout`
+longer than the `max_wait_time` being tested. The
 default `test_check_bot` accepts bots that called `drop_out()` or
 `allow_failure()`; call `allow_failure()` for every bot the design fails on
 purpose, such as a partner left behind under the default

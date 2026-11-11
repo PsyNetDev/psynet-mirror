@@ -333,7 +333,8 @@ Module("game", for_loop(
   bot runs when arrival races matter.
 - Assert group formation, active group size, role assignment, shared node/trial
   IDs, barrier IDs, `on_release` side effects, and failed/overflow exits.
-- Test each kind of dropout, as described in "Test dropouts" below, and
+- Test each kind of dropout, as described in "Decide and test failure
+  cases" below, and
   top-ups, not only a complete group that finishes.
 - Test waiting-phase retention aids: filler trials should save usable data or
   stay harmless, alerts should fire at the intended transition, timers should be
@@ -345,25 +346,39 @@ Module("game", for_loop(
 - Inspect exported data to confirm group IDs, platform IDs, roles, phase
   timestamps, responses, failures, and partial-completion reasons are analyzable.
 
-## Test dropouts
+## Decide and test failure cases
 
 Real groups lose members in several ways; "Waiting and dropouts" in
-`design/groups` lists them, and "Settings for each kind of dropout" in
-`code/multiplayer/synchronization` gives the setting for each.
-Write a serial bot test for every kind your design can meet, and check that
-the experiment behaves sensibly for everyone involved: members who did
-nothing wrong are not failed unless the design says so, their next page tells
-them what happened, nobody waits for a partner who has gone, and nobody is
-shown a page that only makes sense with a group.
+`design/groups` lists them, and "Settings for each kind of dropout" and
+"Failure cases to decide" in `code/multiplayer/synchronization` give the
+setting for each. For every case your design can meet, decide what the
+player sees, how they are paid and what the export records, then write a
+serial bot test for it. Check that the experiment behaves sensibly for
+everyone involved: members who did nothing wrong are not failed unless the
+design says so, their next page tells them what happened, nobody waits for
+a partner who has gone, and nobody is shown a page that only makes sense
+with a group.
 
-| Dropout | Simulate it in the bot test |
-|---|---|
-| Returns the study | `bot.drop_out()` |
-| Is failed by the experiment | `bot.allow_failure()`, then `bot.fail("reason")` |
-| Runs out of time on a timed page | `bot.run_out_of_time()` |
-| Closes the tab or stops responding | Stop taking pages for that bot and keep advancing the others |
-| Comes back after being removed | Take pages for the silent bot again |
-| Arrives when no group can form | Send one bot more than fills the groups to the grouper, and wait out its `max_wait_time` |
+| Case | What PsyNet records | Simulate it in the bot test |
+|---|---|---|
+| Returns the study | `"left_experiment"` | `bot.drop_out()` |
+| Is failed by the experiment | `"left_experiment"` | `bot.allow_failure()`, then `bot.fail("reason")` |
+| Runs out of time on a timed page | Answer `None` (or `time_limit_answer`), `trial.time_limit_reached` | `bot.run_out_of_time()` |
+| Closes the tab or stops responding | `"late"`, from a barrier's `late_after` | Stop taking pages for that bot, then `make_late_now(bots, "<barrier id>")` once the others wait there |
+| Group falls below quorum | `"group_dissolved"` for those left, by `below_quorum` | Make enough members drop out or late |
+| Comes back after being removed | The reason they were removed | Take pages for the silent bot again |
+| Arrives when no group can form | `"no_group_formed"` | Send one bot more than fills the groups to the grouper, and wait out its `max_wait_time` |
+
+The removal reasons are those of `participant.sync_group_removal_reason`,
+and a cued trial's `sync_group_outcome`. Pay by `self.sync_group_outcome`
+in `score_answer`, and start the page after an early end with the standard
+sentence, as in `public_goods`:
+
+```python
+def game_ended_early(participant):
+    text = participant.sync_group_removal_text("team")  # "You were away for too long, …"
+    return InfoPage(f"{text} Your bonus is ${participant.performance_reward:.2f}.")
+```
 
 Read `references/test-dropouts.md` for a worked pair test with a quitter and a
 silent member, and for how long to wait out timeouts in bot tests.
