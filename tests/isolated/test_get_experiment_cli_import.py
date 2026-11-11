@@ -4,6 +4,7 @@ import pytest
 
 from psynet.experiment_scaffold import scaffold_missing_files
 from psynet.pytest_psynet import path_to_test_experiment
+from psynet.testing.locks import experiment_directory_lock
 from psynet.utils import working_directory
 
 
@@ -12,7 +13,11 @@ def experiment_class_imported_before_pytest(experiment_directory):
     """Import the experiment before the fixtures run, as ``psynet test local`` does."""
     from psynet.experiment import import_local_experiment
 
-    with working_directory(experiment_directory), scaffold_missing_files():
+    with (
+        experiment_directory_lock(experiment_directory),
+        working_directory(experiment_directory),
+        scaffold_missing_files(),
+    ):
         return import_local_experiment()["class"]
 
 
