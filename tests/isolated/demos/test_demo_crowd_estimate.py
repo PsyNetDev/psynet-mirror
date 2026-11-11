@@ -55,7 +55,6 @@ def _crowd(n_members):
     "outcome, median, in_median, timed_out, expected",
     [
         ("late", 5, None, False, "didn't reach your group in time"),
-        ("late", 5, True, False, "You left your group"),
         ("group_dissolved", 5, None, False, "Your group ended"),
         ("waited_too_long", 5, None, False, "You left your group"),
         ("stayed", None, None, False, "Too few estimates"),

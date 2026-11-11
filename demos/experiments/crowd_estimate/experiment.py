@@ -211,13 +211,12 @@ class EstimateTrial(Trial):
         group passes the barrier without waiting, before the group is scored.
         """
         outcome = self.sync_group_outcome
-        if outcome == "late" and not self.var.get("in_median"):
+        if outcome == "late":
             return "Your estimate didn't reach your group in time"
         if outcome == "group_dissolved":
             # The framework's notice on this page says too few members remained.
             return "Your group ended before you saw its median"
         if outcome != "stayed":
-            # Includes a member removed as late after their estimate counted.
             return "You left your group before you saw its median"
         if self.node.var.get("median") is None:
             return "Too few estimates arrived for a group median"
@@ -251,11 +250,9 @@ class Exp(psynet.experiment.Experiment):
                     "question": t.definition["question"],
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
-                    # How the round ended for the player: "stayed" to the
-                    # end, or why they last left during the round's pages,
-                    # such as "late" or "group_dissolved", even after the
-                    # median was shared (in_median says whether the estimate
-                    # counted); None alone.
+                    # "stayed" if the player was in the group when the
+                    # median was shared, otherwise why they left before
+                    # that, such as "late" or "group_dissolved"; None alone.
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or left first.
                     "estimate": t.answer.get("estimate"),
