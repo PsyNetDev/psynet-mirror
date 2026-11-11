@@ -23,6 +23,7 @@ from psynet.page import InfoPage
 from psynet.sync import GroupBarrier, SimpleGrouper
 from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop, join
 from psynet.trial.main import SyncGroupNode, Trial
+from psynet.utils import serialise_datetime
 
 GROUP = "team"
 N_ROUNDS = 3
@@ -161,7 +162,8 @@ class ContributionTrial(Trial):
 
     def show_feedback(self, experiment, participant):
         node = self.node
-        # A group of three plays on with two, so at most one player leaves.
+        # A group of three with a quorum of two dissolves when a second player
+        # leaves, cancelling the round, so a scored round has n_left <= 1.
         left = "One player has left the group. " if node.var.n_left else ""
         if self.time_limit_reached:
             you = "You ran out of time and put in nothing"
@@ -267,8 +269,8 @@ class Exp(psynet.experiment.Experiment):
                     "team_id": n.sync_group_id,
                     "node_id": n.id,
                     # When the group dissolved and the round was cancelled,
-                    # or None.
-                    "dissolved_at": n.sync_group_dissolved_at,
+                    # as an ISO timestamp, or None. Basic data must be JSON.
+                    "dissolved_at": serialise_datetime(n.sync_group_dissolved_at),
                     # The rest are None until the round is scored, so in a
                     # cancelled round. A player who ran out of time has a
                     # contribution of None.

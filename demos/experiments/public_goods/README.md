@@ -24,7 +24,8 @@ which pays the bonus. The basic data is read from the trials and nodes.
   round. The others carry on while at least two remain, sharing the pot
   between fewer players.
 - When only one player remains, the group dissolves: the round is cancelled,
-  the node's `sync_group_dissolved_at` records when, and the last player
+  the node's `sync_group_dissolved_at` records when (exported as the ISO
+  timestamp `dissolved_at` in the `team_round` table), and the last player
   keeps their tokens for it, whether or not they had already contributed.
   `score_answer` pays each player by their trial's `sync_group_outcome`.
 - Nobody is failed because others left: the last player, a player who comes

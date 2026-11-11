@@ -1,11 +1,18 @@
-"""Scoring and results text of the public_goods demo when players leave or time out."""
+"""Scoring, results text and export of the public_goods demo when players leave or time out."""
 
+import json
+import uuid
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
+from dallinger import db
 
-from psynet.experiment import import_local_experiment
+from psynet.experiment import get_experiment, import_local_experiment
+from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_demo_experiment
+from psynet.sync import SimpleSyncGroup
+from psynet.timeline import Module
 
 
 def _trial(participant_id, answer, **attributes):
@@ -29,7 +36,7 @@ class TestPublicGoods:
     @pytest.mark.parametrize(
         "answers, n_left, share, payoffs",
         [
-            # A departed player is not in the pot: two players share it.
+            # Two players played the round after a third left.
             ([10, 0], 1, 7.5, [7.5, 17.5]),
             # A player who ran out of time puts in nothing but still gets a share.
             ([4, 8, None], 0, 6, [12, 8, 16]),
@@ -86,3 +93,38 @@ class TestPublicGoods:
             trials[0], None, SimpleNamespace(id=0)
         )
         assert page.prompt.text == expected
+
+    def test_export_of_a_cancelled_round_is_json(self, demo, db_session):
+        exp = get_experiment()
+        members = [
+            Participant(
+                experiment=exp,
+                recruiter_id="hotair",
+                worker_id=str(uuid.uuid4()),
+                hit_id="XYZ",
+                assignment_id=str(uuid.uuid4()),
+                mode="debug",
+            )
+            for _ in range(3)
+        ]
+        group = SimpleSyncGroup(
+            group_type=demo.GROUP,
+            initial_group_size=3,
+            min_group_size=2,
+            n_active_participants=3,
+            accepts_top_ups=False,
+        )
+        db.session.add_all([*members, group])
+        for participant in members:
+            participant.status = "working"
+            group.add_participant(participant)
+            participant.start_module(Module("game", []))
+        db.session.commit()
+        for participant in members:
+            demo.ContributionTrial.cue(round=0)[0].consume(exp, participant)
+        group.remove_participant(members[0], reason="late")
+        group.remove_participant(members[1], reason="late")
+        db.session.commit()
+
+        (team,) = json.loads(json.dumps(demo.Exp.get_basic_data()))["team_round"]
+        assert datetime.fromisoformat(team["dissolved_at"])
