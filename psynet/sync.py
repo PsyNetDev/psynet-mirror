@@ -1855,8 +1855,8 @@ class GroupBarrier(Barrier):
         member of the group is acted on until a check finds none of them busy; if that request
         brought them to this barrier, they are no longer late. So code a late member runs in their own
         request, such as a :class:`~psynet.timeline.CodeBlock` storing their answer, either runs before the
-        removal or sees it (``participant.sync_group_removal_reason``, or a cued trial's
-        :attr:`~psynet.trial.main.Trial.sync_group_outcome`).
+        removal or sees it (``participant.sync_group_removal_reason``, or, before the round's first
+        release, a cued trial's :attr:`~psynet.trial.main.Trial.sync_group_outcome`).
 
     also_leave
         With ``late_action="leave_group"``, the other group types a late member also leaves, with the
@@ -4759,7 +4759,9 @@ def _open_rounds(group, participants):
     for participant in participants:
         db.session.refresh(participant, ["current_trial_id", "_current_trial"])
         if participant.current_trial is not None:
-            db.session.refresh(participant.current_trial, ["complete"])
+            db.session.refresh(
+                participant.current_trial, ["complete", "sync_group_outcome"]
+            )
     trials = [_round_trial(group, p) for p in participants]
     return list(
         {t.node_id: t.node for t in trials if t is not None and not t.complete}.values()
