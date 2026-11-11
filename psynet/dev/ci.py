@@ -11,8 +11,8 @@ GitHub. That made parallel CI builds depend on several live network calls to
 
 To keep Docker builds reproducible and less sensitive to transient GitHub
 timeouts, PsyNet vendors the relevant Dallinger ``dev-requirements.txt`` snapshot
-in ``ci/dallinger-dev-requirements.txt``. Docker copies this local file and runs
-``uv pip compile`` against it. The file has a PsyNet-specific provenance header
+in ``ci/dallinger-dev-requirements.txt``. Both CI images copy this local file
+and compile against it with ``ci/install-psynet-deps.sh``. The file has a PsyNet-specific provenance header
 recording the Dallinger git ref it came from (a release tag or commit SHA).
 
 When PsyNet upgrades its Dallinger dependency, maintainers should run
