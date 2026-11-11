@@ -14,6 +14,9 @@ Each round is one cued trial per player (`Trial.cue(...)` with
 `sync_group_type`), so the room's results live on a node shared by its trials
 and the basic data is read from trials and nodes.
 
+A player the experimenter removes from their room on the dashboard misses
+that round, is told why, and joins the next one.
+
 ## Usage
 
 For instructions on how to run PsyNet experiments like this one, visit the

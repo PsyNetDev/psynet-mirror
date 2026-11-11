@@ -406,8 +406,9 @@ class Exp(psynet.experiment.Experiment):
                     # decision is then the answer so far.
                     "complete": t.complete,
                     # "stayed" if the player was in the group when the round
-                    # was scored, "late" if they were taken out before that
-                    # for being away.
+                    # was scored; otherwise "late" if they were taken out
+                    # before that for being away, or "removed" if the
+                    # experimenter removed them on the dashboard.
                     "outcome": t.sync_group_outcome,
                     # None if the player was away and never sent a decision.
                     "decision": t.answer,
