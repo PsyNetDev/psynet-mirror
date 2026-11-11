@@ -150,6 +150,8 @@ def _check_docker_constraints_compile(
                 dallinger_constraints_path.read_text(encoding="utf-8"),
                 encoding="utf-8",
             )
+            # Same extras and constraint as ci/install-psynet-deps.sh, which
+            # builds the CI images; keep the two in step.
             subprocess.run(
                 [
                     "uv",

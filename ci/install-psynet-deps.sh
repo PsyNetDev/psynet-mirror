@@ -8,7 +8,10 @@
 # Docker builds do not depend on raw.githubusercontent.com availability.
 #
 # Compile for the full Python version of the interpreter on PATH: uv reads
-# "3.11" as 3.11.0.
+# "3.11" as 3.11.0. `psynet dev ci update-dallinger-constraints` compiles
+# with the same extras and constraint for every supported Python
+# (_check_docker_constraints_compile in psynet/dev/ci.py); keep the two in
+# step.
 set -eu
 python_version="$(python -c 'import platform; print(platform.python_version())')"
 uv pip compile --python-version "$python_version" pyproject.toml \
