@@ -422,7 +422,11 @@ def make_late_now(
         participants = [Participant.query.get(bot.id) for bot in bots]
         waiting = [p for p in participants if barrier_id in p.active_barriers]
         if not waiting:
-            raise ValueError(f"None of the bots is waiting at '{barrier_id}'.")
+            raise ValueError(
+                f"None of the bots is waiting at '{barrier_id}'. If they were, "
+                "the barrier may already have released them; give it a longer "
+                "late_after."
+            )
         barrier = waiting[0].active_barriers[barrier_id].get_barrier()
         late_after = getattr(barrier, "late_after", None)
         if late_after is None:
