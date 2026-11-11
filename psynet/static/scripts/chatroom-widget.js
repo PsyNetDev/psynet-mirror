@@ -116,11 +116,22 @@ export async function activate({root, vars}) {
         }
         if (String(senderId) === MY_ID) {
             // Own messages say "You", so the list spells out the participant's name.
-            label.appendChild(document.createTextNode(
-                inList && pseudonym
-                    ? YOU_IN_LIST_LABEL.replace("{NAME}", function () { return pseudonym.name; })
-                    : YOU_LABEL
-            ));
+            var fullName = pseudonym
+                ? YOU_IN_LIST_LABEL.replace("{NAME}", function () { return pseudonym.name; })
+                : YOU_LABEL;
+            if (!inList && pseudonym) {
+                // Screen readers hear the name, which the hidden icon can't give them.
+                var shown = document.createElement("span");
+                shown.setAttribute("aria-hidden", "true");
+                shown.textContent = YOU_LABEL;
+                var spoken = document.createElement("span");
+                spoken.className = "visually-hidden";
+                spoken.textContent = fullName;
+                label.appendChild(shown);
+                label.appendChild(spoken);
+            } else {
+                label.appendChild(document.createTextNode(inList ? fullName : YOU_LABEL));
+            }
         } else if (pseudonym) {
             label.appendChild(document.createTextNode(pseudonym.name));
         } else {
