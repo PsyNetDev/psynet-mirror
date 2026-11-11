@@ -6999,19 +6999,24 @@ def test_group_barrier_late_after_removes_missing_participants(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_late_action_leave_all_groups_also_leaves_the_cohort(
+def test_also_leave_removes_a_late_member_from_the_listed_groups_only(
     in_experiment_directory, db_session
 ):
-    """A member late for their pair also leaves the cohort, so the cohort doesn't wait for them."""
+    """A member late for their pair also leaves the cohort and stays in groups of unlisted types."""
     exp = get_experiment()
     barrier = GroupBarrier(
-        id_="round", group_type="pair", late_after=5, late_action="leave_all_groups"
+        id_="round",
+        group_type="pair",
+        late_after=5,
+        late_action="leave_group",
+        also_leave=["cohort"],
     )
     late, on_time, other = [new_participant(exp) for _ in range(3)]
     groups = {}
     for group_type, members in [
         ("cohort", [late, on_time, other]),
         ("pair", [late, on_time]),
+        ("chat", [late, other]),
     ]:
         group = SimpleSyncGroup(
             group_type=group_type,
@@ -7036,20 +7041,45 @@ def test_late_action_leave_all_groups_also_leaves_the_cohort(
     assert late not in groups["pair"].active_participants
     assert set(groups["cohort"].active_participants) == {on_time, other}
     assert late.sync_group_removal_reason("cohort") == "late"
-    assert not late.active_sync_groups
+    assert set(late.active_sync_groups) == {"chat"}
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        (
+            dict(also_leave=["cohort"]),
+            "only takes effect with late_action='leave_group'",
+        ),
+        (dict(late_action="leave_group", also_leave="cohort"), "must be a list"),
+        (dict(late_action="leave_group", also_leave=["pair"]), "own group type"),
+        (
+            dict(late_action="leave_group", also_leave=["cohort", "cohort"]),
+            "more than once",
+        ),
+        (dict(late_action="leave_all_groups"), "late_action must be one of"),
+    ],
+)
+def test_also_leave_is_validated(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        GroupBarrier(id_="round", group_type="pair", late_after=5, **kwargs)
 
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 @pytest.mark.parametrize("both_pairs_late", [False, True])
-def test_late_member_leaving_all_groups_can_fail_the_cohort_with_a_warning(
+def test_late_member_leaving_the_cohort_can_fail_it_with_a_warning(
     in_experiment_directory, db_session, caplog, both_pairs_late
 ):
     """Leaving a cohort at full quorum fails its other members, but never another late member."""
     exp = get_experiment()
     barrier = GroupBarrier(
-        id_="round", group_type="pair", late_after=5, late_action="leave_all_groups"
+        id_="round",
+        group_type="pair",
+        late_after=5,
+        late_action="leave_group",
+        also_leave=["cohort"],
     )
     late_a, on_time_a, b1, b2 = [new_participant(exp) for _ in range(4)]
     for group_type, members, below_quorum in [
@@ -7720,6 +7750,39 @@ def test_waiter_leaving_a_pair_after_max_wait(
     assert waiter.sync_group_removal_reason("main") == "waited_too_long"
     InfoPage("Next").consume(exp, waiter)
     assert _removed_from_group_notice(waiter).startswith("Your partner didn't")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+@pytest.mark.parametrize("waiting_page", [False, True])
+def test_poller_failing_a_waiter_after_max_wait(
+    in_experiment_directory, db_session, waiting_page
+):
+    exp = get_experiment()
+    (waiter, absent), _ = _pair_sync_group(exp, db_session)
+    barrier = GroupBarrier(
+        id_="abandoned",
+        group_type="main",
+        max_wait_time=300,
+        waiting_logic=InfoPage("Filler", time_estimate=5) if waiting_page else None,
+    )
+    _arrive_at_group_barrier(exp, barrier, waiter)
+    db.session.commit()
+    rows = ParticipantLinkBarrier if waiting_page else TimelineHoldRecord
+    rows.query.filter_by(participant_id=waiter.id).update({"deadline_at": timenow()})
+    db.session.commit()
+    ids = waiter.id, absent.id
+
+    check_barriers()
+    db.session.expire_all()
+
+    waiter, absent = (Participant.query.get(i) for i in ids)
+    hold = "while_loop" if waiting_page else "timeline_hold"
+    assert set(waiter.failure_tags) == {f"{hold}:barrier:abandoned", "fail_on_timeout"}
+    assert waiter.sync_group_removal_reason("main") == "waited_too_long"
+    assert absent.sync_group_removal_reason("main") == "group_dissolved"
+    assert absent.failure_tags == ["sync group below minimum size"]
 
 
 @pytest.mark.parametrize(

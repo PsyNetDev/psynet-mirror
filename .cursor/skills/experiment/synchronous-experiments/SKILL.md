@@ -79,8 +79,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   (see "Release callbacks"). `on_release` doesn't run
   for members who left before the release or whose group dissolved, so read
   what it stores with `trial.var.get("score")` (or `participant.var.get`),
-  which returns `None` when it isn't set. Nothing runs when a group
-  dissolves, so with `below_quorum="continue_without_group"`, when a
+  which returns `None` when it isn't set. No experiment code runs when a
+  group dissolves; PsyNet only sets `node.sync_group_dissolved_at` on the
+  node of a round its group dissolved during, so exports should read that rather than store
+  their own marker from `score_answer`. With
+  `below_quorum="continue_without_group"`, when a
   member's cued trial has `sync_group_outcome == "group_dissolved"`,
   compute their result where it is needed (`show_feedback`, an export or
   `on_finalized`) from every stored `trial.answer` on `node.all_trials`.
@@ -109,8 +112,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   a split join the next one rather than being failed. For players who stop
   responding mid-round, follow "Moving slow players on" in
   `code/multiplayer/writing_a_round_based_experiment`: use
-  `late_action="leave_all_groups"` so that they also leave the `within`
-  group; see the quorum caveat there.
+  `late_action="leave_group"` with `also_leave=[<within group type>]` so
+  that they also leave the `within` group; see the quorum caveat there.
 - A member on a timed page isn't treated as late until its limit plus 10 s,
   so `late_after` need not cover the page (see "Timeouts" in
   `code/multiplayer/synchronization`); the demos use 30 s so that a
@@ -377,7 +380,9 @@ silent member, and for how long to wait out timeouts in bot tests.
 - Do not leave default wait limits in place for real recruitment sessions
   without checking whether they are appropriate.
 - Do not assume top-ups are safe; define exactly which groups may accept late
-  participants.
+  participants. Top-ups never stop by themselves, and a `join_criterion` only
+  turns newcomers away; see "Groups below quorum" in
+  `code/multiplayer/synchronization` for the ways to stop them.
 - Do not set recruitment targets that leave stranded participants unable to form
   a full group.
 - Do not auto-reject participants who waited or were stranded by no-shows; plan

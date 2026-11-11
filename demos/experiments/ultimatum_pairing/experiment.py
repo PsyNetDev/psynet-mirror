@@ -250,7 +250,8 @@ class OfferTrial(Trial):
                 # They have probably closed their page, so they leave the
                 # cohort too, and the next split doesn't wait for them.
                 late_after=30,
-                late_action="leave_all_groups",
+                late_action="leave_group",
+                also_leave=[COHORT],
                 on_release=self.score_pair,
             ),
         )

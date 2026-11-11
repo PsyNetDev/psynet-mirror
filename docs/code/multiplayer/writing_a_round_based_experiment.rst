@@ -158,9 +158,9 @@ Moving slow players on
 The barrier after the decision page waits for
 both partners. A player who hasn't reached it within ``late_after`` seconds
 of the round's start is late. A late player has usually closed their page,
-so with ``late_action="leave_all_groups"`` they are removed from the pair and
-from the cohort: their partner carries on alone, and the next split doesn't
-wait for them. The narrower ``late_action="leave_group"`` removes them from
+so with ``late_action="leave_group"`` and ``also_leave=[COHORT]`` they are
+removed from the pair and from the cohort: their partner carries on alone,
+and the next split doesn't wait for them. Without ``also_leave`` they leave
 the pair only, so the next split would wait for them until its deadline
 (see :class:`~psynet.sync.GroupBarrier` and :ref:`sync-leaving-a-group`).
 A player on a page

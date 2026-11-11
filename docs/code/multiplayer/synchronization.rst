@@ -43,9 +43,10 @@ the grouper has a ``waiting_screen`` (see below).
     If ``True``, an arriving participant first joins an existing group that
     is below ``max_group_size``, preferring the smallest and then the oldest
     group. Participants already waiting at the grouper join such a group on
-    the next barrier check after one has room. Closed groups and groups with
-    no active members are not joined. Groups formed with this option accept
-    *top-ups*; see `Groups below quorum`_ for how they stop and what they
+    the next barrier check after one has room. Groups that have closed or
+    stopped accepting top-ups, and groups with no active members, are not
+    joined. Groups formed with this option accept *top-ups* until you stop
+    them; see `Groups below quorum`_ for how they stop, and for what they
     change when a member drops out.
 
 ``max_group_size`` (default: ``initial_group_size``)
@@ -63,7 +64,8 @@ the grouper has a ``waiting_screen`` (see below).
     A function of ``group`` and ``participant`` that returns whether the
     participant may join that group. Only used with
     ``join_existing_groups=True``. Returning ``False`` only turns that
-    newcomer away (see `Groups below quorum`_).
+    newcomer away; the group keeps accepting top-ups (see
+    `Groups below quorum`_).
 
 ``start_short_after`` (default: ``None``)
     Seconds after which a smaller group may start. Once the longest-waiting
@@ -354,6 +356,28 @@ slow. ``trials`` only covers the members still in the group; on a group's
 node, ``node.all_trials`` lists every trial of the round, including those of
 members who have since left, each with its ``sync_group_role``.
 
+.. _sync-timeouts-and-rounds:
+
+:attr:`trial.time_limit_reached <psynet.trial.main.Trial.time_limit_reached>`
+says whether a member's latest timed page ran out of time before their
+answer, so ``on_release`` can score a timed-out answer differently. The trial
+keeps it through later untimed pages and barrier waits, including timed
+pages shown while waiting at a barrier, and it is exported
+with the trial. To read a group's rounds after the game, for example on a
+debrief page once the group has ended,
+:meth:`group.rounds(module_id) <psynet.sync.SyncGroup.rounds>` returns the
+group's nodes for that module of cued trials in round order:
+
+.. code-block:: python
+
+    def score_round(trials, node):
+        for trial in trials:
+            trial.score = 0 if trial.time_limit_reached else trial.answer
+        ...
+
+    def story_so_far(group):
+        return [node.var.get("sentence") for node in group.rounds("story")]
+
 .. _sync-round-outcome:
 
 Each trial on a group's node records how the round ended for its player in
@@ -367,8 +391,8 @@ later:
   nothing;
 - why the player left the group: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
-  ``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or
-  ``"removed"`` if none was given (the values are listed in
+  ``"late"``, ``"waited_too_long"``, ``"left_experiment"`` or
+  ``"group_dissolved"``, or ``"removed"`` if none was given (the values are listed in
   :data:`~psynet.sync.SyncGroupOutcome`);
 - ``None`` before either happens, and for a trial played without a group.
 
@@ -400,8 +424,24 @@ the results it would have stored, so read them with ``.get``, which returns
 ``None`` when they aren't set: ``trial.var.get("score")`` for results saved on
 the trial, or ``participant.var.get("score")`` when there is no trial.
 
-Nothing runs when a group dissolves, but with
-``below_quorum="continue_without_group"`` the members carry on and the
+.. _sync-dissolved-round:
+
+No code of yours runs when a group dissolves, but PsyNet records it on the
+round: the group's node gets
+:attr:`~psynet.trial.main.SyncGroupNode.sync_group_dissolved_at`, the time
+it dissolved, if a member still in the group was in their trial on that
+node (its pages hadn't ended) and no group barrier had released the round.
+A round that a barrier released stays ``None``, even if a member was still
+on a page after the barrier, and so does a round whose remaining members'
+trials had all ended, as when the group dissolves between rounds. A member
+still on a page after a release does get ``sync_group_outcome``
+``"group_dissolved"`` on their trial: the trial says how the player left the
+round, the node's column whether the round itself was cut short. So an export can tell a
+cancelled round from one still in progress even if no member finishes
+their trial, for example ``node.sync_group_dissolved_at is not None``,
+without storing anything of its own.
+
+With ``below_quorum="continue_without_group"`` the members carry on and the
 round's results are still stored (with the default ``"fail"``, the members
 are failed and ``show_feedback`` doesn't run). Each trial's ``answer`` holds
 the player's latest answer, the round's trials are in ``node.all_trials``,
@@ -935,7 +975,8 @@ decisions each one needs. These settings carry them out:
   the next (see `Rounds with changing groups`_). One who stops responding
   partway through a round is removed from their group by
   ``late_action="leave_group"``, but stays in the ``within`` group, so the
-  next split waits for them until its deadline; ``late_action="leave_all_groups"``
+  next split waits for them until its deadline; adding
+  ``also_leave=[<the within group's type>]``, for example ``["cohort"]``,
   takes them out of both (see :ref:`rounds-slow-players`).
 
 Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
@@ -959,9 +1000,10 @@ the maximum waiting time:
     then handles late members instead; passing ``max_wait_time`` together
     with ``late_after`` raises an error. ``max_wait_action`` decides what
     happens to a participant who waits longer: ``"fail"`` (default) fails
-    them. At a :class:`~psynet.sync.GroupBarrier`, ``"leave_group"`` removes
-    them from the group (see :ref:`sync-leaving-a-group` for what they see
-    next); at a grouper, where they have no group yet,
+    them. At a :class:`~psynet.sync.GroupBarrier`, both actions first remove
+    them from the group as ``"waited_too_long"``; ``"fail"`` then fails them,
+    and with ``"leave_group"`` they carry on without it (see
+    :ref:`sync-leaving-a-group` for what they see next); at a grouper, where they have no group yet,
     ``"continue_without_group"`` lets them carry on without one, telling them
     "We couldn't find a partner for you in time. Please continue." (or "We
     couldn't form a group for you in time. Please continue." for larger
@@ -983,15 +1025,26 @@ the maximum waiting time:
     :class:`~psynet.sync.GroupBarrier` yet: a member who hasn't reached the
     barrier within ``late_after`` seconds of the group's previous barrier
     pass, or of joining the group if that is later, is late, and is handled
-    by ``late_action``: ``"fail"`` (default) fails them, ``"leave_group"``
-    removes them from the group, and ``"leave_all_groups"`` removes them from
-    all their groups, such as the cohort a pair was formed in. Whichever
+    by ``late_action``: ``"fail"`` (default) fails them, and ``"leave_group"``
+    removes them from the group. With ``"leave_group"``, ``also_leave`` lists
+    the other group types they leave too, such as ``["cohort"]`` for the
+    cohort a pair was formed in. Whichever
     action it is, the late member leaves the barrier's group with the
     reason ``"late"``, so ``participant.sync_group_removal_reason`` and their
     trial's ``sync_group_outcome`` say ``"late"`` even when they are failed.
     Members who arrive on time wait for the
     others until they arrive or are late, so they need no ``max_wait_time``
     of their own.
+
+    A late member who is in the middle of a request of their own, such as
+    submitting a page, is left alone until the barrier checks again once
+    that request finishes, and so are the group's other late members, so
+    that equally late members leave together. If that request brought them
+    to the barrier they are no longer late. So a late member is never
+    removed while their own request is acting: code in their own request, such as a
+    :class:`~psynet.timeline.CodeBlock` that stores their answer, either runs
+    before the removal or sees it (``participant.sync_group_removal_reason``,
+    or a cued trial's ``sync_group_outcome``), and needs no locks of its own.
 
     A member who has started a page with a ``time_limit``, other than a
     waiting page, since the group last passed a barrier (or since joining)
@@ -1011,8 +1064,9 @@ the maximum waiting time:
 
 Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_`` prefix: ``sync_group_max_wait_time``,
-``sync_group_max_wait_action``, ``sync_group_late_after`` and
-``sync_group_late_action``. ``sync_group_max_wait_time`` defaults to 45
+``sync_group_max_wait_action``, ``sync_group_late_after``,
+``sync_group_late_action`` and ``sync_group_also_leave``.
+``sync_group_max_wait_time`` defaults to 45
 seconds, or, as at a barrier, to no limit with ``sync_group_late_after``,
 and passing both raises an error. Passing any of the others, or
 ``sync_group_waiting_message``, without ``sync_group_type`` also raises an
@@ -1063,8 +1117,8 @@ Two separate settings decide what happens when someone leaves a group:
 
 - **The member who leaves** is handled by why they left: a barrier's
   ``max_wait_action`` (they waited too long for the others) or
-  ``late_action`` (the others waited too long for them), each ``"fail"``,
-  ``"leave_group"`` or ``"leave_all_groups"``, or their own failure, for
+  ``late_action`` (the others waited too long for them), each ``"fail"``
+  or ``"leave_group"``, or their own failure, for
   example when they return the study.
 - **The members left behind** carry on as before while the group still has
   its ``quorum``. Below it, what happens depends on whether the group
@@ -1075,13 +1129,16 @@ Two separate settings decide what happens when someone leaves a group:
     ``max_wait_time``, or without a limit if the barrier sets
     ``late_after``. If every member leaves, the group closes at the next
     periodic sync-group check (every few seconds), and later arrivals form a
-    new one. A ``join_criterion`` that returns ``False`` only turns that
-    newcomer away; it doesn't stop top-ups.
-  - Top-ups stop in four ways, and from then on the group is treated as
-    one without top-ups:
+    new one.
+  - Top-ups never stop by themselves: a ``join_criterion`` that returns
+    ``False`` only turns that newcomer away, and a group at its
+    ``max_group_size`` takes newcomers again once a member leaves. They stop
+    only in one of these ways, and from then on the group is treated as one
+    without top-ups:
 
-    - ``group.stop_top_ups()`` stops them at once; a group already below
-      its quorum is then dissolved, however its members left.
+    - :meth:`group.stop_top_ups() <psynet.sync.SimpleSyncGroup.stop_top_ups>`
+      stops them at once; a group already below its quorum is then
+      dissolved, however its members left.
     - ``stop_top_ups=True`` on a :class:`~psynet.sync.GroupBarrier` stops
       them when the group passes that barrier, for example at the start of
       the game, so nobody joins a game already under way. A group below its
@@ -1094,9 +1151,13 @@ Two separate settings decide what happens when someone leaves a group:
       its quorum at that split is dissolved with nobody grouped; with
       ``below_quorum="continue_without_group"``, its waiting players are
       released ungrouped and ``on_release`` isn't called.
-    - The grouper's ``top_up_wait=seconds`` limits that wait: once the
-      group has been below its quorum that long, the barrier it is waiting
-      at stops top-ups and dissolves it. This only helps members who are
+    - The grouper's ``top_up_wait=seconds`` limits the wait below quorum:
+      once the group has been below its quorum that long without a newcomer
+      bringing it back up, the next check of the
+      :class:`~psynet.sync.GroupBarrier` its members are waiting at stops
+      top-ups and dissolves it. Only such a barrier applies the limit, so a
+      group whose members are all still on other pages keeps accepting
+      top-ups until one of them reaches it. This only helps members who are
       still waiting, so give that barrier a ``max_wait_time`` (20 seconds
       by default) longer than ``top_up_wait``, or ``late_after``, which
       removes the limit.
@@ -1138,7 +1199,7 @@ settings together decide both fates:
    * - waited too long, ``max_wait_action="leave_group"``
      - leaver carries on alone, absent partner failed
      - both carry on alone
-   * - was late, ``late_action="leave_group"`` or ``"leave_all_groups"``
+   * - was late, ``late_action="leave_group"``
      - late member carries on alone, partner who was on time failed
      - both carry on alone
 
@@ -1153,8 +1214,8 @@ To let the members who were on time carry on, set
     SimpleGrouper("pair", initial_group_size=2, below_quorum="continue_without_group")
 
 ``late_action="fail"`` instead ends the session for both. With
-``late_action="leave_all_groups"`` the same applies to the late member's other
-groups: a cohort without top-ups that one departure takes below its quorum
+``also_leave`` the same applies to the late member's groups of the listed
+types: a cohort without top-ups that one departure takes below its quorum
 fails all its other members, including those in other pairs, unless its
 grouper has ``below_quorum="continue_without_group"``.
 
@@ -1410,7 +1471,9 @@ For the rest of the timeline:
   them no group in time), ``"group_dissolved"``, ``"moved_on"`` (a
   :class:`~psynet.sync.Regrouper` took them out of their previous group, and
   they are waiting there or sitting the round out),
-  ``"finished"`` or ``"left_experiment"`` (they failed or returned the study).
+  ``"finished"`` or ``"left_experiment"`` (they failed or returned the study;
+  a member failed for being late or waiting too long at this group's barrier
+  records ``"late"`` or ``"waited_too_long"`` instead).
   A cued trial whose pages they were on in that group keeps the reason in
   ``sync_group_outcome``, even after they join another group (see
   :ref:`round outcomes <sync-round-outcome>`).
