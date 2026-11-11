@@ -41,7 +41,7 @@ read their results.
 | `late` | The member was inactive for longer than `LATE_AFTER`, for example by closing the page, and missed the end of a round. | Earns nothing for that round; the others carry on. Sees the page if they come back. |
 | `left_experiment` | The member returned the study or was failed. | Sees no page; the others carry on. |
 | `group_dissolved` | One member was left, and no newcomer joined within `TOP_UP_WAIT`. | Keeps the catch of the round in progress, and is told the society ended. |
-| `removed` | The experimenter removed the member on the dashboard. | Told they were removed. |
+| `removed_by_experimenter` | The experimenter removed the member on the dashboard. | Told they were removed. |
 | `no_group_formed` | No society formed or had room within `GROUPING_WAIT`. | Told no society was found. |
 
 A member who leaves in their last round leaves for that reason and writes

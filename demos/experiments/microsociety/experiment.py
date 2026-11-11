@@ -130,7 +130,7 @@ def get_timeline():
                     "You were away for too long, so you left the society.",
                     time_estimate=5,
                 ),
-                "removed": InfoPage(
+                "removed_by_experimenter": InfoPage(
                     "You were removed from the society.", time_estimate=5
                 ),
                 "no_group_formed": InfoPage(
@@ -163,7 +163,7 @@ def life_stage(participant: Participant) -> Optional[str]:
     if last is not None and last.var.get("leaves_as"):
         return last.var.leaves_as
     if GROUP not in participant.active_sync_groups:
-        # "late", "group_dissolved", "removed", "left_experiment" or
+        # "late", "group_dissolved", "removed_by_experimenter", "left_experiment" or
         # "no_group_formed".
         return participant.sync_group_removal_reason(GROUP)
     return "playing"
@@ -291,7 +291,7 @@ class FishingTrial(Trial):
             # The society ended before the round was scored, so they fish alone.
             self.var.catch = _draw_catch(answer)
             return self.var.catch
-        # They left during the round: "late", "removed" or "left_experiment".
+        # They left during the round: "late", "removed_by_experimenter" or "left_experiment".
         return 0
 
     def compute_performance_reward(self, score):
