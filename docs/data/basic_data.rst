@@ -109,9 +109,11 @@ per question; a player who answered on their own has a row with an empty
 ``crowd_id``. Its ``outcome`` column, from ``trial.sync_group_outcome``, says
 how the round ended for each player: ``"stayed"``, or why they last left the
 group during the round's pages, even after the median was shared;
-``time_limit_reached``, from ``trial.time_limit_reached``, says whether
-their estimate's time limit ran out, and
-``in_median`` whether it counted.
+``estimate_timed_out`` says whether their estimate's time limit ran out,
+from the estimate's own
+:attr:`Response.time_limit_reached <psynet.timeline.Response.time_limit_reached>`
+(``trial.time_limit_reached`` follows the trial's latest timed page, here
+the revised estimate), and ``in_median`` whether it counted.
 
 Groups that stay together save their rounds the same way. The
 ``public_goods`` demo saves the group's ``contributions`` (``None`` for a
