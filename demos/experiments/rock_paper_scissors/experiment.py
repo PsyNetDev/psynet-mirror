@@ -34,6 +34,8 @@ from psynet.trial.main import Trial
 GROUP = "rock_paper_scissors"
 PARTNER_WAIT_SECONDS = 300
 CHOICE_SECONDS = 20
+# The time a player is expected to spend on a round's results and chat.
+RESULTS_SECONDS = 30
 N_ROUNDS = 3
 ACTIONS = ["rock", "paper", "scissors"]
 BEATS = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
@@ -45,7 +47,7 @@ def get_timeline():
     return Timeline(
         EnableChatrooms(),
         SimpleGrouper(
-            group_type=GROUP,
+            GROUP,
             initial_group_size=2,
             waiting_message="Waiting for your partner",
             max_wait_time=PARTNER_WAIT_SECONDS,
@@ -63,7 +65,7 @@ def get_timeline():
 
 
 def _result(action, partner_action):
-    """Return ``"won"``, ``"drew"`` or ``"lost"`` for the player who played ``action``."""
+    """Return ``"won"``, ``"drew"`` or ``"lost"`` for the player of ``action``."""
     if action == partner_action:
         return "drew"
     if BEATS[action] == partner_action:
@@ -73,13 +75,14 @@ def _result(action, partner_action):
 
 class RockPaperScissorsTrial(Trial):
     sync_group_type = GROUP
-    time_estimate = 35
+    # About 5 seconds to choose, then the results and chat.
+    time_estimate = 5 + RESULTS_SECONDS
 
     def show_trial(self, experiment, participant):
         return join(
             self.choose_action(participant),
             GroupBarrier(
-                id_="finished_trial",
+                id_="round_finished",
                 group_type=GROUP,
                 waiting_message="Waiting for your partner",
                 # Releasing the pair closes the round and scores it.
@@ -103,7 +106,7 @@ class RockPaperScissorsTrial(Trial):
 
     @classmethod
     def score_round(cls, trials: List["RockPaperScissorsTrial"]):
-        """Save each player's action, their partner's action and the result on the player's trial."""
+        """Save each player's action, partner's action and result on their trial."""
         for trial in trials:
             trial.var.action = trial.answer or random.choice(ACTIONS)
         # A pair needs both players to pass a barrier, so there are two trials.
@@ -157,7 +160,7 @@ class RockPaperScissorsTrial(Trial):
                 show_participants=True,
                 show_history=True,
             ),
-            time_estimate=30,
+            time_estimate=RESULTS_SECONDS,
         )
 
 
@@ -271,7 +274,7 @@ class Exp(psynet.experiment.Experiment):
 
 
 def _assert_on_page(bots, label):
-    """Every bot has left the waiting overlay, whose label is "wait", and is on ``label``."""
+    """Assert that every bot has left the waiting overlay and is on ``label``."""
     for bot in bots:
         bot.refresh_status()
         assert bot.current_page_label == label, bot.current_page_label

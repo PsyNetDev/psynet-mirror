@@ -536,7 +536,7 @@ have no side effects. Notices must fit on two lines of a phone screen:
         return "Your partner is ready."
 
     GroupBarrier(
-        id_="finished_trial",
+        id_="round_finished",
         group_type="rock_paper_scissors",
         waiting_message="Waiting for your partner",
         on_arrival_message=arrival_message,
