@@ -117,10 +117,7 @@ Groups that stay together save their rounds the same way. The
 player who ran out of time), ``pot``, ``multiplied_pot``, ``share`` and the
 number of players who left since the previous round was scored, from
 ``on_release``'s ``left``, once per round on the node, and
-each player's ``contribution``, ``payoff`` and ``timed_out`` on their trial.
-``timed_out`` copies :attr:`~psynet.timeline.Response.time_limit_reached`
-from the trial's response rather than inferring a time-out from a missing
-answer:
+each player's ``contribution`` and ``payoff`` on their trial:
 
 .. literalinclude:: ../../demos/experiments/public_goods/experiment.py
    :pyobject: ContributionTrial.score_round
@@ -130,11 +127,13 @@ The trial pays its round's payoff as a bonus through ``score_answer`` and
 their trials' ``performance_reward``, and the export and the payments agree.
 Its ``player_round`` table also gives each trial's ``sync_group_outcome``,
 which says whether the player stayed to the end of the round or why they
-left it (see :ref:`round outcomes <sync-round-outcome>`). Its
-``team_round`` table reads the node of each team and round, including
-``cancelled``, which the last player's ``score_answer`` saves when they finish
-the cancelled round. If they return the study first, the round still looks in
-progress (`issue #1163 <https://gitlab.com/PsyNetDev/PsyNet/-/work_items/1163>`__):
+left it (see :ref:`round outcomes <sync-round-outcome>`), and ``timed_out``
+from the trial's
+:attr:`~psynet.trial.main.Trial.time_limit_reached` rather than inferred
+from a missing answer. Its ``team_round`` table reads the node of each team
+and round, including ``dissolved_at`` from
+:attr:`~psynet.trial.main.SyncGroupNode.sync_group_dissolved_at`, set when
+the group dissolved during the round, which cancels it:
 
 .. literalinclude:: ../../demos/experiments/public_goods/experiment.py
    :start-at: "team_round": [
