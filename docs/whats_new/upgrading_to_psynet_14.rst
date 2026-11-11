@@ -565,8 +565,9 @@ Search for code that changes ``SyncGroup.participants``, custom ``Barrier``
 subclasses, ``get_waiting_participants(`` and ``SimpleGrouper(``.
 
 * Change group membership with ``SyncGroup.add_participant()`` and
-  ``SyncGroup.remove_participant()``. ``SyncGroup.participants`` is
-  read-only and lists only active members.
+  ``SyncGroup.remove_participant(participant, reason=...)``, which needs a
+  reason such as ``"removed_by_experimenter"``. ``SyncGroup.participants``
+  is read-only and lists only active members.
 * Custom barriers implement ``check_waiting_participants()`` and
   ``choose_who_to_release()`` instead of overriding ``check()``. Barrier
   state is saved as data, so custom release state must be JSON-compatible
@@ -581,7 +582,9 @@ subclasses, ``get_waiting_participants(`` and ``SimpleGrouper(``.
   a ``FutureWarning``. A grouper for groups of three or more without
   ``quorum`` warns: pass ``quorum=initial_group_size`` to keep failing a group
   as soon as one member leaves, or a smaller number if your code handles
-  smaller groups.
+  smaller groups. A ``quorum`` below ``initial_group_size`` also needs
+  ``below_quorum="fail"`` (the old behavior) or
+  ``below_quorum="continue_without_group"``.
 * A trial maker's ``sync_group_max_wait_time`` without ``sync_group_type``
   has no effect and now warns; remove it or set ``sync_group_type``.
 * In bot tests, ``advance_past_wait_pages(bots, max_iterations=...)`` is
