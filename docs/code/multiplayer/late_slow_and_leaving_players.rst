@@ -196,6 +196,9 @@ below its quorum of three and is dissolved:
   estimate, ``submitted`` lets him straight through, and his next page says
   "Too few members of your group remained. Please continue." (in a pair: "Your partner is no longer in your group. Please
   continue.").
+- The round's node records when the group dissolved, in
+  ``sync_group_dissolved_at`` (see :ref:`dissolved rounds <sync-dissolved-round>`), so the
+  export shows the round as cancelled even if Ben never submits.
 
 Both estimates stay on their trials, in ``trial.answer["estimate"]``, so an
 export or ``on_finalized`` can score the round from ``node.all_trials`` (see

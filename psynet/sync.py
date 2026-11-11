@@ -2313,13 +2313,16 @@ class GroupBarrier(Barrier):
         group.last_barrier_pass_time = timenow()
         for link in group.participant_links:
             link.page_deadline = None
+        if node is not None:
+            # Closes the round to newcomers: their cues start the next. Done
+            # before stopping top-ups, so if that dissolves the group, the
+            # round counts as finished rather than dissolved.
+            node.sync_group_closed = True
         if self.stop_top_ups:
             group.stop_top_ups()
 
         trials = [p.current_trial for p in released]
         if node is not None:
-            # Closes the round to newcomers: their cues start the next.
-            node.sync_group_closed = True
             for participant in released:
                 trial = _round_trial(group, participant)
                 if trial is not None:
@@ -4493,6 +4496,12 @@ class SyncGroup(SQLBase, SQLMixin):
         failing removes a member from the groups they are still in as
         ``"left_experiment"``.
 
+        The cued rounds that members are still playing get
+        ``sync_group_dissolved_at`` (see :func:`_mark_rounds_dissolved`).
+        Their round locks are tried without waiting too, as in
+        :func:`_lock_round`, and a busy one makes the dissolution wait like a
+        busy member.
+
         Returns
         -------
         list of Participant
@@ -4501,14 +4510,17 @@ class SyncGroup(SQLBase, SQLMixin):
         self._dissolving_below_quorum = True
         try:
             removed = _lock_all_participants(list(self.active_participants))
-            if removed is None:
+            rounds = None if removed is None else _open_rounds(self, removed)
+            if rounds is None or not all(_lock_round(self, node) for node in rounds):
                 if not self.dissolving:
                     logger.debug(
-                        "Dissolving sync group %s waits for a member's request.",
+                        "Dissolving sync group %s waits for a member's request "
+                        "or a cue.",
                         self.id,
                     )
                 self.dissolving = True
                 return []
+            _mark_rounds_dissolved(rounds)
             group_size = len(group_seats(self))
             fail = (self.below_quorum or "fail") == "fail"
             for participant in removed:
@@ -4610,6 +4622,28 @@ def _record_leaving_the_round(group, participant, reason):
     trial = _round_trial(group, participant)
     if trial is not None and not trial.complete:
         trial.sync_group_outcome = reason or "removed"
+
+
+def _open_rounds(group, participants):
+    """Return the nodes of the cued rounds of ``group`` in which ``participants`` have an unfinished trial."""
+    trials = [_round_trial(group, p) for p in participants]
+    return list(
+        {t.node_id: t.node for t in trials if t is not None and not t.complete}.values()
+    )
+
+
+def _mark_rounds_dissolved(nodes):
+    """Record on each round in ``nodes`` that its group dissolved, unless a barrier closed it.
+
+    Expects the caller to hold the rounds' locks (see :func:`_lock_round`),
+    and re-reads each node under them, so a release that another request
+    committed first is seen.
+    """
+    db.session.flush()
+    for node in nodes:
+        db.session.refresh(node, ["sync_group_closed", "sync_group_dissolved_at"])
+        if not node.sync_group_closed and node.sync_group_dissolved_at is None:
+            node.sync_group_dissolved_at = timenow()
 
 
 def _round_trial(group, participant):

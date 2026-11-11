@@ -78,8 +78,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   (see "Release callbacks"). `on_release` doesn't run
   for members who left before the release or whose group dissolved, so read
   what it stores with `trial.var.get("score")` (or `participant.var.get`),
-  which returns `None` when it isn't set. Nothing runs when a group
-  dissolves, so with `below_quorum="continue_without_group"`, when a
+  which returns `None` when it isn't set. No experiment code runs when a
+  group dissolves; PsyNet only sets `node.sync_group_dissolved_at` on a
+  round it dissolved during, so exports should read that rather than store
+  their own marker from `score_answer`. With
+  `below_quorum="continue_without_group"`, when a
   member's cued trial has `sync_group_outcome == "group_dissolved"`,
   compute their result where it is needed (`show_feedback`, an export or
   `on_finalized`) from every stored `trial.answer` on `node.all_trials`.

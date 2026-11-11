@@ -98,7 +98,10 @@ re-formed every round, as by a :class:`~psynet.sync.Regrouper`, plays only
 round 0. The group's trials with the same
 ``sync_group_id`` and ``sync_group_round`` are one round. All three stay after
 the group ends. Cued trials of one group and round also share a
-:class:`~psynet.trial.main.SyncGroupNode`, which can hold the group's results;
+:class:`~psynet.trial.main.SyncGroupNode`, which can hold the group's results
+and records in ``sync_group_closed`` whether a group barrier released the
+round and in ``sync_group_dissolved_at`` when the group dissolved during it
+(see :ref:`dissolved rounds <sync-dissolved-round>`);
 the ``lowest_unique_number`` demo builds a table per player and round and
 one per room from them (see :ref:`rounds-one-trial-per-player`).
 

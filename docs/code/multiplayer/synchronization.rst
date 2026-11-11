@@ -401,8 +401,21 @@ the results it would have stored, so read them with ``.get``, which returns
 ``None`` when they aren't set: ``trial.var.get("score")`` for results saved on
 the trial, or ``participant.var.get("score")`` when there is no trial.
 
-Nothing runs when a group dissolves, but with
-``below_quorum="continue_without_group"`` the members carry on and the
+.. _sync-dissolved-round:
+
+No code of yours runs when a group dissolves, but PsyNet records it on the
+round: the group's node gets
+:attr:`~psynet.trial.main.SyncGroupNode.sync_group_dissolved_at`, the time
+it dissolved, if a member still in the group was in their trial on that
+node (its pages hadn't ended) and no group barrier had released the round.
+A round that a barrier released stays ``None``, even if a member was still
+on a page after the barrier, and so does a round whose trials had all
+ended, as when the group dissolves between rounds. So an export can tell a
+cancelled round from one still in progress even if no member finishes
+their trial, for example ``node.sync_group_dissolved_at is not None``,
+without storing anything of its own.
+
+With ``below_quorum="continue_without_group"`` the members carry on and the
 round's results are still stored (with the default ``"fail"``, the members
 are failed and ``show_feedback`` doesn't run). Each trial's ``answer`` holds
 the player's latest answer, the round's trials are in ``node.all_trials``,

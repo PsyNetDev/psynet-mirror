@@ -1334,6 +1334,71 @@ def test_the_outcome_records_why_a_player_left_the_round(
         assert other_leaver.current_trial.sync_group_outcome == outcome
 
 
+def _dissolved_mid_round(exp, members):
+    members[-1].fail("returned")
+
+
+def _released_then_dissolved(exp, members):
+    _arrive(exp, GroupBarrier("done", group_type="main"), members)
+    members[-1].fail("returned")
+
+
+def _dissolved_between_rounds(exp, members):
+    _complete_trials(members)
+    members[-1].fail("returned")
+
+
+@pytest.mark.parametrize(
+    "dissolve, marked",
+    [
+        (_dissolved_mid_round, True),
+        (_released_then_dissolved, False),
+        (_dissolved_between_rounds, False),
+    ],
+    ids=["mid_round", "after_release", "between_rounds"],
+)
+@in_consents_experiment
+def test_a_round_records_that_its_group_dissolved_during_it(
+    in_experiment_directory, db_session, dissolve, marked
+):
+    exp = get_experiment()
+    members, group = _sync_group_of(exp, db_session, 2)
+    group.below_quorum = "continue_without_group"
+    _cue_team(exp, members, 0)
+    db.session.commit()
+    node = members[0].current_trial.node
+
+    dissolve(exp, members)
+    db.session.commit()
+    assert not group.active
+    assert (node.sync_group_dissolved_at is not None) == marked
+
+
+@in_consents_experiment
+def test_dissolving_waits_for_a_cue_holding_the_round_lock(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    (stayer, leaver), group = _sync_group_of(exp, db_session, 2)
+    group.below_quorum = "continue_without_group"
+    _cue_team(exp, [stayer, leaver], 0)
+    db.session.commit()
+    node = stayer.current_trial.node
+    key = f"sync_group_node:{node.module_id}:{group.id}"
+
+    with db.engine.connect() as cue_request, cue_request.begin():
+        cue_request.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": key},
+        )
+        leaver.fail("returned")
+        db.session.commit()
+        assert group.dissolving and stayer in group.active_participants
+    group._dissolve()
+    db.session.commit()
+    assert not group.active and node.sync_group_dissolved_at is not None
+
+
 @in_consents_experiment
 def test_late_action_fail_waits_for_a_busy_late_member_then_fails_both(
     in_experiment_directory, db_session
@@ -1573,6 +1638,7 @@ def test_case_a_group_dissolves_under_a_member_on_a_round_page(
         "group_dissolved",
         "group_dissolved",
     ]
+    assert reader.current_trial.node.sync_group_dissolved_at is not None
     original = exp.timeline
     exp.timeline = Timeline(
         submitted, ModularPage("after", "Round over", time_estimate=1)
