@@ -365,7 +365,7 @@ with a group. List the cases and your decisions in the experiment's README.
 |---|---|---|
 | Runs out of time on a timed page (stays in the group) | `trial.time_limit_reached`; answer `None` or `time_limit_answer` | `bot.run_out_of_time()` |
 | Closes the tab or stops responding | reason `"late"`, from a barrier's `late_after` | Stop taking pages for that bot, then `make_late_now(bots, "<barrier id>")` once the others wait there |
-| Waits for others who never arrive | reason `"waited_too_long"`, from a barrier's `max_wait_time` | Wait out the barrier's `max_wait_time` |
+| Waits for others who never arrive (barrier `max_wait_action="leave_group"`; the default fails them) | reason `"waited_too_long"`, from a barrier's `max_wait_time` | Wait out the barrier's `max_wait_time` |
 | Is left in a group below quorum | reason `"group_dissolved"`, from the grouper's `below_quorum` | Make enough members drop out or late |
 | Returns the study | reason `"left_experiment"` | `bot.drop_out()` |
 | Is failed by the experiment | reason `"left_experiment"` | `bot.allow_failure()`, then `bot.fail("reason")` |

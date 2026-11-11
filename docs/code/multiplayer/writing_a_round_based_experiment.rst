@@ -276,8 +276,9 @@ played the most rounds sits the round out; with ``left_over="sit_out"``
 they move on without a pair instead of waiting (see
 :class:`~psynet.sync.Regrouper`), so the ``switch`` gives them a page
 instead of a trial that round. A player who was paired but removed from the
-pair before submitting their decision has a trial, and the first check in
-``outcome`` above tells them that they were away.
+pair before submitting their decision has a trial, and the first checks in
+``outcome`` above tell them that they were away or were removed from the
+pair.
 
 .. figure:: ../../_static/images/rounds/sit_out.png
    :width: 600
