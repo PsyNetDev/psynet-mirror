@@ -439,7 +439,8 @@ answered it. With ``accumulate_answers``, an unanswered trial's ``answer`` is
 In the ``public_goods`` demo, a group of three plays on with two, so the
 group dissolves when one player is left and the round is cancelled.
 ``score_answer``, at the end of each trial, pays the last player for the
-cancelled round by their trial's outcome:
+cancelled round by their trial's outcome, and marks the round cancelled on
+the node for the export:
 
 .. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
    :pyobject: ContributionTrial.score_answer

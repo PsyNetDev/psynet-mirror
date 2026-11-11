@@ -103,10 +103,10 @@ the ``lowest_unique_number`` demo builds a table per player and round and
 one per room from them (see :ref:`rounds-one-trial-per-player`).
 
 Groups that stay together save their rounds the same way. The
-``public_goods`` demo saves the group's ``contributions``, ``pot``,
-``multiplied_pot`` and ``share`` once per round on the node, and each
-player's ``contribution`` (``None`` for a player who ran out of time) and
-``payoff`` on their trial:
+``public_goods`` demo saves the group's ``contributions`` (``None`` for a
+player who ran out of time), ``pot``, ``multiplied_pot``, ``share`` and the
+number of players who left during the round once per round on the node, and
+each player's ``contribution`` and ``payoff`` on their trial:
 
 .. literalinclude:: ../../demos/experiments/public_goods/experiment.py
    :pyobject: ContributionTrial.score_round
@@ -117,7 +117,9 @@ their trials' ``performance_reward``, and the export and the payments agree.
 Its ``player_round`` table also gives each trial's ``sync_group_outcome``,
 which says whether the player stayed to the end of the round or why they
 left it (see :ref:`round outcomes <sync-round-outcome>`). Its
-``team_round`` table reads the node of each team and round:
+``team_round`` table reads the node of each team and round, including
+``cancelled``, which the last player's ``score_answer`` saves when the group
+dissolves, so a cancelled round isn't mistaken for one still in progress:
 
 .. literalinclude:: ../../demos/experiments/public_goods/experiment.py
    :start-at: "team_round": [

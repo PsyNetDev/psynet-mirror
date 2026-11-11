@@ -134,17 +134,18 @@ class ContributionTrial(Trial):
     @classmethod
     def score_round(cls, trials: List["ContributionTrial"], node: SyncGroupNode):
         """Share the multiplied pot between the members who played the round."""
-        # String keys, because node.var stores JSON.
-        contributions = {str(t.participant_id): t.answer or 0 for t in trials}
-        pot = sum(contributions.values())
+        # String keys, because node.var stores JSON. An answer of None means
+        # the player ran out of time and put in nothing.
+        node.var.contributions = {str(t.participant_id): t.answer for t in trials}
+        pot = sum(t.answer or 0 for t in trials)
         multiplied_pot = MULTIPLIER * pot
         share = multiplied_pot / len(trials)
-        node.var.contributions = contributions
         node.var.pot = pot
         node.var.multiplied_pot = multiplied_pot
         node.var.share = share
+        # The round closes now, so no trials join after this.
+        node.var.n_left = len(node.all_trials) - len(trials)
         for trial in trials:
-            # An answer of None means the player ran out of time.
             trial.var.payoff = ENDOWMENT - (trial.answer or 0) + share
 
     def score_answer(self, answer, definition):
@@ -154,7 +155,9 @@ class ContributionTrial(Trial):
             return self.var.payoff
         if outcome == "group_dissolved":
             # The last player keeps their tokens for the cancelled round,
-            # whether or not they were already waiting at the barrier.
+            # whether or not they were already waiting at the barrier. They
+            # are its only player left, so nobody else writes this.
+            self.node.var.cancelled = True
             return ENDOWMENT
         if outcome == "late":
             return 0
@@ -170,9 +173,7 @@ class ContributionTrial(Trial):
 
     def show_feedback(self, experiment, participant):
         node = self.node
-        n_left = sum(
-            t.sync_group_outcome not in (None, "stayed") for t in node.all_trials
-        )
+        n_left = node.var.n_left
         if n_left == 0:
             left = ""
         elif n_left == 1:
@@ -193,7 +194,7 @@ class ContributionTrial(Trial):
                 participant=participant,
                 group=self.sync_group,
                 answers={
-                    id_: f"{tokens} tokens"
+                    id_: f"{tokens or 0} tokens"
                     for id_, tokens in node.var.contributions.items()
                 },
             ),
@@ -279,8 +280,11 @@ class Exp(psynet.experiment.Experiment):
                     "round": n.sync_group_round,
                     "team_id": n.sync_group_id,
                     "node_id": n.id,
-                    # These are None if the round was cancelled; each
-                    # player's contribution is also in player_round.
+                    # Set when the group dissolves during the round.
+                    "cancelled": n.var.get("cancelled", False),
+                    # The rest are None until the round is scored, so in a
+                    # cancelled round; a contribution of None means the
+                    # player ran out of time.
                     "contributions": n.var.get("contributions"),
                     "pot": n.var.get("pot"),
                     "multiplied_pot": n.var.get("multiplied_pot"),
@@ -303,15 +307,25 @@ class Exp(psynet.experiment.Experiment):
         # Per round: the full game's team, the late players' team, whose last
         # round was cancelled, and the quitters' team, cancelled in round 0.
         teams = data["team_round"]
-        assert [(t["round"], t["pot"]) for t in teams] == [
-            (0, 18),
-            (0, 18),
-            (0, None),
-            (1, 12),
-            (1, 4),
-            (2, 12),
-            (2, None),
+        assert [(t["round"], t["pot"], t["cancelled"]) for t in teams] == [
+            (0, 18, False),
+            (0, 18, False),
+            (0, None, True),
+            (1, 12, False),
+            (1, 4, False),
+            (2, 12, False),
+            (2, None, True),
         ], teams
+        assert all(
+            t["contributions"] is t["multiplied_pot"] is t["share"] is None
+            for t in teams
+            if t["cancelled"]
+        ), teams
+        assert teams[3]["contributions"] == {
+            str(bots[0].id): 4,
+            str(bots[1].id): 8,
+            str(bots[2].id): None,
+        }, teams
 
         rows = data["player_round"]
         contributions = {
