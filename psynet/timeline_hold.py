@@ -233,10 +233,15 @@ def default_group_barrier_arrival_message(
 
     Notices tell people still on an earlier page that partners are already
     waiting, ``"late"`` tells someone who was too slow that their group
-    went on without them, and ``"waited_too_long"`` tells someone who waited
-    too long that the others didn't arrive.
+    went on without them, ``"waited_too_long"`` tells someone who waited
+    too long that the others didn't arrive, and ``"not_admitted"`` tells a
+    pending member that the group did not admit them.
     """
     _p = get_translator(context=True)
+    if kind == "not_admitted":
+        return _p(
+            "timeline_hold", "We couldn't add you to a group in time. Please continue."
+        )
     if kind == "waited_too_long":
         if group_size <= 2:
             return _p(

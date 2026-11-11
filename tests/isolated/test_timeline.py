@@ -1609,10 +1609,36 @@ def test_two_sync_trial_makers_keep_distinct_barrier_ids():
         for elt in timeline.all_elts
         if elt.links.get("barrier") is not None
     }
-    assert tm_1.with_namespace("init_participant") in ids
-    assert tm_2.with_namespace("init_participant") in ids
-    assert tm_1.with_namespace("prepare_trial") in ids
-    assert tm_2.with_namespace("prepare_trial") in ids
+    assert ids == {
+        tm_1.with_namespace("prepare_trial"),
+        tm_2.with_namespace("prepare_trial"),
+    }
+
+
+def test_a_group_admitting_at_admission_points_needs_one():
+    from psynet.sync import GroupBarrier, SimpleGrouper
+
+    def grouper():
+        return SimpleGrouper(
+            "main",
+            initial_group_size=2,
+            max_group_size=3,
+            target_group_size=2,
+            join_existing_groups=True,
+            admit_newcomers="at_admission_point",
+            below_quorum="continue_without_group",
+        )
+
+    with pytest.warns(UserWarning, match="no admission point"):
+        Timeline(grouper(), InfoPage("x", time_estimate=1))
+    with pytest.raises(ValueError, match="sync_group_newcomer_max_wait"):
+        Timeline(grouper(), new_trial_maker(sync_group_type="main"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        Timeline(
+            grouper(),
+            GroupBarrier("start", "main", admission_point=True, newcomer_max_wait=60),
+        )
 
 
 def test_estimate_credit__simple():

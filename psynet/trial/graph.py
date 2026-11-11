@@ -406,6 +406,7 @@ class GraphChainTrialMaker(ChainTrialMaker):
         sync_group_late_action: Optional[LateAction] = None,
         sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
+        sync_group_newcomer_max_wait: Optional[float] = None,
     ):
         if chain_type == "within":
             raise NotImplementedError  # UNCLEAR TO ME HOW TO UNITE THE ON-DEMAND CREATION OF WITHIN CHAINS AND THE PRE-DFINED GRAPH NETWORK STRUCTURE
@@ -446,6 +447,7 @@ class GraphChainTrialMaker(ChainTrialMaker):
             sync_group_late_action=sync_group_late_action,
             sync_group_also_leave=sync_group_also_leave,
             sync_group_waiting_message=sync_group_waiting_message,
+            sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
         )
 
     @property

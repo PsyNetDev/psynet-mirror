@@ -68,7 +68,7 @@ A scheduled task in ``Experiment._check_barriers`` calls ``check_barriers`` in
 this module. That loop:
 
 - Dissolves sync groups whose dissolution waited because a member was busy
-  in their own request or a round lock was busy (see ``SyncGroup._dissolve``).
+  in their own request (see ``SyncGroup._dissolve``).
 - Applies ``max_wait_time`` to waiters whose hold or waiting-page deadline has
   passed. Their own request normally does this, so waiters who left would
   otherwise stay.
@@ -124,6 +124,7 @@ import logging
 import random
 import time
 import uuid
+import warnings
 from contextlib import contextmanager
 from datetime import timedelta
 from functools import partial
@@ -725,7 +726,7 @@ class _BarrierHoldPage(_TimelineHoldPage):
         super().__init__(
             hold_id=f"barrier:{barrier.id}",
             expected_wait=barrier.expected_wait,
-            max_wait_time=barrier.max_wait_time,
+            max_wait_time=barrier._max_wait_time_for,
             fix_time_credit=barrier.fix_time_credit,
             check_interval=2.0,
             waiting_message=barrier.waiting_message,
@@ -736,7 +737,7 @@ class _BarrierHoldPage(_TimelineHoldPage):
 
     @property
     def fail_on_timeout(self):
-        return self.barrier.max_wait_action == "fail"
+        return self.barrier._fails_on_timeout
 
     @staticmethod
     def failure_releases_hold(experiment, participant):
@@ -1196,7 +1197,7 @@ class Barrier(EltCollection):
                 expected_repetitions=self._waiting_logic_repetitions,
                 max_loop_time=self._arrival_max_wait_time,
                 fix_time_credit=self.fix_time_credit,
-                fail_on_timeout=(self.max_wait_action == "fail"),
+                fail_on_timeout=self._fails_on_timeout,
                 on_timeout=self.handle_max_wait_timeout,
             )
 
@@ -1225,6 +1226,17 @@ class Barrier(EltCollection):
         """Release the participant's active barrier link after a max-wait timeout."""
         if self.id in participant.active_barriers:
             self.release(participant)
+
+    @property
+    def _fails_on_timeout(self) -> bool:
+        """Whether the wait itself fails a waiter after :meth:`handle_max_wait_timeout`."""
+        return self.max_wait_action == "fail"
+
+    def _max_wait_time_for(self, participant, experiment=None):
+        """Return the longest ``participant`` may wait here, in seconds, or ``None`` for no limit."""
+        return call_if_callable(
+            self.max_wait_time, participant=participant, experiment=experiment
+        )
 
     def receive_participant(self, participant: Participant):
         """Register this participant on the live timeline barrier.
@@ -1255,9 +1267,7 @@ class Barrier(EltCollection):
         participant.waiting_barrier_id = self.id
         participant.active_barriers[self.id] = link
         if not self._uses_timeline_hold:
-            max_wait_time = call_if_callable(
-                self.max_wait_time, participant=participant
-            )
+            max_wait_time = self._max_wait_time_for(participant)
             if max_wait_time is not None:
                 link.deadline_at = now + timedelta(seconds=max_wait_time)
             self._queue_check_on_arrival(barrier_instance)
@@ -1554,22 +1564,39 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
             raise
 
 
-def _group_barrier_outcome(group, members, waiting_ids, barrier_id):
+def _group_barrier_outcome(
+    group, members, waiting_ids, barrier_id, admissible=(), admission_point=False
+):
     """Return ``"dissolve"``, ``"release"`` or ``"wait"`` for one visit of ``group``.
 
     Read-only: ``GroupBarrier.would_release`` passes the members it projects will
     remain, and ``choose_who_to_release`` the live ones, so the peek and the
-    real release share one decision. ``members`` count towards the quorum,
-    and the visit releases once all of them are waiting.
+    real release share one decision. ``members`` (admitted) and
+    ``admissible`` (pending members this admission point would admit) count
+    towards the quorum, and the visit releases once all ``members`` are
+    waiting. In a group that admits newcomers at admission points, only an
+    admission point waits for newcomers, below the quorum or the
+    ``target_group_size``.
     """
-    if len(members) < group.quorum:
-        waits_for_top_ups = group.accepts_top_ups and not _top_up_wait_over(
-            group, members, barrier_id
+    candidates = [*members, *admissible]
+    newcomers_can_help = group.accepts_top_ups and (
+        admission_point or group.admit_newcomers != "at_admission_point"
+    )
+    if len(candidates) < group.quorum:
+        waits_for_top_ups = newcomers_can_help and not _top_up_wait_over(
+            group, candidates, barrier_id
         )
         return "wait" if waits_for_top_ups else "dissolve"
-    if all(p.id in waiting_ids for p in members):
-        return "release"
-    return "wait"
+    if not all(p.id in waiting_ids for p in members):
+        return "wait"
+    if (
+        newcomers_can_help
+        and group.target_group_size is not None
+        and len(candidates) < group.target_group_size
+        and not _top_up_wait_over(group, candidates, barrier_id, below_target=True)
+    ):
+        return "wait"
+    return "release"
 
 
 #: Longest a newcomer's own request waits for a busy group's row before
@@ -1671,6 +1698,35 @@ def _reject_release_candidate_options(owner, kwargs, replacements):
             )
 
 
+def _validate_admission_options(
+    admission_point, newcomer_max_wait, newcomer_page, *, requires_max_wait=True
+):
+    """Check a GroupBarrier's admission-point options."""
+    if not admission_point:
+        for name, value in [
+            ("newcomer_max_wait", newcomer_max_wait),
+            ("newcomer_page", newcomer_page),
+        ]:
+            if value is not None:
+                raise ValueError(f"{name} is only used with admission_point=True.")
+        return
+    if newcomer_max_wait is None and requires_max_wait:
+        raise ValueError(
+            "admission_point=True needs newcomer_max_wait: the longest a pending "
+            "member may wait for this admission point, in seconds from joining "
+            "the group, before they are turned away."
+        )
+    if newcomer_max_wait is not None and newcomer_max_wait <= 0:
+        raise ValueError(
+            f"newcomer_max_wait must be positive, got {newcomer_max_wait}."
+        )
+    if newcomer_page is not None and callable(newcomer_page):
+        raise TypeError(
+            "newcomer_page takes a page or other timeline logic, not a function; "
+            "wrap a function that makes a page in PageMaker."
+        )
+
+
 def _validate_group_timeouts(
     max_wait_action,
     late_after,
@@ -1759,8 +1815,11 @@ RemovalReason = Literal[
     "group_dissolved",
     "moved_on",
     "finished",
+    "not_admitted",
 ]
 REMOVAL_REASONS = get_args(RemovalReason)
+
+AdmitNewcomers = Literal["on_join", "at_admission_point"]
 #: Values of :attr:`~psynet.trial.main.Trial.sync_group_outcome` other than
 #: ``None``: ``"stayed"`` once a barrier in the trial's pages releases the
 #: group with the player in it, after which it doesn't change; before that,
@@ -1888,8 +1947,8 @@ class GroupBarrier(Barrier):
 
     late_after
         Acts on members who haven't reached this barrier yet: the longest each may take to reach it, in seconds,
-        counted from the group's previous barrier pass or from when they joined the group, whichever is later,
-        before ``late_action`` is applied to them. ``None`` (default) never treats anyone as late. A member on a
+        counted from the group's previous barrier pass or from when the group admitted them, whichever is later,
+        before ``late_action`` is applied to them; pending members are never late. ``None`` (default) never treats anyone as late. A member on a
         page with a ``time_limit`` is never late before that limit has run out plus 10 seconds, so that an
         answer sent at the deadline can arrive; this timeout therefore need not cover the pages' time limits.
         Requires ``late_action``, and the grouper of ``group_type`` (and of each type in ``also_leave``)
@@ -1965,6 +2024,33 @@ class GroupBarrier(Barrier):
         Only affects groups formed with ``join_existing_groups=True``. A group
         below its quorum doesn't pass, so it keeps waiting here for a newcomer,
         up to the grouper's ``top_up_wait``, if set (see :ref:`groups_below_min_size`).
+        Pending members are turned away as ``"not_admitted"``; at an admission
+        point, those waiting here are admitted first.
+
+    admission_point
+        If ``True``, this barrier admits the group's pending members (see
+        ``SimpleGrouper(admit_newcomers="at_admission_point")``): they wait
+        here, and its release admits them, in the order they joined, together
+        with the group, which counts them towards its ``quorum`` and waits up
+        to ``top_up_wait`` for newcomers while it has fewer members than the
+        grouper's ``target_group_size``. Pending members pass every other
+        barrier straight through. Put it where a newcomer can sensibly start,
+        such as the start of a round or generation. See
+        :ref:`sync-admission-points`.
+
+    newcomer_max_wait
+        Required with ``admission_point=True``: the longest a pending member
+        may wait for this admission point, in seconds, counted from when they
+        joined the group. It replaces ``max_wait_time`` for them. Once it runs
+        out they are turned away: they leave the group as ``"not_admitted"``,
+        are never failed, carry on past the group's barriers like any member
+        who left it, and see the ``on_arrival_message`` notice of kind
+        ``"not_admitted"`` on their next page.
+
+    newcomer_page
+        Optional page, page maker or list of timeline elements shown right
+        after this admission point only to the members it just admitted, for
+        example a summary of the group's history.
 
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
@@ -2021,6 +2107,11 @@ class GroupBarrier(Barrier):
         defaults to "Your partner didn't arrive in time. Please continue." or
         "Not everyone in your group arrived in time. Please continue.".
 
+        ``"not_admitted"`` is the notice for a pending member turned away
+        before an admission point admitted them (see ``newcomer_max_wait``),
+        shown on the page they move on to. It defaults to "We couldn't add
+        you to a group in time. Please continue.".
+
         Check ``kind`` for each of these rather than treating everything
         that isn't ``"late"`` as a progress notice, or a removed member
         sees "Your partner is ready." after waiting too long.
@@ -2047,9 +2138,18 @@ class GroupBarrier(Barrier):
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
         stop_top_ups: bool = False,
+        admission_point: bool = False,
+        newcomer_max_wait: Optional[float] = None,
+        newcomer_page=None,
     ):
         _validate_group_timeouts(
             max_wait_action, late_after, late_action, also_leave, group_type
+        )
+        _validate_admission_options(
+            admission_point,
+            newcomer_max_wait,
+            newcomer_page,
+            requires_max_wait=self._requires_newcomer_max_wait,
         )
         max_wait_time = _group_max_wait_time(max_wait_time, late_after, default=20)
         super().__init__(
@@ -2071,6 +2171,19 @@ class GroupBarrier(Barrier):
         self.late_action = late_action
         self.also_leave = list(also_leave or [])
         self.stop_top_ups = bool(stop_top_ups)
+        self.admission_point = bool(admission_point)
+        self.newcomer_max_wait = newcomer_max_wait
+        self.newcomer_page = newcomer_page
+
+    #: Whether ``admission_point=True`` needs ``newcomer_max_wait`` when
+    #: constructed; a synchronized trial maker's barrier is checked at load
+    #: (see :func:`check_admission_points`), which names the option and owner.
+    _requires_newcomer_max_wait = True
+    _newcomer_max_wait_option = "newcomer_max_wait"
+
+    @property
+    def _admission_point_owner(self) -> str:
+        return f"GroupBarrier '{self.id}'"
 
     def __new__(cls, *args, **kwargs):
         _reject_release_candidate_options(
@@ -2079,72 +2192,74 @@ class GroupBarrier(Barrier):
         return super().__new__(cls)
 
     def resolve(self):
-        group_type = self.group_type
-        return conditional(
+        logic = conditional(
             f"barrier:{self.id}:in_group",
-            condition=lambda participant: (
-                not _removed_from_group(participant, group_type)
-                and not self._passes_straight_through(participant)
-            ),
+            condition=self._waits_here,
             logic_if_true=super().resolve(),
             logic_if_false=CodeBlock(_forget_time_out),
             log_chosen_branch=False,
         )
+        if self.newcomer_page is None:
+            return logic
+        return join(
+            logic,
+            conditional(
+                f"barrier:{self.id}:newcomer_page",
+                condition=self._just_admitted,
+                logic_if_true=self.newcomer_page,
+                log_chosen_branch=False,
+            ),
+        )
 
-    #: Whether this barrier lets some members through, by overriding
-    #: :meth:`_lets_through`.
-    _lets_newcomers_through = False
+    def _waits_here(self, participant) -> bool:
+        """Return whether the participant waits here rather than passing straight through.
 
-    def _passes_straight_through(self, participant) -> bool:
-        """Return whether the participant skips this barrier, by :meth:`_lets_through`."""
-        if not self._lets_newcomers_through:
+        Members who left the group pass, and so do pending members except at
+        an admission point.
+        """
+        if _removed_from_group(participant, self.group_type):
             return False
         group = participant.active_sync_groups.get(self.group_type)
-        return group is not None and self._lets_through(group, participant)
+        return (
+            self.admission_point or group is None or not group._is_pending(participant)
+        )
 
-    def _lets_through(self, group, participant) -> bool:
-        """Return whether ``participant``, a member of ``group`` reaching this barrier, passes straight through.
-
-        Never, by default; subclasses that override it set
-        ``_lets_newcomers_through``.
-        """
-        return False
-
-    def _waiters_let_through(self, waiting_participants) -> list:
-        """Return the waiters who, by :meth:`_lets_through`, no longer wait here.
-
-        A newcomer who arrived while their group's release was committing
-        can still be waiting here; release checks let them through.
-        ``waiting_participants`` may be lazy: a barrier that lets nobody
-        through doesn't iterate it.
-        """
-        if not self._lets_newcomers_through:
-            return []
-        return [p for p in waiting_participants if self._passes_straight_through(p)]
+    def _just_admitted(self, participant) -> bool:
+        """Return whether the participant's latest visit here admitted them to the group."""
+        if self.group_type not in participant.active_sync_groups:
+            return False
+        visit = (
+            ParticipantLinkBarrier.query.filter_by(
+                participant_id=participant.id, barrier_id=self.id
+            )
+            .order_by(ParticipantLinkBarrier.id.desc())
+            .first()
+        )
+        return visit is not None and bool(visit.admitted)
 
     def _release_ready_waiters(self, waiting_participants, instance):
-        """Release waiters that :meth:`_lets_through` lets go, then check the rest as usual.
+        """Check the waiters as usual, after locking their groups that accept top-ups.
 
-        Their groups that accept top-ups are locked first; see
-        :meth:`_lock_top_up_groups`.
+        See :meth:`_lock_top_up_groups`.
         """
-        through = self._waiters_let_through(waiting_participants)
-        through_ids = {p.id for p in through}
-        rest = [p for p in waiting_participants if p.id not in through_ids]
-        self._lock_top_up_groups(rest)
-        if through:
-            logger.info(
-                "GroupBarrier '%s': letting through %i participant(s) who joined "
-                "their group's run in progress (ids = %s)",
-                self.id,
-                len(through),
-                ", ".join(str(p.id) for p in through),
-            )
-            for participant in through:
-                self.release(participant)
-            _queue_released_hold_waiters(through)
-        super()._release_ready_waiters(rest, instance)
+        self._lock_top_up_groups(waiting_participants)
+        super()._release_ready_waiters(waiting_participants, instance)
         return waiting_participants
+
+    def _max_wait_time_for(self, participant, experiment=None):
+        """Return the participant's ``max_wait_time``, or for a pending member at an admission point, what is left of ``newcomer_max_wait``."""
+        group = participant.active_sync_groups.get(self.group_type)
+        if not (self.admission_point and group and group._is_pending(participant)):
+            return super()._max_wait_time_for(participant, experiment)
+        if self.newcomer_max_wait is None:
+            return None
+        joined = group._active_link(participant).arrival_time
+        waited = (timenow() - joined).total_seconds()
+        return max(self.newcomer_max_wait - waited, 0)
+
+    #: GroupBarrier fails timed-out waiters itself, in
+    #: :meth:`handle_max_wait_timeout`, which spares pending members.
+    _fails_on_timeout = False
 
     def _lock_top_up_groups(self, waiting_participants):
         """Lock and reload the waiters' groups that accept top-ups, raising ``55P03`` if one is busy.
@@ -2273,8 +2388,18 @@ class GroupBarrier(Barrier):
         group dissolving cannot fail them for its own reason first.
         """
         group = participant.active_sync_groups.get(self.group_type)
-        if group is None:
+        if group is not None and group._is_pending(participant):
+            # Only reached at an admission point, after newcomer_max_wait.
+            group._turn_away(participant, self)
             super().handle_max_wait_timeout(participant)
+        elif group is None:
+            hold = self._hold_kind(participant)
+            super().handle_max_wait_timeout(participant)
+            if self.max_wait_action == "fail" and not participant.failed:
+                participant.append_failure_tags(
+                    f"{hold}:barrier:{self.id}", "fail_on_timeout"
+                )
+                participant.fail()
         elif self.max_wait_action == "leave_group":
             group_size = len(group.active_participants)
             group.remove_participant(participant, reason="waited_too_long")
@@ -2283,10 +2408,7 @@ class GroupBarrier(Barrier):
             )
             super().handle_max_wait_timeout(participant)
         else:
-            # The poller's reconstructed barrier lacks _uses_timeline_hold.
-            link = participant.active_barriers.get(self.id)
-            on_hold = link is not None and link.timeline_hold is not None
-            hold = "timeline_hold" if on_hold else "while_loop"
+            hold = self._hold_kind(participant)
             left = _groups_left_on_failure(participant, group, "waited_too_long")
             for left_group, reason in left:
                 left_group._remove_without_quorum_check(participant, reason)
@@ -2303,6 +2425,13 @@ class GroupBarrier(Barrier):
             for left_group, _ in left:
                 left_group.dissolve_if_below_quorum()
 
+    def _hold_kind(self, participant) -> str:
+        """Return ``"timeline_hold"`` or ``"while_loop"``: how the participant waits here."""
+        # The poller's reconstructed barrier lacks _uses_timeline_hold.
+        link = participant.active_barriers.get(self.id)
+        on_hold = link is not None and link.timeline_hold is not None
+        return "timeline_hold" if on_hold else "while_loop"
+
     def choose_who_to_release(self, waiting_participants: List[Participant]):
         """Release each waiting group that is ready, and dissolve those that can't reach their quorum.
 
@@ -2318,12 +2447,16 @@ class GroupBarrier(Barrier):
             node = _common_round_node(
                 group, self._waiting_members(group, waiting_participants)
             )
-            if not _lock_round(group, node):
-                continue
             group.check_numbers()
             members = group.active_participants
+            admissible = self._admissible(group, waiting_participant_ids)
             outcome = _group_barrier_outcome(
-                group, members, waiting_participant_ids, self.id
+                group,
+                members,
+                waiting_participant_ids,
+                self.id,
+                admissible,
+                self.admission_point,
             )
 
             if outcome == "dissolve":
@@ -2332,7 +2465,7 @@ class GroupBarrier(Barrier):
                 # below_quorum has failed or released each of them (or
                 # nobody yet, if a member is busy; see _dissolve).
                 if group.accepts_top_ups:
-                    group._close_to_top_ups()
+                    group._close_to_top_ups(self)
                 participants_to_release.extend(
                     participant
                     for participant in group._dissolve()
@@ -2340,8 +2473,14 @@ class GroupBarrier(Barrier):
                 )
             elif outcome == "release":
                 released = self._waiting_members(group, waiting_participants)
+                if admissible:
+                    group._admit(
+                        admissible,
+                        {p.id: p.active_barriers.get(self.id) for p in admissible},
+                    )
+                    released += admissible
                 participants_to_release.extend(released)
-                self._pass(group, released, node)
+                self._pass(group, released, node, admitted=admissible)
 
         participants_to_release_ids = {p.id for p in participants_to_release}
         for participant in waiting_participants:
@@ -2358,13 +2497,20 @@ class GroupBarrier(Barrier):
 
     @staticmethod
     def _waiting_members(group, waiting_participants):
-        """Return the active members of ``group`` among ``waiting_participants``."""
+        """Return the admitted active members of ``group`` among ``waiting_participants``."""
         member_ids = {p.id for p in group.active_participants}
         return [p for p in waiting_participants if p.id in member_ids]
 
-    def _pass(self, group, released, node):
+    def _admissible(self, group, waiting_ids) -> list:
+        """Return the pending members of ``group`` that this barrier's release would admit, in join order."""
+        if not self.admission_point or not group.accepts_top_ups:
+            return []
+        return [p for p in group.pending_participants if p.id in waiting_ids]
+
+    def _pass(self, group, released, node, admitted=()):
         """Do the group's bookkeeping for releasing ``released``.
 
+        ``admitted`` are the members this admission point just admitted.
         Also closes round ``node``, if any, and calls ``on_release``.
         """
         group.check_leader()
@@ -2372,10 +2518,17 @@ class GroupBarrier(Barrier):
             group.last_barrier_pass_time or group.creation_time
         )
         group.last_barrier_pass_time = timenow()
+        released_ids = {p.id for p in released}
         for link in group.participant_links:
             link.page_deadline = None
+            if (
+                self.admission_point
+                and link.active
+                and link.participant_id in released_ids
+            ):
+                link.admission_points_passed = (link.admission_points_passed or 0) + 1
         if self.stop_top_ups:
-            group.stop_top_ups()
+            group._stop_top_ups(self)
 
         trials = [p.current_trial for p in released]
         if node is not None:
@@ -2395,6 +2548,7 @@ class GroupBarrier(Barrier):
                     leader=group.leader,
                     participant=group.leader,
                     left=left,
+                    admitted=list(admitted),
                     barrier=self,
                 )
             except Exception as err:
@@ -2413,15 +2567,7 @@ class GroupBarrier(Barrier):
         recounted rather than read from ``n_active_participants``.
         """
         waiting_ids = {participant.id for participant in waiting_participants}
-        if self._waiters_let_through(waiting_participants):
-            return True
         for group in self.get_waiting_groups(waiting_participants).values():
-            node = _common_round_node(
-                group, self._waiting_members(group, waiting_participants)
-            )
-            if _round_is_busy(group, node):
-                # choose_who_to_release would defer this group.
-                continue
             if group.accepts_top_ups:
                 # A peek takes no lock, but still counts newcomers who have
                 # joined since this session loaded the group.
@@ -2438,7 +2584,15 @@ class GroupBarrier(Barrier):
                 for participant in group.active_participants
                 if participant.id not in late_ids
             ]
-            if _group_barrier_outcome(group, members, waiting_ids, self.id) != "wait":
+            outcome = _group_barrier_outcome(
+                group,
+                members,
+                waiting_ids,
+                self.id,
+                self._admissible(group, waiting_ids),
+                self.admission_point,
+            )
+            if outcome != "wait":
                 return True
         return any(
             self.group_type not in participant.active_sync_groups
@@ -2595,9 +2749,9 @@ class GroupBarrier(Barrier):
     def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
         """Return active members past the between-barrier timeout who are not waiting.
 
-        Each member is timed from the group's last barrier pass or from when
-        they joined the group, whichever is later, so newcomers to an open
-        group are not late as soon as they join. A
+        Each admitted member is timed from the group's last barrier pass or
+        from when they were admitted, whichever is later, so newcomers are
+        not late as soon as they take part; pending members are never late. A
         member who has started a page with a time limit since then, outside
         waiting logic, is not late until that limit has run out and an answer
         sent at the deadline has had time to arrive, even if they have
@@ -2617,7 +2771,7 @@ class GroupBarrier(Barrier):
                 or participant.id in waiting_ids
             ):
                 continue
-            starts = [t for t in (group.last_barrier_pass_time, link.arrival_time) if t]
+            starts = [t for t in (group.last_barrier_pass_time, link.admitted_at) if t]
             if not starts:
                 continue
             late_at = max(starts) + timedelta(seconds=self.late_after)
@@ -2937,6 +3091,36 @@ class SimpleGrouper(Grouper):
         active members, are not joined. Groups keep accepting top-ups until you stop
         them (see :ref:`groups_below_min_size`).
         This behavior can be further customized via the ``join_criterion`` argument.
+        Pass ``admit_newcomers`` to say when such a newcomer starts taking part.
+
+    admit_newcomers
+        When a newcomer who joins an existing group starts taking part in it.
+        ``"on_join"`` admits them at once, so the group's next barrier waits
+        for them, which suits groups that only take newcomers before play
+        starts (for example in a lobby closed by ``stop_top_ups=True``).
+        ``"at_admission_point"`` makes them a pending member: they hold a
+        seat, but barriers, the quorum, the leader and
+        :class:`~psynet.group_prompt.GroupPrompt` ignore them until the
+        group's next admission point (a ``GroupBarrier(admission_point=True)``,
+        a synchronized trial maker's trial preparation, or a
+        :class:`Regrouper` with ``within``) admits them; they pass its other
+        barriers straight through. See :ref:`sync-admission-points`.
+        Required with ``join_existing_groups=True``; leaving it out warns and
+        uses ``"on_join"``.
+
+    target_group_size
+        With ``admit_newcomers="at_admission_point"``, which requires it, how
+        many members the group tries to have: an admission point that would
+        leave it with fewer admitted members waits up to ``top_up_wait`` for
+        newcomers, then carries on with whoever is there as long as they meet
+        the ``quorum``. Must be between ``quorum`` and ``max_group_size``.
+
+    max_groups
+        Optional cap on how many of this grouper's groups may be active at
+        once. Once it is reached, participants wait at the grouper for a seat
+        in an existing group instead of forming a new one, for example to run
+        a single society that newcomers join one by one. ``None`` (default)
+        has no cap.
 
     join_criterion
         A callable that takes ``group`` and ``participant`` as arguments, and returns ``True``
@@ -3015,6 +3199,9 @@ class SimpleGrouper(Grouper):
         start_short_with: Optional[int] = None,
         quorum: Optional[int] = None,
         top_up_wait: Optional[float] = None,
+        admit_newcomers: Optional[AdmitNewcomers] = None,
+        target_group_size: Optional[int] = None,
+        max_groups: Optional[int] = None,
         **kwargs,
     ):
         _reject_old_below_quorum_names(kwargs)
@@ -3164,6 +3351,59 @@ class SimpleGrouper(Grouper):
             )
         self.start_short_after = start_short_after
         self.start_short_with = start_short_with
+        self.admit_newcomers = self._check_admit_newcomers(
+            admit_newcomers, join_existing_groups
+        )
+        if self.admit_newcomers == "at_admission_point":
+            if target_group_size is None:
+                raise ValueError(
+                    "admit_newcomers='at_admission_point' needs target_group_size: "
+                    "how many members an admission point waits for (up to "
+                    "top_up_wait) before carrying on."
+                )
+            if not quorum <= target_group_size <= (max_group_size or float("inf")):
+                raise ValueError(
+                    "Need quorum <= target_group_size <= max_group_size, got "
+                    f"{quorum}, {target_group_size} and {max_group_size}."
+                )
+        elif target_group_size is not None:
+            raise ValueError(
+                "target_group_size is only used with "
+                "admit_newcomers='at_admission_point'."
+            )
+        self.target_group_size = target_group_size
+        if max_groups is not None and (
+            not isinstance(max_groups, int) or max_groups < 1
+        ):
+            raise ValueError(
+                f"max_groups must be a positive integer, got {max_groups!r}."
+            )
+        self.max_groups = max_groups
+
+    @staticmethod
+    def _check_admit_newcomers(admit_newcomers, join_existing_groups):
+        """Validate ``admit_newcomers``, warning and defaulting when it is left out."""
+        if admit_newcomers is None:
+            if join_existing_groups:
+                warn_from_caller(
+                    "SimpleGrouper(join_existing_groups=True) should say when "
+                    "newcomers start taking part: pass admit_newcomers='on_join' "
+                    "(the current behavior) or admit_newcomers='at_admission_point'.",
+                    FutureWarning,
+                )
+                return "on_join"
+            return None
+        if admit_newcomers not in get_args(AdmitNewcomers):
+            raise ValueError(
+                "admit_newcomers must be 'on_join' or 'at_admission_point', "
+                f"got {admit_newcomers!r}."
+            )
+        if not join_existing_groups:
+            raise ValueError(
+                "admit_newcomers requires join_existing_groups=True: only groups "
+                "that take newcomers admit them."
+            )
+        return admit_newcomers
 
     @property
     def min_group_size(self):
@@ -3307,10 +3547,11 @@ class SimpleGrouper(Grouper):
         """
         if not group.active or not group.accepts_top_ups:
             return False
-        n_members = len(group.active_participants)
-        group.n_active_participants = n_members
-        return n_members > 0 and (
-            self.max_group_size is None or n_members < self.max_group_size
+        n_admitted = len(group.active_participants)
+        group.n_active_participants = n_admitted
+        n_seats_taken = n_admitted + len(group.pending_participants)
+        return n_admitted > 0 and (
+            self.max_group_size is None or n_seats_taken < self.max_group_size
         )
 
     def _join_on_arrival(self, participant: Participant):
@@ -3320,7 +3561,9 @@ class SimpleGrouper(Grouper):
     def _join_existing_groups(self, participant: Participant, *, wait=False):
         group = self._claim_group_to_join(participant, wait=wait)
         if group is not None:
-            group.add_participant(participant, newcomer=True)
+            group._add_link(
+                participant, admitted=group.admit_newcomers != "at_admission_point"
+            )
             assert participant.active_sync_groups[self.group_type] == group
             group.check_numbers()
             group.check_leader()
@@ -3363,9 +3606,20 @@ class SimpleGrouper(Grouper):
         return any(self._find_group_to_join(p) is not None for p in candidates)
 
     def ready_to_group(self, participants: List[Participant]) -> bool:
+        if self._groups_left() == 0:
+            return False
         if len(participants) >= self.batch_size:
             return True
         return self._can_start_short(participants)
+
+    def _groups_left(self) -> Optional[int]:
+        """Return how many more groups ``max_groups`` allows, or ``None`` without a cap."""
+        if getattr(self, "max_groups", None) is None:
+            return None
+        n_active = SimpleSyncGroup.query.filter_by(
+            grouper_id=self.id, active=True
+        ).count()
+        return max(self.max_groups - n_active, 0)
 
     def _can_start_short(self, participants: List[Participant]) -> bool:
         """Return whether enough people have waited long enough for a short start."""
@@ -3428,6 +3682,9 @@ class SimpleGrouper(Grouper):
                 self._make_group(participants, initial_group_size=len(participants))
             ]
         n_groups = floor(len(participants) / self.initial_group_size)
+        groups_left = self._groups_left()
+        if groups_left is not None:
+            n_groups = min(n_groups, groups_left)
         n_participants_to_group = n_groups * self.initial_group_size
         participants_to_group = participants[:n_participants_to_group]
 
@@ -3449,6 +3706,8 @@ class SimpleGrouper(Grouper):
             accepts_top_ups=self.join_existing_groups,
             below_quorum=self.below_quorum or "fail",
             top_up_wait=self.top_up_wait,
+            admit_newcomers=self.admit_newcomers or "on_join",
+            target_group_size=self.target_group_size,
         )
 
     @staticmethod
@@ -3524,9 +3783,12 @@ class Regrouper(Grouper):
         Optional ``group_type`` of an existing group to regroup within, for
         example ``"cohort"``. Participants are only grouped with members of the
         same ``within`` group, and a pool counts as complete once all that
-        group's active members are waiting. A participant without such a group
+        group's admitted members are waiting. A participant without such a group
         is released ungrouped. If ``None`` (default), everyone waiting is one pool,
         which is only split at the ``deadline`` or ``every`` tick.
+        Each split is an admission point of the ``within`` group (see
+        :ref:`sync-admission-points`): its pending members waiting in the pool
+        are admitted, then grouped with the rest.
 
     group_size
         Size of the groups to form. The pool is split into balanced groups of
@@ -3969,9 +4231,16 @@ class Regrouper(Grouper):
                 members = self._members_to_split(within_group, pool)
                 if members is None:
                     continue
-                if len(within_group.active_participants) < within_group.quorum:
+                member_ids = {p.id for p in members}
+                admissible = [
+                    p for p in within_group.pending_participants if p.id in member_ids
+                ]
+                if (
+                    len(within_group.active_participants) + len(admissible)
+                    < within_group.quorum
+                ):
                     # Dissolving releases the members its below_quorum let
-                    # carry on. One deferred by a busy member or round lock
+                    # carry on. One deferred by a busy member
                     # marks the cohort dissolving, so later checks skip its
                     # pool until the poller dissolves it.
                     within_group.stop_top_ups()
@@ -4146,11 +4415,16 @@ class Regrouper(Grouper):
         left_over = [p for p in members if p.id not in placed]
         if not groups:
             if self._may_release_only_left_over(within_group, members):
+                self._admit_released(within_group, left_over)
                 if stop_top_ups:
                     within_group.stop_top_ups()
                 self._record_sit_outs(left_over)
                 return left_over
             return []
+        self._admit_released(
+            within_group,
+            [p for p in members if p.id in placed or self.left_over == "sit_out"],
+        )
         if stop_top_ups:
             within_group.stop_top_ups()
         if self.on_release:
@@ -4174,6 +4448,24 @@ class Regrouper(Grouper):
             self._record_sit_outs(left_over)
             released += left_over
         return released
+
+    def _admit_released(self, within_group, released):
+        """Admit the pending ``within`` members among ``released`` and count this admission point for all of them.
+
+        A split is an admission point of the ``within`` group: it admits
+        the pending members it places or sits out, in the order they joined.
+        """
+        if within_group is None:
+            return
+        released_ids = {p.id for p in released}
+        admitted = [
+            p for p in within_group.pending_participants if p.id in released_ids
+        ]
+        visits = self._visits(admitted)
+        within_group._admit(admitted, {p.id: visits.get(p.id) for p in admitted})
+        for link in within_group.participant_links:
+            if link.active and link.participant_id in released_ids:
+                link.admission_points_passed = (link.admission_points_passed or 0) + 1
 
     def _record_sit_outs(self, left_over):
         """Mark these members' current visits as sat out."""
@@ -4284,16 +4576,78 @@ def check_group_dropout_policies(barriers):
                     )
 
 
-def group_seats(group) -> Dict[int, int]:
-    """Return ``{participant_id: seat}`` for everyone who has been in ``group``.
+def check_admission_points(barriers):
+    """Check the admission points of groups that admit newcomers at them.
 
-    Seats number members in the order they first joined. Links are kept when
-    members leave, so seats never change while the group exists, and pages
-    can refer to members without their IDs.
+    Each :class:`SimpleGrouper` with ``admit_newcomers="at_admission_point"``
+    needs an admission point for its group type: a
+    ``GroupBarrier(admission_point=True)``, a synchronized trial maker's
+    trial preparation, or a :class:`Regrouper` with ``within`` that type.
+    Without one its newcomers would never be admitted, so this warns.
+
+    Parameters
+    ----------
+    barriers : iterable of Barrier
+        The barriers in the timeline.
+
+    Raises
+    ------
+    ValueError
+        If an admission point of such a group type lacks ``newcomer_max_wait``
+        (``sync_group_newcomer_max_wait`` for a trial maker).
+    """
+    barriers = list(barriers)
+    group_types = {
+        barrier.group_type
+        for barrier in barriers
+        if isinstance(barrier, SimpleGrouper)
+        and barrier.admit_newcomers == "at_admission_point"
+    }
+    found = set()
+    for barrier in barriers:
+        if isinstance(barrier, Regrouper) and barrier.within in group_types:
+            found.add(barrier.within)
+        if not (
+            isinstance(barrier, GroupBarrier)
+            and barrier.admission_point
+            and barrier.group_type in group_types
+        ):
+            continue
+        found.add(barrier.group_type)
+        if barrier.newcomer_max_wait is None:
+            raise ValueError(
+                f"{barrier._admission_point_owner} admits newcomers to "
+                f"'{barrier.group_type}' groups, whose grouper uses "
+                f"admit_newcomers='at_admission_point', so pass "
+                f"{barrier._newcomer_max_wait_option}: the longest a newcomer "
+                "may wait for it, in seconds from joining, before they are "
+                "turned away."
+            )
+    for group_type in sorted(group_types - found):
+        warnings.warn(
+            f"The grouper of '{group_type}' groups uses "
+            "admit_newcomers='at_admission_point', but the timeline has no "
+            "admission point for them, so newcomers would never be admitted. "
+            "Add GroupBarrier(admission_point=True, ...), a synchronized trial "
+            f"maker with sync_group_type='{group_type}', or a Regrouper within "
+            "that group type.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+
+def group_seats(group) -> Dict[int, int]:
+    """Return ``{participant_id: seat}`` for everyone who has been admitted to ``group``.
+
+    Seats number members in the order they were first admitted. Links are
+    kept when members leave, so seats never change while the group exists,
+    and pages can refer to members without their IDs. Pending members get a
+    seat once admitted, and members turned away never get one.
     """
     seats = {}
     links = sorted(
-        group.participant_links, key=lambda link: (link.id is None, link.id or 0)
+        (link for link in group.participant_links if link.admitted_at is not None),
+        key=lambda link: (link.admitted_at, link.id is None, link.id or 0),
     )
     for link in links:
         seats.setdefault(link.participant_id, len(seats))
@@ -4380,14 +4734,23 @@ class SyncGroup(SQLBase, SQLMixin):
     #: Quorum and below-quorum policy; only :class:`SimpleSyncGroup` sets them.
     quorum = None
     below_quorum = None
+    #: When newcomers are admitted and how many an admission point waits
+    #: for; only :class:`SimpleSyncGroup` takes newcomers.
+    admit_newcomers = "on_join"
+    target_group_size = None
 
     def stop_top_ups(self):
+        """Stop newcomers joining this group; a no-op for groups that never take them."""
+
+    def _stop_top_ups(self, barrier=None):
         """Stop newcomers joining this group; a no-op for groups that never take them."""
 
     @property
     def participants(self) -> List[Participant]:
         """Read-only list of participants currently in the group (links with ``active=True``).
 
+        Includes pending members (see :attr:`pending_participants`); use
+        :attr:`active_participants` for the admitted ones still working.
         Use ``group.add_participant(participant)`` to add a participant.
         """
         links = [
@@ -4396,12 +4759,8 @@ class SyncGroup(SQLBase, SQLMixin):
         _load_link_participants(links)
         return _ReadOnlyParticipantList(link.participant for link in links)
 
-    def add_participant(self, participant: Participant, *, newcomer: bool = False):
-        """Add a participant to the group (creates an active link).
-
-        ``newcomer`` records that they joined a group that had already formed,
-        as a grouper with ``join_existing_groups=True`` does; see
-        :meth:`is_newcomer`.
+    def add_participant(self, participant: Participant):
+        """Add a participant to the group as an admitted member (creates an active link).
 
         If an active member already has the newcomer's derived pseudonym and
         this is the newcomer's first group, the newcomer is given a free one,
@@ -4410,47 +4769,147 @@ class SyncGroup(SQLBase, SQLMixin):
         later groups never rename anyone, so a pseudonym stays the same once
         others have seen it.
         """
+        self._add_link(participant, admitted=True)
+
+    def _add_link(self, participant: Participant, *, admitted: bool):
+        """Link ``participant`` to the group, admitted or pending (see :attr:`pending_participants`)."""
         self._give_distinct_pseudonym(participant)
         _forget_active_sync_group(participant)
         if self.group_type in (participant.ungrouped_group_types or []):
             participant.ungrouped_group_types = [
                 t for t in participant.ungrouped_group_types if t != self.group_type
             ]
+        now = timenow()
         # Setting ``sync_group`` also appends to ``participant_links``, and lets
         # ``participant.active_sync_groups`` see the group before a flush.
         ParticipantLinkSyncGroup(
             participant=participant,
             sync_group=self,
             active=True,
-            arrival_time=timenow(),
-            newcomer=newcomer,
+            arrival_time=now,
+            admitted_at=now if admitted else None,
+            admission_points_passed=0,
         )
-        _notify_membership_change(self, newcomer=participant)
+        if admitted:
+            _notify_membership_change(self, newcomer=participant)
 
-    def is_newcomer(self, participant: Participant) -> bool:
-        """Return whether ``participant`` joined the group after it formed.
-
-        ``True`` for a member who topped up a group formed by a grouper with
-        ``join_existing_groups=True``, and ``False`` for the members it formed
-        with, also after they leave. Raises ``ValueError`` if ``participant``
-        was never in the group.
-        """
-        links = [
+    def _working_links(self, admitted: bool) -> list:
+        """Return the active links of working members, admitted or pending, in join order."""
+        links = sorted(
+            (
+                link
+                for link in self.participant_links
+                if getattr(link, "active", True)
+                and (link.admitted_at is not None) == admitted
+            ),
+            key=lambda link: (link.id is None, link.id or 0),
+        )
+        _load_link_participants(links)
+        return [
             link
-            for link in self.participant_links
-            if link.participant_id == participant.id
-            or (link.participant_id is None and link.participant is participant)
+            for link in links
+            if not link.participant.failed and link.participant.status == "working"
         ]
-        if not links:
-            raise ValueError(
-                f"Participant {participant.id} was never in group {self.id}."
-            )
-        latest = max(links, key=lambda link: (link.id is None, link.id or 0))
-        return bool(latest.newcomer)
 
     @property
     def active_participants(self) -> List[Participant]:
-        return [p for p in self.participants if not p.failed and p.status == "working"]
+        """The admitted members who are still working, in the order they joined.
+
+        Barriers wait for them, the quorum counts them, the leader is one of
+        them, and :class:`~psynet.group_prompt.GroupPrompt` draws them.
+        Pending members (see :attr:`pending_participants`) are not included.
+        """
+        return [link.participant for link in self._working_links(admitted=True)]
+
+    @property
+    def pending_participants(self) -> List[Participant]:
+        """Members who have joined but not been admitted yet, in the order they joined.
+
+        Only a grouper with ``admit_newcomers="at_admission_point"`` makes
+        pending members: each holds a seat until the group's next admission
+        point admits them or turns them away (see
+        :ref:`sync-admission-points`).
+        """
+        return [link.participant for link in self._working_links(admitted=False)]
+
+    def _active_link(self, participant) -> Optional["ParticipantLinkSyncGroup"]:
+        """Return ``participant``'s active link to the group, or ``None``."""
+        return next(
+            (
+                link
+                for link in self.participant_links
+                if link.active
+                and (
+                    link.participant_id == participant.id
+                    or (link.participant_id is None and link.participant is participant)
+                )
+            ),
+            None,
+        )
+
+    def _is_pending(self, participant) -> bool:
+        """Return whether ``participant`` is a pending member of the group."""
+        link = self._active_link(participant)
+        return link is not None and link.admitted_at is None
+
+    def _admit(self, participants, barrier_visits=None):
+        """Admit pending members, recording the admitting visit if there is one."""
+        now = timenow()
+        for participant in participants:
+            self._active_link(participant).admitted_at = now
+            visit = (barrier_visits or {}).get(participant.id)
+            if visit is not None:
+                visit.admitted = True
+        if participants:
+            self.check_numbers()
+            self.check_leader()
+            _notify_membership_change(self)
+
+    def _turn_away_pending(self, barrier=None):
+        """Remove every pending member as ``"not_admitted"``; see :meth:`_turn_away`."""
+        for participant in self.pending_participants:
+            self._turn_away(participant, barrier)
+
+    def _turn_away(self, participant, barrier=None):
+        """Remove a pending member as ``"not_admitted"`` and tell them on their next page.
+
+        They did nothing wrong, so they are never failed. The notice comes
+        from ``barrier``'s ``on_arrival_message`` with ``kind="not_admitted"``,
+        or the default one.
+        """
+        link = self._active_link(participant)
+        if link is None or link.admitted_at is not None:
+            return
+        logger.info(
+            "Sync group %s turns away pending member %s.", self.id, participant.id
+        )
+        link.active = False
+        link.removal_reason = "not_admitted"
+        link.removal_time = timenow()
+        _forget_active_sync_group(participant)
+        message = (
+            default_group_barrier_arrival_message
+            if barrier is None
+            else barrier._call_arrival_message
+        )
+        try:
+            text = message(
+                kind="not_admitted",
+                waiting_count=0,
+                group_size=len(self.active_participants),
+                participant=participant,
+                group=self,
+            )
+        except Exception as err:
+            if is_transient_transaction_error(err):
+                raise
+            logger.exception(
+                "Could not make the not-admitted notice for participant %s.",
+                participant.id,
+            )
+            return
+        if text:
+            _set_next_page_notice(participant, text)
 
     def _give_distinct_pseudonym(self, participant):
         """Store a free pseudonym for ``participant`` if an active member has theirs.
@@ -4510,6 +4969,8 @@ class SyncGroup(SQLBase, SQLMixin):
         return participant.active_sync_groups[group_type]
 
     def close(self):
+        """End the group, turning away its pending members as ``"not_admitted"``."""
+        self._turn_away_pending()
         self.active = False
         self.end_time = timenow()
         for participant in self.participants:
@@ -4546,6 +5007,9 @@ class SyncGroup(SQLBase, SQLMixin):
               a player leaving a cohort after their last round.
               The members finishing their own last rounds aren't told that too
               few remained.
+
+            PsyNet itself records ``"not_admitted"`` for a pending member it
+            turns away (see :attr:`pending_participants`).
 
             ``"finished"`` and ``"moved_on"`` don't dissolve the group; other
             reasons can. See :ref:`groups_below_min_size` for the full rule.
@@ -4644,14 +5108,10 @@ class SyncGroup(SQLBase, SQLMixin):
         ``"left_experiment"``.
 
         The cued rounds that members are still playing get
-        ``sync_group_dissolved_at`` (see :func:`_mark_rounds_dissolved`).
-        Their round locks are tried without waiting too, as in
-        :func:`_lock_round`, after the members' rows and in the same
-        savepoint, so a busy one makes the dissolution wait like a busy
-        member. Rolling back the savepoint then unlocks the members' rows and
-        releases the round locks taken in it; a round lock the transaction
-        already held, as a barrier check that dissolves the group does, stays
-        until the transaction ends.
+        ``sync_group_dissolved_at`` (see :func:`_mark_rounds_dissolved`),
+        read under the members' row locks, so a member's cue either comes
+        before the dissolution or sees it. Pending members are turned away
+        as ``"not_admitted"``.
 
         Returns
         -------
@@ -4660,27 +5120,20 @@ class SyncGroup(SQLBase, SQLMixin):
         """
         self._dissolving_below_quorum = True
         try:
-            with db.session.begin_nested() as savepoint:
-                # Rolling back this savepoint also undoes the inner one in _lock_all_participants.
-                removed = _lock_all_participants(list(self.active_participants))
-                rounds = None if removed is None else _open_rounds(self, removed)
-                if rounds is None or not all(
-                    _lock_round(self, node) for node in rounds
-                ):
-                    savepoint.rollback()
-                    rounds = None
-            if rounds is None:
+            removed = _lock_all_participants(list(self.active_participants))
+            if removed is None:
                 if not self.dissolving:
                     logger.debug(
-                        "Dissolving sync group %s waits for a member's request "
-                        "or a cue.",
+                        "Dissolving sync group %s waits for a member's request.",
                         self.id,
                     )
                 self.dissolving = True
                 return []
+            rounds = _open_rounds(self, removed)
             _mark_rounds_dissolved(rounds)
             group_size = len(group_seats(self))
             fail = (self.below_quorum or "fail") == "fail"
+            self._turn_away_pending()
             for participant in removed:
                 self._remove_without_quorum_check(participant, "group_dissolved")
                 if fail:
@@ -4716,6 +5169,12 @@ class SimpleSyncGroup(SyncGroup):
     #: What happens to members when the group dissolves below quorum: ``"fail"``
     #: or ``"continue_without_group"``.
     below_quorum = Column(String, default="fail")
+    #: When newcomers are admitted: ``"on_join"`` or ``"at_admission_point"``;
+    #: see ``SimpleGrouper(admit_newcomers=...)``.
+    admit_newcomers = Column(String, default="on_join")
+    #: How many members an admission point waits for, up to ``top_up_wait``;
+    #: see ``SimpleGrouper(target_group_size=...)``.
+    target_group_size = Column(Integer)
 
     def remove_participant(self, participant: Participant, reason: RemovalReason):
         super().remove_participant(participant, reason=reason)
@@ -4735,20 +5194,26 @@ class SimpleSyncGroup(SyncGroup):
         For a group formed with ``join_existing_groups=True``, for example once
         the game has started, so nobody joins it under way. From then on it
         is treated as a group without top-ups (see
-        :ref:`groups_below_min_size`); a group already below its
+        :ref:`groups_below_min_size`); its pending members are turned away
+        as ``"not_admitted"``, and a group already below its
         quorum is dissolved, usually at once. :ref:`groups_below_min_size` lists
         the other ways top-ups stop.
         """
+        self._stop_top_ups()
+
+    def _stop_top_ups(self, barrier=None):
+        """Stop top-ups as :meth:`stop_top_ups` does; ``barrier`` gives the turned-away notice."""
         if not self.accepts_top_ups:
             return
-        self._close_to_top_ups()
+        self._close_to_top_ups(barrier)
         self.check_numbers()
         self.dissolve_if_below_quorum()
 
-    def _close_to_top_ups(self):
-        """Record that newcomers can no longer join, without dissolving the group."""
+    def _close_to_top_ups(self, barrier=None):
+        """Record that newcomers can no longer join and turn away pending members, without dissolving the group."""
         self.accepts_top_ups = False
         self.top_ups_stopped_at = timenow()
+        self._turn_away_pending(barrier)
 
     def dissolve_if_below_quorum(self):
         """Dissolve a group without top-ups that fell below its quorum.
@@ -4803,9 +5268,8 @@ def _open_rounds(group, participants):
 def _mark_rounds_dissolved(nodes):
     """Record on each round in ``nodes`` that its group dissolved, unless a barrier closed it.
 
-    Expects the caller to hold the rounds' locks (see :func:`_lock_round`),
-    and re-reads each node under them, so a release that another request
-    committed first is seen.
+    Expects the caller to hold the members' row locks, and re-reads each
+    node, so a release that another request committed first is seen.
     """
     db.session.flush()
     for node in nodes:
@@ -4936,6 +5400,7 @@ def _divergence_candidates() -> List[Tuple[int, str]]:
         .where(
             ParticipantLinkSyncGroup.sync_group_id == BarrierInstance.group_id,
             ParticipantLinkSyncGroup.active.is_(True),
+            ParticipantLinkSyncGroup.admitted_at.isnot(None),
             member,
         )
         .correlate(BarrierInstance)
@@ -4955,6 +5420,7 @@ def _divergence_candidates() -> List[Tuple[int, str]]:
                 ParticipantLinkSyncGroup.participant_id
                 == ParticipantLinkBarrier.participant_id,
                 ParticipantLinkSyncGroup.active.is_(True),
+                ParticipantLinkSyncGroup.admitted_at.isnot(None),
             ),
         )
         .join(Participant, Participant.id == ParticipantLinkBarrier.participant_id)
@@ -4994,8 +5460,8 @@ def _divergence_message(group) -> Optional[Tuple[str, Set[int]]]:
     members take. Each barrier waits for the members at the others, so
     only ``late_after`` or ``max_wait_time`` can end the wait. The members
     and their waits are read in one statement, so they are consistent with
-    each other. A member that a barrier lets through (see
-    :meth:`GroupBarrier._lets_through`) isn't stuck.
+    each other. Pending members (see :attr:`SyncGroup.pending_participants`)
+    don't count: barriers don't wait for them.
     """
     group_instances = select(BarrierInstance.id).where(
         BarrierInstance.group_id == group.id
@@ -5015,6 +5481,7 @@ def _divergence_message(group) -> Optional[Tuple[str, Set[int]]]:
         .where(
             ParticipantLinkSyncGroup.sync_group_id == group.id,
             ParticipantLinkSyncGroup.active.is_(True),
+            ParticipantLinkSyncGroup.admitted_at.isnot(None),
             Participant.failed.is_(False),
             Participant.status == "working",
         )
@@ -5033,8 +5500,7 @@ def _divergence_message(group) -> Optional[Tuple[str, Set[int]]]:
         != members
         or any(
             {link.participant_id for link in links} == members
-            or barrier._waiters_let_through(link.participant for link in links)
-            for barrier, links in waits.values()
+            for _, links in waits.values()
         )
     ):
         return None
@@ -5083,65 +5549,27 @@ def fail_on_group_divergence():
             raise GroupDivergenceError("\n".join(messages))
 
 
-def _lock_round(group, node) -> bool:
-    """Try the lock of the cued round ``node`` of ``group``, or return ``False`` if it is busy.
+def _top_up_wait_over(group, members, barrier_id, *, below_target=False) -> bool:
+    """Return whether a group has waited its ``top_up_wait`` for newcomers at barrier ``barrier_id``.
 
-    A release closes that round's node, so newcomers' cues start the next
-    round. :meth:`~psynet.trial.main.SyncGroupNode.for_cue` holds the same
-    lock while a cue runs, so a busy lock defers the release to the next
-    barrier check, instead of waiting while this request holds waiter rows.
-    Releases outside a round need no lock. :meth:`SyncGroup._dissolve` tries
-    it too, so a busy lock also makes a dissolution wait for the poller.
-    """
-    key = _round_lock_key(group, node)
-    if key is None:
-        return True
-    return _execute_advisory_xact_lock(db.session, key, wait=False)
-
-
-def _round_lock_key(group, node):
-    """Return the lock key of ``group``'s cued round ``node``, or ``None`` without one."""
-    if node is None:
-        return None
-    return f"sync_group_node:{node.module_id}:{group.id}"
-
-
-def _round_is_busy(group, node) -> bool:
-    """Return whether a cue holds the lock :func:`_lock_round` would try.
-
-    Probes with a session lock released at once, so the peek holds no lock
-    afterwards whether or not it runs in a savepoint; holding a transaction
-    lock until commit would block that round's cues for no reason.
-    """
-    key = _round_lock_key(group, node)
-    if key is None:
-        return False
-    params = {"key": key}
-    if not db.session.execute(
-        text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"), params
-    ).scalar():
-        return True
-    db.session.execute(
-        text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"), params
-    )
-    return False
-
-
-def _top_up_wait_over(group, members, barrier_id) -> bool:
-    """Return whether a group below its quorum has waited its ``top_up_wait`` for newcomers at barrier ``barrier_id``.
-
-    The wait starts once the group is below its quorum and all its remaining
-    ``members`` have reached the barrier, so it doesn't run while they are
-    still on earlier pages.
+    The wait starts once the group is below its quorum (or, with
+    ``below_target``, at once) and all ``members`` it would pass with have
+    reached the barrier, so it doesn't run while they are still on earlier
+    pages.
     """
     top_up_wait = getattr(group, "top_up_wait", None)
     below_quorum_since = getattr(group, "below_quorum_since", None)
-    if top_up_wait is None or below_quorum_since is None:
+    if top_up_wait is None or (below_quorum_since is None and not below_target):
         return False
     visits = [member.active_barriers.get(barrier_id) for member in members]
     if any(visit is None or visit.released for visit in visits):
         return False
-    since = max([below_quorum_since, *(visit.arrival_time for visit in visits)])
+    starts = [visit.arrival_time for visit in visits]
+    if not below_target:
+        starts.append(below_quorum_since)
+    if not starts:
+        return False
+    since = max(starts)
     return (timenow() - since).total_seconds() >= top_up_wait
 
 
@@ -5445,14 +5873,13 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     # waiting logic since the group's last barrier pass; see
     # ``GroupBarrier.late_after``.
     page_deadline = Column(DateTime)
-    # The group's cued round (a SyncGroupNode id) that the member last cued,
-    # or skipped if ``skipped_round``; set by ``SyncGroupNode.for_cue``, which
-    # uses it to reject cues of a round again. No foreign key, as on
-    # Trial.sync_group_id.
-    round_node_id = Column(Integer)
-    skipped_round = Column(Boolean, default=False)
-    # The member joined after the group formed; see SyncGroup.is_newcomer.
-    newcomer = Column(Boolean, default=False)
+    #: When the group took the member in: at formation, on joining with
+    #: ``admit_newcomers="on_join"``, or at an admission point. ``None``
+    #: while they are pending (see :attr:`SyncGroup.pending_participants`).
+    admitted_at = Column(DateTime)
+    #: How many of the group's admission points released the member once
+    #: admitted, counting the one that admitted them.
+    admission_points_passed = Column(Integer, default=0)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
     participant = relationship(
@@ -5482,6 +5909,8 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     released = Column(Boolean, default=False)
     # A Regrouper released the participant without a group.
     sat_out = Column(Boolean, default=False)
+    # This visit, to an admission point, admitted the participant to their group.
+    admitted = Column(Boolean, default=False)
     # The last page the participant answered before arriving, other than a
     # waiting page, ended on its time limit
     # (``Participant.timed_out_since_barrier``).
@@ -6256,10 +6685,10 @@ def _process_barrier_instance(instance_id, *, retry=False):
 
 
 def _finish_dissolving_groups():
-    """Try again to dissolve groups whose dissolution waited for a busy member or round lock.
+    """Try again to dissolve groups whose dissolution waited for a busy member.
 
     Each group is handled in its own transaction. A group another request
-    holds, or with a member or round lock still busy, is left for the next sweep. A group
+    holds, or with a member still busy, is left for the next sweep. A group
     back at its quorum by then is no longer dissolved. Group and member rows
     are taken without waiting; other lock waits while failing a member, for
     example on their trials, are bounded by ``timeline_lock_timeout_seconds``.
@@ -6329,7 +6758,7 @@ def check_barriers():
     before the next check so a locked waiter cannot poison sibling checks.
 
     Each sweep first retries group dissolutions that waited for a busy member
-    or round lock and times out overdue waiters, then checks visits, least
+    and times out overdue waiters, then checks visits, least
     recently checked first, with new or changed ones given a head start. Each
     of the two steps stops starting new work after
     ``_POLLER_SWEEP_BUDGET_SECONDS``, so thousands of idle waiters cannot
@@ -6395,8 +6824,8 @@ def check_sync_groups():
 
     Members who finish or return the experiment stay linked to their groups,
     so this is what closes a group once all of them are gone. It closes any
-    active :class:`SyncGroup` with no active members, including emptied
-    groups that accept top-ups, unless the group is still dissolving.
+    active :class:`SyncGroup` with no admitted or pending members, including
+    emptied groups that accept top-ups, unless the group is still dissolving.
     Groups locked by another request are skipped until the next tick.
 
     Dedicated sessions keep these maintenance commits separate from any
@@ -6424,7 +6853,11 @@ def check_sync_groups():
                 if group is None:
                     continue
                 group.check_numbers()
-                if group.n_active_participants == 0 and not group.dissolving:
+                if (
+                    group.n_active_participants == 0
+                    and not group.dissolving
+                    and not group.pending_participants
+                ):
                     group.close()
                 session.commit()
         except Exception as err:

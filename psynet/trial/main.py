@@ -307,6 +307,14 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         round. Only used by :meth:`cue`; trial
         makers take ``sync_group_type`` as an argument instead.
 
+    sync_group_optional : bool
+        With :attr:`sync_group_type`, set this class attribute to ``True`` to
+        let :meth:`cue` give a participant who is in no such group, for
+        example because they left it, an ungrouped trial on the module's
+        default node. ``False`` (default) raises an error instead, which
+        usually means the cue needs a :func:`~psynet.timeline.conditional`
+        on ``participant.in_sync_group(...)``.
+
     time_credit_before_trial: float
         Reports the amount of time credit that the participant had before they started the trial (in seconds).
 
@@ -580,6 +588,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     wait_for_feedback = True  # determines whether feedback waits for the trial to be finalized or failed
     accumulate_answers = False
     sync_group_type = None
+    sync_group_optional = False
 
     # Back-compat alias: older code referred to the creating node as ``origin``.
     @property
@@ -1296,8 +1305,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         whose ``var`` holds the group's results for the round. ``cue`` numbers
         each group's rounds from 0 by itself: a cue joins the group's newest
         round while it is open, that is until a barrier of that round
-        releases the group, and otherwise starts the next. So a newcomer
-        joins a round only before its first barrier releases. Each trial records
+        releases the group, and otherwise starts the next. Newcomers take
+        part from an admission point (see :ref:`sync-admission-points`), so
+        put one before the round, such as a
+        ``GroupBarrier(admission_point=True)`` at the start of each round; a
+        pending member who reaches a cue raises an error. Each trial records
         ``sync_group_id``, ``sync_group_role`` and ``sync_group_round``; see
         :ref:`rounds-cued-trials` for the rules. In short:
 
@@ -1315,10 +1327,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         - Each cued trial's ``position`` counts the participant's earlier
           trials in the current module from 0, grouped or not; it is
           ``None`` outside a module.
-        - A participant who is in no group of that type gets an ungrouped
-          trial on the module's default node, so put the cue in a
-          :func:`~psynet.timeline.conditional` on
-          ``participant.in_sync_group(...)`` if its pages need the group.
+        - A participant who is in no group of that type raises an error,
+          unless the trial class sets :attr:`sync_group_optional`, when they
+          get an ungrouped trial on the module's default node. Otherwise put
+          the cue in a :func:`~psynet.timeline.conditional` on
+          ``participant.in_sync_group(...)``.
           Once started, the trial runs to its end even if they leave the
           group, so :meth:`show_feedback` can explain every outcome.
         - :attr:`sync_group_outcome` records how the round ended for the
@@ -1371,25 +1384,20 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             two trial classes played one after the other in one round. A
             round closes when a :class:`~psynet.sync.GroupBarrier` releases
             the group there, so ``show_trial`` must contain one; building a
-            grouped trial's pages without one raises an error. If the participant has no trial in a
-            closed round, the group finished it without them: the cue is skipped,
-            with no trial and no pages. A later barrier in that round's
-            trial still waits for them, as every
-            :class:`~psynet.sync.GroupBarrier` waits for each active member,
-            until they leave the group or are removed, for example as late.
-            ``participant.current_trial`` is then ``None``, so
-            guard later steps that read it, for example with a
-            :func:`~psynet.timeline.conditional` on
-            ``participant.current_trial is not None``. Rounds are ordered by
+            grouped trial's pages without one raises an error. Cueing a
+            closed round in which the participant has no trial raises an
+            error: members admitted at an admission point before the round
+            are always in it. Rounds are ordered by
             when the group first plays them, not by number. A module whose
             cues pass ``round`` runs once per participant, so give each run
             of it its own module id: its cues raise an error if the
             participant has run the module before. Cueing a round again
-            after a later one, even one the participant skipped, or a trial
-            class again in the same round, also raises an error. Only
+            after a later one, or a trial class again in the same round,
+            also raises an error. Only
             for a trial class that sets :attr:`sync_group_type`, and not with a
             regrouper, whose groups mix players at different loop positions.
-            For a participant without a group, ``round`` doesn't select a
+            For a participant without a group (with
+            :attr:`sync_group_optional`), ``round`` doesn't select a
             node: they get an ungrouped trial. See
             :ref:`a fixed group's loop <rounds-fixed-group-loop>`.
 
@@ -1421,8 +1429,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 def score_room(cls, trials, node):
                     node.var.picks = [t.answer for t in trials]
 
-            # A fixed room plays rounds 0, 1 and 2; a player who leaves it
-            # plays the remaining rounds alone. The Module gives the nodes a
+            # A fixed room plays rounds 0, 1 and 2; PickTrial would need
+            # sync_group_optional = True for a player who leaves it to play
+            # the remaining rounds alone. The Module gives the nodes a
             # module_id, for example to find them by when exporting.
             join(
                 SimpleGrouper("room", initial_group_size=4),
@@ -1472,9 +1481,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             node, group, trial_definition = cls._cued_trial_node(
                 definition, round, participant, experiment
             )
-            if node is None:
-                participant.current_trial = None
-                return
             trial = cls(
                 experiment,
                 node,
@@ -1504,15 +1510,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                     creation_context=creation_context,
                 )
 
-        trial_logic = cls.trial_logic()
-        if round is not None:
-            trial_logic = conditional(
-                "cued_round",
-                lambda participant: participant.current_trial is not None,
-                trial_logic,
-                log_chosen_branch=False,
-            )
-        return join(CodeBlock(_register_trial), trial_logic)
+        return join(CodeBlock(_register_trial), cls.trial_logic())
 
     @classmethod
     def _cued_trial_node(cls, definition, round_number, participant, experiment):
@@ -1525,12 +1523,23 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         group = None
         if cls.sync_group_type is not None:
             group = participant.active_sync_groups.get(cls.sync_group_type)
-            if group is None:
-                logger.info(
-                    "Participant %s is in no '%s' group, so their %s is not grouped.",
-                    participant.id,
-                    cls.sync_group_type,
-                    cls.__name__,
+            if group is None and not cls.sync_group_optional:
+                raise RuntimeError(
+                    f"Participant {participant.id} cued {cls.__name__}, whose "
+                    f"sync_group_type is '{cls.sync_group_type}', but is in no "
+                    "such group, for example because they left it. Put the cue "
+                    "in a conditional on participant.in_sync_group("
+                    f"'{cls.sync_group_type}'), or set "
+                    f"{cls.__name__}.sync_group_optional = True to let them "
+                    "play it ungrouped."
+                )
+            if group is not None and group._is_pending(participant):
+                raise RuntimeError(
+                    f"Participant {participant.id} reached a cue of {cls.__name__} "
+                    "before an admission point: they are a pending member of "
+                    f"'{cls.sync_group_type}' group {group.id}, which hasn't "
+                    "admitted them yet. Put a GroupBarrier(admission_point=True) "
+                    "before the cue."
                 )
 
         def make_definition(round_number):
@@ -1550,16 +1559,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         node = SyncGroupNode.for_cue(
             group, round_number, participant, experiment, make_definition, cls
         )
-        if node is None:
-            logger.info(
-                "Participant %s skips round %s of '%s' group %s, which finished "
-                "without them.",
-                participant.id,
-                round_number,
-                cls.sync_group_type,
-                group.id,
-            )
-            return None, group, None
         if not callable(definition) and definition != node.definition:
             raise ValueError(
                 f"{cls.__name__}.cue() got the definition {definition!r}, but "
@@ -1890,31 +1889,32 @@ def _edit_group_runs(group, trial_maker_id, edit):
     group.trial_maker_runs = all_runs
 
 
-class _InitParticipantBarrier(GroupBarrier):
-    """The barrier at which a synchronized trial maker starts each run of its group.
+class _PrepareTrialBarrier(GroupBarrier):
+    """The admission point at which a synchronized trial maker prepares its group's next trials.
 
-    The group's release starts the group's next run (see
-    :meth:`TrialMaker._init_participants_in_sync_group`). A member who
-    hasn't started the group's current run, such as a newcomer joining play
-    in progress, passes straight through and copies its choices. A member
-    who already played the current run, as when they loop quickly, waits
-    for the group to start the next one.
+    Its release initializes the members it releases who haven't started the
+    group's current run, starting a new run if none of them has, and then
+    prepares their trials (see :meth:`TrialMaker._try_to_prepare_trial_group`).
+    ``sync_group_newcomer_max_wait`` is checked when the experiment loads.
     """
 
-    _lets_newcomers_through = True
+    _requires_newcomer_max_wait = False
+    _newcomer_max_wait_option = "sync_group_newcomer_max_wait"
 
     def __init__(self, trial_maker: "TrialMaker"):
         super().__init__(
-            trial_maker.with_namespace("init_participant"),
-            on_release=trial_maker._init_participants_in_sync_group,
-            expected_wait=3.0,
+            id_=trial_maker.with_namespace("prepare_trial"),
+            on_release=trial_maker._try_to_prepare_trial_group,
+            fix_time_credit=False,  # we're already within a while loop with fixed time credit
+            admission_point=True,
+            newcomer_max_wait=trial_maker.sync_group_newcomer_max_wait,
             **trial_maker._sync_group_barrier_kwargs(),
         )
         self.trial_maker_id = trial_maker.id
 
-    def _lets_through(self, group, participant) -> bool:
-        run = _current_group_run(group, self.trial_maker_id)
-        return run is not None and participant.id not in run["members"]
+    @property
+    def _admission_point_owner(self) -> str:
+        return f"Trial maker '{self.trial_maker_id}'"
 
 
 class TrialMakerState(ModuleState):
@@ -2132,7 +2132,7 @@ class TrialMaker(Module):
     sync_group_late_after
         Acts on members who haven't reached the trial maker's barrier yet: the longest each may
         take to reach it, in seconds, counted from the group's previous barrier pass or from when
-        they joined the group, whichever is later, before ``sync_group_late_action`` is applied
+        the group admitted them, whichever is later, before ``sync_group_late_action`` is applied
         to them. ``None`` (default) never treats anyone as late. See ``late_after`` in
         :class:`~psynet.sync.GroupBarrier`.
 
@@ -2147,8 +2147,8 @@ class TrialMaker(Module):
         leaves, for example ``["cohort"]``. See ``also_leave`` in :class:`~psynet.sync.GroupBarrier`.
 
     sync_group_waiting_message
-        Message on the waiting indicator at the trial maker's own sync-group waits
-        (initialization and trial preparation). If omitted, participants see "Waiting for other
+        Message on the waiting indicator at the trial maker's own sync-group wait
+        (trial preparation). If omitted, participants see "Waiting for other
         participants…". :class:`~psynet.sync.Grouper` and :class:`~psynet.sync.GroupBarrier`
         elements use their own ``waiting_message``; pass the same text to them if the messages
         should match.
@@ -2184,6 +2184,7 @@ class TrialMaker(Module):
         sync_group_late_action: Optional[LateAction] = None,
         sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
+        sync_group_newcomer_max_wait: Optional[float] = None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
         if recruit_mode not in self.recruit_criteria:
@@ -2259,6 +2260,15 @@ class TrialMaker(Module):
                 sync_group_late_action=(sync_group_late_action, None),
                 sync_group_also_leave=(sync_group_also_leave, None),
                 sync_group_waiting_message=(sync_group_waiting_message, None),
+                sync_group_newcomer_max_wait=(sync_group_newcomer_max_wait, None),
+            )
+        if (
+            sync_group_newcomer_max_wait is not None
+            and sync_group_newcomer_max_wait <= 0
+        ):
+            raise ValueError(
+                "sync_group_newcomer_max_wait must be positive, got "
+                f"{sync_group_newcomer_max_wait}."
             )
         _validate_group_timeouts(
             sync_group_max_wait_action,
@@ -2294,6 +2304,7 @@ class TrialMaker(Module):
         self.sync_group_late_action = sync_group_late_action
         self.sync_group_also_leave = sync_group_also_leave
         self.sync_group_waiting_message = sync_group_waiting_message
+        self.sync_group_newcomer_max_wait = sync_group_newcomer_max_wait
 
         elts = self.compile_elts()
 
@@ -2393,35 +2404,30 @@ class TrialMaker(Module):
         )
 
     def _init_participant(self):
-        # The barrier's release starts each run of the group.
-        barrier = [] if self.sync_group_type is None else _InitParticipantBarrier(self)
-        return join(
-            barrier,
-            # Everyone else initializes alone, including members released
-            # from the barrier by a max-wait time-out, which skips on_release.
-            CodeBlock(self._init_if_not_initialized),
-        )
-
-    def _init_if_not_initialized(self, experiment, participant):
-        """Initialize the participant unless their group's release already did."""
-        if not self._is_initialized(participant):
-            self.init_participant(experiment, participant)
+        # A synchronized trial maker initializes its members when its
+        # trial preparation first releases them; see _init_released_members.
+        if self.sync_group_type is not None:
+            return None
+        return CodeBlock(self.init_participant)
 
     def _is_initialized(self, participant):
         return _initialized_in(participant, self.id)
 
-    def _init_participants_in_sync_group(
-        self, group: SyncGroup, participants, experiment
-    ):
-        """Start the group's next run and initialize the members it released, leader first.
+    def _init_released_members(self, group: SyncGroup, participants, experiment):
+        """Initialize the released members who haven't started the group's current run, leader first.
 
-        The first member initialized makes the run's choices and the others
-        copy them (see :meth:`init_participant_group`).
+        If none of the released members has started it, they start the
+        group's next run together. The first member initialized makes the
+        run's choices and the others copy them (see
+        :meth:`init_participant_group`).
         """
-        _edit_group_runs(group, self.id, lambda runs: runs.append({"members": []}))
-        for participant in sorted(participants, key=lambda p: p != group.leader):
-            if not self._is_initialized(participant):
-                self.init_participant(experiment, participant)
+        new = [p for p in participants if not self._is_initialized(p)]
+        if not new:
+            return
+        if len(new) == len(participants):
+            _edit_group_runs(group, self.id, lambda runs: runs.append({"members": []}))
+        for participant in sorted(new, key=lambda p: p != group.leader):
+            self.init_participant(experiment, participant)
 
     @property
     def _setup_extra(self):
@@ -3178,12 +3184,7 @@ class TrialMaker(Module):
             if not self.sync_group_type:
                 return CodeBlock(self._try_to_prepare_trial_solo)
             return join(
-                GroupBarrier(
-                    id_=self.with_namespace("prepare_trial"),
-                    on_release=self._try_to_prepare_trial_group,
-                    fix_time_credit=False,  # we're already within a while loop with fixed time credit
-                    **self._sync_group_barrier_kwargs(),
-                ),
+                _PrepareTrialBarrier(self),
                 # For members who left the group, including those released
                 # by a max-wait time-out, which skips on_release.
                 CodeBlock(self._exit_if_left_group),
@@ -3223,10 +3224,12 @@ class TrialMaker(Module):
         participant.current_trial = trial
         participant.trial_status = trial_status
 
-    def _try_to_prepare_trial_group(self, group: SyncGroup):
+    def _try_to_prepare_trial_group(self, group: SyncGroup, participants):
+        """Initialize the released members who are new to the group's run, then prepare the group's trials."""
         from ..experiment import get_experiment
 
         experiment = get_experiment()
+        self._init_released_members(group, participants, experiment)
 
         leader = group.leader
 
@@ -3422,7 +3425,7 @@ class NetworkTrialMaker(TrialMaker):
     sync_group_late_after
         Acts on members who haven't reached the trial maker's barrier yet: the longest each may
         take to reach it, in seconds, counted from the group's previous barrier pass or from when
-        they joined the group, whichever is later, before ``sync_group_late_action`` is applied
+        the group admitted them, whichever is later, before ``sync_group_late_action`` is applied
         to them. ``None`` (default) never treats anyone as late. See ``late_after`` in
         :class:`~psynet.sync.GroupBarrier`.
 
@@ -3437,11 +3440,14 @@ class NetworkTrialMaker(TrialMaker):
         leaves, for example ``["cohort"]``. See ``also_leave`` in :class:`~psynet.sync.GroupBarrier`.
 
     sync_group_waiting_message
-        Message on the waiting indicator at the trial maker's own sync-group waits
-        (initialization and trial preparation). If omitted, participants see "Waiting for other
+        Message on the waiting indicator at the trial maker's own sync-group wait
+        (trial preparation). If omitted, participants see "Waiting for other
         participants…". :class:`~psynet.sync.Grouper` and :class:`~psynet.sync.GroupBarrier`
         elements use their own ``waiting_message``; pass the same text to them if the messages
         should match.
+
+    sync_group_newcomer_max_wait
+        See :class:`~psynet.trial.main.TrialMaker`.
 
     Attributes
     ----------
@@ -3516,6 +3522,7 @@ class NetworkTrialMaker(TrialMaker):
         sync_group_late_action: Optional[LateAction] = None,
         sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
+        sync_group_newcomer_max_wait: Optional[float] = None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
         performance_check_is_enabled = (
@@ -3560,6 +3567,7 @@ class NetworkTrialMaker(TrialMaker):
             sync_group_late_action=sync_group_late_action,
             sync_group_also_leave=sync_group_also_leave,
             sync_group_waiting_message=sync_group_waiting_message,
+            sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
             n_participants_completion=n_participants_completion,
         )
         self.network_class = network_class
@@ -4570,8 +4578,7 @@ class SyncGroupNode(GenericTrialNode):
     sync_group_id = Column(Integer, index=True)
     sync_group_round = Column(Integer)
     # Set when a GroupBarrier in the round's trials releases the group,
-    # after which the round takes no members who have no trial on it. Set
-    # under the round lock that for_cue holds, so a cue reads it consistently.
+    # after which the round takes no members who have no trial on it.
     sync_group_closed = Column(Boolean, default=False)
     #: When the group dissolved during this round, or ``None`` if it didn't.
     #: Set when the group dissolves (see :ref:`groups_below_min_size`) while
@@ -4581,9 +4588,8 @@ class SyncGroupNode(GenericTrialNode):
     #: (``sync_group_closed``). So a round the group finished stays ``None``
     #: even if a member is still on a page after the barrier, and so does a
     #: round whose remaining members' trials had all ended before the group
-    #: dissolved. Written under
-    #: the round lock, like ``sync_group_closed``, so it is never set on a
-    #: round that a barrier closed.
+    #: dissolved. Written under the members' row locks, so it is never set
+    #: on a round that a barrier closed.
     sync_group_dissolved_at = Column(DateTime)
 
     def __init__(self, module_id, experiment, group, round_number, definition):
@@ -4599,10 +4605,10 @@ class SyncGroupNode(GenericTrialNode):
 
     @staticmethod
     def _round_is_open(node, participant):
-        """Whether ``participant``'s cue may join ``node`` as a newcomer to that round.
+        """Whether an automatic cue by ``participant`` joins ``node``, the group's newest round.
 
-        ``node`` is the group's newest round for an automatic cue, or the
-        round a cue's ``round`` names, which may be a past one.
+        It does until a barrier of the round releases the group, unless they
+        already played it.
         """
         played = Trial.query.filter_by(node_id=node.id, participant_id=participant.id)
         return played.first() is None and not node.sync_group_closed
@@ -4620,24 +4626,19 @@ class SyncGroupNode(GenericTrialNode):
         ``sync_group_closed``; :meth:`Trial._show_trial` requires such a barrier.
         Otherwise the group moves on to a new node for the next round,
         counted from 0, which the others then join.
-        With ``round_number``, it is the group's node for that round, or
-        ``None`` if it is no longer open and the participant isn't playing it,
-        as when the group finished it without them, or if they have a trial
-        of ``trial_class`` on it from before they left and rejoined the
-        group. Naming a round when
+        With ``round_number``, it is the group's node for that round (see
+        :meth:`_named_round` for the errors). Naming a round when
         the participant has run this module before raises a
         ``RuntimeError``, because the group's nodes for the module would be
-        reused; so does naming a round in which they already have a trial of
-        ``trial_class``, or one before a round they played or skipped (see
-        :meth:`_named_round`).
+        reused.
         ``trial_class`` is the class of the cued trial. A new node's
-        definition is ``make_definition(round_number)``. Either way, the
-        participant's link to ``group`` records the round as the one they
-        last cued or skipped, so a later cue can't name it again.
+        definition is ``make_definition(round_number)``.
 
         The group's members cue their trials in parallel requests, so this
         holds an advisory lock on the module and group until the request
-        commits; the others then find the node it made.
+        commits; the others then find the node it made. Releases need no
+        such lock: a barrier waits for every admitted member, so none of
+        them can still be about to cue the round it closes.
         """
         module_id = participant.module_id
         _lock_until_commit(f"sync_group_node:{module_id}:{group.id}")
@@ -4651,7 +4652,6 @@ class SyncGroupNode(GenericTrialNode):
             if newest is None:
                 round_number = 0
             elif cls._round_is_open(newest, participant):
-                _record_round_position(group, participant, newest)
                 return newest
             else:
                 round_number = newest.sync_group_round + 1
@@ -4677,34 +4677,29 @@ class SyncGroupNode(GenericTrialNode):
         db.session.add(node)
         node.check_on_deploy()
         db.session.flush()
-        _record_round_position(group, participant, node)
         return node
 
     @classmethod
     def _named_round(cls, node, group, participant, trial_class):
-        """Return ``node``, a round named by ``round=``, or ``None`` if the participant skips it.
+        """Return ``node``, a round named by ``round=``, if the participant may cue it.
 
-        Raises a ``RuntimeError`` if the participant has a trial of
-        ``trial_class`` on the round they are playing, or their stored round
-        in this module is one played after it, whether they played or
-        skipped either. So a skip never moves their stored round back.
-        A member who left and rejoined the group has no stored round, so
-        they skip a round in which they already have a trial of
-        ``trial_class``, like a closed round.
+        Raises a ``RuntimeError`` if they already have a trial of
+        ``trial_class`` on it, or one on a later round of the group in the
+        module, or if a barrier closed the round before they had any trial
+        on it.
         """
-        link = _member_link(group, participant)
-        stored = link.round_node_id and db.session.get(cls, link.round_node_id)
-        playing = link.round_node_id == node.id and not link.skipped_round
-        played_after = (
-            stored and stored.module_id == node.module_id and stored.id > node.id
+        played = Trial.query.join(cls, Trial.node_id == cls.id).filter(
+            Trial.participant_id == participant.id,
+            cls.module_id == node.module_id,
+            cls.sync_group_id == group.id,
         )
-        has_trial = (
-            trial_class.query.filter_by(
-                node_id=node.id, participant_id=participant.id
-            ).first()
-            is not None
+        same_class = trial_class.query.filter_by(
+            node_id=node.id, participant_id=participant.id
         )
-        if played_after or (playing and has_trial):
+        if (
+            played.filter(cls.id > node.id).first() is not None
+            or same_class.first() is not None
+        ):
             raise RuntimeError(
                 f"Participant {participant.id} cued {trial_class.__name__} for "
                 f"round {node.sync_group_round} of '{group.group_type}' group "
@@ -4712,30 +4707,16 @@ class SyncGroupNode(GenericTrialNode):
                 "later round. A round takes one trial of each class, and "
                 "can't be cued after a round played after it."
             )
-        if playing:
-            # Another trial class cued in the round the participant is playing.
-            return node
-        if not node.sync_group_closed and not has_trial:
-            _record_round_position(group, participant, node)
-            return node
-        _record_round_position(group, participant, node, skipped=True)
-        return None
-
-
-def _member_link(group, participant):
-    """Return ``participant``'s active link to ``group``."""
-    return next(
-        link
-        for link in group.participant_links
-        if link.active and link.participant_id == participant.id
-    )
-
-
-def _record_round_position(group, participant, node, skipped=False):
-    """Store ``node`` as the round of ``group`` that ``participant`` last cued or skipped."""
-    link = _member_link(group, participant)
-    link.round_node_id = node.id
-    link.skipped_round = skipped
+        if node.sync_group_closed and played.filter(cls.id == node.id).first() is None:
+            raise RuntimeError(
+                f"Participant {participant.id} cued round {node.sync_group_round} "
+                f"of '{group.group_type}' group {group.id} in module "
+                f"'{node.module_id}', which the group already finished without "
+                "them. Newcomers should join at an admission point before the "
+                "round, such as GroupBarrier(admission_point=True) with a "
+                "grouper using admit_newcomers='at_admission_point'."
+            )
+        return node
 
 
 # SyncGroupNode shares the node table, and SQLAlchemy doesn't accept

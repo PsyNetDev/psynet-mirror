@@ -884,6 +884,7 @@ def test_closing_split_counts_a_newcomer_who_joined_in_another_request(
                 sync_group_id=cohort.id,
                 active=True,
                 arrival_time=timenow(),
+                admitted_at=timenow(),
             )
         )
         other.commit()
@@ -1087,3 +1088,37 @@ def test_case_an_odd_player_out_sits_out_then_plays_the_next_round(
     assert _waiting(pairs, cohort) == []
     assert "pair" in sitter.active_sync_groups
     assert [pairs.sat_out(p) for p in players].count(True) == 1
+
+
+@in_consents_experiment
+def test_a_regrouper_split_admits_pending_members_of_its_within_group(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort_grouper = SimpleGrouper(
+        "cohort",
+        initial_group_size=2,
+        max_group_size=3,
+        target_group_size=2,
+        join_existing_groups=True,
+        admit_newcomers="at_admission_point",
+        below_quorum="continue_without_group",
+    )
+    trios = Regrouper("trio", within="cohort", group_size=3, deadline=30)
+    founders = _working_participants(exp, 2)
+    _arrive(exp, cohort_grouper, founders)
+    (newcomer,) = _working_participants(exp, 1)
+    _arrive(exp, cohort_grouper, [newcomer])
+    cohort = founders[0].active_sync_groups["cohort"]
+    assert cohort.pending_participants == [newcomer]
+
+    _arrive(exp, trios, [*founders, newcomer])
+
+    assert cohort.pending_participants == []
+    assert set(cohort.active_participants) == {*founders, newcomer}
+    assert set(newcomer.active_sync_groups["trio"].participants) == {
+        *founders,
+        newcomer,
+    }
+    links = [p.sync_group_link("cohort") for p in (*founders, newcomer)]
+    assert [link.admission_points_passed for link in links] == [1, 1, 1]

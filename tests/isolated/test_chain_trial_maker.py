@@ -317,13 +317,12 @@ def test_static_trial_maker_error_mentions_nodes():
         )
 
 
-def _init_barrier(trial_maker):
-    (barrier,) = {
+def _prepare_barrier(trial_maker):
+    return next(
         elt.links["barrier"]
-        for elt in trial_maker._init_participant()
+        for elt in trial_maker._wait_for_trial()
         if "barrier" in elt.links
-    }
-    return barrier
+    )
 
 
 WITHIN_CHAINS = dict(
@@ -381,7 +380,6 @@ def test_a_looped_sync_trial_maker_shares_each_run_s_choices_with_newcomers(
         block_order="listed",
         **WITHIN_CHAINS,
     )
-    barrier = _init_barrier(trial_maker)
     group = SimpleNamespace(id=1, trial_maker_runs={})
 
     leader, follower, newcomer = (
@@ -391,27 +389,26 @@ def test_a_looped_sync_trial_maker_shares_each_run_s_choices_with_newcomers(
     for participant_group in "AB":
         _start_run(trial_maker, leader)
         _start_run(trial_maker, follower)
-        # The follower waits for the group's release, also after looping
-        # while the leader is still in the previous run.
-        assert not barrier._passes_straight_through(follower)
-        trial_maker._init_participants_in_sync_group(
-            group, [follower, leader], experiment=None
-        )
+        # Members released together who are all new to the run start a new one.
+        trial_maker._init_released_members(group, [follower, leader], experiment=None)
         trial_maker._go_to_next_block(leader)
         assert (
             _choices(follower) == _choices(leader) == (participant_group, ["X", "Y"], 1)
         )
 
-    # A newcomer joins the current run in progress.
+    # A newcomer admitted alongside the group joins its current run.
     _start_run(trial_maker, newcomer)
-    group.active_participants.append(newcomer)
-    assert barrier._passes_straight_through(newcomer)
-    trial_maker._init_if_not_initialized(None, newcomer)
+    trial_maker._init_released_members(
+        group, [leader, follower, newcomer], experiment=None
+    )
     assert _choices(newcomer) == ("B", ["X", "Y"], 1)
+    assert group.trial_maker_runs[trial_maker.id][-1]["members"] == [1, 2, 3]
 
 
-@pytest.mark.parametrize("promoted", [False, True])
-def test_a_newcomer_copies_the_run_they_are_recorded_in(monkeypatch, promoted):
+def test_a_newcomer_admitted_as_leader_copies_the_run_but_creates_chains(
+    monkeypatch,
+):
+    monkeypatch.setattr(db.session, "refresh", lambda *args, **kwargs: None)
     trial_maker = make_trial_maker(
         _WithinTrialMaker,
         sync_group_type="main",
@@ -419,25 +416,20 @@ def test_a_newcomer_copies_the_run_they_are_recorded_in(monkeypatch, promoted):
         block_order="listed",
         **WITHIN_CHAINS,
     )
-    old_run = dict(members=[1], participant_group="A", block_order=["X", "Y"])
-    new_run = dict(members=[1], participant_group="B", block_order=["Y", "X"])
-    old_run["block_position"] = new_run["block_position"] = 1
-    group = SimpleNamespace(id=1, trial_maker_runs={trial_maker.id: [old_run]})
-
-    def refresh(group, *args, **kwargs):
-        # The group's release starts a new run while the newcomer waits for the lock.
-        group.trial_maker_runs = {trial_maker.id: [old_run, new_run]}
-
-    monkeypatch.setattr(db.session, "refresh", refresh)
-    newcomer = _group_member(trial_maker, group, 3)
-    # A newcomer promoted to leader copies the run too, but creates their own chains.
-    group.leader = newcomer if promoted else None
+    run = dict(members=[1], participant_group="B", block_order=["Y", "X"])
+    run["block_position"] = 1
+    group = SimpleNamespace(id=1, trial_maker_runs={trial_maker.id: [run]})
+    member, newcomer = (_group_member(trial_maker, group, id_) for id_ in (1, 3))
+    _start_run(trial_maker, member)
+    member.module_state.trial_maker_initialized = True
     _start_run(trial_maker, newcomer)
-    trial_maker._init_if_not_initialized(None, newcomer)
+    group.leader = newcomer
+
+    trial_maker._init_released_members(group, [member, newcomer], experiment=None)
 
     assert _choices(newcomer) == ("B", ["Y", "X"], 1)
     assert group.trial_maker_runs[trial_maker.id][-1]["members"] == [1, 3]
-    assert hasattr(newcomer, "networks") == promoted
+    assert hasattr(newcomer, "networks")
 
 
 def test_a_preset_participant_group_is_shared_with_the_run(monkeypatch):
@@ -506,7 +498,7 @@ def test_participant_whose_group_was_closed_still_needs_a_new_group():
         ],
     )
     with pytest.raises(RuntimeError, match="Participant 3 is not in a sync group"):
-        _init_barrier(trial_maker).waiting_pool_group(closed)
+        _prepare_barrier(trial_maker).waiting_pool_group(closed)
 
 
 def test_trial_position_is_stored_and_continues_through_repeats():
@@ -1193,16 +1185,9 @@ def test_sync_trial_maker_waiting_message_is_used_by_internal_barriers():
         sync_group_waiting_message="Waiting for your partner",
     )
     holds = [
-        elt
-        for elt in trial_maker.elts
-        if getattr(elt, "barrier_id", None)
-        in {
-            trial_maker.with_namespace("init_participant"),
-            trial_maker.with_namespace("prepare_trial"),
-        }
+        elt for elt in trial_maker.elts if getattr(elt, "barrier_id", None) is not None
     ]
     assert {hold.barrier_id for hold in holds} == {
-        trial_maker.with_namespace("init_participant"),
         trial_maker.with_namespace("prepare_trial"),
     }
     assert all(hold.waiting_message == "Waiting for your partner" for hold in holds)
@@ -1219,7 +1204,7 @@ def test_sync_trial_maker_passes_also_leave_to_its_barrier():
         sync_group_late_action="leave_group",
         sync_group_also_leave=["cohort"],
     )
-    assert _init_barrier(trial_maker).also_leave == ["cohort"]
+    assert _prepare_barrier(trial_maker).also_leave == ["cohort"]
 
 
 def _run_step_after_barrier(elts, step, participant):
@@ -1267,31 +1252,6 @@ def test_sync_trial_maker_is_skipped_by_members_who_left_before_any_trial():
     participant.module_state.n_completed_trials = 0
     participant.active_sync_groups["main"] = DummySyncGroup()
     assert all(c(participant=participant) for c in conditions)
-
-
-def test_sync_trial_maker_initializes_members_released_alone(monkeypatch):
-    trial_maker = make_trial_maker(
-        sync_group_type="main", sync_group_max_wait_action="leave_group"
-    )
-    participant = DummyParticipant()
-    initialized = []
-    monkeypatch.setattr(trial_maker, "_is_initialized", lambda p: p in initialized)
-    monkeypatch.setattr(
-        trial_maker, "init_participant", lambda e, p: initialized.append(p)
-    )
-
-    _run_step_after_barrier(
-        trial_maker._init_participant(),
-        trial_maker._init_if_not_initialized,
-        participant,
-    )
-    _run_step_after_barrier(
-        trial_maker._init_participant(),
-        trial_maker._init_if_not_initialized,
-        participant,
-    )
-
-    assert initialized == [participant]
 
 
 def _check_consistency(repeat_answers, parent_answers):

@@ -326,7 +326,7 @@ def _raise_for_status_with_server_details(response):
 
 
 if TYPE_CHECKING:
-    from .sync import SyncGroup
+    from .sync import ParticipantLinkSyncGroup, SyncGroup
     from .timeline import Module
 
 UniqueConstraint(dallinger.models.Participant.unique_id)
@@ -756,6 +756,19 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         latest = _latest_sync_group_link(self, group_type)
         return None if latest is None else latest.sync_group
 
+    def sync_group_link(self, group_type: str) -> Optional["ParticipantLinkSyncGroup"]:
+        """Return the participant's link to their latest group of ``group_type``, or ``None``.
+
+        The link records their membership, including ``admitted_at`` (when
+        the group admitted them, ``None`` while pending) and
+        ``admission_points_passed`` (how many of the group's admission points
+        released them once admitted), for example to work out how long a
+        member has been in a society. It stays readable after they leave.
+        """
+        from .sync import _latest_sync_group_link
+
+        return _latest_sync_group_link(self, group_type)
+
     def sync_group_removal_reason(self, group_type: str) -> Optional[str]:
         """Return why the participant left their latest group of ``group_type``.
 
@@ -772,7 +785,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         seen while they wait at the regrouper, and after they sit a round out,
         even if they then fail there; once they are in the next group this
         returns ``None``), ``"finished"`` (left after playing
-        their part), ``"left_experiment"`` (failed,
+        their part), ``"not_admitted"`` (joined as a pending member but was
+        turned away before an admission point admitted them, for example after
+        its ``newcomer_max_wait`` or because top-ups stopped; never failed),
+        ``"left_experiment"`` (failed,
         including returning the study, and for a member's other groups
         when a barrier's ``late_action="fail"`` or ``max_wait_action="fail"``,
         or a dissolving group's ``below_quorum="fail"``, fails them), or

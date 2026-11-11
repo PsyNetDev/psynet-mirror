@@ -75,6 +75,7 @@ from psynet.sync import (
     arrival_notice_payload,
     check_barriers,
     check_sync_groups,
+    group_seats,
     hold_message,
     leave_group,
     pending_arrival_notice_for,
@@ -2139,6 +2140,8 @@ def _set_group_clocks_in_the_past(group, seconds):
     group.last_barrier_pass_time = past
     for link in group.participant_links:
         link.arrival_time = past
+        if link.admitted_at is not None:
+            link.admitted_at = past
 
 
 def _arrive_at_group_barrier(exp, barrier, participant):
@@ -7206,6 +7209,7 @@ def test_late_after_counts_from_joining_the_group(
     assert group.last_barrier_pass_time is None
     for link in group.participant_links:
         link.arrival_time -= timedelta(seconds=10)
+        link.admitted_at -= timedelta(seconds=10)
     if passed_a_barrier:
         group.last_barrier_pass_time = timenow() - timedelta(seconds=10)
     (newcomer,) = _working_participants(exp, 1)
@@ -7253,6 +7257,7 @@ def test_late_after_follows_a_timed_page(
     group = participants[0].sync_group
     for link in group.participant_links:
         link.arrival_time -= timedelta(seconds=30)
+        link.admitted_at -= timedelta(seconds=30)
     for participant, time_limit in [
         (deciding, 25),
         (moved_on, 14),
@@ -7316,6 +7321,7 @@ def test_a_group_barrier_pass_forgets_earlier_timed_pages(
     group.last_barrier_pass_time -= timedelta(seconds=30)
     for link in group.participant_links:
         link.arrival_time -= timedelta(seconds=30)
+        link.admitted_at -= timedelta(seconds=30)
     barrier = GroupBarrier(
         id_="next",
         group_type="main",
@@ -8025,6 +8031,7 @@ def test_latecomers_fill_a_team_until_it_passes_game_starts(
     grouper._join_existing_groups(slow)
     for link in slow.sync_group_links:
         link.arrival_time -= timedelta(seconds=121)
+        link.admitted_at -= timedelta(seconds=121)
     game_starts.check_waiting_participants(on_time)
     assert slow.sync_group_removal_reason("team") == "late"
     assert set(game_starts.choose_who_to_release(on_time)) == set(on_time)
@@ -8035,6 +8042,7 @@ def test_latecomers_fill_a_team_until_it_passes_game_starts(
     below_quorum = grouper._make_group([lone, slow], initial_group_size=4)
     for link in slow.sync_group_links:
         link.arrival_time -= timedelta(seconds=121)
+        link.admitted_at -= timedelta(seconds=121)
     game_starts.check_waiting_participants([lone])
     assert slow.sync_group_removal_reason("team") == "late"
     assert game_starts.choose_who_to_release([lone]) == []
@@ -8044,7 +8052,7 @@ def test_latecomers_fill_a_team_until_it_passes_game_starts(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_a_member_who_tops_up_a_group_is_a_newcomer_and_keeps_it_as_latest(
+def test_a_member_who_left_or_whose_group_ended_keeps_it_as_latest(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
@@ -8054,26 +8062,205 @@ def test_a_member_who_tops_up_a_group_is_a_newcomer_and_keeps_it_as_latest(
         max_group_size=3,
         quorum=2,
         join_existing_groups=True,
+        admit_newcomers="on_join",
     )
     founder, other, newcomer, outsider = _working_participants(exp, 4)
     group = grouper._make_group([founder, other], initial_group_size=2)
     db_session.commit()
     grouper._join_existing_groups(newcomer)
-    assert newcomer.active_sync_groups["team"] == group
-    assert not group.is_newcomer(founder)
-    assert group.is_newcomer(newcomer)
+    assert group.active_participants == [founder, other, newcomer]
 
     group.remove_participant(newcomer, reason="late")
     assert "team" not in newcomer.active_sync_groups
     assert newcomer.latest_sync_group("team") == group
-    assert group.is_newcomer(newcomer)
     group.remove_participant(founder, reason="finished")
     group.close()
     assert founder.latest_sync_group("team") == group
-    assert not group.is_newcomer(founder)
+    assert founder.sync_group_link("team").removal_reason == "finished"
     assert outsider.latest_sync_group("team") is None
-    with pytest.raises(ValueError):
-        group.is_newcomer(outsider)
+
+
+_ADMITTED_AT_RELEASE = []
+
+
+def _record_admitted(admitted):
+    _ADMITTED_AT_RELEASE.append([p.id for p in admitted])
+
+
+def _society(exp, db_session, *, target_group_size=2, n_newcomers=1):
+    """Return a society of two founders that admits newcomers at admission points, and its newcomers."""
+    grouper = SimpleGrouper(
+        "society",
+        initial_group_size=2,
+        max_group_size=4,
+        quorum=2,
+        target_group_size=target_group_size,
+        join_existing_groups=True,
+        admit_newcomers="at_admission_point",
+        top_up_wait=30,
+        below_quorum="continue_without_group",
+    )
+    founders = _working_participants(exp, 2)
+    group = grouper._make_group(founders, initial_group_size=2)
+    db_session.commit()
+    newcomers = _working_participants(exp, n_newcomers)
+    for newcomer in newcomers:
+        grouper._join_existing_groups(newcomer)
+    db_session.commit()
+    return group, founders, newcomers
+
+
+@pytest.mark.parametrize(
+    "kwargs, error",
+    [
+        (dict(join_existing_groups=True), FutureWarning),
+        (dict(admit_newcomers="on_join"), ValueError),
+        (
+            dict(join_existing_groups=True, admit_newcomers="at_admission_point"),
+            ValueError,
+        ),
+        (
+            dict(
+                join_existing_groups=True,
+                admit_newcomers="at_admission_point",
+                target_group_size=5,
+            ),
+            ValueError,
+        ),
+        (dict(max_groups=0), ValueError),
+    ],
+)
+def test_simple_grouper_checks_its_admission_options(kwargs, error):
+    options = dict(initial_group_size=2, max_group_size=4, quorum=2) | kwargs
+    if not options.get("join_existing_groups"):
+        options["max_group_size"] = "initial_group_size"
+    if error is FutureWarning:
+        with pytest.warns(FutureWarning, match="admit_newcomers"):
+            assert SimpleGrouper("team", **options).admit_newcomers == "on_join"
+    else:
+        with pytest.raises(error):
+            SimpleGrouper("team", **options)
+    with pytest.raises(ValueError, match="newcomer_max_wait"):
+        GroupBarrier("start", group_type="team", admission_point=True)
+    with pytest.raises(TypeError, match="PageMaker"):
+        GroupBarrier(
+            "start",
+            group_type="team",
+            admission_point=True,
+            newcomer_max_wait=60,
+            newcomer_page=lambda participant: None,
+        )
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_pending_member_is_admitted_only_at_an_admission_point(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    group, founders, (newcomer,) = _society(exp, db_session)
+    assert group.pending_participants == [newcomer]
+    assert group.active_participants == founders
+    assert newcomer.sync_group_link("society").admitted_at is None
+    assert newcomer.id not in group_seats(group)
+
+    ordinary = GroupBarrier("round_ends", group_type="society")
+    assert not ordinary._waits_here(newcomer)
+    for founder in founders:
+        _arrive_at_group_barrier(exp, ordinary, founder)
+    _commit_barrier_arrivals()
+    assert all(ordinary.can_participant_exit(p) for p in founders)
+    assert group.pending_participants == [newcomer]
+
+    _ADMITTED_AT_RELEASE.clear()
+    start = GroupBarrier(
+        "generation_start",
+        group_type="society",
+        admission_point=True,
+        newcomer_max_wait=60,
+        on_release=_record_admitted,
+    )
+    for participant in [*founders, newcomer]:
+        _arrive_at_group_barrier(exp, start, participant)
+    _commit_barrier_arrivals()
+    assert _ADMITTED_AT_RELEASE == [[newcomer.id]]
+    assert group.active_participants == [*founders, newcomer]
+    assert group.pending_participants == []
+    assert group_seats(group)[newcomer.id] == 2
+    assert start._just_admitted(newcomer) and not start._just_admitted(founders[0])
+    assert [
+        p.sync_group_link("society").admission_points_passed
+        for p in [*founders, newcomer]
+    ] == [1, 1, 1]
+
+
+@pytest.mark.parametrize("how", ["newcomer_max_wait", "stop_top_ups", "closed"])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_pending_member_is_turned_away_without_failing(
+    in_experiment_directory, db_session, how
+):
+    exp = get_experiment()
+    group, founders, (newcomer,) = _society(exp, db_session)
+    start = GroupBarrier(
+        "generation_start",
+        group_type="society",
+        admission_point=True,
+        newcomer_max_wait=60,
+    )
+    if how == "newcomer_max_wait":
+        newcomer.sync_group_link("society").arrival_time -= timedelta(seconds=61)
+        assert start._max_wait_time_for(newcomer) == 0
+        _arrive_at_group_barrier(exp, start, newcomer)
+        start.handle_max_wait_timeout(newcomer)
+    elif how == "stop_top_ups":
+        group.stop_top_ups()
+    else:
+        group.close()
+    db_session.commit()
+    assert newcomer.sync_group_removal_reason("society") == "not_admitted"
+    assert not newcomer.failed
+    assert "couldn't add you to a group" in newcomer.group_removal_notice["text"]
+    assert group.pending_participants == []
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_an_admission_point_waits_for_the_target_group_size_up_to_top_up_wait(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    group, founders, _ = _society(exp, db_session, target_group_size=3, n_newcomers=0)
+    start = GroupBarrier(
+        "generation_start",
+        group_type="society",
+        admission_point=True,
+        newcomer_max_wait=60,
+    )
+    for founder in founders:
+        _arrive_at_group_barrier(exp, start, founder)
+    _commit_barrier_arrivals()
+    assert not any(start.can_participant_exit(p) for p in founders)
+    for founder in founders:
+        founder.active_barriers[start.id].arrival_time -= timedelta(seconds=31)
+    assert set(start.choose_who_to_release(founders)) == set(founders)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_max_groups_caps_the_groups_a_grouper_forms(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper = SimpleGrouper("team", initial_group_size=2, quorum=2, max_groups=1)
+    waiting = _working_participants(exp, 4)
+    assert len(grouper.choose_who_to_release(waiting)) == 2
+    db_session.flush()
+    assert grouper.choose_who_to_release(waiting[2:]) == []
 
 
 @pytest.mark.parametrize("stop_top_ups", [False, True])
@@ -8133,6 +8320,7 @@ def test_group_barrier_counts_a_newcomer_joining_in_another_request(
                 sync_group_id=group.id,
                 active=True,
                 arrival_time=timenow(),
+                admitted_at=timenow(),
             )
         )
         joiner.flush()
@@ -8173,6 +8361,7 @@ def test_group_barrier_counts_a_newcomer_joining_in_another_request(
                 sync_group_id=group.id,
                 active=True,
                 arrival_time=timenow(),
+                admitted_at=timenow(),
             )
         )
         other.commit()
@@ -8240,6 +8429,7 @@ def test_group_barrier_check_counts_a_newcomer_who_joined_after_it_loaded_the_gr
                 sync_group_id=group.id,
                 active=True,
                 arrival_time=timenow(),
+                admitted_at=timenow(),
             )
         )
         other.commit()

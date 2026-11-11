@@ -37,6 +37,7 @@ _PAGE_FIELDS = {
     "waiting_logic",
     "waiting_logic_expected_repetitions",
     "waiting_screen",
+    "newcomer_page",
 }
 
 _PRESENTATION_FIELDS = {

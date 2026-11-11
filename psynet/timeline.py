@@ -3026,10 +3026,11 @@ class Timeline:
         self.check_group_policies()
 
     def check_group_policies(self):
-        """Check that groupers say what happens when late members shrink their groups."""
-        from .sync import check_group_dropout_policies
+        """Check that groupers say what happens when late members shrink their groups, and how newcomers are admitted."""
+        from .sync import check_admission_points, check_group_dropout_policies
 
         check_group_dropout_policies(self._barriers())
+        check_admission_points(self._barriers())
 
     def _barriers(self):
         """Yield the barrier behind each timeline element that has one."""

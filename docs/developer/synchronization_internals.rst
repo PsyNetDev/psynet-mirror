@@ -80,32 +80,29 @@ Barrier checks and participant requests take their locks in this order:
    A synchronized trial maker recording a run's choices in the group's
    ``trial_maker_runs`` also waits for the row, after locking any
    participant rows it needs.
-4. The advisory lock of a cued round. Barriers only try it and defer if it
-   is busy. Group dissolution tries it too, after the members' rows of step
-   5, and waits like it does for a busy member (see below); taking it out
-   of order can't deadlock, because it doesn't wait for it. A cue waits for
-   it, but takes only a ``KEY SHARE`` lock on the group row, through its
-   trial's foreign key, which doesn't conflict with ``FOR NO KEY UPDATE``.
+4. The advisory lock of a cued round's node, which a cue waits for so
+   that members cueing at once share one node. Only cues take it; they take
+   only a ``KEY SHARE`` lock on the group row, through the trial's foreign
+   key, which doesn't conflict with ``FOR NO KEY UPDATE``. Releases and
+   dissolution don't need it: a barrier waits for every admitted member, so
+   none of them can still be about to cue the round it closes, and
+   dissolution reads the rounds under the members' row locks.
 5. Members' rows when dissolving the group, with ``SKIP LOCKED``, then the
    rows of links, trials and nodes, and of other groups. A between-barrier
    timeout locks late members' rows (also ``SKIP LOCKED``) earlier, in
-   :meth:`~psynet.sync.GroupBarrier.check_waiting_participants`, before the
-   round lock is tried. This can't deadlock: the round lock is only tried,
-   and late members' rows are skipped if busy.
+   :meth:`~psynet.sync.GroupBarrier.check_waiting_participants`. This can't
+   deadlock: late members' rows are skipped if busy.
 
 So, in framework code, a request holding a sync group row takes other
 participants' rows only with ``SKIP LOCKED`` or ``NOWAIT``:
 
-- Group dissolution locks the members' rows with ``SKIP LOCKED``, then tries
-  the lock of each cued round they are still playing, and is all or nothing.
-  If another member's request holds their row, or a cue holds a round's
-  lock, nobody is removed (rolling back a savepoint unlocks the rows and
-  releases the round locks taken in it; a round lock the transaction already
-  held, as when a barrier's release check dissolves the group after taking
-  it, stays until the transaction ends): the group is marked ``dissolving`` and the barrier poller tries the whole
+- Group dissolution locks the members' rows with ``SKIP LOCKED``, and is
+  all or nothing. If another member's request holds their row, nobody is
+  removed: the group is marked ``dissolving`` and the barrier poller tries the whole
   dissolution again on each sweep, so every member leaves the group, and
   learns why, at the same time. A group back at its quorum by then is no
-  longer dissolved.
+  longer dissolved. Its pending members are turned away as
+  ``"not_admitted"``.
 - A between-barrier timeout (``late_after``) also skips busy late members,
   all or nothing as in dissolution, with either ``late_action``: removing
   only the free ones could leave the group below quorum and dissolve it

@@ -225,6 +225,7 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
         sync_group_late_action: Optional[LateAction] = None,
         sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
+        sync_group_newcomer_max_wait: Optional[float] = None,
     ):
         self.max_reversals_per_chain = max_reversals_per_chain
         self.min_passing_score = min_passing_score
@@ -252,6 +253,7 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
             sync_group_late_action=sync_group_late_action,
             sync_group_also_leave=sync_group_also_leave,
             sync_group_waiting_message=sync_group_waiting_message,
+            sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
             max_nodes_per_chain=max_nodes_per_chain,
             check_performance_at_end=True,
             check_performance_every_trial=False,

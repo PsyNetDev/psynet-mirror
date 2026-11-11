@@ -1563,11 +1563,14 @@ class ChainTrialMaker(NetworkTrialMaker):
         leaves, for example ``["cohort"]``. See ``also_leave`` in :class:`~psynet.sync.GroupBarrier`.
 
     sync_group_waiting_message
-        Message on the waiting indicator at the trial maker's own sync-group waits
-        (initialization and trial preparation). If omitted, participants see "Waiting for other
+        Message on the waiting indicator at the trial maker's own sync-group wait
+        (trial preparation). If omitted, participants see "Waiting for other
         participants…". :class:`~psynet.sync.Grouper` and :class:`~psynet.sync.GroupBarrier`
         elements use their own ``waiting_message``; pass the same text to them if the messages
         should match.
+
+    sync_group_newcomer_max_wait
+        See :class:`~psynet.trial.main.TrialMaker`.
 
     Attributes
     ----------
@@ -1656,6 +1659,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         sync_group_late_action: Optional[LateAction] = None,
         sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
+        sync_group_newcomer_max_wait: Optional[float] = None,
     ):
         if network_class is None:
             network_class = self.default_network_class
@@ -1823,6 +1827,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             sync_group_late_action=sync_group_late_action,
             sync_group_also_leave=sync_group_also_leave,
             sync_group_waiting_message=sync_group_waiting_message,
+            sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
             n_participants_completion=n_participants_completion,
         )
 
