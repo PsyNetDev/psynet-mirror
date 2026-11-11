@@ -5128,7 +5128,7 @@ def _top_up_wait_over(group, members, barrier_id) -> bool:
     if top_up_wait is None or below_quorum_since is None:
         return False
     visits = [member.active_barriers.get(barrier_id) for member in members]
-    if any(visit is None for visit in visits):
+    if any(visit is None or visit.released for visit in visits):
         return False
     since = max([below_quorum_since, *(visit.arrival_time for visit in visits)])
     return (timenow() - since).total_seconds() >= top_up_wait
