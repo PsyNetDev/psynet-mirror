@@ -219,6 +219,7 @@ class _GuessTrial(Trial):
     def show_trial(self, experiment, participant):
         return [
             ModularPage("guess", "Guess", TextControl(), time_limit=10),
+            ModularPage("again", "Again", TextControl(), time_limit=10),
             ModularPage("confirm", "Sure?", TextControl()),
         ]
 
@@ -238,19 +239,7 @@ def test_a_trial_keeps_whether_its_timed_page_ran_out(
         trial = participant.current_trial
         assert trial.time_limit_reached is None
 
-        def answer_timed_page_in_time():
-            page = ModularPage("timed", "Go", TextControl(), time_limit=10)
-            participant.page_deadline = None
-            resp = page.process_response(
-                raw_answer="x",
-                blobs={},
-                metadata={},
-                experiment=exp,
-                participant=participant,
-            )
-            page._accept_response(resp, exp, participant)
-
-        answer_timed_page_in_time()
+        assert _submit(exp, participant, "7")["submission"] == "approved"
         assert trial.time_limit_reached is False
 
         participant.page_deadline = timenow()
@@ -267,7 +256,10 @@ def test_a_trial_keeps_whether_its_timed_page_ran_out(
         assert trial.response.metadata["interrupted"]
         assert trial.time_limit_reached is True
         participant.waiting_barrier_id = "barrier"
-        answer_timed_page_in_time()
+        waiting = ModularPage("timed", "Go", TextControl(), time_limit=10)
+        participant.page_deadline = None
+        resp = _respond(waiting, participant, "x")
+        waiting._accept_response(resp, exp, participant)
         participant.waiting_barrier_id = None
         assert trial.time_limit_reached is True
         assert _submit(exp, participant, "yes")["submission"] == "approved"

@@ -360,7 +360,8 @@ members who have since left, each with its ``sync_group_role``.
 :attr:`trial.time_limit_reached <psynet.trial.main.Trial.time_limit_reached>`
 says whether a member's latest timed page ran out of time before their
 answer, so ``on_release`` can score a timed-out answer differently. The trial
-keeps it through later untimed pages and barrier waits, and it is exported
+keeps it through later untimed pages and barrier waits, including timed
+pages shown while waiting at a barrier, and it is exported
 with the trial. To read a group's rounds after the game, for example on a
 debrief page once the group has ended,
 :meth:`group.rounds(module_id) <psynet.sync.SyncGroup.rounds>` returns the

@@ -364,7 +364,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         :attr:`psynet.timeline.Response.time_limit_reached`. It is set when a
         page of :meth:`~psynet.trial.main.Trial.show_trial` with a
         ``time_limit`` is accepted, and kept through later untimed pages,
-        barrier waits and feedback, so for example a
+        barrier waits and feedback; timed pages shown while the participant
+        waits at a barrier don't set it either. So for example a
         :class:`~psynet.sync.GroupBarrier`'s ``on_release`` can read it after
         a waiting page. Equals ``None`` until a timed page of the trial is
         answered.
