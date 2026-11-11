@@ -50,13 +50,5 @@ RUN echo Installing Chrome $CHROME_VERSION && \
 
 COPY pyproject.toml pyproject.toml
 COPY ci/dallinger-dev-requirements.txt dallinger-dev-requirements.txt
-
-# Generate PsyNet constraints.txt (experiment runtime + demos extras) and install it.
-# Use a vendored Dallinger dev-requirements snapshot so parallel CI Docker
-# builds do not depend on raw.githubusercontent.com availability.
-# Compile for the image's full Python version: uv reads 3.11 as 3.11.0.
-RUN uv pip compile --python-version "$(python -c 'import platform; print(platform.python_version())')" pyproject.toml \
-        --extra experiment --extra demos \
-        --constraint dallinger-dev-requirements.txt \
-        --output-file constraints.txt
-RUN uv pip install --no-cache --system -r constraints.txt
+COPY ci/install-psynet-deps.sh /usr/local/bin/install-psynet-deps
+RUN install-psynet-deps

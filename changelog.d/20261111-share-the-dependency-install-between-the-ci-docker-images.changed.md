@@ -1,0 +1,1 @@
+Changed both CI Docker images to install PsyNet's dependencies with one script, `ci/install-psynet-deps.sh`, so the Playwright image now resolves them for the same full Python version as the main image.
