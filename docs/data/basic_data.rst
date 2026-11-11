@@ -110,10 +110,10 @@ per question; a player who answered on their own has a row with an empty
 how the round ended for each player: ``"stayed"``, or why they last left the
 group during the round's pages, even after the median was shared;
 ``estimate_timed_out`` says whether their estimate's time limit ran out,
-from the estimate's own
-:attr:`Response.time_limit_reached <psynet.timeline.Response.time_limit_reached>`
-(``trial.time_limit_reached`` follows the trial's latest timed page, here
-the revised estimate), and ``in_median`` whether it counted.
+which the trial stores right after the estimate page from
+``participant.last_response`` (``trial.time_limit_reached`` follows the
+trial's latest timed page, here the revised estimate), and ``in_median``
+whether it counted.
 
 Group membership, for groups formed by a grouper (see
 :doc:`/code/multiplayer/synchronization`), is stored in two tables:
