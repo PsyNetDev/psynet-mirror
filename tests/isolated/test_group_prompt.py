@@ -211,7 +211,7 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
         GroupPrompt("Hi", group=None, group_type="room", participant=early)
 
     # A member who left is no longer drawn on a live page.
-    group.min_group_size = 1
+    group.quorum = 1
     group.remove_participant(late, reason="late")
     db_session.flush()
 
@@ -258,7 +258,7 @@ def test_live_pages_redraw_the_group_when_someone_joins(
     published = []
     monkeypatch.setattr(timeline_hold, "_publish_wakes", published.extend)
     first, late, other = _working_participants(exp, 3)
-    group = SimpleSyncGroup(group_type="room", initial_group_size=3, min_group_size=1)
+    group = SimpleSyncGroup(group_type="room", initial_group_size=3, quorum=1)
     db_session.add(group)
     group.add_participant(first)
     db_session.flush()

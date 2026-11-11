@@ -115,7 +115,7 @@ class TestPublicGoods:
         group = SimpleSyncGroup(
             group_type=demo.GROUP,
             initial_group_size=3,
-            min_group_size=2,
+            quorum=2,
             n_active_participants=3,
             accepts_top_ups=False,
         )

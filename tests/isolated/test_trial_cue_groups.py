@@ -1655,7 +1655,7 @@ def test_a_late_joiner_joins_the_open_round_and_its_barrier_waits_for_them(
 def test_case_a_member_leaves_mid_round(in_experiment_directory, db_session, n):
     exp = get_experiment()
     (*stayers, leaver), group = _sync_group_of(exp, db_session, n)
-    group.min_group_size = 2
+    group.quorum = 2
     group.below_quorum = "continue_without_group"
     _cue_team(exp, [*stayers, leaver], 0)
     _passes.clear()
@@ -1734,7 +1734,7 @@ def test_case_max_wait_time_runs_out(
             group_type="cohort",
             initial_group_size=2,
             max_group_size=2,
-            min_group_size=2,
+            quorum=2,
             n_active_participants=2,
             below_quorum=below_quorum,
             accepts_top_ups=False,

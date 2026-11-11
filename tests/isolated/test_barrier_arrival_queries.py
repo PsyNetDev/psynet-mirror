@@ -201,7 +201,7 @@ def _sync_group_of(exp, db_session, n, group_type):
         group_type=group_type,
         initial_group_size=n,
         max_group_size=n,
-        min_group_size=n,
+        quorum=n,
         n_active_participants=n,
         accepts_top_ups=False,
     )

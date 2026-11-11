@@ -36,7 +36,7 @@ def _crowd(n_members):
     group = SimpleSyncGroup(
         group_type=demo.GROUP,
         initial_group_size=n_members,
-        min_group_size=2,
+        quorum=2,
         n_active_participants=n_members,
         accepts_top_ups=False,
     )

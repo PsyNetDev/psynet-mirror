@@ -22,7 +22,7 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
         group_type="empty-leader",
         initial_group_size=1,
         max_group_size=1,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=0,
         accepts_top_ups=True,
     )
@@ -53,7 +53,7 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
         group_type="dashboard-actions",
         initial_group_size=1,
         max_group_size=2,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=1,
         accepts_top_ups=True,
     )

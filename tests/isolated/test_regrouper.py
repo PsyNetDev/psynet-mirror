@@ -341,7 +341,7 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
     assert set(released) == set(participants)
     db_session.commit()
     group = participants[0].sync_group
-    assert (group.initial_group_size, group.min_group_size) == (2, 2)
+    assert (group.initial_group_size, group.quorum) == (2, 2)
 
 
 @pytest.mark.parametrize(

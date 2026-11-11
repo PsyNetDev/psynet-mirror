@@ -172,7 +172,6 @@ from sqlalchemy.orm import (
     object_session,
     relationship,
     selectinload,
-    synonym,
 )
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -1561,7 +1560,7 @@ def _group_barrier_outcome(group, members, waiting_ids, barrier_id):
     real release share one decision. ``members`` count towards the quorum,
     and the visit releases once all of them are waiting.
     """
-    if len(members) < group.min_group_size:
+    if len(members) < group.quorum:
         waits_for_top_ups = group.accepts_top_ups and not _top_up_wait_over(
             group, members, barrier_id
         )
@@ -3438,7 +3437,7 @@ class SimpleGrouper(Grouper):
             participants,
             initial_group_size=initial_group_size,
             max_group_size=self.max_group_size,
-            min_group_size=self.quorum,
+            quorum=self.quorum,
             accepts_top_ups=self.join_existing_groups,
             below_quorum=self.below_quorum or "fail",
             top_up_wait=self.top_up_wait,
@@ -4210,7 +4209,7 @@ class Regrouper(Grouper):
             split_id=split_id,
             initial_group_size=len(participants),
             max_group_size=len(participants),
-            min_group_size=1,
+            quorum=1,
             accepts_top_ups=False,
             below_quorum="continue_without_group",
         )
@@ -4425,7 +4424,7 @@ class SyncGroup(SQLBase, SQLMixin):
     #: When the group stopped accepting top-ups; see :class:`SimpleSyncGroup`.
     top_ups_stopped_at = None
     #: Quorum and below-quorum policy; only :class:`SimpleSyncGroup` sets them.
-    min_group_size = None
+    quorum = None
     below_quorum = None
 
     def stop_top_ups(self):
@@ -4750,9 +4749,8 @@ class SimpleSyncGroup(SyncGroup):
 
     initial_group_size = Column(Integer)
     max_group_size = Column(Integer)
-    min_group_size = Column(Integer)
     #: How many active members the group needs to keep going.
-    quorum = synonym("min_group_size")
+    quorum = Column(Integer)
     accepts_top_ups = Column(Boolean)
     #: When the group stopped accepting top-ups, or ``None`` while it accepts
     #: them or if it never did.
@@ -4772,7 +4770,7 @@ class SimpleSyncGroup(SyncGroup):
 
     def check_numbers(self):
         super().check_numbers()
-        if self.n_active_participants >= (self.min_group_size or 0):
+        if self.n_active_participants >= (self.quorum or 0):
             self.below_quorum_since = None
         elif self.below_quorum_since is None:
             self.below_quorum_since = timenow()
@@ -4807,7 +4805,7 @@ class SimpleSyncGroup(SyncGroup):
         if (
             getattr(self, "_dissolving_below_quorum", False)
             or self.accepts_top_ups
-            or self.n_active_participants >= self.min_group_size
+            or self.n_active_participants >= self.quorum
         ):
             return
         self._dissolve()
@@ -5053,7 +5051,7 @@ def _divergence_message(group) -> Optional[Tuple[str, Set[int]]]:
         )
     ).all()
     members = {participant_id for participant_id, _ in rows}
-    if len(members) < group.min_group_size or any(link is None for _, link in rows):
+    if len(members) < group.quorum or any(link is None for _, link in rows):
         return None
     waits = {}
     for _, link in rows:
@@ -6315,7 +6313,7 @@ def _finish_dissolving_groups():
             group = _lock_sync_group(group_id, skip_locked=True)
             if group is not None and group.active and group.dissolving:
                 group.check_numbers()
-                quorum = group.min_group_size or 0
+                quorum = group.quorum or 0
                 if 0 < quorum <= group.n_active_participants:
                     group.dissolving = False
                 else:

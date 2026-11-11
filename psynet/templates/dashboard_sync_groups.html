@@ -108,7 +108,7 @@ async function failSyncGroupParticipant(button) {
                     <th>Leader</th>
                     <th>Waiting at barrier</th>
                     {% if has_simple_groups %}
-                    <th>Min / Max size</th>
+                    <th>Quorum / Max size</th>
                     {% endif %}
                     <th>Last barrier pass</th>
                     <th>End time</th>
@@ -159,8 +159,8 @@ async function failSyncGroupParticipant(button) {
                     </td>
                     {% if has_simple_groups %}
                     <td>
-                        {% if g.min_group_size is not none %}
-                        {{ g.min_group_size }} / {{ g.max_group_size }}
+                        {% if g.quorum is not none %}
+                        {{ g.quorum }} / {{ g.max_group_size }}
                         {% if g.initial_group_size is not none %}
                         <span class="text-muted">(init: {{ g.initial_group_size }})</span>
                         {% endif %}

@@ -34,7 +34,7 @@ def _story_group(exp):
     group = SimpleSyncGroup(
         group_type=demo.GROUP,
         initial_group_size=demo.GROUP_SIZE,
-        min_group_size=2,
+        quorum=2,
         n_active_participants=demo.GROUP_SIZE,
         accepts_top_ups=False,
     )

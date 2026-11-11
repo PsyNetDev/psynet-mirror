@@ -345,7 +345,7 @@ class TestParticipantFailure:
             group_type="main",
             initial_group_size=2,
             max_group_size=2,
-            min_group_size=2,
+            quorum=2,
             n_active_participants=2,
             accepts_top_ups=False,
         )

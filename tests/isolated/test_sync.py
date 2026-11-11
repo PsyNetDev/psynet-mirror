@@ -1269,7 +1269,7 @@ def test_manual_sync_group_participant_failure(in_experiment_directory, db_sessi
         group_type="main",
         initial_group_size=2,
         max_group_size=2,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=2,
         accepts_top_ups=False,
     )
@@ -1302,7 +1302,7 @@ def test_manual_sync_group_participant_kick(in_experiment_directory, db_session)
         group_type="main",
         initial_group_size=2,
         max_group_size=2,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=2,
         accepts_top_ups=False,
     )
@@ -1340,7 +1340,7 @@ def test_manual_sync_group_participant_kick_targets_selected_group(
         group_type="main",
         initial_group_size=1,
         max_group_size=2,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=1,
         accepts_top_ups=True,
     )
@@ -1348,7 +1348,7 @@ def test_manual_sync_group_participant_kick_targets_selected_group(
         group_type="secondary",
         initial_group_size=1,
         max_group_size=2,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=1,
         accepts_top_ups=True,
     )
@@ -1384,7 +1384,7 @@ def test_manual_sync_group_participant_kick_handles_empty_top_up_group(
         group_type="main",
         initial_group_size=1,
         max_group_size=2,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=1,
         accepts_top_ups=True,
     )
@@ -1424,7 +1424,7 @@ def test_manual_sync_group_participant_kick_dissolves_group_below_min_size(
         group_type="main",
         initial_group_size=3,
         max_group_size=3,
-        min_group_size=3,
+        quorum=3,
         n_active_participants=3,
         accepts_top_ups=False,
         below_quorum="fail" if fail_below_min_size else "continue_without_group",
@@ -1464,7 +1464,7 @@ def test_manual_sync_group_participant_failure_rejects_non_working_participants(
         group_type="main",
         initial_group_size=1,
         max_group_size=1,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=1,
         accepts_top_ups=False,
     )
@@ -1495,7 +1495,7 @@ def test_manual_sync_group_participant_failure_rejects_inactive_group_member(
         group_type="main",
         initial_group_size=1,
         max_group_size=1,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=1,
         accepts_top_ups=False,
     )
@@ -2119,7 +2119,7 @@ def _sync_group_of(exp, db_session, n, group_type="main"):
         group_type=group_type,
         initial_group_size=n,
         max_group_size=n,
-        min_group_size=n,
+        quorum=n,
         n_active_participants=n,
         accepts_top_ups=False,
     )
@@ -4051,7 +4051,7 @@ def test_electing_a_busy_leader_does_not_wait(in_experiment_directory, db_sessio
     """Re-electing a leader doesn't wait for the new leader's own request."""
     exp = get_experiment()
     (leader, busy, _), group = _sync_group_of(exp, db_session, 3)
-    group.min_group_size = 1
+    group.quorum = 1
     db.session.commit()
     busy_id, group_id = busy.id, group.id
 
@@ -6327,7 +6327,7 @@ def test_check_sync_groups_skips_locked_group_and_continues(
         group_type="main",
         initial_group_size=1,
         max_group_size=1,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=99,
         accepts_top_ups=False,
     )
@@ -6335,7 +6335,7 @@ def test_check_sync_groups_skips_locked_group_and_continues(
         group_type="main",
         initial_group_size=1,
         max_group_size=1,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=99,
         accepts_top_ups=False,
     )
@@ -6950,7 +6950,7 @@ def test_make_late_now_keeps_who_left_since_the_last_pass(
     monkeypatch.setattr(psynet.bot, "advance_past_wait_pages", lambda *a, **k: None)
     exp = get_experiment()
     waiter, quiet, earlier = [new_participant(exp) for _ in range(3)]
-    group = SimpleSyncGroup(group_type="main", initial_group_size=3, min_group_size=2)
+    group = SimpleSyncGroup(group_type="main", initial_group_size=3, quorum=2)
     db_session.add(group)
     for p in (waiter, quiet, earlier):
         p.status = "working"
@@ -6977,9 +6977,9 @@ def test_make_late_now_keeps_who_left_since_the_last_pass(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 @pytest.mark.parametrize("notify_arrivals", [True, False])
-@pytest.mark.parametrize("min_group_size", [2, 3])
+@pytest.mark.parametrize("quorum", [2, 3])
 def test_group_barrier_late_after_removes_missing_participants(
-    in_experiment_directory, db_session, notify_arrivals, monkeypatch, min_group_size
+    in_experiment_directory, db_session, notify_arrivals, monkeypatch, quorum
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
@@ -7001,7 +7001,7 @@ def test_group_barrier_late_after_removes_missing_participants(
         group_type="main",
         initial_group_size=4,
         max_group_size=4,
-        min_group_size=min_group_size,
+        quorum=quorum,
         n_active_participants=4,
         accepts_top_ups=False,
         below_quorum="fail",
@@ -7025,7 +7025,7 @@ def test_group_barrier_late_after_removes_missing_participants(
             participant=missing_participant,
         )
         assert late_answer.too_late_for_group
-    if min_group_size == 3:
+    if quorum == 3:
         # Both are removed for being late before the group dissolves.
         assert all(p.failed for p in waiting_participants)
         for missing_participant in missing_participants:
@@ -7090,7 +7090,7 @@ def test_also_leave_removes_a_late_member_from_the_listed_groups_only(
             group_type=group_type,
             initial_group_size=len(members),
             max_group_size=len(members),
-            min_group_size=1,
+            quorum=1,
             n_active_participants=len(members),
             accepts_top_ups=False,
             below_quorum="continue_without_group",
@@ -7159,7 +7159,7 @@ def test_late_member_leaving_the_cohort_can_fail_it_with_a_warning(
             group_type=group_type,
             initial_group_size=len(members),
             max_group_size=len(members),
-            min_group_size=len(members) if group_type == "cohort" else 1,
+            quorum=len(members) if group_type == "cohort" else 1,
             accepts_top_ups=False,
             below_quorum=below_quorum,
         )
@@ -7398,7 +7398,7 @@ def test_group_barrier_late_after_removal_releases_waiters_after_dissolution(
         group_type="main",
         initial_group_size=3,
         max_group_size=3,
-        min_group_size=3,
+        quorum=3,
         n_active_participants=3,
         accepts_top_ups=False,
         below_quorum="continue_without_group",
@@ -7509,7 +7509,7 @@ def test_members_who_finish_dont_dissolve_the_group(
         group_type="main",
         initial_group_size=3,
         max_group_size=3,
-        min_group_size=2,
+        quorum=2,
         accepts_top_ups=False,
         below_quorum="continue_without_group",
     )
@@ -7536,7 +7536,7 @@ def test_leave_group_takes_the_participant_out_as_finished(
     exp = get_experiment()
     leaver, stayer = [new_participant(exp) for _ in range(2)]
     group = SimpleSyncGroup(
-        group_type="main", initial_group_size=2, max_group_size=2, min_group_size=2
+        group_type="main", initial_group_size=2, max_group_size=2, quorum=2
     )
     db_session.add(group)
     for p in (leaver, stayer):
@@ -7570,7 +7570,7 @@ def test_removing_a_late_member_dissolves_a_group_without_top_ups(
         group_type="cohort",
         initial_group_size=2,
         max_group_size=2,
-        min_group_size=2,
+        quorum=2,
         accepts_top_ups=False,
         below_quorum=below_quorum,
     )
@@ -7601,7 +7601,7 @@ def test_late_member_leaving_a_pair_fails_the_partner_with_a_warning(
         group_type="main",
         initial_group_size=2,
         max_group_size=2,
-        min_group_size=2,
+        quorum=2,
         accepts_top_ups=False,
         below_quorum="fail",
     )
@@ -7622,18 +7622,18 @@ def test_late_member_leaving_a_pair_fails_the_partner_with_a_warning(
 
 
 @pytest.mark.parametrize("action", ["leave_group", "fail"])
-@pytest.mark.parametrize("min_group_size", [2, 3])
+@pytest.mark.parametrize("quorum", [2, 3])
 @pytest.mark.parametrize("accepts_top_ups", [False, True])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_group_barrier_would_release_predicts_late_after(
-    in_experiment_directory, db_session, action, min_group_size, accepts_top_ups
+    in_experiment_directory, db_session, action, quorum, accepts_top_ups
 ):
     """The release peek must see the late member the check will remove."""
     exp = get_experiment()
     barrier = GroupBarrier(
-        id_=f"would_release_between_{action}_{min_group_size}_{accepts_top_ups}",
+        id_=f"would_release_between_{action}_{quorum}_{accepts_top_ups}",
         group_type="main",
         late_after=5,
         late_action=action,
@@ -7646,7 +7646,7 @@ def test_group_barrier_would_release_predicts_late_after(
         group_type="main",
         initial_group_size=3,
         max_group_size=3,
-        min_group_size=min_group_size,
+        quorum=quorum,
         n_active_participants=3,
         accepts_top_ups=accepts_top_ups,
         below_quorum="continue_without_group",
@@ -7657,9 +7657,7 @@ def test_group_barrier_would_release_predicts_late_after(
     _set_group_clocks_in_the_past(group, seconds=10)
     db_session.commit()
     # A group that accepts top-ups waits below its minimum instead of dissolving.
-    expected = (
-        set() if accepts_top_ups and min_group_size == 3 else set(waiting_participants)
-    )
+    expected = set() if accepts_top_ups and quorum == 3 else set(waiting_participants)
 
     assert barrier.would_release(waiting_participants) is bool(expected)
     assert len(group.active_participants) == 3
@@ -7693,7 +7691,7 @@ def test_group_barrier_late_after_fail_missing_participants(
         group_type="main",
         initial_group_size=3,
         max_group_size=3,
-        min_group_size=2,
+        quorum=2,
         n_active_participants=3,
         accepts_top_ups=False,
         below_quorum="fail",
@@ -7738,7 +7736,7 @@ def test_group_barrier_below_quorum(
         group_type="main",
         initial_group_size=3,
         max_group_size=3,
-        min_group_size=3,
+        quorum=3,
         n_active_participants=2,
         accepts_top_ups=False,
         below_quorum=grouper.below_quorum,
@@ -7748,7 +7746,7 @@ def test_group_barrier_below_quorum(
         group_type="other",
         initial_group_size=2,
         max_group_size=2,
-        min_group_size=1,
+        quorum=1,
         accepts_top_ups=False,
     )
     db_session.add_all([group, other_group])
@@ -7799,7 +7797,7 @@ def test_group_barrier_below_min_size_only_releases_waiting_participants(
         group_type="main",
         initial_group_size=3,
         max_group_size=3,
-        min_group_size=3,
+        quorum=3,
         n_active_participants=2,
         accepts_top_ups=False,
         below_quorum="fail",
@@ -7830,7 +7828,7 @@ def test_waiter_leaving_a_pair_after_max_wait(
         group_type="main",
         initial_group_size=2,
         max_group_size=2,
-        min_group_size=2,
+        quorum=2,
         accepts_top_ups=False,
         below_quorum=below_quorum,
     )
@@ -7899,7 +7897,7 @@ def test_stopping_top_ups_dissolves_a_group_below_quorum(
         group_type="team",
         initial_group_size=3,
         max_group_size=3,
-        min_group_size=3,
+        quorum=3,
         accepts_top_ups=True,
         below_quorum="continue_without_group",
     )
@@ -8392,7 +8390,7 @@ def test_group_barrier_max_wait_leave_group_releases_barrier_link(
         group_type="main",
         initial_group_size=1,
         max_group_size=1,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=1,
         accepts_top_ups=False,
         below_quorum="fail",
@@ -8435,7 +8433,7 @@ def test_on_release_is_told_who_left_since_the_last_barrier(
 ):
     exp = get_experiment()
     participants, group = _sync_group_of(exp, db_session, 4)
-    group.min_group_size = 2
+    group.quorum = 2
     late, quitter, *stayers = participants
     group.remove_participant(late, reason="late")
     quitter.fail("returned")
