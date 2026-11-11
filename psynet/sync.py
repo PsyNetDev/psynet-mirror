@@ -221,7 +221,6 @@ from psynet.timeline_hold import (
 )
 from psynet.utils import (
     NoArgumentProvided,
-    call_function_with_context,
     call_if_callable,
     get_config,
     get_logger,
@@ -911,7 +910,7 @@ def hold_message(title, progress=None):
     more ("1 of 3 not ready yet"). Return ``hold_message(title, progress)``
     from a ``waiting_message`` function to write that line yourself, or leave out
     ``progress`` to show no progress line. The message is redrawn as members
-    arrive unless the barrier has ``notify_arrivals=False``.
+    arrive unless the barrier has ``on_arrival_message=None``.
 
     Parameters
     ----------
@@ -1632,6 +1631,34 @@ def _lock_sync_group(
 LateAction = Literal["fail", "leave_group"]
 
 
+_GROUP_BARRIER_RELEASE_CANDIDATE_OPTIONS = {
+    "notify_arrivals": (
+        "pass on_arrival_message=None to turn arrival notices off, or leave it "
+        "out to keep them"
+    ),
+}
+
+
+def _reject_release_candidate_options(owner, kwargs, replacements):
+    """Raise a ``TypeError`` naming the replacement for an option of the PsyNet 14.0 release candidates.
+
+    Parameters
+    ----------
+    owner
+        Name of the class the options were passed to.
+    kwargs
+        The keyword arguments passed.
+    replacements
+        Maps each retired option name to a description of its replacement.
+    """
+    for name, replacement in replacements.items():
+        if name in kwargs:
+            raise TypeError(
+                f"{owner} no longer takes {name} (from the PsyNet 14.0 release "
+                f"candidates): {replacement}."
+            )
+
+
 def _validate_group_timeouts(
     max_wait_action,
     late_after,
@@ -1944,17 +1971,6 @@ class GroupBarrier(Barrier):
         a preceding :class:`~psynet.sync.Grouper`'s ``waiting_message`` and of
         trial-maker ``sync_group_waiting_message``.
 
-    notify_arrivals
-        If ``True`` (default), group members who have not reached this barrier
-        yet see a pill on the progress bar, and waiting participants in groups
-        of three or more see remaining-not-ready copy on the hold overlay.
-        Pairs show only the message. Set ``False`` to disable both. A
-        member removed by ``"leave_group"`` is told either way; return ``None``
-        from ``on_arrival_message`` for ``kind="late"`` or
-        ``kind="waited_too_long"`` to hide it. To change the waiting indicator's
-        progress line, return :func:`hold_message` from a
-        ``waiting_message`` function.
-
     release_grace
         See :class:`Barrier`. Default: 3 seconds.
 
@@ -1962,11 +1978,17 @@ class GroupBarrier(Barrier):
         See :class:`Barrier`.
 
     on_arrival_message
-        Optional callable that returns copy for one participant. It receives
-        ``kind`` (``"notice"``, ``"late"`` or ``"waited_too_long"``), ``waiting_count``,
+        Callable that returns arrival copy for one participant, by default
+        :func:`~psynet.timeline_hold.default_group_barrier_arrival_message`.
+        It receives ``kind`` (``"notice"``, ``"late"`` or ``"waited_too_long"``), ``waiting_count``,
         ``group_size``, and the usual context arguments (``participant``, the
         one who sees the copy, ``group``, ``barrier``, ``experiment``). Return ``None`` to hide that
-        surface. Same serialization rules as ``on_release``.
+        notice. Same serialization rules as ``on_release``. Pass
+        ``on_arrival_message=None`` to turn off all of this barrier's arrival
+        notices, including the not-ready count on the waiting indicator in
+        groups of three or more. To change the waiting indicator's progress
+        line instead, return :func:`hold_message` from a ``waiting_message``
+        function.
 
         ``"notice"`` is the progress-bar notice for members who have not
         reached the barrier yet. It defaults to "Your partner is ready." in
@@ -2009,8 +2031,7 @@ class GroupBarrier(Barrier):
         also_leave: Optional[Sequence[str]] = None,
         expected_wait=None,
         waiting_message=None,
-        notify_arrivals: bool = True,
-        on_arrival_message: Optional[Callable] = None,
+        on_arrival_message: Optional[Callable] = default_group_barrier_arrival_message,
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
         stop_top_ups: bool = False,
@@ -2034,11 +2055,16 @@ class GroupBarrier(Barrier):
         self.group_type = group_type
         self.on_release = on_release
         self.on_arrival_message = on_arrival_message
-        self.notify_arrivals = bool(notify_arrivals)
         self.late_after = late_after
         self.late_action = late_action
         self.also_leave = list(also_leave or [])
         self.stop_top_ups = bool(stop_top_ups)
+
+    def __new__(cls, *args, **kwargs):
+        _reject_release_candidate_options(
+            cls.__name__, kwargs, _GROUP_BARRIER_RELEASE_CANDIDATE_OPTIONS
+        )
+        return super().__new__(cls)
 
     def resolve(self):
         group_type = self.group_type
@@ -2153,7 +2179,9 @@ class GroupBarrier(Barrier):
 
     def _hold_progress_text(self, participant, counts=None):
         """Return hold-overlay progress when arrival notices are enabled."""
-        if not self.notify_arrivals or not self._participant_is_waiting(participant):
+        if self.on_arrival_message is None or not self._participant_is_waiting(
+            participant
+        ):
             return None
         if counts is None:
             counts = self._hold_message_counts(participant)
@@ -2183,9 +2211,7 @@ class GroupBarrier(Barrier):
         """
         callback = self.on_arrival_message
         if callback is None:
-            return call_function_with_context(
-                default_group_barrier_arrival_message, barrier=self, **kwargs
-            )
+            return None
         return callback(barrier=self, **kwargs)
 
     def _notify_arrivals(self, arriving_participant):
@@ -2193,7 +2219,7 @@ class GroupBarrier(Barrier):
 
         Live timeline only. Overlay HTML comes from ``waiting_logic``.
         """
-        if not self.notify_arrivals:
+        if self.on_arrival_message is None:
             return
         if arriving_participant.failed or not self._participant_is_waiting(
             arriving_participant
@@ -5987,7 +6013,10 @@ def pending_arrival_notice_for(participant):
                 if instance is not None and instance.group_id != group.id:
                     continue
                 barrier = _reconstructed_arrival_barrier(link, reconstructed)
-                if not isinstance(barrier, GroupBarrier) or not barrier.notify_arrivals:
+                if (
+                    not isinstance(barrier, GroupBarrier)
+                    or barrier.on_arrival_message is None
+                ):
                     continue
                 if barrier._participant_is_waiting(participant):
                     continue

@@ -590,6 +590,12 @@ subclasses, ``get_waiting_participants(`` and ``SimpleGrouper(``.
 * In bot tests, ``advance_past_wait_pages(bots, max_iterations=...)`` is
   deprecated; pass ``timeout=`` (seconds) instead.
 
+If you used a PsyNet 14.0 release candidate, also change these options,
+which now raise an error naming the replacement:
+
+* ``GroupBarrier(notify_arrivals=False)`` becomes
+  ``GroupBarrier(on_arrival_message=None)``. Drop ``notify_arrivals=True``.
+
 See :doc:`/code/multiplayer/synchronization`.
 
 18. Assets and stimuli

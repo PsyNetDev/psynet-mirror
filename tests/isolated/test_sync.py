@@ -6079,34 +6079,24 @@ def test_default_group_barrier_arrival_message_copy():
             assert message.startswith(start)
 
 
-def test_group_barrier_notify_arrivals_defaults_on():
-    barrier = GroupBarrier(id_="default_notice", group_type="main")
-    assert barrier.notify_arrivals is True
-
-    quiet = GroupBarrier(id_="quiet_notice", group_type="main", notify_arrivals=False)
-    assert quiet.notify_arrivals is False
-
-
-def test_on_arrival_message_customizes_notices_without_turning_them_on():
+def test_on_arrival_message_customizes_or_turns_off_notices():
     barrier = GroupBarrier(
         id_="custom_notice",
         group_type="main",
         on_arrival_message=_custom_arrival_message,
     )
-    assert barrier.notify_arrivals is True
-    quiet = GroupBarrier(
-        id_="quiet_custom_notice",
-        group_type="main",
-        notify_arrivals=False,
-        on_arrival_message=_custom_arrival_message,
-    )
-    assert quiet.notify_arrivals is False
     assert (
         barrier._call_arrival_message(
             kind="notice", waiting_count=1, group_size=2, group=None
         )
         == "custom"
     )
+    quiet = GroupBarrier(id_="quiet_notice", group_type="main", on_arrival_message=None)
+    assert (
+        quiet._call_arrival_message(kind="late", waiting_count=0, group_size=2) is None
+    )
+    with pytest.raises(TypeError, match="on_arrival_message=None"):
+        GroupBarrier(id_="rc_notice", group_type="main", notify_arrivals=False)
 
 
 @pytest.mark.parametrize(
@@ -6973,10 +6963,9 @@ def test_make_late_now_keeps_who_left_since_the_last_pass(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-@pytest.mark.parametrize("notify_arrivals", [True, False])
 @pytest.mark.parametrize("quorum", [2, 3])
 def test_group_barrier_late_after_removes_missing_participants(
-    in_experiment_directory, db_session, notify_arrivals, monkeypatch, quorum
+    in_experiment_directory, db_session, monkeypatch, quorum
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
@@ -6984,7 +6973,6 @@ def test_group_barrier_late_after_removes_missing_participants(
         group_type="main",
         late_after=5,
         late_action="leave_group",
-        notify_arrivals=notify_arrivals,
     )
 
     # Create 4 participants in the same sync group, but only 2 "reach" this barrier.

@@ -520,7 +520,6 @@ def test_pending_arrival_notice_reconstructs_each_instance_once(db_session):
     barrier = GroupBarrier(
         id_=f"notice_{uuid.uuid4().hex[:8]}",
         group_type="notice",
-        notify_arrivals=True,
     )
     for waiter in waiters:
         _arrive_at_group_barrier(exp, barrier, waiter)

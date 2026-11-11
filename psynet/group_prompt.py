@@ -14,7 +14,7 @@ Design constraints:
 - By default a member has answered once they are waiting at a barrier of
   the group (:func:`psynet.sync.is_waiting_at_barrier`), typically the barrier after
   the decision page. Live ticks come from that barrier's arrival updates, so
-  they need ``notify_arrivals`` (the default). A member who reached the
+  they don't work with ``on_arrival_message=None``. A member who reached the
   barrier because their page's time limit ran out gets a dash instead of a
   tick (:func:`psynet.sync.reached_barrier_after_time_limit`).
 - Live redraws re-create the prompt on the server from a signed token, so

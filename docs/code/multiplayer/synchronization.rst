@@ -526,8 +526,8 @@ While a member waits at a barrier, members who have not reached it yet see a
 notice on the progress bar ("Your partner is ready.", or
 "{ARRIVED}/{TOTAL} of your group are ready."). In groups of three or more,
 the waiting indicator also has a smaller second line saying how many members
-are not ready yet. Set ``notify_arrivals=False`` to turn both off, or pass
-``on_arrival_message`` to change the notices. It receives ``kind``
+are not ready yet. Pass ``on_arrival_message`` to change the notices, or
+``on_arrival_message=None`` to turn them all off. It receives ``kind``
 (``"notice"`` for the progress bar, ``"late"`` for the notice a member
 sees after being removed for being late, ``"waited_too_long"`` for the one
 on the next page of a member removed after waiting too long), ``waiting_count`` and
@@ -660,7 +660,7 @@ hide the ticks.
 
 A page without ``answers`` updates live: ticks and dashes appear as members
 arrive at the group's barriers (this uses the barriers' arrival updates, so
-it needs ``notify_arrivals``), and members appear as they join and disappear
+it doesn't work with ``on_arrival_message=None``), and members appear as they join and disappear
 as they leave. A page with ``answers`` is fixed when it loads. Live redraws
 need the same ``FLASK_SECRET_KEY`` on every web process; without one, PsyNet
 logs a warning and the group stays as first drawn:

@@ -48,7 +48,7 @@ _PRESENTATION_FIELDS = {
     "release_grace",
 }
 
-_NOTIFICATION_FIELDS = {"notify_arrivals", "on_arrival_message"}
+_NOTIFICATION_FIELDS = {"on_arrival_message"}
 
 _EXCLUDED_FROM_STATE = _PAGE_FIELDS | _PRESENTATION_FIELDS | _NOTIFICATION_FIELDS
 

@@ -204,12 +204,10 @@ def test_group_barrier_restores_on_arrival_message_callable():
     restored = barrier_from_spec_json(barrier_spec_json(original))
     spec = json.loads(barrier_spec_json(original))
 
-    assert restored.notify_arrivals is True
     assert restored.on_arrival_message.function is arrival_message
     assert spec["notifications"]["on_arrival_message"]["__type__"] == "callable"
-    assert spec["notifications"]["notify_arrivals"] is True
     assert behavior_hash(restored) == behavior_hash(
-        GroupBarrier("pair_hold", group_type="pair", notify_arrivals=False)
+        GroupBarrier("pair_hold", group_type="pair", on_arrival_message=None)
     )
 
 
@@ -220,7 +218,7 @@ def test_group_barrier_restores_scalar_presentation_not_waiting_pages():
         waiting_message="Waiting for your partner",
         max_wait_time=30,
         max_wait_action="leave_group",
-        notify_arrivals=False,
+        on_arrival_message=None,
     )
 
     restored = barrier_from_spec_json(barrier_spec_json(original))
@@ -229,7 +227,7 @@ def test_group_barrier_restores_scalar_presentation_not_waiting_pages():
     assert restored.waiting_message == "Waiting for your partner"
     assert restored.max_wait_time == 30
     assert restored.max_wait_action == "leave_group"
-    assert restored.notify_arrivals is False
+    assert restored.on_arrival_message is None
     _assert_page_fields_omitted(spec, restored)
     assert behavior_hash(restored) == behavior_hash(
         GroupBarrier(
@@ -237,7 +235,6 @@ def test_group_barrier_restores_scalar_presentation_not_waiting_pages():
             group_type="pair",
             waiting_message="Waiting for someone else",
             max_wait_time=90,
-            notify_arrivals=True,
         )
     )
 
