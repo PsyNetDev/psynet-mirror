@@ -2368,6 +2368,9 @@ class GroupBarrier(Barrier):
                 # A peek takes no lock, but still counts newcomers who have
                 # joined since this session loaded the group.
                 db.session.expire(group, ["participant_links"])
+            # Approximate: the check keeps a late member who is busy in their
+            # own request. A wrong "yes" only makes this request wait for the
+            # visit claim; the member is removed at a later sweep.
             late_ids = {
                 participant.id
                 for participant in self._late_between_barriers(group, waiting_ids)

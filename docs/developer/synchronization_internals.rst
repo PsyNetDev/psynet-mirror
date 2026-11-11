@@ -84,9 +84,12 @@ Barrier checks and participant requests take their locks in this order:
    is busy. A cue waits for it, but takes only a ``KEY SHARE`` lock on the
    group row, through its trial's foreign key, which doesn't conflict with
    ``FOR NO KEY UPDATE``.
-5. Members' rows when dissolving the group or removing late members, with
-   ``SKIP LOCKED``, then the rows of links, trials and nodes, and of other
-   groups.
+5. Members' rows when dissolving the group, with ``SKIP LOCKED``, then the
+   rows of links, trials and nodes, and of other groups. A between-barrier
+   timeout locks late members' rows (also ``SKIP LOCKED``) earlier, in
+   :meth:`~psynet.sync.GroupBarrier.check_waiting_participants`, before the
+   round lock is tried. This can't deadlock: the round lock is only tried,
+   and late members' rows are skipped if busy.
 
 So, in framework code, a request holding a sync group row takes other
 participants' rows only with ``SKIP LOCKED`` or ``NOWAIT``:

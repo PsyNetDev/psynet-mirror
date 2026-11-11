@@ -1366,13 +1366,17 @@ def test_late_action_fail_waits_for_a_busy_late_member_then_fails_both(
         assert participant.sync_group_removal_reason("main") == "late"
 
 
+@pytest.mark.parametrize("n", [2, 3])
 @in_consents_experiment
 def test_late_action_leave_group_skips_a_late_member_busy_in_their_own_request(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, n
 ):
-    """A late member whose own request holds their row is removed at a later check."""
+    """A late member whose own request holds their row is removed at a later check.
+
+    Free late members are removed meanwhile.
+    """
     exp = get_experiment()
-    (stayer, late), group = _sync_group_of(exp, db_session, 2)
+    (stayer, *late), group = _sync_group_of(exp, db_session, n)
     group.below_quorum = "continue_without_group"
     barrier = GroupBarrier(
         "late", group_type="main", late_after=5, late_action="leave_group"
@@ -1380,7 +1384,7 @@ def test_late_action_leave_group_skips_a_late_member_busy_in_their_own_request(
     _arrive(exp, barrier, [stayer])
     _backdate_group(group, seconds=10)
     db.session.commit()
-    late_id = late.id
+    *free_ids, late_id = [p.id for p in late]
 
     with db.engine.connect() as busy_request, busy_request.begin():
         busy_request.execute(
@@ -1391,6 +1395,9 @@ def test_late_action_leave_group_skips_a_late_member_busy_in_their_own_request(
         barrier.check_waiting_participants([stayer])
         db.session.commit()
         assert "main" in Participant.query.get(late_id).active_sync_groups
+        for free_id in free_ids:
+            participant = Participant.query.get(free_id)
+            assert participant.sync_group_removal_reason("main") == "late"
 
     barrier.check_waiting_participants([stayer])
     db.session.commit()
@@ -1399,7 +1406,7 @@ def test_late_action_leave_group_skips_a_late_member_busy_in_their_own_request(
 
 @pytest.mark.parametrize("late_action", ["fail", "leave_group"])
 @in_consents_experiment
-def test_a_member_who_reached_the_barrier_during_the_check_is_not_late(
+def test_late_removal_rechecks_a_stale_list_of_waiting_members(
     in_experiment_directory, db_session, late_action
 ):
     """Lateness is rechecked once the member's row is locked.
