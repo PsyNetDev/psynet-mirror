@@ -112,7 +112,7 @@ def left_group(participant):
 
 
 # Why a player who left the group before it shared its median can't revise.
-# Being late or removed shows a notice on the page; a dissolving group's
+# Being late shows a notice on the page; a dissolving group's
 # notice says that too few members remained.
 LEFT_BEFORE_MEDIAN_TEXTS = {
     "late": "Your estimate didn't reach your group in time",

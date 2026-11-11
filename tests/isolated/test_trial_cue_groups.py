@@ -1280,7 +1280,7 @@ def _waited_too_long(exp, group, stayer, leaver):
     return stayer
 
 
-def _removed_without_reason(exp, group, stayer, leaver):
+def _removed_with_default_reason(exp, group, stayer, leaver):
     group.remove_participant(leaver)
     return leaver
 
@@ -1322,7 +1322,7 @@ def _dissolved_after_release(exp, group, stayer, leaver):
         (_late_at_barrier("fail"), "late", 3, True),
         (_late_at_barrier("leave_group"), "late", 2, False),
         (_waited_too_long, "waited_too_long", 2, False),
-        (_removed_without_reason, "removed", 2, False),
+        (_removed_with_default_reason, "removed", 2, False),
         (_dissolved_before_the_barrier, "group_dissolved", 2, False),
         (_dissolved_and_failed, "group_dissolved", 2, True),
         (_late_after_complete, None, 2, False),

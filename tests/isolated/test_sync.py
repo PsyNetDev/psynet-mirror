@@ -6934,9 +6934,11 @@ def test_make_late_now_needs_a_waiting_bot_and_late_after(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_make_late_now_does_not_count_an_earlier_leaver_again(
-    in_experiment_directory, db_session, monkeypatch
+@pytest.mark.parametrize("passed_before", [True, False])
+def test_make_late_now_keeps_who_left_since_the_last_pass(
+    in_experiment_directory, db_session, monkeypatch, passed_before
 ):
+    """An earlier leaver counts in ``left`` only if they left after the group's last pass, or its creation."""
     monkeypatch.setattr(psynet.bot, "advance_past_wait_pages", lambda *a, **k: None)
     exp = get_experiment()
     waiter, quiet, earlier = [new_participant(exp) for _ in range(3)]
@@ -6946,16 +6948,19 @@ def test_make_late_now_does_not_count_an_earlier_leaver_again(
         p.status = "working"
         group.add_participant(p)
     group.remove_participant(earlier, reason="late")
-    group.last_barrier_pass_time = timenow()
+    if passed_before:
+        group.last_barrier_pass_time = timenow()
     barrier = GroupBarrier("round", group_type="main", late_after=30)
     _arrive_at_group_barrier(exp, barrier, waiter)
     db_session.commit()
-    group_id = group.id
+    group_id, earlier_id = group.id, earlier.id
 
     make_late_now([SimpleNamespace(id=waiter.id)], "round")
 
     group = SyncGroup.query.get(group_id)
-    assert group.members_who_left_since(group.last_barrier_pass_time) == []
+    since = group.last_barrier_pass_time or group.creation_time
+    left = [p.id for p in group.members_who_left_since(since)]
+    assert left == ([] if passed_before else [earlier_id])
 
 
 @pytest.mark.parametrize(

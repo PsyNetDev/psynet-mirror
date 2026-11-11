@@ -771,11 +771,13 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         or ``in_sync_group`` instead.
 
         To explain an early end, map the reasons your game can meet to your
-        own text::
+        own text. A missing reason raises ``KeyError``, so include
+        ``"removed"``, which a dashboard removal can give in any game::
 
             ENDED_EARLY_TEXTS = {
                 "late": "You were away for too long, so the game ended early for you.",
                 "group_dissolved": "Too few players stayed, so the game ended early.",
+                "removed": "You were removed from the game.",
             }
             text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason("team")]
         """
