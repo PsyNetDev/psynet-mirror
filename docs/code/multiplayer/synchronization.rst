@@ -1422,7 +1422,9 @@ For the rest of the timeline:
   them no group in time), ``"group_dissolved"``, ``"moved_on"`` (a
   :class:`~psynet.sync.Regrouper` took them out of their previous group, and
   they are waiting there or sitting the round out),
-  ``"finished"`` or ``"left_experiment"`` (they failed or returned the study).
+  ``"finished"`` or ``"left_experiment"`` (they failed or returned the study;
+  a member failed for being late or waiting too long at this group's barrier
+  records ``"late"`` or ``"waited_too_long"`` instead).
   A cued trial whose pages they were on in that group keeps the reason in
   ``sync_group_outcome``, even after they join another group (see
   :ref:`round outcomes <sync-round-outcome>`).
