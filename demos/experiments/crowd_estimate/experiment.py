@@ -192,41 +192,34 @@ class EstimateTrial(Trial):
             t.var.in_median = str(t.participant_id) in estimates if has_median else None
 
     def revise_page(self, participant):
-        late = InfoPage(
-            "Your estimate didn't reach your group in time, so there is "
-            "nothing to revise.",
-            time_estimate=5,
-        )
-        # A member removed from the group passes the barrier without waiting,
-        # so their own outcome comes first: the group may not be scored yet.
+        # A member who left the group passes the barrier without waiting, so
+        # their own outcome comes first: the group may not be scored yet.
         if self.sync_group_outcome == "late":
-            return late
-        # No median if too few estimates arrived, or if the group ended
-        # ("group_dissolved") before the barrier released it, so score_round
-        # didn't run.
-        if self.node.var.get("median") is None:
-            return InfoPage(
-                "Too few estimates arrived for a group median, so there is "
-                "nothing to revise.",
-                time_estimate=5,
+            reason = "Your estimate didn't reach your group in time"
+        elif self.sync_group_outcome == "group_dissolved":
+            # The framework's notice on this page says too few members remained.
+            reason = "Your group ended before you saw its median"
+        elif self.node.var.get("median") is None:
+            reason = "Too few estimates arrived for a group median"
+        elif not self.var.get("in_median"):
+            reason = "You didn't give an estimate in time"
+        else:
+            estimates = self.node.var.estimates
+            return ModularPage(
+                "revised",
+                GroupPrompt(
+                    f"{self.question} The median of your group's {len(estimates)} "
+                    f"estimates is {self.node.var.median:.15g}. "
+                    "Give your revised estimate.",
+                    participant=participant,
+                    group=self.sync_group,
+                    answers={pid: f"{v:.15g}" for pid, v in estimates.items()},
+                ),
+                NumberControl(),
+                time_limit=ANSWER_SECONDS,
+                time_estimate=ANSWER_SECONDS,
             )
-        if not self.var.get("in_median"):
-            # They ran out of time.
-            return late
-        estimates = self.node.var.estimates
-        return ModularPage(
-            "revised",
-            GroupPrompt(
-                f"{self.question} The median of your group's {len(estimates)} "
-                f"estimates is {self.node.var.median:.15g}. Give your revised estimate.",
-                participant=participant,
-                group=self.sync_group,
-                answers={pid: f"{value:.15g}" for pid, value in estimates.items()},
-            ),
-            NumberControl(),
-            time_limit=ANSWER_SECONDS,
-            time_estimate=ANSWER_SECONDS,
-        )
+        return InfoPage(f"{reason}, so there is nothing to revise.", time_estimate=5)
 
 
 class Exp(psynet.experiment.Experiment):
@@ -254,8 +247,10 @@ class Exp(psynet.experiment.Experiment):
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
                     # How the round ended for the player: "stayed" to the
-                    # end, or why they left, such as "late" or
-                    # "group_dissolved"; None alone.
+                    # end, or why they last left during the round's pages,
+                    # such as "late" or "group_dissolved", even after the
+                    # median was shared (in_median says whether the estimate
+                    # counted); None alone.
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or left first.
                     "estimate": t.answer.get("estimate"),
@@ -370,7 +365,10 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(waiting)
         for bot in waiting:
             text = bot.current_page_text
-            assert text.startswith("Too few estimates arrived"), text
+            assert text.startswith("Your group ended before you saw"), text
+            assert bot.current_notice == (
+                "Too few members of your group remained. Please continue."
+            ), bot.current_notice
 
         finishers = [*bots[:5], *stayers, *waiting]
         run_bots_to_completion(finishers)

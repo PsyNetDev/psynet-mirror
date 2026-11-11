@@ -103,8 +103,10 @@ the ``lowest_unique_number`` demo builds a table per player and round and
 one per room from them (see :ref:`rounds-one-trial-per-player`). The
 ``crowd_estimate`` demo does the same for a fixed group that plays one round
 per question; a player who answered on their own has a row with an empty
-``crowd_id``, and its ``outcome`` column, from ``trial.sync_group_outcome``,
-says how the round ended for each player.
+``crowd_id``. Its ``outcome`` column, from ``trial.sync_group_outcome``, says
+how the round ended for each player: ``"stayed"``, or why they last left the
+group during the round's pages, even after the median was shared;
+``in_median`` says whether their estimate counted.
 
 Group membership, for groups formed by a grouper (see
 :doc:`/code/multiplayer/synchronization`), is stored in two tables:
