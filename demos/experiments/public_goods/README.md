@@ -5,12 +5,13 @@ privately puts some of their tokens in a group pot, within a time limit; the
 pot is multiplied and shared between the members who played the round, and
 everyone sees the group's contributions and what they earned, paid as a
 bonus. A member who runs out of time puts nothing in but keeps their tokens
-and their share. The game carries on when a member returns the study or stops
-responding, sharing the pot between fewer players, until only one is left; a
-member who leaves this way earns nothing for that round.
-Nobody is failed for someone else leaving: the last player, a player who was
-away too long, and a participant for whom no group forms are each told why
-the game ended for them.
+and their share. A member who returns the study or stops responding leaves
+the group and earns nothing for that round, and the others carry on, sharing
+the pot between fewer players. When only one player remains, the round is
+cancelled: they keep their tokens for it, and the game ends. Nobody is failed
+for someone else leaving: the last player, a player who was away too long,
+and a participant for whom no group forms are each told why the game ended
+for them.
 
 Good reference for a `SimpleGrouper` with a `quorum` whose members carry on
 without the group, a scoring `GroupBarrier` with `late_after`, `on_release`
