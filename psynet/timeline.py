@@ -2096,6 +2096,8 @@ class Page(Elt):
         trial = resp.trial
         if trial is not None:
             trial.response = resp
+            if self.time_limit is not None:
+                trial.time_limit_reached = resp.time_limit_reached
             page_time = resp.metadata.get("time_taken")
             if page_time is not None:
                 trial.time_taken = (trial.time_taken or 0) + page_time

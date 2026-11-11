@@ -226,7 +226,7 @@ class _GuessTrial(Trial):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_a_trial_reports_whether_its_latest_page_timed_out(
+def test_a_trial_keeps_whether_its_timed_page_ran_out(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
@@ -244,7 +244,13 @@ def test_a_trial_reports_whether_its_latest_page_timed_out(
             == "approved"
         )
         assert trial.time_limit_reached is True
+
+        # Neither a barrier release ending a wait nor an untimed page clears it.
+        confirm = ModularPage("confirm", "Sure?", TextControl())
+        exp._record_interrupted_response(confirm, participant, {})
+        assert trial.response.metadata["interrupted"]
+        assert trial.time_limit_reached is True
         assert _submit(exp, participant, "yes")["submission"] == "approved"
-        assert trial.time_limit_reached is False
+        assert trial.time_limit_reached is True
     finally:
         exp.timeline = original

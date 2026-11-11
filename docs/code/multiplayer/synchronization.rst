@@ -358,11 +358,11 @@ members who have since left, each with its ``sync_group_role``.
 .. _sync-reading-rounds:
 
 :attr:`trial.time_limit_reached <psynet.trial.main.Trial.time_limit_reached>`
-says whether a member's page ran out of time before their answer, so
-``on_release`` can score a timed-out answer differently. It describes the
-trial's latest accepted page, so save it in ``on_release`` if a later page of
-the trial could replace it. To read a group's rounds after the game, for
-example on a debrief page once the group has ended,
+says whether a member's latest timed page ran out of time before their
+answer, so ``on_release`` can score a timed-out answer differently. The trial
+keeps it through later untimed pages and barrier waits, and it is exported
+with the trial. To read a group's rounds after the game, for example on a
+debrief page once the group has ended,
 :meth:`group.rounds(module_id) <psynet.sync.SyncGroup.rounds>` returns the
 group's nodes for that module of cued trials in round order:
 
@@ -370,7 +370,7 @@ group's nodes for that module of cued trials in round order:
 
     def score_round(trials, node):
         for trial in trials:
-            trial.var.timed_out = trial.time_limit_reached
+            trial.score = 0 if trial.time_limit_reached else trial.answer
         ...
 
     def story_so_far(group):

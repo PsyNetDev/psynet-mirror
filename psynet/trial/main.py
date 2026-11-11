@@ -357,6 +357,17 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         such as ``UnityPage``, adds nothing, so a trial whose pages are all of
         that kind keeps ``None``.
         Equals ``None`` until the participant submits a trial page.
+
+    time_limit_reached : bool or None
+        Whether the ``time_limit`` of the trial's latest timed page ran out
+        before it was answered, as in
+        :attr:`psynet.timeline.Response.time_limit_reached`. It is set when a
+        page of :meth:`~psynet.trial.main.Trial.show_trial` with a
+        ``time_limit`` is accepted, and kept through later untimed pages,
+        barrier waits and feedback, so for example a
+        :class:`~psynet.sync.GroupBarrier`'s ``on_release`` can read it after
+        a waiting page. Equals ``None`` until a timed page of the trial is
+        answered.
     """
 
     __tablename__ = "trial"
@@ -456,6 +467,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     repeat_trial_index = Column(Integer)
     n_repeat_trials = Column(Integer)
     time_taken = Column(Float)
+    time_limit_reached = Column(Boolean)
     _initial_assets = deferred(Column(PythonDict))
 
     time_credit_before_trial = Column(Float)
@@ -568,24 +580,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @property
     def var(self):
         return VarStore(self)
-
-    @property
-    def time_limit_reached(self) -> Optional[bool]:
-        """Whether the page's ``time_limit`` ran out before the trial's :attr:`response` was given.
-
-        Reads :attr:`psynet.timeline.Response.time_limit_reached` of
-        :attr:`response`, the latest accepted page of
-        :meth:`~psynet.trial.main.Trial.show_trial`, so with several pages it
-        describes the latest one only. It is ``None`` before the participant
-        submits a trial page, and ``False`` once a waiting page in
-        ``show_trial`` that a barrier release ended has replaced the response.
-        To keep a particular page's flag, copy it once that page is answered,
-        for example in the ``on_release`` of the barrier that follows it::
-
-            for trial in trials:
-                trial.var.timed_out = trial.time_limit_reached
-        """
-        return None if self.response is None else self.response.time_limit_reached
 
     @classmethod
     def get_for_participant(cls, participant_id: int, trial_maker_id: int = None):
@@ -1301,9 +1295,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         - Put a :class:`~psynet.sync.GroupBarrier` in each round, for example
           in :meth:`show_trial`, so that members stay in step.
         - The barriers' ``on_release`` can read each member's answer so far
-          from ``trial.answer``: ``None`` there means the page ran out of
-          time. With several answer pages before a barrier, set
-          :attr:`accumulate_answers` to get them all.
+          from ``trial.answer``, and whether their timed page ran out of
+          time from :attr:`time_limit_reached`. With several answer pages
+          before a barrier, set :attr:`accumulate_answers` to get them all.
         - In a loop of rounds played by a fixed group, pass the loop value as
           ``round``, so that a definition can come from the loop. Otherwise a
           grouped cue's definition must not depend on the player's own

@@ -4495,7 +4495,7 @@ class SyncGroup(SQLBase, SQLMixin):
         Returns
         -------
         list of SyncGroupNode
-            Ordered by ``sync_group_round``; empty if the group has cued no
+            Ordered by ``sync_group_round``, then by node ID; empty if the group has cued no
             round in the module, including a module run by a trial maker with
             ``sync_group_type``, whose rounds have no group nodes.
         """
