@@ -1737,6 +1737,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         else:
             label = f"{cls.__name__}__feedback"
 
+        feedback_pages = PageMaker(
+            lambda experiment, participant: participant.current_trial.show_feedback(
+                experiment=experiment, participant=participant
+            ),
+            time_estimate=0,
+        )
+        # Feedback pages' time limits don't count as running out of time.
+        feedback_pages._trial_feedback = True
+
         return conditional(
             label=label,
             condition=lambda experiment, participant: (
@@ -1762,14 +1771,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                     condition=lambda participant: (
                         not participant.current_trial._recording_failed
                     ),
-                    logic_if_true=PageMaker(
-                        lambda experiment, participant: (
-                            participant.current_trial.show_feedback(
-                                experiment=experiment, participant=participant
-                            )
-                        ),
-                        time_estimate=0,
-                    ),
+                    logic_if_true=feedback_pages,
                     fix_time_credit=False,
                     log_chosen_branch=False,
                 ),
