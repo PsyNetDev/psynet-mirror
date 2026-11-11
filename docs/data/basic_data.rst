@@ -104,10 +104,10 @@ to, counted from 0 and shared by a member who joined the group late; a group
 re-formed every round, as by a :class:`~psynet.sync.Regrouper`, plays only
 round 0. The group's trials with the same
 ``sync_group_id`` and ``sync_group_round`` are one round. All three stay after
-the group ends. Cued trials of one group and round also share a
+the group ends. The trials of one group and round also share a
 :class:`~psynet.sync.SyncGroupRound` (``trial.group_round``), which can hold
-the group's results in ``var`` and records in ``closed_at`` when a group
-barrier released the round and in ``dissolved_at`` when the group dissolved during it
+the group's results in ``var`` and records in ``closed_at`` when the round
+closed and in ``dissolved_at`` when the group dissolved during it
 (see :ref:`dissolved rounds <sync-dissolved-round>`);
 the ``public_goods`` demo builds a table per player and round and
 one per team and round from them (see :ref:`rounds-one-trial-per-player`). The

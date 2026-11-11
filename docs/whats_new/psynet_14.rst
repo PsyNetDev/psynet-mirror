@@ -116,7 +116,9 @@ instead of holding up or failing the others. Each round can be one
 ``Trial.cue`` per player: with ``sync_group_type`` on the trial class, the
 trials of a group's round share a round record
 (:class:`~psynet.sync.SyncGroupRound`) that holds the group's results, and
-every trial records its group, the player's role and the round. See
+every trial records its group, the player's role, the round and how the
+round ended for the player. A trial maker with ``sync_group_type`` makes
+such a round each time it prepares the group's trials. See
 :doc:`/code/multiplayer/writing_a_round_based_experiment`.
 
 Stimuli and assets

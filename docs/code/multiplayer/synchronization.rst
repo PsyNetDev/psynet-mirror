@@ -792,6 +792,30 @@ group, the member's role and the group's round, counted from 0, in
 ``sync_group_id``, ``sync_group_role`` and ``sync_group_round`` (see
 :ref:`basic_data_groups`).
 
+.. _trial-maker-rounds:
+
+Each time the trial preparation releases the group with new trials, they
+share a new :class:`~psynet.sync.SyncGroupRound` (``trial.group_round``),
+including the trials of newcomers admitted there. A barrier's
+``on_release`` in the trial gets it as ``group_round``, so it can store the
+group's results once in ``group_round.var``, as the ``create_rate_sync``
+demo does. Rounds are numbered per group and trial maker, continuing
+across runs when a loop repeats the trial maker; a leader told to wait
+gives the group no trials and uses up no number. A round closes, setting
+its ``closed_at``:
+
+- when a ``GroupBarrier`` in the trial releases the group while every
+  member it releases is in the round's trial. Each released member's trial
+  records ``sync_group_outcome="stayed"``;
+- otherwise when the trial preparation next releases the group, also at
+  the end of the trial maker. The trials that members still in the group
+  have completed record ``"stayed"``.
+
+Leaving the group during the trial, and the group dissolving, are recorded
+as for cued trials (see :ref:`sync-group-rounds`). :meth:`SyncGroup.rounds()
+<psynet.sync.SyncGroup.rounds>`, given the trial maker's id, returns the
+group's rounds of the trial maker.
+
 ``sync_group_waiting_message`` sets the waiting message for the trial maker's own
 waits. Grouper and barrier waits use their own ``waiting_message``, so pass the
 same text to each if the messages should match.
@@ -809,9 +833,8 @@ are fixed or formed anew each round. For a worked example, with the
 group's results in ``group_round.var`` and the exports, see
 :ref:`rounds-one-trial-per-player` in the round-based tutorial. For a group
 that works through a stimulus set or a chain, use a trial maker with
-``sync_group_type`` instead (see :ref:`concept_groups` for how to choose).
-``sync_group_outcome`` and :meth:`SyncGroup.rounds()
-<psynet.sync.SyncGroup.rounds>` only cover cued trials.
+``sync_group_type`` instead (see :ref:`concept_groups` for how to choose,
+and :ref:`trial-maker-rounds` for its rounds).
 
 ``cue`` numbers each group's rounds by itself, from 0:
 
@@ -1176,8 +1199,8 @@ the maximum waiting time:
     ``late_action="leave_group"`` with ``below_quorum="fail"``. Whichever
     action it is, the late member leaves the barrier's group with the
     reason ``"late"``, so ``participant.sync_group_removal_reason`` says
-    ``"late"`` even when they are failed, and so does their cued trial's
-    ``sync_group_outcome`` unless an earlier barrier of the round released
+    ``"late"`` even when they are failed, and so does the
+    ``sync_group_outcome`` of their trial in the round unless an earlier barrier of the round released
     the group with them in it.
     Members who arrive on time wait for the
     others until they arrive or are late, so they need no ``max_wait_time``
@@ -1193,7 +1216,7 @@ the maximum waiting time:
     is acting: code in their own request, such as a
     :class:`~psynet.timeline.CodeBlock` that stores their answer, either runs
     before the removal or sees it (``participant.sync_group_removal_reason``,
-    or, before the round's first release, a cued trial's
+    or, before the round's first release, their trial's
     ``sync_group_outcome``), and needs no locks of its own.
 
     A member who has started a page with a ``time_limit``, other than a

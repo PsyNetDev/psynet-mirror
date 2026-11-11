@@ -384,7 +384,7 @@ with a group. List the cases and your decisions in the experiment's README.
 | Joins but is never admitted (`admit_newcomers="at_admission_point"`) | reason `"not_admitted"`, from `newcomer_max_wait`, top-ups stopping or the group ending | Send a bot in while the group plays, then end the group or stop its top-ups |
 
 The reasons come from `participant.sync_group_removal_reason(group_type)`;
-a cued trial's `sync_group_outcome` holds the same value until a barrier
+the `sync_group_outcome` of their trial in the round holds the same value until a barrier
 releases the group. A player who comes back after being removed keeps their
 reason; test it by taking pages for the silent bot again.
 

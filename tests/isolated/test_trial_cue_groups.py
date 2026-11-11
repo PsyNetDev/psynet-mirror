@@ -1085,13 +1085,14 @@ class CustomStaticTrialMaker(StaticTrialMaker):
         return trial, "available"
 
 
-@in_consents_experiment
-def test_a_synchronized_trial_maker_records_group_role_and_round(
-    in_experiment_directory, db_session, caplog
-):
-    exp = get_experiment()
-    cohort, pairs = _paired(exp)
+def _paired_trial_maker(exp):
+    """Return a pair, its members (leader first) and a trial maker they have started."""
+    cohort, _ = _paired(exp)
     pair = cohort[0].active_sync_groups["pair"]
+    return pair, [pair.leader, *pair.active_followers], _started_trial_maker(cohort)
+
+
+def _started_trial_maker(participants):
     trial_maker = CustomStaticTrialMaker(
         id_="paired_static",
         trial_class=PairTrial,
@@ -1100,11 +1101,67 @@ def test_a_synchronized_trial_maker_records_group_role_and_round(
         max_trials_per_participant=1,
         sync_group_type="pair",
     )
-    for participant in cohort:
+    for participant in participants:
         participant.start_module(trial_maker)
         participant.module_state.trial_maker_initialized = True
+    return trial_maker
 
-    members = [pair.leader, *pair.active_followers]
+
+@in_consents_experiment
+def test_a_trial_maker_s_next_trials_close_its_round(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    pair, members, trial_maker = _paired_trial_maker(exp)
+    trial_maker._try_to_prepare_trial_group(pair, members)
+    first = members[0].current_trial.group_round
+    assert (first.module_id, first.trial_maker_id) == (trial_maker.id,) * 2
+    assert set(first.trials) == {p.current_trial for p in members}
+
+    _complete_trials(members)
+    trial_maker._try_to_prepare_trial_group(pair, members)
+    second = members[0].current_trial.group_round
+    assert first.closed_at is not None and second.closed_at is None
+    assert [t.sync_group_outcome for t in first.trials] == ["stayed", "stayed"]
+    assert pair.rounds(trial_maker.id) == [first, second]
+
+
+@in_consents_experiment
+def test_a_barrier_in_a_trial_maker_s_trial_closes_its_round(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    pair, members, trial_maker = _paired_trial_maker(exp)
+    trial_maker._try_to_prepare_trial_group(pair, members)
+    group_round = members[0].current_trial.group_round
+    _arrive(exp, GroupBarrier("answered", group_type="pair"), members)
+    assert group_round.closed_at is not None
+    assert [t.sync_group_outcome for t in group_round.trials] == ["stayed"] * 2
+
+
+@in_consents_experiment
+def test_a_trial_maker_s_round_records_its_group_dissolving(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    (stayer, leaver), pair = _sync_group_of(exp, db_session, 2, group_type="pair")
+    pair.below_quorum = "continue_without_group"
+    trial_maker = _started_trial_maker([stayer, leaver])
+    trial_maker._try_to_prepare_trial_group(pair, [stayer, leaver])
+    db.session.commit()
+    group_round = stayer.current_trial.group_round
+    leaver.fail("returned")
+    assert group_round.dissolved_at is not None and group_round.closed_at is None
+    assert stayer.current_trial.sync_group_outcome == "group_dissolved"
+    assert leaver.current_trial.sync_group_outcome == "left_experiment"
+
+
+@in_consents_experiment
+def test_a_synchronized_trial_maker_records_group_role_and_round(
+    in_experiment_directory, db_session, caplog
+):
+    exp = get_experiment()
+    pair, members, trial_maker = _paired_trial_maker(exp)
     for round in (0, 1, 2):
         if round == 2:
             # Repeat each player's last trial.

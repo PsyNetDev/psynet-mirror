@@ -1948,7 +1948,7 @@ class GroupBarrier(Barrier):
     max_wait_action
         What happens to a member who waits longer than ``max_wait_time``. Either way they first leave the
         group, which records ``"waited_too_long"`` as their removal reason and, unless a release has
-        already made it ``"stayed"``, their cued trial's ``sync_group_outcome``. ``"fail"`` (default) then fails them, after they leave their other groups as
+        already made it ``"stayed"``, the ``sync_group_outcome`` of their trial in the group's round. ``"fail"`` (default) then fails them, after they leave their other groups as
         ``"left_experiment"``, and sends them to the end of the experiment; with ``"leave_group"`` they carry on with the
         experiment without the group (see :ref:`sync-leaving-a-group`).
         With ``"leave_group"``, their next page says "Your partner didn't arrive in time. Please continue." in a pair (see
@@ -1975,7 +1975,7 @@ class GroupBarrier(Barrier):
         members who were on time while the late one carries on; the experiment raises an error at load.
         With every action the member leaves this
         barrier's group with the reason ``"late"`` (with ``"fail"``, before they are failed), which their
-        cued trial's :attr:`~psynet.trial.main.Trial.sync_group_outcome` records unless an earlier barrier
+        trial in the group's round records in :attr:`~psynet.trial.main.Trial.sync_group_outcome` unless an earlier barrier
         in the trial's pages already released the group with them in it (then it stays ``"stayed"``). A
         group without top-ups that this leaves below
         its quorum dissolves as its ``below_quorum`` says, so with ``late_action="fail"`` and
@@ -1986,7 +1986,7 @@ class GroupBarrier(Barrier):
         brought them to this barrier, they are no longer late. So code a late member runs in their own
         request, such as a :class:`~psynet.timeline.CodeBlock` storing their answer, either runs before the
         removal or sees it (``participant.sync_group_removal_reason``, or, before the round's first
-        release, a cued trial's :attr:`~psynet.trial.main.Trial.sync_group_outcome`).
+        release, their trial's :attr:`~psynet.trial.main.Trial.sync_group_outcome`).
 
     also_leave
         With ``late_action="leave_group"``, the other group types a late member also leaves, with the
@@ -5254,7 +5254,8 @@ class SyncGroupRound(SQLBase, SQLMixin):
     class with ``sync_group_type`` (``trial_maker_id`` is ``None``), when the
     round's first member cues it, or by a trial maker with
     ``sync_group_type`` each time it prepares the group's trials. See
-    :ref:`sync-group-rounds` for when rounds open and close.
+    :ref:`sync-group-rounds` and :ref:`trial-maker-rounds` for when rounds
+    open and close.
 
     Attributes
     ----------
@@ -5319,9 +5320,9 @@ class SyncGroupRound(SQLBase, SQLMixin):
     )
 
     __table_args__ = (
-        # Concurrent first cues and trial preparations rely on these to
-        # create each round once (see _find_or_create). Cues outside a
-        # module have no module_id, which must still be unique.
+        # Concurrent first cues rely on the first to create each cued round
+        # once (see _find_or_create). Cues outside a module have no
+        # module_id, which must still be unique.
         Index(
             "ix_sync_group_round_cued",
             sync_group_id,
@@ -5346,8 +5347,8 @@ class SyncGroupRound(SQLBase, SQLMixin):
         return db.session.get(SyncGroup, self.sync_group_id)
 
     @classmethod
-    def _find_or_create(cls, group_id, module_id, trial_maker_id, number):
-        """Return the group's round with these keys and whether this call created it.
+    def _find_or_create(cls, group_id, module_id, number):
+        """Return the group's cued round with these keys and whether this call created it.
 
         Parallel requests may create the same round, for example two members'
         first cues, so this inserts it with ``ON CONFLICT DO NOTHING``. A
@@ -5357,7 +5358,6 @@ class SyncGroupRound(SQLBase, SQLMixin):
         values = dict(
             sync_group_id=group_id,
             module_id=module_id,
-            trial_maker_id=trial_maker_id,
             number=number,
             type=cls.__mapper__.polymorphic_identity,
         )
@@ -5367,11 +5367,7 @@ class SyncGroupRound(SQLBase, SQLMixin):
         ).scalar()
         query = cls.query.filter_by(
             sync_group_id=group_id, module_id=module_id, number=number
-        ).filter(
-            cls.trial_maker_id.is_(None)
-            if trial_maker_id is None
-            else cls.trial_maker_id == trial_maker_id
-        )
+        ).filter(cls.trial_maker_id.is_(None))
         return query.populate_existing().one(), inserted is not None
 
     def _close(self, stayed_trials):

@@ -8,8 +8,9 @@ member can't hold up the group; a member who runs out of time doesn't vote.
 Each trial collects both answers in ``trial.answer`` (``accumulate_answers``).
 After each phase, a :class:`~psynet.sync.GroupBarrier`'s ``on_release`` reads
 the members' answers from their trials and stores what the next page needs
-in each trial's ``var``: everyone's creations, and then everyone's votes and
-the winning creation.
+once on the group's round (``group_round.var``), which the members' trials
+share: everyone's creations, and then everyone's votes and the winning
+creation.
 """
 
 import random
@@ -20,7 +21,7 @@ import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl, TextControl
-from psynet.sync import GroupBarrier, SimpleGrouper
+from psynet.sync import GroupBarrier, SimpleGrouper, SyncGroupRound
 from psynet.timeline import PageMaker, Timeline, join
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 
@@ -64,15 +65,17 @@ class CreateRateTrial(StaticTrial):
         )
 
     @classmethod
-    def store_creations(cls, trials: List["CreateRateTrial"]):
-        """Store every member's creation on each member's trial."""
-        creations = {str(t.participant_id): t.answer["create"] for t in trials}
-        for trial in trials:
-            trial.var.creations = creations
+    def store_creations(
+        cls, trials: List["CreateRateTrial"], group_round: SyncGroupRound
+    ):
+        """Store every member's creation on the group's round."""
+        group_round.var.creations = {
+            str(t.participant_id): t.answer["create"] for t in trials
+        }
 
     @classmethod
-    def count_votes(cls, trials: List["CreateRateTrial"]):
-        """Store every member's vote and the result of the vote on each member's trial.
+    def count_votes(cls, trials: List["CreateRateTrial"], group_round: SyncGroupRound):
+        """Store every member's vote and the result of the vote on the group's round.
 
         A member who ran out of time has the vote ``None``. The result is
         ``"winner"`` (stored with the ``winner`` creation), ``"tie"`` or
@@ -86,10 +89,9 @@ class CreateRateTrial(StaticTrial):
             result, winner = "winner", counts[0][0]
         else:
             result, winner = "tie", None
-        for trial in trials:
-            trial.var.votes = votes
-            trial.var.result = result
-            trial.var.winner = winner
+        group_round.var.votes = votes
+        group_round.var.result = result
+        group_round.var.winner = winner
 
     def rate(self, participant):
         return ModularPage(
@@ -108,14 +110,15 @@ class CreateRateTrial(StaticTrial):
         """Return the other members' creations in random order."""
         creations = [
             creation
-            for participant_id, creation in self.var.creations.items()
+            for participant_id, creation in self.group_round.var.creations.items()
             if participant_id != str(self.participant_id)
         ]
         random.shuffle(creations)
         return creations
 
     def show_ratings(self, participant):
-        votes = dict(self.var.votes)
+        results = self.group_round.var
+        votes = dict(results.votes)
         own = votes.pop(str(participant.id))
         others = sorted(v for v in votes.values() if v is not None)
         you = "You ran out of time to vote" if own is None else f"You voted for {own}"
@@ -126,12 +129,12 @@ class CreateRateTrial(StaticTrial):
         else:
             partners = f"your partners voted for {others[0]} and {others[1]}"
 
-        creations, winner = self.var.creations, self.var.winner
+        creations, winner = results.creations, results.winner
         highlight = {}
-        if self.var.result == "winner":
+        if results.result == "winner":
             note = f"{winner} got the most votes."
             highlight = {pid: "winner" for pid, c in creations.items() if c == winner}
-        elif self.var.result == "no_votes":
+        elif results.result == "no_votes":
             note = "Nobody voted."
         else:
             note = "It's a tie."

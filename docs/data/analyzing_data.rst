@@ -90,7 +90,7 @@ trial's vars (``action``), as the demo's basic data shows (see
 
 Group details such as ``group_type`` are in the ``sync_group`` table, and
 each member's role and removal reason in ``participant_link_sync_group``.
-For cued trials, the group's results are in the ``sync_group_round`` table:
+The group's results for each round are in the ``sync_group_round`` table:
 each trial's ``sync_group_round_id`` points to its row, whose
 ``sync_group_id`` and ``number`` match the trial's ``sync_group_id`` and
 ``sync_group_round``.

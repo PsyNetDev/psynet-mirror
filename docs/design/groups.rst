@@ -119,15 +119,15 @@ Groups can go through the experiment in two ways, **cued trials** or a
        member getting a trial on the same stimulus
      - **A synchronized trial maker**: a trial maker with a group type
        (``sync_group_type``), which gives the members trials on the same
-       nodes and keeps them in step from trial to trial.
+       nodes and keeps them in step from trial to trial. Each time it
+       prepares the group's trials, they share a new
+       :class:`~psynet.sync.SyncGroupRound`.
      - ``create_rate_sync``, ``gibbs_within_sync``
 
 Either way, each trial records the group, the player's role and the round,
-so the data can be analyzed round by round. Only cued trials record how the
-round ended for each player (``trial.sync_group_outcome``) and can be read
-back round by round with
-:meth:`SyncGroup.rounds() <psynet.sync.SyncGroup.rounds>`; a synchronized
-trial maker's trials have neither, so read them from the trial table.
+and how the round ended for the player (``trial.sync_group_outcome``), so
+the data can be analyzed round by round. A group's rounds can be read back
+in order with :meth:`SyncGroup.rounds() <psynet.sync.SyncGroup.rounds>`.
 
 Talking to each other
 ---------------------

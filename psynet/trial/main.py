@@ -305,7 +305,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         :class:`~psynet.sync.SyncGroupRound` (:attr:`group_round`), and each
         trial records the group, the participant's role and the
         round. Only used by :meth:`cue`; trial
-        makers take ``sync_group_type`` as an argument instead.
+        makers take ``sync_group_type`` as an argument instead, and make one
+        round each time they prepare the group's trials.
 
     sync_group_optional : bool
         With :attr:`sync_group_type`, set this class attribute to ``True`` to
@@ -471,8 +472,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             "and in the ``left`` of the next barrier's ``on_release`` "
             "instead. Barriers and departures after the "
             "trial's pages, such as in :meth:`show_feedback` or between "
-            "rounds, write nothing. ``None`` while nothing has happened yet, "
-            "and for ungrouped trials."
+            "rounds, write nothing. The exception is a trial maker's round "
+            "that no barrier in the trial's pages released: when the trial "
+            'maker prepares the group\'s next trials, ``"stayed"`` is written '
+            "on the complete trials of the members still in the group. "
+            "``None`` while nothing has happened yet, and for ungrouped trials."
         ),
     )
     definition = Column(PythonObject)
@@ -3260,6 +3264,7 @@ class TrialMaker(Module):
 
         experiment = get_experiment()
         self._init_released_members(group, participants, experiment)
+        self._close_group_rounds(group)
 
         leader = group.leader
 
@@ -3272,26 +3277,61 @@ class TrialMaker(Module):
                 participant=follower,
                 leader=group.leader,
             )
-        self._number_group_round(group, [leader, *group.active_followers])
+        self._start_group_round(group, [leader, *group.active_followers])
 
-    def _number_group_round(self, group: SyncGroup, members):
-        """Give the trials just created for ``group`` its next round number."""
+    def _close_group_rounds(self, group: SyncGroup):
+        """Close the group's rounds of this trial maker that no barrier in the trial closed.
+
+        Members still in the group whose trial in the round is complete
+        stayed to the end of it.
+        """
+        member_ids = {p.id for p in group.active_participants}
+        open_rounds = SyncGroupRound.query.filter_by(
+            sync_group_id=group.id,
+            trial_maker_id=self.id,
+            closed_at=None,
+            dissolved_at=None,
+        )
+        for group_round in open_rounds:
+            group_round._close(
+                [
+                    t
+                    for t in group_round.trials
+                    if t.participant_id in member_ids
+                    and t.complete
+                    and t.sync_group_outcome is None
+                ]
+            )
+
+    def _start_group_round(self, group: SyncGroup, members):
+        """Put the trials just prepared for ``group`` in its next round of this trial maker.
+
+        Rounds are numbered from 0 per group and trial maker, continuing
+        across runs of the trial maker, for example in a loop around it.
+        """
         trials = [
             member.current_trial
             for member in members
             if member.current_trial is not None
-            and member.current_trial.sync_group_round is None
+            and member.current_trial.group_round is None
         ]
         if not trials:
             return
         latest = (
-            db.session.query(func.max(Trial.sync_group_round))
+            db.session.query(func.max(SyncGroupRound.number))
             .filter_by(sync_group_id=group.id, trial_maker_id=self.id)
             .scalar()
         )
-        number = 0 if latest is None else latest + 1
+        group_round = SyncGroupRound(
+            sync_group_id=group.id,
+            module_id=self.id,
+            trial_maker_id=self.id,
+            number=0 if latest is None else latest + 1,
+        )
+        db.session.add(group_round)
         for trial in trials:
-            trial.sync_group_round = number
+            trial.group_round = group_round
+            trial.sync_group_round = group_round.number
 
     max_time_waiting_for_trial = 60
 
@@ -4639,7 +4679,7 @@ def _cued_round(group, round_number, participant, make_definition, trial_class):
             "per participant; give each run of it its own module id."
         )
     group_round, created = SyncGroupRound._find_or_create(
-        group.id, module_id, None, round_number
+        group.id, module_id, round_number
     )
     if created:
         group_round.definition = make_definition(round_number)
