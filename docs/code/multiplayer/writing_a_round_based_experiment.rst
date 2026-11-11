@@ -381,29 +381,35 @@ stores their ID for every member's trial and for the export:
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
    :pyobject: choose_writer
 
-The writer gets the writing page before the turn's barrier; the others go
-straight to the barrier, whose ``waiting_screen`` shows them the story so
-far. The barrier closes the round, and its ``on_release`` saves the writer's
-sentence in ``node.var``:
+The writer gets the writing page and then a code block that stores their
+sentence in ``node.var``, before the turn's barrier; the others go straight
+to the barrier, whose ``waiting_screen`` shows them the story so far. The
+barrier closes the round:
 
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
    :pyobject: StoryTurn.show_trial
 
+The sentence is stored in the writer's own request, so it is there before
+the barrier lets the others go on, and it is kept if the group dissolves
+while the writer is still writing. A writer the barrier has removed for
+being late stores nothing; locking their trial first makes a submit that
+races the removal wait for it:
+
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
    :pyobject: StoryTurn.save_sentence
 
-Nothing runs when a group dissolves, so if the group dissolves before the
-turn's barrier releases, whether the writer is still writing or already
-waiting there, the writer's own trial saves their sentence when it
-finishes:
+A turn can also end without a sentence, when the writer is late or leaves.
+Each member's trial stores ``None`` when it finishes if the turn has no
+sentence yet, so every finished turn has one, whether the barrier released
+or the group dissolved:
 
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
    :pyobject: StoryTurn.on_finalized
 
-A sentence that never arrived is saved as ``None``, and the writer trial's
-``sync_group_outcome`` says why: ``"stayed"`` if they ran out of time,
-``"late"`` if the barrier took them out, ``"left_experiment"`` if they
-returned the study, or ``"group_dissolved"`` if the others left. If the
+When the sentence is ``None``, the writer trial's
+``sync_group_outcome`` says why: ``"stayed"`` if they ran out of time, or
+why they left the group, such as ``"late"`` if the barrier took them out or
+``"left_experiment"`` if they returned the study. If the
 chosen writer leaves between the turn's first cue and their own, they have
 no trial for the turn at all, and the export's ``writer_outcome`` is
 ``None``. The export has one row per turn, from the nodes and the writers'

@@ -14,13 +14,14 @@ Everything the story needs is stored rather than worked out later:
   members joined, and stores their ID as ``writer_id`` in the node's
   definition. If the member in that seat has left, the member in the next
   seat writes instead, so turns become uneven (for example A, C, C).
-- The barrier's ``on_release`` saves the writer's sentence in
-  ``node.var.sentence``, or ``None`` if none arrived. Nothing runs when a
-  group dissolves, so if the group dissolves before the turn's barrier
-  releases, the writer's own trial saves its sentence when it finishes.
-  Why a sentence didn't arrive is the
-  writer trial's ``sync_group_outcome``: ``"stayed"`` if they ran out of
-  time, or why they left the group.
+- The writer stores their sentence in ``node.var.sentence`` as soon as they
+  submit it, before the turn's barrier, or ``None`` if they ran out of time.
+  A writer the barrier has removed as late stores nothing. When a member's
+  trial finishes and the turn still has no sentence, because the writer was
+  late or left, it stores ``None``. So every finished turn has a
+  ``sentence``, whether the barrier released or the group dissolved. Why a
+  sentence is ``None`` is the writer trial's ``sync_group_outcome``:
+  ``"stayed"`` if they ran out of time, or why they left the group.
 - The last page reads the story from the nodes of the group whose ID each
   member stored when the group formed, so it still works after the group
   has ended.
@@ -37,6 +38,8 @@ Dropouts:
 """
 
 from typing import List, Optional
+
+from dallinger import db
 
 import psynet.experiment
 from psynet.bot import (
@@ -169,11 +172,12 @@ class StoryTurn(Trial):
             waiting_screen=waiting_for_writer,
             late_after=LATE_AFTER,
             late_action="leave_group",
-            on_release=self.save_sentence,
         )
         if not self.is_writer:
             return barrier
-        return join(self.write_page(participant), barrier)
+        return join(
+            self.write_page(participant), CodeBlock(self.save_sentence), barrier
+        )
 
     def write_page(self, participant):
         story = story_text(self.sync_group_id)
@@ -195,23 +199,23 @@ class StoryTurn(Trial):
             time_limit=WRITE_SECONDS,
         )
 
-    @classmethod
-    def save_sentence(cls, node: SyncGroupNode):
-        """Save the writer's sentence on the turn's node, or ``None`` if none arrived."""
-        trial = writer_trial(node)
-        node.var.sentence = trial.answer if trial else None
+    def save_sentence(self, participant):
+        """Store the writer's sentence on the turn's node, unless the barrier has removed them as late.
+
+        The sentence is ``None`` if they ran out of time. A writer whose
+        group dissolved while they wrote still finishes the story. Locking
+        the trial makes a submit that races the late removal wait for it, so
+        a removed writer's sentence never lands.
+        """
+        db.session.refresh(self, ["sync_group_outcome"], with_for_update=True)
+        if self.sync_group_outcome in (None, "group_dissolved"):
+            self.node.var.sentence = participant.answer
 
     def on_finalized(self):
+        """Store ``None`` as the sentence if the turn ended without one, because the writer was late or left."""
         super().on_finalized()
-        # Only a writer whose group dissolved before the turn's barrier
-        # released saves their own sentence, because on_release never ran.
-        # A writer removed as "late" doesn't.
-        if (
-            self.is_writer
-            and self.sync_group_outcome == "group_dissolved"
-            and not self.node.var.has("sentence")
-        ):
-            self.node.var.sentence = self.answer
+        if not self.node.var.has("sentence"):
+            self.node.var.sentence = None
 
     def show_feedback(self, experiment, participant):
         ran_out_of_time = self.is_writer and self.answer is None
@@ -396,8 +400,7 @@ class Exp(psynet.experiment.Experiment):
 
     def _test_group_dissolving_while_writing(self, bots: List[BotDriver]):
         # Both others wait at the barrier and then return the study while the
-        # first writes, so the barrier never releases and the writer's own
-        # trial saves the sentence.
+        # first writes, so the group dissolves but the sentence still counts.
         first, second, third = _seated(bots)
         second.drop_out()
         third.drop_out()
@@ -435,32 +438,32 @@ class Exp(psynet.experiment.Experiment):
         assert f"{EARLY_END_INTROS['late']} Once upon a time. How" in text, text
 
         # The third writes their own turn and, after the first's, the
-        # second's. The first returns the study before the last turn, while
-        # the third waits at its barrier, so the group dissolves there and
-        # the third's own trial saves their sentence.
+        # second's. The third returns the study while writing the last turn,
+        # so the group dissolves with the first waiting. The story still has
+        # all its turns, so the first isn't told it ended early.
         third.take_page(response="A dragon appeared.")
         advance_past_wait_pages([first, third], stop_at=TURN_BARRIER)
         first.take_page(response="It was hungry.")
         advance_past_wait_pages([first, third], stop_at=TURN_BARRIER)
         assert third.current_page_label == "write", third.current_page_text
         third.take_page(response="It ate the moon.")
-        advance_past_wait_pages([third], stop_at=TURN_BARRIER)
-        third.take_page(response="The end.")
-        first.drop_out()
-        advance_past_wait_pages([third])
-        story = "Once upon a time. A dragon appeared. It was hungry. It ate the moon. The end."
-        assert f"your group wrote: {story} How" in third.current_page_text
+        advance_past_wait_pages([first, third], stop_at=TURN_BARRIER)
+        assert third.current_page_label == "write", third.current_page_text
+        third.drop_out()
+        advance_past_wait_pages([first])
+        story = "Once upon a time. A dragon appeared. It was hungry. It ate the moon."
+        assert f"{FINISHED_INTRO} {story} How" in first.current_page_text
 
-        assert self._turns(third) == [
+        assert self._turns(first) == [
             (first.id, "Once upon a time.", "stayed"),
             (second.id, None, "late"),
             (third.id, "A dragon appeared.", "stayed"),
             (first.id, "It was hungry.", "stayed"),
             (third.id, "It ate the moon.", "stayed"),
-            (third.id, "The end.", "group_dissolved"),
+            (third.id, None, "left_experiment"),
         ]
         assert self._removal_reasons([first, second, third]) == [
-            "left_experiment",
-            "late",
             "group_dissolved",
+            "late",
+            "left_experiment",
         ]

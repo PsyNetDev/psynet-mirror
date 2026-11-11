@@ -219,10 +219,11 @@ votes.
 
 In ``demos/experiments/story_chain``, a group of three writes a story one
 sentence at a time, taking turns in seat order. While one member writes, the
-others wait at a barrier that shows them the story so far, and the barrier
-saves the new sentence. A writer who runs out of time adds nothing that
-turn; a member who leaves plays no more turns, and the next member in seat
-order writes in their place. The last one left goes on to the story so far.
+others wait at a barrier that shows them the story so far. The writer's
+sentence is stored on the turn as soon as they submit it. A writer who runs
+out of time adds nothing that turn; a member who leaves plays no more turns,
+and the next member in seat order writes in their place. The last one left
+goes on to the story so far.
 
 .. figure:: ../_static/images/design/groups/story_chain.svg
    :alt: A grouper forms groups of three. Then, for each turn, the writer adds a sentence while the others wait at a barrier that shows them the story so far. Finally everyone rates the story.
