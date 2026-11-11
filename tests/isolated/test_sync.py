@@ -2132,7 +2132,7 @@ def _pair_sync_group(exp, db_session, group_type="main"):
     return _sync_group_of(exp, db_session, 2, group_type)
 
 
-def _backdate_group(group, seconds):
+def _set_group_clocks_in_the_past(group, seconds):
     """Pretend the group passed its last barrier, and its members joined, ``seconds`` ago."""
     past = timenow() - timedelta(seconds=seconds)
     group.last_barrier_pass_time = past
@@ -6999,7 +6999,7 @@ def test_group_barrier_late_after_removes_missing_participants(
     db_session.add(group)
     for p in participants:
         group.add_participant(p)
-    _backdate_group(group, seconds=10)
+    _set_group_clocks_in_the_past(group, seconds=10)
     db_session.commit()
     publications = _hold_wake_publications(monkeypatch)
 
@@ -7089,7 +7089,7 @@ def test_also_leave_removes_a_late_member_from_the_listed_groups_only(
         for p in members:
             p.status = "working"
             group.add_participant(p)
-        _backdate_group(group, seconds=10)
+        _set_group_clocks_in_the_past(group, seconds=10)
         groups[group_type] = group
     db_session.commit()
 
@@ -7157,7 +7157,7 @@ def test_late_member_leaving_the_cohort_can_fail_it_with_a_warning(
         for p in members:
             p.status = "working"
             group.add_participant(p)
-        _backdate_group(group, seconds=10)
+        _set_group_clocks_in_the_past(group, seconds=10)
     db_session.commit()
 
     waiting = [on_time_a, b2] if both_pairs_late else [on_time_a, b1, b2]
@@ -7396,7 +7396,7 @@ def test_group_barrier_late_after_removal_releases_waiters_after_dissolution(
     db_session.add(group)
     for p in participants:
         group.add_participant(p)
-    _backdate_group(group, seconds=10)
+    _set_group_clocks_in_the_past(group, seconds=10)
     db_session.commit()
 
     barrier.check_waiting_participants(waiting_participants)
@@ -7565,7 +7565,7 @@ def test_late_member_leaving_a_pair_fails_the_partner_with_a_warning(
     for p in (on_time, late):
         p.status = "working"
         group.add_participant(p)
-    _backdate_group(group, seconds=10)
+    _set_group_clocks_in_the_past(group, seconds=10)
     db_session.commit()
 
     with caplog.at_level("WARNING", logger="psynet"):
@@ -7610,7 +7610,7 @@ def test_group_barrier_would_release_predicts_late_after(
     db_session.add(group)
     for p in participants:
         group.add_participant(p)
-    _backdate_group(group, seconds=10)
+    _set_group_clocks_in_the_past(group, seconds=10)
     db_session.commit()
     # A group that accepts top-ups waits below its minimum instead of dissolving.
     expected = (
@@ -7657,7 +7657,7 @@ def test_group_barrier_late_after_fail_missing_participants(
     db_session.add(group)
     for p in participants:
         group.add_participant(p)
-    _backdate_group(group, seconds=10)
+    _set_group_clocks_in_the_past(group, seconds=10)
     db_session.commit()
 
     barrier.check_waiting_participants(waiting_participants)
@@ -8406,7 +8406,7 @@ def test_a_newcomer_at_a_barrier_the_group_passed_strands_the_group_unless_it_pa
     _commit_barrier_arrivals()
 
     # A minute into the game, the members wait at a round's barrier as a newcomer joins.
-    _backdate_group(group, seconds=60)
+    _set_group_clocks_in_the_past(group, seconds=60)
     for member in members:
         _arrive_at_group_barrier(exp, each_round, member)
     (newcomer,) = _working_participants(exp, 1)
