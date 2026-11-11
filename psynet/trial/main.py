@@ -52,6 +52,7 @@ from ..field import PythonDict, PythonObject, VarStore
 from ..page import InfoPage, UnsuccessfulEndPage, WaitPage, wait_while
 from ..participant import Participant
 from ..sync import (
+    _TRIAL_MAKER_RELEASE_CANDIDATE_OPTIONS,
     INTERRUPTED_BY_RELEASE,
     GroupBarrier,
     LateAction,
@@ -59,6 +60,7 @@ from ..sync import (
     SyncGroup,
     _execute_advisory_xact_lock,
     _group_max_wait_time,
+    _reject_release_candidate_options,
     _validate_group_timeouts,
 )
 from ..timeline import (
@@ -2153,6 +2155,12 @@ class TrialMaker(Module):
     """
 
     state_class = TrialMakerState
+
+    def __new__(cls, *args, **kwargs):
+        _reject_release_candidate_options(
+            cls.__name__, kwargs, _TRIAL_MAKER_RELEASE_CANDIDATE_OPTIONS
+        )
+        return super().__new__(cls)
 
     def __init__(
         self,

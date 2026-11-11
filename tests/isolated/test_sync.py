@@ -97,6 +97,7 @@ from psynet.timeline_hold import (
     default_hold_progress,
 )
 from psynet.trial.main import _edit_group_runs
+from psynet.trial.static import StaticTrialMaker
 from psynet.utils import call_function_with_context, get_config
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -6095,8 +6096,28 @@ def test_on_arrival_message_customizes_or_turns_off_notices():
     assert (
         quiet._call_arrival_message(kind="late", waiting_count=0, group_size=2) is None
     )
-    with pytest.raises(TypeError, match="on_arrival_message=None"):
-        GroupBarrier(id_="rc_notice", group_type="main", notify_arrivals=False)
+
+
+@pytest.mark.parametrize(
+    "make, replacement",
+    [
+        (
+            lambda: GroupBarrier("rc", "main", notify_arrivals=False),
+            "on_arrival_message=None",
+        ),
+        (
+            lambda: GroupBarrier("rc", "main", timeout_between_barriers_time=5),
+            "renamed late_after",
+        ),
+        (
+            lambda: StaticTrialMaker(sync_group_timeout_between_barriers_action="fail"),
+            "renamed sync_group_late_action",
+        ),
+    ],
+)
+def test_options_from_the_release_candidates_name_their_replacement(make, replacement):
+    with pytest.raises(TypeError, match=replacement):
+        make()
 
 
 @pytest.mark.parametrize(

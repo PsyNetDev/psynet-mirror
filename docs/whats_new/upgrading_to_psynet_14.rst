@@ -595,6 +595,13 @@ which now raise an error naming the replacement:
 
 * ``GroupBarrier(notify_arrivals=False)`` becomes
   ``GroupBarrier(on_arrival_message=None)``. Drop ``notify_arrivals=True``.
+* ``GroupBarrier``'s ``timeout_between_barriers_time`` and
+  ``timeout_between_barriers_action`` were renamed ``late_after`` and
+  ``late_action``; on trial makers, ``sync_group_timeout_between_barriers_time``
+  and ``sync_group_timeout_between_barriers_action`` were renamed
+  ``sync_group_late_after`` and ``sync_group_late_action``. ``late_action`` no
+  longer defaults to ``"fail"``, so pass it whenever you pass ``late_after``,
+  and write ``"leave_group"`` for ``"kick"``.
 
 See :doc:`/code/multiplayer/synchronization`.
 

@@ -1636,6 +1636,18 @@ _GROUP_BARRIER_RELEASE_CANDIDATE_OPTIONS = {
         "pass on_arrival_message=None to turn arrival notices off, or leave it "
         "out to keep them"
     ),
+    "timeout_between_barriers_time": "it was renamed late_after",
+    "timeout_between_barriers_action": (
+        "it was renamed late_action, which late_after now requires"
+    ),
+}
+
+_TRIAL_MAKER_RELEASE_CANDIDATE_OPTIONS = {
+    "sync_group_timeout_between_barriers_time": "it was renamed sync_group_late_after",
+    "sync_group_timeout_between_barriers_action": (
+        "it was renamed sync_group_late_action, which sync_group_late_after "
+        "now requires"
+    ),
 }
 
 
