@@ -2250,6 +2250,7 @@ class GroupBarrier(Barrier):
             )
             super().handle_max_wait_timeout(participant)
         else:
+            # The poller's reconstructed barrier lacks _uses_timeline_hold.
             link = participant.active_barriers.get(self.id)
             on_hold = link is not None and link.timeline_hold is not None
             hold = "timeline_hold" if on_hold else "while_loop"

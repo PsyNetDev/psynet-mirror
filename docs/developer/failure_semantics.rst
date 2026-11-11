@@ -48,8 +48,10 @@ have already failed. Otherwise, in this order, it:
    in an end branch or have completed the experiment.
 
 One exception to this order: a barrier's ``late_action="fail"`` removes the
-member from all their groups (the barrier's as ``"late"``), and a group
-dissolving with ``below_quorum="fail"`` removes them from that group (as
+member from all their groups (the barrier's as ``"late"``), a
+``GroupBarrier``'s ``max_wait_action="fail"`` removes the waiter from all their
+groups (the barrier's as ``"waited_too_long"``, the others as
+``"left_experiment"``), and a group dissolving with ``below_quorum="fail"`` removes them from that group (as
 ``"group_dissolved"``), before calling ``fail()``, so fail routines no longer
 see those groups in ``active_sync_groups``.
 
