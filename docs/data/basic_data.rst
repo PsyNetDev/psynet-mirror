@@ -166,10 +166,10 @@ the trial ID (to trace each row back to the database) and both players'
 responses. Group-level measures can be computed from this table.
 The ``rock_paper_scissors`` demo builds it from its trials. The barrier
 that ends each round saves on each player's trial the action they played,
-including the random action played for someone who ran out of time,
-because that action is in no answer, their partner's action and the
-result (see ``score_round`` under "Barriers" in
-:doc:`/code/multiplayer/synchronization`). ``get_basic_data`` reads one row
+their partner's action and the result (see ``score_round`` under
+"Barriers" in :doc:`/code/multiplayer/synchronization`). The action saved
+for someone who ran out of time is the random one played for them, which
+is in no answer. ``get_basic_data`` reads one row
 from every trial, including the trial of a player who left during the
 round:
 
@@ -193,7 +193,12 @@ row, and ``partner_timed_out``):
 Each round has one row per member, and ``partner_id`` points in both
 directions. A round that was never scored, for example because a partner
 dropped out before choosing, has ``None`` in the result columns, and its
-``outcome`` says why the player left the pair. Participants who are regrouped have
+``outcome`` says how the player left the pair. This doesn't always show who
+dropped out: when a partner goes silent, the player who waited for them is
+failed and leaves as ``"left_experiment"``, and the silent partner then
+leaves as ``"group_dissolved"`` (see
+`issue #1162 <https://gitlab.com/PsyNetDev/PsyNet/-/work_items/1162>`__).
+Participants who are regrouped have
 one ``sync_group_id`` per group, so their rounds with each partner stay apart.
 
 .. _basic_data_regrouper:

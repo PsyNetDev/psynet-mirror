@@ -15,12 +15,19 @@ from there.
 - A player who runs out of time gets a random action, so every round has a
   winner or a draw. Their answer stays ``None``; the action they played is
   saved with the result.
-- The demo doesn't handle dropouts: a player whose partner leaves waits up
-  to ``PARTNER_WAIT_SECONDS`` at the next barrier and is then failed, as is
-  a participant for whom no partner arrives in that time. Each trial's
-  ``sync_group_outcome`` says whether its player stayed to the end of the
-  round or why they left it. See ``public_goods`` for a game that carries
-  on when players leave.
+- The demo doesn't handle dropouts: a player whose partner goes silent
+  waits up to ``PARTNER_WAIT_SECONDS`` at the next barrier and is then
+  failed, as is a participant for whom no partner arrives in that time. A
+  partner who is removed from the pair instead, for example by returning
+  the study or being failed elsewhere, dissolves it at once, and the
+  remaining player is failed with no wait. See ``public_goods`` for a game
+  that carries on when players leave.
+- Each trial's ``sync_group_outcome`` is ``"stayed"`` if the round was
+  scored. Otherwise it records how the player left the pair, which doesn't
+  always show who dropped out: when a partner goes silent, the player who
+  waited for them is failed and leaves as ``"left_experiment"``, and the
+  silent partner then leaves as ``"group_dissolved"``
+  (https://gitlab.com/PsyNetDev/PsyNet/-/work_items/1162).
 """
 
 import random
@@ -123,6 +130,9 @@ class RockPaperScissorsTrial(Trial):
             trial.var.points = POINTS[trial.var.result]
 
     def show_feedback(self, experiment, participant):
+        if self.sync_group_outcome != "stayed":
+            # The round was never scored, so there is nothing to show.
+            return None
         if self.var.timed_out:
             you = f"You ran out of time, so we chose {self.var.action} for you"
         else:
@@ -190,8 +200,8 @@ class Exp(psynet.experiment.Experiment):
                     "round": t.sync_group_round,
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
-                    # "stayed" if the round was scored; otherwise why the
-                    # player left the pair, such as "left_experiment".
+                    # "stayed" if the round was scored; otherwise how the
+                    # player left the pair (see the module docstring).
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or never answered.
                     "choice": t.answer,
