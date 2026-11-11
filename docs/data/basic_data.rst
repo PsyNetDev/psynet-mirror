@@ -107,8 +107,8 @@ one per room from them (see :ref:`rounds-one-trial-per-player`). The
 ``crowd_estimate`` demo does the same for a fixed group that plays one round
 per question; a player who answered on their own has a row with an empty
 ``crowd_id``. Its ``outcome`` column, from ``trial.sync_group_outcome``, says
-how the round ended for each player: ``"stayed"``, or why they last left the
-group during the round's pages, even after the median was shared;
+how the round ended for each player: ``"stayed"`` if they were in the group
+when the median was shared, or why they left before that;
 ``estimate_timed_out`` says whether their estimate's time limit ran out,
 which the trial stores right after the estimate page from
 ``participant.last_response`` (``trial.time_limit_reached`` follows the
