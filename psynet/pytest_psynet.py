@@ -454,7 +454,9 @@ def reset_sys_modules():
     server module, which PsyNet imports lazily to send socket messages,
     execute ``experiment.py`` again and register duplicate SQLAlchemy classes.
     :func:`in_experiment_directory` unimports the experiment on teardown
-    instead, and reinstates the same modules when it next sets up.
+    instead, and reinstates the same modules when it next sets up, or the
+    modules already imported from this directory before its first setup, as
+    ``psynet test local`` does.
     """
     if _active_experiment_directory is None:
         clean_sys_modules()
