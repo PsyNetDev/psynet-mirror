@@ -67,7 +67,7 @@ A scheduled task in ``Experiment._check_barriers`` calls ``check_barriers`` in
 this module. That loop:
 
 - Dissolves sync groups whose dissolution waited because a member was busy
-  in their own request (see ``SyncGroup._dissolve``).
+  in their own request or a round lock was busy (see ``SyncGroup._dissolve``).
 - Applies ``max_wait_time`` to waiters whose hold or waiting-page deadline has
   passed. Their own request normally does this, so waiters who left would
   otherwise stay.
@@ -3875,9 +3875,9 @@ class Regrouper(Grouper):
                     continue
                 if len(within_group.active_participants) < within_group.quorum:
                     # Dissolving releases the members its below_quorum let
-                    # carry on. One deferred by a busy member marks the cohort
-                    # dissolving, so later checks skip its pool until the
-                    # poller dissolves it.
+                    # carry on. One deferred by a busy member or round lock
+                    # marks the cohort dissolving, so later checks skip its
+                    # pool until the poller dissolves it.
                     within_group.stop_top_ups()
                     released += [p for p in pool if self._within_group(p) is None]
                     continue
@@ -4498,10 +4498,10 @@ class SyncGroup(SQLBase, SQLMixin):
         Their round locks are tried without waiting too, as in
         :func:`_lock_round`, after the members' rows and in the same
         savepoint, so a busy one makes the dissolution wait like a busy
-        member, and the members' rows are unlocked again. Round locks last
-        until the transaction ends, so a round lock taken before a busy one
-        is kept until then; members are usually all in one round, so there is
-        rarely one.
+        member. Rolling back the savepoint then unlocks the members' rows and
+        releases the round locks taken in it; a round lock the transaction
+        already held, as a barrier check that dissolves the group does, stays
+        until the transaction ends.
 
         Returns
         -------
@@ -4932,9 +4932,9 @@ def _round_lock_key(group, node):
 def _round_is_busy(group, node) -> bool:
     """Return whether a cue holds the lock :func:`_lock_round` would try.
 
-    Probes with a session lock released at once, because a peek's savepoint
-    rollback would not release a transaction lock, and holding it until
-    commit would block that round's cues for no reason.
+    Probes with a session lock released at once, so the peek holds no lock
+    afterwards whether or not it runs in a savepoint; holding a transaction
+    lock until commit would block that round's cues for no reason.
     """
     key = _round_lock_key(group, node)
     if key is None:
@@ -6071,10 +6071,10 @@ def _process_barrier_instance(instance_id, *, retry=False):
 
 
 def _finish_dissolving_groups():
-    """Try again to dissolve groups whose dissolution waited for a busy member.
+    """Try again to dissolve groups whose dissolution waited for a busy member or round lock.
 
     Each group is handled in its own transaction. A group another request
-    holds, or with a member still busy, is left for the next sweep. A group
+    holds, or with a member or round lock still busy, is left for the next sweep. A group
     back at its quorum by then is no longer dissolved. Group and member rows
     are taken without waiting; other lock waits while failing a member, for
     example on their trials, are bounded by ``timeline_lock_timeout_seconds``.
@@ -6143,8 +6143,8 @@ def check_barriers():
     publishes unpublished until that walk returns. Each visit still commits
     before the next check so a locked waiter cannot poison sibling checks.
 
-    Each sweep first retries group dissolutions that waited for busy members
-    and times out overdue waiters, then checks visits, least
+    Each sweep first retries group dissolutions that waited for a busy member
+    or round lock and times out overdue waiters, then checks visits, least
     recently checked first, with new or changed ones given a head start. Each
     of the two steps stops starting new work after
     ``_POLLER_SWEEP_BUDGET_SECONDS``, so thousands of idle waiters cannot

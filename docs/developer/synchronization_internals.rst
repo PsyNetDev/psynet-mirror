@@ -96,9 +96,10 @@ participants' rows only with ``SKIP LOCKED`` or ``NOWAIT``:
 - Group dissolution locks the members' rows with ``SKIP LOCKED``, then tries
   the lock of each cued round they are still playing, and is all or nothing.
   If another member's request holds their row, or a cue holds a round's
-  lock, nobody is removed (the rows that were free are unlocked again, by
-  rolling back a savepoint; a round lock taken before a busy one stays until
-  the transaction ends, as advisory locks outlive savepoints):
+  lock, nobody is removed (rolling back a savepoint unlocks the rows and
+  releases the round locks taken in it; a round lock the transaction already
+  held, as a barrier check that dissolves the group does, stays until the
+  transaction ends):
   the group is marked ``dissolving`` and the barrier poller tries the whole
   dissolution again on each sweep, so every member leaves the group, and
   learns why, at the same time. A group back at its quorum by then is no
