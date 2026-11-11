@@ -122,6 +122,7 @@ def get_timeline():
                     "so the game ended early for you.",
                     time_estimate=5,
                 ),
+                "removed": InfoPage("You were removed from the game.", time_estimate=5),
                 "too_few_players": InfoPage(
                     "Not enough players stayed to keep playing, "
                     "so the game ended early.",
@@ -169,9 +170,11 @@ def game_over_reason(participant):
         return "played_all_rounds"
     if pairing.rounds_sat_out(participant) >= MAX_SIT_OUTS:
         return "sat_out_too_often"
-    # Being late takes a player out of their pair and their cohort.
-    if participant.sync_group_removal_reason(COHORT) == "late":
-        return "late"
+    # Being late takes a player out of their pair and their cohort; the
+    # experimenter can remove them from the cohort on the dashboard.
+    reason = participant.sync_group_removal_reason(COHORT)
+    if reason in ("late", "removed"):
+        return reason
     cohort = cohort_of(participant)
     if cohort is None or cohort.n_active_participants < 2:
         return "too_few_players"
