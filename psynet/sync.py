@@ -1847,10 +1847,12 @@ class GroupBarrier(Barrier):
         barrier's group with the reason ``"late"`` (with ``"fail"``, before they are failed), which their
         trial's :attr:`~psynet.trial.main.Trial.sync_group_outcome` records. A group that this leaves below
         its quorum dissolves as its ``below_quorum`` says, so with ``"fail"`` one late member can fail a whole
-        cohort. A late member whose own request is in progress, for example submitting a page, is not acted
-        on until a later check, by which time that request has finished; if it brought them to this barrier,
-        they are no longer late. So code a late member runs in their own request, such as a
-        :class:`~psynet.timeline.CodeBlock` storing their answer, either runs before the removal or sees it.
+        cohort. While a late member's own request is in progress, for example submitting a page, no late
+        member of the group is acted on until a later check, by which time that request has finished; if it
+        brought them to this barrier, they are no longer late. So code a late member runs in their own
+        request, such as a :class:`~psynet.timeline.CodeBlock` storing their answer, either runs before the
+        removal or sees it (``participant.sync_group_removal_reason``, or a cued trial's
+        :attr:`~psynet.trial.main.Trial.sync_group_outcome`).
 
     also_leave
         With ``late_action="leave_group"``, the other group types a late member also leaves, with the
@@ -2398,17 +2400,14 @@ class GroupBarrier(Barrier):
             late = self._late_between_barriers(group, waiting_ids)
             if not late:
                 continue
-            if self.late_action == "fail":
-                # All or nothing, as in dissolving: a late member whose own
-                # request holds their row would otherwise stay behind in a
-                # group that dissolves without them. All are late next check.
-                late = _lock_all_participants(late)
-                if late is None:
-                    continue
-            else:
-                # A member busy in their own request stays until a later
-                # check, so that request never acts on a removal it can't see.
-                late = _lock_free_participants(late)
+            # All or nothing: a late member busy in their own request must not
+            # act on a removal that request can't see, and removing only the
+            # free ones could dissolve the group around the busy one, who
+            # would then leave with it rather than as late. All are late at
+            # the next check.
+            late = _lock_all_participants(late)
+            if late is None:
+                continue
             late = self._still_late(group, late, waiting_ids)
             if late:
                 removals.append((group, late, len(group.active_participants)))

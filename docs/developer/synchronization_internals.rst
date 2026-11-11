@@ -101,11 +101,13 @@ participants' rows only with ``SKIP LOCKED`` or ``NOWAIT``:
   dissolution again on each sweep, so every member leaves the group, and
   learns why, at the same time. A group back at its quorum by then is no
   longer dissolved.
-- A between-barrier timeout (``late_after``) also skips busy late members:
-  with ``"fail"`` all or nothing, as in dissolution, and with
-  ``"leave_group"`` member by member. A skipped member is reconsidered at
-  the barrier's next check, which the poller makes on each sweep, and the
-  group waits for them meanwhile. Lateness is decided before the rows are
+- A between-barrier timeout (``late_after``) also skips busy late members,
+  all or nothing as in dissolution, with either ``late_action``: removing
+  only the free ones could leave the group below quorum and dissolve it
+  around a busy late member, who would then leave with the group instead
+  of as late. The late members are reconsidered at the barrier's next
+  check, which the poller makes on each sweep, and the group waits for
+  them meanwhile. Lateness is decided before the rows are
   locked, so it is decided again for the members locked: one whose request
   brought them to the barrier in between is no longer late. Removal writes
   the member's links and trial outcome, so without the row lock a member's

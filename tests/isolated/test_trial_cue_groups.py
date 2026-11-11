@@ -1334,15 +1334,18 @@ def test_the_outcome_records_why_a_player_left_the_round(
         assert other_leaver.current_trial.sync_group_outcome == outcome
 
 
+@pytest.mark.parametrize("late_action", ["fail", "leave_group"])
 @in_consents_experiment
-def test_late_action_fail_waits_for_a_busy_late_member_then_fails_both(
-    in_experiment_directory, db_session
+def test_late_removal_waits_for_a_busy_late_member_then_removes_both(
+    in_experiment_directory, db_session, late_action
 ):
-    """Nobody is failed while one late member's own request holds their row."""
+    """Nobody is removed while one late member's own request holds their row."""
     exp = get_experiment()
     (stayer, *late), group = _sync_group_of(exp, db_session, 3)
     group.below_quorum = "continue_without_group"
-    barrier = GroupBarrier("late", group_type="main", late_after=5, late_action="fail")
+    barrier = GroupBarrier(
+        "late", group_type="main", late_after=5, late_action=late_action
+    )
     _arrive(exp, barrier, [stayer])
     _backdate_group(group, seconds=10)
     db.session.commit()
@@ -1356,52 +1359,14 @@ def test_late_action_fail_waits_for_a_busy_late_member_then_fails_both(
         _set_transaction_lock_timeout(1)
         barrier.check_waiting_participants([stayer])
         db.session.commit()
-        assert not Participant.query.get(ids[0]).failed
+        assert "main" in Participant.query.get(ids[0]).active_sync_groups
 
     barrier.check_waiting_participants([stayer])
     db.session.commit()
     for participant_id in ids:
         participant = Participant.query.get(participant_id)
-        assert participant.failed
+        assert participant.failed == (late_action == "fail")
         assert participant.sync_group_removal_reason("main") == "late"
-
-
-@pytest.mark.parametrize("n", [2, 3])
-@in_consents_experiment
-def test_late_action_leave_group_skips_a_late_member_busy_in_their_own_request(
-    in_experiment_directory, db_session, n
-):
-    """A late member whose own request holds their row is removed at a later check.
-
-    Free late members are removed meanwhile.
-    """
-    exp = get_experiment()
-    (stayer, *late), group = _sync_group_of(exp, db_session, n)
-    group.below_quorum = "continue_without_group"
-    barrier = GroupBarrier(
-        "late", group_type="main", late_after=5, late_action="leave_group"
-    )
-    _arrive(exp, barrier, [stayer])
-    _backdate_group(group, seconds=10)
-    db.session.commit()
-    *free_ids, late_id = [p.id for p in late]
-
-    with db.engine.connect() as busy_request, busy_request.begin():
-        busy_request.execute(
-            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
-            {"id": late_id},
-        )
-        _set_transaction_lock_timeout(1)
-        barrier.check_waiting_participants([stayer])
-        db.session.commit()
-        assert "main" in Participant.query.get(late_id).active_sync_groups
-        for free_id in free_ids:
-            participant = Participant.query.get(free_id)
-            assert participant.sync_group_removal_reason("main") == "late"
-
-    barrier.check_waiting_participants([stayer])
-    db.session.commit()
-    assert Participant.query.get(late_id).sync_group_removal_reason("main") == "late"
 
 
 @pytest.mark.parametrize("late_action", ["fail", "leave_group"])
@@ -1428,6 +1393,34 @@ def test_late_removal_rechecks_a_stale_list_of_waiting_members(
     db.session.commit()
     assert not late.failed
     assert "main" in late.active_sync_groups
+
+
+@in_consents_experiment
+def test_late_removal_rechecks_a_timed_page_started_meanwhile(
+    in_experiment_directory, db_session
+):
+    """A timed page the late member's request started since the group was read keeps them."""
+    exp = get_experiment()
+    (stayer, late), group = _sync_group_of(exp, db_session, 2)
+    barrier = GroupBarrier("late", group_type="main", late_after=5)
+    _arrive(exp, barrier, [stayer])
+    _backdate_group(group, seconds=10)
+    db.session.commit()
+    assert all(link.page_deadline is None for link in group.participant_links)
+
+    with db.engine.begin() as late_request:
+        late_request.execute(
+            text(
+                "UPDATE participant_link_sync_group "
+                "SET page_deadline = now() + interval '1 minute' "
+                "WHERE participant_id = :id"
+            ),
+            {"id": late.id},
+        )
+
+    barrier.check_waiting_participants([stayer])
+    db.session.commit()
+    assert not late.failed
 
 
 @in_consents_experiment
