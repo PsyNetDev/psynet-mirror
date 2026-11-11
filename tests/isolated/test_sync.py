@@ -939,6 +939,36 @@ def test_join_skips_a_group_that_another_request_is_changing(
         assert joiner.active_sync_groups["top_up"].id == free.id
 
 
+def _commit_once_blocked(connection, transaction, pid, before_commit=None):
+    """Commit ``transaction`` once backend ``pid`` waits on a lock, calling ``before_commit`` first."""
+    deadline = time.monotonic() + 10
+    while (
+        time.monotonic() < deadline
+        and not connection.execute(
+            text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"), {"pid": pid}
+        ).scalar()
+    ):
+        time.sleep(0.01)
+    if before_commit is not None:
+        before_commit()
+    transaction.commit()
+
+
+def _row_lock_is_free(group_id):
+    """Return whether another connection can lock a sync group's row without waiting."""
+    with db.engine.connect() as prober, prober.begin():
+        try:
+            prober.execute(
+                text(
+                    "SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE NOWAIT"
+                ),
+                {"id": group_id},
+            )
+            return True
+        except OperationalError:
+            return False
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
@@ -966,23 +996,12 @@ def test_newcomer_waits_briefly_for_a_busy_group_instead_of_the_poller(
         )
         return transaction
 
-    def release_once_blocked(other, transaction, pid):
-        deadline = time.monotonic() + 10
-        while (
-            time.monotonic() < deadline
-            and not other.execute(
-                text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"), {"pid": pid}
-            ).scalar()
-        ):
-            time.sleep(0.01)
-        transaction.commit()
-
     lock_timeout = "SELECT current_setting('lock_timeout')"
     _set_transaction_lock_timeout(5)
     newcomer_pid = db_session.execute(text("SELECT pg_backend_pid()")).scalar()
     with db.engine.connect() as other:
         releaser = threading.Thread(
-            target=release_once_blocked,
+            target=_commit_once_blocked,
             args=(other, hold_group_row(other), newcomer_pid),
         )
         releaser.start()
@@ -1006,9 +1025,11 @@ def test_newcomer_waits_briefly_for_a_busy_group_instead_of_the_poller(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_newcomer_waiting_for_a_busy_group_holds_no_full_groups_row(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, monkeypatch
 ):
     """While a newcomer waits for a busy group, a group found full stays unlocked."""
+    # The busy row is released only after the probe, so the wait must outlast it.
+    monkeypatch.setattr("psynet.sync._JOIN_LOCK_WAIT_SECONDS", 30)
     exp = get_experiment()
     _, full = _sync_group_of(exp, db_session, 4, group_type="top_up")
     _, busy = _sync_group_of(exp, db_session, 2, group_type="top_up")
@@ -1027,37 +1048,64 @@ def test_newcomer_waiting_for_a_busy_group_holds_no_full_groups_row(
     full_id, busy_id = full.id, busy.id
     full_row_free = []
 
-    def probe_full_group_then_release(other, transaction, pid):
-        deadline = time.monotonic() + 10
-        while (
-            time.monotonic() < deadline
-            and not other.execute(
-                text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"), {"pid": pid}
-            ).scalar()
-        ):
-            time.sleep(0.01)
-        with db.engine.connect() as prober, prober.begin():
-            try:
-                prober.execute(text(lock_sql + " NOWAIT"), {"id": full_id})
-                full_row_free.append(True)
-            except OperationalError:
-                full_row_free.append(False)
-        transaction.commit()
-
-    _set_transaction_lock_timeout(5)
     newcomer_pid = db_session.execute(text("SELECT pg_backend_pid()")).scalar()
     with db.engine.connect() as other:
         transaction = other.begin()
         other.execute(text(lock_sql), {"id": busy_id})
         releaser = threading.Thread(
-            target=probe_full_group_then_release,
+            target=_commit_once_blocked,
             args=(other, transaction, newcomer_pid),
+            kwargs={
+                "before_commit": lambda: full_row_free.append(
+                    _row_lock_is_free(full_id)
+                )
+            },
         )
         releaser.start()
         grouper._join_on_arrival(newcomer)
         releaser.join(30)
     assert full_row_free == [True]
     assert newcomer.active_sync_groups["top_up"] == busy
+    db_session.commit()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_newcomer_releases_a_busy_group_found_full_after_waiting(
+    in_experiment_directory, db_session
+):
+    """A busy group the newcomer waited for but found full is not left locked."""
+    exp = get_experiment()
+    _, full = _sync_group_of(exp, db_session, 4, group_type="top_up")
+    full.n_active_participants = 1  # stale, so it looks open
+    full.accepts_top_ups = True
+    full.max_group_size = 4
+    (newcomer,) = _working_participants(exp, 1)
+    grouper = SimpleGrouper(
+        group_type="top_up",
+        initial_group_size=2,
+        max_group_size=4,
+        join_existing_groups=True,
+    )
+    full_id = full.id
+    db_session.commit()
+
+    newcomer_pid = db_session.execute(text("SELECT pg_backend_pid()")).scalar()
+    with db.engine.connect() as other:
+        transaction = other.begin()
+        other.execute(
+            text("SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"),
+            {"id": full_id},
+        )
+        releaser = threading.Thread(
+            target=_commit_once_blocked, args=(other, transaction, newcomer_pid)
+        )
+        releaser.start()
+        grouper._join_on_arrival(newcomer)
+        releaser.join(30)
+    assert not newcomer.in_sync_group("top_up")
+    assert _row_lock_is_free(full_id)
     db_session.commit()
 
 
