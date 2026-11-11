@@ -260,7 +260,9 @@ def test_trial_answer_follows_its_pages_until_the_trial_ends(
     page = ModularPage("pick", "Pick a number.", PushButtonControl([1, 2, 3]))
 
     def submit(answer):
-        page._accept_response(SimpleNamespace(answer=answer), experiment, participant)
+        page._accept_response(
+            SimpleNamespace(answer=answer, trial=None), experiment, participant
+        )
 
     submit(1)
     assert trial.answer == 1
@@ -290,7 +292,9 @@ def test_trial_answer_accumulates_across_pages(
     trial = participant.current_trial
     for label, answer in [("first", 1), ("second", 2)]:
         page = ModularPage(label, "Pick a number.", PushButtonControl([1, 2]))
-        page._accept_response(SimpleNamespace(answer=answer), experiment, participant)
+        page._accept_response(
+            SimpleNamespace(answer=answer, trial=None), experiment, participant
+        )
         db.session.flush()
     db.session.expire(trial)
     assert trial.answer == {"first": 1, "second": 2}
