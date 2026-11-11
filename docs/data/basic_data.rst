@@ -106,7 +106,8 @@ per question; a player who answered on their own has a row with an empty
 ``crowd_id``. Its ``outcome`` column, from ``trial.sync_group_outcome``, says
 how the round ended for each player: ``"stayed"``, or why they last left the
 group during the round's pages, even after the median was shared;
-``in_median`` says whether their estimate counted.
+``timed_out`` says whether their estimate's time limit ran out, and
+``in_median`` whether it counted.
 
 Group membership, for groups formed by a grouper (see
 :doc:`/code/multiplayer/synchronization`), is stored in two tables:

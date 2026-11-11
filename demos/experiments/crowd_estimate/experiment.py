@@ -9,8 +9,9 @@ estimate and the group's median, and gives a revised estimate.
 Each question is one cued ``EstimateTrial`` per player, in the group's round
 of that number (``round=question``). The group's trials for a question share
 a node, which holds the group's estimates and median; each player's estimate
-and revised estimate are their trial's answer, and ``trial.var.in_median``
-says whether the estimate counted towards the median. A player without a
+and revised estimate are their trial's answer, ``trial.var.timed_out`` says
+whether the estimate's time limit ran out, and ``trial.var.in_median`` says
+whether the estimate counted towards the median. A player without a
 group gets an ungrouped trial, which asks only for the estimate.
 
 Dropout decisions
@@ -177,9 +178,11 @@ class EstimateTrial(Trial):
 
     @classmethod
     def score_round(cls, trials: List["EstimateTrial"], node: SyncGroupNode):
-        """Save the group's estimates on the node, with their median if there are enough, and on each trial whether its estimate is in the median."""
+        """Save the group's estimates on the node, with their median if there are enough, and on each trial whether its estimate timed out and whether it is in the median."""
         estimates = {}
         for t in trials:
+            # The estimate page's response, the trial's only one so far.
+            t.var.timed_out = t.response.time_limit_reached
             # The answer so far; running out of time saves None.
             estimate = t.answer.get("estimate")
             if estimate is not None:
@@ -201,7 +204,7 @@ class EstimateTrial(Trial):
             reason = "Your group ended before you saw its median"
         elif self.node.var.get("median") is None:
             reason = "Too few estimates arrived for a group median"
-        elif not self.var.get("in_median"):
+        elif self.var.get("timed_out"):
             reason = "You didn't give an estimate in time"
         else:
             estimates = self.node.var.estimates
@@ -254,6 +257,9 @@ class Exp(psynet.experiment.Experiment):
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or left first.
                     "estimate": t.answer.get("estimate"),
+                    # Whether the estimate's time limit ran out; None for an
+                    # answer given alone or one that missed the group's barrier.
+                    "timed_out": t.var.get("timed_out"),
                     # Whether the estimate counted towards the group's median;
                     # None for an answer given alone or a group without one.
                     "in_median": t.var.get("in_median"),
@@ -394,20 +400,24 @@ class Exp(psynet.experiment.Experiment):
         }
         for bot in players:
             rows = [answers[(bot.id, question)] for question in (0, 1)]
-            assert [(r["outcome"], r["in_median"], r["revised"]) for r in rows] == [
-                ("stayed", True, 250),
-                ("stayed", True, 1300),
+            assert [
+                (r["outcome"], r["timed_out"], r["in_median"], r["revised"])
+                for r in rows
+            ] == [
+                ("stayed", False, True, 250),
+                ("stayed", False, True, 1300),
             ], rows
         # The silent member was removed as late and answered the first question
         # after its time limit, so their trial saved no estimate and it missed
-        # the median.
+        # the barrier and the median.
         late = answers[(silent.id, 0)]
         assert (
             late["crowd_id"],
             late["outcome"],
             late["estimate"],
+            late["timed_out"],
             late["in_median"],
-        ) == (crowds[0]["crowd_id"], "late", None, False), late
+        ) == (crowds[0]["crowd_id"], "late", None, None, False), late
         # The group that ended had no median to count towards, and the member
         # who left still has a row.
         for bot in group_c:
