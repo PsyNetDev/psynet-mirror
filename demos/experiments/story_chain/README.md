@@ -8,7 +8,8 @@ Good reference for turns one after the other in a fixed group: each turn is
 one cued round, `StoryTurn.cue(..., round=turn)`, whose definition stores the
 turn's writer, chosen once with `group_seats`. The writer stores their
 sentence in `node.var` as soon as they submit it, and a turn that ends
-without one stores `None`, so the export has one row per turn. A writer who
+without one stores `None`, so every finished turn has a stored sentence. The
+writing page doesn't accept an empty sentence. A writer who
 runs out of time adds nothing, a member who leaves or goes silent plays no
 more turns and the next seat writes in their place, the last member left goes
 on to the story so far, and someone who finds no group is told so. The bot

@@ -415,11 +415,14 @@ or the group dissolved:
 When the sentence is ``None``, the writer trial's
 ``sync_group_outcome`` says why: ``"stayed"`` if they ran out of time, or
 why they left the group, such as ``"late"`` if the barrier took them out or
-``"left_experiment"`` if they returned the study. If the
+``"left_experiment"`` if they returned the study. With
+``"group_dissolved"``, the writer was the last one left and ran out of time
+or returned the study. If the
 chosen writer leaves between the turn's first cue and their own, they have
 no trial for the turn at all, and the export's ``writer_outcome`` is
 ``None``. The export has one row per turn, from the nodes and the writers'
-trials. Each member stores their group's ID when the group forms, so the
+trials, and its ``finished`` column tells a turn that stored ``None`` from
+one that never finished. Each member stores their group's ID when the group forms, so the
 last page can read the story from the group's nodes even after the group
 has ended.
 

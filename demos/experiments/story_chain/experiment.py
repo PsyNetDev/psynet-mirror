@@ -16,12 +16,14 @@ Everything the story needs is stored rather than worked out later:
   seat writes instead, so turns become uneven (for example A, C, C).
 - The writer stores their sentence in ``node.var.sentence`` as soon as they
   submit it, before the turn's barrier, or ``None`` if they ran out of time.
-  A writer the barrier has already removed as late stores nothing. When a member's
-  trial finishes and the turn still has no sentence, because the writer was
-  late or left, it stores ``None``. So every finished turn has a
+  A writer the barrier has already removed as late stores nothing. When a
+  member's trial finishes and the turn still has no sentence, because the
+  writer was late or left, it stores ``None``. So every finished turn has a
   ``sentence``, whether the barrier released or the group dissolved. Why a
   sentence is ``None`` is the writer trial's ``sync_group_outcome``:
-  ``"stayed"`` if they ran out of time, or why they left the group.
+  ``"stayed"`` if they ran out of time, otherwise why they left the group.
+  With ``"group_dissolved"``, the writer was the last one left and ran out
+  of time or returned the study.
 - The last page reads the story from the nodes of the group whose ID each
   member stored when the group formed, so it still works after the group
   has ended.
@@ -197,6 +199,9 @@ class StoryTurn(Trial):
             TextControl(one_line=True),
             time_estimate=WRITE_SECONDS,
             time_limit=WRITE_SECONDS,
+            validate=lambda answer: (
+                None if answer.strip() else "Please write a sentence."
+            ),
         )
 
     def save_sentence(self, participant):
@@ -223,9 +228,11 @@ class StoryTurn(Trial):
     def show_feedback(self, experiment, participant):
         ran_out_of_time = self.is_writer and self.answer is None
         if ran_out_of_time and self.sync_group_outcome == "stayed":
+            # The time limit keeps the next turn's barrier from removing them as late.
             return InfoPage(
                 "You ran out of time, so nothing was added to the story this turn.",
                 time_estimate=5,
+                time_limit=5,
             )
         return None
 
@@ -285,7 +292,10 @@ def _turn_row(node: SyncGroupNode) -> dict:
         "node_id": node.id,
         "writer_id": node.definition["writer_id"],
         "writer_trial_id": trial.id if trial else None,
-        # None if the writer ran out of time or left the group.
+        # False while the turn is being played, or if it never finished.
+        "finished": node.var.has("sentence"),
+        # None if the writer ran out of time or left the group, or if the turn
+        # isn't finished.
         "sentence": node.var.get("sentence"),
         # "stayed" if the writer was still in the group when the turn ended,
         # otherwise why they left; None if they never started the turn.
@@ -365,13 +375,19 @@ class Exp(psynet.experiment.Experiment):
     def _removal_reasons(self, bots: List[BotDriver]) -> list:
         return [self._player(bot)["removal_reason"] for bot in bots]
 
-    def _turns(self, bot: BotDriver):
-        """Return the writer, sentence and writer outcome of each turn of the bot's group."""
+    def _turn_rows(self, bot: BotDriver) -> list:
+        """Return the rows of the ``turn`` table for the bot's group."""
         group_id = bot.with_participant(lambda p: p.var.story_group_id)
         return [
-            (row["writer_id"], row["sentence"], row["writer_outcome"])
-            for row in self.get_basic_data()["turn"]
-            if row["group_id"] == group_id
+            row for row in self.get_basic_data()["turn"] if row["group_id"] == group_id
+        ]
+
+    def _turns(self, bot: BotDriver):
+        """Check that the bot's group finished its turns, and return each turn's writer, sentence and writer outcome."""
+        rows = self._turn_rows(bot)
+        assert all(row["finished"] for row in rows), rows
+        return [
+            (row["writer_id"], row["sentence"], row["writer_outcome"]) for row in rows
         ]
 
     def _test_full_story(self, bots: List[BotDriver]):
@@ -432,6 +448,7 @@ class Exp(psynet.experiment.Experiment):
         # The second writer goes silent, so the barrier takes them out and
         # the other two go on without them.
         assert second.current_page_label == "write"
+        assert [row["finished"] for row in self._turn_rows(first)] == [True, False]
         advance_past_wait_pages([third], timeout=LATE_AFTER + 20)
         advance_past_wait_pages([first, third], stop_at=TURN_BARRIER)
         assert (
