@@ -130,6 +130,7 @@ from .participant import (
     Participant,
     _load_participant_for_update,
     _lock_and_load_participant,
+    _unique_ids_allowed_to_fail,
     bonus_is_settled,
     bonus_needs_review,
     bonus_transfer_already_claimed,
@@ -2207,7 +2208,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         assert (
             not bot.failed
             or bot.status == "returned"
-            or bot.var.get("test_allowed_to_fail", False)
+            or bot.unique_id in _unique_ids_allowed_to_fail
         ), f"Bot {bot.id} failed (failure tags: {bot.failure_tags})."
 
     @classmethod

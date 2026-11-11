@@ -1446,6 +1446,12 @@ def _check_barriers_now():
     check_barriers()
 
 
+#: Unique IDs of the participants that :meth:`ParticipantDriver.allow_failure`
+#: allowed to fail. Test-only state, kept in the test process rather than in
+#: the participant's variables; bots run in threads of that process.
+_unique_ids_allowed_to_fail = set()
+
+
 class ParticipantDriver:
     """
     Driver class for automating participant actions in an experiment.
@@ -1991,9 +1997,7 @@ class ParticipantDriver:
         Use it for bots that the test makes fail on purpose, such as the partner
         of a bot that drops out.
         """
-        with transaction(commit=True):
-            participant = Participant.query.get(self.id)
-            participant.var.set("test_allowed_to_fail", True)
+        _unique_ids_allowed_to_fail.add(self.participant_unique_id)
 
     def with_participant(self, function):
         """Return ``function(participant)``, called with the bot's database row.
