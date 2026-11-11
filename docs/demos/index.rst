@@ -431,6 +431,13 @@ Groups
     role-specific pages and the pair's result on the node its trials share.
     :doc:`/code/multiplayer/writing_a_round_based_experiment`.
 
+`experiments/microsociety <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety>`__
+    A fishing microsociety of three whose members are replaced one at a
+    time: a newcomer reads the society's recent catches and the tips of
+    members who have left, joins the round in progress, and the
+    longest-serving member then retires and leaves a tip.
+    :doc:`/code/multiplayer/synchronization`.
+
 `experiments/public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__
     A repeated public goods game in groups of three that carries on with two
     when a member returns the study or stops responding, and tells the last

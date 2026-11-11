@@ -1494,6 +1494,9 @@ Keep these in mind:
   iteration, holds the newcomer while the team waits for them in the round.
   For such a game, stop top-ups before the game instead (see
   :ref:`group barriers in loops <rounds-group-barriers-in-loops>`).
+  Alternatively, end each round at a single barrier in its trial, as the
+  ``microsociety`` demo does: a newcomer's cued trial then joins the round
+  in progress, and nothing outside the round holds them.
 
 When the experiment loads, PsyNet warns about each barrier outside a loop
 that comes after a grouper with ``join_existing_groups=True`` and has neither
