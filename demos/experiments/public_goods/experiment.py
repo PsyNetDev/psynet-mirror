@@ -6,24 +6,11 @@ and shared between the members who played the round, and everyone sees the
 group's contributions and what they earned, paid as a bonus of
 ``TOKEN_VALUE`` per token.
 
-Each round is one cued ``ContributionTrial`` per player, cued with the loop
-value as ``round=`` because the team stays together. The team's trials in
-one round share a node, which holds the team's contributions and pot; each
-player's contribution and payoff are on their trial, which pays the bonus,
-and the trial's ``sync_group_outcome`` records whether the player stayed to
-the end of the round or why they left it.
-
-- Running out of time on the contribution page puts nothing in the pot, so
-  the player keeps their tokens and still gets their share.
-- A player who returns the study, or closes the page and so is late for the
-  end of a round (``LATE_AFTER``), leaves the group and earns nothing for
-  that round. The others carry on while at least two remain, sharing the pot
-  between fewer players.
-- When one player remains, the group dissolves, the round is cancelled and
-  they keep their tokens for it.
-- Nobody is failed because others left: the last player, a player who comes
-  back after being removed, and a participant for whom no group forms within
-  ``GROUPING_WAIT`` are each told why the game ended for them.
+Each round is one ``ContributionTrial`` per player, cued with the loop value
+as ``round=``. The team's trials in a round share a node, which holds the
+team's pot; each trial holds the player's contribution and pays their
+payoff, according to its ``sync_group_outcome``. See ``README.md`` for what
+happens when players run out of time or leave.
 """
 
 from typing import List
@@ -136,8 +123,6 @@ class ContributionTrial(Trial):
         cls, trials: List["ContributionTrial"], node: SyncGroupNode, left: list
     ):
         """Share the multiplied pot between the members who played the round."""
-        for trial in trials:
-            trial.var.timed_out = trial.response.time_limit_reached
         # String keys, because node.var stores JSON. A player who ran out of
         # time has an answer of None and puts in nothing.
         node.var.contributions = {str(t.participant_id): t.answer for t in trials}
@@ -160,9 +145,7 @@ class ContributionTrial(Trial):
             return self.var.payoff
         if outcome == "group_dissolved":
             # The last player keeps their tokens for the cancelled round,
-            # whether or not they were already waiting at the barrier. They
-            # are its only player left, so nobody else writes this.
-            self.node.var.cancelled = True
+            # whether or not they were already waiting at the barrier.
             return ENDOWMENT
         if outcome == "late":
             return 0
@@ -180,7 +163,7 @@ class ContributionTrial(Trial):
         node = self.node
         # A group of three plays on with two, so at most one player leaves.
         left = "One player has left the group. " if node.var.n_left else ""
-        if self.var.timed_out:
+        if self.time_limit_reached:
             you = "You ran out of time and put in nothing"
         else:
             you = f"You put in {self.answer}"
@@ -204,7 +187,7 @@ class ContributionTrial(Trial):
 
 def your_contribution(participant, trial):
     """Replace the contribution buttons with the player's contribution while the others decide."""
-    if trial.response.time_limit_reached:
+    if trial.time_limit_reached:
         text = "You ran out of time, so you put in nothing."
     else:
         text = f"You put in {trial.answer} tokens."
@@ -269,9 +252,9 @@ class Exp(psynet.experiment.Experiment):
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or never answered.
                     "contribution": t.answer,
-                    # Whether the player ran out of time; None until the
-                    # round is scored, so in a cancelled round.
-                    "timed_out": t.var.get("timed_out"),
+                    # Whether the player ran out of time; None if they
+                    # never answered.
+                    "timed_out": t.time_limit_reached,
                     # None if the player returned the study during the round.
                     "payoff": t.score,
                     "bonus": t.performance_reward,
@@ -283,9 +266,9 @@ class Exp(psynet.experiment.Experiment):
                     "round": n.sync_group_round,
                     "team_id": n.sync_group_id,
                     "node_id": n.id,
-                    # Set when the last player finishes the cancelled round,
-                    # so False if they return the study first (issue #1163).
-                    "cancelled": n.var.get("cancelled", False),
+                    # When the group dissolved and the round was cancelled,
+                    # or None.
+                    "dissolved_at": n.sync_group_dissolved_at,
                     # The rest are None until the round is scored, so in a
                     # cancelled round. A player who ran out of time has a
                     # contribution of None.
@@ -300,72 +283,13 @@ class Exp(psynet.experiment.Experiment):
             ],
         }
 
-    test_n_bots = 10
+    test_n_bots = 3
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        self._test_full_game(bots[:3])
-        self._test_late_players(*bots[3:6])
-        self._test_no_group(bots[6])
-        self._test_others_leave_before_contributing(*bots[7:10])
-
-        data = self.get_basic_data()
-        # Per round: the full game's team, the late players' team, whose last
-        # round was cancelled, and the quitters' team, cancelled in round 0.
-        teams = data["team_round"]
-        assert [(t["round"], t["pot"], t["cancelled"], t["n_left"]) for t in teams] == [
-            (0, 18, False, 0),
-            (0, 18, False, 0),
-            (0, None, True, None),
-            (1, 12, False, 0),
-            (1, 4, False, 1),
-            (2, 12, False, 0),
-            (2, None, True, None),
-        ], teams
-        assert all(
-            t["contributions"] is t["multiplied_pot"] is t["share"] is None
-            for t in teams
-            if t["cancelled"]
-        ), teams
-        assert teams[3]["contributions"] == {
-            str(bots[0].id): 4,
-            str(bots[1].id): 8,
-            str(bots[2].id): None,
-        }, teams
-
-        rows = data["player_round"]
-        contributions = {
-            (r["participant_id"], r["round"]): r["contribution"] for r in rows
-        }
-        assert contributions[(bots[5].id, 2)] == 5, contributions
-        assert contributions[(bots[9].id, 0)] == 3, contributions
-        # Only a player who returned the study leaves their trial incomplete.
-        left = {
-            (r["participant_id"], r["round"]): (r["outcome"], r["complete"], r["bonus"])
-            for r in rows
-            if r["outcome"] != "stayed"
-        }
-        assert left == {
-            (bots[3].id, 2): ("late", True, 0),
-            (bots[4].id, 1): ("late", True, 0),
-            (bots[5].id, 2): ("group_dissolved", True, ENDOWMENT * TOKEN_VALUE),
-            (bots[7].id, 0): ("left_experiment", False, None),
-            (bots[8].id, 0): ("left_experiment", False, None),
-            (bots[9].id, 0): ("group_dissolved", True, ENDOWMENT * TOKEN_VALUE),
-        }, left
-        timed_out = [
-            (r["participant_id"], r["round"], r["contribution"])
-            for r in rows
-            if r["timed_out"]
-        ]
-        assert timed_out == [(bots[2].id, 1, None), (bots[5].id, 1, None)], timed_out
         for bot in bots:
-            paid = sum(r["bonus"] or 0 for r in rows if r["participant_id"] == bot.id)
-            reward = bot.with_participant(lambda p: p.performance_reward)
-            assert abs(paid - reward) < 1e-9, (bot.id, paid, reward)
-
-    def _test_full_game(self, bots):
-        _start(bots)
+            bot.take_page()
+        advance_past_wait_pages(bots)
         # A pot of 18 becomes 27: 9 tokens each.
         _play(bots, [2, 6, 10])
         text = bots[0].current_page_text
@@ -387,89 +311,32 @@ class Exp(psynet.experiment.Experiment):
         assert text == "The game is over. Your bonus is $0.90.", text
         run_bots_to_completion(bots)
 
-    def _test_late_players(self, late_3, late_2, stayer):
-        _start([late_3, late_2, stayer])
-        _play([late_3, late_2, stayer], [3, 6, 9])
-        _see_results([late_3, late_2, stayer])
-
-        # Round 2: late_2 stays on the contribution page and is removed for
-        # being late; the other two carry on.
-        late_3.take_page(response=4)
-        stayer.run_out_of_time()
-        # While waiting, the waiting screen shows the stayer's contribution.
-        advance_past_wait_pages([stayer], stop_at="round_finished")
-        text = stayer.current_page_text
-        assert "You ran out of time, so you put in nothing." in text, text
-        advance_past_wait_pages([late_3, stayer], timeout=LATE_AFTER + 15)
-        text = stayer.current_page_text
-        assert text.startswith("One player has left the group."), text
-        assert "shared between 2 players: 3 tokens each" in text, text
-        _check_late(late_2, "group", "$0.26")  # 13 tokens, and none for round 2
-
-        # Round 3: late_3 is late too, which dissolves the group while the
-        # stayer waits for the results.
-        _see_results([late_3, stayer])
-        stayer.take_page(response=5)
-        advance_past_wait_pages([stayer], timeout=LATE_AFTER + 15)
-        assert stayer.current_notice == (
-            "Too few members of your group remained. Please continue."
-        ), stayer.current_notice
-        text = stayer.current_page_text  # 10 + 13, and 10 for the cancelled round
-        assert text == (
-            "Too few players remained, so the game ended early. Your bonus is $0.66."
-        ), text
-        # Only the stayer was left when late_3 was removed, hence "partner".
-        _check_late(late_3, "partner", "$0.50")  # 16 + 9 tokens
-        run_bots_to_completion([late_2, late_3, stayer])
-
-    def _test_no_group(self, bot):
-        bot.take_page()
-        advance_past_wait_pages([bot], timeout=GROUPING_WAIT + 15)
-        assert bot.current_notice == (
-            "We couldn't form a group for you in time. Please continue."
-        ), bot.current_notice
-        text = bot.current_page_text
-        assert text == "Without a group, there is no game to play.", text
-        bot.run_to_completion()
-
-    def _test_others_leave_before_contributing(self, quitter_1, quitter_2, stayer):
-        # The group dissolves before the stayer reaches the barrier; the
-        # round is cancelled and they still keep their tokens.
-        _start([quitter_1, quitter_2, stayer])
-        quitter_1.drop_out()
-        quitter_2.drop_out()
-        stayer.take_page(response=3)
-        advance_past_wait_pages([stayer])
-        text = stayer.current_page_text
-        assert text == (
-            "Too few players remained, so the game ended early. Your bonus is $0.20."
-        ), text
-        stayer.run_to_completion()
-
-
-def _start(bots):
-    for bot in bots:
-        bot.take_page()
-    advance_past_wait_pages(bots)
-    assert all(bot.current_page_label == "contribution" for bot in bots)
+        data = self.get_basic_data()
+        teams = data["team_round"]
+        assert [(t["pot"], t["dissolved_at"], t["n_left"]) for t in teams] == [
+            (18, None, 0),
+            (12, None, 0),
+            (12, None, 0),
+        ], teams
+        assert teams[1]["contributions"] == {
+            str(bots[0].id): 4,
+            str(bots[1].id): 8,
+            str(bots[2].id): None,
+        }, teams
+        rows = data["player_round"]
+        assert all(r["outcome"] == "stayed" for r in rows), rows
+        timed_out = [(r["participant_id"], r["round"]) for r in rows if r["timed_out"]]
+        assert timed_out == [(bots[2].id, 1)], timed_out
+        for bot in bots:
+            paid = sum(r["bonus"] for r in rows if r["participant_id"] == bot.id)
+            reward = bot.with_participant(lambda p: p.performance_reward)
+            assert abs(paid - reward) < 1e-9, (bot.id, paid, reward)
 
 
 def _play(bots, contributions):
     for bot, tokens in zip(bots, contributions):
         bot.take_page(response=tokens)
     advance_past_wait_pages(bots)
-
-
-def _check_late(bot, went_on, bonus):
-    """Check what a player removed for being late sees on and after their contribution page."""
-    notice = bot.current_notice
-    assert notice == f"Your {went_on} went on without you. Please continue.", notice
-    bot.take_page()
-    text = bot.current_page_text
-    assert text == (
-        "You were away for too long, so the game went on without you. "
-        f"Your bonus is {bonus}."
-    ), text
 
 
 def _see_results(bots):

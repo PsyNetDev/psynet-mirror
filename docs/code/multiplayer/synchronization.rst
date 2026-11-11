@@ -481,8 +481,7 @@ answered it. With ``accumulate_answers``, an unanswered trial's ``answer`` is
 In the ``public_goods`` demo, a group of three plays on with two, so the
 group dissolves when one player is left and the round is cancelled.
 ``score_answer``, at the end of each trial, pays the last player for the
-cancelled round by their trial's outcome, and marks the round cancelled on
-the node for the export:
+cancelled round by their trial's outcome:
 
 .. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
    :pyobject: ContributionTrial.score_answer
@@ -1456,13 +1455,12 @@ For the rest of the timeline:
   grouped pages. The page after the barrier is built once the member has
   passed it, but a member who has left the group passes without waiting, so
   the group may not be scored yet. The page therefore reads the member's own
-  ``sync_group_outcome`` first, ``"late"`` or ``"group_dissolved"`` (nothing
-  runs when a group ends, so it stored no median), and only then the
-  ``median`` that ``on_release`` stored on the node and the trial's
-  ``timed_out``, which ``on_release`` copied from
-  :attr:`Response.time_limit_reached <psynet.timeline.Response.time_limit_reached>`
-  rather than inferring it from a missing estimate. A member without a median to revise towards is told why
-  there is nothing to revise:
+  ``sync_group_outcome`` first, such as ``"late"`` or ``"group_dissolved"``
+  (``on_release`` doesn't run when a group ends, so there is no median),
+  and only then the ``median`` that ``on_release`` stored on the node and
+  :attr:`Trial.time_limit_reached <psynet.trial.main.Trial.time_limit_reached>`,
+  rather than inferring a time-out from a missing estimate. A member
+  without a median to revise towards is told why there is nothing to revise:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
      :pyobject: EstimateTrial.revise_page
