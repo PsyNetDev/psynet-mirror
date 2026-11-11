@@ -32,7 +32,7 @@ def test_every_round_outcome_has_a_results_text(
     demo = sys.modules[type(get_experiment()).__module__]
     trial = SimpleNamespace(
         sync_group_outcome=outcome,
-        node=SimpleNamespace(var=SimpleNamespace(result=result)),
+        group_round=SimpleNamespace(var=SimpleNamespace(result=result)),
         answer=answer,
     )
     key = demo.OfferTrial.outcome(trial)

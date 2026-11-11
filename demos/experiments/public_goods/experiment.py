@@ -7,8 +7,8 @@ group's contributions and what they earned, paid as a bonus of
 ``TOKEN_VALUE`` per token.
 
 Each round is one ``ContributionTrial`` per player, cued with the loop value
-as ``round=``. The team's trials in a round share a node, which holds the
-team's pot; each trial holds the player's contribution and pays their
+as ``round=``. The team's trials in a round share a ``SyncGroupRound``,
+which holds the team's pot; each trial holds the player's contribution and pays their
 payoff, according to its ``sync_group_outcome``. See ``README.md`` for what
 happens when players run out of time or leave.
 """
@@ -25,9 +25,9 @@ from psynet.bot import (
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
-from psynet.sync import GroupBarrier, SimpleGrouper
+from psynet.sync import GroupBarrier, SimpleGrouper, SyncGroupRound
 from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop, join
-from psynet.trial.main import SyncGroupNode, Trial
+from psynet.trial.main import Trial
 from psynet.utils import serialise_datetime
 
 GROUP = "team"
@@ -128,21 +128,26 @@ class ContributionTrial(Trial):
 
     @classmethod
     def score_round(
-        cls, trials: List["ContributionTrial"], node: SyncGroupNode, left: list
+        cls,
+        trials: List["ContributionTrial"],
+        group_round: SyncGroupRound,
+        left: list,
     ):
         """Share the multiplied pot between the members who played the round."""
-        # String keys, because node.var stores JSON. A player who ran out of
+        # String keys, because var stores JSON. A player who ran out of
         # time has an answer of None and puts in nothing.
-        node.var.contributions = {str(t.participant_id): t.answer for t in trials}
+        group_round.var.contributions = {
+            str(t.participant_id): t.answer for t in trials
+        }
         pot = sum(t.answer or 0 for t in trials)
         multiplied_pot = MULTIPLIER * pot
         share = multiplied_pot / len(trials)
-        node.var.pot = pot
-        node.var.multiplied_pot = multiplied_pot
-        node.var.share = share
+        group_round.var.pot = pot
+        group_round.var.multiplied_pot = multiplied_pot
+        group_round.var.share = share
         # Members who left since the previous round was scored, including
         # one who left while reading its results.
-        node.var.n_left = len(left)
+        group_round.var.n_left = len(left)
         for trial in trials:
             trial.var.payoff = ENDOWMENT - (trial.answer or 0) + share
 
@@ -166,10 +171,10 @@ class ContributionTrial(Trial):
         return self.sync_group_outcome == "stayed"
 
     def show_feedback(self, experiment, participant):
-        node = self.node
+        team = self.group_round.var
         # A group of three with a quorum of two dissolves when a second player
         # leaves, cancelling the round, so a scored round has n_left <= 1.
-        left = "One player has left the group. " if node.var.n_left else ""
+        left = "One player has left the group. " if team.n_left else ""
         if self.time_limit_reached:
             you = "You ran out of time and put in nothing"
         else:
@@ -177,15 +182,15 @@ class ContributionTrial(Trial):
         return ModularPage(
             "results",
             GroupPrompt(
-                f"{left}The group put {node.var.pot} tokens in the pot, which became "
-                f"{node.var.multiplied_pot:g} and was shared between "
-                f"{len(node.var.contributions)} players: {node.var.share:g} tokens "
+                f"{left}The group put {team.pot} tokens in the pot, which became "
+                f"{team.multiplied_pot:g} and was shared between "
+                f"{len(team.contributions)} players: {team.share:g} tokens "
                 f"each. {you}, so you earned {self.var.payoff:g} tokens this round.",
                 participant=participant,
                 group=self.sync_group,
                 answers={
                     id_: f"{tokens or 0} tokens"
-                    for id_, tokens in node.var.contributions.items()
+                    for id_, tokens in team.contributions.items()
                 },
             ),
             time_estimate=RESULTS_SECONDS,
@@ -234,15 +239,15 @@ class Exp(psynet.experiment.Experiment):
     def get_basic_data(cls, context=None, **kwargs):
         """Return one row per player per round and one per team per round.
 
-        Player rows come from the trials and team rows from the nodes. Every
+        Player rows come from the trials and team rows from the rounds. Every
         trial gets a row, including one whose player left or whose round was
         cancelled; ``outcome`` says how the round ended for the player.
         """
         trials = ContributionTrial.query.order_by(
             ContributionTrial.sync_group_round, ContributionTrial.id
         )
-        teams = SyncGroupNode.query.filter_by(module_id="game").order_by(
-            SyncGroupNode.sync_group_round, SyncGroupNode.id
+        teams = SyncGroupRound.query.filter_by(module_id="game").order_by(
+            SyncGroupRound.number, SyncGroupRound.id
         )
         return {
             "player_round": [
@@ -271,23 +276,23 @@ class Exp(psynet.experiment.Experiment):
             ],
             "team_round": [
                 {
-                    "round": n.sync_group_round,
-                    "team_id": n.sync_group_id,
-                    "node_id": n.id,
+                    "round": r.number,
+                    "team_id": r.sync_group_id,
+                    "round_id": r.id,
                     # When the group dissolved and the round was cancelled,
                     # as an ISO timestamp, or None. Basic data must be JSON.
-                    "dissolved_at": serialise_datetime(n.sync_group_dissolved_at),
+                    "dissolved_at": serialise_datetime(r.dissolved_at),
                     # The rest are None until the round is scored, so in a
                     # cancelled round. A player who ran out of time has a
                     # contribution of None.
-                    "contributions": n.var.get("contributions"),
-                    "pot": n.var.get("pot"),
-                    "multiplied_pot": n.var.get("multiplied_pot"),
-                    "share": n.var.get("share"),
+                    "contributions": r.var.get("contributions"),
+                    "pot": r.var.get("pot"),
+                    "multiplied_pot": r.var.get("multiplied_pot"),
+                    "share": r.var.get("share"),
                     # Players who left since the previous round was scored.
-                    "n_left": n.var.get("n_left"),
+                    "n_left": r.var.get("n_left"),
                 }
-                for n in teams
+                for r in teams
             ],
         }
 

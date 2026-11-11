@@ -47,7 +47,7 @@ record of what happened. The following design keeps participants in sync:
 
 - The server stores the shared state in the database, for example in a table
   registered with ``@register_table``, in ``trial.var``, or, for state the
-  whole group shares, in ``node.var`` of the node that a group's cued trials
+  whole group shares, in ``group_round.var`` of the round that a group's cued trials
   share (see :ref:`rounds-one-trial-per-player`). Handlers run in
   several processes, so attributes on the handler object or on the
   experiment are not shared between messages.

@@ -47,10 +47,14 @@ class TestPublicGoods:
         self, demo, answers, n_left, share, payoffs
     ):
         trials = [_trial(i, answer) for i, answer in enumerate(answers)]
-        node = SimpleNamespace(var=SimpleNamespace())
-        demo.ContributionTrial.score_round(trials, node, left=[object()] * n_left)
-        assert node.var.contributions == {str(i): a for i, a in enumerate(answers)}
-        assert (node.var.share, node.var.n_left) == (share, n_left)
+        group_round = SimpleNamespace(var=SimpleNamespace())
+        demo.ContributionTrial.score_round(
+            trials, group_round, left=[object()] * n_left
+        )
+        assert group_round.var.contributions == {
+            str(i): a for i, a in enumerate(answers)
+        }
+        assert (group_round.var.share, group_round.var.n_left) == (share, n_left)
         assert [t.var.payoff for t in trials] == payoffs
 
     @pytest.mark.parametrize(
@@ -88,12 +92,20 @@ class TestPublicGoods:
         ],
     )
     def test_results_text(self, demo, answers, n_left, expected):
-        node = SimpleNamespace(var=SimpleNamespace())
+        group_round = SimpleNamespace(var=SimpleNamespace())
         trials = [
-            _trial(i, a, node=node, time_limit_reached=a is None, sync_group=None)
+            _trial(
+                i,
+                a,
+                group_round=group_round,
+                time_limit_reached=a is None,
+                sync_group=None,
+            )
             for i, a in enumerate(answers)
         ]
-        demo.ContributionTrial.score_round(trials, node, left=[object()] * n_left)
+        demo.ContributionTrial.score_round(
+            trials, group_round, left=[object()] * n_left
+        )
         page = demo.ContributionTrial.show_feedback(
             trials[0], None, SimpleNamespace(id=0)
         )

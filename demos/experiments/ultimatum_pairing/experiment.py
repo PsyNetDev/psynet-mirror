@@ -18,8 +18,8 @@ In each pair, the proposer offers part of
 offer they would accept.
 
 Each player's round is one cued ``OfferTrial``. Because the trial class has
-``sync_group_type = PAIR``, the two trials of a pair share a node: the
-pair's offer and result go in ``trial.node.var`` and each player's coins in
+``sync_group_type = PAIR``, the two trials of a pair share a round: the
+pair's offer and result go in ``trial.group_round.var`` and each player's coins in
 ``trial.var``, and ``get_basic_data`` reads both back.
 
 A player who doesn't answer within ``DECISION_SECONDS`` gets nothing that
@@ -41,6 +41,7 @@ from psynet.participant import Participant
 from psynet.sync import (
     GroupBarrier,
     SimpleGrouper,
+    SyncGroupRound,
     leave_group,
 )
 from psynet.timeline import (
@@ -50,7 +51,7 @@ from psynet.timeline import (
     switch,
     while_loop,
 )
-from psynet.trial.main import SyncGroupNode, Trial
+from psynet.trial.main import Trial
 
 from .pairing import PAIR, PairingRegrouper, last_partner_id, last_role
 
@@ -314,10 +315,10 @@ class OfferTrial(Trial):
     def score_pair(
         cls,
         trials: List["OfferTrial"],
-        node: SyncGroupNode,
+        group_round: SyncGroupRound,
         left: List[Participant],
     ):
-        """Save the pair's players, offer and result on the node, and each player's coins on their trial."""
+        """Save the pair's players, offer and result on the round, and each player's coins on their trial."""
         by_role = {trial.sync_group_role: trial for trial in trials}
         decisions = {role: t.answer for role, t in by_role.items()}
         offer, minimum = decisions.get("proposer"), decisions.get("responder")
@@ -329,14 +330,18 @@ class OfferTrial(Trial):
         else:
             result = "accepted" if offer >= minimum else "rejected"
         # From all the round's trials, so a player removed for being away is kept.
-        players = {t.sync_group_role: t.participant_id for t in node.all_trials}
-        node.var.proposer_id = players.get("proposer")
-        node.var.responder_id = players.get("responder")
-        node.var.offer = offer
-        node.var.minimum = minimum
-        node.var.result = result
+        players = {t.sync_group_role: t.participant_id for t in group_round.trials}
+        pair = group_round.var
+        pair.proposer_id = players.get("proposer")
+        pair.responder_id = players.get("responder")
+        pair.offer = offer
+        pair.minimum = minimum
+        pair.result = result
         coins = (
-            {"proposer": node.definition["endowment"] - offer, "responder": offer}
+            {
+                "proposer": group_round.definition["endowment"] - offer,
+                "responder": offer,
+            }
             if result == "accepted"
             else {}
         )
@@ -350,13 +355,13 @@ class OfferTrial(Trial):
         # From the dashboard; the round may not have been scored yet.
         if self.sync_group_outcome == "removed_by_experimenter":
             return "removed_by_experimenter"
-        if self.node.var.result == "timed_out" and self.answer is None:
+        if self.group_round.var.result == "timed_out" and self.answer is None:
             return "own_time_out"
-        return self.node.var.result
+        return self.group_round.var.result
 
     def show_feedback(self, experiment, participant):
         outcome = self.outcome()
-        pair = self.node.var
+        pair = self.group_round.var
         text = OUTCOME_TEXTS[outcome].format(
             offer=pair.get("offer"), coins=self.var.get("coins")
         )
@@ -399,10 +404,10 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per round from the trials, one per pair from the nodes, and one per player."""
+        """Return one row per player per round from the trials, one per pair from the rounds, and one per player."""
         trials = OfferTrial.query.order_by(OfferTrial.id).all()
-        pairs = SyncGroupNode.query.filter_by(module_id="game").order_by(
-            SyncGroupNode.id
+        pairs = SyncGroupRound.query.filter_by(module_id="game").order_by(
+            SyncGroupRound.id
         )
         players = Participant.query.order_by(Participant.id).all()
         return {
@@ -430,15 +435,15 @@ class Exp(psynet.experiment.Experiment):
             ],
             "pair": [
                 {
-                    "pair_id": n.sync_group_id,
-                    "node_id": n.id,
-                    "proposer_id": n.var.get("proposer_id"),
-                    "responder_id": n.var.get("responder_id"),
-                    "offer": n.var.get("offer"),
-                    "minimum": n.var.get("minimum"),
-                    "result": n.var.get("result"),
+                    "pair_id": r.sync_group_id,
+                    "round_id": r.id,
+                    "proposer_id": r.var.get("proposer_id"),
+                    "responder_id": r.var.get("responder_id"),
+                    "offer": r.var.get("offer"),
+                    "minimum": r.var.get("minimum"),
+                    "result": r.var.get("result"),
                 }
-                for n in pairs
+                for r in pairs
             ],
             "player": [
                 {

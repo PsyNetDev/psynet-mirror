@@ -415,7 +415,7 @@ In group games, cued trials can be the rounds. Set ``sync_group_type`` on
 the trial class and cue it inside a :class:`~psynet.timeline.Module`:
 ``cue`` numbers each group's rounds by itself, and the trials that the
 members of a group cue in one round share one
-:class:`~psynet.trial.main.SyncGroupNode`, whose ``var`` holds the group's
+:class:`~psynet.sync.SyncGroupRound`, whose ``var`` holds the group's
 results. Each trial records the group, the player's role and the round.
 ``definition`` can then be a function of ``group`` and ``round``, called
 once per group and round. ``round=`` overrides the automatic round in the

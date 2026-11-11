@@ -2,8 +2,8 @@
 
 ```python
 @classmethod
-def score_room(cls, trials, node):
-    node.var.picks = [t.answer for t in trials]  # None: the page ran out of time
+def score_room(cls, trials, group_round):
+    group_round.var.picks = [t.answer for t in trials]  # None: the page ran out of time
 ```
 
 When the trial ends, `trial.answer` is set to the result of `format_answer` as before. As a result, an unfinished trial in an export, whether abandoned or still running, can have an `answer` (the answer so far, not yet passed through `format_answer`); filter on `complete` as well as `failed` when analysing answers.

@@ -80,13 +80,15 @@ Barrier checks and participant requests take their locks in this order:
    A synchronized trial maker recording a run's choices in the group's
    ``trial_maker_runs`` also waits for the row, after locking any
    participant rows it needs.
-4. The advisory lock of a cued round's node, which a cue waits for so
-   that members cueing at once share one node. Only cues take it; they take
-   only a ``KEY SHARE`` lock on the group row, through the trial's foreign
-   key, which doesn't conflict with ``FOR NO KEY UPDATE``. Releases and
-   dissolution don't need it: a barrier waits for every admitted member, so
-   none of them can still be about to cue the round it closes, and
-   dissolution reads the rounds under the members' row locks.
+4. The unique index on a group's rounds (``sync_group_round``), on which
+   a cue that creates a round waits for another request creating the same
+   round, so that members cueing at once share one round; the later insert
+   does nothing and loads the earlier one's round. Neither the round nor
+   the trial has a foreign key to the group row, so cues take no lock on
+   it. Releases and dissolution don't need a round lock: a barrier waits
+   for every admitted member, so none of them can still be about to cue the
+   round it closes, and dissolution reads the rounds under the members' row
+   locks.
 5. Members' rows when dissolving the group, with ``SKIP LOCKED``, then the
    rows of links, trials and nodes, and of other groups. A between-barrier
    timeout locks late members' rows (also ``SKIP LOCKED``) earlier, in

@@ -7,7 +7,7 @@ waiting screen. After two rounds of turns everyone rates the story.
 Good reference for turns one after the other in a fixed group: each turn is
 one cued round, `StoryTurn.cue(..., round=turn)`, whose definition stores the
 turn's writer, chosen once with `group_seats`. The writer stores their
-sentence in `node.var` as soon as they submit it, and the last page reads the
+sentence in `trial.group_round.var` as soon as they submit it, and the last page reads the
 story with `SyncGroup.rounds("story")`, which also works after the group has
 ended. The bot test plays a full story in which one writer runs out of time.
 

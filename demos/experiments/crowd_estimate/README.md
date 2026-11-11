@@ -16,7 +16,7 @@ replacement, and `join(..., stop_if=...)` with a `conditional` for participants
 without a group. Each question is one cued trial per player
 (`Trial.cue(..., round=question)` on a trial class with `sync_group_type`):
 the barrier that scores the question saves the group's estimates and median
-on the node its members' trials share, and on each trial whether its
+on the round its members' trials share (`trial.group_round.var`), and on each trial whether its
 estimate is in the median. A code block right after the estimate page stores
 whether it timed out in `trial.var.estimate_timed_out`, from
 `participant.last_response`, because `trial.time_limit_reached` later follows
@@ -27,7 +27,7 @@ both the estimate and the revised estimate, by page label. A player without a
 group gets an ungrouped trial that asks only for their estimate.
 `get_basic_data` exports a row for every trial, including answers given alone
 and trials whose player left before answering, and one per group and question
-from the nodes.
+from the rounds.
 
 ## Dropouts and time-outs
 

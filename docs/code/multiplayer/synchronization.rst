@@ -269,10 +269,10 @@ pairs only latecomers while the others are still playing.
 Play each round as one trial per player, added after the regrouper with
 :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` on a trial class that sets
 ``sync_group_type``. The trials of a group's members in one round share a
-:class:`~psynet.trial.main.SyncGroupNode` for the group's results, and each
+:class:`~psynet.sync.SyncGroupRound` for the group's results, and each
 trial records the group, the player's role and the round, so the game needs
 no bookkeeping of its own and its data can be exported from trials and
-nodes (see :ref:`rounds-one-trial-per-player`).
+rounds (see :ref:`rounds-one-trial-per-player`).
 
 :doc:`writing_a_round_based_experiment` builds a complete game this way, including moving
 slow players on and sitting out. :class:`~psynet.sync.Regrouper` lists all
@@ -334,26 +334,26 @@ where ``show_feedback`` reads them:
 
 ``on_release`` can take any of the arguments ``group``, ``participants``,
 ``trials`` (each member's current trial, in the same order as
-``participants``; its ``answer`` holds the answer so far), ``node`` (see
+``participants``; its ``answer`` holds the answer so far), ``group_round`` (see
 below), ``leader`` and ``barrier`` (``participant`` is the leader too, kept
 for compatibility).
 
-.. _sync-barrier-node:
+.. _sync-barrier-round:
 
-``node`` is the group's :class:`~psynet.trial.main.SyncGroupNode` for the
-round whose trial every member it releases is in, that is, at a barrier in
+``group_round`` is the group's :class:`~psynet.sync.SyncGroupRound` whose
+trial every member it releases is in, that is, at a barrier in
 ``show_trial`` of a cued trial with ``sync_group_type`` (see
 :ref:`whom a group barrier waits for <rounds-group-barrier-rule>`). At any other barrier, including one in ``show_feedback``, between
 iterations, after the loop or at the start of a later run, and in a group
-that never uses :meth:`~psynet.trial.main.Trial.cue`, ``node`` is ``None``
-and ``trials`` holds each member's current trial whatever its node, which
+that plays no rounds, ``group_round`` is ``None``
+and ``trials`` holds each member's current trial whatever its round, which
 can be a trial of an earlier round or module, or ``None`` for a member with
 none.
 In ``rock_paper_scissors`` the barrier is in ``show_trial`` of a cued
-trial, so ``node`` is the pair's node for the round. The demo saves the
+trial, so ``group_round`` is the pair's round. The demo saves the
 results on the trials, but a ``@classmethod`` on the trial class can also
-save the group's results in ``node.var`` (see :ref:`rounds-one-trial-per-player`). Results on
-the trial or node stay in the export for every round, while a participant
+save the group's results in ``group_round.var`` (see :ref:`rounds-one-trial-per-player`). Results on
+the trial or round stay in the export for every round, while a participant
 variable keeps only the latest. ``on_release`` must be a module-level
 function, a static or class method, or a method bound to a trial maker or a
 saved database object such as a trial. The ``barrier`` it receives is rebuilt
@@ -379,8 +379,8 @@ the same name that PsyNet passes:
 its previous barrier pass (or since it formed), ordered by participant ID;
 ``participant.sync_group_removal_reason(group_type)`` says why each went, for
 example to tell a player whether their partner returned the study or was too
-slow. ``trials`` only covers the members still in the group; on a group's
-node, ``node.all_trials`` lists every trial of the round, including those of
+slow. ``trials`` only covers the members still in the group;
+``group_round.trials`` lists every trial of the round, including those of
 members who have since left, each with its ``sync_group_role``.
 
 .. _sync-timeouts-and-rounds:
@@ -402,21 +402,21 @@ To move members on from a notice automatically, show it from the trial's
 To read a group's rounds after the game, for example on a
 debrief page once the group has ended,
 :meth:`group.rounds(module_id) <psynet.sync.SyncGroup.rounds>` returns the
-group's nodes for that module of cued trials in round order:
+group's rounds in that module in round order:
 
 .. code-block:: python
 
-    def score_round(trials, node):
+    def score_round(trials, group_round):
         for trial in trials:
             trial.score = 0 if trial.time_limit_reached else trial.answer
         ...
 
     def story_so_far(group):
-        return [node.var.get("sentence") for node in group.rounds("story")]
+        return [r.var.get("sentence") for r in group.rounds("story")]
 
 .. _sync-round-outcome:
 
-Each trial on a group's node records how the round ended for its player in
+Each trial in a group's round records how the round ended for its player in
 :attr:`~psynet.trial.main.Trial.sync_group_outcome`, so that feedback pages
 and exports can read it rather than work it out from the player's groups
 later:
@@ -444,20 +444,20 @@ lists them in ``left``, so store there what it decides about them.
 Leaving the group in ``show_feedback``, between rounds or in a later
 module stores nothing either, so put the barrier that decides the round in
 ``show_trial``. A partner's outcome is on their trial in
-``node.all_trials``:
+``self.group_round.trials``:
 
 .. code-block:: python
 
     def show_feedback(self, experiment, participant):
         if self.sync_group_outcome == "late":
             return InfoPage("You were away for too long, so you missed this round.")
-        partners = [trial for trial in self.node.all_trials if trial.id != self.id]
+        partners = [t for t in self.group_round.trials if t.id != self.id]
         partner_left = any(
             trial.sync_group_outcome not in (None, "stayed") for trial in partners
         )
         ...
 
-A member removed before their cue ran has no trial on the node; ``left``
+A member removed before their cue ran has no trial in the round; ``left``
 still lists them.
 
 ``on_release`` runs only when the barrier releases the group. A member who
@@ -469,23 +469,23 @@ the trial, or ``participant.var.get("score")`` when there is no trial.
 .. _sync-dissolved-round:
 
 No code of yours runs when a group dissolves, but PsyNet records it on the
-round: the group's node gets
-:attr:`~psynet.trial.main.SyncGroupNode.sync_group_dissolved_at`, the time
-it dissolved, if a member still in the group was in their trial on that
-node (its pages hadn't ended) and no group barrier had released the round.
+round: the group's :class:`~psynet.sync.SyncGroupRound` gets
+``dissolved_at``, the time
+it dissolved, if a member still in the group was in their trial in that
+round (its pages hadn't ended) and the round wasn't closed.
 A round that a barrier released stays ``None``, even if a member was still
 on a page after the barrier, and so does a round whose remaining members'
 trials had all ended, as when the group dissolves between rounds. Likewise,
 the trials of members released by the barrier keep ``sync_group_outcome``
 ``"stayed"``. So an export can tell a cancelled round from one still in
 progress even if no member finishes their trial, for example
-``node.sync_group_dissolved_at is not None``, without storing anything of
+``group_round.dissolved_at is not None``, without storing anything of
 its own.
 
 With ``below_quorum="continue_without_group"`` the members carry on and the
 round's results are still stored (with ``"fail"``, the members
 are failed and ``show_feedback`` doesn't run). Each trial's ``answer`` holds
-the player's latest answer, the round's trials are in ``node.all_trials``,
+the player's latest answer, the round's trials are in ``group_round.trials``,
 and each trial's ``sync_group_outcome`` is
 ``"group_dissolved"`` for every member still in the group when it dissolved,
 waiting at the barrier or still on a page, unless the trial's pages had
@@ -501,12 +501,12 @@ round's result, such as ``show_feedback``, an export or ``on_finalized``,
 computes it from those facts when ``on_release`` didn't run. A partner who
 was still on the question page may not have answered yet when a member's
 ``show_feedback`` runs, so a result that must be the same for the whole
-group belongs in the export, or in code that runs once every trial on the
-node is complete. A quiz can still score the last question for those who
+group belongs in the export, or in code that runs once every trial in the
+round is complete. A quiz can still score the last question for those who
 answered it. With ``accumulate_answers``, an unanswered trial's ``answer`` is
 ``{}`` (without it, ``None``), so skip the missing estimates.
-``node.all_trials`` includes the failed trial of a member who left; use
-``node.alive_trials`` to leave their answer out:
+``group_round.trials`` includes the failed trial of a member who left;
+leave out failed trials to drop their answer:
 
 .. code-block:: python
 
@@ -515,7 +515,8 @@ answered it. With ``accumulate_answers``, an unanswered trial's ``answer`` is
     def show_feedback(self, experiment, participant):
         score = self.var.get("score")
         if score is None and self.sync_group_outcome == "group_dissolved":
-            estimates = [t.answer.get("estimate") for t in self.node.alive_trials]
+            alive = [t for t in self.group_round.trials if not t.failed]
+            estimates = [t.answer.get("estimate") for t in alive]
             score = score_answers([e for e in estimates if e is not None])
         ...
 
@@ -616,8 +617,8 @@ a prompt, or a :class:`~psynet.modular_page.ModularPage` without a Next
 button (``NullControl(show_next_button=False)``), or a module-level
 function that returns one of these, or ``None`` to keep
 the last page. The function can take ``participant``, ``trial``, the
-participant's current trial, and ``node``, that trial's
-:class:`~psynet.trial.main.SyncGroupNode` (``None`` on another kind of node),
+participant's current trial, and ``group_round``, that trial's
+:class:`~psynet.sync.SyncGroupRound` (``None`` if it is in no group's round),
 asking for them by name as ``on_release`` does. At a grouper or
 :class:`~psynet.sync.Regrouper`, ``trial`` is the participant's previous
 trial, such as the previous round's, because ``current_trial`` only changes
@@ -719,7 +720,7 @@ the group (hidden, like the group, when there is no group to show). In the
 
 .. code-block:: python
 
-    choices = self.node.var.choices
+    choices = self.group_round.var.choices
     GroupPrompt(
         "The winning number was 2.",
         participant=participant,
@@ -729,7 +730,7 @@ the group (hidden, like the group, when there is no group to show). In the
     )
 
 Store the answers when the barrier releases, as the ``public_goods``
-demo does on the round's node in ``on_release``, rather than reading them
+demo does on the round's ``group_round.var`` in ``on_release``, rather than reading them
 from the group's current members: a member who has already moved on to the
 next round is no longer in the group, and would disappear if the page is
 reloaded.
@@ -797,13 +798,15 @@ same text to each if the messages should match.
 
 .. _rounds-cued-trials:
 
+.. _sync-group-rounds:
+
 Rounds of cued trials
 ~~~~~~~~~~~~~~~~~~~~~
 
 This section is the reference for rounds played as one cued trial per
 player, on a trial class that sets ``sync_group_type``, whether the groups
 are fixed or formed anew each round. For a worked example, with the
-group's results in ``node.var`` and the exports, see
+group's results in ``group_round.var`` and the exports, see
 :ref:`rounds-one-trial-per-player` in the round-based tutorial. For a group
 that works through a stimulus set or a chain, use a trial maker with
 ``sync_group_type`` instead (see :ref:`concept_groups` for how to choose).
@@ -812,8 +815,8 @@ that works through a stimulus set or a chain, use a trial maker with
 
 ``cue`` numbers each group's rounds by itself, from 0:
 
-- A cue joins the group's newest node in the module while that round is
-  open and the player has no trial on it. A round closes when a
+- A cue joins the group's newest round in the module while that round is
+  open and the player has no trial in it. A round closes when a
   ``GroupBarrier`` releases the group while every member it releases is in
   the round's trial, that is, at a barrier in ``show_trial``, and only then.
 - Otherwise it starts the group's next round.
@@ -847,8 +850,9 @@ release is the group's pass, except letting one member go after
 dissolved below its quorum (see :ref:`groups_below_min_size`). A pass runs
 ``on_release`` and counts for ``left`` and ``late_after``; a dissolution
 does neither and closes no round. If every member a pass releases is in
-the same round's trial, the pass closes that round and ``on_release`` gets
-its node; otherwise ``node`` is ``None``. For example:
+the same round's trial, the pass closes that round (setting its
+``closed_at``) and ``on_release`` gets it as ``group_round``; otherwise
+``group_round`` is ``None``. For example:
 
 .. code-block:: python
 
@@ -937,7 +941,7 @@ value as ``round=``:
 Each iteration is then the group's round of that number, whoever cues it
 first, so its definition can come from the loop. Cueing a round that the
 group finished without the member, one whose barrier in ``show_trial`` has
-released the group while they had no trial on it, raises an error: a
+released the group while they had no trial in it, raises an error: a
 member who joins during the game should be admitted at the start of a
 round (see :ref:`sync-admission-points`), or top-ups stopped before it.
 Cueing a round in which the member already has a trial of that class, for
@@ -956,15 +960,15 @@ each run its own module id. Its cues raise an error if the participant has
 run the module before. Cueing a round again after a later one, or a trial
 class again in the same round, also raises an error.
 
-Classes cued in the same open round share its node and definition: if the
+Classes cued in the same open round share it and its definition: if the
 members cue different classes, such as an offer trial for the proposer and
-a reply trial for the responder, their trials share the node. Put
+a reply trial for the responder, their trials share the round. Put
 role-specific content in the definition, keyed by role, or derive it from
 ``self.sync_group_role``. A round with two phases, such as an offer and a
 reply, is normally one trial class with several pages. Only phases played
 one after the other by trials of two classes need ``round=``, because the
 second cue would otherwise start the next round, the player already having
-a trial on the round's node. Pass both cues the same ``round=``, such as
+a trial in the round. Pass both cues the same ``round=``, such as
 the loop value in a fixed group's loop. A member with a trial in the round
 joins it even after its barrier has released the group.
 
@@ -1102,7 +1106,7 @@ demo:
    :end-before: def bonus_text
 
 The others learn who left from the ``left`` argument of ``on_release``
-(see :ref:`on_release arguments <sync-barrier-node>`); the demo's results page says "One player
+(see :ref:`on_release arguments <sync-barrier-round>`); the demo's results page says "One player
 has left the group." when ``left`` isn't empty.
 
 For each case, also decide:
@@ -1625,7 +1629,7 @@ For the rest of the timeline:
   the group may not be scored yet. The page therefore reads the member's own
   ``sync_group_outcome`` first, such as ``"late"`` or ``"group_dissolved"``
   (``on_release`` doesn't run when a group ends, so there is no median),
-  and only then the ``median`` that ``on_release`` stored on the node and
+  and only then the ``median`` that ``on_release`` stored on the round and
   whether the estimate timed out, which the trial stored right after the
   estimate page, rather than inferring a time-out from a missing estimate. A member
   without a median to revise towards is told why there is nothing to revise:

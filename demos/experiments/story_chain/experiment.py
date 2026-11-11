@@ -2,14 +2,14 @@
 
 A :class:`~psynet.sync.SimpleGrouper` forms a group of three, which then
 plays ``N_TURNS`` turns in a fixed loop. Each turn is one cued round:
-``StoryTurn.cue(..., round=turn)`` gives every member a trial on the
-round's shared node. One member writes a sentence while the others see
+``StoryTurn.cue(..., round=turn)`` gives every member a trial in the
+group's round (a :class:`~psynet.sync.SyncGroupRound`). One member writes a sentence while the others see
 the story so far and wait at the turn's
 :class:`~psynet.sync.GroupBarrier`.
 
 The turn's definition stores the writer, chosen by seat with
 :func:`~psynet.sync.group_seats`. The writer stores their sentence in
-``node.var.sentence`` as soon as they submit it, and a turn that ends without
+``group_round.var.sentence`` as soon as they submit it, and a turn that ends without
 one stores ``None``. The last page reads the story with
 :meth:`SyncGroup.rounds <psynet.sync.SyncGroup.rounds>`. See ``README.md`` for
 what happens when members drop out.
@@ -30,7 +30,13 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl, TextControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, SimpleGrouper, SyncGroup, group_seats
+from psynet.sync import (
+    GroupBarrier,
+    SimpleGrouper,
+    SyncGroup,
+    SyncGroupRound,
+    group_seats,
+)
 from psynet.timeline import (
     CodeBlock,
     Module,
@@ -40,7 +46,7 @@ from psynet.timeline import (
     for_loop,
     join,
 )
-from psynet.trial.main import SyncGroupNode, Trial
+from psynet.trial.main import Trial
 
 GROUP = "story"
 GROUP_SIZE = 3
@@ -114,8 +120,8 @@ def turn_definition(group, round: int) -> dict:
     return {"writer_id": choose_writer(group, round)}
 
 
-def group_turns(group_id: int) -> List[SyncGroupNode]:
-    """Return the nodes of the turns the group has started, in order.
+def group_turns(group_id: int) -> List[SyncGroupRound]:
+    """Return the rounds of the turns the group has started, in order.
 
     This works even after the group has ended.
     """
@@ -131,10 +137,10 @@ def story_text(group_id: int) -> str:
     return " ".join(turn.var.sentence for turn in turns if turn.var.get("sentence"))
 
 
-def writer_trial(node: SyncGroupNode) -> Optional["StoryTurn"]:
+def writer_trial(turn: SyncGroupRound) -> Optional["StoryTurn"]:
     """Return the writer's trial for the turn, or ``None`` if they never started it."""
-    writer_id = node.definition["writer_id"]
-    return next((t for t in node.all_trials if t.participant_id == writer_id), None)
+    writer_id = turn.definition["writer_id"]
+    return next((t for t in turn.trials if t.participant_id == writer_id), None)
 
 
 class StoryTurn(Trial):
@@ -184,7 +190,7 @@ class StoryTurn(Trial):
         )
 
     def save_sentence(self, participant):
-        """Store the writer's sentence on the turn's node, if the turn is still theirs.
+        """Store the writer's sentence on the turn's round, if the turn is still theirs.
 
         A writer removed from the group, for example as late, stores nothing,
         because the others have finished the turn without them. The sentence
@@ -193,7 +199,7 @@ class StoryTurn(Trial):
         # A writer whose group dissolved while they wrote is the last one
         # left, so their sentence still ends the story.
         if in_group(participant) or self.sync_group_outcome == "group_dissolved":
-            self.node.var.sentence = participant.answer
+            self.group_round.var.sentence = participant.answer
 
     def on_finalized(self):
         """Store ``None`` as the sentence if the turn ended without one.
@@ -201,8 +207,8 @@ class StoryTurn(Trial):
         That happens when the writer was late or left.
         """
         super().on_finalized()
-        if not self.node.var.has("sentence"):
-            self.node.var.sentence = None
+        if not self.group_round.var.has("sentence"):
+            self.group_round.var.sentence = None
 
     def show_feedback(self, experiment, participant):
         if self.time_limit_reached and self.sync_group_outcome == "stayed":
@@ -266,19 +272,19 @@ def final_page(participant: Participant):
     )
 
 
-def _turn_row(node: SyncGroupNode) -> dict:
-    trial = writer_trial(node)
+def _turn_row(turn: SyncGroupRound) -> dict:
+    trial = writer_trial(turn)
     return {
-        "group_id": node.sync_group_id,
-        "turn": node.sync_group_round,
-        "node_id": node.id,
-        "writer_id": node.definition["writer_id"],
+        "group_id": turn.sync_group_id,
+        "turn": turn.number,
+        "round_id": turn.id,
+        "writer_id": turn.definition["writer_id"],
         "writer_trial_id": trial.id if trial else None,
         # False while the turn is being played, or if it never finished.
-        "finished": node.var.has("sentence"),
+        "finished": turn.var.has("sentence"),
         # None if the writer ran out of time or left the group, or if the turn
         # isn't finished.
-        "sentence": node.var.get("sentence"),
+        "sentence": turn.var.get("sentence"),
         # "stayed" if the writer was still in the group when the turn ended,
         # otherwise why they left; None if they never started the turn.
         "writer_outcome": trial.sync_group_outcome if trial else None,
@@ -308,14 +314,14 @@ class Exp(psynet.experiment.Experiment):
     def get_basic_data(cls, context=None, **kwargs):
         """Return one row per turn and one per player.
 
-        Turn rows come from the turns' nodes and the writers' trials.
+        Turn rows come from the turns' rounds and the writers' trials.
         """
-        turns = SyncGroupNode.query.filter_by(module_id="story").order_by(
-            SyncGroupNode.id
+        turns = SyncGroupRound.query.filter_by(module_id="story").order_by(
+            SyncGroupRound.id
         )
         players = Participant.query.order_by(Participant.id)
         return {
-            "turn": [_turn_row(node) for node in turns],
+            "turn": [_turn_row(turn) for turn in turns],
             "player": [
                 {
                     "participant_id": p.id,

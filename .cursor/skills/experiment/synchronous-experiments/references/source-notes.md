@@ -20,7 +20,7 @@ and platform docs when a study is near deployment.
   `on_arrival_message`.
   It checks the group's `quorum` (a group below it waits for top-ups or is
   dissolved; see "Groups below quorum" in the synchronization docs),
-  and accepts `on_release(group, participants, trials, node, leader, left, barrier)`
+  and accepts `on_release(group, participants, trials, group_round, leader, left, barrier)`
   (any subset) for atomic shared updates.
   The `barrier` argument is reconstructed; see
   `docs/code/multiplayer/synchronization.rst` (published at https://psynetdev.gitlab.io/PsyNet/code/multiplayer/synchronization.html) ("Release callbacks").
@@ -72,8 +72,8 @@ and platform docs when a study is near deployment.
   simulation, and a top-up participant joining a still-active group.
 - `ultimatum_pairing` shows a game played in rounds
   with a `Regrouper`: one `Trial.cue` per player per round on a trial class
-  with `sync_group_type`, group results on the shared `SyncGroupNode`,
-  per-player results on the trial, and basic data read from trials and nodes.
+  with `sync_group_type`, group results on the shared `SyncGroupRound`,
+  per-player results on the trial, and basic data read from trials and rounds.
 
 ## Practical group-search findings
 

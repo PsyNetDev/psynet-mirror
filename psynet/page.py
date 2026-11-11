@@ -350,8 +350,8 @@ def wait_while(
         module-level function returning one of these (or ``None`` to keep
         the current page). The function may take ``participant``, ``trial``
         (their ``current_trial``, which stays their previous trial until the
-        next one is cued) and ``node`` (that trial's
-        :class:`~psynet.trial.main.SyncGroupNode`, or ``None``). ``waiting_message`` still sets the
+        next one is cued) and ``group_round`` (that trial's
+        :class:`~psynet.sync.SyncGroupRound`, or ``None``). ``waiting_message`` still sets the
         waiting indicator shown on top. Only used when ``wait_page`` is
         omitted.
 

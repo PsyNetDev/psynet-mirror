@@ -81,13 +81,13 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   for members who left before the release or whose group dissolved, so read
   what it stores with `trial.var.get("score")` (or `participant.var.get`),
   which returns `None` when it isn't set. No experiment code runs when a
-  group dissolves; PsyNet only sets `node.sync_group_dissolved_at` on the
-  node of a round its group dissolved during, so exports should read that rather than store
+  group dissolves; PsyNet only sets `dissolved_at` on the
+  round (`trial.group_round`) its group dissolved during, so exports should read that rather than store
   their own marker from `score_answer`. With
   `below_quorum="continue_without_group"`, when a
   member's cued trial has `sync_group_outcome == "group_dissolved"`,
   compute their result where it is needed (`show_feedback`, an export or
-  `on_finalized`) from every stored `trial.answer` on `node.all_trials`.
+  `on_finalized`) from every stored `trial.answer` in `group_round.trials`.
   `trial.answer` is the trial's latest answer, so if `show_trial` has pages
   after the barrier, set `accumulate_answers = True` and read the answer by
   page label. A partner still on the question page may not have answered
@@ -102,8 +102,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries
   such as submit, rate, reveal, score, or bonus computation. PsyNet refuses
   `waiting_logic` on a barrier inside `show_trial`; use `waiting_screen` there.
-- Read partners' answers from what `on_release` stored on the trial or node
-  (trial vars, node vars); use `sync_group.participants` only for membership,
+- Read partners' answers from what `on_release` stored on the trial or round
+  (trial vars, `group_round.var`); use `sync_group.participants` only for membership,
   such as assigning roles. Do not let the browser decide shared experiment
   state.
 - For games played in rounds with changing partners or rooms, put a
@@ -245,7 +245,7 @@ trial per player per round" in
 
 ```python
 class PickTrial(Trial):
-    sync_group_type = "room"  # a room's trials in one round share a node
+    sync_group_type = "room"  # a room's trials in one round share a round record
     time_estimate = 15
 
     def show_trial(self, experiment, participant):
@@ -256,12 +256,12 @@ class PickTrial(Trial):
         )
 
     @classmethod
-    def score_room(cls, trials, node):
+    def score_room(cls, trials, group_round):
         # trial.answer holds each player's answer so far (None: timed out).
-        # String keys, since node.var is stored as JSON.
-        node.var.choices = {str(t.participant_id): t.answer for t in trials}
+        # String keys, since var is stored as JSON.
+        group_round.var.choices = {str(t.participant_id): t.answer for t in trials}
 
-# The Module gives the nodes a module_id to find them by when exporting.
+# The Module gives the rounds a module_id to find them by when exporting.
 Module("game", for_loop(
     label="rounds", iterate_over=range(N_ROUNDS), time_estimate_per_iteration=20,
     logic=join(
@@ -296,7 +296,7 @@ Module("game", for_loop(
 - `on_release` reads each member's answer so far from `trial.answer`
   (`accumulate_answers = True` for several answer pages, which makes it a
   dict from the start), and `score_answer`, `show_feedback` and
-  `get_basic_data` read the trial and `self.node.var`. `node.all_trials`
+  `get_basic_data` read the trial and `self.group_round.var`. `group_round.trials`
   keeps the trials of players who left during the round. Exports need no
   round counter of their own: `sync_group_round` counts the group's rounds,
   for what the group shares, and `position` counts the player's own
@@ -316,10 +316,10 @@ Module("game", for_loop(
   `trial.sync_group_outcome` (`"stayed"` once a barrier in the trial's
   pages releases the group with them in it, after which it doesn't change;
   before that, why they left, such as `"late"`), a partner's from their
-  trial in `self.node.all_trials`, rather than from current group
+  trial in `self.group_round.trials`, rather than from current group
   membership. Put the scoring barrier in `show_trial`, because only
   barriers there write the outcome. A barrier's `waiting_screen` can take
-  `trial` and `node` to show the round's state.
+  `trial` and `group_round` to show the round's state.
 
 ## Recruitment and platform design
 

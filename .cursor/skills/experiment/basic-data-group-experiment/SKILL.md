@@ -29,15 +29,15 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 
 Follow "Group experiments" in `data/basic_data`: play each round as one
 trial per player, save each player's results on their trial and the
-group's on its `SyncGroupNode`, and build the tables from those, not from
+group's on its round record (`trial.group_round`, a `SyncGroupRound`), and build the tables from those, not from
 timestamps or `position`. For example:
 
 ```python
 @classmethod
-def score_round(cls, trials, node):  # GroupBarrier(..., on_release=cls.score_round)
+def score_round(cls, trials, group_round):  # GroupBarrier(..., on_release=cls.score_round)
     # Each player's choice is their trial's answer, None after a timeout.
     total = sum(t.answer or 0 for t in trials)
-    node.var.total = total
+    group_round.var.total = total
     for trial in trials:
         trial.var.payoff = total / len(trials) - (trial.answer or 0)
 
@@ -55,7 +55,7 @@ def get_basic_data(cls, context=None, **kwargs):
             "complete": t.complete,
             "choice": t.answer,
             "payoff": t.var.get("payoff"),
-            "group_total": t.node.var.get("total"),
+            "group_total": t.group_round.var.get("total"),
         }
         for t in MyTrial.query.all()
     ]}
@@ -65,17 +65,17 @@ Start from the `get_basic_data` of the demo closest to the design:
 
 - `rock_paper_scissors`: a fixed pair playing cued trials.
 - `public_goods`: a fixed group of three playing several rounds, with the
-  group's results on its `SyncGroupNode` and a group-round table from the
-  nodes.
+  group's results on its `SyncGroupRound` and a group-round table from the
+  rounds.
 - `ultimatum_pairing`: pairs that change every round, with a table per
-  pair from the nodes (see "Games with a regrouper" in `data/basic_data`).
+  pair from the rounds (see "Games with a regrouper" in `data/basic_data`).
 - Groups that each play one round, formed by a `Regrouper` without
   `within`: number each player's own trials as their `round`
   (`trial.position`); where a group plays several rounds, use
   `sync_group_round` instead.
 
 If a per-round value exists only in participant variables or browser
-state, change the experiment to save it on the trial or node before any
+state, change the experiment to save it on the trial or round before any
 data are collected.
 
 ## Workflow
@@ -100,7 +100,7 @@ data are collected.
    the docstring. Export `complete` with each row, and filter on it (and
    on `failed`) in the analysis: an unfinished trial, abandoned or still
    running, can have an `answer`, the answer given so far. Add a
-   group-round table from the `SyncGroupNode` rows if the game has group
+   group-round table from the `SyncGroupRound` rows if the game has group
    results. Give roles and player order their own columns. Keep nested
    JSON or raw event IDs only where they help auditing.
 6. Run the experiment with bots or simulated participants
@@ -124,7 +124,7 @@ data are collected.
   authoritative server events, and match the simulated participants' inputs.
 - Timeouts, invalid actions, dropouts, sit-outs, failed trials, and
   one-sided responses follow a documented missingness policy.
-- Every row keeps enough IDs to trace it back to its trial, node or event.
+- Every row keeps enough IDs to trace it back to its trial, round or event.
 
 ## Common failures
 
@@ -137,5 +137,5 @@ data are collected.
 - Collapsing to one row per round when the analysis needs one row per player.
 - Encoding role or player order only in column names that cannot be compared
   across rounds.
-- Discarding trial, node, or event IDs before the clean table has passed the
+- Discarding trial, round, or event IDs before the clean table has passed the
   checks above.

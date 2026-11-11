@@ -1,1 +1,0 @@
-Added `SyncGroupNode.sync_group_dissolved_at`, which records when a sync group dissolved during a cued round (`Trial.cue` with `sync_group_type`), so exports can tell a cancelled round from one still in progress without storing a marker of their own. It stays `None` for a round that a group barrier released and for a group that dissolved between rounds.

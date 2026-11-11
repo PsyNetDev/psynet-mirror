@@ -70,8 +70,8 @@ def test_revise_page_explains_each_outcome(
     trial.sync_group_outcome = outcome
     trial.var.estimate_timed_out = timed_out
     trial.var.in_median = in_median
-    trial.node.var.median = median
-    trial.node.var.estimates = {
+    trial.group_round.var.median = median
+    trial.group_round.var.estimates = {
         str(t.participant_id): e for t, e in zip(trials, [4, 5, 6])
     }
     page = trial.revise_page(trial.participant)
@@ -87,14 +87,17 @@ def test_score_round_needs_a_quorum_of_estimates_given_in_time(
         trial.answer = {"estimate": estimate}
     ids = [str(t.participant_id) for t in trials]
     # The last member was removed as late before the release, so isn't released.
-    released, node = trials[:4], trials[0].node
-    demo.EstimateTrial.score_round(released, node)
-    assert (node.var.median, node.var.estimates) == (20, dict(zip(ids, [10, 20, 31])))
+    released, group_round = trials[:4], trials[0].group_round
+    demo.EstimateTrial.score_round(released, group_round)
+    assert (group_round.var.median, group_round.var.estimates) == (
+        20,
+        dict(zip(ids, [10, 20, 31])),
+    )
     assert [t.var.in_median for t in trials] == [True] * 3 + [False] * 2
 
     trials[2].answer = {"estimate": None}
-    demo.EstimateTrial.score_round(released, node)
-    assert node.var.median is None
+    demo.EstimateTrial.score_round(released, group_round)
+    assert group_round.var.median is None
     assert [t.var.in_median for t in trials] == [None] * 5
 
 

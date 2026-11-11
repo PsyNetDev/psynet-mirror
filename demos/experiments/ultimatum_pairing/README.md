@@ -24,9 +24,9 @@ test uses `regroup_now` to start a round at the deadline without waiting for
 it.
 Each round is one cued trial per player (`Trial.cue(...)` with
 `sync_group_type = PAIR`, in a `switch` on the player's `round_status`), so
-the pair's offer and result live on a node shared by its two trials, sit-outs
-get a page instead of a trial, and the basic data is read from trials and
-nodes.
+the pair's offer and result live on the round shared by its two trials
+(`trial.group_round.var`), sit-outs get a page instead of a trial, and the
+basic data is read from trials and rounds.
 
 A player the experimenter removes from their pair on the dashboard gets no
 coins that round; one removed from the cohort before their last round is

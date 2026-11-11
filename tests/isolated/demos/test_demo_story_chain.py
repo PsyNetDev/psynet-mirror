@@ -84,7 +84,7 @@ def test_the_writer_s_sentence_is_kept_unless_they_were_late(
     trial.save_sentence(writer)
     trial.on_finalized()
 
-    assert trial.node.var.sentence == ("Once upon a time." if saved else None)
+    assert trial.group_round.var.sentence == ("Once upon a time." if saved else None)
 
 
 @in_story_chain
@@ -118,7 +118,7 @@ def test_the_next_seat_writes_for_a_member_who_left(
     assert _play_turn(demo, 2, [first, third], "It was hungry.") == third
     db.session.commit()
 
-    assert [node.definition["writer_id"] for node in demo.group_turns(group.id)] == [
+    assert [turn.definition["writer_id"] for turn in demo.group_turns(group.id)] == [
         first.id,
         third.id,
         third.id,

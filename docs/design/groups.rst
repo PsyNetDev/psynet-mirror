@@ -112,7 +112,7 @@ Groups can go through the experiment in two ways, **cued trials** or a
        :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` per player in each
        round, after a regrouper when partners change (see
        `New groups for each round`_). The trials of a group's round share a
-       node that holds the group's results.
+       :class:`~psynet.sync.SyncGroupRound` that holds the group's results.
      - ``public_goods``, ``ultimatum_pairing``, ``story_chain``,
        ``microsociety``
    * - A group working through a stimulus set or a chain together, each

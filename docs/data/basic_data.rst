@@ -105,9 +105,9 @@ re-formed every round, as by a :class:`~psynet.sync.Regrouper`, plays only
 round 0. The group's trials with the same
 ``sync_group_id`` and ``sync_group_round`` are one round. All three stay after
 the group ends. Cued trials of one group and round also share a
-:class:`~psynet.trial.main.SyncGroupNode`, which can hold the group's results
-and records in ``sync_group_closed`` whether a group barrier released the
-round and in ``sync_group_dissolved_at`` when the group dissolved during it
+:class:`~psynet.sync.SyncGroupRound` (``trial.group_round``), which can hold
+the group's results in ``var`` and records in ``closed_at`` when a group
+barrier released the round and in ``dissolved_at`` when the group dissolved during it
 (see :ref:`dissolved rounds <sync-dissolved-round>`);
 the ``public_goods`` demo builds a table per player and round and
 one per team and round from them (see :ref:`rounds-one-trial-per-player`). The
@@ -126,7 +126,7 @@ Groups that stay together save their rounds the same way. The
 ``public_goods`` demo saves the group's ``contributions`` (``None`` for a
 player who ran out of time), ``pot``, ``multiplied_pot``, ``share`` and the
 number of players who left since the previous round was scored, from
-``on_release``'s ``left``, once per round on the node, and
+``on_release``'s ``left``, once per round on the round record, and
 each player's ``contribution`` and ``payoff`` on their trial:
 
 .. literalinclude:: ../../demos/experiments/public_goods/experiment.py
@@ -140,9 +140,8 @@ which says whether the player stayed to the end of the round or why they
 left it (see :ref:`round outcomes <sync-round-outcome>`), and ``timed_out``
 from the trial's
 :attr:`~psynet.trial.main.Trial.time_limit_reached` rather than inferred
-from a missing answer. Its ``team_round`` table reads the node of each team
-and round, including ``dissolved_at`` from
-:attr:`~psynet.trial.main.SyncGroupNode.sync_group_dissolved_at`, set when
+from a missing answer. Its ``team_round`` table reads the round record of each team
+and round, including its ``dissolved_at``, set when
 the group dissolved during the round, which cancels it. Basic data must be
 JSON-serializable, so that datetime is exported as an ISO timestamp with
 :func:`~psynet.utils.serialise_datetime`:
@@ -187,7 +186,7 @@ participant's own trials from that trial maker, so it differs from
 A participant variable (``participant.var``) holds only its latest value. To
 keep a result from every round in the export, save it on the trial, for
 example in ``trial.score`` or ``trial.var``, and the group's results on the
-node its trials share, as in :ref:`basic_data_regrouper`.
+round its trials share, as in :ref:`basic_data_regrouper`.
 
 A convenient layout for dyads and small groups is one row per participant per
 round, with columns for the group, the round, the participant, their partner,
@@ -237,9 +236,9 @@ Games with a regrouper
 In games that re-pair players with a :class:`~psynet.sync.Regrouper`, each
 group the regrouper forms is one round of one group. With one cued trial per
 player per round (see :ref:`rounds-one-trial-per-player`), each trial records the pair
-and the player's role, and the pair's node holds its results. The
+and the player's role, and the pair's round record holds its results. The
 ``ultimatum_pairing`` demo reads one table from the trials, one from the
-nodes and one per player:
+rounds and one per player:
 
 .. literalinclude:: ../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: Exp.get_basic_data

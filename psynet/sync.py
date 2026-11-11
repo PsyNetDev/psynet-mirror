@@ -38,8 +38,8 @@ Whom a group barrier waits for
     they are in the timeline; nothing about their position is inferred. A
     member stops being waited for only by leaving the group (``leave_group``,
     ``late_action``, ``max_wait_action``, failing or finishing). The
-    release's round, if any, is the node that every released member's
-    unfinished cued trial is on (``_common_round_node``). If every member is
+    release's round, if any, is the ``SyncGroupRound`` that every released
+    member's unfinished trial is in (``_common_round``). If every member is
     waiting, but no barrier of the group has them all, nothing can pass:
     each ``check_barriers`` sweep looks for such groups
     (``_report_divergences``) and records each as an error once, with a
@@ -194,7 +194,7 @@ from psynet.db import (
     transaction,
 )
 from psynet.error import ErrorRecord
-from psynet.field import PythonClass, PythonDict
+from psynet.field import PythonClass, PythonDict, PythonObject
 from psynet.page import UnsuccessfulEndPage
 from psynet.participant import Participant, _lock_and_load_participant
 from psynet.serialize import SerializedCallable, serialize_callable
@@ -1028,10 +1028,10 @@ class Barrier(EltCollection):
         example with ``NullControl(show_next_button=False)``. Pass a
         module-level function to show each participant their own screen. It
         may take ``participant``, ``trial`` (their ``current_trial``, or
-        ``None``) and ``node`` (that trial's
-        :class:`~psynet.trial.main.SyncGroupNode`, or ``None`` if it is on
-        another kind of node), for example
-        ``waiting_screen(trial, node)`` to show the player's answer and the
+        ``None``) and ``group_round`` (that trial's
+        :class:`SyncGroupRound`, or ``None`` if it is in no group's round),
+        for example
+        ``waiting_screen(trial, group_round)`` to show the player's answer and the
         round's state. At a grouper or :class:`Regrouper`, ``trial`` is the
         participant's previous trial, such as the previous round's, because
         ``current_trial`` only changes when the next trial is cued. It runs on each request (a page load
@@ -2000,9 +2000,9 @@ class GroupBarrier(Barrier):
         active members), ``trials``
         (each member's ``current_trial``, in the same order as ``participants``,
         for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
-        ``sync_group_type`` that the barrier is part of), ``node`` (the
-        group's :class:`~psynet.trial.main.SyncGroupNode` of the round whose
-        trial every released member is in, or ``None``; see :ref:`the barrier's node <sync-barrier-node>`), ``leader`` (the
+        ``sync_group_type`` that the barrier is part of), ``group_round`` (the
+        :class:`SyncGroupRound` whose trial every released member is in, or
+        ``None``; see :ref:`the barrier's round <sync-barrier-round>`), ``leader`` (the
         group's leader), ``participant`` (the same object as ``leader``, kept for
         compatibility), ``left`` (the members who left the group since its
         previous barrier pass, or since it formed; see below) and ``barrier``,
@@ -2459,7 +2459,7 @@ class GroupBarrier(Barrier):
         groups = self.get_waiting_groups(waiting_participants)
 
         for group in groups.values():
-            node = _common_round_node(
+            group_round = _common_round(
                 group, self._waiting_members(group, waiting_participants)
             )
             group.check_numbers()
@@ -2495,7 +2495,7 @@ class GroupBarrier(Barrier):
                     )
                     released += admissible
                 participants_to_release.extend(released)
-                self._pass(group, released, node, admitted=admissible)
+                self._pass(group, released, group_round, admitted=admissible)
 
         participants_to_release_ids = {p.id for p in participants_to_release}
         for participant in waiting_participants:
@@ -2522,11 +2522,11 @@ class GroupBarrier(Barrier):
             return []
         return [p for p in group.pending_participants if p.id in waiting_ids]
 
-    def _pass(self, group, released, node, admitted=()):
+    def _pass(self, group, released, group_round, admitted=()):
         """Do the group's bookkeeping for releasing ``released``.
 
         ``admitted`` are the members this admission point just admitted.
-        Also closes round ``node``, if any, and calls ``on_release``.
+        Also closes ``group_round``, if any, and calls ``on_release``.
         """
         group.check_leader()
         left = group._members_who_left_since(
@@ -2546,20 +2546,18 @@ class GroupBarrier(Barrier):
             group._stop_top_ups(self)
 
         trials = [p.current_trial for p in released]
-        if node is not None:
+        if group_round is not None:
             # Closes the round to newcomers: their cues start the next.
-            node.sync_group_closed = True
-            for participant in released:
-                trial = _round_trial(group, participant)
-                if trial is not None:
-                    trial.sync_group_outcome = "stayed"
+            group_round._close(
+                [t for t in trials if t is not None and t.group_round is group_round]
+            )
         if self.on_release:
             try:
                 self.on_release(
                     group=group,
                     participants=released,
                     trials=trials,
-                    node=node,
+                    group_round=group_round,
                     leader=group.leader,
                     participant=group.leader,
                     left=left,
@@ -5079,16 +5077,15 @@ class SyncGroup(SQLBase, SQLMixin):
             key=lambda participant: participant.id,
         )
 
-    def rounds(self, module_id: str) -> list:
-        """Return the group's rounds in a module of cued trials, in round order.
+    def rounds(self, module_id: str) -> List["SyncGroupRound"]:
+        """Return the group's rounds in a module, in round order.
 
-        Each round is the :class:`~psynet.trial.main.SyncGroupNode` that the
-        group's :meth:`~psynet.trial.main.Trial.cue` trials share, so its
-        ``var`` holds what the round stored and ``all_trials`` its trials.
+        Each round is a :class:`SyncGroupRound`, whose ``var`` holds what the
+        round stored and ``trials`` its trials.
         It also works once the group has ended or dissolved, for example to
         show a debrief after the game::
 
-            sentences = [node.var.get("sentence") for node in group.rounds("story")]
+            sentences = [r.var.get("sentence") for r in group.rounds("story")]
 
         Parameters
         ----------
@@ -5098,16 +5095,13 @@ class SyncGroup(SQLBase, SQLMixin):
 
         Returns
         -------
-        list of SyncGroupNode
-            Ordered by ``sync_group_round``, then by node ID; empty if the group has cued no
-            round in the module, including a module run by a trial maker with
-            ``sync_group_type``, whose rounds have no group nodes.
+        list of SyncGroupRound
+            Ordered by ``number``, then by creation; empty if the group has
+            played no round in the module.
         """
-        from .trial.main import SyncGroupNode
-
         return (
-            SyncGroupNode.query.filter_by(module_id=module_id, sync_group_id=self.id)
-            .order_by(SyncGroupNode.sync_group_round, SyncGroupNode.id)
+            SyncGroupRound.query.filter_by(module_id=module_id, sync_group_id=self.id)
+            .order_by(SyncGroupRound.number, SyncGroupRound.id)
             .all()
         )
 
@@ -5129,8 +5123,8 @@ class SyncGroup(SQLBase, SQLMixin):
         failing removes a member from the groups they are still in as
         ``"left_experiment"``.
 
-        The cued rounds that members are still playing get
-        ``sync_group_dissolved_at`` (see :func:`_mark_rounds_dissolved`),
+        The rounds that members are still playing get their
+        :class:`SyncGroupRound`'s ``dissolved_at`` (see :func:`_mark_rounds_dissolved`),
         read under the members' row locks, so a member's cue either comes
         before the dissolution or sees it. Pending members are turned away
         as ``"not_admitted"``.
@@ -5252,10 +5246,153 @@ class SimpleSyncGroup(SyncGroup):
         self._dissolve()
 
 
+@register_table
+class SyncGroupRound(SQLBase, SQLMixin):
+    """One round that a sync group plays together, linking the members' trials in it.
+
+    A round is made either by :meth:`~psynet.trial.main.Trial.cue` for a trial
+    class with ``sync_group_type`` (``trial_maker_id`` is ``None``), when the
+    round's first member cues it, or by a trial maker with
+    ``sync_group_type`` each time it prepares the group's trials. See
+    :ref:`sync-group-rounds` for when rounds open and close.
+
+    Attributes
+    ----------
+    sync_group_id : int
+        The :class:`SyncGroup` playing the round.
+    module_id : str
+        The module the round was played in; for a trial maker, its ``id``.
+    trial_maker_id : str or None
+        The trial maker that made the round, or ``None`` for cued rounds.
+    number : int
+        The round's number, counted from 0 for each group, separately in each
+        module of cued trials and in each trial maker. It equals
+        ``sync_group_round`` on the round's trials.
+    definition : dict
+        For cued rounds, the definition shared by every trial in the round,
+        set by its first cue. ``None`` for trial makers' rounds, whose trials
+        keep their own definitions.
+    var :
+        A variable store for the group's results in the round, for example
+        those that a :class:`GroupBarrier`'s ``on_release`` computes.
+    closed_at : datetime or None
+        When the round closed: when a :class:`GroupBarrier` in the round's
+        trials released the group, or, for a trial maker's round that has no
+        such barrier, when the group's next trials were prepared. A closed
+        cued round takes no members who have no trial in it.
+    dissolved_at : datetime or None
+        When the group dissolved during the round, or ``None`` if it didn't.
+        Set when the group dissolves (see :ref:`groups_below_min_size`) while
+        a member still in the group is in their trial in this round (the
+        trial's ``complete`` is ``False``) and the round is not closed. So a
+        round the group finished stays ``None`` even if a member is still on
+        a page after the barrier, and so does a round whose remaining
+        members' trials had all ended before the group dissolved. Written
+        under the members' row locks, so it is never set on a closed round.
+    trials : list of Trial
+        The members' trials in the round, including failed ones.
+    """
+
+    __tablename__ = "sync_group_round"
+
+    # Unused SharedMixin columns.
+    property1 = None
+    property2 = None
+    property3 = None
+    property4 = None
+    property5 = None
+    details = None
+
+    # No foreign key, as on Trial.sync_group_id.
+    sync_group_id = Column(Integer, index=True)
+    module_id = Column(String, index=True)
+    trial_maker_id = Column(String)
+    number = Column(Integer)
+    definition = Column(PythonObject)
+    closed_at = Column(DateTime)
+    dissolved_at = Column(DateTime)
+
+    trials = relationship(
+        "psynet.trial.main.Trial",
+        back_populates="group_round",
+        order_by=lambda: _trial_class().id,
+    )
+
+    __table_args__ = (
+        # Concurrent first cues and trial preparations rely on these to
+        # create each round once (see _find_or_create). Cues outside a
+        # module have no module_id, which must still be unique.
+        Index(
+            "ix_sync_group_round_cued",
+            sync_group_id,
+            func.coalesce(module_id, ""),
+            number,
+            unique=True,
+            postgresql_where=text("trial_maker_id IS NULL"),
+        ),
+        Index(
+            "ix_sync_group_round_trial_maker",
+            sync_group_id,
+            trial_maker_id,
+            number,
+            unique=True,
+            postgresql_where=text("trial_maker_id IS NOT NULL"),
+        ),
+    )
+
+    @property
+    def sync_group(self) -> Optional[SyncGroup]:
+        """The :class:`SyncGroup` playing the round."""
+        return db.session.get(SyncGroup, self.sync_group_id)
+
+    @classmethod
+    def _find_or_create(cls, group_id, module_id, trial_maker_id, number):
+        """Return the group's round with these keys and whether this call created it.
+
+        Parallel requests may create the same round, for example two members'
+        first cues, so this inserts it with ``ON CONFLICT DO NOTHING``. A
+        request that conflicts waits for the creator's transaction to end and
+        then loads its round, so only the creator sees it as new and fills it in.
+        """
+        values = dict(
+            sync_group_id=group_id,
+            module_id=module_id,
+            trial_maker_id=trial_maker_id,
+            number=number,
+            type=cls.__mapper__.polymorphic_identity,
+        )
+        db.session.flush()
+        inserted = db.session.execute(
+            pg_insert(cls).values(**values).on_conflict_do_nothing().returning(cls.id)
+        ).scalar()
+        query = cls.query.filter_by(
+            sync_group_id=group_id, module_id=module_id, number=number
+        ).filter(
+            cls.trial_maker_id.is_(None)
+            if trial_maker_id is None
+            else cls.trial_maker_id == trial_maker_id
+        )
+        return query.populate_existing().one(), inserted is not None
+
+    def _close(self, stayed_trials):
+        """Close the round, if still open, and record ``"stayed"`` on ``stayed_trials``."""
+        if self.closed_at is None:
+            self.closed_at = timenow()
+        for trial in stayed_trials:
+            trial.sync_group_outcome = "stayed"
+
+
+def _trial_class():
+    """Return :class:`~psynet.trial.main.Trial`, which imports this module."""
+    from .trial.main import Trial
+
+    return Trial
+
+
 def _record_leaving_the_round(group, participant, reason):
     """Record why the participant left ``group`` on the round they are playing in it, if any.
 
-    That is their cued trial of ``group`` (see :func:`_round_trial`), if it
+    That is their trial in a round of ``group`` (see :func:`_round_trial`), if it
     is not complete yet and no barrier has released the group with them in
     it. Leaving after that, or between rounds, records nothing on the trial.
     """
@@ -5269,7 +5406,7 @@ def _record_leaving_the_round(group, participant, reason):
 
 
 def _open_rounds(group, participants):
-    """Return the nodes of the cued rounds of ``group`` in which ``participants`` have an unfinished trial.
+    """Return the rounds of ``group`` in which ``participants`` have an unfinished trial.
 
     Expects the caller to hold the participants' row locks, and re-reads
     their current trials under them, so a trial that a member's request
@@ -5283,57 +5420,59 @@ def _open_rounds(group, participants):
             )
     trials = [_round_trial(group, p) for p in participants]
     return list(
-        {t.node_id: t.node for t in trials if t is not None and not t.complete}.values()
+        {
+            id(t.group_round): t.group_round
+            for t in trials
+            if t is not None and not t.complete
+        }.values()
     )
 
 
-def _mark_rounds_dissolved(nodes):
-    """Record on each round in ``nodes`` that its group dissolved, unless a barrier closed it.
+def _mark_rounds_dissolved(rounds):
+    """Record on each of ``rounds`` that its group dissolved, unless it is closed.
 
     Expects the caller to hold the members' row locks, and re-reads each
-    node, so a release that another request committed first is seen.
+    round, so a release that another request committed first is seen.
     """
     db.session.flush()
-    for node in nodes:
-        db.session.refresh(node, ["sync_group_closed", "sync_group_dissolved_at"])
-        if not node.sync_group_closed and node.sync_group_dissolved_at is None:
-            node.sync_group_dissolved_at = timenow()
+    for group_round in rounds:
+        db.session.refresh(group_round, ["closed_at", "dissolved_at"])
+        if group_round.closed_at is None and group_round.dissolved_at is None:
+            group_round.dissolved_at = timenow()
 
 
 def _round_trial(group, participant):
-    """Return the participant's current trial if it is a cued trial of ``group`` in this run of their module, else ``None``.
+    """Return the participant's current trial if it is in a round of ``group`` in this run of their module, else ``None``.
 
     A run is one ``ModuleState``, so a trial from an earlier module, or from
     an earlier run of the same module, as in a loop around the module, gives
     ``None``.
     """
-    from .trial.main import SyncGroupNode
-
     trial = participant.current_trial
     if (
         trial is None
         or trial.sync_group_id != group.id
-        or not isinstance(trial.node, SyncGroupNode)
+        or trial.group_round is None
         or trial.module_state is not participant.module_state
     ):
         return None
     return trial
 
 
-def _common_round_node(group, participants):
-    """Return the round of ``group`` whose trial each of ``participants`` is in, as its node, or ``None``.
+def _common_round(group, participants) -> Optional[SyncGroupRound]:
+    """Return the round of ``group`` whose trial each of ``participants`` is in, or ``None``.
 
-    That is a node shared by every participant's current trial, an
-    unfinished cued trial of ``group`` in this run of their module (see
+    That is a round shared by every participant's current trial, an
+    unfinished trial of ``group`` in this run of their module (see
     :func:`_round_trial`), as at a barrier in ``show_trial``. Anywhere else,
     such as before the first cue, in ``show_feedback`` or after the loop,
     or if one participant isn't in that round, it is ``None``.
     """
     trials = [_round_trial(group, p) for p in participants]
-    node_ids = {None if t is None or t.complete else t.node_id for t in trials}
-    if len(node_ids) != 1 or None in node_ids:
+    rounds = {None if t is None or t.complete else t.group_round for t in trials}
+    if len(rounds) != 1 or None in rounds:
         return None
-    return trials[0].node
+    return trials[0].group_round
 
 
 class GroupDivergenceError(RuntimeError):

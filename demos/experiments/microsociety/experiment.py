@@ -41,7 +41,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl, TextControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, SimpleGrouper, group_seats
+from psynet.sync import GroupBarrier, SimpleGrouper, SyncGroupRound, group_seats
 from psynet.timeline import (
     CodeBlock,
     Module,
@@ -52,7 +52,7 @@ from psynet.timeline import (
     switch,
     while_loop,
 )
-from psynet.trial.main import SyncGroupNode, Trial
+from psynet.trial.main import Trial
 from psynet.utils import serialise_datetime
 
 GROUP = "society"
@@ -192,18 +192,18 @@ def history_page(participant: Participant):
     # The newcomer may have left the society while reading this page.
     society = participant.latest_sync_group(GROUP)
     rounds = society.rounds("fishing")
-    scored = [node for node in rounds if node.var.has("catches")]
-    tips = [t.var.tip for node in rounds for t in node.all_trials if t.var.has("tip")]
+    scored = [r for r in rounds if r.var.has("catches")]
+    tips = [t.var.tip for r in rounds for t in r.trials if t.var.has("tip")]
     content = tags.div()
     with content:
         tags.p("Welcome to the society.")
         if scored:
             tags.p("Here is what its members caught lately:")
             with tags.ul():
-                for node in scored[-HISTORY_ROUNDS:]:
+                for r in scored[-HISTORY_ROUNDS:]:
                     tags.li(
-                        f"Round {node.sync_group_round + 1}: "
-                        + _catches_text(node.var.spots, node.var.catches)
+                        f"Round {r.number + 1}: "
+                        + _catches_text(r.var.spots, r.var.catches)
                     )
         if tips:
             tags.p("Tips from members who have left:")
@@ -277,21 +277,23 @@ class FishingTrial(Trial):
         ]
 
     @classmethod
-    def score_round(cls, trials: List["FishingTrial"], node: SyncGroupNode, group):
+    def score_round(
+        cls, trials: List["FishingTrial"], group_round: SyncGroupRound, group
+    ):
         """Draw each member's catch, and retire the longest-serving member if the round had too many."""
         for trial in trials:
             trial.var.catch = (
                 None if trial.answer is None else _draw_catch(trial.answer)
             )
-        # String keys, because node.var stores JSON.
-        node.var.spots = {str(t.participant_id): t.answer for t in trials}
-        node.var.catches = {str(t.participant_id): t.var.catch for t in trials}
+        # String keys, because var stores JSON.
+        group_round.var.spots = {str(t.participant_id): t.answer for t in trials}
+        group_round.var.catches = {str(t.participant_id): t.var.catch for t in trials}
         retiring = None
         too_many = len(trials) > SOCIETY_SIZE
         if too_many:
             seats = group_seats(group)
             retiring = min(trials, key=lambda t: seats[t.participant_id])
-        node.var.retired_id = retiring.participant_id if retiring else None
+        group_round.var.retired_id = retiring.participant_id if retiring else None
         for trial in trials:
             trial.var.leaves_as = _leaves_as(trial, retiring)
             if trial.var.leaves_as:
@@ -326,7 +328,7 @@ class FishingTrial(Trial):
             text = f"You fished at spot {self.answer} and caught {self.var.catch} fish."
         if self.var.leaves_as == "retired":
             text += " A new member has joined, so this was your last round."
-        spots, catches = self.node.var.spots, self.node.var.catches
+        spots, catches = self.group_round.var.spots, self.group_round.var.catches
         return ModularPage(
             "results",
             GroupPrompt(
@@ -375,8 +377,8 @@ class Exp(psynet.experiment.Experiment):
     def get_basic_data(cls, context=None, **kwargs):
         """Return one row per member per round, one per society per round, and one per participant."""
         trials = FishingTrial.query.order_by(FishingTrial.id).all()
-        rounds = SyncGroupNode.query.filter_by(module_id="fishing").order_by(
-            SyncGroupNode.sync_group_id, SyncGroupNode.sync_group_round
+        rounds = SyncGroupRound.query.filter_by(module_id="fishing").order_by(
+            SyncGroupRound.sync_group_id, SyncGroupRound.number
         )
         players = Participant.query.order_by(Participant.id).all()
         return {
@@ -404,17 +406,17 @@ class Exp(psynet.experiment.Experiment):
             ],
             "society_round": [
                 {
-                    "society_id": n.sync_group_id,
-                    "round": n.sync_group_round,
-                    "node_id": n.id,
+                    "society_id": r.sync_group_id,
+                    "round": r.number,
+                    "round_id": r.id,
                     # None until the round is scored.
-                    "spots": n.var.get("spots"),
-                    "catches": n.var.get("catches"),
-                    "retired_id": n.var.get("retired_id"),
+                    "spots": r.var.get("spots"),
+                    "catches": r.var.get("catches"),
+                    "retired_id": r.var.get("retired_id"),
                     # Set if the society dissolved during the round.
-                    "dissolved_at": serialise_datetime(n.sync_group_dissolved_at),
+                    "dissolved_at": serialise_datetime(r.dissolved_at),
                 }
-                for n in rounds
+                for r in rounds
             ],
             "member": [
                 {

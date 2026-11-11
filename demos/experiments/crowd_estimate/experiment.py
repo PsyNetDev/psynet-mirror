@@ -8,7 +8,7 @@ estimate and the group's median, and gives a revised estimate.
 
 Each question is one cued ``EstimateTrial`` per player, in the group's round
 of that number (``round=question``). The group's trials for a question share
-a node, which holds the group's estimates and median; each player's estimate
+a ``SyncGroupRound``, which holds the group's estimates and median; each player's estimate
 and revised estimate are their trial's answer, and ``trial.var.in_median``
 says whether the estimate counted towards the median. A player without a
 group, because none formed, their group ended or they were removed for being
@@ -32,7 +32,7 @@ from psynet.bot import (
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, NumberControl
 from psynet.page import InfoPage
-from psynet.sync import GroupBarrier, SimpleGrouper
+from psynet.sync import GroupBarrier, SimpleGrouper, SyncGroupRound
 from psynet.timeline import (
     CodeBlock,
     Module,
@@ -42,7 +42,7 @@ from psynet.timeline import (
     for_loop,
     join,
 )
-from psynet.trial.main import SyncGroupNode, Trial
+from psynet.trial.main import Trial
 
 GROUP = "crowd"
 GROUP_SIZE = 4
@@ -177,8 +177,8 @@ class EstimateTrial(Trial):
         self.var.estimate_timed_out = participant.last_response.time_limit_reached
 
     @classmethod
-    def score_round(cls, trials: List["EstimateTrial"], node: SyncGroupNode):
-        """Save the group's estimates and median on the node.
+    def score_round(cls, trials: List["EstimateTrial"], group_round: SyncGroupRound):
+        """Save the group's estimates and median on the round.
 
         The median is ``None`` with fewer than ``QUORUM`` estimates. Each
         trial's ``in_median`` says whether its estimate counted.
@@ -189,11 +189,13 @@ class EstimateTrial(Trial):
             estimate = t.answer.get("estimate")
             if estimate is not None:
                 estimates[str(t.participant_id)] = estimate
-        node.var.estimates = estimates
+        group_round.var.estimates = estimates
         has_median = len(estimates) >= QUORUM
-        node.var.median = statistics.median(estimates.values()) if has_median else None
+        group_round.var.median = (
+            statistics.median(estimates.values()) if has_median else None
+        )
         # From all the round's trials, so a member removed for being late is kept.
-        for t in node.all_trials:
+        for t in group_round.trials:
             t.var.in_median = str(t.participant_id) in estimates if has_median else None
 
     def revise_page(self, participant):
@@ -202,12 +204,12 @@ class EstimateTrial(Trial):
             return InfoPage(
                 f"{reason}, so there is nothing to revise.", time_estimate=5
             )
-        estimates = self.node.var.estimates
+        estimates = self.group_round.var.estimates
         return ModularPage(
             "revised",
             GroupPrompt(
                 f"{self.question} The median of your group's {len(estimates)} "
-                f"estimates is {self.node.var.median:.15g}. "
+                f"estimates is {self.group_round.var.median:.15g}. "
                 "Give your revised estimate.",
                 participant=participant,
                 group=self.sync_group,
@@ -226,7 +228,7 @@ class EstimateTrial(Trial):
         """
         if self.sync_group_outcome != "stayed":
             return LEFT_BEFORE_MEDIAN_TEXTS[self.sync_group_outcome]
-        if self.node.var.get("median") is None:
+        if self.group_round.var.get("median") is None:
             return "Too few estimates arrived for a group median"
         if self.var.estimate_timed_out:
             return "You didn't give an estimate in time"
@@ -242,13 +244,13 @@ class Exp(psynet.experiment.Experiment):
     def get_basic_data(cls, context=None, **kwargs):
         """Return one row per player per question and one per group per question.
 
-        Player rows come from the trials and group rows from the nodes. Every
+        Player rows come from the trials and group rows from the rounds. Every
         trial gets a row, including one whose player left before answering, so
         a missing answer is None rather than a missing row.
         """
         trials = EstimateTrial.query.order_by(EstimateTrial.id)
-        crowds = SyncGroupNode.query.filter_by(module_id="game").order_by(
-            SyncGroupNode.sync_group_round, SyncGroupNode.id
+        crowds = SyncGroupRound.query.filter_by(module_id="game").order_by(
+            SyncGroupRound.number, SyncGroupRound.id
         )
         return {
             "player_round": [
@@ -276,16 +278,16 @@ class Exp(psynet.experiment.Experiment):
             ],
             "crowd_round": [
                 {
-                    "crowd_id": n.sync_group_id,
-                    "question": n.definition["question"],
-                    "node_id": n.id,
+                    "crowd_id": r.sync_group_id,
+                    "question": r.definition["question"],
+                    "round_id": r.id,
                     # The estimates that arrived in time; None if the group
                     # ended before the barrier released it.
-                    "estimates": n.var.get("estimates"),
+                    "estimates": r.var.get("estimates"),
                     # None if fewer than three estimates arrived.
-                    "median": n.var.get("median"),
+                    "median": r.var.get("median"),
                 }
-                for n in crowds
+                for r in crowds
             ],
         }
 

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from dallinger import db
+from dallinger.models import timenow
 from sqlalchemy import text
 
 from psynet.db import _set_transaction_lock_timeout
@@ -21,6 +22,7 @@ from psynet.sync import (
     GroupBarrier,
     GroupDivergenceError,
     SimpleSyncGroup,
+    SyncGroupRound,
     _hold_barrier_instance_claim,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
@@ -30,7 +32,7 @@ from psynet.sync import (
 )
 from psynet.timeline import Module, Timeline, join
 from psynet.trial.chain import ChainNode
-from psynet.trial.main import GenericTrialNetwork, SyncGroupNode, Trial
+from psynet.trial.main import GenericTrialNetwork, GenericTrialNode, Trial
 from psynet.trial.static import StaticNode, StaticTrialMaker
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -76,14 +78,14 @@ class PairTrial(Trial):
         raise NotImplementedError
 
     @classmethod
-    def score_pair(cls, trials, node):
-        node.var.players = [trial.participant_id for trial in trials]
+    def score_pair(cls, trials, group_round):
+        group_round.var.players = [trial.participant_id for trial in trials]
         for trial in trials:
             trial.var.scored = True
 
     @classmethod
-    def record_release(cls, participants, trials, node):
-        _released.append((participants, trials, node))
+    def record_release(cls, participants, trials, group_round):
+        _released.append((participants, trials, group_round))
 
 
 _released = []
@@ -108,7 +110,7 @@ def _pair_role(participant):
 
 
 @in_consents_experiment
-def test_a_pair_s_cued_trials_share_one_node_per_round(
+def test_a_pair_s_cued_trials_share_one_round_per_round_number(
     in_experiment_directory, db_session, monkeypatch
 ):
     exp = get_experiment()
@@ -134,10 +136,13 @@ def test_a_pair_s_cued_trials_share_one_node_per_round(
     ]
     assert [t.definition for t in trials] == [{"target": r} for r in (0, 0, 1, 1)]
     assert _definition_calls == [(pair.id, 0), (pair.id, 1)]
-    nodes = [t.node for t in trials]
-    assert isinstance(nodes[0], SyncGroupNode)
-    assert nodes[0] is nodes[1] and nodes[2] is nodes[3] and nodes[0] is not nodes[2]
-    assert nodes[0].network is nodes[2].network
+    rounds = [t.group_round for t in trials]
+    assert rounds[0] is rounds[1] and rounds[2] is rounds[3]
+    assert rounds[0] is not rounds[2]
+    assert [r.number for r in rounds] == [0, 0, 1, 1]
+    assert rounds[0].trials == trials[:2]
+    assert len({t.node_id for t in trials}) == 1
+    assert isinstance(trials[0].node, GenericTrialNode)
     PairTrial.cue({"target": 7})[0].consume(exp, cohort[0])
     with pytest.raises(ValueError, match="already has the definition"):
         PairTrial.cue({"target": 8})[0].consume(exp, cohort[1])
@@ -147,8 +152,7 @@ def test_a_pair_s_cued_trials_share_one_node_per_round(
     monkeypatch.setattr(PairTrial, "sync_group_optional", True)
     PairTrial.cue({"target": 9})[0].consume(exp, cohort[0])
     ungrouped = cohort[0].current_trial
-    assert ungrouped.sync_group_id is None
-    assert not isinstance(ungrouped.node, SyncGroupNode)
+    assert ungrouped.sync_group_id is None and ungrouped.group_round is None
     _definition_calls.clear()
     PairTrial.cue(_record_definition_args)[0].consume(exp, cohort[0])
     assert _definition_calls == [(None, None)]
@@ -172,7 +176,7 @@ def test_group_barrier_passes_the_members_trials_to_on_release(
     db.session.expire_all()
 
     trials = PairTrial.query.order_by(PairTrial.participant_id).all()
-    assert sorted(trials[0].node.var.players) == [p.id for p in cohort]
+    assert sorted(trials[0].group_round.var.players) == [p.id for p in cohort]
     assert all(trial.var.scored for trial in trials)
 
 
@@ -210,24 +214,24 @@ def test_cue_without_a_definition_defaults_to_an_empty_dict(
 
 
 @in_consents_experiment
-def test_a_waiting_screen_gets_the_trial_and_its_node(
+def test_a_waiting_screen_gets_the_trial_and_its_round(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
     cohort, _ = _paired(exp)
     PairTrial.cue()[0].consume(exp, cohort[0])
     hold = GroupBarrier(
-        "answered", group_type="pair", waiting_screen=_trial_and_node_screen
+        "answered", group_type="pair", waiting_screen=_trial_and_round_screen
     ).waiting_logic
 
     trial = cohort[0].current_trial
     screen = hold.waiting_screen_page(cohort[0])
-    assert screen.prompt.text == f"Trial {trial.id} on node {trial.node.id}"
-    assert hold.waiting_screen_page(cohort[1]).prompt.text == "Trial None on node None"
+    assert screen.prompt.text == f"Trial {trial.id} in round {trial.group_round.id}"
+    assert hold.waiting_screen_page(cohort[1]).prompt.text == "Trial None in round None"
 
 
-def _trial_and_node_screen(trial, node):
-    return f"Trial {getattr(trial, 'id', None)} on node {getattr(node, 'id', None)}"
+def _trial_and_round_screen(trial, group_round):
+    return f"Trial {getattr(trial, 'id', None)} in round {getattr(group_round, 'id', None)}"
 
 
 @in_consents_experiment
@@ -270,11 +274,13 @@ def test_a_barrier_release_closes_the_round(in_experiment_directory, db_session)
     db.session.commit()
 
     assert newcomer.current_trial.sync_group_round == 1
-    assert {p.current_trial.node_id for p in cohort} == {newcomer.current_trial.node_id}
+    assert {p.current_trial.group_round for p in cohort} == {
+        newcomer.current_trial.group_round
+    }
 
 
 @in_consents_experiment
-def test_a_barrier_after_the_trial_waits_for_every_member_and_gets_no_node(
+def test_a_barrier_after_the_trial_waits_for_every_member_and_gets_no_round(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
@@ -294,12 +300,12 @@ def test_a_barrier_after_the_trial_waits_for_every_member_and_gets_no_node(
     assert barrier._participant_is_waiting(cohort[0])
     _arrive(exp, barrier, [newcomer])
 
-    ((participants, trials, node),) = _released
-    assert node is None
+    ((participants, trials, group_round),) = _released
+    assert group_round is None
     assert {p.id: t for p, t in zip(participants, trials)} == {
         p.id: p.current_trial for p in [*cohort, newcomer]
     }
-    assert not cohort[0].current_trial.node.sync_group_closed
+    assert cohort[0].current_trial.group_round.closed_at is None
     assert [p.current_trial.sync_group_outcome for p in cohort] == [None, None]
 
 
@@ -341,10 +347,10 @@ def test_a_release_waits_for_a_member_still_cueing_the_round(
     assert errors == []
     db.session.expire_all()
     late_cuer = db.session.get(Participant, late_cuer.id)
-    node = cohort[0].current_trial.node
-    assert late_cuer.current_trial.node_id == node.id
+    group_round = cohort[0].current_trial.group_round
+    assert late_cuer.current_trial.group_round is group_round
     _arrive(exp, barrier, [*cohort, late_cuer])
-    assert node.sync_group_closed
+    assert group_round.closed_at is not None
 
 
 def _cue_in_parallel(exp, logic, participants):
@@ -376,13 +382,14 @@ def _cue_in_parallel(exp, logic, participants):
 
 
 @in_consents_experiment
-def test_members_cueing_in_parallel_get_one_node(in_experiment_directory, db_session):
+def test_members_cueing_in_parallel_get_one_round(in_experiment_directory, db_session):
     exp = get_experiment()
     cohort, _ = _paired(exp)
     _cue_in_parallel(exp, PairTrial.cue(_make_definition), cohort)
 
-    assert SyncGroupNode.query.count() == 1
-    assert {t.node_id for t in PairTrial.query} == {SyncGroupNode.query.one().id}
+    group_round = SyncGroupRound.query.one()
+    assert {t.sync_group_round_id for t in PairTrial.query} == {group_round.id}
+    assert group_round.definition == {"target": 0}
     assert len(_definition_calls) == 1
 
 
@@ -393,11 +400,11 @@ class SoloTrial(Trial):
         raise NotImplementedError
 
     @classmethod
-    def record_node(cls, node):
-        _released_nodes.append(node)
+    def record_round(cls, group_round):
+        _released_rounds.append(group_round)
 
 
-_released_nodes = []
+_released_rounds = []
 
 
 @in_consents_experiment
@@ -421,7 +428,7 @@ def test_cue_takes_round_only_when_the_trial_has_a_sync_group_type():
 
 
 def test_a_grouped_cue_takes_no_node():
-    with pytest.raises(TypeError, match="makes the group's node itself"):
+    with pytest.raises(TypeError, match="pass a dict or a function"):
         PairTrial.cue(ChainNode.__new__(ChainNode))
 
 
@@ -448,7 +455,7 @@ def test_each_module_numbers_a_group_s_rounds_from_0(
             PairTrial.cue({"target": 1})[0].consume(exp, participant)
     db.session.commit()
 
-    assert sorted((n.module_id, n.sync_group_round) for n in SyncGroupNode.query) == [
+    assert sorted((r.module_id, r.number) for r in SyncGroupRound.query) == [
         ("main", 0),
         ("practice", 0),
     ]
@@ -470,7 +477,7 @@ def test_a_group_lists_its_rounds_of_a_module_in_order_after_it_ends(
         pair.remove_participant(participant, reason="finished")
 
     assert not pair.active
-    assert [n.definition["target"] for n in pair.rounds("story")] == [0, 1]
+    assert [r.definition["target"] for r in pair.rounds("story")] == [0, 1]
     assert pair.rounds("other") == []
 
 
@@ -508,13 +515,13 @@ def test_a_barrier_before_a_module_s_first_cue_gets_no_round(
     )
     _arrive(exp, barrier, cohort)
 
-    ((participants, trials, node),) = _released
-    assert node is None
+    ((participants, trials, group_round),) = _released
+    assert group_round is None
     assert {p.id: t for p, t in zip(participants, trials)} == {
         t.participant_id: t for t in first_trials
     }
     assert [t.sync_group_outcome for t in first_trials] == [None, None]
-    assert not first_trials[0].node.sync_group_closed
+    assert first_trials[0].group_round.closed_at is None
     # Leaving the group in a later module doesn't record on the earlier round.
     cohort[1].fail("questionnaire attention check")
     assert [t.sync_group_outcome for t in first_trials] == [None, None]
@@ -548,10 +555,10 @@ def test_a_barrier_before_a_later_run_s_first_cue_gets_no_round(
     )
     _arrive(exp, barrier, cohort)
 
-    ((_, _, node),) = _released
-    assert node is None
+    ((_, _, group_round),) = _released
+    assert group_round is None
     assert [t.sync_group_outcome for t in first_trials] == [None, None]
-    assert not first_trials[0].node.sync_group_closed
+    assert first_trials[0].group_round.closed_at is None
 
 
 @in_consents_experiment
@@ -578,7 +585,7 @@ def test_a_newcomer_starts_a_later_run_with_the_group(
 ):
     exp = get_experiment()
     cohort, trials = _start_a_second_run(exp)
-    trials[0].node.sync_group_closed = round_closed
+    trials[0].group_round.closed_at = timenow() if round_closed else None
     (newcomer,) = _working_participants(exp, 1)
     cohort[0].active_sync_groups["pair"].add_participant(newcomer)
     newcomer.start_module(Module("game", InfoPage("Hi", time_estimate=1)))
@@ -684,11 +691,11 @@ def test_alternating_trial_classes_advance_the_round(
     # Different classes cued by different players in an open round share it.
     PairTrial.cue({"target": 1})[0].consume(exp, cohort[0])
     VoteTrial.cue({"target": 1})[0].consume(exp, cohort[1])
-    assert cohort[0].current_trial.node is cohort[1].current_trial.node
+    assert cohort[0].current_trial.group_round is cohort[1].current_trial.group_round
 
 
 @in_consents_experiment
-def test_an_explicit_round_lets_two_classes_share_a_node(
+def test_an_explicit_round_lets_two_classes_share_a_round(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
@@ -712,7 +719,7 @@ def test_an_explicit_round_lets_two_classes_share_a_node(
         4,
         5,
     ]
-    assert SyncGroupNode.query.count() == 2
+    assert SyncGroupRound.query.count() == 2
 
 
 @in_consents_experiment
@@ -729,7 +736,7 @@ def test_cues_need_an_admitted_member_of_an_open_round(
     pair.add_participant(newcomer)
     with pytest.raises(RuntimeError, match="finished without them"):
         _cue_round(exp, newcomer, 0)
-    assert _cue_round(exp, newcomer, 1).node.sync_group_round == 1
+    assert _cue_round(exp, newcomer, 1).group_round.number == 1
 
     pending = pair._active_link(newcomer)
     pending.admitted_at = None
@@ -792,9 +799,9 @@ def test_rounds_named_out_of_order_release_their_barriers(
         )
         _arrive(exp, barrier, cohort)
         assert not any(barrier._participant_is_waiting(p) for p in cohort)
-        node = cohort[0].current_trial.node
-        assert node.sync_group_round == i
-        assert sorted(node.var.players) == [p.id for p in cohort]
+        group_round = cohort[0].current_trial.group_round
+        assert group_round.number == i
+        assert sorted(group_round.var.players) == [p.id for p in cohort]
 
 
 def _newcomer_in_round_0(exp, round_closed=False):
@@ -1046,11 +1053,11 @@ def test_a_late_joiner_joins_an_open_round_or_starts_the_next(
         early.id: [0],
         between.id: [1],
     }
-    assert SyncGroupNode.query.count() == 2
+    assert SyncGroupRound.query.count() == 2
 
 
 @in_consents_experiment
-def test_on_release_gets_no_node_for_trials_off_the_group_s_node(
+def test_on_release_gets_no_round_for_ungrouped_trials(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
@@ -1059,13 +1066,13 @@ def test_on_release_gets_no_node_for_trials_off_the_group_s_node(
     for participant in cohort:
         logic[0].consume(exp, participant)
     db.session.commit()
-    _released_nodes.clear()
+    _released_rounds.clear()
 
     barrier = GroupBarrier(
-        "solo_done", group_type="pair", on_release=SoloTrial.record_node
+        "solo_done", group_type="pair", on_release=SoloTrial.record_round
     )
     _arrive(exp, barrier, cohort)
-    assert _released_nodes == [None]
+    assert _released_rounds == [None]
 
 
 class CustomStaticTrialMaker(StaticTrialMaker):
@@ -1170,11 +1177,9 @@ def test_a_dissolved_round_keeps_its_answers_and_outcomes(
     finally:
         exp.timeline = original
 
-    node = waiter.current_trial.node
-    assert isinstance(node, SyncGroupNode)
     assert {
         (t.participant_id, t.answer.get("estimate"), t.sync_group_outcome)
-        for t in node.all_trials
+        for t in waiter.current_trial.group_round.trials
     } == {
         (waiter.id, "5", "group_dissolved"),
         (reader.id, "3", "group_dissolved"),
@@ -1319,12 +1324,12 @@ def test_a_round_records_that_its_group_dissolved_during_it(
     group.below_quorum = "continue_without_group"
     _cue_team(exp, members, 0)
     db.session.commit()
-    node = members[0].current_trial.node
+    group_round = members[0].current_trial.group_round
 
     dissolve(exp, members)
     db.session.commit()
     assert not group.active
-    assert (node.sync_group_dissolved_at is not None) == marked
+    assert (group_round.dissolved_at is not None) == marked
 
 
 @in_consents_experiment
@@ -1336,17 +1341,17 @@ def test_dissolving_sees_a_release_another_request_committed(
     group.below_quorum = "continue_without_group"
     _cue_team(exp, members, 0)
     db.session.commit()
-    node = members[0].current_trial.node
-    assert not node.sync_group_closed
+    group_round = members[0].current_trial.group_round
+    assert group_round.closed_at is None
 
     with db.engine.begin() as barrier_request:
         barrier_request.execute(
-            text("UPDATE node SET sync_group_closed = true WHERE id = :id"),
-            {"id": node.id},
+            text("UPDATE sync_group_round SET closed_at = now() WHERE id = :id"),
+            {"id": group_round.id},
         )
     members[-1].fail("returned")
     db.session.commit()
-    assert not group.active and node.sync_group_dissolved_at is None
+    assert not group.active and group_round.dissolved_at is None
 
 
 @pytest.mark.parametrize("late_action", ["fail", "leave_group"])
@@ -1492,7 +1497,7 @@ def test_case_a_fixed_pair_waits_only_for_the_slower_partner(
     assert _waiting_at(submitted, [fast]) == [fast]
     _arrive(exp, submitted, [slow])
     assert _waiting_at(submitted, [fast, slow]) == []
-    assert len(_passes) == 1 and fast.current_trial.node.sync_group_closed
+    assert len(_passes) == 1 and fast.current_trial.group_round.closed_at
     assert [p.current_trial.sync_group_outcome for p in (fast, slow)] == [
         "stayed",
         "stayed",
@@ -1524,7 +1529,7 @@ def test_a_late_joiner_joins_the_open_round_and_its_barrier_waits_for_them(
     assert _waiting_at(submitted, [first, second]) == [first, second]
 
     _cue_team(exp, [late], 0)
-    assert late.current_trial.node is first.current_trial.node
+    assert late.current_trial.group_round is first.current_trial.group_round
     _arrive(exp, submitted, [late])
     assert _waiting_at(submitted, [first, second, late]) == []
     assert [sorted(ids) for ids, _ in _passes] == [
@@ -1582,7 +1587,7 @@ def test_case_a_slow_reader_between_runs_of_a_looped_module(
     slow.end_module(game)
     slow.start_module(game)
     _cue_team(exp, [slow])
-    assert slow.current_trial.node is fast.current_trial.node
+    assert slow.current_trial.group_round is fast.current_trial.group_round
     _arrive(exp, answered, [slow])
     assert _waiting_at(answered, [fast, slow]) == []
 
@@ -1670,7 +1675,7 @@ def test_case_a_group_dissolves_under_a_member_on_a_round_page(
         "group_dissolved",
         "group_dissolved",
     ]
-    assert reader.current_trial.node.sync_group_dissolved_at is not None
+    assert reader.current_trial.group_round.dissolved_at is not None
     original = exp.timeline
     exp.timeline = Timeline(
         submitted, ModularPage("after", "Round over", time_estimate=1)

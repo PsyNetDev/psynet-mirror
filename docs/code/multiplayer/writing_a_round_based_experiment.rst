@@ -13,8 +13,8 @@ cohort is split into pairs, and in each pair a proposer offers part of 10
 coins while the responder says the smallest offer they would accept. A
 player who is slow, closes their tab or sits a round out never holds up the
 others, and nobody is failed for it. Each player's round is one trial, and
-the two trials of a pair share a node that holds the pair's results, so the
-game's data can be read back from trials and nodes.
+the two trials of a pair share a round record that holds the pair's results, so the
+game's data can be read back from trials and rounds.
 
 Forming cohorts
 ---------------
@@ -97,12 +97,13 @@ maker:
    :dedent: 8
 
 The trial class sets ``sync_group_type``, so the trials that a pair's
-members cue in a round share one :class:`~psynet.trial.main.SyncGroupNode`.
+members cue in a round share one :class:`~psynet.sync.SyncGroupRound`
+(``trial.group_round``).
 Each trial records the pair (``sync_group_id``), the player's role
 (``sync_group_role``), the pair's round (``sync_group_round``) and how the
 round ended for the player (``sync_group_outcome``, see
 :ref:`rounds-explaining-the-outcome`), and keeps
-them after the pair ends. The ``Module`` gives the nodes a ``module_id`` to
+them after the pair ends. The ``Module`` gives the rounds a ``module_id`` to
 find them by when exporting.
 
 ``cue`` numbers each group's rounds from 0, so every pair here, new each
@@ -213,14 +214,14 @@ Scoring the round
 
 The barrier's ``on_release`` scores the pair once both have arrived, or once
 the one who is left has. It takes ``trials``, the members' trials, and
-``node``, the node they share, so a ``@classmethod`` on the trial class can
-save the pair's players, offer and result on the node and each player's coins on
+``group_round``, the round they share, so a ``@classmethod`` on the trial class can
+save the pair's players, offer and result in ``group_round.var`` and each player's coins on
 their trial, where a page reloaded later still finds them. When a partner
 left or ran out of time, nobody is paid. The ``left`` argument lists the
 members who left the pair this round, and
 ``sync_group_removal_reason`` tells a partner who was too slow apart from
 one who returned the study. ``trials`` only holds the trials of members
-still in the pair, so the players of the round come from ``node.all_trials``,
+still in the pair, so the players of the round come from ``group_round.trials``,
 which also keeps the trial of a player removed for being away:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
@@ -243,9 +244,9 @@ during the round rather than work it out from the player's groups:
   they left the pair before then, here ``"late"`` for a player taken out for
   being away (see :ref:`round outcomes <sync-round-outcome>` for every value);
 - ``self.answer`` is their own decision, ``None`` if they ran out of time;
-- ``self.node.var`` holds what ``on_release`` saved for the pair.
+- ``self.group_round.var`` holds what ``on_release`` saved for the pair.
 
-A partner's outcome is on their trial in ``self.node.all_trials``.
+A partner's outcome is on their trial in ``self.group_round.trials``.
 ``outcome`` turns these into one key of ``OUTCOME_TEXTS``:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
@@ -280,7 +281,7 @@ winner where ``on_release`` scores the round:
 
     class OfferTrial(Trial):
         @classmethod
-        def score_pair(cls, trials, node, left):
+        def score_pair(cls, trials, group_round, left):
             ...  # Save each player's coins on their trial, as above.
             best = max(trial.var.coins for trial in trials)
             for trial in trials:
@@ -343,9 +344,9 @@ already been told on their round's results page, so they get none.
 Exporting the rounds
 --------------------
 
-The results stay on the trials and nodes, so ``get_basic_data`` builds a
+The results stay on the trials and rounds, so ``get_basic_data`` builds a
 table with one row per player and round from the trials, including each
-player's ``sync_group_outcome``, and one with a row per pair from the nodes.
+player's ``sync_group_outcome``, and one with a row per pair from the rounds.
 Rounds a player sat out have no trial, so a third table counts them with the
 regrouper (see :doc:`/data/basic_data`):
 
@@ -396,7 +397,7 @@ has finished, carries on without a group instead of being failed:
 
 **A draw per group.** ``definition`` can also be a function, for example
 ``lambda group: {"target": random.choice(TARGETS)}``. It is called once per
-group and round, when the first member's trial creates the node, so the
+group and round, when the first member's cue creates the round, so the
 whole group plays the same draw. A player who is in no group of that type
 when the trial starts gets an ungrouped trial if the trial class sets
 ``sync_group_optional = True``, with ``sync_group_id`` set to ``None``
@@ -437,14 +438,14 @@ writes a story one sentence at a time. Each turn is one cued round in the
 group's loop, ``StoryTurn.cue(turn_definition, round=turn)`` (see
 :ref:`a fixed group's loop <rounds-fixed-group-loop>`). The definition
 function runs only at the turn's first cue, so it chooses the writer once,
-by seat with :func:`~psynet.sync.group_seats`, and the node's definition
+by seat with :func:`~psynet.sync.group_seats`, and the round's definition
 stores their ID for every member's trial and for the export:
 
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
    :pyobject: choose_writer
 
 The writer gets the writing page and then a code block that stores their
-sentence in ``node.var``, before the turn's barrier; the others go straight
+sentence in ``group_round.var``, before the turn's barrier; the others go straight
 to the barrier, whose ``waiting_screen`` shows them the story so far. The
 barrier closes the round:
 
@@ -476,7 +477,7 @@ why they left the group, such as ``"late"`` if the barrier took them out or
 or returned the study. If the
 chosen writer leaves between the turn's first cue and their own, they have
 no trial for the turn at all, and the export's ``writer_outcome`` is
-``None``. The export has one row per turn, from the nodes and the writers'
+``None``. The export has one row per turn, from the rounds and the writers'
 trials, and its ``finished`` column tells a turn that stored ``None`` from
 one that never finished. Each member stores their group's ID when the
 group forms, so the last page can read the story with

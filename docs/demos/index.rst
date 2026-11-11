@@ -435,7 +435,7 @@ Groups
     when a member returns the study or stops responding, and tells the last
     player, and anyone without a group, why the game ended. Each round is one
     cued trial per player that pays its bonus, with the group's pot on the
-    node they share. :doc:`/code/multiplayer/synchronization`.
+    round they share. :doc:`/code/multiplayer/synchronization`.
 
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
     A multi-room chat written directly on WebSockets rather than
