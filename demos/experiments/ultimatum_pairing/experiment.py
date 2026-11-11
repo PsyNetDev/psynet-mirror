@@ -17,23 +17,29 @@ In each pair, the proposer offers part of
 ``ENDOWMENT`` coins and, at the same time, the responder says the smallest
 offer they would accept.
 
-A player who doesn't answer in time is taken out of their pair so their
-partner isn't held up. A player who misses a round joins the next one, and
-nobody is failed for being slow. Players finish after ``N_ROUNDS`` rounds in
-a pair, or early, with an explanation, after sitting out ``MAX_SIT_OUTS``
-rounds or if their team falls apart.
+A player who doesn't answer within ``DECISION_SECONDS`` gets nothing that
+round, and nor does their partner. A player who closes their page is taken
+out of their pair so their partner isn't held up. A player who misses a
+round joins the next one, and nobody is failed for being slow. Players
+finish after ``N_ROUNDS`` rounds in a pair, or early, with an explanation,
+after sitting out ``MAX_SIT_OUTS`` rounds or if their team falls apart.
 """
 
 import random
-import time
 from typing import List
 
 import psynet.experiment
-from psynet.bot import BotDriver
+from psynet.bot import BotDriver, advance_past_wait_pages
+from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper
+from psynet.sync import (
+    GroupBarrier,
+    Regrouper,
+    SimpleGrouper,
+    pairs_avoiding_repeats,
+)
 from psynet.timeline import (
     CodeBlock,
     PageMaker,
@@ -54,6 +60,9 @@ DECISION_SECONDS = 30
 # with the rest of the team rather than without them.
 ROUND_DEADLINE_SECONDS = DECISION_SECONDS + 20
 ENDOWMENT = 10
+# Only players who have left their page reach this: the others are moved on by the time limit.
+LEFT_PAGE_SECONDS = DECISION_SECONDS + 10
+WAIT_TIMEOUT = ROUND_DEADLINE_SECONDS + LEFT_PAGE_SECONDS + 10
 
 
 def team_of(participant):
@@ -137,16 +146,7 @@ def pair_new_partners(members, within_group, regrouper):
             [p for p in members if p.var.get("rounds_played", 0) == most]
         )
         members = [p for p in members if p is not sitter]
-    best = None
-    for _ in range(20):
-        shuffled = random.sample(members, len(members))
-        pairs = [shuffled[i : i + 2] for i in range(0, len(shuffled) - 1, 2)]
-        repeats = sum(a.var.get("partner", None) == b.id for a, b in pairs)
-        if best is None or repeats < best[0]:
-            best = (repeats, pairs)
-        if repeats == 0:
-            break
-    return best[1]
+    return pairs_avoiding_repeats(members, lambda p: p.var.get("partner", None))
 
 
 def start_round(within_group, groups, left_over, regrouper):
@@ -158,16 +158,30 @@ def start_round(within_group, groups, left_over, regrouper):
 
 
 def score_round(participants: List[Participant]):
-    """Pay out the round, or note that the partner ran out of time."""
+    """Pay out the round, or note who ran out of time or left."""
     if len(participants) < 2:
-        participants[
-            0
-        ].var.outcome = "Your partner ran out of time, so nobody was paid."
+        participants[0].var.outcome = "Your partner left, so nobody was paid."
+        participants[0].var.decisions = None
+        return
+    if any(p.var.decision is None for p in participants):
+        for participant in participants:
+            participant.var.decisions = None
+            participant.var.outcome = (
+                "You ran out of time, so nobody was paid."
+                if participant.var.decision is None
+                else "Your partner ran out of time, so nobody was paid."
+            )
         return
     roles = {p.var.role: p for p in participants}
     offer = roles["proposer"].var.decision
-    accepted = offer >= roles["responder"].var.decision
+    minimum = roles["responder"].var.decision
+    accepted = offer >= minimum
+    decisions = {
+        roles["proposer"].id: f"I offer {offer}",
+        roles["responder"].id: f"I accept {minimum}+",
+    }
     for participant in participants:
+        participant.var.decisions = decisions
         if not accepted:
             outcome = f"The offer of {offer} coins was rejected, so nobody was paid."
         else:
@@ -186,19 +200,64 @@ def decision_page(participant):
         )
     return ModularPage(
         participant.var.role,
-        prompt,
+        # A tick appears once the partner has decided. Partners are anonymous,
+        # so that nobody recognises a partner from an earlier round.
+        GroupPrompt(prompt, participant=participant, group_type="pair", anonymous=True),
         PushButtonControl(choices=list(range(ENDOWMENT + 1))),
         save_answer="decision",
+        time_limit=DECISION_SECONDS,
         time_estimate=10,
+    )
+
+
+def forming_team(participant):
+    """Replace the welcome page while the player waits for a team."""
+    return "We're putting together a team for you. Each round, you play with one other player from it."
+
+
+def pairing_up(participant):
+    """Replace the last results page while the team pairs up for the next round."""
+    return "Getting the next round ready."
+
+
+def waiting_for_partner(participant):
+    """Replace the decision buttons with the player's choice while their partner decides."""
+    if participant.var.decision is None:
+        text = "You ran out of time, so nobody will be paid this round."
+    elif participant.var.role == "proposer":
+        text = f"You offer {participant.var.decision} coins."
+    else:
+        text = f"You accept at least {participant.var.decision} coins."
+    # No ticks: the partner arriving releases the pair at once, and one who
+    # ran out of time would get a tick for an answer they never gave.
+    return GroupPrompt(
+        text,
+        participant=participant,
+        group_type="pair",
+        anonymous=True,
+        show_progress=False,
     )
 
 
 def show_outcome(participant):
     if not in_pair(participant):
         return InfoPage(
-            "You ran out of time, so you got no coins this round.", time_estimate=5
+            "You were away for too long, so you got no coins this round.",
+            time_estimate=5,
         )
-    return InfoPage(participant.var.outcome, time_estimate=5)
+    if participant.var.decisions is None:
+        return InfoPage(participant.var.outcome, time_estimate=5)
+    return ModularPage(
+        "outcome",
+        GroupPrompt(
+            participant.var.outcome,
+            participant=participant,
+            group_type="pair",
+            answers=participant.var.decisions,
+            anonymous=True,
+        ),
+        time_estimate=5,
+    )
 
 
 def play_round():
@@ -212,6 +271,7 @@ def play_round():
             release_left_over=True,
             on_release=start_round,
             content=round_message,
+            waiting_screen=pairing_up,
         ),
         conditional(
             "paired",
@@ -222,9 +282,9 @@ def play_round():
                     id_="round_finished",
                     group_type="pair",
                     content="Waiting for your partner…",
-                    timeout_between_barriers_time=DECISION_SECONDS,
+                    waiting_screen=waiting_for_partner,
+                    timeout_between_barriers_time=LEFT_PAGE_SECONDS,
                     timeout_between_barriers_action="kick",
-                    skip_if_not_in_group=True,
                     on_release=score_round,
                 ),
                 PageMaker(show_outcome, time_estimate=5),
@@ -258,6 +318,7 @@ class Exp(psynet.experiment.Experiment):
             join_criterion=team_accepts_newcomers,
             fail_participants_below_min_size=False,
             content=lobby_message,
+            waiting_screen=forming_team,
             max_wait_time=300,
         ),
         while_loop(
@@ -280,7 +341,7 @@ class Exp(psynet.experiment.Experiment):
     def test_serial_run_bots(self, bots: List[BotDriver]):
         for bot in bots:
             bot.take_page()
-        _wait_while_held(bots)
+        advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
 
         # Round 1: the whole team is ready, so it starts at once. Latecomers
         # can still join while it is being played.
@@ -293,7 +354,7 @@ class Exp(psynet.experiment.Experiment):
         others = bots[:3]
         for bot in others:
             bot.take_page()
-        _wait_while_held(others)
+        advance_past_wait_pages(others, timeout=WAIT_TIMEOUT)
         assert not _team_accepts_newcomers(bots[0])
         sitting_out = [b for b in others if "sit out" in b.current_page_text]
         assert len(sitting_out) == 1
@@ -305,7 +366,7 @@ class Exp(psynet.experiment.Experiment):
         for bot in bots:
             bot.take_page()
         last_pair = [sitting_out[0], bots[3]]
-        _wait_while_held(last_pair)
+        advance_past_wait_pages(last_pair, timeout=WAIT_TIMEOUT)
         assert not _team_accepts_newcomers(last_pair[0])
         _play(last_pair)
         assert all("The offer of" in bot.current_page_text for bot in last_pair)
@@ -320,25 +381,8 @@ def _play(bots):
     for bot in bots:
         response = 5 if bot.current_page_label == "proposer" else 3
         bot.take_page(response=response)
-    _wait_while_held(bots)
+    advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
 
 
 def _team_accepts_newcomers(bot):
     return team_accepts_newcomers(team_of(Participant.query.get(bot.id)), None)
-
-
-def _wait_while_held(bots, timeout=ROUND_DEADLINE_SECONDS + DECISION_SECONDS + 10):
-    """Poll until no bot is on a waiting screen, as a browser would."""
-    deadline = time.monotonic() + timeout
-    while True:
-        held = []
-        for bot in bots:
-            bot.refresh_status()
-            if getattr(bot.get_current_page(), "is_timeline_hold", False):
-                held.append(bot)
-                bot.take_page()
-        if not held:
-            return
-        if time.monotonic() > deadline:
-            raise RuntimeError(f"Bots {[b.id for b in held]} are still waiting.")
-        time.sleep(0.5)

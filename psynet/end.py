@@ -1,8 +1,10 @@
-from typing import List, Optional, Union
+import math
+from typing import Callable, List, Optional, Union
 
 import dominate
 from dominate import tags
 from jinja2.utils import htmlsafe_json_dumps
+from markupsafe import Markup, escape
 
 from psynet import exit as exit_domain
 from psynet.modular_page import NullControl
@@ -17,7 +19,9 @@ from psynet.timeline import (
     conditional,
     join,
 )
-from psynet.utils import get_translator
+from psynet.utils import call_function_with_context, get_logger, get_translator
+
+logger = get_logger()
 
 
 class ExitLogic(EltCollection):
@@ -34,9 +38,24 @@ class ExitLogic(EltCollection):
 
 
 class EndLogic(ExitLogic):
-    """Show a terminal debrief before recruiter release."""
+    """Show a terminal debrief before recruiter release.
+
+    Parameters
+    ----------
+    auto_continue_seconds
+        If given, the debrief page continues by itself after this many
+        seconds, as if the participant had clicked Finish, and says so with
+        a countdown. Useful when participants should not wait on the last
+        page, for example in multiplayer games.
+    """
 
     exit_context: exit_domain.ExitContext
+
+    def __init__(self, auto_continue_seconds: Optional[float] = None):
+        super().__init__()
+        if auto_continue_seconds is not None and auto_continue_seconds < 0:
+            raise ValueError("auto_continue_seconds must be non-negative.")
+        self.auto_continue_seconds = auto_continue_seconds
 
     def resolve(self) -> Union[Elt, List[Elt]]:
         return join(
@@ -92,10 +111,12 @@ class EndLogic(ExitLogic):
         # Todo - Once automatic translation is updated, revisit the logic in
         # RejectedConsentPage and ask the participant to return their platform
         # submission if appropriate.
+        time_limit = None
         if show_finish_button:
             # The choice key "Finish" stays untranslated so that recorded answers
             # are locale-independent; only the visible label is translated.
             control = PushButtonControl(["Finish"], labels=[_("Finish")])
+            time_limit = self.auto_continue_seconds
         else:
             control = NullControl()
 
@@ -104,6 +125,8 @@ class EndLogic(ExitLogic):
             content,
             control,
             show_next_button=False,
+            time_limit=time_limit,
+            time_limit_answer="Finish",
         )
 
     @property
@@ -149,12 +172,22 @@ class EndLogic(ExitLogic):
 
         return dominate.util.raw(text)
 
-    def _finish_next_step(self, experiment) -> str:
+    def _finish_next_step(self, experiment):
         """Tell the participant what Finish does on this debrief."""
         _ = get_translator()
         if experiment.with_lucid_recruitment():
-            return _("Click Finish to return to your panel.")
-        return _("Click Finish to finalize the session.")
+            text = _("Click Finish to return to your panel.")
+        else:
+            text = _("Click Finish to finalize the session.")
+        if self.auto_continue_seconds is None:
+            return text
+        countdown = Markup("<span data-psynet-seconds-left>{}</span>").format(
+            math.ceil(self.auto_continue_seconds)
+        )
+        auto_continue = _("This page continues by itself in {SECONDS} s.")
+        return dominate.util.raw(
+            escape(text) + " " + escape(auto_continue).replace("{SECONDS}", countdown)
+        )
 
 
 class SuccessfulEndLogic(EndLogic):
@@ -272,10 +305,39 @@ class ImmediateExitLogic(ExitLogic):
 
 
 class UnsuccessfulEndLogic(EndLogic):
+    """Show the early-end page to a participant who failed or was screened out.
+
+    Parameters
+    ----------
+    failure_tags
+        Tags appended to the participant's ``failure_tags`` on this page.
+    auto_continue_seconds
+        See :class:`EndLogic`.
+    failure_message
+        Optional line that says why the participant stopped early, or a
+        function of ``participant`` (and, if it asks for them, other context
+        arguments such as ``experiment``) that returns one, or ``None``.
+        Without one, or when it returns ``None``, PsyNet explains its own
+        multiplayer reasons: waiting too long at a barrier, being too slow
+        to reach the next one, or the group becoming too small.
+        A plain string replaces these built-in lines for every participant,
+        so prefer a function that returns ``None`` for reasons you don't
+        handle. Returning ``""`` shows no line at all. If the function
+        raises, PsyNet logs the error and shows its built-in line.
+    """
+
     exit_context = exit_domain.ExitContext.UNSUCCESSFUL
 
-    def __init__(self, failure_tags: Optional[List] = None, **kwargs):
-        super().__init__()
+    def __init__(
+        self,
+        failure_tags: Optional[List] = None,
+        *,
+        failure_message: Optional[Union[str, Callable]] = None,
+        auto_continue_seconds: Optional[float] = None,
+        **kwargs,
+    ):
+        super().__init__(auto_continue_seconds=auto_continue_seconds)
+        self.failure_message = failure_message
 
         if failure_tags is None:
             failure_tags = []
@@ -285,7 +347,7 @@ class UnsuccessfulEndLogic(EndLogic):
         if "template_filename" in kwargs:
             raise ValueError(
                 "UnsuccessfulEndPage no longer accepts a template_filename argument. "
-                "Instead you should customize its content by subclassing its message attribute."
+                "Instead, pass failure_message or override debrief_participant."
             )
 
     def before_debrief(self, experiment, participant) -> None:
@@ -307,6 +369,10 @@ class UnsuccessfulEndLogic(EndLogic):
                 )
             )
 
+            reason = self.failure_reason(participant)
+            if reason:
+                tags.p(reason)
+
             if self.should_show_reward:
                 tags.p(
                     _p(
@@ -321,9 +387,60 @@ class UnsuccessfulEndLogic(EndLogic):
 
         return self.debrief_page(html, experiment, participant)
 
+    def failure_reason(self, participant):
+        """Return the line explaining why the participant stopped early, or ``None``."""
+        reason = self.failure_message
+        if callable(reason):
+            try:
+                reason = call_function_with_context(reason, participant=participant)
+            except Exception:
+                logger.exception(
+                    "failure_message raised for participant %s; "
+                    "showing PsyNet's built-in reason instead.",
+                    getattr(participant, "id", None),
+                )
+                reason = None
+        if reason is not None:
+            return reason
+        return _builtin_failure_reason(participant.failure_tags or [])
+
+
+def _builtin_failure_reason(failure_tags):
+    """Explain why PsyNet ended a multiplayer session, from its failure tags, or return ``None``."""
+    _p = get_translator(context=True)
+    if "timeout between barriers" in failure_tags:
+        return _p(
+            "final_page_unsuccessful",
+            "You took too long to reach the next step, so we ended your session.",
+        )
+    if "sync group below minimum size" in failure_tags:
+        return _p(
+            "final_page_unsuccessful",
+            "Too few members of your group remained to continue, "
+            "so we ended your session.",
+        )
+    waited_at_barrier = any(
+        tag.startswith(("timeline_hold:barrier:", "while_loop:barrier:"))
+        for tag in failure_tags
+    )
+    if "fail_on_timeout" in failure_tags and waited_at_barrier:
+        return _p(
+            "final_page_unsuccessful",
+            "We waited too long for other participants, so we ended your session.",
+        )
+    return None
+
 
 class RejectedConsentLogic(UnsuccessfulEndLogic):
     exit_context = exit_domain.ExitContext.REJECTED_CONSENT
+
+    def __init__(self, *args, **kwargs):
+        if "failure_message" in kwargs:
+            raise TypeError(
+                "RejectedConsentLogic does not show a failure_message; "
+                "override debrief_participant to change its page."
+            )
+        super().__init__(*args, **kwargs)
 
     def before_debrief_logic(self) -> TimelineLogic:
         return conditional(

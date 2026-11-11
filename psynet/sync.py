@@ -102,7 +102,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import timedelta
 from math import ceil, floor
-from typing import Callable, List, Literal, Optional, Union
+from typing import Callable, Dict, List, Literal, Optional, Union
 
 from dallinger import db
 from dallinger.models import timenow
@@ -151,7 +151,14 @@ from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
 from psynet.participant import Participant, _lock_and_load_participant
 from psynet.serialize import SerializedCallable, serialize_callable
-from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
+from psynet.timeline import (
+    CodeBlock,
+    EltCollection,
+    EndWhile,
+    StartWhile,
+    _is_timeline_hold,
+    conditional,
+)
 from psynet.timeline_hold import (
     HoldMessage,
     TimelineHoldRecord,
@@ -170,6 +177,8 @@ from psynet.utils import (
     call_if_callable,
     get_config,
     get_logger,
+    get_translator,
+    warn_from_caller,
 )
 
 logger = get_logger()
@@ -672,6 +681,7 @@ class _BarrierHoldPage(_TimelineHoldPage):
             content=barrier.content,
             message_kind="barrier" if barrier.content is None else None,
             on_timeout=barrier.handle_max_wait_timeout,
+            waiting_screen=barrier.waiting_screen,
         )
 
     @property
@@ -748,7 +758,8 @@ class _BarrierHoldPage(_TimelineHoldPage):
         content_is_function = isinstance(content, SerializedCallable)
         if not content_is_function and "{SECONDS}" not in str(content or ""):
             return compose_hold_overlay_html(
-                self.translated_content(), self.hold_progress_text(participant, counts)
+                self.translated_content(participant),
+                self.hold_progress_text(participant, counts),
             )
         if release_time is NoArgumentProvided:
             release_time = (
@@ -812,6 +823,22 @@ class _ReadOnlyParticipantList(list):
     __delitem__ = __iadd__ = __imul__ = __setitem__ = _raise_mutation_error
 
 
+def _expected_repetitions(waiting_logic, expected_wait, default):
+    """Return how often ``waiting_logic`` is expected to run to fill ``expected_wait``.
+
+    Called when the barrier is built, before the timeline multiplies the
+    logic's own repetition estimates.
+    """
+    from psynet.timeline import estimate_duration
+
+    if expected_wait is None:
+        return default
+    duration = estimate_duration(waiting_logic)
+    if duration <= 0:
+        return 1
+    return max(1, ceil(expected_wait / duration - 1e-9))
+
+
 def hold_message(title, progress=None):
     """Return a waiting message with its own progress line.
 
@@ -856,8 +883,9 @@ class Barrier(EltCollection):
     from :func:`~psynet.barrier_spec.barrier_from_spec_json`. That reconstructed
     object has ``id``, custom release state, scalar presentation (``content``,
     timeouts), and notification settings. It does not include wait-page
-    construction (``waiting_logic``, ``_uses_timeline_hold``,
-    ``waiting_logic_expected_repetitions``).
+    construction (``waiting_logic``, ``waiting_screen``,
+    ``_uses_timeline_hold`` and the expected repetitions of
+    ``waiting_logic``).
 
     Call :meth:`check_waiting_participants`, :meth:`choose_who_to_release`,
     and :meth:`release` on reconstructed objects. Keep
@@ -873,14 +901,17 @@ class Barrier(EltCollection):
 
     waiting_logic
         Either a single timeline element or a list of timeline elements (created by ``join``) that is to be displayed
-        to the participant while they are waiting at the barrier. If left at the
-        default value of ``None``, the current page remains visible beneath a
-        lightweight waiting indicator.
+        to the participant while they are waiting at the barrier. Use it to
+        give participants something to do while they wait, such as filler
+        trials, and ``waiting_screen`` to show them something. If left at the
+        default value of ``None``, the participant sees ``waiting_screen``,
+        or their current page beneath a lightweight waiting indicator. Give
+        each barrier its own elements: the timeline scales their time
+        estimates in place, so shared elements inflate progress estimates.
 
     waiting_logic_expected_repetitions
-        Expected repetitions for explicit ``waiting_logic``. For a default
-        hold, this is used only to derive the legacy ``expected_wait`` when no
-        explicit estimate is supplied.
+        Deprecated; pass ``expected_wait`` instead. Expected repetitions of
+        ``waiting_logic``.
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
@@ -895,9 +926,11 @@ class Barrier(EltCollection):
         holds credit actual visible waiting time up to ``max_wait_time``.
 
     expected_wait
-        Expected duration of a default timeline hold. If omitted, preserves the
-        historical default estimate of 0.5 seconds multiplied by
-        ``waiting_logic_expected_repetitions``.
+        How long participants are expected to wait here, in seconds, for
+        progress estimates and fixed time credit. With ``waiting_logic``, the
+        waiting logic is expected to repeat often enough to fill this time,
+        rounded up to whole passes (at least one). If omitted, a default hold expects 1.5 seconds and
+        ``waiting_logic`` three repetitions.
 
     content
         Message displayed by the default timeline hold overlay. Only used when
@@ -906,43 +939,98 @@ class Barrier(EltCollection):
         pass ``markupsafe.Markup`` or a dominate tag for HTML. A ``{SECONDS}``
         placeholder counts down to :meth:`expected_release_time`, showing "…"
         while it is unknown. ``content`` can also be a module-level function
-        that returns the message; it may take ``seconds_left`` (whole seconds,
-        or ``None`` while the release time is unknown), ``participant`` and
+        that returns the message, for example one that depends on the
+        participant's role; it may take ``participant``, ``seconds_left``
+        (whole seconds, or ``None`` while the release time is unknown) and
         ``barrier``, and on a :class:`GroupBarrier` also ``waiting_count``
         and ``group_size`` (both ``None`` if the participant has no group).
         Return :func:`hold_message` to set the progress
         line under the message yourself.
+
+    waiting_screen
+        What to show in place of the current page while the participant
+        waits: a prompt, text or HTML (shown without a Next button), or a
+        :class:`~psynet.modular_page.ModularPage` that nothing submits, for
+        example with ``NullControl(show_next_button=False)``. Pass a
+        module-level function ``waiting_screen(participant)`` to show each
+        participant their own screen. It runs on each request (a page load
+        or a check for the release), sometimes more than once, so base it on
+        the participant's state
+        rather than on chance. Returning ``None`` keeps the current page, as
+        omitting ``waiting_screen`` does; if that page is another barrier's
+        waiting screen, a plain waiting page replaces it. The ``content`` message still shows
+        on top. A page with a Next button, push buttons or ``auto_advance``,
+        or one that needs a full page reload (for
+        example deprecated ``js_links``) while
+        ``inplace_timeline_transitions`` is on, raises ``ValueError`` when
+        it is shown. Only used when ``waiting_logic`` is omitted.
+
+    release_grace
+        Seconds a participant on a ``waiting_logic`` page has to finish it
+        once they are released; the page then ends without an answer,
+        recorded with ``"interrupted": True`` in its response metadata.
+        ``None`` lets each waiting page run to its end. Pages inside trials
+        always run to their end. Default: 3 seconds.
     """
+
+    # Reconstructed barriers skip ``__init__`` and never render a hold page.
+    waiting_screen = None
 
     def __init__(
         self,
         id_: str,
         waiting_logic=None,
-        waiting_logic_expected_repetitions=3,
+        waiting_logic_expected_repetitions=None,
         max_wait_time=20,
         fix_time_credit=False,
         expected_wait=None,
         content=None,
+        release_grace: Optional[float] = 3,
+        waiting_screen=None,
     ):
         self.id = id_
         self.max_wait_time = max_wait_time
         self.fix_time_credit = fix_time_credit
+        if waiting_logic_expected_repetitions is not None:
+            warn_from_caller(
+                "waiting_logic_expected_repetitions is deprecated; pass expected_wait "
+                "(in seconds) instead.",
+                FutureWarning,
+            )
+            if expected_wait is not None:
+                raise ValueError(
+                    "Pass expected_wait or waiting_logic_expected_repetitions, not both."
+                )
         self.waiting_logic_expected_repetitions = waiting_logic_expected_repetitions
         self.content = content
+        self.waiting_screen = waiting_screen
         self._uses_timeline_hold = waiting_logic is None
-        if waiting_logic is not None and expected_wait is not None:
-            raise ValueError(
-                "expected_wait only applies when waiting_logic is omitted."
-            )
         if waiting_logic is not None and content is not None:
             raise ValueError("content only applies when waiting_logic is omitted.")
+        if waiting_logic is not None and waiting_screen is not None:
+            raise ValueError(
+                "waiting_screen only applies when waiting_logic is omitted."
+            )
+        default_repetitions = (
+            3
+            if waiting_logic_expected_repetitions is None
+            else waiting_logic_expected_repetitions
+        )
         self.expected_wait = (
-            0.5 * waiting_logic_expected_repetitions
-            if expected_wait is None
-            else expected_wait
+            0.5 * default_repetitions if expected_wait is None else expected_wait
         )
         if self.expected_wait < 0:
             raise ValueError("expected_wait must be non-negative.")
+        if release_grace is not None and release_grace < 0:
+            raise ValueError("release_grace must be non-negative or None.")
+        self.release_grace = None if waiting_logic is None else release_grace
+        self._waiting_logic_repetitions = (
+            None
+            if waiting_logic is None
+            else _expected_repetitions(
+                waiting_logic, expected_wait, default_repetitions
+            )
+        )
         if waiting_logic is None:
             waiting_logic = _BarrierHoldPage(self)
 
@@ -999,7 +1087,7 @@ class Barrier(EltCollection):
                     not self.can_participant_exit(participant)
                 ),
                 logic=self.waiting_logic,
-                expected_repetitions=self.waiting_logic_expected_repetitions,
+                expected_repetitions=self._waiting_logic_repetitions,
                 max_loop_time=self._arrival_max_wait_time,
                 fix_time_credit=self.fix_time_credit,
                 fail_on_timeout=(self.max_wait_action == "fail"),
@@ -1018,7 +1106,16 @@ class Barrier(EltCollection):
             ),
         )
         for elt in elts:
-            elt.links["barrier"] = self
+            # Keep an inner barrier's link: its waiting pages belong to it.
+            elt.links.setdefault("barrier", self)
+        # Page makers can resolve the waiting logic again elsewhere, carrying
+        # this link with it, so the loop's own markers say where it really is.
+        self._waiting_loop_markers = [
+            elt
+            for elt in elts
+            if isinstance(elt, (StartWhile, EndWhile))
+            and elt.label == f"barrier:{self.id}"
+        ]
 
         return elts
 
@@ -1107,8 +1204,12 @@ class Barrier(EltCollection):
         link.release()
 
     def can_participant_exit(self, participant: "Participant"):
-        barrier_is_active = self.id in participant.active_barriers
-        return not barrier_is_active
+        """Return whether the participant may leave ``waiting_logic``.
+
+        Checks the ``released`` flag, because a link released earlier in
+        the same request stays in ``active_barriers`` until it expires.
+        """
+        return not self._participant_is_waiting(participant)
 
     def waiting_pool_group(self, participant) -> Optional["SyncGroup"]:
         """Return the group whose members wait together at this barrier, or ``None``.
@@ -1379,15 +1480,15 @@ class GroupBarrier(Barrier):
 
     waiting_logic
         Either a single timeline element or a list of timeline elements (created by ``join``) that is to be displayed
-        to the participant while they are waiting at the barrier. If left at
-        ``None``, the current page remains visible beneath a lightweight
+        to the participant while they are waiting at the barrier, for
+        example filler trials. If left at ``None``, the participant sees
+        ``waiting_screen``, or their current page beneath a lightweight
         waiting indicator. Pass ``content`` to customize that indicator's
-        message.
+        message. Give each barrier its own elements (see :class:`Barrier`).
 
     waiting_logic_expected_repetitions
-        Expected repetitions for explicit ``waiting_logic``. For a default
-        hold, this is used only to derive the legacy ``expected_wait`` when no
-        explicit estimate is supplied.
+        Deprecated; pass ``expected_wait`` instead. Expected repetitions of
+        ``waiting_logic``.
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
@@ -1411,7 +1512,8 @@ class GroupBarrier(Barrier):
     timeout_between_barriers_action
         When a participant exceeds ``timeout_between_barriers_time``: ``"kick"`` removes them from the group (so the
         rest can proceed without them), or ``"fail"`` fails the participant and sends them to the end of the experiment.
-        Default is ``"fail"``.
+        Default is ``"fail"``. A kicked participant is no longer in the group when they reach the barrier, so
+        ``"kick"`` also makes ``skip_if_not_in_group`` default to ``True``.
 
     on_release
         Optional callback invoked when the barrier releases participants.
@@ -1425,14 +1527,15 @@ class GroupBarrier(Barrier):
         holds credit actual visible waiting time up to ``max_wait_time``.
 
     expected_wait
-        Expected duration of a default timeline hold. If omitted, preserves the
-        historical default estimate.
+        See :class:`Barrier`.
 
     content
         Message displayed by the default timeline hold overlay. Only used when
         ``waiting_logic`` is omitted. If omitted, participants see
         "Waiting for other participants…". Plain strings are shown as text;
-        pass ``markupsafe.Markup`` or a dominate tag for HTML. Independent of
+        pass ``markupsafe.Markup`` or a dominate tag for HTML, or a
+        module-level function ``content(participant)`` returning either (see
+        :class:`Barrier`). Independent of
         a preceding :class:`~psynet.sync.Grouper`'s ``content`` and of
         trial-maker ``sync_group_wait_content``.
 
@@ -1440,16 +1543,25 @@ class GroupBarrier(Barrier):
         If ``True`` (default), group members who have not reached this barrier
         yet see a pill on the progress bar, and waiting participants in groups
         of three or more see remaining-not-ready copy on the hold overlay.
-        Pairs show only the message. Set ``False`` to disable both. To
-        change the waiting indicator's progress line, return
-        :func:`hold_message` from a ``content`` function.
-        Passing ``on_arrival_message`` implies ``True``.
+        Pairs show only the message. Set ``False`` to disable both. A
+        member removed by ``timeout_between_barriers_action="kick"`` is told
+        either way; return ``None`` from ``on_arrival_message`` for
+        ``kind="removed"`` to hide it. To change the waiting indicator's
+        progress line, return :func:`hold_message` from a ``content``
+        function.
 
     skip_if_not_in_group
         If ``True``, a participant who is not in a group of this ``group_type``
         passes straight through, for example after being kicked by a timeout in
-        a round-based design. If ``False`` (default), they get an error, which
-        usually means a grouper is missing from the timeline.
+        a round-based design. If ``False``, they get an error, which usually
+        means a grouper is missing from the timeline. Defaults to ``True`` when
+        ``timeout_between_barriers_action="kick"``, and ``False`` otherwise.
+
+    release_grace
+        See :class:`Barrier`. Default: 3 seconds.
+
+    waiting_screen
+        See :class:`Barrier`.
 
     on_arrival_message
         Optional callable that returns copy for one recipient. It receives
@@ -1461,8 +1573,10 @@ class GroupBarrier(Barrier):
         ``"notice"`` is the progress-bar notice for members who have not
         reached the barrier yet. It defaults to "Your partner is ready." in
         pairs and ``"{ARRIVED}/{TOTAL} of your group are ready."`` in larger
-        groups. Notices stay on one line (overflow ellipsizes), so keep them
-        to a short sentence.
+        groups. It is called whenever the recipient's browser fetches its
+        notice, which can be several times per arrival, so it should depend
+        only on its arguments and have no side effects. Notices stay on one
+        line (overflow ellipsizes), so keep them to a short sentence.
 
         ``"removed"`` is the progress-bar notice for someone kicked by
         ``timeout_between_barriers_action="kick"``, shown until they leave
@@ -1517,7 +1631,7 @@ class GroupBarrier(Barrier):
         id_: str,
         group_type: str,
         waiting_logic=None,
-        waiting_logic_expected_repetitions=3,
+        waiting_logic_expected_repetitions=None,
         max_wait_time: Optional[float] = _DEFAULT_MAX_WAIT_TIME,
         max_wait_action: Literal["fail", "kick"] = "fail",
         on_release: Optional[Callable] = None,
@@ -1528,7 +1642,9 @@ class GroupBarrier(Barrier):
         content=None,
         notify_arrivals: bool = True,
         on_arrival_message: Optional[Callable] = None,
-        skip_if_not_in_group: bool = False,
+        skip_if_not_in_group: Optional[bool] = None,
+        release_grace: Optional[float] = 3,
+        waiting_screen=None,
     ):
         self._validate_max_wait_action(max_wait_action)
         max_wait_time = self._check_max_wait_time(
@@ -1542,12 +1658,14 @@ class GroupBarrier(Barrier):
             fix_time_credit=fix_time_credit,
             expected_wait=expected_wait,
             content=content,
+            release_grace=release_grace,
+            waiting_screen=waiting_screen,
         )
         self.max_wait_action = max_wait_action
         self.group_type = group_type
         self.on_release = on_release
         self.on_arrival_message = on_arrival_message
-        self.notify_arrivals = bool(notify_arrivals) or on_arrival_message is not None
+        self.notify_arrivals = bool(notify_arrivals)
         self.timeout_between_barriers_time = timeout_between_barriers_time
         if timeout_between_barriers_action not in ("kick", "fail"):
             raise ValueError(
@@ -1555,6 +1673,8 @@ class GroupBarrier(Barrier):
                 f"got {timeout_between_barriers_action!r}"
             )
         self.timeout_between_barriers_action = timeout_between_barriers_action
+        if skip_if_not_in_group is None:
+            skip_if_not_in_group = timeout_between_barriers_action == "kick"
         self.skip_if_not_in_group = skip_if_not_in_group
 
     def resolve(self):
@@ -1652,11 +1772,12 @@ class GroupBarrier(Barrier):
             return
         members = group.active_participants
         waiting = [m for m in members if self._participant_is_waiting(m)]
-        waiting_count = len(waiting)
-        group_size = len(members)
-        counts = {"waiting_count": waiting_count, "group_size": group_size}
+        counts = {"waiting_count": len(waiting), "group_size": len(members)}
         if self._uses_timeline_hold:
             _prime_timeline_hold_records(waiting, self.id)
+        # Arrivals in concurrent requests don't see each other, so the browser
+        # fetches the notice and ready seats after the commit instead of being
+        # sent the counts this request sees.
         for member in members:
             if member.failed:
                 continue
@@ -1669,13 +1790,9 @@ class GroupBarrier(Barrier):
                     ) and hold_page._is_silent_for(member):
                         continue
                     hold_html = hold_page.overlay_html(member, counts=counts)
-                _queue_arrival_update(member.id, hold_message=hold_html)
+                _queue_arrival_update(member.id, hold_message=hold_html, refresh=True)
                 continue
-            text = self._call_arrival_message(
-                kind="notice", recipient=member, group=group, **counts
-            )
-            if text:
-                _queue_arrival_update(member.id, notice=str(text))
+            _queue_arrival_update(member.id, refresh=True)
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Kick from the sync group when requested, then release the barrier link."""
@@ -1802,12 +1919,8 @@ class GroupBarrier(Barrier):
                     participant.id,
                     group.id,
                 )
-                group.remove_participant(participant)
-            if (
-                self.notify_arrivals
-                and group.n_active_participants > 0
-                and not group.dissolving
-            ):
+                group.remove_participant(participant, reason="out_of_time")
+            if group.n_active_participants > 0 and not group.dissolving:
                 for participant in late:
                     self._tell_removed_participant(participant, group, group_size)
             return
@@ -1850,7 +1963,7 @@ class GroupBarrier(Barrier):
             "page_uuid": participant.page_uuid,
             "text": text,
         }
-        _queue_arrival_update(participant.id, notice=text)
+        _queue_arrival_update(participant.id, notice=text, removed=True)
 
     def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
         """Return active members past the between-barrier timeout who are not waiting.
@@ -1900,14 +2013,15 @@ class Grouper(Barrier):
 
     waiting_logic
         Either a single timeline element or a list of timeline elements (created by ``join``) that is to be displayed
-        to the participant while they are waiting at the barrier. If left at
-        ``None``, the current page remains visible beneath a lightweight
-        waiting indicator.
+        to the participant while they are waiting at the barrier, for
+        example filler trials. If left at ``None``, the participant sees
+        ``waiting_screen``, or their current page beneath a lightweight
+        waiting indicator. Give each grouper its own elements (see
+        :class:`Barrier`).
 
     waiting_logic_expected_repetitions
-        Expected repetitions for explicit ``waiting_logic``. For a default
-        hold, this is used only to derive the legacy ``expected_wait`` when no
-        explicit estimate is supplied.
+        Deprecated; pass ``expected_wait`` instead. Expected repetitions of
+        ``waiting_logic``.
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
@@ -1917,8 +2031,7 @@ class Grouper(Barrier):
         so make it long enough to cover long filler pages (for example trials used as filler).
 
     expected_wait
-        Expected duration of a default timeline hold. If omitted, preserves the
-        historical default estimate.
+        See :class:`Barrier`.
 
     content
         Message displayed by the default timeline hold overlay. Only used when
@@ -1940,6 +2053,13 @@ class Grouper(Barrier):
         are failed. If ``False``, they are removed from the group without being failed and continue
         alone. A member whose own request is in progress is handled within about a second by the
         barrier poller instead.
+
+    release_grace
+        See :class:`Barrier`. Default: 3 seconds.
+
+    waiting_screen
+        See :class:`Barrier`.
+
     """
 
     def __init__(
@@ -1947,12 +2067,14 @@ class Grouper(Barrier):
         group_type: str,
         id_: Optional[str] = None,
         waiting_logic=None,
-        waiting_logic_expected_repetitions=3,
+        waiting_logic_expected_repetitions=None,
         max_wait_time=20,
         fail_participants_below_min_size: bool = True,
         expected_wait=None,
         fix_time_credit=False,
         content=None,
+        release_grace: Optional[float] = 3,
+        waiting_screen=None,
     ):
         if not id_:
             id_ = f"{group_type}_grouper"
@@ -1964,6 +2086,8 @@ class Grouper(Barrier):
             expected_wait=expected_wait,
             fix_time_credit=fix_time_credit,
             content=content,
+            release_grace=release_grace,
+            waiting_screen=waiting_screen,
         )
         self.group_type = group_type
         self.fail_participants_below_min_size = fail_participants_below_min_size
@@ -2034,6 +2158,20 @@ class Grouper(Barrier):
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         """Return whether this grouper would form groups, without creating them."""
         return bool(self.ready_to_group(waiting_participants))
+
+    def _create_group(self, participants, **settings):
+        """Create a ``SimpleSyncGroup`` of these participants, led by :meth:`select_leader`."""
+        group = SimpleSyncGroup(
+            group_type=self.group_type,
+            n_active_participants=len(participants),
+            active=True,
+            **settings,
+        )
+        db.session.add(group)
+        for participant in participants:
+            group.add_participant(participant)
+        group.leader = self.select_leader(participants)
+        return group
 
     def select_leader(self, participants: List[Participant]) -> Participant:
         """
@@ -2400,19 +2538,14 @@ class SimpleGrouper(Grouper):
 
     def _make_group(self, participants, *, initial_group_size):
         """Create one group of these participants with this grouper's settings."""
-        group = SimpleSyncGroup(
-            group_type=self.group_type,
+        return self._create_group(
+            participants,
             initial_group_size=initial_group_size,
             max_group_size=self.max_group_size,
             min_group_size=self.min_group_size,
-            n_active_participants=len(participants),
             accepts_top_ups=self.join_existing_groups,
             fail_participants_below_min_size=self.fail_participants_below_min_size,
         )
-        for participant in participants:
-            group.add_participant(participant)
-        group.leader = self.select_leader(participants)
-        return group
 
     @staticmethod
     def randomly_partition_list(lst: list, group_size: int):
@@ -2425,6 +2558,41 @@ class SimpleGrouper(Grouper):
         lst = lst.copy()
         random.shuffle(lst)
         return [lst[i::n_groups] for i in range(n_groups)]
+
+
+def pairs_avoiding_repeats(members, last_partner_id: Callable, attempts: int = 50):
+    """Pair members at random, repeating a previous partnership as rarely as possible.
+
+    A building block for :class:`Regrouper`'s ``form_groups``. With an odd
+    number of members, one is left over.
+
+    Parameters
+    ----------
+    members : list of Participant
+        The participants to pair.
+    last_partner_id : callable
+        ``last_partner_id(participant)`` returns the ID of the participant's
+        previous partner, or ``None``.
+    attempts : int
+        Random pairings to try before taking the one with the fewest repeats.
+
+    Returns
+    -------
+    list of list of Participant
+        The pairs.
+    """
+    best, best_repeats = [], None
+    for _ in range(attempts):
+        shuffled = random.sample(members, len(members))
+        pairs = [shuffled[i : i + 2] for i in range(0, len(shuffled) - 1, 2)]
+        repeats = sum(
+            last_partner_id(a) == b.id or last_partner_id(b) == a.id for a, b in pairs
+        )
+        if best_repeats is None or repeats < best_repeats:
+            best, best_repeats = pairs, repeats
+        if repeats == 0:
+            break
+    return best
 
 
 class Clock:
@@ -2608,7 +2776,7 @@ class Regrouper(Grouper):
     def receive_participant(self, participant: Participant):
         previous = participant.active_sync_groups.get(self.group_type)
         if previous is not None:
-            previous.remove_participant(participant)
+            previous.remove_participant(participant, reason="moved_on")
         Barrier.receive_participant(self, participant)
 
     def form_groups(self, members, within_group=None):
@@ -2833,21 +3001,31 @@ class Regrouper(Grouper):
             )
 
     def _make_group(self, participants):
-        group = SimpleSyncGroup(
-            group_type=self.group_type,
+        """Create a fixed group that never dissolves or fails its members."""
+        return self._create_group(
+            participants,
             initial_group_size=len(participants),
             max_group_size=len(participants),
             min_group_size=1,
-            n_active_participants=len(participants),
             accepts_top_ups=False,
             fail_participants_below_min_size=False,
-            active=True,
         )
-        db.session.add(group)
-        for participant in participants:
-            group.add_participant(participant)
-        group.leader = self.select_leader(participants)
-        return group
+
+
+def group_seats(group) -> Dict[int, int]:
+    """Return ``{participant_id: seat}`` for everyone who has been in ``group``.
+
+    Seats number members in the order they first joined. Links are kept when
+    members leave, so seats never change while the group exists, and pages
+    can refer to members without their IDs.
+    """
+    seats = {}
+    links = sorted(
+        group.participant_links, key=lambda link: (link.id is None, link.id or 0)
+    )
+    for link in links:
+        seats.setdefault(link.participant_id, len(seats))
+    return seats
 
 
 @register_table
@@ -2894,7 +3072,14 @@ class SyncGroup(SQLBase, SQLMixin):
         return _ReadOnlyParticipantList(link.participant for link in links)
 
     def add_participant(self, participant: Participant):
-        """Add a participant to the group (creates an active link)."""
+        """Add a participant to the group (creates an active link).
+
+        If an active member already has the newcomer's pseudonym and this is
+        the newcomer's first group, the newcomer is given a free one, so
+        members can tell each other apart. Later groups never rename anyone,
+        so a pseudonym stays the same once others have seen it.
+        """
+        self._give_distinct_pseudonym(participant)
         _forget_active_sync_group(participant)
         # Setting ``sync_group`` also appends to ``participant_links``, and lets
         # ``participant.active_sync_groups`` see the group before a flush.
@@ -2904,10 +3089,39 @@ class SyncGroup(SQLBase, SQLMixin):
             active=True,
             arrival_time=timenow(),
         )
+        _notify_membership_change(self, newcomer=participant)
 
     @property
     def active_participants(self) -> List[Participant]:
         return [p for p in self.participants if not p.failed and p.status == "working"]
+
+    def _give_distinct_pseudonym(self, participant):
+        """Store a free pseudonym for ``participant`` if an active member has theirs.
+
+        Only in the participant's first group; see :meth:`add_participant`.
+        """
+        # Cached for this transaction, so forming a large group stays linear.
+        transaction = db.session().get_transaction()
+        cached = self.__dict__.get("_pseudonym_keys")
+        if cached is not None and transaction is not None and cached[0] is transaction:
+            taken = cached[1]
+        else:
+            others = [p for p in self.active_participants if p.id != participant.id]
+            taken = {(p.pseudonym.color, p.pseudonym.animal) for p in others}
+            self.__dict__["_pseudonym_keys"] = (transaction, taken)
+        pseudonym = participant.pseudonym
+        keys = (pseudonym.color, pseudonym.animal)
+        first_group = not participant.sync_group_links
+        if keys in taken and first_group:
+            from .experiment import get_experiment
+
+            replacement = get_experiment().pseudonym_scheme.replacement(
+                taken, participant
+            )
+            if replacement is not None:
+                participant.set_pseudonym(*replacement)
+                keys = replacement
+        taken.add(keys)
 
     leader = relationship(
         "psynet.participant.Participant",
@@ -2954,12 +3168,31 @@ class SyncGroup(SQLBase, SQLMixin):
     def check_numbers(self):
         self.n_active_participants = len(self.active_participants)
 
-    def remove_participant(self, participant: Participant):
+    def remove_participant(
+        self, participant: Participant, reason: Optional[str] = None
+    ):
+        """Remove a participant from the group.
+
+        Parameters
+        ----------
+        participant
+            The member to remove.
+        reason
+            Optional reason stored on their link, such as ``"moved_on"`` for a
+            member who went on to their next group or ``"out_of_time"`` for one
+            kicked by a timeout. :class:`~psynet.group_prompt.GroupPrompt`
+            uses it to label former members.
+        """
         _forget_active_sync_group(participant)
         for link in self.participant_links:
-            if link.participant_id == participant.id:
+            is_member = (
+                link.participant is participant or link.participant_id == participant.id
+            )
+            if is_member and link.active:
                 link.active = False
+                link.removal_reason = reason
         self.check_numbers()
+        _notify_membership_change(self)
         if self.n_active_participants == 0 and not getattr(
             self, "accepts_top_ups", False
         ):
@@ -3009,8 +3242,10 @@ class SimpleSyncGroup(SyncGroup):
     accepts_top_ups = Column(Boolean)
     fail_participants_below_min_size = Column(Boolean, default=True)
 
-    def remove_participant(self, participant: Participant):
-        super().remove_participant(participant)
+    def remove_participant(
+        self, participant: Participant, reason: Optional[str] = None
+    ):
+        super().remove_participant(participant, reason=reason)
         self.dissolve_if_below_min_size()
 
     def dissolve_if_below_min_size(self):
@@ -3281,6 +3516,7 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
 
     arrival_time = Column(DateTime)
     active = Column(Boolean, default=True)
+    removal_reason = Column(String)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
     participant = relationship(
@@ -3508,7 +3744,7 @@ def _time_out_overdue_waiters(sweep_ends):
 
 
 def arrival_notice_payload(unique_id):
-    """Return the partner-ready notice snapshot for one participant.
+    """Return the partner-ready notice and ready seats for one participant.
 
     Redis arrival wakes are fire-and-forget. The browser fetches this when
     the arrival websocket opens so a partner who arrived during connect is
@@ -3517,11 +3753,218 @@ def arrival_notice_payload(unique_id):
     from psynet.participant import Participant
 
     if not unique_id:
-        return {"notice": None}
+        return {"notice": None, "group_ready": []}
     participant = Participant.query.filter_by(unique_id=unique_id).one_or_none()
     if participant is None:
-        return {"notice": None}
-    return {"notice": pending_arrival_notice_for(participant)}
+        return {"notice": None, "group_ready": []}
+    return {
+        **_arrival_notice_fields(participant),
+        "group_ready": _ready_seats_for(participant),
+    }
+
+
+def _ready_seats_for(participant):
+    """Return ``{group_id, seats, members}`` for each of the participant's groups.
+
+    ``seats`` (see :func:`group_seats`) are those of the members waiting at
+    a barrier of the group, as :class:`~psynet.group_prompt.GroupPrompt`
+    ticks them, and ``members`` those of all active members, so that it can
+    redraw the group when someone joins or leaves.
+    """
+    ready = []
+    for group in participant.active_sync_groups.values():
+        seats = group_seats(group)
+        members = group.active_participants
+        waiting = [seats[m.id] for m in members if waiting_barrier_ids(m, group)]
+        ready.append(
+            {
+                "group_id": group.id,
+                "seats": sorted(waiting),
+                "members": sorted(seats[m.id] for m in members),
+            }
+        )
+    return ready
+
+
+def _notify_membership_change(group, newcomer=None):
+    """Have the other members of ``group`` fetch their notice and group again."""
+    if getattr(group, "_dissolving_below_min_size", False):
+        return
+    for member in group.active_participants:
+        if member is not newcomer:
+            _queue_arrival_update(member.id, refresh=True)
+
+
+def waiting_barrier_ids(participant, group):
+    """Return the IDs of the barriers of ``group`` that ``participant`` is waiting at."""
+    return [
+        barrier_id
+        for barrier_id, link in participant.active_barriers.items()
+        if not link.released
+        and link.barrier_instance is not None
+        and link.barrier_instance.group_id == group.id
+    ]
+
+
+def _interruptible_waiting_barrier(page, participant):
+    """Return the barrier whose ``waiting_logic`` this page belongs to, if a release may end it.
+
+    Pages of a trial that is still waiting for its answer are left to run
+    to their end, so that the trial is not finalized without an answer.
+    ``participant.current_trial`` is not cleared after a trial, so an
+    earlier, answered trial doesn't count.
+    """
+    barrier = (getattr(page, "links", None) or {}).get("barrier")
+    if not isinstance(barrier, Barrier) or barrier.release_grace is None:
+        return None
+    if not _is_inside_waiting_loop(barrier, participant):
+        return None
+    if participant.failed:
+        return None
+    trial = participant.current_trial
+    if trial is not None and not trial.complete:
+        return None
+    return barrier
+
+
+def _is_inside_waiting_loop(barrier, participant):
+    """Return whether the participant's timeline position is inside the barrier's ``waiting_logic`` loop."""
+    markers = getattr(barrier, "_waiting_loop_markers", None)
+    position = participant.elt_id
+    if not markers or position is None:
+        return True
+    start, end = (marker.id for marker in markers)
+    depth = len(start)
+    return (
+        len(position) >= depth
+        and list(position[: depth - 1]) == list(start[:-1])
+        and start[-1] < position[depth - 1] < end[-1]
+    )
+
+
+def _has_left_barrier(participant, barrier_id):
+    """Return whether the participant is no longer waiting at this barrier."""
+    link = participant.active_barriers.get(barrier_id)
+    return link is None or bool(link.released)
+
+
+def released_waiting_barrier(page, participant):
+    """Return the barrier if this is its interruptible waiting page and it released the participant.
+
+    The waiting-status route uses the same test, so the browser only ends a
+    waiting page when the server will accept the interrupt.
+    """
+    barrier = _interruptible_waiting_barrier(page, participant)
+    if barrier is not None and _has_left_barrier(participant, barrier.id):
+        return barrier
+    return None
+
+
+def _waiting_page_barrier_id(participant):
+    """Return the ID of the barrier whose ``waiting_logic`` the participant is in, or ``None``."""
+    for barrier_id, link in participant.active_barriers.items():
+        # A hold's record may not be flushed yet, so test the object, not its id.
+        if not link.released and link.timeline_hold is None:
+            return barrier_id
+    return None
+
+
+def _release_notice(barrier):
+    """Return the notice a waiting page shows once its barrier releases the participant."""
+    _p = get_translator(context=True)
+    if isinstance(barrier, (GroupBarrier, Grouper)):
+        return _p("waiting", "Your group is ready. Moving on in {SECONDS} s.")
+    return _p("waiting", "Moving on in {SECONDS} s.")
+
+
+def waiting_page_config(page, participant):
+    """Return the browser config for a page shown while waiting at a barrier, or ``None``.
+
+    Every page shown during ``waiting_logic`` checks in, including pages that
+    trial makers generate there, so each can count down to the release.
+    ``release_grace_ms`` is ``None`` unless a release may end the
+    page. The participant may already have been released while this page was
+    being built; the page's first status check then ends it. Timeline holds
+    get no config, because they already poll for their release.
+    """
+    if _is_timeline_hold(page):
+        return None
+    barrier = _interruptible_waiting_barrier(page, participant)
+    if barrier is not None:
+        return {
+            "barrier_id": barrier.id,
+            "release_grace_ms": round(barrier.release_grace * 1000),
+            "release_notice": _release_notice(barrier),
+        }
+    if participant.failed or not any(
+        _is_inside_waiting_loop(b, participant) for b in _waiting_loop_barriers()
+    ):
+        return None
+    barrier_id = _waiting_page_barrier_id(participant)
+    if barrier_id is None:
+        return None
+    return {"barrier_id": barrier_id, "release_grace_ms": None}
+
+
+def _waiting_loop_barriers():
+    """Return the timeline's barriers that have a ``waiting_logic`` loop, found once per timeline.
+
+    Lets ordinary pages skip loading the participant's barrier links.
+    """
+    from .experiment import get_experiment
+
+    timeline = get_experiment().timeline
+    barriers = getattr(timeline, "_waiting_loop_barriers", None)
+    if barriers is None:
+        found = {}
+        for elts in timeline.elts.values():
+            for elt in elts:
+                barrier = (getattr(elt, "links", None) or {}).get("barrier")
+                if isinstance(barrier, Barrier) and getattr(
+                    barrier, "_waiting_loop_markers", None
+                ):
+                    found[id(barrier)] = barrier
+        barriers = timeline._waiting_loop_barriers = list(found.values())
+    return barriers
+
+
+def waiting_status_payload(unique_id, barrier_id):
+    """Return whether a participant on a waiting page has been released.
+
+    Waiting pages fetch this about every 2 seconds. ``ends_page`` tells
+    whether the participant's current page would now accept an interrupt
+    (see :func:`released_waiting_barrier`); a released participant whose
+    page may not be ended, for example inside an unfinished trial, gets
+    ``released`` without ``ends_page`` and finishes the page normally.
+    ``release_in_ms`` is the time left until
+    :meth:`Barrier.expected_release_time`, or ``None``.
+    """
+    from psynet.experiment import get_experiment
+
+    participant = (
+        Participant.query.filter_by(unique_id=unique_id).one_or_none()
+        if unique_id
+        else None
+    )
+    if participant is None:
+        return {"released": False, "ends_page": False, "release_in_ms": None}
+    if _has_left_barrier(participant, barrier_id):
+        exp = get_experiment()
+        page = exp.timeline.get_current_elt(exp, participant)
+        released = released_waiting_barrier(page, participant)
+        return {
+            "released": True,
+            "ends_page": released is not None and released.id == barrier_id,
+            "release_in_ms": None,
+        }
+    link = participant.active_barriers[barrier_id]
+    release_in_ms = None
+    barrier = _reconstructed_arrival_barrier(link, {})
+    if barrier is not None:
+        release_time = barrier.expected_release_time(participant)
+        if release_time is not None:
+            release_in_ms = max(0, round((release_time - time.time()) * 1000))
+    return {"released": False, "ends_page": False, "release_in_ms": release_in_ms}
 
 
 def _reconstructed_arrival_barrier(link, reconstructed):
@@ -3551,6 +3994,18 @@ def _removed_from_group_notice(participant) -> Optional[str]:
     if stored is None or stored["page_uuid"] != participant.page_uuid:
         return None
     return stored["text"]
+
+
+def _arrival_notice_fields(participant):
+    """Return ``{"notice": ...}``, adding ``"removed": True`` for a removal notice.
+
+    Pages that hide arrival notices, such as live-tick GroupPrompt pages,
+    still show a removal notice.
+    """
+    notice = pending_arrival_notice_for(participant)
+    if notice is not None and _removed_from_group_notice(participant) is not None:
+        return {"notice": notice, "removed": True}
+    return {"notice": notice}
 
 
 def pending_arrival_notice_for(participant):

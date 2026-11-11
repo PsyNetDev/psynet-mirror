@@ -259,8 +259,9 @@ def wait_while(
     log_message: Optional[str] = None,
     fail_on_timeout=True,
     fix_time_credit: Optional[bool] = None,
-    content: Union[str, Markup, dom_tag, None] = None,
+    content: Union[str, Markup, dom_tag, Callable, None] = None,
     on_timeout: Optional[Callable] = None,
+    waiting_screen=None,
 ):
     """
     Displays the participant a waiting page while a given condition
@@ -314,12 +315,23 @@ def wait_while(
     content
         Message displayed by the timeline hold. Only used when ``wait_page`` is
         omitted. Plain strings are shown as text; pass ``markupsafe.Markup``
-        or a dominate tag for HTML.
+        or a dominate tag for HTML. A module-level function of
+        ``participant`` returning one of these shows each participant their
+        own message, for example by role.
 
     on_timeout
         Optional function called with ``participant=...`` when
         ``max_wait_time`` is reached, before the participant is failed or
         moves on. It must not commit the database session.
+
+    waiting_screen
+        What to show in place of the current page while the participant
+        waits, as for :class:`~psynet.sync.Barrier`: text, a prompt, a
+        :class:`~psynet.modular_page.ModularPage` that nothing submits, or a
+        module-level function of the participant returning one of these (or
+        ``None`` to keep the current page). ``content`` still sets the
+        waiting indicator shown on top. Only used when ``wait_page`` is
+        omitted.
 
     Returns
     -------
@@ -333,6 +345,8 @@ def wait_while(
     uses_timeline_hold = wait_page is None
     if wait_page is not None and content is not None:
         raise ValueError("content only applies when wait_page is omitted.")
+    if wait_page is not None and waiting_screen is not None:
+        raise ValueError("waiting_screen only applies when wait_page is omitted.")
     if fix_time_credit is None:
         fix_time_credit = not uses_timeline_hold
 
@@ -366,6 +380,7 @@ def wait_while(
             message_kind="generic" if content is None else None,
             fail_on_timeout=fail_on_timeout,
             on_timeout=on_timeout,
+            waiting_screen=waiting_screen,
         )
         hold_logic = hold if log_message is None else join(CodeBlock(log), hold)
         return join(
@@ -464,6 +479,12 @@ class EndPageRedirect(Elt):
     branch_name = None
 
     def __init__(self, failure_tags: Optional[List] = None, **kwargs):
+        if "failure_message" in kwargs:
+            raise TypeError(
+                f"{type(self).__name__} does not take failure_message; pass it to "
+                "the end logic instead, for example "
+                "Timeline(..., unsuccessful_end=UnsuccessfulEndLogic(failure_message=...))."
+            )
         super().__init__()
         if failure_tags is None:
             failure_tags = []

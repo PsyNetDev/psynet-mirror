@@ -8,10 +8,13 @@ together in a shared chatroom where they exchange messages in real time.
 
 This delivers the same core functionality as the lower-level
 ``demos/features/websocket_chatroom`` demo (two participants chatting in a
-shared, persisted room with a live participant list), but with almost no custom
-code: the chatroom UI, message persistence, history replay, and occupancy
-tracking are all provided by the built-in ``ChatRoom`` component. The structure
-mirrors the rock-paper-scissors chatroom demo, minus the game logic.
+shared, persisted room), but with almost no custom code: the chatroom UI,
+message persistence and history replay are all provided by the built-in
+``ChatRoom`` component. Instead of the chat's participant list, a
+:class:`~psynet.group_prompt.GroupPrompt` above the chat shows the pair and
+ticks a partner who has pressed Next. The chat ends by itself after
+``CHAT_SECONDS``. The structure mirrors the
+rock-paper-scissors chatroom demo, minus the game logic.
 """
 
 from typing import List
@@ -21,6 +24,7 @@ from dominate import tags
 import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.chatroom import ChatRoom, EnableChatrooms
+from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.sync import GroupBarrier, SimpleGrouper
@@ -31,6 +35,7 @@ from psynet.utils import get_logger
 logger = get_logger()
 
 GROUP_TYPE = "chat"
+CHAT_SECONDS = 120
 
 
 class ChatTrialMaker(StaticTrialMaker):
@@ -47,10 +52,18 @@ class ChatTrial(StaticTrial):
                 group_type=GROUP_TYPE,
                 content="Waiting for your partner",
             ),
-            self.chat_page(topic=self.definition["topic"]),
+            self.chat_page(participant, topic=self.definition["topic"]),
+            # Partners leave together, and the chat page ticks whoever has finished.
+            GroupBarrier(
+                id_="finished_chatting",
+                group_type=GROUP_TYPE,
+                content="Waiting for your partner to finish chatting",
+                # Whoever presses Next first may wait out the rest of the chat.
+                max_wait_time=CHAT_SECONDS + 30,
+            ),
         )
 
-    def chat_page(self, topic):
+    def chat_page(self, participant, topic):
         prompt = tags.div()
         with prompt:
             tags.h1("Chatroom")
@@ -64,13 +77,24 @@ class ChatTrial(StaticTrial):
         # ``self.sync_group.id`` and therefore meet in the same room.
         return ModularPage(
             "chat",
-            prompt,
+            GroupPrompt(
+                prompt,
+                group=self.sync_group,
+                participant=participant,
+                show_names=True,
+                note="Press Next when you have finished; the chat also ends "
+                "by itself when the time runs out. "
+                "A tick shows when your partner has finished.",
+            ),
             chatroom=ChatRoom(
                 room_id=f"chat_room_{self.sync_group.id}",
-                show_participants=True,
+                # The GroupPrompt already shows who is in the room.
+                show_participants=False,
                 show_history=True,
             ),
             time_estimate=60,
+            # Moves on by itself, so a partner who never presses Next can't hold the other up.
+            time_limit=CHAT_SECONDS,
         )
 
 
@@ -112,8 +136,8 @@ class Exp(psynet.experiment.Experiment):
             assert bot.current_page_label == "chat"
             page = bot.get_current_page()
             assert isinstance(page, ModularPage)
+            assert isinstance(page.prompt, GroupPrompt)
             assert isinstance(page.chatroom, ChatRoom)
-            assert page.chatroom.show_participants is True
             assert page.chatroom.show_history is True
 
         # Both partners must be assigned to the same chatroom.

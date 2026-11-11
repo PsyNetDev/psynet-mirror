@@ -95,8 +95,9 @@ supported callables, classes, or persisted PsyNet ORM records.
 
 The reconstructed barrier has ``id``, custom release state, scalar
 presentation fields (``content`` and the timeouts) and notification
-settings. Wait-page construction (``waiting_logic``, ``_uses_timeline_hold``,
-``waiting_logic_expected_repetitions``) stays on the live timeline object, as
+settings. Wait-page construction (``waiting_logic``, ``waiting_screen``,
+``_uses_timeline_hold`` and the expected repetitions of ``waiting_logic``)
+stays on the live timeline object, as
 do :meth:`~psynet.sync.Barrier.receive_participant` and arrival
 notification. :class:`~psynet.sync.Barrier` documents which methods are
 live-only.
@@ -113,6 +114,18 @@ The browser opens the live-update WebSocket for arrival notices only while
 the participant is in an active sync group, or has a removal notice for the
 current page. Hold pages reuse the hold-channel socket instead.
 
+Arrivals in concurrent requests don't see each other's uncommitted links, so
+a count read in the arriving request can be too low. Arrival and departure
+updates therefore carry no counts: they ask the browser to fetch
+``/timeline/arrival_notice`` (:func:`psynet.sync.arrival_notice_payload`)
+again. That request starts after the update's commit, so the response to the
+last update counts every arrival. Responses can come back out of order, and
+the browser drops any response to an earlier request than one it has shown.
+The response also has the seats of the members waiting in each of the
+participant's groups, for the ticks of :class:`~psynet.group_prompt.GroupPrompt`.
+Hold overlays for members who are already waiting are still sent with the
+update, so their counts can lag until the next arrival.
+
 Time credit
 -----------
 
@@ -120,5 +133,7 @@ Default holds credit the visible waiting time, including the interval
 between the server release and the browser resuming, up to
 ``max_wait_time``. Progress uses the estimated duration, so participants who
 arrive early do not appear further through the experiment. When
-``expected_wait`` is omitted, it is ``0.5 * waiting_logic_expected_repetitions``
-seconds (1.5 seconds by default).
+``expected_wait`` is omitted, a default hold expects 1.5 seconds and
+``waiting_logic`` three passes. A given ``expected_wait`` sets the expected
+repetitions of ``waiting_logic`` to ``ceil(expected_wait / estimate_duration(waiting_logic))``
+(at least one), so progress can slightly exceed ``expected_wait``.

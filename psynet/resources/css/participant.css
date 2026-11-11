@@ -1037,6 +1037,92 @@ textarea:focus-visible,
     color: var(--psynet-accent);
 }
 
+/*
+ * A participant's pseudonym icon (psynet.pseudonym): their animal on a disc
+ * of their colour. The grey ring keeps black and yellow discs visible on
+ * dark and light backgrounds.
+ */
+.psynet-pseudonym-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6em;
+    height: 1.6em;
+    margin-inline-end: 0.3em;
+    border: 0.15em solid var(--psynet-pseudonym-color);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--psynet-pseudonym-color) 30%, transparent);
+    box-shadow: 0 0 0 1px rgb(128 128 128 / 0.5);
+    font-size: 0.9em;
+    line-height: 1;
+    vertical-align: middle;
+}
+
+/* The animal in the participant's colour: the shape filled with the colour
+   through a mask, with the line art on top, light on dark colours. An emoji
+   instead gets a grey copy multiplied over its coloured silhouette. */
+.psynet-pseudonym-sticker {
+    position: relative;
+    display: inline-block;
+    width: 3em;
+    height: 3em;
+    isolation: isolate;
+    vertical-align: middle;
+}
+
+.psynet-pseudonym-sticker::before,
+.psynet-pseudonym-sticker-shape,
+.psynet-pseudonym-sticker-detail {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.psynet-pseudonym-sticker::before {
+    content: "";
+    background: var(--psynet-pseudonym-color);
+    -webkit-mask: var(--psynet-pseudonym-shape) center / contain no-repeat;
+    mask: var(--psynet-pseudonym-shape) center / contain no-repeat;
+    mask-mode: alpha;
+}
+
+/* Black and other very dark animals would vanish on a dark page. */
+[data-bs-theme="dark"] .psynet-pseudonym-sticker--dark::before {
+    background: #6c757d;
+}
+
+.psynet-pseudonym-sticker--dark img.psynet-pseudonym-sticker-detail {
+    filter: invert(1);
+}
+
+.psynet-pseudonym-sticker--emoji::before {
+    content: none;
+}
+
+.psynet-pseudonym-sticker--emoji > span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5em;
+    line-height: 1;
+}
+
+.psynet-pseudonym-sticker-shape {
+    color: transparent;
+    text-shadow: 0 0 0 var(--psynet-pseudonym-color);
+}
+
+.psynet-pseudonym-sticker--emoji .psynet-pseudonym-sticker-detail {
+    filter: grayscale(1) contrast(1.2) brightness(1.15);
+    mix-blend-mode: multiply;
+}
+
+.psynet-pseudonym-sticker--dark.psynet-pseudonym-sticker--emoji .psynet-pseudonym-sticker-detail {
+    filter: grayscale(1) invert(1) contrast(1.2);
+    mix-blend-mode: screen;
+}
+
 @keyframes psynet-gradient {
     0% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
@@ -1054,4 +1140,13 @@ textarea:focus-visible,
     .psynet-tooltip__content {
         transition: none;
     }
+}
+
+/* Countdown added by Page(time_limit=...) when the page has no countdown of its own. */
+.psynet-time-limit {
+    font-variant-numeric: tabular-nums;
+}
+
+.psynet-time-limit[hidden] {
+    display: none;
 }

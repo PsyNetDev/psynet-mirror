@@ -17,6 +17,7 @@ participant row lock, but they do not share that lock protocol. The page
 lifecycle developer docs describe the resume protocol.
 """
 
+import copy
 import time
 import uuid
 from contextlib import contextmanager
@@ -25,6 +26,7 @@ from datetime import timedelta
 
 from dallinger import db
 from dallinger.models import timenow
+from dominate.dom_tag import dom_tag
 from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
@@ -163,15 +165,35 @@ def _queue_timeline_hold_wake(
         )
 
 
-def _queue_arrival_update(participant_id, *, hold_message=None, notice=None):
-    """Queue an arrival-progress or partner-ready update after the next commit."""
+def _queue_arrival_update(
+    participant_id, *, hold_message=None, notice=None, removed=False, refresh=False
+):
+    """Queue an arrival-progress or partner-ready update after the next commit.
+
+    The browser shows ``notice``, or hides its notice if ``notice`` is
+    ``None``. ``removed`` marks a notice that the participant was removed
+    from their group, which pages that hide arrival notices still show.
+    With ``refresh``, it fetches the participant's notice and
+    the ready seats of their groups instead (see
+    :func:`psynet.sync.arrival_notice_payload`), which are read after the
+    commit and so count every arrival committed by then. Updates queued
+    for a participant in one transaction are merged.
+    """
     try:
-        _pending_wakes.get()[f"arrival:{participant_id}"] = {
+        key = f"arrival:{participant_id}"
+        previous = _pending_wakes.get().get(key, {})
+        update = {
             "participant_id": participant_id,
             "reason": "arrival_update",
-            "hold_message": hold_message,
-            "notice": notice,
+            "hold_message": hold_message or previous.get("hold_message"),
         }
+        if refresh or previous.get("refresh"):
+            update["refresh"] = True
+        else:
+            update["notice"] = notice
+            if removed:
+                update["removed"] = True
+        _pending_wakes.get()[key] = update
     except Exception:
         logger.warning(
             "Failed to queue an arrival update for participant %s.",
@@ -226,6 +248,11 @@ def default_group_barrier_arrival_message(
         ARRIVED=waiting_count,
         TOTAL=group_size,
     )
+
+
+def _is_content_function(content):
+    """Return whether hold ``content`` is a function of the participant (dominate tags are callable too)."""
+    return callable(content) and not isinstance(content, dom_tag)
 
 
 def default_hold_progress(waiting_count, group_size):
@@ -476,7 +503,12 @@ class TimelineHoldRecord(SQLBase, SQLMixin):
 
 
 class _TimelineHoldPage(Page):
-    """Internal page checkpoint that preserves the preceding browser page."""
+    """Internal page checkpoint that preserves the preceding browser page.
+
+    With a ``waiting_screen``, the hold instead shows the page that function
+    returns, rendered with this hold's browser attributes so the browser
+    still waits for the release.
+    """
 
     is_timeline_hold = True
 
@@ -492,6 +524,7 @@ class _TimelineHoldPage(Page):
         message_kind=None,
         fail_on_timeout=True,
         on_timeout=None,
+        waiting_screen=None,
     ):
         self.hold_id = hold_id
         self.expected_wait = expected_wait
@@ -500,6 +533,7 @@ class _TimelineHoldPage(Page):
         self.check_interval = check_interval
         self.content = content
         self.message_kind = message_kind
+        self.waiting_screen = waiting_screen
         self._fail_on_timeout = fail_on_timeout
         self.on_timeout = on_timeout
         super().__init__(
@@ -666,8 +700,8 @@ class _TimelineHoldPage(Page):
         record = self.get_hold_record(participant)
         return bool(record is not None and record.silent)
 
-    def translated_content(self):
-        """Translate framework-provided hold messages for this participant."""
+    def translated_content(self, participant):
+        """Return the hold message for this participant, translating framework-provided ones."""
         _p = get_translator(context=True)
         if self.message_kind == "barrier":
             return _p("timeline_hold", "Waiting for other participants…")
@@ -676,9 +710,11 @@ class _TimelineHoldPage(Page):
                 "timeline_hold",
                 "Please wait, the experiment should continue shortly...",
             )
+        if _is_content_function(self.content):
+            return call_function_with_context(self.content, participant=participant)
         return self.content
 
-    def overlay_html(self, participant=None):
+    def overlay_html(self, participant):
         """Return hold copy as HTML for both Jinja and the dynamic overlay.
 
         Trusted ``Markup`` is preserved; plain strings are escaped so a refresh
@@ -687,7 +723,7 @@ class _TimelineHoldPage(Page):
         if self._is_silent_for(participant):
             return compose_hold_overlay_html("", None)
         return compose_hold_overlay_html(
-            self.translated_content(), self.hold_progress_text(participant)
+            self.translated_content(participant), self.hold_progress_text(participant)
         )
 
     def hold_progress_text(self, participant):
@@ -722,6 +758,7 @@ class _TimelineHoldPage(Page):
             "safety_poll_ms": round(self.check_interval * 1000),
             "timeout_ms": remaining_timeout_ms,
             "silent": bool(record.silent),
+            "replaces_page": self.waiting_screen_page(participant) is not None,
         }
 
     def attributes(self, participant):
@@ -730,6 +767,87 @@ class _TimelineHoldPage(Page):
         if payload is not None:
             attributes["timeline_hold"] = payload
         return attributes
+
+    def waiting_screen_page(self, participant):
+        """Return the page shown while this hold waits, or ``None`` to keep the previous page.
+
+        The ``waiting_screen`` function runs once per request; later calls
+        reuse its page, so every part of a response sees the same screen.
+        The page is prepared (``pre_render``) when it is first built, which
+        the request's write phase does before the read-only render.
+
+        Raises
+        ------
+        ValueError
+            If the screen is not a ``ModularPage``, shows a Next button, has
+            a control that submits it (push buttons or ``auto_advance``), or
+            needs a full page reload under in-place transitions.
+        """
+        if self.waiting_screen is None:
+            return None
+        cached = getattr(participant, "_waiting_screen", None)
+        if cached is not None and cached[0] == participant.page_uuid:
+            return cached[1]
+        screen = self._build_waiting_screen(participant)
+        participant._waiting_screen = (participant.page_uuid, screen)
+        return screen
+
+    def _build_waiting_screen(self, participant):
+        from psynet.modular_page import (
+            ModularPage,
+            NextButton,
+            NullControl,
+            PushButtonControl,
+        )
+        from psynet.utils import get_config
+
+        screen = self.waiting_screen
+        if callable(screen) and not isinstance(screen, dom_tag):
+            screen = call_function_with_context(screen, participant=participant)
+        if screen is None:
+            return None
+        if not isinstance(screen, Page):
+            screen = ModularPage(
+                "waiting_screen",
+                screen,
+                NullControl(show_next_button=False),
+                time_estimate=0,
+            )
+        problem = None
+        if not isinstance(screen, ModularPage):
+            problem = "is not a ModularPage"
+        elif any(isinstance(button, NextButton) for button in screen.buttons):
+            problem = "shows a Next button"
+        elif isinstance(screen.control, PushButtonControl) or getattr(
+            screen.control, "auto_advance", False
+        ):
+            problem = f"has a {type(screen.control).__name__} that submits it"
+        elif screen.requires_full_page_reload and get_config().get(
+            "inplace_timeline_transitions"
+        ):
+            problem = "needs a full page reload"
+        if problem is not None:
+            raise ValueError(
+                f"The waiting_screen of {self.hold_id!r} returned page "
+                f"{screen.label!r}, which {problem}. A waiting screen must be "
+                "text, a prompt, or a ModularPage that works with in-place "
+                "transitions and that nothing submits, such as one with "
+                "NullControl(show_next_button=False), because the participant "
+                "cannot submit it."
+            )
+        # A copy, so a page the experiment reuses doesn't keep this hold's attributes.
+        screen = copy.copy(screen)
+        screen.attributes = self.attributes
+        with forbid_commits(f"pre_render of waiting_screen of {self.hold_id!r}"):
+            screen.pre_render()
+        return screen
+
+    def render(self, experiment, participant, partial_mode=False):
+        """Render the waiting screen, if there is one, in place of the hold page."""
+        screen = self.waiting_screen_page(participant)
+        if screen is None:
+            return super().render(experiment, participant, partial_mode)
+        return screen.render(experiment, participant, partial_mode)
 
     def get_bot_response(self, experiment, bot):
         return None

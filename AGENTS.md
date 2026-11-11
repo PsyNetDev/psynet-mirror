@@ -336,6 +336,21 @@ We assume PsyNet experiments are short-lived and their databases do not need
 to persist across PsyNet version upgrades. As a result, avoid complicating
 code to support database migrations or backward-compatible schema changes.
 
+## Framework state on participants and other tables
+
+Do not store PsyNet's own state in `participant.var` (the `vars` column) or
+in other variable stores; they are for experiment authors' variables. Add a
+dedicated column instead (see Database migrations above). `vars` is one
+deferred JSON dict, so:
+
+- reading it costs an extra query per object, which adds up when a page or
+  barrier check reads it for every group member;
+- writing any key rewrites the whole dict, so a write made in another
+  participant's request (for example during a barrier check) can silently
+  undo the participant's own concurrent changes to other keys;
+- its `MutableDict` change tracking is easy to bypass (for example with
+  `set_committed_value`), and then changes are silently not saved.
+
 ## Docstrings
 
 Prefer including function docstrings. Short docstrings are fine; often a brief

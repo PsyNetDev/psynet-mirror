@@ -3,6 +3,7 @@ from typing import List
 
 import psynet.experiment
 from psynet.bot import Bot, BotDriver
+from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
@@ -39,9 +40,25 @@ trial_maker = StaticTrialMaker(
     allow_repeated_nodes=True,
 )
 
-waiting_logic = PageMaker(
-    trial_maker.cue_trial, time_estimate=AnimalTrial.time_estimate
-)
+
+def show_quorum(participant):
+    return ModularPage(
+        "quorate",
+        # Nobody waits at a barrier here, so there is nothing to tick.
+        GroupPrompt(
+            # No count here: the group display updates as people join and leave.
+            "We are now quorate. These participants are present:",
+            participant=participant,
+            show_names=True,
+            show_progress=False,
+        ),
+        time_estimate=5,
+    )
+
+
+def waiting_logic():
+    """Return filler trials; each place in the timeline needs its own copy."""
+    return PageMaker(trial_maker.cue_trial, time_estimate=AnimalTrial.time_estimate)
 
 
 class Exp(psynet.experiment.Experiment):
@@ -66,8 +83,8 @@ class Exp(psynet.experiment.Experiment):
                 max_group_size=None,
                 min_group_size=3,
                 join_existing_groups=True,
-                waiting_logic=waiting_logic,
-                waiting_logic_expected_repetitions=10,
+                waiting_logic=waiting_logic(),
+                expected_wait=10 * AnimalTrial.time_estimate,
                 max_wait_time=120,
             ),
             for_loop(
@@ -82,13 +99,8 @@ class Exp(psynet.experiment.Experiment):
                             participant.sync_group.n_active_participants
                             >= participant.sync_group.min_group_size
                         ),
-                        logic_if_true=PageMaker(
-                            lambda participant: InfoPage(
-                                f"We are now quorate. There are {participant.sync_group.n_active_participants - 1} other participants present."
-                            ),
-                            time_estimate=5,
-                        ),
-                        logic_if_false=waiting_logic,
+                        logic_if_true=PageMaker(show_quorum, time_estimate=5),
+                        logic_if_false=waiting_logic(),
                     ),
                 ),
             ),
@@ -123,20 +135,14 @@ class Exp(psynet.experiment.Experiment):
             time.sleep(2)
             bots[2].take_page()
 
-        page = bots[2].get_current_page()
-        assert isinstance(page, InfoPage)
-        assert (
-            "We are now quorate. There are 2 other participants present."
-            in page.content
-        )
+        assert bots[2].current_page_label == "quorate"
+        assert "We are now quorate." in bots[2].current_page_text
+        assert bots[2].sync_group_n_active_participants == 3
 
         for bot in [bots[0], bots[1]]:
             bot.take_page()
-            page = bot.get_current_page()
-            assert (
-                "We are now quorate. There are 2 other participants present."
-                in page.content
-            )
+            assert "We are now quorate." in bot.current_page_text
+            assert bot.sync_group_n_active_participants == 3
 
         bots[0].fail("simulated_failure")
 
@@ -155,20 +161,14 @@ class Exp(psynet.experiment.Experiment):
             time.sleep(2)
             bots[3].take_page()
 
-        page = bots[3].get_current_page()
-        assert (
-            "We are now quorate. There are 2 other participants present."
-            in page.content
-        )
+        assert "We are now quorate." in bots[3].current_page_text
+        assert bots[3].sync_group_n_active_participants == 3
 
         # If we bring in a 5th participant, they should be able to join the main room right away.
         assert isinstance(bots[4].get_current_page(), InfoPage)
         bots[4].take_page()
-        page = bots[4].get_current_page()
-        assert (
-            "We are now quorate. There are 3 other participants present."
-            in page.content
-        )
+        assert "We are now quorate." in bots[4].current_page_text
+        assert bots[4].sync_group_n_active_participants == 4
 
         for bot in [bots[1], bots[2], bots[3]]:
             bot.run_to_completion(render_pages=True)

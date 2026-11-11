@@ -107,16 +107,20 @@ def _process_response(exp, participant, page_uuid, *, timeline_hold_resume=False
         )
 
 
-def _route_approved_response(participant, *, raw_answer=True):
-    """POST ``/response`` as an ordinary Next, including last-arrival finalize."""
+def _route_approved_response(participant, *, raw_answer=True, app=None):
+    """POST ``/response`` as an ordinary Next, including last-arrival finalize.
+
+    Pass the experiment server ``app`` to also render the in-place fragment
+    for the next page.
+    """
     payload = {
         "participant_id": participant.id,
         "page_uuid": participant.page_uuid,
         "raw_answer": raw_answer,
         "metadata": {"time_taken": 1},
-        "include_timeline_fragment": False,
+        "include_timeline_fragment": app is not None,
     }
-    with Flask(__name__).test_request_context(
+    with (app or Flask(__name__)).test_request_context(
         "/response",
         method="POST",
         data={"json": json.dumps(payload)},

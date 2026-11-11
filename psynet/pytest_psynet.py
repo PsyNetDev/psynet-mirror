@@ -433,11 +433,56 @@ def experiment_directory(request):
 
 
 loaded_experiment_directory = None
+_active_experiment_directory = None
+# The experiment's SQLAlchemy classes stay registered after it is unimported,
+# so running experiment.py again in this process would register them twice.
+# in_experiment_directory reinstates these modules instead.
+_loaded_experiment_modules = {}
+
+
+@pytest.fixture(autouse=True)
+def reset_sys_modules():
+    """Unimport experiment modules before each test outside an experiment directory.
+
+    Outside an experiment directory it also clears Dallinger's
+    ``TEST_EXPERIMENT_UID*`` modules, as Dallinger's fixture does.
+
+    This replaces Dallinger's fixture of the same name, which unimports them
+    before every test. Inside :func:`in_experiment_directory` the class-scoped
+    fixtures have already imported the experiment and hold its classes, so
+    unimporting it would make the next import, for example Dallinger's
+    server module, which PsyNet imports lazily to send socket messages,
+    execute ``experiment.py`` again and register duplicate SQLAlchemy classes.
+    :func:`in_experiment_directory` unimports the experiment on teardown
+    instead, and reinstates the same modules when it next sets up, or the
+    modules already imported from this directory before its first setup, as
+    ``psynet test local`` does.
+    """
+    if _active_experiment_directory is None:
+        clean_sys_modules()
+        for key in [k for k in sys.modules if pytest_dallinger.is_dallinger_module(k)]:
+            del sys.modules[key]
+
+
+pytest_dallinger.reset_sys_modules = reset_sys_modules
+
+
+def _experiment_modules_loaded_from(directory):
+    """Return the imported ``dallinger_experiment`` modules if they come from ``directory``."""
+    package = sys.modules.get("dallinger_experiment")
+    package_paths = {Path(p).resolve() for p in getattr(package, "__path__", [])}
+    if Path(directory).resolve() not in package_paths:
+        return {}
+    return {
+        key: module
+        for key, module in sys.modules.items()
+        if key.startswith("dallinger_experiment")
+    }
 
 
 @pytest.fixture(scope="class")
 def in_experiment_directory(experiment_directory):
-    global loaded_experiment_directory
+    global loaded_experiment_directory, _active_experiment_directory
     if (
         loaded_experiment_directory is not None
         and loaded_experiment_directory != experiment_directory
@@ -451,6 +496,14 @@ def in_experiment_directory(experiment_directory):
             "experiment directory."
         )
     loaded_experiment_directory = experiment_directory
+    # `psynet test local` imports the experiment before pytest starts.
+    _loaded_experiment_modules.update(
+        _experiment_modules_loaded_from(experiment_directory)
+    )
+    # Importing Dallinger's server outside an experiment directory, for example
+    # while collecting tests, leaves a stale dallinger_experiment package.
+    clean_sys_modules()
+    sys.modules.update(_loaded_experiment_modules)
     redis_vars.clear()
     cleanup_error = None
     with (
@@ -466,9 +519,11 @@ def in_experiment_directory(experiment_directory):
                 original_skip_dependency_check = os.getenv("SKIP_DEPENDENCY_CHECK")
                 if is_in_repo_experiment() or not Path("constraints.txt").exists():
                     os.environ["SKIP_DEPENDENCY_CHECK"] = "1"
+                _active_experiment_directory = experiment_directory
                 try:
                     yield experiment_directory
                 finally:
+                    _active_experiment_directory = None
                     if original_skip_dependency_check is None:
                         os.environ.pop("SKIP_DEPENDENCY_CHECK", None)
                     else:
@@ -477,6 +532,9 @@ def in_experiment_directory(experiment_directory):
                         )
         except Exception as exc:
             cleanup_error = exc
+    _loaded_experiment_modules.update(
+        _experiment_modules_loaded_from(experiment_directory)
+    )
     clean_sys_modules()
     clear_all_caches()
     if cleanup_error is not None:

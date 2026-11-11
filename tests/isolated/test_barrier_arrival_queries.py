@@ -375,6 +375,10 @@ def test_stacked_finalize_commit_and_lock_budget_does_not_grow_with_group_size(
             return out
 
     observed = {}
+    # As after launch, when the deployment ID is read once per process.
+    monkeypatch.setattr(
+        exp.pseudonym_scheme, "_deployment_seed", "query-budget", raising=False
+    )
     with _restored_experiment(exp):
         try:
             for group_size in (2, 4):

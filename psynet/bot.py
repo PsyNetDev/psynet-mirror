@@ -1,7 +1,9 @@
 import json
+import time
 import uuid
+import warnings
 from functools import cached_property
-from typing import List, Optional
+from typing import List, Optional, Sequence, Union
 
 from dallinger import db
 
@@ -212,44 +214,79 @@ class BotResponse:
         return json.dumps(self.__json__())
 
 
-def advance_past_wait_pages(bots: List["BotDriver"], max_iterations=10):
+def advance_past_wait_pages(
+    bots: List["BotDriver"],
+    max_iterations: Optional[int] = None,
+    timeout: Optional[float] = None,
+    stop_at: Union[str, Sequence[str]] = (),
+):
     """
     Repeatedly take wait pages and timeline holds for a group of bots until none are waiting.
 
     Useful in synchronous bot tests, where bots must pass barriers or wait pages together.
+    After the first two passes over ``bots``, it polls every half second, as a
+    browser would, so it also works when barriers release on a clock or a
+    deadline, as in round-based games.
 
     Parameters
     ----------
     bots : list of BotDriver
         Bots to advance.
-    max_iterations : int
-        Maximum number of passes over ``bots``.
+    max_iterations : int, optional
+        Deprecated; use ``timeout``. If given, stop after this many passes.
+    timeout : float, optional
+        Seconds to keep trying before giving up. Defaults to 10, or to no
+        limit when only ``max_iterations`` is given.
+    stop_at : str or sequence of str
+        ID or IDs of barriers to leave bots waiting at, for example a responder
+        waiting for the proposer's offer while the test plays the proposer.
 
     Raises
     ------
     RuntimeError
-        If some bots are still waiting after ``max_iterations`` passes.
+        If some bots are still waiting after ``timeout`` seconds (or
+        ``max_iterations`` passes).
     """
     from .page import WaitPage
 
+    if max_iterations is not None:
+        warnings.warn(
+            "advance_past_wait_pages(max_iterations=...) is deprecated; "
+            "pass timeout=<seconds> instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+    elif timeout is None:
+        timeout = 10.0
+    stop_at = {stop_at} if isinstance(stop_at, str) else set(stop_at)
+    deadline = None if timeout is None else time.monotonic() + timeout
     iteration = 0
     while True:
         iteration += 1
-        any_waiting = False
+        waiting = []
         for bot in bots:
             # Last-arrival may have skipped this waiter while another bot was
             # submitting. Refresh before reading the cached page.
             bot.refresh_status()
             current_page = bot.get_current_page()
+            if getattr(current_page, "barrier_id", None) in stop_at:
+                continue
             if isinstance(current_page, WaitPage) or getattr(
                 current_page, "is_timeline_hold", False
             ):
-                any_waiting = True
+                waiting.append(bot)
                 bot.take_page()
-        if not any_waiting:
-            break
-        if iteration >= max_iterations:
-            raise RuntimeError("Not all bots finished waiting in time.")
+        if not waiting:
+            return
+        ids = [bot.id for bot in waiting]
+        if max_iterations is not None and iteration >= max_iterations:
+            raise RuntimeError(
+                f"Bots {ids} are still waiting after {max_iterations} passes."
+            )
+        if deadline is not None and time.monotonic() > deadline:
+            raise RuntimeError(f"Bots {ids} are still waiting after {timeout} s.")
+        if iteration >= 2:
+            time.sleep(0.5)
 
 
 class BotDriver(ParticipantDriver):
