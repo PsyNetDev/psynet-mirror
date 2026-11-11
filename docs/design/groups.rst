@@ -113,7 +113,8 @@ Groups can go through the experiment in two ways, **cued trials** or a
        round, after a regrouper when partners change (see
        `New groups for each round`_). The trials of a group's round share a
        node that holds the group's results.
-     - ``public_goods``, ``ultimatum_pairing``, ``story_chain``
+     - ``public_goods``, ``ultimatum_pairing``, ``story_chain``,
+       ``microsociety``
    * - A group working through a stimulus set or a chain together, each
        member getting a trial on the same stimulus
      - **A synchronized trial maker**: a trial maker with a group type
@@ -204,6 +205,9 @@ has a demo to start from.
 - **A team game carries on when members leave**, with fewer players, until
   too few remain:
   `public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__.
+- **A group runs on while its members change**, admitting newcomers at the
+  start of a round and retiring its longest-serving member:
+  `microsociety <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety>`__.
 - **Members interact live**, with messages sent to everyone as they are
   written:
   `websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__.
