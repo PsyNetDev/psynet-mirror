@@ -62,7 +62,7 @@ def show_quorum(participant):
         GroupPrompt(
             # No count here: the group display updates as people join and leave
             # the group (closing the tab doesn't count as leaving).
-            "We are now quorate. These participants are present:",
+            "Enough participants are here to continue:",
             participant=participant,
             names="shown",
             show_progress=False,
@@ -135,12 +135,12 @@ class Exp(psynet.experiment.Experiment):
         # The last arriver completes the group, so they skip the filler trial.
         bots[2].take_page()
         assert bots[2].current_page_label == "quorate"
-        assert "We are now quorate." in bots[2].current_page_text
+        assert "Enough participants are here" in bots[2].current_page_text
         assert bots[2].sync_group_n_active_participants == 3
 
         for bot in [bots[0], bots[1]]:
             bot.take_page()
-            assert "We are now quorate." in bot.current_page_text
+            assert "Enough participants are here" in bot.current_page_text
             assert bot.sync_group_n_active_participants == 3
 
         bots[0].drop_out()
@@ -174,4 +174,4 @@ def _join_quorate_group(bot):
     if bot.current_page_label == "animal_trial":
         time.sleep(2)
         bot.take_page()
-    assert "We are now quorate." in bot.current_page_text
+    assert "Enough participants are here" in bot.current_page_text

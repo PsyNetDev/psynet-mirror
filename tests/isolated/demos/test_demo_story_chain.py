@@ -67,15 +67,19 @@ def _play_turn(demo, turn, players, sentence):
 
 @in_story_chain
 @pytest.mark.parametrize(
-    "outcome, saved", [(None, True), ("group_dissolved", True), ("late", False)]
+    "late, saved", [("nobody", True), ("others", True), ("writer", False)]
 )
 def test_the_writer_s_sentence_is_kept_unless_they_were_late(
-    in_experiment_directory, db_session, outcome, saved
+    in_experiment_directory, db_session, late, saved
 ):
-    demo, _, members = _story_group(get_experiment())
+    demo, group, members = _story_group(get_experiment())
     writer = _cue_turn(demo, 0, members)
+    others = [m for m in members if m is not writer]
+    # Removing both others dissolves the group, leaving the writer on their own.
+    removed = {"nobody": [], "writer": [writer], "others": others}[late]
+    for participant in removed:
+        group.remove_participant(participant, reason="late")
     trial = writer.current_trial
-    trial.sync_group_outcome = outcome
     writer.answer = "Once upon a time."
     trial.save_sentence(writer)
     trial.on_finalized()

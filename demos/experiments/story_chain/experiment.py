@@ -184,13 +184,15 @@ class StoryTurn(Trial):
         )
 
     def save_sentence(self, participant):
-        """Store the writer's sentence on the turn's node.
+        """Store the writer's sentence on the turn's node, if the turn is still theirs.
 
-        Nothing is stored if the barrier has removed them as late. The
-        sentence is ``None`` if they ran out of time. A writer whose group
-        dissolved while they wrote still finishes the story.
+        A writer removed from the group, for example as late, stores nothing,
+        because the others have finished the turn without them. The sentence
+        is ``None`` if they ran out of time.
         """
-        if self.sync_group_outcome in (None, "group_dissolved"):
+        # A writer whose group dissolved while they wrote is the last one
+        # left, so their sentence still ends the story.
+        if in_group(participant) or self.sync_group_outcome == "group_dissolved":
             self.node.var.sentence = participant.answer
 
     def on_finalized(self):
@@ -204,7 +206,8 @@ class StoryTurn(Trial):
 
     def show_feedback(self, experiment, participant):
         if self.time_limit_reached and self.sync_group_outcome == "stayed":
-            # The time limit keeps the next turn's barrier from removing them as late.
+            # Moves on by itself, so a writer who has stepped away still
+            # reaches the next turn in time and isn't removed as late.
             return InfoPage(
                 "You ran out of time, so nothing was added to the story this turn.",
                 time_estimate=5,
