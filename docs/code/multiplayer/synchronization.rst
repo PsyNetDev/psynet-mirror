@@ -361,13 +361,19 @@ members who have since left, each with its ``sync_group_role``.
 
 :attr:`trial.time_limit_reached <psynet.trial.main.Trial.time_limit_reached>`
 says whether a member's latest timed page ran out of time before their
-answer, so ``on_release`` can score a timed-out answer differently. The trial
-keeps it through later untimed pages and barrier waits, including timed
-pages shown while waiting at a barrier, and through the trial's feedback
-pages, such as a notice whose time limit only moves it on. Feedback pages
-also don't count when the next barrier records who ran out of time, so a
-time-out on the trial still shows there after its feedback. It is exported
-with the trial. To read a group's rounds after the game, for example on a
+answer, so ``on_release`` can score a timed-out answer differently. It is
+exported with the trial. The trial keeps it through later untimed pages and
+barrier waits, including timed pages shown while waiting at a barrier, and
+through the trial's feedback pages, such as a notice whose time limit only
+moves it on. Feedback pages also don't count when the next barrier records
+who ran out of time, so a time-out on the trial still shows there after its
+feedback. Elsewhere in a group's timeline, give a page a ``time_limit`` only
+when running out of time is a real outcome: any other page that ends on its
+time limit marks the member as having run out of time at the next barrier.
+To move members on from a notice automatically, show it from the trial's
+``show_feedback``.
+
+To read a group's rounds after the game, for example on a
 debrief page once the group has ended,
 :meth:`group.rounds(module_id) <psynet.sync.SyncGroup.rounds>` returns the
 group's nodes for that module of cued trials in round order:
