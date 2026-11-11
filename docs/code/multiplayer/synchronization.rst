@@ -792,8 +792,9 @@ are still on a page after the barrier, their cue starts the next round,
 which the others then join. So put a ``GroupBarrier`` in each round,
 inside ``show_trial`` after the answer page: it keeps
 the members in step, and its release closes the round. A round without
-one never closes, so a member cueing late can join it after the others
-have finished. In a module that
+one would never close, so a member cueing late could join it after the
+others have finished; PsyNet therefore raises an error when a grouped
+trial's ``show_trial`` returns no ``GroupBarrier``. In a module that
 a loop repeats, a member's first cue in the next run can also join the
 previous run's last round while it is open, so end each round there with a
 ``GroupBarrier`` that closes it.

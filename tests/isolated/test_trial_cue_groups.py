@@ -630,6 +630,20 @@ class VoteTrial(Trial):
     time_estimate = 1
     sync_group_type = "pair"
 
+    def show_trial(self, experiment, participant):
+        return InfoPage("Vote", time_estimate=1)
+
+
+@in_consents_experiment
+def test_a_grouped_cued_trial_needs_a_group_barrier(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    VoteTrial.cue({})[0].consume(exp, cohort[0])
+    with pytest.raises(ValueError, match="needs a GroupBarrier to close each round"):
+        cohort[0].current_trial._show_trial(exp, cohort[0])
+
 
 @in_consents_experiment
 def test_alternating_trial_classes_advance_the_round(

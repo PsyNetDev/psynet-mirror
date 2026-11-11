@@ -270,8 +270,8 @@ Module("game", for_loop(
 
 - Keep a `GroupBarrier` in every round, inside `show_trial` after the
   answer page, so members stay in step. A cued round closes only when its
-  barrier releases the group; a round without one never closes, and a
-  latecomer can join it after the others have finished.
+  barrier releases the group, so PsyNet raises an error when a grouped
+  trial's `show_trial` has no `GroupBarrier`.
 - Every `GroupBarrier` waits for every active member of its group, wherever
   it is, so put the barriers where all members reach them in the same
   order, and have a member who stops playing early leave the group

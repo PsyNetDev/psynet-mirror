@@ -1299,8 +1299,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         ``sync_group_id``, ``sync_group_role`` and ``sync_group_round``; see
         :ref:`rounds-cued-trials` for the rules. In short:
 
-        - Put a :class:`~psynet.sync.GroupBarrier` in each round, for example
-          in :meth:`show_trial`, so that members stay in step.
+        - Put a :class:`~psynet.sync.GroupBarrier` in :meth:`show_trial`, so
+          that members stay in step and the round closes; a grouped trial
+          whose ``show_trial`` has none raises an error.
         - The barriers' ``on_release`` can read each member's answer so far
           from ``trial.answer``, and whether their timed page ran out of
           time from :attr:`time_limit_reached`. With several answer pages
@@ -1367,9 +1368,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             group plays a loop of rounds, or the same value to the cues of
             two trial classes played one after the other in one round. A
             round closes when a :class:`~psynet.sync.GroupBarrier` releases
-            the group there, so put one inside ``show_trial``; a round
-            without one never closes, and a latecomer can join it after the
-            others have finished. If the participant has no trial in a
+            the group there, so ``show_trial`` must contain one; building a
+            grouped trial's pages without one raises an error. If the participant has no trial in a
             closed round, the group finished it without them: the cue is skipped,
             with no trial and no pages. A later barrier in that round's
             trial still waits for them, as every
@@ -1645,12 +1645,19 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             )
 
     def _show_trial(self, experiment, participant):
-        return call_function_with_context(
+        logic = call_function_with_context(
             self.show_trial,
             experiment=experiment,
             participant=participant,
             trial_maker=self.trial_maker,
         )
+        if isinstance(self.node, SyncGroupNode) and not _contains_group_barrier(logic):
+            raise ValueError(
+                f"{type(self).__name__} is played in groups (sync_group_type="
+                f"{self.sync_group_type!r}), so show_trial needs a GroupBarrier "
+                "to close each round."
+            )
+        return logic
 
     @classmethod
     def _log_time_credit_before_trial(cls, participant):
@@ -4463,6 +4470,21 @@ def _record_sync_group(trial, participant, group, round_number=None):
     trial.sync_group_role = None if link is None else link.role
 
 
+def _contains_group_barrier(logic) -> bool:
+    """Return whether timeline logic, possibly in nested lists, contains a :class:`~psynet.sync.GroupBarrier`.
+
+    Barriers already resolved into timeline elements, for example by ``join``
+    or ``conditional``, are found through the elements' ``barrier`` link.
+    Barriers built later, inside a nested ``PageMaker``, are not visible.
+    """
+    if isinstance(logic, (list, tuple)):
+        return any(_contains_group_barrier(item) for item in logic)
+    if isinstance(logic, GroupBarrier):
+        return True
+    links = getattr(logic, "links", None) or {}
+    return isinstance(links.get("barrier"), GroupBarrier)
+
+
 def _cued_trial_position(participant):
     """Return how many trials ``participant`` already has in their current module."""
     module_state = participant.module_state
@@ -4587,7 +4609,7 @@ class SyncGroupNode(GenericTrialNode):
         while that round is open and the participant has no trial on it. A
         round is open until a :class:`~psynet.sync.GroupBarrier` in the
         round's trials (in ``show_trial``) releases the group, which sets
-        ``sync_group_closed``; a round without such a barrier never closes.
+        ``sync_group_closed``; :meth:`Trial._show_trial` requires such a barrier.
         Otherwise the group moves on to a new node for the next round,
         counted from 0, which the others then join.
         With ``round_number``, it is the group's node for that round, or
