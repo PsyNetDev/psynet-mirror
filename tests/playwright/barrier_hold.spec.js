@@ -136,6 +136,7 @@ test("default barriers hold the current page until websocket release", { tag: "@
     await expect(
       secondParticipant.locator(".psynet-group-member--answered")
     ).toHaveCount(1, { timeout: STEP_TIMEOUT_MS });
+    await expect(secondParticipant.locator("#psynet-arrival-notice")).toHaveCount(0);
     await expect(secondParticipant.locator("#main-body")).toContainText(
       "Choose your action"
     );

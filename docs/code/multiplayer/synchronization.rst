@@ -166,8 +166,6 @@ then groups of two, and assigns roles at a barrier each time:
 Two groupers of the same type and size share a default ID, and so a waiting
 pool. Give them different ``id_`` values if they should not.
 
-.. _sync-rounds-with-changing-groups:
-
 .. _sync-regrouper-recipe:
 
 Rounds with changing groups
@@ -1096,7 +1094,7 @@ Two separate settings decide what happens when someone leaves a group:
       that regroups within this group (``within``) stops them when the
       regrouper starts its next split after ``n`` rounds in the group, for
       example ``1`` to let latecomers join a cohort only during its first
-      round (see :ref:`sync-rounds-with-changing-groups`). A cohort below
+      round (see :ref:`sync-regrouper-recipe`). A cohort below
       its quorum at that split is dissolved with nobody grouped; with
       ``below_quorum="continue_without_group"``, its waiting players are
       released ungrouped and ``on_release`` isn't called.
