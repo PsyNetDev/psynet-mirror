@@ -85,8 +85,8 @@ data are collected.
    hidden attributes, current turn, previous actions, timers, and cumulative
    outcomes.
 3. Extract each participant's action per round, with any analysis-relevant
-   metadata: timeout status (read `trial.response.time_limit_reached`
-   rather than inferring it from a `None` answer), validity, submission
+   metadata: timeout status (read `trial.time_limit_reached` rather than
+   inferring it from a `None` answer), validity, submission
    time, revision count, duplicate submissions, or out-of-turn rejections.
 4. Extract scores at each level the analysis uses: player-round, partner,
    group, cumulative, and bonus-relevant scores, plus score components when
