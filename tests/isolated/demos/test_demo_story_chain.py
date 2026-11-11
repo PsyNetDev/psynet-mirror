@@ -78,8 +78,9 @@ def test_the_writer_s_sentence_is_kept_unless_they_were_late(
     trial.sync_group_outcome = outcome
     writer.answer = "Once upon a time."
     trial.save_sentence(writer)
+    trial.on_finalized()
 
-    assert trial.node.var.has("sentence") == saved
+    assert trial.node.var.sentence == ("Once upon a time." if saved else None)
 
 
 @in_story_chain

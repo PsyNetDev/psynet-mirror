@@ -204,7 +204,9 @@ class StoryTurn(Trial):
 
 def waiting_for_writer(participant, trial):
     """Show the story so far to the members waiting for the writer."""
-    if trial.is_writer:
+    if trial.is_writer and trial.time_limit_reached:
+        text = "You ran out of time. Waiting for the others."
+    elif trial.is_writer:
         text = "Thank you. Waiting for the others."
     else:
         story = story_text(trial.sync_group_id) or "(Nothing yet.)"
@@ -321,7 +323,7 @@ class Exp(psynet.experiment.Experiment):
             if turn == 4:
                 writer.run_out_of_time()
                 advance_past_wait_pages(members, stop_at=TURN_BARRIER)
-                assert "ran out of time" in writer.current_page_text
+                assert "nothing was added" in writer.current_page_text
                 writer.take_page()
             else:
                 writer.take_page(response=f"Sentence {turn}.")
