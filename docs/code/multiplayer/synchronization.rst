@@ -1000,8 +1000,8 @@ the maximum waiting time:
     submitting a page, is left alone until the barrier checks again once
     that request finishes, and so are the group's other late members, so
     that equally late members leave together. If that request brought them
-    to the barrier they are no longer late. So a late member is never both
-    removed and allowed to act: code in their own request, such as a
+    to the barrier they are no longer late. So a late member is never
+    removed while their own request is acting: code in their own request, such as a
     :class:`~psynet.timeline.CodeBlock` that stores their answer, either runs
     before the removal or sees it (``participant.sync_group_removal_reason``,
     or a cued trial's ``sync_group_outcome``), and needs no locks of its own.
