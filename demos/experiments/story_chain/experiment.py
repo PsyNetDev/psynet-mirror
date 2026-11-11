@@ -251,12 +251,11 @@ def final_page(participant: Participant):
         )
     turns = group_turns(group_id)
     finished = len(turns) == N_TURNS and all(t.var.has("sentence") for t in turns)
-    # None while the member is still in the group.
-    reason = participant.sync_group_removal_reason(GROUP)
-    if reason is not None and not finished:
-        intro = f"{ENDED_EARLY_TEXTS[reason]} Here is the story so far:"
-    else:
+    if finished or in_group(participant):
         intro = "Here is the story your group wrote:"
+    else:
+        reason = participant.sync_group_removal_reason(GROUP)
+        intro = f"{ENDED_EARLY_TEXTS[reason]} Here is the story so far:"
     story = story_text(group_id) or "(Nobody wrote a sentence.)"
     return ModularPage(
         "rate",

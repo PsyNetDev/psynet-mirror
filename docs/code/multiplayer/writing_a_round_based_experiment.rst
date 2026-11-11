@@ -286,11 +286,13 @@ pair before submitting their decision has a trial, and the first check in
 Ending the game
 ---------------
 
-The rounds loop runs until a player has played their rounds, has sat out
-too often, has left the cohort, or their cohort is down to one player:
+The rounds loop runs while ``game_over_reason`` returns ``None``. The
+function names each way a player's game can end: they played their rounds,
+sat out too often, were removed for being late, or their cohort is down to
+one player:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :pyobject: keep_playing
+   :pyobject: game_over_reason
 
 Players who finish leave the cohort with
 :func:`leave_group(COHORT) <psynet.sync.leave_group>`, so that the
@@ -298,6 +300,10 @@ regrouper doesn't wait for them in later rounds. It removes them with
 ``reason="finished"``, which never dissolves the cohort, so players who
 finish first don't dissolve the closed cohort while others are still
 playing (see :ref:`groups_below_min_size`).
+
+After that, a ``switch`` on ``game_over_reason`` shows a page for each early
+end that still needs explaining. A player removed for being late has
+already been told on their round's results page, so they get none.
 
 Exporting the rounds
 --------------------

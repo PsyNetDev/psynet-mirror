@@ -45,9 +45,7 @@ from psynet.sync import (
 )
 from psynet.timeline import (
     Module,
-    PageMaker,
     Timeline,
-    conditional,
     join,
     switch,
     while_loop,
@@ -112,10 +110,24 @@ def get_timeline():
             ),
         ),
         leave_group(COHORT),
-        conditional(
-            "ended_early",
-            ended_early,
-            PageMaker(ended_early_page, time_estimate=5),
+        switch(
+            "game_over",
+            game_over_reason,
+            {
+                "played_all_rounds": [],
+                # Their round's results page has already told them.
+                "late": [],
+                "sat_out_too_often": InfoPage(
+                    f"You sat out {MAX_SIT_OUTS} rounds without a partner, "
+                    "so the game ended early for you.",
+                    time_estimate=5,
+                ),
+                "too_few_players": InfoPage(
+                    "Not enough players stayed to keep playing, "
+                    "so the game ended early.",
+                    time_estimate=5,
+                ),
+            },
         ),
     )
 
@@ -149,34 +161,23 @@ def round_message(seconds_left):
     return "The next round starts in at most {SECONDS} s."
 
 
-def ended_early(participant):
-    # Being late also takes a player out of the cohort, which ends their game;
-    # their round's results page already said so.
-    return (
-        pairing.rounds_played(participant) < N_ROUNDS
-        and participant.sync_group_removal_reason(COHORT) != "late"
-    )
-
-
-def ended_early_page(participant):
+def game_over_reason(participant):
+    """Return why the player's game is over, or ``None`` while they keep playing."""
+    if pairing.rounds_played(participant) >= N_ROUNDS:
+        return "played_all_rounds"
     if pairing.rounds_sat_out(participant) >= MAX_SIT_OUTS:
-        text = (
-            f"You sat out {MAX_SIT_OUTS} rounds without a partner, "
-            "so the game ended early for you."
-        )
-    else:
-        text = "Not enough players stayed to keep playing, so the game ended early."
-    return InfoPage(text, time_estimate=5)
+        return "sat_out_too_often"
+    # Being late takes a player out of their pair and their cohort.
+    if participant.sync_group_removal_reason(COHORT) == "late":
+        return "late"
+    cohort = cohort_of(participant)
+    if cohort is None or cohort.n_active_participants < 2:
+        return "too_few_players"
+    return None
 
 
 def keep_playing(participant):
-    cohort = cohort_of(participant)
-    return (
-        cohort is not None
-        and cohort.n_active_participants >= 2
-        and pairing.rounds_played(participant) < N_ROUNDS
-        and pairing.rounds_sat_out(participant) < MAX_SIT_OUTS
-    )
+    return game_over_reason(participant) is None
 
 
 def forming_cohort(participant):

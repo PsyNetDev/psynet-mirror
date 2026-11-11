@@ -111,6 +111,16 @@ def left_group(participant):
     return not participant.in_sync_group(GROUP)
 
 
+# Why a player who left the group before it shared its median can't revise.
+# Being late or removed shows a notice on the page; a dissolving group's
+# notice says that too few members remained.
+LEFT_BEFORE_MEDIAN_TEXTS = {
+    "late": "Your estimate didn't reach your group in time",
+    "group_dissolved": "Your group ended before you saw its median",
+    "removed": "You were removed from your group before you saw its median",
+}
+
+
 class EstimateTrial(Trial):
     sync_group_type = GROUP
     # An estimate and a revised estimate; alone, only the estimate.
@@ -210,14 +220,8 @@ class EstimateTrial(Trial):
         The player's own outcome comes first, because a member who left the
         group passes the barrier without waiting, before the group is scored.
         """
-        outcome = self.sync_group_outcome
-        if outcome == "late":
-            return "Your estimate didn't reach your group in time"
-        if outcome == "group_dissolved":
-            # The framework's notice on this page says too few members remained.
-            return "Your group ended before you saw its median"
-        if outcome != "stayed":
-            return "You left your group before you saw its median"
+        if self.sync_group_outcome != "stayed":
+            return LEFT_BEFORE_MEDIAN_TEXTS[self.sync_group_outcome]
         if self.node.var.get("median") is None:
             return "Too few estimates arrived for a group median"
         if self.var.estimate_timed_out:
