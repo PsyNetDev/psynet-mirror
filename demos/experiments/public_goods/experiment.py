@@ -4,8 +4,7 @@ In each of ``N_ROUNDS`` rounds, every member privately puts some of their
 ``ENDOWMENT`` tokens in the group pot. The pot is multiplied by ``MULTIPLIER``
 and shared between the members who played the round, and everyone sees the
 group's contributions and what they earned, paid as a bonus of
-``TOKEN_VALUE`` per token. Whoever put the most in the pot that round wins an
-extra ``WINNER_BONUS``.
+``TOKEN_VALUE`` per token.
 
 Each round is one ``ContributionTrial`` per player, cued with the loop value
 as ``round=``. The team's trials in a round share a node, which holds the
@@ -36,7 +35,6 @@ N_ROUNDS = 3
 ENDOWMENT = 10
 MULTIPLIER = 1.5
 TOKEN_VALUE = 0.02
-WINNER_BONUS = 0.05
 # The time a player is expected to spend reading a round's results.
 RESULTS_SECONDS = 10
 # Short so that the bot test runs quickly; with real participants, allow about
@@ -53,8 +51,7 @@ def get_timeline():
             f"You will play {N_ROUNDS} rounds of a game with two other players. "
             f"Each round you get {ENDOWMENT} tokens and choose how many to put in "
             f"a group pot. The pot is multiplied by {MULTIPLIER} and shared equally "
-            f"between the players. Each token you earn pays ${TOKEN_VALUE:.2f}, "
-            f"and whoever puts the most in the pot wins ${WINNER_BONUS:.2f}.",
+            f"between the players. Each token you earn pays ${TOKEN_VALUE:.2f}.",
             time_estimate=15,
         ),
         SimpleGrouper(
@@ -133,7 +130,7 @@ class ContributionTrial(Trial):
     def score_round(
         cls, trials: List["ContributionTrial"], node: SyncGroupNode, left: list
     ):
-        """Share the multiplied pot between the members who played the round, and mark who put in the most."""
+        """Share the multiplied pot between the members who played the round."""
         # String keys, because node.var stores JSON. A player who ran out of
         # time has an answer of None and puts in nothing.
         node.var.contributions = {str(t.participant_id): t.answer for t in trials}
@@ -146,11 +143,8 @@ class ContributionTrial(Trial):
         # Members who left since the previous round was scored, including
         # one who left while reading its results.
         node.var.n_left = len(left)
-        top = max((t.answer or 0) for t in trials)
         for trial in trials:
             trial.var.payoff = ENDOWMENT - (trial.answer or 0) + share
-            # Ties all win; nobody wins if nobody put anything in.
-            trial.var.won = top > 0 and trial.answer == top
 
     def score_answer(self, answer, definition):
         """Return the tokens the player earned in the round."""
@@ -166,8 +160,7 @@ class ContributionTrial(Trial):
         return 0
 
     def compute_performance_reward(self, score):
-        bonus = WINNER_BONUS if self.var.get("won") else 0
-        return TOKEN_VALUE * score + bonus
+        return TOKEN_VALUE * score
 
     def gives_feedback(self, experiment, participant):
         return self.sync_group_outcome == "stayed"
@@ -181,19 +174,13 @@ class ContributionTrial(Trial):
             you = "You ran out of time and put in nothing"
         else:
             you = f"You put in {self.answer}"
-        won = (
-            f" You put in the most, so you also win ${WINNER_BONUS:.2f}."
-            if self.var.won
-            else ""
-        )
         return ModularPage(
             "results",
             GroupPrompt(
                 f"{left}The group put {node.var.pot} tokens in the pot, which became "
                 f"{node.var.multiplied_pot:g} and was shared between "
                 f"{len(node.var.contributions)} players: {node.var.share:g} tokens "
-                f"each. {you}, so you earned {self.var.payoff:g} tokens this round."
-                f"{won}",
+                f"each. {you}, so you earned {self.var.payoff:g} tokens this round.",
                 participant=participant,
                 group=self.sync_group,
                 answers={
@@ -278,9 +265,6 @@ class Exp(psynet.experiment.Experiment):
                     "timed_out": t.time_limit_reached,
                     # None if the player returned the study during the round.
                     "payoff": t.score,
-                    # Whether the player put in the most and won WINNER_BONUS;
-                    # None if the round wasn't scored for them.
-                    "won": t.var.get("won"),
                     "bonus": t.performance_reward,
                 }
                 for t in trials
@@ -319,7 +303,7 @@ class Exp(psynet.experiment.Experiment):
         text = bots[0].current_page_text
         assert "so you earned 17 tokens" in text, text
         text = bots[2].current_page_text
-        assert text.endswith("You put in the most, so you also win $0.05."), text
+        assert "so you earned 9 tokens" in text, text
 
         _see_results(bots)
         bots[0].take_page(response=4)
@@ -334,7 +318,7 @@ class Exp(psynet.experiment.Experiment):
         text = bots[2].current_page_text  # Paid for the first round only.
         assert text == (
             "You were away for too long, so the game ended early for you. "
-            "Your bonus is $0.23."
+            "Your bonus is $0.18."
         ), text
 
         _see_results(bots[:2])
@@ -345,9 +329,9 @@ class Exp(psynet.experiment.Experiment):
         text = bots[1].current_page_text
         assert "You ran out of time and put in nothing, so you earned 14.5" in text
         _see_results(bots[:2])
-        # 17 + 15 + 8.5 tokens, and winning the last round.
+        # 17 + 15 + 8.5 tokens.
         text = bots[0].current_page_text
-        assert text == "The game is over. Your bonus is $0.86.", text
+        assert text == "The game is over. Your bonus is $0.81.", text
         run_bots_to_completion(bots)
 
         data = self.get_basic_data()
@@ -368,12 +352,6 @@ class Exp(psynet.experiment.Experiment):
         )
         timed_out = [(r["participant_id"], r["round"]) for r in rows if r["timed_out"]]
         assert timed_out == [(bots[1].id, 2)], timed_out
-        won = [(r["participant_id"], r["round"]) for r in rows if r["won"]]
-        assert sorted(won, key=lambda w: w[1]) == [
-            (bots[2].id, 0),
-            (bots[1].id, 1),
-            (bots[0].id, 2),
-        ], won
         for bot in bots:
             paid = sum(r["bonus"] for r in rows if r["participant_id"] == bot.id)
             reward = bot.with_participant(lambda p: p.performance_reward)

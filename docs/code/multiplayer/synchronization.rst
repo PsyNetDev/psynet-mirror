@@ -804,7 +804,11 @@ This section is the reference for rounds played as one cued trial per
 player, on a trial class that sets ``sync_group_type``, whether the groups
 are fixed or formed anew each round. For a worked example, with the
 group's results in ``node.var`` and the exports, see
-:ref:`rounds-one-trial-per-player` in the round-based tutorial.
+:ref:`rounds-one-trial-per-player` in the round-based tutorial. For a group
+that works through a stimulus set or a chain, use a trial maker with
+``sync_group_type`` instead (see :ref:`concept_groups` for how to choose).
+``sync_group_outcome`` and :meth:`SyncGroup.rounds()
+<psynet.sync.SyncGroup.rounds>` only cover cued trials.
 
 ``cue`` numbers each group's rounds by itself, from 0:
 
@@ -838,11 +842,13 @@ iteration, between runs of a module or after the loop. Nobody is skipped
 for being in another round or another module: a member stops being waited
 for only by leaving the group, with :func:`~psynet.sync.leave_group` or by
 being removed, for example as late (see :ref:`sync-leaving-a-group`). Every
-release, except letting one member go after ``max_wait_time``, is the
-group's pass: ``on_release`` runs, and the pass counts for ``left`` and
-``late_after``. If every member it releases is in the same round's trial,
-the release closes that round and ``on_release`` gets its node; otherwise
-``node`` is ``None``. For example:
+release is the group's pass, except letting one member go after
+``max_wait_time`` and letting the waiting members go because the group
+dissolved below its quorum (see :ref:`groups_below_min_size`). A pass runs
+``on_release`` and counts for ``left`` and ``late_after``; a dissolution
+does neither and closes no round. If every member a pass releases is in
+the same round's trial, the pass closes that round and ``on_release`` gets
+its node; otherwise ``node`` is ``None``. For example:
 
 .. code-block:: python
 
@@ -1121,7 +1127,15 @@ the maximum waiting time:
     table below for other defaults), or no limit
     at a :class:`~psynet.sync.GroupBarrier` that sets ``late_after``, which
     then handles late members instead; passing ``max_wait_time`` together
-    with ``late_after`` raises an error. ``max_wait_action`` decides what
+    with ``late_after`` raises an error. That is because ``late_after``
+    already frees the members who wait: it moves on whoever keeps them
+    waiting. A limit on the waiting members, fixed when each arrives,
+    can't know how long a slower member's timed page still runs, so it
+    could time out the members who were on time first. If waiting members
+    are ever stuck with ``late_after`` set, that is a bug, and PsyNet's
+    logs and its check for members waiting at different barriers (see
+    :ref:`members at different barriers <rounds-group-barriers-in-loops>`)
+    show it. ``max_wait_action`` decides what
     happens to a participant who waits longer: ``"fail"`` (default) fails
     them. At a :class:`~psynet.sync.GroupBarrier`, both actions first remove
     them from the group as ``"waited_too_long"``; ``"fail"`` then fails them,
@@ -1147,8 +1161,8 @@ the maximum waiting time:
     The late limit. Acts on members who **haven't reached** this
     :class:`~psynet.sync.GroupBarrier` yet: a member who hasn't reached the
     barrier within ``late_after`` seconds of the group's previous barrier
-    pass, or of joining the group if that is later, is late, and is handled
-    by ``late_action``, which you must then pass: ``"fail"`` fails them, and
+    pass, or of being admitted to the group if that is later, is late, and
+    is handled by ``late_action``, which you must then pass: ``"fail"`` fails them, and
     ``"leave_group"`` removes them from the group. With ``"leave_group"``,
     ``also_leave`` lists the other group types they leave too, such as
     ``["cohort"]`` for the cohort a pair was formed in. Since late members
@@ -1165,26 +1179,30 @@ the maximum waiting time:
     others until they arrive or are late, so they need no ``max_wait_time``
     of their own.
 
-    A late member who is in the middle of a request of their own, such as
-    submitting a page, is left alone until the barrier checks again once
-    that request finishes, and so are the group's other late members, so
-    that equally late members leave together. If that request brought them
-    to the barrier they are no longer late. So a late member is never
-    removed while their own request is acting: code in their own request, such as a
+    Removing a group's late members is all or nothing: if any of them is in
+    the middle of a request of their own, such as submitting a page, none
+    of them is removed until a later check of the barrier finds none of
+    them busy, usually the next one, about half a second later. So equally
+    late members leave together, and the removal can be a check later than
+    ``late_after``. If that request brought them to the barrier they are no
+    longer late. So a late member is never removed while their own request
+    is acting: code in their own request, such as a
     :class:`~psynet.timeline.CodeBlock` that stores their answer, either runs
     before the removal or sees it (``participant.sync_group_removal_reason``,
     or, before the round's first release, a cued trial's
     ``sync_group_outcome``), and needs no locks of its own.
 
     A member who has started a page with a ``time_limit``, other than a
-    waiting page, since the group last passed a barrier (or since joining)
-    is not late until that limit has run out plus 10 seconds, so that an
-    answer sent at the deadline can arrive. So the late limit need not be
+    waiting page, since the group last passed a barrier (or since being
+    admitted) is not late until that limit has run out plus 10 seconds, so
+    that an answer sent at the deadline can arrive. So the late limit need not be
     longer than the pages' time limits. See
     :ref:`a worked example <rounds-slow-players>`.
 
     At a group's first barrier the late limit counts from when each member
-    joined the group, which for its original members is when it formed.
+    was admitted to the group: when it formed for its original members, and
+    when they joined for newcomers admitted with
+    ``admit_newcomers="on_join"``.
     Size it to cover everything between the grouper and that barrier, such as
     instructions or a practice trial, or members who read slowly are late
     before they arrive. Removing a late member from the group can also take
@@ -1254,12 +1272,14 @@ Two separate settings decide what happens when someone leaves a group:
   its ``quorum``. Below it, what happens depends on whether the group
   accepts top-ups:
 
-  - While it accepts newcomers (``join_existing_groups=True``), it is never
-    dissolved: its barriers wait for new members to join, until their
-    ``max_wait_time``, or without a limit if the barrier sets
+  - While it accepts newcomers (``join_existing_groups=True``), a member
+    leaving doesn't dissolve it: its barriers wait for new members to join,
+    until their ``max_wait_time``, or without a limit if the barrier sets
     ``late_after``. With ``admit_newcomers="at_admission_point"`` only its
     admission points wait, because only they can admit a newcomer; its
-    other barriers dissolve it (see :ref:`sync-admission-points`). If every
+    other barriers dissolve it when they next check it, so a member left
+    below the quorum mid-round is released from the round's barrier with
+    the group dissolved (see :ref:`sync-admission-points`). If every
     member leaves, and no pending member is waiting to be admitted, the
     group closes at the next periodic sync-group check (every few seconds),
     and later arrivals form a new one.

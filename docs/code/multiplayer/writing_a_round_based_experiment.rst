@@ -269,7 +269,33 @@ both answers to the prompt as speech bubbles:
 
 To pay a bonus as well, return a score from ``score_answer`` and the bonus
 from ``compute_performance_reward``, as the ``public_goods`` demo
-does; both run when the trial ends, after ``on_release``.
+does; both run when the trial ends, after ``on_release``. For example, to
+pay each player's coins and an extra bonus to the round's winner, mark the
+winner where ``on_release`` scores the round:
+
+.. code-block:: python
+
+    COIN_VALUE = 0.01
+    WINNER_BONUS = 0.05
+
+    class OfferTrial(Trial):
+        @classmethod
+        def score_pair(cls, trials, node, left):
+            ...  # Save each player's coins on their trial, as above.
+            best = max(trial.var.coins for trial in trials)
+            for trial in trials:
+                # Ties all win; nobody wins a round in which nobody was paid.
+                trial.var.won = best > 0 and trial.var.coins == best
+
+        def score_answer(self, answer, definition):
+            return self.var.get("coins", 0)
+
+        def compute_performance_reward(self, score):
+            bonus = WINNER_BONUS if self.var.get("won") else 0
+            return COIN_VALUE * score + bonus
+
+``var.get`` covers a trial whose round was not scored, such as that of a
+player who left before the barrier.
 
 .. _rounds-sitting-out:
 
@@ -304,9 +330,11 @@ their pair is told so on that round's results page.)
 Players who finish leave the cohort with
 :func:`leave_group(COHORT) <psynet.sync.leave_group>`, so that the
 regrouper doesn't wait for them in later rounds. It removes them with
-``reason="finished"``, which never dissolves the cohort, so players who
-finish first don't dissolve the closed cohort while others are still
-playing (see :ref:`groups_below_min_size`).
+``reason="finished"``, which doesn't dissolve the closed cohort by itself,
+so players who finish first don't end the round of those still playing.
+The cohort's next barrier, here the regrouper's next split, can still
+dissolve it if it is below its quorum then (see
+:ref:`groups_below_min_size`).
 
 After that, a ``switch`` on ``game_over_reason`` shows a page for each early
 end that still needs explaining. A player removed for being late has

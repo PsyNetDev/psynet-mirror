@@ -71,6 +71,18 @@ agent how to plan, build, test and deploy it. ``psynet audit`` keeps a
 record of the work, from the original request to test evidence, for you to
 review. See :doc:`/code/project/agentic_programming` and :doc:`/test/audits`.
 
+Timeline code
+-------------
+
+**Variables and conditions.** ``participant.var.get(name)``, and ``get`` on
+the other variable stores, now returns ``None`` for a variable that isn't
+set, like ``dict.get``, instead of raising ``KeyError``; code that relied on
+the error should use ``participant.var.has(name)``.
+:func:`~psynet.timeline.conditional` now accepts any truthy or falsy value
+from its condition, such as a list, instead of raising an error. Both
+affect code in almost any experiment, so check them first: see step 12 of
+:doc:`upgrading_to_psynet_14`.
+
 Trials and groups
 -----------------
 

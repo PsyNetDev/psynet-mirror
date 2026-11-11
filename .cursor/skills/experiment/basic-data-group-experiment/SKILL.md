@@ -51,6 +51,8 @@ def get_basic_data(cls, context=None, **kwargs):
             "round": t.sync_group_round,
             "participant_id": t.participant_id,
             "trial_id": t.id,
+            # An unfinished trial's answer is the answer so far.
+            "complete": t.complete,
             "choice": t.answer,
             "payoff": t.var.get("payoff"),
             "group_total": t.node.var.get("total"),
@@ -95,10 +97,12 @@ data are collected.
 5. Build the player-round table in `get_basic_data` from the trials, one
    row for every trial, including rounds that were never scored or that
    the player left, with `None` in the columns they didn't reach; say so in
-   the docstring. Add a group-round table from the `SyncGroupNode` rows if
-   the game has group results. Give roles and player order their own
-   columns. Keep nested JSON
-   or raw event IDs only where they help auditing.
+   the docstring. Export `complete` with each row, and filter on it (and
+   on `failed`) in the analysis: an unfinished trial, abandoned or still
+   running, can have an `answer`, the answer given so far. Add a
+   group-round table from the `SyncGroupNode` rows if the game has group
+   results. Give roles and player order their own columns. Keep nested
+   JSON or raw event IDs only where they help auditing.
 6. Run the experiment with bots or simulated participants
    (`simulate-participants/SKILL.md`), export it, and check the table against
    the validation checklist below. Compare the clean actions and scores with

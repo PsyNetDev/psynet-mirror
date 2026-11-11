@@ -46,6 +46,13 @@ doesn't, such as pandas or R, or import them as text.
 PsyNet doesn't anonymize basic data. If a public release must omit
 identifiers, leave them out in ``get_basic_data``.
 
+An unfinished trial, abandoned or still running when the data are read,
+can have an ``answer``: the answer given so far, before ``format_answer``
+has run. Filter trials on ``complete`` as well as ``failed``, for example
+``Trial.query.filter_by(complete=True, failed=False)``, or export
+``complete`` as a column when a table keeps a row for every trial, such as
+the group tables below.
+
 Over HTTP
 ---------
 
@@ -164,7 +171,10 @@ Group membership, for groups formed by a grouper (see
     ``roles``, ``role``. The row stays after the participant leaves the group, for
     example by failing or being removed from it, with ``active`` set to ``False``
     and the reason in ``removal_reason``.
-    ``creation_time`` is when the participant joined.
+    ``creation_time`` is when the participant joined, ``admitted_at`` when
+    the group admitted them (empty if they were never admitted; see
+    :ref:`sync-admission-points`), and ``admission_points_passed`` how many
+    of the group's admission points they passed once admitted.
 
 In a static trial maker, groups can share nodes and networks. Networks of
 within-chain trial makers with ``sync_group_type`` record the group in

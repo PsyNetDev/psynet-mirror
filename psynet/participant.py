@@ -484,10 +484,12 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     # Only the end of the waiting logic clears it, so a participant who jumps
     # out (for example to a failure page) keeps it.
     waiting_barrier_id = Column(String)
-    # Whether the latest timed page answered outside waiting logic and outside
-    # a trial's feedback since the last barrier ended on its time limit. The
-    # next barrier copies it onto the visit and clears it; see
-    # ``ParticipantLinkBarrier.ran_out_of_time``.
+    #: Internal: whether the latest timed page answered outside waiting logic
+    #: and outside a trial's feedback since the last barrier ended on its time
+    #: limit. The next barrier copies it onto the visit
+    #: (``ParticipantLinkBarrier.ran_out_of_time``) and clears it. To find
+    #: answers given when a time limit ran out, read :attr:`psynet.trial.main.Trial.time_limit_reached`
+    #: or :attr:`psynet.timeline.Response.time_limit_reached` instead.
     timed_out_since_barrier = Column(Boolean, default=False)
     page_count = Column(Integer)
     early_exited = Column(Boolean)
@@ -770,16 +772,19 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         return _latest_sync_group_link(self, group_type)
 
     def sync_group_removal_reason(self, group_type: str) -> Optional[str]:
-        """Return why the participant left their latest group of ``group_type``.
+        """Return why the participant is not in a group of ``group_type``.
 
-        Returns ``None`` if they are still in such a group or were never in
-        one. Otherwise returns ``"late"`` (removed by a barrier's
+        Returns ``None`` if they are in such a group, or if they were never
+        in one and no grouper of that type let them continue without one.
+        Returns ``"no_group_formed"`` if the last grouper of that type that
+        they reached, with ``max_wait_action="continue_without_group"``,
+        found them no group in time, even if they were in a group of that
+        type before. Otherwise returns why they left their latest group of
+        that type: ``"late"`` (removed by a barrier's
         ``late_after``, with any ``late_action``, from its group or a group
         listed in its ``also_leave``), ``"waited_too_long"`` (waited at a
         barrier for longer than its ``max_wait_time``, with any
-        ``max_wait_action``), ``"no_group_formed"`` (a grouper
-        with ``max_wait_action="continue_without_group"`` found them no group
-        in time), ``"group_dissolved"`` (still in the group when it was
+        ``max_wait_action``), ``"group_dissolved"`` (still in the group when it was
         dissolved below its quorum, with any ``below_quorum``), ``"moved_on"`` (a
         :class:`~psynet.sync.Regrouper` took them out of their previous group:
         seen while they wait at the regrouper, and after they sit a round out,

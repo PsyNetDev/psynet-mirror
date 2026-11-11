@@ -1,1 +1,1 @@
-Fixed a newcomer who became their group's leader, after the leader left a synchronized trial maker, waiting at the trial maker's start until a time-out removed them. Synchronized trial makers now initialize their members when they prepare the group's trials, so nobody waits at the trial maker's start.
+Fixed a newcomer who became their group's leader, after the leader left a synchronized trial maker, waiting at the trial maker's start until a time-out removed them.

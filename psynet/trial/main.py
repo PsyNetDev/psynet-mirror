@@ -2123,7 +2123,8 @@ class TrialMaker(Module):
         each may wait, in seconds, counted from their arrival, before
         ``sync_group_max_wait_action`` is applied to them. Defaults to 45 seconds, or to no limit
         with ``sync_group_late_after``, which then moves slow members on; passing a number or a
-        function together with ``sync_group_late_after`` raises an error. ``None`` means no limit.
+        function together with ``sync_group_late_after`` raises an error, for the reason given
+        under ``max_wait_time`` in :class:`~psynet.sync.GroupBarrier`. ``None`` means no limit.
 
     sync_group_max_wait_action
         What happens to a member who waits longer than ``sync_group_max_wait_time``: ``"fail"``
@@ -3416,7 +3417,8 @@ class NetworkTrialMaker(TrialMaker):
         each may wait, in seconds, counted from their arrival, before
         ``sync_group_max_wait_action`` is applied to them. Defaults to 45 seconds, or to no limit
         with ``sync_group_late_after``, which then moves slow members on; passing a number or a
-        function together with ``sync_group_late_after`` raises an error. ``None`` means no limit.
+        function together with ``sync_group_late_after`` raises an error, for the reason given
+        under ``max_wait_time`` in :class:`~psynet.sync.GroupBarrier`. ``None`` means no limit.
 
     sync_group_max_wait_action
         What happens to a member who waits longer than ``sync_group_max_wait_time``: ``"fail"``

@@ -23,6 +23,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 3. Give every row the IDs that trace it back to the database, such as
    `trial_id` and `participant_id`.
 4. Leave out identifiers and sensitive values; basic data is not anonymized.
+   Filter trials on `complete` as well as `failed`, or export `complete`
+   as a column: an unfinished trial, abandoned or still running, can have
+   an `answer`, the answer given so far.
 5. Run `psynet debug local`, take a few participants through the experiment,
    and export with `psynet export local`. Check the basic data files: row
    counts match the expected numbers of participants and trials, and no

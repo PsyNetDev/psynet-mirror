@@ -52,6 +52,15 @@ Reading the tables
         "participant_identifiers.csv",
     )
 
+An unfinished trial, abandoned or still running when the export was made,
+can have an ``answer``: the answer given so far, before ``format_answer``
+has run. So filter trials on ``complete`` as well as ``failed`` before
+analysing their answers:
+
+.. code:: python
+
+    finished = trials[trials["complete"] & ~trials["failed"]]
+
 In group experiments, each synchronized trial records its group and round
 in ``sync_group_id`` and ``sync_group_round`` (see :ref:`basic_data_groups`).
 This example pairs each trial with the trials of the other group members in

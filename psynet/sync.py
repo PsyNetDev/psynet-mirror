@@ -1067,6 +1067,12 @@ class Barrier(EltCollection):
     # Reconstructed barriers skip ``__init__`` and never render a hold page.
     waiting_screen = None
 
+    def __new__(cls, *args, **kwargs):
+        _reject_release_candidate_options(
+            cls.__name__, kwargs, _BARRIER_RELEASE_CANDIDATE_OPTIONS
+        )
+        return super().__new__(cls)
+
     def __init__(
         self,
         id_: str,
@@ -1658,6 +1664,10 @@ def _lock_sync_group(
 LateAction = Literal["fail", "leave_group"]
 
 
+_BARRIER_RELEASE_CANDIDATE_OPTIONS = {
+    "content": "it was renamed waiting_message",
+}
+
 _GROUP_BARRIER_RELEASE_CANDIDATE_OPTIONS = {
     "notify_arrivals": (
         "pass on_arrival_message=None to turn arrival notices off, or leave it "
@@ -1675,6 +1685,7 @@ _TRIAL_MAKER_RELEASE_CANDIDATE_OPTIONS = {
         "it was renamed sync_group_late_action, which sync_group_late_after "
         "now requires"
     ),
+    "sync_group_wait_content": "it was renamed sync_group_waiting_message",
 }
 
 
@@ -1845,7 +1856,7 @@ def _reject_old_below_quorum_names(kwargs):
 
 
 def _removed_from_group(participant, group_type) -> bool:
-    """Return whether the participant left their latest group of ``group_type`` and is in no other."""
+    """Return whether the participant is in no group of ``group_type`` but left one, or a grouper let them continue without one."""
     if group_type in participant.active_sync_groups:
         return False
     if group_type in (getattr(participant, "ungrouped_group_types", None) or []):
@@ -1926,7 +1937,9 @@ class GroupBarrier(Barrier):
         Acts on members waiting at this barrier: the longest each may wait, in seconds, counted from
         their arrival, before ``max_wait_action`` is applied to them. Defaults to 20 seconds, or to no limit
         with ``late_after``, which then moves slow members on; passing a number or a function together with
-        ``late_after`` raises an error. ``None`` means no limit. May also be a function of ``participant``,
+        ``late_after`` raises an error, because a limit fixed at each arrival can't know how long a slower
+        member's timed page still runs, and could time out the members who were on time before
+        ``late_after`` frees them. ``None`` means no limit. May also be a function of ``participant``,
         evaluated once when they arrive.
         This is a hard limit counted from arrival: with explicit ``waiting_logic``, the server applies it
         even while the participant is partway through a filler page, so make it long enough to cover long
@@ -1964,10 +1977,12 @@ class GroupBarrier(Barrier):
         barrier's group with the reason ``"late"`` (with ``"fail"``, before they are failed), which their
         cued trial's :attr:`~psynet.trial.main.Trial.sync_group_outcome` records unless an earlier barrier
         in the trial's pages already released the group with them in it (then it stays ``"stayed"``). A
-        group that this leaves below
+        group without top-ups that this leaves below
         its quorum dissolves as its ``below_quorum`` says, so with ``late_action="fail"`` and
-        ``below_quorum="fail"`` one late member can fail a whole cohort. While a late member's own request is in progress, for example submitting a page, no late
-        member of the group is acted on until a check finds none of them busy; if that request
+        ``below_quorum="fail"`` one late member can fail a whole cohort (see :ref:`groups_below_min_size`
+        for groups that accept top-ups). Removal is all or nothing: while a late member's own request is in
+        progress, for example submitting a page, no late member of the group is acted on until a check
+        finds none of them busy, usually the next one, so the removal can come a check later; if that request
         brought them to this barrier, they are no longer late. So code a late member runs in their own
         request, such as a :class:`~psynet.timeline.CodeBlock` storing their answer, either runs before the
         removal or sees it (``participant.sync_group_removal_reason``, or, before the round's first
@@ -2189,7 +2204,7 @@ class GroupBarrier(Barrier):
         _reject_release_candidate_options(
             cls.__name__, kwargs, _GROUP_BARRIER_RELEASE_CANDIDATE_OPTIONS
         )
-        return super().__new__(cls)
+        return super().__new__(cls, *args, **kwargs)
 
     def resolve(self):
         logic = conditional(
@@ -4669,8 +4684,11 @@ def leave_group(group_type: str, reason: RemovalReason = "finished"):
     group_type
         The type of the group to leave.
     reason
-        Passed to :meth:`SyncGroup.remove_participant`. The default,
-        ``"finished"``, never dissolves the group, even if they leave it below its quorum.
+        Passed to :meth:`SyncGroup.remove_participant`. Leaving with the
+        default, ``"finished"``, doesn't dissolve the group by itself, even
+        if it leaves the group below its quorum; but the group's next
+        :class:`GroupBarrier` can still dissolve it then, unless it is
+        waiting for newcomers (see :ref:`groups_below_min_size`).
 
     Returns
     -------
@@ -5013,8 +5031,10 @@ class SyncGroup(SQLBase, SQLMixin):
             PsyNet itself records ``"not_admitted"`` for a pending member it
             turns away (see :attr:`pending_participants`).
 
-            ``"finished"`` and ``"moved_on"`` don't dissolve the group; other
-            reasons can. See :ref:`groups_below_min_size` for the full rule.
+            Leaving with ``"finished"`` or ``"moved_on"`` doesn't dissolve
+            the group by itself; other reasons can. Either way, the group's
+            next :class:`GroupBarrier` can dissolve a group left below its
+            quorum. See :ref:`groups_below_min_size` for the full rule.
         """
         self._remove_without_quorum_check(participant, reason)
 
@@ -5913,9 +5933,12 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     sat_out = Column(Boolean, default=False)
     # This visit, to an admission point, admitted the participant to their group.
     admitted = Column(Boolean, default=False)
-    # The last page the participant answered before arriving, other than a
-    # waiting page, ended on its time limit
-    # (``Participant.timed_out_since_barrier``).
+    #: Internal: the last page the participant answered before arriving,
+    #: other than a waiting page, ended on its time limit
+    #: (``Participant.timed_out_since_barrier``). It drives the "ran out of
+    #: time" mark of :class:`~psynet.group_prompt.GroupPrompt`. To analyse
+    #: time-outs, read :attr:`psynet.trial.main.Trial.time_limit_reached` or
+    #: :attr:`psynet.timeline.Response.time_limit_reached` instead.
     ran_out_of_time = Column(Boolean, default=False)
     # With explicit waiting_logic there is no hold record, so the link keeps
     # the max_wait_time deadline for the poller.

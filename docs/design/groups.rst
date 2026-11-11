@@ -96,16 +96,37 @@ Plan for dropouts: decide whether a round can continue with fewer members,
 whether the remaining members should go on alone or finish early, and how
 their data will be analyzed.
 
-Groups can go through the experiment in two ways. A **trial maker** with a
-group type gives a group's members trials on the same stimuli, or nodes,
-and keeps them in step from trial to trial; use it when a group works
-through stimuli together. A **loop** in the timeline with one trial per
-player in each round, after a regrouper when partners change (see
-`New groups for each round`_), suits games without stimuli, and designs
-where partners change from round to round; the trials of a group's round
-share a node that holds the group's results. Either way, each trial records
-the group, the player's role and the round, so the data can be analyzed
-round by round.
+Groups can go through the experiment in two ways, **cued trials** or a
+**synchronized trial maker**:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 40 26
+
+   * - The design
+     - Use
+     - Demos
+   * - A game played in rounds without a stimulus set, such as an economic
+       game, with the same group or new partners every round
+     - **Cued trials**: a loop in the timeline with one
+       :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` per player in each
+       round, after a regrouper when partners change (see
+       `New groups for each round`_). The trials of a group's round share a
+       node that holds the group's results.
+     - ``public_goods``, ``ultimatum_pairing``, ``story_chain``
+   * - A group working through a stimulus set or a chain together, each
+       member getting a trial on the same stimulus
+     - **A synchronized trial maker**: a trial maker with a group type
+       (``sync_group_type``), which gives the members trials on the same
+       nodes and keeps them in step from trial to trial.
+     - ``create_rate_sync``, ``gibbs_within_sync``
+
+Either way, each trial records the group, the player's role and the round,
+so the data can be analyzed round by round. Only cued trials record how the
+round ended for each player (``trial.sync_group_outcome``) and can be read
+back round by round with
+:meth:`SyncGroup.rounds() <psynet.sync.SyncGroup.rounds>`; a synchronized
+trial maker's trials have neither, so read them from the trial table.
 
 Talking to each other
 ---------------------
@@ -260,8 +281,9 @@ first member has waited long enough, and then **tops it up**: latecomers join
 a group that has a free place instead of waiting for a new one. Top-ups
 can stop when the game starts, so that every member plays every round;
 from then on, latecomers wait for a new group. Alternatively, a group can
-keep taking latecomers during the game, who skip the rounds it has already
-finished (see :ref:`a fixed group's loop <rounds-fixed-group-loop>`). A group
+keep taking latecomers during the game, who wait to be admitted at the
+start of the next round, an **admission point** (see
+:ref:`sync-admission-points`). A group
 that falls below its quorum before the game starts can wait a little while
 for a latecomer to replace the member who left (see
 :ref:`groups_below_min_size` for when a group ends).

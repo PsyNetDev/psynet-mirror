@@ -4,7 +4,7 @@ A repeated public goods game in groups of three. Each round, every member
 privately puts some of their tokens in a group pot, within a time limit; the
 pot is multiplied and shared between the members who played the round, and
 everyone sees the group's contributions and what they earned, paid as a
-bonus. Whoever put the most in the pot that round wins an extra bonus.
+bonus.
 
 Good reference for a `SimpleGrouper` with a `quorum` whose members carry on
 without the group, a scoring `GroupBarrier` with `late_after`, `on_release`
@@ -12,8 +12,8 @@ and a `waiting_screen`, and `for_loop(..., stop_if=...)` with a
 `conditional` afterwards for players without a group. Each round is one cued
 trial per player (`Trial.cue(round=i)` on a trial class with
 `sync_group_type`): the group's pot is saved once on the node its members'
-trials share, and each player's contribution, payoff and whether they won
-the round on their trial, which pays the bonus (`score_answer` and
+trials share, and each player's contribution and payoff on their trial,
+which pays the bonus (`score_answer` and
 `compute_performance_reward`). The basic data is read from the trials and nodes.
 
 ## Time-outs and dropouts

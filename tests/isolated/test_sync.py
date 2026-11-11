@@ -768,6 +768,7 @@ def test_grouper_leftover_waiter_joins_an_open_group(
         initial_group_size=2,
         max_group_size=None,
         join_existing_groups=True,
+        admit_newcomers="on_join",
     )
     participants = _working_participants(exp, 3)
     for participant in participants:
@@ -819,6 +820,7 @@ def test_grouper_does_not_join_a_group_without_active_members(
         initial_group_size=2,
         max_group_size=None,
         join_existing_groups=True,
+        admit_newcomers="on_join",
     )
 
     assert grouper.choose_who_to_release([newcomer]) == []
@@ -845,6 +847,7 @@ def test_simultaneous_joins_do_not_overfill_a_group(
         initial_group_size=2,
         max_group_size=3,
         join_existing_groups=True,
+        admit_newcomers="on_join",
     )
     first_joined, first_may_commit = threading.Event(), threading.Event()
     errors, second_pid = [], []
@@ -929,6 +932,7 @@ def test_join_skips_a_group_that_another_request_is_changing(
         initial_group_size=2,
         max_group_size=3,
         join_existing_groups=True,
+        admit_newcomers="on_join",
     )
 
     with db.engine.connect() as other, other.begin():
@@ -987,6 +991,7 @@ def test_newcomer_waits_briefly_for_a_busy_group_instead_of_the_poller(
         initial_group_size=2,
         max_group_size=4,
         join_existing_groups=True,
+        admit_newcomers="on_join",
     )
 
     def hold_group_row(other):
@@ -1044,6 +1049,7 @@ def test_newcomer_waiting_for_a_busy_group_holds_no_full_groups_row(
         initial_group_size=2,
         max_group_size=4,
         join_existing_groups=True,
+        admit_newcomers="on_join",
     )
     lock_sql = "SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"
     full_id, busy_id = full.id, busy.id
@@ -1088,6 +1094,7 @@ def test_newcomer_releases_a_busy_group_found_full_after_waiting(
         initial_group_size=2,
         max_group_size=4,
         join_existing_groups=True,
+        admit_newcomers="on_join",
     )
     full_id = full.id
     db_session.commit()
@@ -6116,6 +6123,18 @@ def test_on_arrival_message_customizes_or_turns_off_notices():
             lambda: StaticTrialMaker(sync_group_timeout_between_barriers_action="fail"),
             "renamed sync_group_late_action",
         ),
+        (
+            lambda: SimpleGrouper("main", initial_group_size=2, content="Wait"),
+            "renamed waiting_message",
+        ),
+        (
+            lambda: GroupBarrier("rc", "main", content="Wait"),
+            "renamed waiting_message",
+        ),
+        (
+            lambda: StaticTrialMaker(sync_group_wait_content="Wait"),
+            "renamed sync_group_waiting_message",
+        ),
     ],
 )
 def test_options_from_the_release_candidates_name_their_replacement(make, replacement):
@@ -7340,7 +7359,11 @@ def test_a_time_out_before_joining_an_open_group_gives_no_dash(
 ):
     exp = get_experiment()
     grouper = SimpleGrouper(
-        "main", initial_group_size=2, max_group_size=None, join_existing_groups=True
+        "main",
+        initial_group_size=2,
+        max_group_size=None,
+        join_existing_groups=True,
+        admit_newcomers="on_join",
     )
     founders = _working_participants(exp, 2)
     for participant in founders:
@@ -7912,6 +7935,7 @@ def test_top_up_wait_limits_how_long_a_group_waits_for_newcomers(
         "team",
         initial_group_size=2,
         join_existing_groups=True,
+        admit_newcomers="on_join",
         below_quorum="continue_without_group",
         top_up_wait=10,
     )
@@ -7946,6 +7970,7 @@ def test_top_up_wait_starts_when_the_last_remaining_member_arrives(
         initial_group_size=3,
         quorum=3,
         join_existing_groups=True,
+        admit_newcomers="on_join",
         below_quorum="continue_without_group",
         top_up_wait=10,
     )
@@ -7980,6 +8005,7 @@ def _lobby_recipe():
         start_short_after=60,
         max_wait_time=120,
         join_existing_groups=True,
+        admit_newcomers="on_join",
         top_up_wait=60,
         below_quorum="continue_without_group",
     )
@@ -8277,6 +8303,7 @@ def test_group_barrier_counts_a_newcomer_joining_in_another_request(
         initial_group_size=4,
         quorum=2,
         join_existing_groups=True,
+        admit_newcomers="on_join",
         below_quorum="fail",
     )
     game_starts = GroupBarrier(
@@ -8379,6 +8406,7 @@ def _top_up_team_waiting_at(exp, db_session, barrier, n_starters=2):
         initial_group_size=4,
         quorum=2,
         join_existing_groups=True,
+        admit_newcomers="on_join",
         below_quorum="fail",
     )
     starters = _working_participants(exp, n_starters)
@@ -8482,6 +8510,7 @@ def test_a_closed_join_criterion_doesnt_stop_top_ups(
         "team",
         initial_group_size=2,
         join_existing_groups=True,
+        admit_newcomers="on_join",
         join_criterion=lambda group, participant: False,
         below_quorum="continue_without_group",
     )
