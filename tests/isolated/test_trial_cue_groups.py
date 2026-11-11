@@ -20,7 +20,10 @@ from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     GroupBarrier,
     GroupDivergenceError,
+    SimpleSyncGroup,
+    _finish_dissolving_groups,
     _hold_barrier_instance_claim,
+    _round_lock_key,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
     check_barriers,
@@ -1334,6 +1337,97 @@ def test_the_outcome_records_why_a_player_left_the_round(
         assert other_leaver.current_trial.sync_group_outcome == outcome
 
 
+def _dissolved_mid_round(exp, members):
+    members[-1].fail("returned")
+
+
+def _released_then_dissolved(exp, members):
+    _arrive(exp, GroupBarrier("done", group_type="main"), members)
+    members[-1].fail("returned")
+
+
+def _dissolved_between_rounds(exp, members):
+    _complete_trials(members)
+    members[-1].fail("returned")
+
+
+@pytest.mark.parametrize(
+    "dissolve, marked",
+    [
+        (_dissolved_mid_round, True),
+        (_released_then_dissolved, False),
+        (_dissolved_between_rounds, False),
+    ],
+    ids=["mid_round", "after_release", "between_rounds"],
+)
+@in_consents_experiment
+def test_a_round_records_that_its_group_dissolved_during_it(
+    in_experiment_directory, db_session, dissolve, marked
+):
+    exp = get_experiment()
+    members, group = _sync_group_of(exp, db_session, 2)
+    group.below_quorum = "continue_without_group"
+    _cue_team(exp, members, 0)
+    db.session.commit()
+    node = members[0].current_trial.node
+
+    dissolve(exp, members)
+    db.session.commit()
+    assert not group.active
+    assert (node.sync_group_dissolved_at is not None) == marked
+
+
+@in_consents_experiment
+def test_dissolving_sees_a_release_another_request_committed(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    members, group = _sync_group_of(exp, db_session, 2)
+    group.below_quorum = "continue_without_group"
+    _cue_team(exp, members, 0)
+    db.session.commit()
+    node = members[0].current_trial.node
+    assert not node.sync_group_closed
+
+    with db.engine.begin() as barrier_request:
+        barrier_request.execute(
+            text("UPDATE node SET sync_group_closed = true WHERE id = :id"),
+            {"id": node.id},
+        )
+    members[-1].fail("returned")
+    db.session.commit()
+    assert not group.active and node.sync_group_dissolved_at is None
+
+
+@in_consents_experiment
+def test_dissolving_waits_for_a_cue_holding_the_round_lock(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    (stayer, leaver), group = _sync_group_of(exp, db_session, 2)
+    group.below_quorum = "continue_without_group"
+    _cue_team(exp, [stayer, leaver], 0)
+    db.session.commit()
+    node = stayer.current_trial.node
+
+    with db.engine.connect() as cue_request, cue_request.begin():
+        cue_request.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": _round_lock_key(group, node)},
+        )
+        leaver.fail("returned")
+        db.session.flush()
+        assert group.dissolving and stayer in group.active_participants
+        with db.engine.connect() as stayer_request, stayer_request.begin():
+            stayer_request.execute(
+                text("SELECT id FROM participant WHERE id = :id FOR UPDATE NOWAIT"),
+                {"id": stayer.id},
+            )
+        db.session.commit()
+    _finish_dissolving_groups()
+    assert not group.active and node.sync_group_dissolved_at is not None
+
+
 @pytest.mark.parametrize("late_action", ["fail", "leave_group"])
 @in_consents_experiment
 def test_late_removal_waits_for_a_busy_late_member_then_removes_both(
@@ -1569,12 +1663,14 @@ def test_case_a_slow_reader_between_runs_of_a_looped_module(
 
 
 @pytest.mark.parametrize(
-    "max_wait_action, below_quorum, waiter_fails, absent_fails",
+    "max_wait_action, below_quorum, shared_cohort, waiter_fails, absent_fails",
     [
-        ("fail", "fail", True, True),
-        ("fail", "continue_without_group", True, False),
-        ("leave_group", "fail", False, True),
-        ("leave_group", "continue_without_group", False, False),
+        ("fail", "fail", False, True, True),
+        ("fail", "fail", True, True, True),
+        ("fail", "continue_without_group", False, True, False),
+        ("fail", "continue_without_group", True, True, False),
+        ("leave_group", "fail", False, False, True),
+        ("leave_group", "continue_without_group", False, False, False),
     ],
 )
 @in_consents_experiment
@@ -1583,12 +1679,26 @@ def test_case_max_wait_time_runs_out(
     db_session,
     max_wait_action,
     below_quorum,
+    shared_cohort,
     waiter_fails,
     absent_fails,
 ):
     exp = get_experiment()
     (waiter, absent), group = _sync_group_of(exp, db_session, 2)
     group.below_quorum = below_quorum
+    if shared_cohort:
+        cohort = SimpleSyncGroup(
+            group_type="cohort",
+            initial_group_size=2,
+            max_group_size=2,
+            min_group_size=2,
+            n_active_participants=2,
+            below_quorum=below_quorum,
+            accepts_top_ups=False,
+        )
+        db_session.add(cohort)
+        for participant in (waiter, absent):
+            cohort.add_participant(participant)
     _cue_team(exp, [waiter, absent], 0)
     _passes.clear()
     submitted = GroupBarrier(
@@ -1603,10 +1713,15 @@ def test_case_max_wait_time_runs_out(
 
     assert _waiting_at(submitted, [waiter]) == [] and _passes == []
     assert (waiter.failed, absent.failed) == (waiter_fails, absent_fails)
-    assert waiter.current_trial.sync_group_outcome == (
-        "left_experiment" if waiter_fails else "waited_too_long"
-    )
-    if not waiter_fails:
+    assert waiter.current_trial.sync_group_outcome == "waited_too_long"
+    assert waiter.sync_group_removal_reason("main") == "waited_too_long"
+    if shared_cohort:
+        assert waiter.sync_group_removal_reason("cohort") == "left_experiment"
+    if waiter_fails:
+        assert "fail_on_timeout" in waiter.failure_tags
+        assert "sync group below minimum size" not in waiter.failure_tags
+        assert waiter.group_removal_notice is None
+    else:
         assert waiter.group_removal_notice["text"] == (
             "Your partner didn't arrive in time. Please continue."
         )
@@ -1630,6 +1745,7 @@ def test_case_a_group_dissolves_under_a_member_on_a_round_page(
         "group_dissolved",
         "group_dissolved",
     ]
+    assert reader.current_trial.node.sync_group_dissolved_at is not None
     original = exp.timeline
     exp.timeline = Timeline(
         submitted, ModularPage("after", "Round over", time_estimate=1)

@@ -16,6 +16,7 @@ from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
     Column,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -422,8 +423,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             "player in it, and why the player left the group when they leave "
             "it there, one of the reasons of "
             ":meth:`~psynet.sync.SyncGroup.remove_participant`, such as "
-            '``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or '
-            '``"removed"`` without a reason. The latest of these is kept. '
+            '``"late"``, ``"waited_too_long"``, ``"left_experiment"`` or '
+            '``"group_dissolved"``, or ``"removed"`` without a reason. The latest of these is kept. '
             "Barriers and departures after the trial's pages, such as in "
             ":meth:`show_feedback` or between rounds, write nothing. ``None`` "
             "while nothing has happened yet, and for ungrouped trials."
@@ -4520,6 +4521,18 @@ class SyncGroupNode(GenericTrialNode):
     # after which the round takes no members who have no trial on it. Set
     # under the round lock that for_cue holds, so a cue reads it consistently.
     sync_group_closed = Column(Boolean, default=False)
+    #: When the group dissolved during this round, or ``None`` if it didn't.
+    #: Set when the group dissolves (see :ref:`groups_below_min_size`) while
+    #: a member still in the group is in their trial on this node (the
+    #: trial's ``complete`` is ``False``) and no
+    #: :class:`~psynet.sync.GroupBarrier` has closed the round
+    #: (``sync_group_closed``). So a round the group finished stays ``None``
+    #: even if a member is still on a page after the barrier, and so does a
+    #: round whose remaining members' trials had all ended before the group
+    #: dissolved. Written under
+    #: the round lock, like ``sync_group_closed``, so it is never set on a
+    #: round that a barrier closed.
+    sync_group_dissolved_at = Column(DateTime)
 
     def __init__(self, module_id, experiment, group, round_number, definition):
         super().__init__(module_id, experiment)
