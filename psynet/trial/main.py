@@ -1,3 +1,4 @@
+import copy
 import datetime
 import random
 from dataclasses import dataclass
@@ -50,6 +51,7 @@ from ..field import PythonDict, PythonObject, VarStore
 from ..page import InfoPage, UnsuccessfulEndPage, WaitPage, wait_while
 from ..participant import Participant
 from ..sync import (
+    INTERRUPTED_BY_RELEASE,
     GroupBarrier,
     LateAction,
     ParticipantLinkSyncGroup,
@@ -329,13 +331,32 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         barriers credit the time actually spent waiting for the others.
 
     response_id : int
-        ID of the associated :class:`~psynet.timeline.Response` object.
-        Equals ``None`` if no such object has been created yet.
+        ID of :attr:`response`.
 
     response :
-        The associated :class:`~psynet.timeline.Response` object,
-        which records in detail the response received from the participant's web browser.
-        Equals ``None`` if no such object has been created yet.
+        The :class:`~psynet.timeline.Response` from the last accepted page of
+        :meth:`~psynet.trial.main.Trial.show_trial` (normally the one that
+        completed the trial), which records in detail what the participant's
+        web browser sent. With several pages (for example with
+        ``accumulate_answers``), find every response of the trial, including
+        rejected submissions, through :attr:`psynet.timeline.Response.trial_id`.
+        Equals ``None`` until the participant submits a trial page.
+
+    time_taken : float
+        Time in seconds that the participant spent on the pages of
+        :meth:`~psynet.trial.main.Trial.show_trial`, summed over its pages.
+        Each page counts from when it loaded to when its answer was accepted,
+        so a submission rejected by validation adds nothing of its own, and a
+        page that submits itself (for example when a recording or countdown
+        ends) counts up to that submission. Feedback pages are not included.
+        A trial failed by :attr:`~psynet.trial.main.TrialMaker.response_timeout_sec`
+        keeps the time of the pages answered so far, and of any the participant
+        answers afterwards. Pages submitted after the participant fails, such as
+        the unsuccessful-end page, are not included.
+        Bots report each page's ``time_estimate``. A page that reports no time,
+        such as ``UnityPage``, adds nothing, so a trial whose pages are all of
+        that kind keeps ``None``.
+        Equals ``None`` until the participant submits a trial page.
     """
 
     __tablename__ = "trial"
@@ -394,17 +415,18 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         doc=(
             "How the group's round ended for this player, for a trial made by "
             ":meth:`Trial.cue` on a :class:`SyncGroupNode`, one of "
-            ':data:`~psynet.sync.SyncGroupOutcome`: ``"stayed"`` '
-            "once a :class:`~psynet.sync.GroupBarrier` releases the group while "
-            "this is the player's current trial, or why the player left the "
-            "group, one of the reasons of "
+            ":data:`~psynet.sync.SyncGroupOutcome`. It is written during "
+            "the trial's pages, that is, before :attr:`complete` is set: "
+            '``"stayed"`` when a :class:`~psynet.sync.GroupBarrier` in those '
+            "pages, such as in :meth:`show_trial`, releases the group with the "
+            "player in it, and why the player left the group when they leave "
+            "it there, one of the reasons of "
             ":meth:`~psynet.sync.SyncGroup.remove_participant`, such as "
             '``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or '
-            '``"removed"`` without a reason. The first of these is kept, '
-            "except that leaving before :attr:`complete` is set replaces "
-            '``"stayed"``, and ``"moved_on"`` or ``"finished"`` after it is set '
-            "stores nothing. ``None`` while nothing has happened yet, and for "
-            "ungrouped trials."
+            '``"removed"`` without a reason. The latest of these is kept. '
+            "Barriers and departures after the trial's pages, such as in "
+            ":meth:`show_feedback` or between rounds, write nothing. ``None`` "
+            "while nothing has happened yet, and for ungrouped trials."
         ),
     )
     definition = Column(PythonObject)
@@ -414,8 +436,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         doc=(
             "Whether the trial has been completed (i.e. received a response from the "
             "participant). It is set once all of :meth:`show_trial`'s pages have "
-            "ended, before :meth:`show_feedback`. The user should not typically "
-            "change this directly."
+            "ended, before :meth:`show_feedback`, and also when a barrier's "
+            "release ends the trial's page in ``waiting_logic`` before it is "
+            "answered, in which case the trial is failed with "
+            '``failed_reason="interrupted_by_release"``, not finalized, and '
+            "gets no :meth:`show_feedback`. "
+            "The user should not typically change this directly."
         ),
     )
 
@@ -508,7 +534,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     parent_trial = relationship(
         "psynet.trial.main.Trial", foreign_keys=[parent_trial_id], uselist=False
     )
-    response = relationship("psynet.timeline.Response")
+    response = relationship(
+        "psynet.timeline.Response", foreign_keys=[response_id], post_update=True
+    )
 
     async_jobs = relationship("AsyncJob")
     async_processes = _deprecated_async_processes
@@ -1246,10 +1274,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         members cue in one module and round share one :class:`SyncGroupNode`,
         whose ``var`` holds the group's results for the round. ``cue`` numbers
         each group's rounds from 0 by itself: a cue joins the group's newest
-        round while it is open, that is until any barrier of that round
-        releases the group or every other current member's trial on it has
-        ended, and otherwise starts the next. So a newcomer joins a round only
-        before its first barrier releases. Each trial records
+        round while it is open, that is until a barrier of that round
+        releases the group, and otherwise starts the next. So a newcomer
+        joins a round only before its first barrier releases. Each trial records
         ``sync_group_id``, ``sync_group_role`` and ``sync_group_round``; see
         :ref:`rounds-cued-trials` for the rules. In short:
 
@@ -1273,8 +1300,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           Once started, the trial runs to its end even if they leave the
           group, so :meth:`show_feedback` can explain every outcome.
         - :attr:`sync_group_outcome` records how the round ended for the
-          player: ``"stayed"`` once a barrier released the group with
-          them in it, or why they left the group.
+          player: ``"stayed"`` once a barrier in the trial's pages released
+          the group with them in it, or why they left the group during
+          those pages.
           A partner's is on their trial in
           ``self.node.all_trials``.
 
@@ -1329,11 +1357,16 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             guard later steps that read it, for example with a
             :func:`~psynet.timeline.conditional` on
             ``participant.current_trial is not None``. Rounds are ordered by
-            when the group first plays them, not by number. Only for a trial
-            class that sets
-            :attr:`sync_group_type`, and not with a regrouper, whose groups
-            mix players at different loop positions. Ignored for a
-            participant without a group. See
+            when the group first plays them, not by number. A module whose
+            cues pass ``round`` runs once per participant, so give each run
+            of it its own module id: its cues raise an error if the
+            participant has run the module before. Cueing a round again
+            after a later one, even one the participant skipped, or a trial
+            class again in the same round, also raises an error. Only
+            for a trial class that sets :attr:`sync_group_type`, and not with a
+            regrouper, whose groups mix players at different loop positions.
+            For a participant without a group, ``round`` doesn't select a
+            node: they get an ungrouped trial. See
             :ref:`a fixed group's loop <rounds-fixed-group-loop>`.
 
         Examples
@@ -1491,7 +1524,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             node = cls.get_default_parent_node(participant, experiment)
             return node, None, make_definition(round_number)
         node = SyncGroupNode.for_cue(
-            group, round_number, participant, experiment, make_definition
+            group, round_number, participant, experiment, make_definition, cls
         )
         if node is None:
             logger.info(
@@ -1614,7 +1647,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         trial.time_credit_from_trial = (
             trial.time_credit_after_trial - trial.time_credit_before_trial
         )
-        if trial.check_time_credit_received and trial.sync_group_id is None:
+        if (
+            trial.check_time_credit_received
+            and trial.sync_group_id is None
+            and not trial.failed
+        ):
             original_estimate = cls._get_trial_time_estimate(
                 trial_maker=trial.trial_maker
             )
@@ -1650,6 +1687,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                     getattr(trial, "id", None),
                 )
                 return
+            if trial.failed_reason == INTERRUPTED_BY_RELEASE:
+                # A barrier's release ended the trial's page before it was answered.
+                trial.complete = True
+                return
 
             answer = participant.answer
 
@@ -1683,6 +1724,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             label=label,
             condition=lambda experiment, participant: (
                 not participant.current_trial._recording_failed
+                and participant.current_trial.failed_reason != INTERRUPTED_BY_RELEASE
                 and participant.current_trial.gives_feedback(experiment, participant)
             ),
             logic_if_true=join(
@@ -1783,13 +1825,47 @@ def _initialized_in(participant, trial_maker_id) -> bool:
     return state.trial_maker_initialized
 
 
-class _InitParticipantBarrier(GroupBarrier):
-    """The barrier at which a synchronized trial maker initializes its group, leader first.
+def _current_group_run(group, trial_maker_id):
+    """Return ``group``'s current run of the trial maker, or ``None`` before its first.
 
-    Members wait here until the leader is initialized in this run of the
-    trial maker. After that, anyone who arrives passes straight through and
-    initializes alone, including a newcomer who arrived while the group's
-    release was committing.
+    A run is a dict in ``group.trial_maker_runs``: the group's choices for
+    that run (``participant_group``, and for chain trial makers
+    ``block_order`` and ``block_position``), set by the first member
+    initialized, and the ``members`` who started it.
+    """
+    runs = (group.trial_maker_runs or {}).get(trial_maker_id, [])
+    return runs[-1] if runs else None
+
+
+def _edit_group_runs(group, trial_maker_id, edit):
+    """Apply ``edit`` to the list of ``group``'s runs of the trial maker and store it.
+
+    Members' requests write the runs concurrently, so this first rereads
+    them holding the group's row lock until the transaction ends;
+    otherwise one request could overwrite another's change. Unlike the group
+    locks that skip locked rows, this waits for the lock, so call it only
+    after taking any participant locks (participants first, then the group)
+    to avoid deadlocks.
+    """
+    db.session.flush()
+    db.session.refresh(group, ["trial_maker_runs"], with_for_update={"key_share": True})
+    # A copy, so the edit doesn't change the loaded value it is compared with.
+    all_runs = copy.deepcopy(dict(group.trial_maker_runs or {}))
+    runs = all_runs.get(trial_maker_id, [])
+    edit(runs)
+    all_runs[trial_maker_id] = runs
+    group.trial_maker_runs = all_runs
+
+
+class _InitParticipantBarrier(GroupBarrier):
+    """The barrier at which a synchronized trial maker starts each run of its group.
+
+    The group's release starts the group's next run (see
+    :meth:`TrialMaker._init_participants_in_sync_group`). A member who
+    hasn't started the group's current run, such as a newcomer joining play
+    in progress, passes straight through and copies its choices. A member
+    who already played the current run, as when they loop quickly, waits
+    for the group to start the next one.
     """
 
     _lets_newcomers_through = True
@@ -1798,13 +1874,14 @@ class _InitParticipantBarrier(GroupBarrier):
         super().__init__(
             trial_maker.with_namespace("init_participant"),
             on_release=trial_maker._init_participants_in_sync_group,
+            expected_wait=3.0,
             **trial_maker._sync_group_barrier_kwargs(),
         )
         self.trial_maker_id = trial_maker.id
 
-    def _lets_through(self, group, module_id) -> bool:
-        leader = group.leader
-        return leader is not None and _initialized_in(leader, self.trial_maker_id)
+    def _lets_through(self, group, participant) -> bool:
+        run = _current_group_run(group, self.trial_maker_id)
+        return run is not None and participant.id not in run["members"]
 
 
 class TrialMakerState(ModuleState):
@@ -2267,7 +2344,7 @@ class TrialMaker(Module):
         )
 
     def _init_participant(self):
-        # The barrier makes sure the group's leader is initialized first.
+        # The barrier's release starts each run of the group.
         barrier = [] if self.sync_group_type is None else _InitParticipantBarrier(self)
         return join(
             barrier,
@@ -2284,11 +2361,17 @@ class TrialMaker(Module):
     def _is_initialized(self, participant):
         return _initialized_in(participant, self.id)
 
-    def _init_participants_in_sync_group(self, group: SyncGroup, experiment):
-        if not self._is_initialized(group.leader):
-            self.init_participant(experiment, group.leader)
-        for participant in group.active_participants:
-            if participant != group.leader and not self._is_initialized(participant):
+    def _init_participants_in_sync_group(
+        self, group: SyncGroup, participants, experiment
+    ):
+        """Start the group's next run and initialize the members it released, leader first.
+
+        The first member initialized makes the run's choices and the others
+        copy them (see :meth:`init_participant_group`).
+        """
+        _edit_group_runs(group, self.id, lambda runs: runs.append({"members": []}))
+        for participant in sorted(participants, key=lambda p: p != group.leader):
+            if not self._is_initialized(participant):
                 self.init_participant(experiment, participant)
 
     @property
@@ -2624,8 +2707,27 @@ class TrialMaker(Module):
         participant.select_module(self.id)
         participant.module_state.n_completed_trials = 0
         participant.module_state.in_repeat_phase = False
+        self._join_group_run(participant)
         self.init_participant_group(experiment, participant)
         participant.module_state.trial_maker_initialized = True
+
+    def _join_group_run(self, participant):
+        """Record the participant as a member of their group's current run.
+
+        This rereads the group's runs under its row lock, which is held until
+        the transaction ends, so the run whose choices they then copy or make
+        is the one they joined, even if the group's release was starting a
+        new run meanwhile.
+        """
+        group = self._active_sync_group(participant)
+        if group is None:
+            return
+
+        def join(runs):
+            if runs:
+                runs[-1]["members"].append(participant.id)
+
+        _edit_group_runs(group, self.id, join)
 
     def _active_sync_group(self, participant):
         """Return the participant's active group of ``sync_group_type``, if any."""
@@ -2633,25 +2735,42 @@ class TrialMaker(Module):
             return None
         return participant.active_sync_groups.get(self.sync_group_type)
 
-    def _leader_state(self, sync_group):
-        """Return the group leader's state for this trial maker.
+    def _group_run(self, participant):
+        """Return the participant's group and its current run of this trial maker.
 
-        The leader may already be in a later module, so this reads their state
-        for this trial maker rather than their current module state.
+        The run is ``None`` if the participant has no group or their group
+        hasn't started a run.
         """
-        return sync_group.leader.module_states[self.id][-1]
+        group = self._active_sync_group(participant)
+        run = None if group is None else _current_group_run(group, self.id)
+        return group, run
+
+    def _update_group_run(self, group, **values):
+        """Store ``values`` in ``group``'s current run of this trial maker."""
+        _edit_group_runs(group, self.id, lambda runs: runs[-1].update(values))
 
     def init_participant_group(self, experiment, participant):
-        if participant.module_state.participant_group:
+        """Set the participant's group for this trial maker.
+
+        In a synchronized trial maker, members copy it from their group's
+        current run, so newcomers and a promoted leader keep the group's;
+        otherwise, or for the run's first member, ``choose_participant_group``
+        chooses it. A group already set on the participant is kept, and
+        recorded as the run's if the run has none yet.
+        """
+        group, run = self._group_run(participant)
+        preset = participant.module_state.participant_group
+        if preset:
+            if run is not None and "participant_group" not in run:
+                self._update_group_run(group, participant_group=preset)
             return
 
-        sync_group = self._active_sync_group(participant)
-        is_follower = sync_group and participant != sync_group.leader
-        if is_follower:
+        if run is not None and "participant_group" in run:
             logger.info(
-                f"participant = {participant.id}, sync_group id = {sync_group.id}"
+                f"participant = {participant.id} copies the participant group "
+                f"of sync_group id = {group.id}"
             )
-            participant_group = self._leader_state(sync_group).participant_group
+            participant_group = run["participant_group"]
         else:
             if self.choose_participant_group is None:
                 participant_group = "default"
@@ -2659,6 +2778,8 @@ class TrialMaker(Module):
                 participant_group = self.choose_participant_group(
                     participant=participant,
                 )
+            if run is not None:
+                self._update_group_run(group, participant_group=participant_group)
         participant.module_state.participant_group = participant_group
 
     def on_complete(self, experiment, participant):
@@ -2970,7 +3091,8 @@ class TrialMaker(Module):
             self._wait_for_trial(),
             conditional(
                 "is_trial_available",
-                condition=lambda participant: participant.trial_status != "exit",
+                # A release can end the wait for a trial while the status is "wait".
+                condition=lambda participant: participant.trial_status == "available",
                 logic_if_true=self.trial_class.trial_logic(trial_maker=self),
                 logic_if_false=CodeBlock(
                     lambda: logger.debug("No trial found, skipping")
@@ -4377,7 +4499,7 @@ class SyncGroupNode(GenericTrialNode):
     # No foreign key, as on Trial.sync_group_id.
     sync_group_id = Column(Integer, index=True)
     sync_group_round = Column(Integer)
-    # Set when a GroupBarrier releases the group with all its trials here,
+    # Set when a GroupBarrier in the round's trials releases the group,
     # after which the round takes no members who have no trial on it. Set
     # under the round lock that for_cue holds, so a cue reads it consistently.
     sync_group_closed = Column(Boolean, default=False)
@@ -4394,8 +4516,8 @@ class SyncGroupNode(GenericTrialNode):
         return db.session.get(SyncGroup, self.sync_group_id)
 
     @staticmethod
-    def _round_is_open(node, group, participant):
-        """Whether ``participant``'s cue should join ``node``, a round of ``group``.
+    def _round_is_open(node, participant):
+        """Whether ``participant``'s cue may join ``node`` as a newcomer to that round.
 
         ``node`` is the group's newest round for an automatic cue, or the
         round a cue's ``round`` names, which may be a past one.
@@ -4404,23 +4526,32 @@ class SyncGroupNode(GenericTrialNode):
         return played.first() is None and not node.sync_group_closed
 
     @classmethod
-    def for_cue(cls, group, round_number, participant, experiment, make_definition):
+    def for_cue(
+        cls, group, round_number, participant, experiment, make_definition, trial_class
+    ):
         """Return the node that ``participant``'s cued trial joins, creating it if needed.
 
         Without ``round_number``, this is the group's newest node in the module
         while that round is open and the participant has no trial on it. A
-        round is open until a :class:`~psynet.sync.GroupBarrier` releases the
-        group with all its trials on the node, which sets
+        round is open until a :class:`~psynet.sync.GroupBarrier` in the
+        round's trials (in ``show_trial``) releases the group, which sets
         ``sync_group_closed``; a round without such a barrier never closes.
         Otherwise the group moves on to a new node for the next round,
         counted from 0, which the others then join.
         With ``round_number``, it is the group's node for that round, or
-        ``None`` if the group finished that round without the participant:
-        they have no trial on it and it is no longer open. A new node's
+        ``None`` if it is no longer open and the participant isn't playing it,
+        as when the group finished it without them, or if they have a trial
+        of ``trial_class`` on it from before they left and rejoined the
+        group. Naming a round when
+        the participant has run this module before raises a
+        ``RuntimeError``, because the group's nodes for the module would be
+        reused; so does naming a round in which they already have a trial of
+        ``trial_class``, or one before a round they played or skipped (see
+        :meth:`_named_round`).
+        ``trial_class`` is the class of the cued trial. A new node's
         definition is ``make_definition(round_number)``. Either way, the
         participant's link to ``group`` records the round as the one they
-        last cued or skipped, for :class:`~psynet.sync.GroupBarrier` to tell
-        whom a round's barriers wait for.
+        last cued or skipped, so a later cue can't name it again.
 
         The group's members cue their trials in parallel requests, so this
         holds an advisory lock on the module and group until the request
@@ -4437,26 +4568,27 @@ class SyncGroupNode(GenericTrialNode):
             )
             if newest is None:
                 round_number = 0
-            elif cls._round_is_open(newest, group, participant):
+            elif cls._round_is_open(newest, participant):
                 _record_round_position(group, participant, newest)
                 return newest
             else:
                 round_number = newest.sync_group_round + 1
         else:
+            if len(participant.module_states.get(module_id, [])) > 1:
+                raise RuntimeError(
+                    f"Participant {participant.id} cued round {round_number} of "
+                    f"'{group.group_type}' group {group.id} in module "
+                    f"'{module_id}' again: the participant has run this module "
+                    "before. A module whose cues pass round= can run only once "
+                    "per participant; give each run of it its own module id."
+                )
             node = (
                 nodes.filter_by(sync_group_round=round_number)
                 .populate_existing()
                 .one_or_none()
             )
             if node is not None:
-                played = Trial.query.filter_by(
-                    node_id=node.id, participant_id=participant.id
-                ).first()
-                if played is None and node.sync_group_closed:
-                    _record_round_position(group, participant, node, skipped=True)
-                    return None
-                _record_round_position(group, participant, node)
-                return node
+                return cls._named_round(node, group, participant, trial_class)
         node = cls(
             module_id, experiment, group, round_number, make_definition(round_number)
         )
@@ -4466,13 +4598,62 @@ class SyncGroupNode(GenericTrialNode):
         _record_round_position(group, participant, node)
         return node
 
+    @classmethod
+    def _named_round(cls, node, group, participant, trial_class):
+        """Return ``node``, a round named by ``round=``, or ``None`` if the participant skips it.
+
+        Raises a ``RuntimeError`` if the participant has a trial of
+        ``trial_class`` on the round they are playing, or their stored round
+        in this module is one played after it, whether they played or
+        skipped either. So a skip never moves their stored round back.
+        A member who left and rejoined the group has no stored round, so
+        they skip a round in which they already have a trial of
+        ``trial_class``, like a closed round.
+        """
+        link = _member_link(group, participant)
+        stored = link.round_node_id and db.session.get(cls, link.round_node_id)
+        playing = link.round_node_id == node.id and not link.skipped_round
+        played_after = (
+            stored and stored.module_id == node.module_id and stored.id > node.id
+        )
+        has_trial = (
+            trial_class.query.filter_by(
+                node_id=node.id, participant_id=participant.id
+            ).first()
+            is not None
+        )
+        if played_after or (playing and has_trial):
+            raise RuntimeError(
+                f"Participant {participant.id} cued {trial_class.__name__} for "
+                f"round {node.sync_group_round} of '{group.group_type}' group "
+                f"{group.id} again in module '{node.module_id}', after it or a "
+                "later round. A round takes one trial of each class, and "
+                "can't be cued after a round played after it."
+            )
+        if playing:
+            # Another trial class cued in the round the participant is playing.
+            return node
+        if not node.sync_group_closed and not has_trial:
+            _record_round_position(group, participant, node)
+            return node
+        _record_round_position(group, participant, node, skipped=True)
+        return None
+
+
+def _member_link(group, participant):
+    """Return ``participant``'s active link to ``group``."""
+    return next(
+        link
+        for link in group.participant_links
+        if link.active and link.participant_id == participant.id
+    )
+
 
 def _record_round_position(group, participant, node, skipped=False):
     """Store ``node`` as the round of ``group`` that ``participant`` last cued or skipped."""
-    for link in group.participant_links:
-        if link.active and link.participant_id == participant.id:
-            link.round_node_id = node.id
-            link.skipped_round = skipped
+    link = _member_link(group, participant)
+    link.round_node_id = node.id
+    link.skipped_round = skipped
 
 
 # SyncGroupNode shares the node table, and SQLAlchemy doesn't accept

@@ -1,0 +1,1 @@
+Fixed a `GroupBarrier` on a group that accepts top-ups (`join_existing_groups=True`) sometimes releasing the group without a newcomer whose join committed while the barrier was checking. Every `GroupBarrier` now locks such a group while it decides, as `stop_top_ups=True` barriers already did, so a newcomer joins either before the check counts them or after the group has passed.

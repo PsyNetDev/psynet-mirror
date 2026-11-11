@@ -33,6 +33,18 @@ Barrier definition and instance
     identities separate lets multiple worker processes cooperate without using
     mutable metadata as a mutex.
 
+Whom a group barrier waits for
+    A ``GroupBarrier`` waits for every active member of its group, wherever
+    they are in the timeline; nothing about their position is inferred. A
+    member stops being waited for only by leaving the group (``leave_group``,
+    ``late_action``, ``max_wait_action``, failing or finishing). The
+    release's round, if any, is the node that every released member's
+    unfinished cued trial is on (``_common_round_node``). If every member is
+    waiting, but no barrier of the group has them all, nothing can pass:
+    each ``check_barriers`` sweep looks for such groups
+    (``_report_divergences``) and records each as an error once, with a
+    token naming the group so later sweeps skip it.
+
 Where this shows up in a timeline
 ---------------------------------
 The most common pattern is:
@@ -65,13 +77,15 @@ this module. That loop:
   connection, leaving definition and instance metadata available to arrival
   requests. That extra transaction stays open until this poller's
   skip-after-commit finishes.
-- Locks waiters with ``FOR UPDATE NOWAIT``. If any waiter is already locked
-  (for example by ``POST /response``), it skips that barrier this tick instead
-  of blocking the poller.
+- Locks waiters, and their groups that accept top-ups, with ``NOWAIT``. If a
+  waiter or top-up group is already locked (for example by
+  ``POST /response`` or a newcomer joining), it skips that barrier this tick
+  instead of blocking the poller.
 - Evaluates the barrier's release hooks in an isolated transaction, then
   skips waiters **this poller** released, one row at a time, after that commit.
 - Logs and skips failures per barrier so one bad barrier does not stall others.
 - Keeps hold-wake publishes unpublished until the sweep returns.
+- Reports groups whose members wait at different barriers of the group.
 
 Each default barrier visit links to a durable ``TimelineHoldRecord``. Releasing
 the link accounts waiting through the release time and queues a targeted browser
@@ -84,10 +98,18 @@ browser then rechecks the authoritative link state. See "Timeline holds" in
 arrival transaction commits, the response route evaluates the barrier in a
 short coordination transaction before rendering. That lets a ``Grouper`` form
 groups and a ``GroupBarrier`` release the group without waiting for the poller.
+Arrivals submitted with Next at a ``Regrouper`` with ``every`` are usually the
+exception: they cannot make the pool ready, so they queue no check and the
+poller normally enacts each due tick. An arrival or reload in ``GET /timeline``
+still checks the waiter's visit (see PsyNet issue #1159).
+Ungrouped arrivals at a ``within`` regrouper, and subclasses that override
+``choose_who_to_release`` or ``check_waiting_participants``, keep the arrival
+check; see
+:meth:`Regrouper._queue_check_on_arrival`.
 Last-arrival does not skip partner timeline cursors after that commit; partners
-leave on overlay wake (or this poller, if it won the release). Waiter rows stay
-``NOWAIT`` during the check so a locked partner cannot stall that request for
-``lock_timeout``.
+leave on overlay wake (or this poller, if it won the release). Waiter and
+top-up group rows stay ``NOWAIT`` during the check so a locked partner or group
+cannot stall that request for ``lock_timeout``.
 
 Callable attributes on barriers (e.g., ``on_release``) persist through
 :mod:`psynet.barrier_spec` so each ``BarrierInstance`` keeps stable release
@@ -97,10 +119,10 @@ methods are live-only.
 """
 
 import inspect
+import logging
 import random
 import time
 import uuid
-from collections import Counter
 from contextlib import contextmanager
 from datetime import timedelta
 from functools import partial
@@ -110,9 +132,10 @@ from typing import (
     Dict,
     List,
     Literal,
-    NamedTuple,
     Optional,
     Sequence,
+    Set,
+    Tuple,
     Union,
     get_args,
 )
@@ -130,6 +153,8 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    and_,
+    exists,
     func,
     or_,
     select,
@@ -141,6 +166,7 @@ from sqlalchemy.orm import (
     Session,
     backref,
     deferred,
+    foreign,
     joinedload,
     lazyload,
     object_session,
@@ -158,19 +184,23 @@ from psynet.barrier_spec import (
 )
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.db import (
+    _lock_timeout,
     _SessionQueue,
     _set_transaction_lock_timeout,
     is_transient_transaction_error,
+    transaction,
 )
-from psynet.field import PythonClass, PythonObject
+from psynet.error import ErrorRecord
+from psynet.field import PythonClass, PythonDict
 from psynet.page import UnsuccessfulEndPage
-from psynet.participant import Participant
+from psynet.participant import Participant, _lock_and_load_participant
 from psynet.serialize import SerializedCallable, serialize_callable
 from psynet.timeline import (
     TIME_LIMIT_GRACE_SECONDS,
     CodeBlock,
     EltCollection,
     _is_timeline_hold,
+    _trial_owning_page,
     conditional,
     join,
 )
@@ -221,6 +251,11 @@ def _forget_barrier_from_spec(instance_id):
 # Walkers observe once more after the last work unit so a walk that settles on
 # the cap still succeeds.
 _MAX_BARRIER_WALK_PASSES = 32
+
+# Cap on the pages that a release skips in one pass of waiting_logic. While_loops
+# in the pass end at their next check during the walk, so only for_loops and
+# sequences repeat pages; reaching the cap means one of them is very long.
+_MAX_RELEASE_WALK_STEPS = 1000
 
 
 # The 0.5 s poller stops starting overdue timeouts, and separately visit
@@ -421,10 +456,8 @@ def _hold_barrier_instance_claim(instance_id, *, wait=False):
     """
     with db.engine.connect() as conn:
         with conn.begin():
-            timeout = get_config().get("timeline_lock_timeout_seconds")
-            conn.execute(
-                text("SELECT set_config('lock_timeout', :timeout, true)"),
-                {"timeout": f"{timeout}s"},
+            _set_transaction_lock_timeout(
+                get_config().get("timeline_lock_timeout_seconds"), session=conn
             )
             acquired = _execute_advisory_xact_lock(conn, instance_id, wait=wait)
             yield acquired
@@ -450,16 +483,39 @@ def _get_waiting_participants(
 
     ``active_barriers`` and ``sync_group_links`` are populated separately;
     see ``_populate_active_barriers`` and ``_populate_sync_group_links``.
+
+    A locked load that waited would join the waiters' trials as they were
+    before the wait (see :func:`psynet.participant._load_participant_for_update`).
+    So unless ``nowait`` is set, a bare statement takes the locks first and
+    the joined load, limited to the links it locked, then runs with
+    ``NOWAIT``, which cannot fail on rows already held.
     """
+    criteria = [
+        ParticipantLinkBarrier.barrier_id == barrier_id,
+        ParticipantLinkBarrier.barrier_instance_id == barrier_instance_id,
+        ~ParticipantLinkBarrier.released,
+        ~Participant.failed,
+        Participant.status == "working",
+    ]
+    if for_update and not nowait:
+        locked_link_ids = (
+            db.session.execute(
+                select(ParticipantLinkBarrier.id)
+                .join(Participant)
+                .where(*criteria)
+                .order_by(Participant.id)
+                .with_for_update(of=[ParticipantLinkBarrier, Participant])
+            )
+            .scalars()
+            .all()
+        )
+        if not locked_link_ids:
+            return []
+        criteria.append(ParticipantLinkBarrier.id.in_(locked_link_ids))
+        nowait = True
     query = (
         ParticipantLinkBarrier.query.join(Participant)
-        .filter(
-            ParticipantLinkBarrier.barrier_id == barrier_id,
-            ParticipantLinkBarrier.barrier_instance_id == barrier_instance_id,
-            ~ParticipantLinkBarrier.released,
-            ~Participant.failed,
-            Participant.status == "working",
-        )
+        .filter(*criteria)
         .options(
             joinedload(ParticipantLinkBarrier.participant, innerjoin=True).options(
                 lazyload(Participant.active_barriers),
@@ -721,24 +777,39 @@ class _BarrierHoldPage(_TimelineHoldPage):
         self.barrier._queue_check_on_arrival(link.barrier_instance)
         self.barrier._notify_arrivals(participant)
 
-    def hold_progress_text(self, participant):
+    def hold_progress_text(self, participant, counts=None):
         """Return arrival progress for a participant waiting at this barrier."""
         if participant is None:
             return None
-        return self.barrier._hold_progress_text(participant)
+        return self.barrier._hold_progress_text(participant, counts)
 
-    def overlay_html(self, participant=None, release_time=NoArgumentProvided):
+    def overlay_html(
+        self, participant=None, release_time=NoArgumentProvided, *, counts=None
+    ):
         """Return hold copy, calling a ``waiting_message`` function and filling in ``{SECONDS}``.
 
-        ``release_time`` (epoch seconds, or ``None`` if unknown) defaults to the
-        barrier's :meth:`~Barrier.expected_release_time`.
+        Parameters
+        ----------
+        participant : Participant, optional
+            The waiting participant.
+        release_time : float or None, optional
+            Epoch seconds, or ``None`` if unknown. Defaults to the barrier's
+            :meth:`~Barrier.expected_release_time`.
+        counts : dict, optional
+            The barrier's hold message counts for ``participant``
+            (``waiting_count`` and ``group_size``). Callers
+            that render the overlay for every member of a group pass them,
+            so the group is not recounted per member.
         """
+        if self._is_silent_for(participant):
+            return compose_hold_overlay_html("", None)
         message = self.waiting_message
         message_is_function = isinstance(message, SerializedCallable)
         if not message_is_function and "{SECONDS}" not in str(message or ""):
-            return super().overlay_html(participant)
-        if self._is_silent_for(participant):
-            return compose_hold_overlay_html("", None)
+            return compose_hold_overlay_html(
+                self.translated_waiting_message(participant),
+                self.hold_progress_text(participant, counts),
+            )
         if release_time is NoArgumentProvided:
             release_time = (
                 None
@@ -760,17 +831,21 @@ class _BarrierHoldPage(_TimelineHoldPage):
             _p = get_translator(context=True)
             return compose_hold_overlay_html(
                 _p("timeline_hold", "Waiting for other participants…"),
-                self.hold_progress_text(participant),
+                self.hold_progress_text(participant, counts),
             )
         if message_is_function:
+            if counts is None:
+                counts = self.barrier._hold_message_counts(participant)
             context = {} if participant is None else {"participant": participant}
             message = message(
                 barrier=self.barrier,
                 seconds_left=seconds,
                 **context,
-                **self.barrier._hold_message_counts(participant),
+                **counts,
             )
-        html = compose_hold_overlay_html(message, self.hold_progress_text(participant))
+        html = compose_hold_overlay_html(
+            message, self.hold_progress_text(participant, counts)
+        )
         if "{SECONDS}" not in html:
             return html
         if remaining_ms is None or remaining_ms <= 0:
@@ -893,7 +968,13 @@ class Barrier(EltCollection):
         trials, and ``waiting_screen`` to show them something. If left at the
         default value of ``None``, the participant sees ``waiting_screen``,
         or their current page beneath a lightweight waiting indicator.
-        Several barriers can share the same elements.
+        Several barriers can share the same elements. Keep it atomic, with
+        one short trial or page per pass (the loop repeats it), such as
+        ``PageMaker(trial_maker.cue_trial, ...)`` in the ``sync_quorum``
+        demo: a release then fails at most the trial on screen and creates
+        no unseen trials (see ``release_grace``). A barrier with
+        ``waiting_logic`` can't be inside a trial's own pages, such as in
+        ``Trial.show_trial``; use ``waiting_screen`` there.
 
     waiting_logic_expected_repetitions
         Deprecated; pass ``expected_wait`` instead. Expected repetitions of
@@ -949,7 +1030,9 @@ class Barrier(EltCollection):
         :class:`~psynet.trial.main.SyncGroupNode`, or ``None`` if it is on
         another kind of node), for example
         ``waiting_screen(trial, node)`` to show the player's answer and the
-        round's state. It runs on each request (a page load
+        round's state. At a grouper or :class:`Regrouper`, ``trial`` is the
+        participant's previous trial, such as the previous round's, because
+        ``current_trial`` only changes when the next trial is cued. It runs on each request (a page load
         or a check for the release), sometimes more than once, so base it on
         the participant's state
         rather than on chance. Returning ``None`` keeps the current page, as
@@ -965,9 +1048,18 @@ class Barrier(EltCollection):
         Seconds a participant on a ``waiting_logic`` page has to finish it
         once they are released; the page then ends without an answer,
         recorded with ``"interrupted": True`` in its response metadata.
-        ``None`` lets each waiting page run to its end. Pages inside trials
-        always run to their end. Default: 3 seconds. Only used with
-        ``waiting_logic``; passing it without raises an error.
+        The rest of the participant's pass of ``waiting_logic`` is then run
+        through without showing its pages (code blocks still run), and each
+        ``while_loop`` in it ends at its next check. This includes the pages of trials in ``waiting_logic``, such as
+        filler trials from a trial maker: a trial whose page ends this way,
+        and any trial that the rest of the pass reaches, which is created
+        but never shown, is failed with
+        ``failed_reason="interrupted_by_release"``, so it isn't finalized,
+        shows no feedback, and doesn't count towards the trial maker's
+        targets of completed trials (it still counts towards
+        ``max_trials_per_block`` and ``n_created_trials``).
+        ``None`` lets each waiting page run to its end. Default: 3 seconds.
+        Only used with ``waiting_logic``; passing it without raises an error.
     """
 
     # Reconstructed barriers skip ``__init__`` and never render a hold page.
@@ -1141,6 +1233,12 @@ class Barrier(EltCollection):
         """
         if object_session(participant) is None:
             db.session.add(participant)
+        if not self._uses_timeline_hold and _trial_owning_page(participant):
+            raise ValueError(
+                f"Barrier '{self.id}' has waiting_logic but is inside the pages "
+                "of a trial, whose release would end that trial without an "
+                "answer. Use waiting_screen for a barrier inside a trial."
+            )
 
         barrier_instance = BarrierInstance.for_arrival(self, participant)
 
@@ -1181,8 +1279,12 @@ class Barrier(EltCollection):
         Live timeline only. Overlay HTML comes from ``waiting_logic``.
         """
 
-    def _hold_progress_text(self, participant):
-        """Return hold-overlay progress copy, if this barrier publishes arrivals."""
+    def _hold_progress_text(self, participant, counts=None):
+        """Return hold-overlay progress copy, if this barrier publishes arrivals.
+
+        ``counts`` are :meth:`_hold_message_counts` for ``participant`` when
+        the caller already has them.
+        """
         return None
 
     def _hold_message_counts(self, participant):
@@ -1312,11 +1414,16 @@ class Barrier(EltCollection):
         waiting_participants.sort(key=lambda p: p.id)
 
         logger.info(
-            "Barrier '%s' currently has %i participant(s) waiting (ids = %s)",
+            "Barrier '%s' currently has %i participant(s) waiting",
             self.id,
             len(waiting_participants),
-            ", ".join([str(p.id) for p in waiting_participants]),
         )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Barrier '%s' waiting participant ids: %s",
+                self.id,
+                ", ".join([str(p.id) for p in waiting_participants]),
+            )
 
         instance = BarrierInstance.query.get(barrier_instance_id)
         other = self._other_active_pool(instance)
@@ -1409,11 +1516,8 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            participant = (
-                experiment._participant_request_query()
-                .with_for_update(of=Participant, nowait=True)
-                .populate_existing()
-                .get(participant_id)
+            participant = _lock_and_load_participant(
+                experiment._participant_request_query(), participant_id, nowait=True
             )
         except Exception as err:
             _rollback_preserving_barrier_queues()
@@ -1449,44 +1553,75 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
             raise
 
 
-def _group_barrier_outcome(group, members, waiting_ids, scope):
-    """Return ``"dissolve"``, ``"release"`` or ``"wait"`` for one group visit.
+def _group_barrier_outcome(group, members, waiting_ids):
+    """Return ``"dissolve"``, ``"release"`` or ``"wait"`` for one visit of ``group``.
 
-    Pure: ``GroupBarrier.would_release`` passes the members and scope it
-    projects will remain, and ``choose_who_to_release`` the live ones, so the
-    peek and the real release share one decision. ``members`` count towards
-    the quorum; the visit releases once all of ``scope.waited_for`` (see
-    :func:`_barrier_scope`) are waiting, if that releases anyone.
+    Pure: ``GroupBarrier.would_release`` passes the members it projects will
+    remain, and ``choose_who_to_release`` the live ones, so the peek and the
+    real release share one decision. ``members`` count towards the quorum,
+    and the visit releases once all of them are waiting.
     """
     if len(members) < group.min_group_size:
         waits_for_top_ups = group.accepts_top_ups and not _top_up_wait_over(group)
         return "wait" if waits_for_top_ups else "dissolve"
-    if all(p.id in waiting_ids for p in scope.waited_for) and any(
-        p.id in waiting_ids for p in scope.releasable
-    ):
+    if all(p.id in waiting_ids for p in members):
         return "release"
     return "wait"
 
 
-def _lock_group_to_stop_top_ups(group) -> bool:
-    """Lock a group that accepts top-ups and re-count its members, or return ``False`` if it is busy.
+#: Longest a newcomer's own request waits for a busy group's row before
+#: waiting at the grouper for the barrier poller instead.
+_JOIN_LOCK_WAIT_SECONDS = 1
 
-    A barrier with ``stop_top_ups=True`` holds the row until it commits, so a
-    newcomer can't join, under the same lock (see
-    ``SimpleGrouper._claim_group_to_join``), between this check's member count
-    and its stopping top-ups. A row another request holds is skipped rather
-    than waited for, because the release may then wait for other locks, such
-    as a round's advisory lock; the next barrier check tries again.
-    ``populate_existing`` also reloads the group's member links, so the count
-    includes newcomers who joined in other requests.
+
+def _lock_sync_group(
+    group_id, *, session=None, skip_locked=False, nowait=False, wait_seconds=None
+) -> Optional["SyncGroup"]:
+    """Lock a sync group's row ``FOR NO KEY UPDATE`` and reload it, with its member links.
+
+    ``populate_existing`` also reloads the member links this session has
+    loaded, so they include members who joined or left in other requests.
+    See the lock order in :doc:`/developer/synchronization_internals`.
+
+    Parameters
+    ----------
+    group_id
+        The group to lock.
+    session
+        The session to lock it in, by default ``db.session``.
+    skip_locked
+        Return ``None`` instead of waiting if another transaction holds the row.
+    nowait
+        Raise PostgreSQL's ``55P03`` (lock not available) instead of waiting.
+    wait_seconds
+        Wait at most this long, in a savepoint, then return ``None`` with
+        the transaction intact; a deadlock also returns ``None``.
+
+    Returns
+    -------
+    SyncGroup or None
+        The locked group, or ``None`` if it doesn't exist or stayed busy.
     """
-    locked = (
-        SimpleSyncGroup.query.filter_by(id=group.id)
-        .with_for_update(of=SimpleSyncGroup, key_share=True, skip_locked=True)
+    if session is None:
+        session = db.session
+    query = (
+        session.query(SyncGroup)
+        .filter_by(id=group_id)
+        .with_for_update(
+            of=SyncGroup, key_share=True, skip_locked=skip_locked, nowait=nowait
+        )
         .populate_existing()
-        .first()
     )
-    return locked is not None
+    if wait_seconds is None:
+        return query.first()
+    try:
+        with _lock_timeout(wait_seconds, session=session):
+            return query.first()
+    except Exception as err:
+        if not is_transient_transaction_error(err):
+            raise
+        logger.debug("Sync group %s stayed busy for %s s.", group_id, wait_seconds)
+        return None
 
 
 #: What a :class:`GroupBarrier` does with a member who is late reaching it; see ``late_action``.
@@ -1546,8 +1681,9 @@ RemovalReason = Literal[
 ]
 REMOVAL_REASONS = (None, *get_args(RemovalReason))
 #: Values of :attr:`~psynet.trial.main.Trial.sync_group_outcome` other than
-#: ``None``: ``"stayed"`` once a barrier releases the group with the player
-#: in it, a :data:`RemovalReason`, or ``"removed"`` for a removal without one.
+#: ``None``: ``"stayed"`` once a barrier in the trial's pages releases the
+#: group with the player in it, a :data:`RemovalReason`, or ``"removed"`` for
+#: a removal without one.
 SyncGroupOutcome = Literal["stayed", "removed", RemovalReason]
 # Reasons for leaving that don't dissolve a group below its quorum.
 _KEEPS_GROUP_REASONS = ("finished", "moved_on")
@@ -1595,8 +1731,21 @@ class GroupBarrier(Barrier):
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
     have reached the Barrier. It also checks the group against its ``quorum``: a group below it
     can't proceed, and waits for newcomers or is dissolved (see :ref:`groups_below_min_size`).
-    When the group's members are on one round of cued trials, a release closes that round to
-    newcomers, whose cues then start the next round (see :ref:`rounds-cued-trials`).
+
+    It waits for every active member of the group, wherever they are in the
+    timeline, until they leave the group: with :func:`leave_group`,
+    ``late_action`` or ``max_wait_action``, or by failing or finishing the
+    experiment. So a member whose part ends before the group's, such as at
+    the end of a loop that runs a different number of times for each member,
+    must leave the group there (see :ref:`sync-leaving-a-group`). When every
+    member it releases is inside the same round's trial of a
+    :meth:`~psynet.trial.main.Trial.cue` with ``sync_group_type``, that is,
+    at a barrier in ``show_trial``, the release closes that round to
+    newcomers, whose cues then start the next round. If every member is
+    waiting but at different barriers of the group, none of them can ever
+    pass: PsyNet records and logs an error naming the barriers, bot tests
+    fail with it, and ``late_after`` or ``max_wait_time`` ends the wait (see
+    :ref:`members at different barriers <rounds-group-barriers-in-loops>`).
 
     After the arrival write commits, the same request evaluates the barrier in
     a short transaction so partners are released without waiting for the 0.5 s
@@ -1627,7 +1776,7 @@ class GroupBarrier(Barrier):
         example filler trials. If left at ``None``, the participant sees
         ``waiting_screen``, or their current page beneath a lightweight
         waiting indicator. Pass ``waiting_message`` to customize that indicator's
-        message.
+        message. See :class:`Barrier` for where ``waiting_logic`` can go.
 
     waiting_logic_expected_repetitions
         Deprecated; pass ``expected_wait`` instead. Expected repetitions of
@@ -1675,19 +1824,13 @@ class GroupBarrier(Barrier):
     on_release
         Optional callback invoked when the barrier releases the group. It may take
         ``group``, ``participants`` (the members it releases: the group's
-        active members, except, at a barrier in or after a round of
-        :meth:`~psynet.trial.main.Trial.cue`, members it didn't wait for who
-        aren't waiting here, such as a late joiner who skipped the round,
-        and members already in a round the group played after it), ``trials``
+        active members), ``trials``
         (each member's ``current_trial``, in the same order as ``participants``,
         for example the trials of a :meth:`~psynet.trial.main.Trial.cue` with
-        ``sync_group_type`` that the barrier is part of, and ``None`` for a
-        member with none), ``node`` (the
-        group's :class:`~psynet.trial.main.SyncGroupNode` for the round, if
-        all those trials are on it, ignoring members with no current trial,
-        and otherwise ``None``), ``leader`` (the
-        group's leader, who may be missing from ``participants``),
-        ``participant`` (the same object as ``leader``, kept for
+        ``sync_group_type`` that the barrier is part of), ``node`` (the
+        group's :class:`~psynet.trial.main.SyncGroupNode` of the round whose
+        trial every released member is in, or ``None``; see :ref:`the barrier's node <sync-barrier-node>`), ``leader`` (the
+        group's leader), ``participant`` (the same object as ``leader``, kept for
         compatibility), ``left`` (the members who left the group since its
         previous barrier pass, or since it formed; see below) and ``barrier``,
         the reconstructed registry object for this
@@ -1716,21 +1859,10 @@ class GroupBarrier(Barrier):
 
         Barriers that share an ``id_`` must pass the same arguments.
 
-    on_dissolve
-        Optional callback invoked when the group dissolves below its quorum
-        while members are waiting at this barrier, before they are removed from
-        the group, so that what they did is not lost. For example, it can score
-        the last question for the members who answered it. It takes the same
-        arguments as ``on_release`` except ``leader`` and ``left``:
-        ``participants`` are the members waiting here, and ``trials`` and
-        ``node`` refer to their current trials. The same serialization rules
-        apply. Dissolving waits until no member's request is in flight, so
-        ``on_dissolve`` is called once, with every member waiting here.
-
     stop_top_ups
         If ``True``, the group stops accepting newcomers once it passes this
         barrier, as :meth:`SimpleSyncGroup.stop_top_ups` does, for example at
-        the barrier that starts a game a latecomer couldn't catch up with.
+        the barrier that starts a game, so nobody joins it once it is under way.
         Only affects groups formed with ``join_existing_groups=True``. A group
         below its quorum doesn't pass, so it keeps waiting here for a newcomer,
         up to the grouper's ``top_up_wait``, if set (see :ref:`groups_below_min_size`).
@@ -1745,10 +1877,11 @@ class GroupBarrier(Barrier):
         in ``show_trial``: newcomers, and members, would skip every pass after the
         first. That includes a module run again, for example in a loop: the
         group's pass in the module's first run counts for later runs too, but a
-        barrier ID used in another module starts afresh. Only the group's
-        release counts as a pass, not a member released on a time-out.
+        barrier ID used in another module starts afresh. Every release of
+        the group counts as a pass, but not a member released on a time-out.
         ``on_release`` doesn't run for those who pass through, so any group
-        state it sets up must not be needed by them. Redundant with
+        state it sets up must not be needed by them, and their passing doesn't
+        count as the group's pass for ``left`` or ``late_after``. Redundant with
         ``stop_top_ups=True``, after which nobody can join.
 
     fix_time_credit
@@ -1836,7 +1969,6 @@ class GroupBarrier(Barrier):
         on_arrival_message: Optional[Callable] = None,
         release_grace: Optional[float] = NoArgumentProvided,
         waiting_screen=None,
-        on_dissolve: Optional[Callable] = None,
         stop_top_ups: bool = False,
         pass_newcomers: bool = False,
     ):
@@ -1860,7 +1992,6 @@ class GroupBarrier(Barrier):
         self.notify_arrivals = bool(notify_arrivals)
         self.late_after = late_after
         self.late_action = late_action
-        self.on_dissolve = on_dissolve
         self.stop_top_ups = bool(stop_top_ups)
         self.pass_newcomers = bool(pass_newcomers)
 
@@ -1884,13 +2015,13 @@ class GroupBarrier(Barrier):
     def _passes_straight_through(self, participant) -> bool:
         """Return whether the participant skips this barrier because their group passed it."""
         group = participant.active_sync_groups.get(self.group_type)
-        return group is not None and self._lets_through(group, participant.module_id)
+        return group is not None and self._lets_through(group, participant)
 
-    def _lets_through(self, group, module_id) -> bool:
-        """Return whether members of ``group`` reaching this barrier in module ``module_id`` pass straight through.
+    def _lets_through(self, group, participant) -> bool:
+        """Return whether ``participant``, a member of ``group`` reaching this barrier, passes straight through.
 
         By default, only with ``pass_newcomers`` once the group has passed
-        here. Only a release of the whole group counts (see
+        here in the participant's module. Only the group's release counts (see
         ``BarrierInstance.group_passed``), not a member released on a time-out.
         The pass is recorded on the visit, so it still counts after every
         member who waited there has left the group or finished the module.
@@ -1901,33 +2032,33 @@ class GroupBarrier(Barrier):
             BarrierInstance.query.filter_by(
                 barrier_id=self.id,
                 group_id=group.id,
-                module_id=module_id,
+                module_id=participant.module_id,
                 group_passed=True,
             ).exists()
         ).scalar()
 
     def _waiters_let_through(self, waiting_participants) -> list:
-        """Return the waiters whose group, by :meth:`_lets_through`, no longer waits here.
+        """Return the waiters who, by :meth:`_lets_through`, no longer wait here.
 
         A newcomer who arrived while their group's release was committing
         can still be waiting here; release checks let them through.
+        ``waiting_participants`` may be lazy: a barrier that lets nobody
+        through doesn't iterate it.
         """
-        answers = {}
-        through = []
-        for participant in waiting_participants:
-            group = participant.active_sync_groups.get(self.group_type)
-            if group is None:
-                continue
-            key = (group.id, participant.module_id)
-            if key not in answers:
-                answers[key] = self._lets_through(group, participant.module_id)
-            if answers[key]:
-                through.append(participant)
-        return through
+        if not (self.pass_newcomers or self._lets_newcomers_through):
+            return []
+        return [p for p in waiting_participants if self._passes_straight_through(p)]
 
     def _release_ready_waiters(self, waiting_participants, instance):
-        """Release waiters whose group already passed, then check the rest as usual."""
+        """Release waiters whose group already passed, then check the rest as usual.
+
+        Their groups that accept top-ups are locked first; see
+        :meth:`_lock_top_up_groups`.
+        """
         through = self._waiters_let_through(waiting_participants)
+        through_ids = {p.id for p in through}
+        rest = [p for p in waiting_participants if p.id not in through_ids]
+        self._lock_top_up_groups(rest)
         if through:
             logger.info(
                 "GroupBarrier '%s': letting through %i participant(s) whose group "
@@ -1939,11 +2070,23 @@ class GroupBarrier(Barrier):
             for participant in through:
                 self.release(participant)
             _queue_released_hold_waiters(through)
-        through_ids = {p.id for p in through}
-        super()._release_ready_waiters(
-            [p for p in waiting_participants if p.id not in through_ids], instance
-        )
+        super()._release_ready_waiters(rest, instance)
         return waiting_participants
+
+    def _lock_top_up_groups(self, waiting_participants):
+        """Lock and reload the waiters' groups that accept top-ups, raising ``55P03`` if one is busy.
+
+        Newcomers join under the same lock (see
+        ``SimpleGrouper._claim_group_to_join``), so they join either before
+        the check counts them or after it commits. Taken once per check,
+        before :meth:`check_waiting_participants` and
+        :meth:`choose_who_to_release`, so both see the same members. A busy
+        group, perhaps with a newcomer joining, defers the whole check like a
+        busy waiter does: the poller and the last arrival retry it.
+        """
+        for group in self.get_waiting_groups(waiting_participants).values():
+            if group.accepts_top_ups:
+                _lock_sync_group(group.id, nowait=True)
 
     def waiting_pool_group(self, participant) -> "SyncGroup":
         """Return the participant's group of ``group_type``; its members wait together."""
@@ -1973,11 +2116,12 @@ class GroupBarrier(Barrier):
             )
         return super().get_waiting_participants(participant, for_update=for_update)
 
-    def _hold_progress_text(self, participant):
+    def _hold_progress_text(self, participant, counts=None):
         """Return hold-overlay progress when arrival notices are enabled."""
         if not self.notify_arrivals or not self._participant_is_waiting(participant):
             return None
-        counts = self._hold_message_counts(participant)
+        if counts is None:
+            counts = self._hold_message_counts(participant)
         if counts["group_size"] is None:
             return None
         return default_hold_progress(**counts)
@@ -1991,17 +2135,10 @@ class GroupBarrier(Barrier):
         )
         if group is None:
             return {"waiting_count": None, "group_size": None}
-        waiting = [
-            m for m in group.active_participants if self._participant_is_waiting(m)
-        ]
-        scope = _barrier_scope(group, waiting)
-        waiting_ids = {m.id for m in waiting}
-        counted = {m.id for m in scope.waited_for} | {
-            m.id for m in scope.releasable if m.id in waiting_ids
-        }
+        members = group.active_participants
         return {
-            "waiting_count": len(counted & waiting_ids),
-            "group_size": len(counted),
+            "waiting_count": sum(self._participant_is_waiting(m) for m in members),
+            "group_size": len(members),
         }
 
     def _call_arrival_message(self, **kwargs):
@@ -2032,6 +2169,7 @@ class GroupBarrier(Barrier):
             return
         members = group.active_participants
         waiting = [m for m in members if self._participant_is_waiting(m)]
+        counts = {"waiting_count": len(waiting), "group_size": len(members)}
         if self._uses_timeline_hold:
             _prime_timeline_hold_records(waiting, self.id)
         # Arrivals in concurrent requests don't see each other, so the browser
@@ -2048,7 +2186,7 @@ class GroupBarrier(Barrier):
                         hold_page, "_is_silent_for", None
                     ) and hold_page._is_silent_for(member):
                         continue
-                    hold_html = hold_page.overlay_html(member)
+                    hold_html = hold_page.overlay_html(member, counts=counts)
                 _queue_arrival_update(member.id, hold_message=hold_html, refresh=True)
                 continue
             _queue_arrival_update(member.id, refresh=True)
@@ -2065,81 +2203,42 @@ class GroupBarrier(Barrier):
         super().handle_max_wait_timeout(participant)
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
+        """Release each waiting group that is ready, and dissolve those that can't reach their quorum.
+
+        Expects to run inside a barrier check, which has locked the waiters
+        and their groups that accept top-ups; called directly, it counts the
+        members this session has loaded and takes no such locks.
+        """
         waiting_participant_ids = {p.id for p in waiting_participants}
         participants_to_release = []
         groups = self.get_waiting_groups(waiting_participants)
 
         for group in groups.values():
-            if self._skips_busy_group(group):
-                continue
-            if not _lock_round(group, _barrier_round(group, waiting_participants)):
+            node = _common_round_node(
+                group, self._waiting_members(group, waiting_participants)
+            )
+            if not _lock_round(group, node):
                 continue
             group.check_numbers()
-            scope = _barrier_scope(group, waiting_participants)
-            outcome = _group_barrier_outcome(
-                group, group.active_participants, waiting_participant_ids, scope
-            )
+            members = group.active_participants
+            outcome = _group_barrier_outcome(group, members, waiting_participant_ids)
 
             if outcome == "dissolve":
                 # The group can never reach its quorum, so remove everyone
                 # and release whoever is waiting here, after the grouper's
-                # below_quorum has failed or released each of them.
-                group.accepts_top_ups = False
+                # below_quorum has failed or released each of them (or
+                # nobody yet, if a member is busy; see _dissolve).
+                if group.accepts_top_ups:
+                    group._close_to_top_ups()
                 participants_to_release.extend(
                     participant
                     for participant in group._dissolve()
                     if participant.id in waiting_participant_ids
                 )
             elif outcome == "release":
-                group.check_leader()
-                released = [
-                    p for p in scope.releasable if p.id in waiting_participant_ids
-                ]
+                released = self._waiting_members(group, waiting_participants)
                 participants_to_release.extend(released)
-                for participant in released:
-                    link = participant.active_barriers.get(self.id)
-                    if link is not None:
-                        link.barrier_instance.group_passed = True
-
-                left = group.members_who_left_since(
-                    group.last_barrier_pass_time or group.creation_time
-                )
-                group.last_barrier_pass_time = timenow()
-                in_later_round = {p.id for p in group.active_participants} - {
-                    p.id for p in scope.releasable
-                }
-                for link in group.participant_links:
-                    if link.participant_id not in in_later_round:
-                        link.page_deadline = None
-                if self.stop_top_ups and hasattr(group, "stop_top_ups"):
-                    group.stop_top_ups()
-
-                trials = [p.current_trial for p in released]
-                node = _shared_node(group, trials)
-                if node is not None:
-                    # Closes the round to newcomers: their cues start the next.
-                    node.sync_group_closed = True
-                    for trial in trials:
-                        if trial is not None and trial.sync_group_outcome is None:
-                            trial.sync_group_outcome = "stayed"
-                if self.on_release:
-                    try:
-                        self.on_release(
-                            group=group,
-                            participants=released,
-                            trials=trials,
-                            node=node,
-                            leader=group.leader,
-                            participant=group.leader,
-                            left=left,
-                            barrier=self,
-                        )
-                    except Exception as err:
-                        if is_transient_transaction_error(err):
-                            raise
-                        raise _BarrierAuthorHookError(
-                            f"Barrier '{self.id}' on_release failed."
-                        ) from err
+                self._pass(group, released, node)
 
         participants_to_release_ids = {p.id for p in participants_to_release}
         for participant in waiting_participants:
@@ -2154,6 +2253,58 @@ class GroupBarrier(Barrier):
 
         return participants_to_release
 
+    @staticmethod
+    def _waiting_members(group, waiting_participants):
+        """Return the active members of ``group`` among ``waiting_participants``."""
+        member_ids = {p.id for p in group.active_participants}
+        return [p for p in waiting_participants if p.id in member_ids]
+
+    def _pass(self, group, released, node):
+        """Do the group's bookkeeping for releasing ``released``.
+
+        Also closes round ``node``, if any, and calls ``on_release``.
+        """
+        group.check_leader()
+        for participant in released:
+            link = participant.active_barriers.get(self.id)
+            if link is not None:
+                link.barrier_instance.group_passed = True
+        left = group.members_who_left_since(
+            group.last_barrier_pass_time or group.creation_time
+        )
+        group.last_barrier_pass_time = timenow()
+        for link in group.participant_links:
+            link.page_deadline = None
+        if self.stop_top_ups:
+            group.stop_top_ups()
+
+        trials = [p.current_trial for p in released]
+        if node is not None:
+            # Closes the round to newcomers: their cues start the next.
+            node.sync_group_closed = True
+            for participant in released:
+                trial = _round_trial(group, participant)
+                if trial is not None:
+                    trial.sync_group_outcome = "stayed"
+        if self.on_release:
+            try:
+                self.on_release(
+                    group=group,
+                    participants=released,
+                    trials=trials,
+                    node=node,
+                    leader=group.leader,
+                    participant=group.leader,
+                    left=left,
+                    barrier=self,
+                )
+            except Exception as err:
+                if is_transient_transaction_error(err):
+                    raise
+                raise _BarrierAuthorHookError(
+                    f"Barrier '{self.id}' on_release failed."
+                ) from err
+
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         """Return whether this group visit would release, without mutating state.
 
@@ -2166,31 +2317,26 @@ class GroupBarrier(Barrier):
         if self._waiters_let_through(waiting_participants):
             return True
         for group in self.get_waiting_groups(waiting_participants).values():
-            if _round_is_busy(group, _barrier_round(group, waiting_participants)):
+            node = _common_round_node(
+                group, self._waiting_members(group, waiting_participants)
+            )
+            if _round_is_busy(group, node):
                 # choose_who_to_release would defer this group.
                 continue
-            if self.stop_top_ups and getattr(group, "accepts_top_ups", False):
+            if group.accepts_top_ups:
                 # A peek takes no lock, but still counts newcomers who have
                 # joined since this session loaded the group.
                 db.session.expire(group, ["participant_links"])
-            scope = _barrier_scope(group, waiting_participants)
             late_ids = {
                 participant.id
-                for participant in self._late_between_barriers(
-                    group, waiting_ids, scope.waited_for
-                )
+                for participant in self._late_between_barriers(group, waiting_ids)
             }
             members = [
                 participant
                 for participant in group.active_participants
                 if participant.id not in late_ids
             ]
-            scope = _BarrierScope(
-                [p for p in scope.waited_for if p.id not in late_ids],
-                [p for p in scope.releasable if p.id not in late_ids],
-            )
-            outcome = _group_barrier_outcome(group, members, waiting_ids, scope)
-            if outcome != "wait":
+            if _group_barrier_outcome(group, members, waiting_ids) != "wait":
                 return True
         return any(
             self.group_type not in participant.active_sync_groups
@@ -2198,35 +2344,24 @@ class GroupBarrier(Barrier):
         )
 
     def check_waiting_participants(self, waiting_participants: List[Participant]):
+        """Remove members late between barriers; relies on the lock taken in :meth:`_lock_top_up_groups`."""
         waiting_ids = {p.id for p in waiting_participants}
         removals = []
         for group in self.get_waiting_groups(waiting_participants).values():
-            if self._skips_busy_group(group):
-                continue
             group.check_numbers()
             if self.late_after is None:
                 continue
-            scope = _barrier_scope(group, waiting_participants)
-            late = self._late_between_barriers(group, waiting_ids, scope.waited_for)
-            if self.late_action == "fail":
-                # A late member whose own request holds their row is
-                # still late on the next check.
-                late = _lock_free_participants(late)
+            late = self._late_between_barriers(group, waiting_ids)
+            if self.late_action == "fail" and late:
+                # All or nothing, as in dissolving: a late member whose own
+                # request holds their row would otherwise stay behind in a
+                # group that dissolves without them. All are late next check.
+                late = _lock_all_participants(late)
+                if late is None:
+                    continue
             if late:
                 removals.append((group, late, len(group.active_participants)))
         self._remove_late_participants(removals)
-
-    def _skips_busy_group(self, group) -> bool:
-        """Return whether this check must leave ``group`` alone because a newcomer may be joining it.
-
-        Only a ``stop_top_ups`` barrier on a group that accepts top-ups locks
-        the group; see :func:`_lock_group_to_stop_top_ups`.
-        """
-        return (
-            self.stop_top_ups
-            and getattr(group, "accepts_top_ups", False)
-            and not _lock_group_to_stop_top_ups(group)
-        )
 
     def get_waiting_groups(self, waiting_participants: List[Participant]):
         groups = {
@@ -2269,7 +2404,7 @@ class GroupBarrier(Barrier):
                         participant.id,
                         left_group.id,
                     )
-                    SyncGroup.remove_participant(left_group, participant, reason=reason)
+                    left_group._remove_without_quorum_check(participant, reason)
                     left.setdefault(left_group.id, (left_group, []))[1].append(
                         participant
                     )
@@ -2289,22 +2424,23 @@ class GroupBarrier(Barrier):
                 self._tell_removed_participant(participant, group, group_size)
 
     def _dissolve_after_late_removal(self, group, late):
-        """Dissolve ``group`` if losing ``late`` left it below quorum, warning if that may fail the rest."""
+        """Dissolve ``group`` if losing ``late`` left it below quorum, logging a warning if that fails the rest."""
         had_others = group.n_active_participants > 0
-        if hasattr(group, "dissolve_if_below_quorum"):
-            group.dissolve_if_below_quorum()
-        dissolved = group.n_active_participants == 0 or group.dissolving
+        group.dissolve_if_below_quorum()
+        dissolves = group.n_active_participants == 0 or group.dissolving
         if (
             self.late_action != "fail"
             and had_others
-            and dissolved
-            and getattr(group, "below_quorum", None) != "continue_without_group"
+            and dissolves
+            and group.below_quorum != "continue_without_group"
         ):
             logger.warning(
-                "GroupBarrier '%s': removing late members %s dissolved group %s, "
-                "so its below_quorum may have failed its other members while the "
-                "late ones carry on. Set below_quorum='continue_without_group' on "
-                "the grouper to let them carry on too.",
+                "GroupBarrier '%s': removing late members %s dissolves group %s "
+                "(now, or once its members' requests finish), so its "
+                "below_quorum='fail' fails its other members while the late ones "
+                "carry on. Set "
+                "below_quorum='continue_without_group' on the grouper to let them "
+                "carry on too.",
                 self.id,
                 [p.id for p in late],
                 group.id,
@@ -2350,24 +2486,22 @@ class GroupBarrier(Barrier):
         }
         _queue_arrival_update(participant.id, notice=text, removed=True)
 
-    def _late_between_barriers(
-        self, group: "SyncGroup", waiting_ids, waited_for: List[Participant]
-    ) -> list:
-        """Return members of ``waited_for`` past the between-barrier timeout who are not waiting.
+    def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
+        """Return active members past the between-barrier timeout who are not waiting.
 
-        ``waited_for`` are the active members this visit waits for (see
-        :func:`_barrier_scope`). Each member is timed from the group's last barrier pass or from when
+        Each member is timed from the group's last barrier pass or from when
         they joined the group, whichever is later, so newcomers to an open
-        group are not late as soon as they join. A member who has started a
-        page with a time limit since then, outside waiting logic, is not late
-        until that limit has run out and an answer sent at the deadline has
-        had time to arrive, even if they have already left the page.
+        group are not late as soon as they join. A
+        member who has started a page with a time limit since then, outside
+        waiting logic, is not late until that limit has run out and an answer
+        sent at the deadline has had time to arrive, even if they have
+        already left the page.
         """
         if self.late_after is None:
             return []
         now = timenow()
         answer_arrival = timedelta(seconds=2 * TIME_LIMIT_GRACE_SECONDS)
-        active_ids = {p.id for p in waited_for}
+        active_ids = {p.id for p in group.active_participants}
         late = []
         for link in group.participant_links:
             participant = link.participant
@@ -2410,7 +2544,8 @@ class Grouper(Barrier):
         to the participant while they are waiting at the barrier, for
         example filler trials. If left at ``None``, the participant sees
         ``waiting_screen``, or their current page beneath a lightweight
-        waiting indicator.
+        waiting indicator. See :class:`Barrier` for where ``waiting_logic``
+        can go.
 
     waiting_logic_expected_repetitions
         Deprecated; pass ``expected_wait`` instead. Expected repetitions of
@@ -2688,13 +2823,10 @@ class SimpleGrouper(Grouper):
         failure). ``"fail"`` (default) fails them, telling them "Too few members of your
         group remained to continue, so we ended your session." ``"continue_without_group"``
         lets them carry on with the experiment without the group, and their next page says
-        that their group ended (see :ref:`sync-leaving-a-group`). A module-level function
-        ``f(participant, group)`` returning ``"fail"`` or ``"continue_without_group"`` decides member by member, for
-        example from how many rounds they played. It is called while the group is being
-        dissolved, so base the decision on the participant, not on who else is still in
-        ``group``; if it raises or returns anything else, the error is logged and the member
-        is failed. A member whose own request is in progress is handled within
-        about a second by the barrier poller instead.
+        that their group ended (see :ref:`sync-leaving-a-group`). With the default, one
+        member who is late or leaves can end the session of everyone who was on time,
+        as in a pair, so pass ``"continue_without_group"`` unless that is what you want.
+        See :ref:`groups_below_min_size` for when the group is dissolved.
 
     top_up_wait
         With ``join_existing_groups=True``, how many seconds a group below its
@@ -2739,7 +2871,7 @@ class SimpleGrouper(Grouper):
         batch_size: Union[int, str] = "initial_group_size",
         join_existing_groups: bool = False,
         join_criterion: Optional[Callable] = None,
-        below_quorum: Union[str, Callable] = "fail",
+        below_quorum: str = "fail",
         start_short_after: Optional[float] = None,
         start_short_with: Optional[int] = None,
         quorum: Optional[int] = None,
@@ -2789,25 +2921,18 @@ class SimpleGrouper(Grouper):
         self.batch_size = batch_size
         self.join_existing_groups = join_existing_groups
         self.join_criterion = join_criterion
-        if callable(below_quorum):
-            if getattr(below_quorum, "__name__", None) == "<lambda>":
-                raise ValueError(
-                    "below_quorum must be a module-level function, not a lambda, "
-                    "because PsyNet stores it with each group."
-                )
-            below_quorum = serialize_callable(
-                below_quorum, "SimpleGrouper.below_quorum"
-            )
-        elif below_quorum not in ("fail", "continue_without_group"):
+        if below_quorum not in ("fail", "continue_without_group"):
             hint = (
                 " The remaining members don't leave the group; it ends around them, "
                 "so use 'continue_without_group'."
                 if below_quorum == "leave_group"
+                else " Functions aren't supported; pass one of these strings."
+                if callable(below_quorum)
                 else ""
             )
             raise ValueError(
-                "below_quorum must be 'fail', 'continue_without_group' or a function "
-                f"returning one of these, got {below_quorum!r}.{hint}"
+                "below_quorum must be 'fail' or 'continue_without_group', "
+                f"got {below_quorum!r}.{hint}"
             )
         self.below_quorum = below_quorum
         if top_up_wait is not None and not join_existing_groups:
@@ -2909,7 +3034,7 @@ class SimpleGrouper(Grouper):
         from .timeline import conditional, join
 
         return join(
-            CodeBlock(self._join_existing_groups),
+            CodeBlock(self._join_on_arrival),
             conditional(
                 "joined_an_existing_group",
                 condition=lambda participant: (
@@ -2962,43 +3087,66 @@ class SimpleGrouper(Grouper):
             ):
                 yield group
 
-    def _claim_group_to_join(self, participant: Participant):
+    def _claim_group_to_join(self, participant: Participant, *, wait=False):
         """Lock and return the best group with room for this participant.
 
         Each candidate's row is locked ``FOR NO KEY UPDATE SKIP LOCKED``, and
         its active members are re-counted under that lock, so two joiners
-        cannot both take a group's last place. A group another transaction
-        is changing is skipped rather than waited for; the participant can
-        try it again on a later barrier check. The joiner already holds its
-        own participant row (or, in a barrier check, the waiters' rows), so
-        this keeps the order participants before group without waiting on
-        the group.
+        cannot both take a group's last place. A :class:`GroupBarrier` check
+        holds the same lock while it counts a top-up group's members, so a
+        newcomer joins either before the check or after it commits. A group
+        another transaction is changing is skipped for the next candidate.
+        The joiner already holds its own participant row (or, in a barrier
+        check, the waiters' rows), so this keeps the order participants
+        before group.
+
+        Parameters
+        ----------
+        participant
+            The newcomer.
+        wait
+            If every open group was busy, wait up to
+            ``_JOIN_LOCK_WAIT_SECONDS`` for the best one instead of returning
+            ``None``. For the newcomer's own request, which would otherwise
+            wait at the grouper for the barrier poller; barrier checks don't
+            wait. The wait can't deadlock: the newcomer has no link in the
+            group yet, so whoever holds the group's row has no reason to
+            lock the newcomer's.
 
         Returns
         -------
         SimpleSyncGroup or None
             The locked group, or ``None`` if no candidate is free and has room.
         """
+        busy = None
         for candidate in self._groups_to_join(participant):
-            group = (
-                SimpleSyncGroup.query.filter_by(id=candidate.id)
-                .with_for_update(of=SimpleSyncGroup, key_share=True, skip_locked=True)
-                .populate_existing()
-                .first()
-            )
-            if group is None or not group.active or not group.accepts_top_ups:
-                continue
-            n_members = len(group.active_participants)
-            group.n_active_participants = n_members
-            if n_members == 0 or (
-                self.max_group_size is not None and n_members >= self.max_group_size
-            ):
-                continue
-            return group
+            group = _lock_sync_group(candidate.id, skip_locked=True)
+            if group is None:
+                busy = busy or candidate
+            elif self._has_room_to_join(group):
+                return group
+        if wait and busy is not None:
+            group = _lock_sync_group(busy.id, wait_seconds=_JOIN_LOCK_WAIT_SECONDS)
+            if group is not None and self._has_room_to_join(group):
+                return group
         return None
 
-    def _join_existing_groups(self, participant: Participant):
-        group = self._claim_group_to_join(participant)
+    def _has_room_to_join(self, group) -> bool:
+        """Re-count a locked group's members and return whether a newcomer may join it."""
+        if not group.active or not group.accepts_top_ups:
+            return False
+        n_members = len(group.active_participants)
+        group.n_active_participants = n_members
+        return n_members > 0 and (
+            self.max_group_size is None or n_members < self.max_group_size
+        )
+
+    def _join_on_arrival(self, participant: Participant):
+        """Join an open group as the newcomer reaches the grouper, waiting briefly for a busy one."""
+        self._join_existing_groups(participant, wait=True)
+
+    def _join_existing_groups(self, participant: Participant, *, wait=False):
+        group = self._claim_group_to_join(participant, wait=wait)
         if group is not None:
             group.add_participant(participant)
             assert participant.active_sync_groups[self.group_type] == group
@@ -3185,11 +3333,9 @@ class Regrouper(Grouper):
     when a member leaves, so a member who drops out of a round leaves their
     partners in a smaller group rather than failing them.
 
-    By default, when not everyone waiting fits into a group, those who have
-    played the most rounds sit out, and members are kept apart from the
-    people they were grouped with last time where possible (see
-    ``avoid_repeats``). The regrouper
-    counts each participant's rounds (:meth:`rounds_played`,
+    By default, members are grouped at random, and when not everyone waiting
+    fits into a group, those who have played the most rounds sit out. The
+    regrouper counts each participant's rounds (:meth:`rounds_played`,
     :meth:`rounds_sat_out`, :meth:`sat_out`) and, with ``roles``, gives out roles
     (:meth:`role`), all while it holds its lock, so two splits cannot give
     out the same seat twice. Each group records the regrouper that formed
@@ -3234,41 +3380,42 @@ class Regrouper(Grouper):
     every
         Seconds between fixed wall-clock ticks. The pool is split only at a
         tick, even when everyone is already waiting, if at least
-        ``smallest_group`` members were waiting at the tick. Pass either
+        ``smallest_group`` members were waiting at the tick. The background
+        barrier check makes the split at its next check after the tick,
+        normally within a second, so participants arriving with Next don't
+        wait for a check of the whole pool; an arrival or reload in
+        ``GET /timeline`` still checks the waiter's visit. Pass either
         ``deadline`` or ``every``, not both.
 
     roles
         Optional role names, for example ``["proposer", "responder"]``. Each
         group then has one member per role, so groups have ``len(roles)``
         members; ``group_size``, if given, must equal it. Read a member's role
-        with :meth:`role`. By default each member gets the role they have had
-        least often, so roles alternate from round to round.
-
-    keep_roles
-        If ``True``, a participant keeps the role they first play for the
-        rest of the experiment. Participants without a role get one when they
-        are split, choosing the role that lets the most waiting participants
-        play, or else the role that fewer participants still in the
-        experiment play. Those of a role nobody is free to pair with sit out;
-        a newcomer who sits out gets a role again at the next split.
+        with :meth:`role`. Roles are given out at random by default; see
+        ``assign_roles``.
 
     form_groups
         Optional callable ``form_groups(members, within_group, barrier)``
         that returns a list of groups, each a list of participants, replacing
         the default grouping described above; ``barrier`` is this regrouper.
-        Members who are not placed are left over. With ``roles``, return each
-        group as a ``{role: participant}`` dict, which is clearest, or as a list
-        in the order of ``roles``. With ``keep_roles``, members already have
-        their roles when it is called, and each group needs one member per role.
-        Subclasses can override :meth:`form_groups` instead. The callable must be
-        a module-level function so it can be stored with the barrier.
+        Members who are not placed are left over. With ``roles``, each group
+        needs one member per role; ``assign_roles`` then gives out the roles.
+        Subclasses can override :meth:`form_groups` instead, for
+        example calling the default and retrying until no one is paired with
+        last round's partner, as the ``ultimatum_pairing`` demo does. The
+        callable must be a module-level function so it can be
+        stored with the barrier.
 
-    avoid_repeats
-        Whom the default grouping keeps members apart from where possible:
-        ``"last_round"`` (default), the members of their previous group, or
-        ``"all_rounds"``, everyone they have been grouped with before,
-        preferring those they met least often, for example so that a cohort of
-        four meets each partner once in three rounds of pairs.
+    assign_roles
+        Optional callable ``assign_roles(members, within_group, barrier)``
+        that returns ``{participant: role}`` for one group formed with
+        ``roles``, giving each role to one member; ``barrier`` is this
+        regrouper. It is called once per group, before the group is created,
+        replacing the default, which shuffles the roles across the group's
+        members. Subclasses can override :meth:`assign_roles` instead, for
+        example to give each role to whoever has held it least often, so that
+        roles alternate, as the ``ultimatum_pairing`` demo does. The callable
+        must be a module-level function so it can be stored with the barrier.
 
     left_over
         What participants left over after a split do: ``"wait"`` (default)
@@ -3290,6 +3437,20 @@ class Regrouper(Grouper):
         have their ``id``, for example to save as a pair ID. A late member can make a split
         of their own in the same round, so count rounds per participant (see
         :meth:`rounds_played`) rather than here.
+
+    stop_top_ups_after_rounds
+        Optional number of rounds during which newcomers can still join the
+        ``within`` group, for example a cohort formed with
+        ``join_existing_groups=True``. Each split that forms groups in the
+        cohort counts as one of its rounds, even one that groups only
+        latecomers while the others are still playing. The next split, even
+        one in which everyone waiting sits out, stops the cohort's top-ups, as
+        :meth:`SimpleSyncGroup.stop_top_ups` does; a cohort below its quorum
+        is then dissolved instead of split, as its ``below_quorum`` says.
+        With ``0`` the cohort closes when its first round starts. ``None``
+        (default) leaves top-ups to the grouper and the barriers. Needs
+        ``within``, and only applies to ``within`` groups that accept
+        top-ups; it does nothing for others.
 
     max_wait_time
         Longest a participant waits at the regrouper before ``max_wait_action``
@@ -3321,14 +3482,25 @@ class Regrouper(Grouper):
         deadline: Optional[float] = None,
         every: Optional[float] = None,
         roles: Optional[Sequence[str]] = None,
-        keep_roles: bool = False,
         form_groups: Optional[Callable] = None,
-        avoid_repeats: Literal["last_round", "all_rounds"] = "last_round",
+        assign_roles: Optional[Callable] = None,
         left_over: Literal["wait", "sit_out"] = "wait",
         on_release: Optional[Callable] = None,
+        stop_top_ups_after_rounds: Optional[int] = None,
         max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         **kwargs,
     ):
+        if stop_top_ups_after_rounds is not None:
+            if within is None:
+                raise ValueError("stop_top_ups_after_rounds needs within.")
+            if (
+                isinstance(stop_top_ups_after_rounds, bool)
+                or not isinstance(stop_top_ups_after_rounds, int)
+                or stop_top_ups_after_rounds < 0
+            ):
+                raise ValueError(
+                    "stop_top_ups_after_rounds must be a whole number, 0 or more."
+                )
         if roles is not None:
             if len(set(roles)) != len(roles):
                 raise ValueError("Pass distinct role names.")
@@ -3342,8 +3514,6 @@ class Regrouper(Grouper):
                         f"{name} must equal len(roles) or be left out."
                     )
             group_size = smallest_group = len(roles)
-        elif keep_roles:
-            raise ValueError("keep_roles needs roles.")
         elif group_size is None:
             raise ValueError("Regrouper needs group_size, or roles.")
         if smallest_group is None:
@@ -3370,11 +3540,6 @@ class Regrouper(Grouper):
                 "Regrouper groups are never dissolved when a member leaves, so "
                 "below_quorum doesn't apply; it is an option of "
                 "the SimpleGrouper that forms the groups being regrouped."
-            )
-        if avoid_repeats not in ("last_round", "all_rounds"):
-            raise ValueError(
-                "avoid_repeats must be 'last_round' or 'all_rounds', "
-                f"got {avoid_repeats!r}."
             )
         if left_over not in ("wait", "sit_out"):
             raise ValueError(
@@ -3404,11 +3569,11 @@ class Regrouper(Grouper):
         self.deadline = deadline
         self.every = every
         self.roles = None if roles is None else list(roles)
-        self.keep_roles = keep_roles
         self.form_groups_function = form_groups
-        self.avoid_repeats = avoid_repeats
+        self.assign_roles_function = assign_roles
         self.left_over = left_over
         self.on_release = on_release
+        self.stop_top_ups_after_rounds = stop_top_ups_after_rounds
 
     def receive_participant(self, participant: Participant):
         previous = participant.active_sync_groups.get(self.group_type)
@@ -3416,43 +3581,58 @@ class Regrouper(Grouper):
             previous.remove_participant(participant, reason="moved_on")
         Barrier.receive_participant(self, participant)
 
+    def _queue_check_on_arrival(self, barrier_instance):
+        """Leave a pool with ``every`` ticks to the barrier poller.
+
+        Such a pool is split only at a tick, among the members who were
+        already waiting then, so an arrival cannot make the pool ready. A
+        check on the arrival would enact a tick that is already due and not
+        yet used, but it locks every waiter to do so. Skipping it leaves that
+        split to the barrier poller, at its next check and normally within a
+        second. This only covers arrivals submitted with Next
+        (``POST /response``): an arrival or reload in ``GET /timeline``, or a
+        bot's poll, still checks the waiter's visit. Ungrouped arrivals at a
+        ``within`` regrouper are still checked, because they are released at
+        once. Subclasses that override :meth:`choose_who_to_release` or
+        :meth:`check_waiting_participants` keep the check, since their rule
+        might release on arrival.
+        """
+        if self._skips_arrival_release_check(barrier_instance):
+            return
+        super()._queue_check_on_arrival(barrier_instance)
+
+    def _skips_arrival_release_check(self, barrier_instance):
+        """Return whether an arrival at ``barrier_instance`` cannot release anyone."""
+        return (
+            self.every is not None
+            and (self.within is None or barrier_instance.group_id is not None)
+            and type(self).choose_who_to_release is Regrouper.choose_who_to_release
+            and type(self).check_waiting_participants
+            is Regrouper.check_waiting_participants
+        )
+
     def form_groups(self, members, within_group=None):
         """Return the groups to form from one pool's waiting members.
 
-        By default members are put into balanced groups of at most
+        By default members are shuffled into balanced groups of at most
         ``group_size`` and at least ``smallest_group``, or into one group per
-        set of ``roles``. Those who have played the most rounds sit out, and
-        members are kept apart from last time's group where possible.
+        set of ``roles``. Those who have played the most rounds sit out.
         """
         if self.form_groups_function is not None:
             return self.form_groups_function(
                 members=members, within_group=within_group, barrier=self
             )
-        history = self._history(members)
+        rounds = self._rounds(members)
         # Shuffled first, so that ties are broken at random.
         members = sorted(
-            random.sample(members, len(members)), key=lambda m: history.rounds[m.id]
+            random.sample(members, len(members)), key=lambda m: rounds[m.id]
         )
-        if self.keep_roles:
-            roles = {m.id: self.role(m) for m in members}
-            by_role = [[m for m in members if roles[m.id] == r] for r in self.roles]
-            n_groups = min(len(players) for players in by_role)
-            players = [players[:n_groups] for players in by_role]
-            return self._best_groups(
-                lambda: [
-                    list(group)
-                    for group in zip(*(random.sample(p, n_groups) for p in players))
-                ],
-                history,
-            )
         n_placed = sum(
             len(group)
             for group in _balanced_groups(members, self.group_size, self.smallest_group)
         )
-        players = members[:n_placed]
-        return self._best_groups(
-            lambda: _balanced_groups(players, self.group_size, self.smallest_group),
-            history,
+        return _balanced_groups(
+            members[:n_placed], self.group_size, self.smallest_group
         )
 
     def rounds_played(self, participant) -> int:
@@ -3477,14 +3657,8 @@ class Regrouper(Grouper):
         ).count()
 
     def sat_out(self, participant) -> bool:
-        """Return whether ``participant``'s latest visit here ended without a group (see ``left_over``)."""
-        latest_visit = (
-            ParticipantLinkBarrier.query.filter_by(
-                barrier_id=self.id, participant_id=participant.id
-            )
-            .order_by(ParticipantLinkBarrier.id.desc())
-            .first()
-        )
+        """Return whether ``participant`` sat out their latest visit here (see ``left_over``)."""
+        latest_visit = self._latest_visit(participant)
         return latest_visit is not None and bool(latest_visit.sat_out)
 
     def role(self, participant) -> Optional[str]:
@@ -3493,42 +3667,35 @@ class Regrouper(Grouper):
         This is their role in their latest round with this regrouper, even
         after they were removed from that group, so a reloaded page still
         shows it. It is ``None`` once they are back at the regrouper, while
-        waiting for the next split or after sitting a round out, and before
-        their first round. With ``keep_roles`` it is instead their permanent
-        role, which a newcomer gets at their first split. It is also ``None``
-        while they are in a group of this type that another grouper formed.
+        waiting for the next split or after a visit that ended without a
+        group (for example sitting a round out), and before their first round.
+        It is also ``None`` while they are in a group of this type that
+        another grouper formed; once they leave that group, it is their role
+        from this regrouper again.
         """
-        links = self._links([participant.id])
-        if self.keep_roles:
-            kept = next((link.role for link in links if link.role), None)
-            return kept or self._waiting_role(participant)
         current = participant.active_sync_groups.get(self.group_type)
-        if not links or (current is not None and current.grouper_id != self.id):
+        if current is not None and current.grouper_id != self.id:
             return None
-        latest_visit = (
+        latest_visit = self._latest_visit(participant)
+        if latest_visit is None or latest_visit.sync_group is None:
+            return None
+        return next(
+            (
+                link.role
+                for link in latest_visit.sync_group.participant_links
+                if link.participant_id == participant.id
+            ),
+            None,
+        )
+
+    def _latest_visit(self, participant) -> Optional["ParticipantLinkBarrier"]:
+        """Return ``participant``'s latest visit to this regrouper, if any."""
+        return (
             ParticipantLinkBarrier.query.filter_by(
                 barrier_id=self.id, participant_id=participant.id
             )
             .order_by(ParticipantLinkBarrier.id.desc())
             .first()
-        )
-        if (
-            latest_visit is not None
-            and latest_visit.arrival_time > links[-1].arrival_time
-        ):
-            return None
-        return links[-1].role
-
-    def _waiting_role(self, participant) -> Optional[str]:
-        """Return the role given to a waiting newcomer for the coming split."""
-        visit = self._visits([participant]).get(participant.id)
-        return None if visit is None else visit.role
-
-    @property
-    def _custom_grouping(self) -> bool:
-        return (
-            self.form_groups_function is not None
-            or type(self).form_groups is not Regrouper.form_groups
         )
 
     def _links(self, participant_ids) -> List["ParticipantLinkSyncGroup"]:
@@ -3556,141 +3723,44 @@ class Regrouper(Grouper):
         )
         return {visit.participant_id: visit for visit in visits}
 
-    def _history(self, members) -> "_RegroupHistory":
-        """Return the members' rounds, past group-mates and role counts, keyed by ID."""
+    def assign_roles(self, members, within_group=None) -> Dict[Participant, str]:
+        """Return ``{participant: role}`` for one group's members, one member per role.
+
+        By default the roles are shuffled across the members.
+        """
+        if self.assign_roles_function is not None:
+            return self.assign_roles_function(
+                members=members, within_group=within_group, barrier=self
+            )
+        return dict(zip(random.sample(members, len(members)), self.roles))
+
+    def _rounds(self, members) -> Dict[int, int]:
+        """Return how many groups this regrouper has put each member in, keyed by ID."""
         rounds = {m.id: 0 for m in members}
-        role_counts = {m.id: {} for m in members}
-        groups = {pid: [] for pid in rounds}
         for link in self._links(list(rounds)):
             rounds[link.participant_id] += 1
-            groups[link.participant_id].append(link.sync_group_id)
-            if link.role:
-                counts = role_counts[link.participant_id]
-                counts[link.role] = counts.get(link.role, 0) + 1
-        if self.avoid_repeats == "last_round":
-            groups = {pid: group_ids[-1:] for pid, group_ids in groups.items()}
-        members_of = {}
-        group_ids = {group_id for ids in groups.values() for group_id in ids}
-        if group_ids:
-            for link in ParticipantLinkSyncGroup.query.filter(
-                ParticipantLinkSyncGroup.sync_group_id.in_(group_ids)
-            ):
-                members_of.setdefault(link.sync_group_id, set()).add(
-                    link.participant_id
-                )
-        times_met = {pid: Counter() for pid in rounds}
-        for pid, ids in groups.items():
-            for group_id in ids:
-                times_met[pid].update(members_of.get(group_id, set()) - {pid})
-        return _RegroupHistory(rounds, times_met, role_counts)
+        return rounds
 
-    def _best_groups(self, make_groups, history, attempts: int = 50):
-        """Return the groups from ``make_groups()`` with the fewest repeats.
-
-        A repeat is a member grouped with someone they met before (see
-        ``avoid_repeats``), counted once per earlier meeting, or, when roles
-        alternate, a member who must take a role they have had more often
-        than another.
-        """
-        best, best_cost = [], None
-        for _ in range(attempts):
-            groups = make_groups()
-            cost = sum(self._repeats(group, history) for group in groups)
-            if best_cost is None or cost < best_cost:
-                best, best_cost = groups, cost
-            if cost == 0:
-                break
-        return best
-
-    def _repeats(self, group, history) -> int:
-        """Return how many partnerships and role imbalances ``group`` repeats."""
-        repeats = sum(
-            history.times_met[member.id][other.id]
-            for member in group
-            for other in group
-        )
-        if self.roles and not self.keep_roles:
-            for member, role in self._least_held_roles(group, history).items():
-                counts = history.role_counts[member.id]
-                repeats += counts.get(role, 0) - min(
-                    counts.get(r, 0) for r in self.roles
-                )
-        return repeats
-
-    def _give_kept_roles(self, members):
-        """Give members without a role the role that lets the most of them play.
-
-        When the waiting members' roles are balanced, a newcomer takes the
-        role that fewer participants still in the experiment play.
-        """
-        roles = {member.id: self.role(member) for member in members}
-        newcomers = [m for m in members if roles[m.id] is None]
-        if not newcomers:
-            return
-        waiting = {role: 0 for role in self.roles}
-        for role in roles.values():
-            if role is not None:
-                waiting[role] += 1
-        in_game = {role: 0 for role in self.roles}
-        in_game.update(self._players_per_role())
-        visits = self._visits(newcomers)
-        for member in random.sample(newcomers, len(newcomers)):
-            tally = next(
-                (t for t in (waiting, in_game) if len(set(t.values())) > 1), waiting
-            )
-            fewest = min(tally.values())
-            role = random.choice([r for r, n in tally.items() if n == fewest])
-            visits[member.id].role = role
-            waiting[role] += 1
-            in_game[role] += 1
-
-    def _players_per_role(self) -> Dict[str, int]:
-        """Return how many participants still in the experiment have played each role."""
-        link = ParticipantLinkSyncGroup
-        rows = (
-            db.session.query(link.role, func.count(link.participant_id.distinct()))
-            .join(SyncGroup)
-            .join(Participant, Participant.id == link.participant_id)
-            .filter(
-                SyncGroup.grouper_id == self.id,
-                link.role.isnot(None),
-                Participant.status == "working",
-                Participant.failed.is_(False),
-            )
-            .group_by(link.role)
-        )
-        return dict(rows.all())
-
-    def _planned_roles(self, plan, members) -> Dict[int, Optional[str]]:
-        """Return each planned member's role by ID, decided from the history before the split."""
+    def _planned_roles(self, plan, within_group) -> Dict[int, str]:
+        """Return each planned member's role by ID, given out before the groups exist."""
         if not self.roles:
             return {}
-        if self.keep_roles:
-            return {m.id: self.role(m) for group in plan for m in group}
-        if self._custom_grouping:
-            return {m.id: r for group in plan for m, r in zip(group, self.roles)}
-        history = self._history(members)
-        return {
-            m.id: role
-            for group in plan
-            for m, role in self._least_held_roles(group, history).items()
-        }
-
-    def _least_held_roles(self, members, history) -> dict:
-        """Return ``{member: role}``, giving each role to whoever has had it least.
-
-        Ties go by member order, which ``form_groups`` shuffles, so the
-        assignment scored when choosing groups is the one that is stored.
-        """
-        unassigned = list(members)
         roles = {}
-        for role in self.roles:
-            member = min(
-                unassigned,
-                key=lambda m: history.role_counts[m.id].get(role, 0),
-            )
-            unassigned.remove(member)
-            roles[member] = role
+        for group_members in plan:
+            assigned = self.assign_roles(group_members, within_group=within_group)
+            if not all(isinstance(m, Participant) for m in assigned):
+                raise TypeError(
+                    f"Regrouper '{self.id}': assign_roles must return "
+                    "{participant: role}, keyed by participants rather than IDs."
+                )
+            if sorted(m.id for m in assigned) != sorted(
+                m.id for m in group_members
+            ) or sorted(assigned.values()) != sorted(self.roles):
+                raise ValueError(
+                    f"Regrouper '{self.id}': assign_roles must give each role "
+                    "to one member of the group."
+                )
+            roles.update({m.id: role for m, role in assigned.items()})
         return roles
 
     def _shows_countdown(self) -> bool:
@@ -3702,6 +3772,8 @@ class Regrouper(Grouper):
             return None
         within_group = self._within_group(participant)
         if self.within is not None and within_group is None:
+            return None
+        if _is_dissolving(within_group):
             return None
         if self.every is None and self.deadline is None:
             return None
@@ -3731,21 +3803,66 @@ class Regrouper(Grouper):
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
         released = []
-        for within_group, members in self._pools(waiting_participants):
+        for within_group, pool in self._pools(waiting_participants):
             if self.within is not None and within_group is None:
-                released += members
+                released += pool
                 continue
-            if not self._pool_is_ready(within_group, members):
+            if _is_dissolving(within_group):
                 continue
-            if self.every is not None:
-                members = self._waiting_at_tick(members, time.time())
-            released += self._split(within_group, members)
+            members = self._members_to_split(within_group, pool)
+            if members is None:
+                continue
+            stop_top_ups = self._ends_join_window(within_group)
+            if stop_top_ups:
+                if _lock_sync_group(within_group.id, skip_locked=True) is None:
+                    continue
+                if _is_dissolving(within_group):
+                    continue
+                # The lock reloads the cohort's members, so a newcomer who
+                # joined in another request now keeps a complete pool waiting.
+                members = self._members_to_split(within_group, pool)
+                if members is None:
+                    continue
+                if len(within_group.active_participants) < within_group.quorum:
+                    # Dissolving releases the members its below_quorum let
+                    # carry on. One deferred by a busy member marks the cohort
+                    # dissolving, so later checks skip its pool until the
+                    # poller dissolves it.
+                    within_group.stop_top_ups()
+                    released += [p for p in pool if self._within_group(p) is None]
+                    continue
+            released += self._split(within_group, members, stop_top_ups=stop_top_ups)
         return released
+
+    def _members_to_split(self, within_group, pool) -> Optional[List[Participant]]:
+        """Return the members of a ready pool to split now, or ``None`` if it isn't ready."""
+        if not self._pool_is_ready(within_group, pool):
+            return None
+        if self.every is not None:
+            return self._waiting_at_tick(pool, time.time())
+        return pool
+
+    def _ends_join_window(self, within_group) -> bool:
+        """Return whether the next split comes after ``stop_top_ups_after_rounds`` splits of this cohort."""
+        if self.stop_top_ups_after_rounds is None or not within_group.accepts_top_ups:
+            return False
+        return self._n_splits(within_group) >= self.stop_top_ups_after_rounds
+
+    def _n_splits(self, within_group) -> int:
+        """Return how many splits of this pool formed groups."""
+        return (
+            db.session.query(func.count(SyncGroup.split_id.distinct()))
+            .filter(*self._pool_splits(within_group))
+            .scalar()
+        )
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         return any(
             (self.within is not None and within_group is None)
-            or self._pool_is_ready(within_group, members)
+            or (
+                not _is_dissolving(within_group)
+                and self._pool_is_ready(within_group, members)
+            )
             for within_group, members in self._pools(waiting_participants)
         )
 
@@ -3838,47 +3955,60 @@ class Regrouper(Grouper):
 
     def _last_split(self, within_group) -> Optional[float]:
         """Return when this regrouper last formed groups in this pool, in epoch seconds."""
-        within_id = None if within_group is None else within_group.id
         latest = (
             db.session.query(func.max(SyncGroup.creation_time))
-            .filter(
-                SyncGroup.grouper_id == self.id,
-                SyncGroup.within_group_id.is_(None)
-                if within_id is None
-                else SyncGroup.within_group_id == within_id,
-            )
+            .filter(*self._pool_splits(within_group))
             .scalar()
         )
         return None if latest is None else latest.timestamp()
 
-    def _split(self, within_group, members):
-        """Form this pool's groups and return the participants to release."""
-        if self.keep_roles:
-            self._give_kept_roles(members)
+    def _pool_splits(self, within_group) -> list:
+        """Return the filter criteria for the groups this regrouper formed in this pool."""
+        return [
+            SyncGroup.grouper_id == self.id,
+            SyncGroup.within_group_id.is_(None)
+            if within_group is None
+            else SyncGroup.within_group_id == within_group.id,
+        ]
+
+    def _split(self, within_group, members, stop_top_ups=False):
+        """Form this pool's groups and return the participants to release.
+
+        With ``stop_top_ups``, a split that forms a group or releases sit-outs
+        also stops the ``within`` group's top-ups (see
+        ``stop_top_ups_after_rounds``).
+        """
         plan = [
-            self._in_role_order(group_members)
+            list(group_members)
             for group_members in self.form_groups(members, within_group=within_group)
             if group_members
         ]
         self._check_plan(plan, members)
-        roles = self._planned_roles(plan, members)
+        roles = self._planned_roles(plan, within_group)
         # The split's time, not the inserts', decides which tick it used.
         split_time = timenow()
+        split_id = uuid.uuid4().hex
         groups = [
-            self._make_group(group_members, within_group, split_time)
+            self._make_group(group_members, within_group, split_time, split_id)
             for group_members in plan
         ]
-        if roles:
-            for group in groups:
-                for link in group.participant_links:
+        visits = self._visits(members)
+        for group in groups:
+            for link in group.participant_links:
+                visits[link.participant.id].sync_group = group
+                if roles:
                     link.role = roles[link.participant.id]
         placed = {p.id for group in groups for p in group.participants}
         left_over = [p for p in members if p.id not in placed]
         if not groups:
             if self._may_release_only_left_over(within_group, members):
+                if stop_top_ups:
+                    within_group.stop_top_ups()
                 self._record_sit_outs(left_over)
                 return left_over
             return []
+        if stop_top_ups:
+            within_group.stop_top_ups()
         if self.on_release:
             # Gives the new groups their IDs, for example to store as pair IDs.
             db.session.flush()
@@ -3906,26 +4036,15 @@ class Regrouper(Grouper):
         for visit in self._visits(left_over).values():
             visit.sat_out = True
 
-    def _in_role_order(self, group_members) -> list:
-        """Return a planned group as a list, putting a ``{role: participant}`` dict in role order."""
-        if not isinstance(group_members, dict):
-            return list(group_members)
-        if self.roles is None or set(group_members) != set(self.roles):
-            raise ValueError(
-                f"Regrouper '{self.id}': form_groups returned a group keyed by "
-                f"{sorted(group_members)}; key groups by the roles {self.roles}."
-            )
-        if self.keep_roles and any(
-            self.role(member) != role for role, member in group_members.items()
-        ):
-            raise ValueError(
-                f"Regrouper '{self.id}': form_groups gave a member a role other "
-                "than the one they keep."
-            )
-        return [group_members[role] for role in self.roles]
-
     def _check_plan(self, plan, members):
         """Raise if ``form_groups`` placed someone twice, placed a non-member, or broke the roles."""
+        if not all(
+            isinstance(p, Participant) for group_members in plan for p in group_members
+        ):
+            raise TypeError(
+                f"Regrouper '{self.id}': form_groups must return groups as lists "
+                "of participants; give out roles with assign_roles instead."
+            )
         member_ids = {p.id for p in members}
         placed = [p.id for group_members in plan for p in group_members]
         if len(placed) != len(set(placed)):
@@ -3939,21 +4058,19 @@ class Regrouper(Grouper):
                 f"{sorted(outsiders)}, who are not waiting in this pool."
             )
         for group_members in plan if self.roles else []:
-            if len(group_members) != len(self.roles) or (
-                self.keep_roles
-                and {self.role(m) for m in group_members} != set(self.roles)
-            ):
+            if len(group_members) != len(self.roles):
                 raise ValueError(
                     f"Regrouper '{self.id}': with roles, form_groups must "
                     f"return groups of {len(self.roles)}, one member per role."
                 )
 
-    def _make_group(self, participants, within_group, creation_time):
+    def _make_group(self, participants, within_group, creation_time, split_id):
         """Create a fixed group that never dissolves or fails its members."""
         return self._create_group(
             participants,
             within_group_id=None if within_group is None else within_group.id,
             creation_time=creation_time,
+            split_id=split_id,
             initial_group_size=len(participants),
             max_group_size=len(participants),
             min_group_size=1,
@@ -3962,87 +4079,9 @@ class Regrouper(Grouper):
         )
 
 
-class _RegroupHistory(NamedTuple):
-    """Regrouper history of a set of members, each field keyed by participant ID."""
-
-    rounds: Dict[int, int]
-    times_met: Dict[int, Counter]
-    role_counts: Dict[int, Dict[str, int]]
-
-
-def warn_if_late_removal_fails_group(barriers):
-    """Warn if removing one late member would fail the members who were on time.
-
-    That happens when a :class:`GroupBarrier` has ``late_action="leave_group"``
-    and a :class:`SimpleGrouper` of its group type has ``below_quorum="fail"``
-    and a ``quorum`` that the loss of one member can break, as in a pair or a
-    group that started short. With ``late_action="leave_all_groups"`` such a
-    grouper of any group type counts, such as one forming the cohort that a
-    :class:`Regrouper` splits into pairs. A grouper with ``join_existing_groups=True``
-    only counts once its groups can stop taking newcomers, through a barrier
-    with ``stop_top_ups=True`` or a ``top_up_wait``, because until then the
-    group can top up instead.
-
-    Parameters
-    ----------
-    barriers : iterable of Barrier
-        The barriers in the timeline. Barriers created inside a trial, such as
-        in ``Trial.show_trial``, are not visible here.
-    """
-    barriers = list(barriers)
-    frozen_types = {
-        barrier.group_type
-        for barrier in barriers
-        if isinstance(barrier, GroupBarrier) and barrier.stop_top_ups
-    }
-    fragile_groupers = {}
-    for grouper in barriers:
-        if (
-            isinstance(grouper, SimpleGrouper)
-            and grouper.below_quorum == "fail"
-            and (
-                not grouper.join_existing_groups
-                or grouper.top_up_wait is not None
-                or grouper.group_type in frozen_types
-            )
-            # The quorum is the smallest size a group can start at.
-            and grouper.quorum
-            >= (grouper.start_short_with or grouper.initial_group_size)
-        ):
-            fragile_groupers.setdefault(grouper.group_type, grouper)
-    for barrier in barriers:
-        if not (
-            isinstance(barrier, GroupBarrier)
-            and barrier.late_after is not None
-            and barrier.late_action in ("leave_group", "leave_all_groups")
-        ):
-            continue
-        if barrier.late_action == "leave_all_groups":
-            groupers = list(fragile_groupers.values())
-        else:
-            groupers = [fragile_groupers.get(barrier.group_type)]
-        for grouper in filter(None, groupers):
-            warn_from_caller(
-                f"GroupBarrier '{barrier.id}' removes late members"
-                + (
-                    " from all their groups"
-                    if barrier.late_action == "leave_all_groups"
-                    else ""
-                )
-                + f", but grouper '{grouper.id}' fails the members left behind "
-                "when that leaves the group below its quorum"
-                + (
-                    " (after top_up_wait, if no newcomer joins)"
-                    if grouper.top_up_wait is not None
-                    and grouper.group_type not in frozen_types
-                    else ""
-                )
-                + ". So a single late member fails everyone who "
-                "was on time, while the late one carries on. Pass "
-                "below_quorum='continue_without_group' to the grouper to let everyone carry on, "
-                "or late_action='fail' to end the session for the whole group.",
-                UserWarning,
-            )
+def _is_dissolving(within_group) -> bool:
+    """Return whether a regrouper pool's ``within`` group waits to be dissolved, so it isn't split."""
+    return within_group is not None and bool(within_group.dissolving)
 
 
 def warn_if_newcomers_can_strand_group(barriers):
@@ -4129,8 +4168,7 @@ def leave_group(group_type: str, reason: RemovalReason = "finished"):
         The type of the group to leave.
     reason
         Passed to :meth:`SyncGroup.remove_participant`. The default,
-        ``"finished"``, shows the participant as "(finished)" and never
-        dissolves the group, even if they leave it below its quorum.
+        ``"finished"``, never dissolves the group, even if they leave it below its quorum.
 
     Returns
     -------
@@ -4168,14 +4206,21 @@ class SyncGroup(SQLBase, SQLMixin):
     active = Column(Boolean, default=True)
     end_time = Column(DateTime)
     last_barrier_pass_time = Column(DateTime, nullable=True)
-    leader_id = Column(Integer, ForeignKey("participant.id"))
-    # Dissolution started but skipped members whose rows were busy; the
-    # barrier poller finishes it.
+    # No foreign key, so writing the group, for example to mark it
+    # ``dissolving``, doesn't wait for a request that holds the leader's row.
+    leader_id = Column(Integer)
+    # Dissolution is queued because a member's row was busy; nobody has been
+    # removed yet, and the barrier poller dissolves the group all at once.
     dissolving = Column(Boolean, default=False)
-    # The grouper that formed the group, and for a Regrouper with ``within``,
-    # the group it regrouped within.
+    # The grouper that formed the group. For a Regrouper, also the split that
+    # formed it, shared by that split's other groups, and with ``within``, the
+    # group it regrouped within.
     grouper_id = Column(String, index=True)
     within_group_id = Column(Integer, index=True)
+    split_id = Column(String)
+    # Each synchronized trial maker's runs, by trial maker id, one dict per
+    # run with the group's choices (see ``psynet.trial.main._current_group_run``).
+    trial_maker_runs = Column(PythonDict, default=lambda: {})
 
     participant_links = relationship(
         "ParticipantLinkSyncGroup",
@@ -4183,6 +4228,17 @@ class SyncGroup(SQLBase, SQLMixin):
     )
 
     n_active_participants = Column(Integer)
+
+    #: Whether newcomers may join; only :class:`SimpleSyncGroup` takes top-ups.
+    accepts_top_ups = False
+    #: When the group stopped accepting top-ups; see :class:`SimpleSyncGroup`.
+    top_ups_stopped_at = None
+    #: Quorum and below-quorum policy; only :class:`SimpleSyncGroup` sets them.
+    min_group_size = None
+    below_quorum = None
+
+    def stop_top_ups(self):
+        """Stop newcomers joining this group; a no-op for groups that never take them."""
 
     @property
     def participants(self) -> List[Participant]:
@@ -4259,28 +4315,17 @@ class SyncGroup(SQLBase, SQLMixin):
         taken.add(keys)
 
     leader = relationship(
-        "psynet.participant.Participant",
-        cascade="all",
+        Participant,
+        primaryjoin=lambda: foreign(SyncGroup.leader_id) == Participant.id,
     )
 
     def check_leader(self):
-        """Make the lowest-id active member leader if the leader has left.
-
-        Setting ``leader_id`` makes PostgreSQL lock the new leader's row for
-        its foreign-key check, so only a member whose row is free (or already
-        held by this transaction) is chosen, and only that member's row is
-        locked. If every remaining member is busy in their own request, the
-        old leader stays until the next call, for example the group's next
-        barrier release.
-        """
+        """Make the lowest-id active member leader if the leader has left."""
         active_participants = sorted(self.active_participants, key=lambda p: p.id)
         if len(active_participants) == 0:
             self.leader = None
         elif self.leader not in active_participants:
-            for participant in active_participants:
-                if _lock_free_participants([participant]):
-                    self.leader = participant
-                    break
+            self.leader = active_participants[0]
 
     @property
     def active_followers(self):
@@ -4317,38 +4362,38 @@ class SyncGroup(SQLBase, SQLMixin):
         reason
             Why they left, stored on their link and returned by
             :meth:`~psynet.participant.Participant.sync_group_removal_reason`.
-            It also sets the label :class:`~psynet.group_prompt.GroupPrompt`
-            gives them (for when they are shown at all, see
-            :ref:`sync-showing-the-group`):
+            A :class:`~psynet.group_prompt.GroupPrompt` that still draws them
+            for their answer labels them "(left)" unless the reason is
+            ``"moved_on"`` or ``"finished"`` (see :ref:`sync-showing-the-group`).
 
             - ``None`` (default), ``"left_experiment"``, ``"waited_too_long"`` or
-              ``"group_dissolved"``: "(dropped out)", or "(left)" once they
-              have failed, left or completed the experiment.
-            - ``"late"``: "(removed)", for a member a barrier removed for
-              being late (with any ``late_action``), or "(left)" once
-              they have failed, left or completed the experiment.
+              ``"group_dissolved"``: they dropped out.
+            - ``"late"``: a barrier removed them for being late (with any
+              ``late_action``).
             - ``"moved_on"``: for a member who left at a :class:`Regrouper`,
               for their next group or to sit the round out. A pair a :class:`SimpleGrouper`
               formed isn't dissolved, failing the partner, when the first
               member reaches a :class:`Regrouper`.
-            - ``"finished"``: "(finished)", for a member who has played their
-              part, such as a player leaving a cohort after their last round,
-              even if they then left or completed the experiment; "(left)"
-              once they have failed.
+            - ``"finished"``: for a member who has played their part, such as
+              a player leaving a cohort after their last round.
               The members finishing their own last rounds aren't told that too
               few remained.
 
             ``"finished"`` and ``"moved_on"`` don't dissolve the group; other
             reasons can. See :ref:`groups_below_min_size` for the full rule.
         """
+        self._remove_without_quorum_check(participant, reason)
+
+    def _remove_without_quorum_check(self, participant, reason=None):
+        """Remove ``participant`` as :meth:`remove_participant` does, but never dissolve the group below its quorum."""
         if reason not in REMOVAL_REASONS:
             raise ValueError(
                 f"reason must be one of {REMOVAL_REASONS}, got {reason!r}."
             )
         _forget_active_sync_group(participant)
         for link in self.participant_links:
-            is_member = (
-                link.participant is participant or link.participant_id == participant.id
+            is_member = link.participant_id == participant.id or (
+                link.participant_id is None and link.participant is participant
             )
             if is_member and link.active:
                 link.active = False
@@ -4359,9 +4404,7 @@ class SyncGroup(SQLBase, SQLMixin):
                 _record_leaving_the_round(self, participant, reason)
         self.check_numbers()
         _notify_membership_change(self)
-        if self.n_active_participants == 0 and not getattr(
-            self, "accepts_top_ups", False
-        ):
+        if self.n_active_participants == 0 and not self.accepts_top_ups:
             self.close()
         else:
             self.check_leader()
@@ -4382,6 +4425,9 @@ class SyncGroup(SQLBase, SQLMixin):
             key=lambda participant: participant.id,
         )
 
+    def dissolve_if_below_quorum(self):
+        """Dissolve the group if it fell below its quorum; groups without a quorum never do."""
+
     def _dissolve(self):
         """Remove every active member at once, failing them if the group says so.
 
@@ -4391,6 +4437,11 @@ class SyncGroup(SQLBase, SQLMixin):
         ``dissolving`` and the barrier poller tries again on its next pass.
         Waiting here could deadlock with that member's request, which holds
         their row and then needs this group's row.
+
+        Each member leaves this group as ``"group_dissolved"`` before being
+        failed, as in :meth:`GroupBarrier._remove_late_participants`, because
+        failing removes a member from the groups they are still in as
+        ``"left_experiment"``.
 
         Returns
         -------
@@ -4408,16 +4459,13 @@ class SyncGroup(SQLBase, SQLMixin):
                     )
                 self.dissolving = True
                 return []
-            _run_on_dissolve(self, removed)
             group_size = len(group_seats(self))
+            fail = (self.below_quorum or "fail") == "fail"
             for participant in removed:
-                action = self._below_quorum_action(participant)
-                if action == "fail":
+                self._remove_without_quorum_check(participant, "group_dissolved")
+                if fail:
                     participant.fail("sync group below minimum size")
-                SyncGroup.remove_participant(
-                    self, participant, reason="group_dissolved"
-                )
-                if action == "continue_without_group":
+                else:
                     _tell_group_ended(participant, group_size)
             self.check_numbers()
             self.dissolving = False
@@ -4426,33 +4474,6 @@ class SyncGroup(SQLBase, SQLMixin):
         finally:
             self._dissolving_below_quorum = False
         return removed
-
-    def _below_quorum_action(self, participant):
-        """Return ``"fail"`` or ``"continue_without_group"`` for a member of this group as it dissolves."""
-        policy = getattr(self, "below_quorum", None) or "fail"
-        if not callable(policy):
-            return policy
-        try:
-            action = policy(participant=participant, group=self)
-        except Exception as err:
-            if is_transient_transaction_error(err):
-                raise
-            logger.exception(
-                "below_quorum of group %s raised for participant %s; failing them.",
-                self.id,
-                participant.id,
-            )
-            return "fail"
-        if action not in ("fail", "continue_without_group"):
-            logger.error(
-                "below_quorum of group %s returned %r for participant %s instead of "
-                "'fail' or 'continue_without_group'; failing them.",
-                self.id,
-                action,
-                participant.id,
-            )
-            return "fail"
-        return action
 
 
 class SimpleSyncGroup(SyncGroup):
@@ -4466,13 +4487,16 @@ class SimpleSyncGroup(SyncGroup):
     #: How many active members the group needs to keep going.
     quorum = synonym("min_group_size")
     accepts_top_ups = Column(Boolean)
+    #: When the group stopped accepting top-ups, or ``None`` while it accepts
+    #: them or if it never did.
+    top_ups_stopped_at = Column(DateTime)
     #: Seconds a group below quorum waits for newcomers; see ``SimpleGrouper(top_up_wait=...)``.
     top_up_wait = Column(Float)
     #: When the group last fell below its quorum while accepting newcomers.
     below_quorum_since = Column(DateTime)
-    #: What happens to members when the group dissolves below quorum: ``"fail"``,
-    #: ``"continue_without_group"``, or a serialized function returning one of these.
-    below_quorum = Column(PythonObject, default="fail")
+    #: What happens to members when the group dissolves below quorum: ``"fail"``
+    #: or ``"continue_without_group"``.
+    below_quorum = Column(String, default="fail")
 
     def remove_participant(
         self,
@@ -4494,17 +4518,22 @@ class SimpleSyncGroup(SyncGroup):
         """Stop newcomers joining this group, so that it no longer waits for them.
 
         For a group formed with ``join_existing_groups=True``, for example once
-        the game has started and a newcomer couldn't catch up. From then on it
+        the game has started, so nobody joins it under way. From then on it
         is treated as a group without top-ups (see
         :ref:`groups_below_min_size`); a group already below its
-        quorum is dissolved now. To stop top-ups when the group passes a
+        quorum is dissolved, usually at once. To stop top-ups when the group passes a
         barrier instead, pass ``stop_top_ups=True`` to that :class:`GroupBarrier`.
         """
         if not self.accepts_top_ups:
             return
-        self.accepts_top_ups = False
+        self._close_to_top_ups()
         self.check_numbers()
         self.dissolve_if_below_quorum()
+
+    def _close_to_top_ups(self):
+        """Record that newcomers can no longer join, without dissolving the group."""
+        self.accepts_top_ups = False
+        self.top_ups_stopped_at = timenow()
 
     def dissolve_if_below_quorum(self):
         """Dissolve a group without top-ups that fell below its quorum.
@@ -4522,11 +4551,23 @@ class SimpleSyncGroup(SyncGroup):
 
 
 def _record_leaving_the_round(group, participant, reason):
-    """Set ``sync_group_outcome`` of the participant's current cued trial in ``group``.
+    """Record why the participant left ``group`` on the round they are playing in it, if any.
 
-    Leaving before the trial's pages end replaces ``"stayed"``; after they end,
-    only a trial without an outcome records it, and moving on or finishing
-    never does.
+    That is their cued trial of ``group`` (see :func:`_round_trial`), if it
+    is not complete yet, so leaving between rounds, after the trial's pages
+    end, records nothing.
+    """
+    trial = _round_trial(group, participant)
+    if trial is not None and not trial.complete:
+        trial.sync_group_outcome = reason or "removed"
+
+
+def _round_trial(group, participant):
+    """Return the participant's current trial if it is a cued trial of ``group`` in this run of their module, else ``None``.
+
+    A run is one ``ModuleState``, so a trial from an earlier module, or from
+    an earlier run of the same module, as in a loop around the module, gives
+    ``None``.
     """
     from .trial.main import SyncGroupNode
 
@@ -4535,128 +4576,259 @@ def _record_leaving_the_round(group, participant, reason):
         trial is None
         or trial.sync_group_id != group.id
         or not isinstance(trial.node, SyncGroupNode)
+        or trial.module_state is not participant.module_state
     ):
-        return
-    if trial.complete and (
-        trial.sync_group_outcome is not None or reason in _KEEPS_GROUP_REASONS
-    ):
-        return
-    trial.sync_group_outcome = reason or "removed"
-
-
-def _shared_node(group, trials):
-    """Return ``group``'s node that all ``trials`` share, or ``None``.
-
-    Members with no current trial (``None`` in ``trials``) are ignored.
-    """
-    from .trial.main import SyncGroupNode
-
-    nodes = {trial.node_id: trial.node for trial in trials if trial is not None}
-    if len(nodes) != 1:
         return None
-    node = next(iter(nodes.values()))
-    if isinstance(node, SyncGroupNode) and node.sync_group_id == group.id:
-        return node
-    return None
+    return trial
 
 
-class _BarrierScope(NamedTuple):
-    """Whom one group's visit to a :class:`GroupBarrier` waits for; see :func:`_barrier_scope`."""
+def _common_round_node(group, participants):
+    """Return the round of ``group`` whose trial each of ``participants`` is in, as its node, or ``None``.
 
-    #: Members the visit waits for, and applies ``late_after`` to.
-    waited_for: List[Participant]
-    #: Members a release takes along if they are waiting: all but those in a
-    #: round the group played after the visit's round.
-    releasable: List[Participant]
-
-
-def _active_links(group):
-    """Return ``group``'s active member links by participant id."""
-    return {
-        link.participant_id: link for link in group.participant_links if link.active
-    }
-
-
-def _barrier_round(group, waiting_participants, links=None):
-    """Return the cued round of ``group`` that a barrier's visit belongs to, as its node, or ``None``.
-
-    Each member's link stores the round they last cued or skipped (see
-    :meth:`~psynet.trial.main.SyncGroupNode.for_cue`). The visit belongs to
-    the earliest of the waiting members' stored rounds in their current
-    module, so also a barrier after the round, such as in its feedback,
-    between iterations or after the loop. Rounds are ordered by node ``id``,
-    which is play order, as ``round=`` may name them in any order.
+    That is a node shared by every participant's current trial, an
+    unfinished cued trial of ``group`` in this run of their module (see
+    :func:`_round_trial`), as at a barrier in ``show_trial``. Anywhere else,
+    such as before the first cue, in ``show_feedback`` or after the loop,
+    or if one participant isn't in that round, it is ``None``.
     """
-    from .trial.main import SyncGroupNode
-
-    if links is None:
-        links = _active_links(group)
-    nodes = []
-    for participant in waiting_participants:
-        link = links.get(participant.id)
-        if link is None or link.round_node_id is None:
-            continue
-        node = db.session.get(SyncGroupNode, link.round_node_id)
-        if node is not None and node.module_id == participant.module_id:
-            nodes.append(node)
-    return min(nodes, key=lambda node: node.id, default=None)
+    trials = [_round_trial(group, p) for p in participants]
+    node_ids = {None if t is None or t.complete else t.node_id for t in trials}
+    if len(node_ids) != 1 or None in node_ids:
+        return None
+    return trials[0].node
 
 
-def _barrier_scope(group, waiting_participants) -> _BarrierScope:
-    """Return whom ``group``'s visit to a barrier waits for, from its members' stored rounds.
+class GroupDivergenceError(RuntimeError):
+    """A group's members wait for each other at different group barriers, so none can pass.
 
-    In the visit's round (see :func:`_barrier_round`), it waits for the
-    members who played that round, and for those behind it (an earlier
-    round, or none yet) only while the round is still open, since once it
-    has closed they will skip it. It doesn't wait for members who skipped
-    the round or are in a round played after it. A visit that belongs to no
-    round waits for every member. Costs at most one query, re-reading the
-    round's stored closure when someone is behind.
+    :func:`check_barriers` records it as an :class:`~psynet.error.ErrorRecord`
+    and logs it (see
+    :ref:`members at different barriers <rounds-group-barriers-in-loops>`);
+    bot tests then fail with it (see :func:`fail_on_group_divergence`).
     """
-    members = group.active_participants
-    links = _active_links(group)
-    node = _barrier_round(group, waiting_participants, links)
-    if node is None:
-        return _BarrierScope(members, members)
-    played, behind, releasable = set(), set(), set()
-    for participant in members:
-        link = links.get(participant.id)
-        round_node_id = None if link is None else link.round_node_id
-        if round_node_id is None or round_node_id < node.id:
-            behind.add(participant.id)
-        elif round_node_id == node.id:
-            if not link.skipped_round:
-                played.add(participant.id)
-        else:
-            continue
-        releasable.add(participant.id)
-    if behind:
-        db.session.refresh(node, ["sync_group_closed"])
-    if behind and not node.sync_group_closed:
-        played |= behind
-    return _BarrierScope(
-        [p for p in members if p.id in played],
-        [p for p in members if p.id in releasable],
+
+
+def _divergence_token(group_id):
+    """Return the token of the :class:`~psynet.error.ErrorRecord` of a divergence of a group."""
+    return f"group-divergence-{group_id}"
+
+
+def _report_divergences():
+    """Record and log each group whose members wait for each other at different barriers.
+
+    Runs at the end of each :func:`check_barriers` sweep, after its visit
+    checks, so whatever a release or time-out could do has been done. One
+    statement (:func:`_divergence_candidates`) finds the groups where every
+    active member waits at a barrier of the group and those waits span two
+    or more barriers; only those get the full check
+    (:func:`_divergence_message`). Each group is checked and recorded in its
+    own transaction, so an error in one doesn't skip the others. A group's
+    record carries the token from :func:`_divergence_token`, so a group with
+    a record isn't checked again.
+    """
+    try:
+        candidates = _divergence_candidates()
+    except Exception:
+        logger.warning("Failed to look for diverged sync groups.", exc_info=True)
+        return
+    for group_id in candidates:
+        try:
+            group = SyncGroup.query.get(group_id)
+            divergence = None if group is None else _divergence_message(group)
+            if divergence is None:
+                db.session.rollback()
+                continue
+            message, participant_ids = divergence
+            db.session.add(
+                ErrorRecord(
+                    GroupDivergenceError(message),
+                    token=_divergence_token(group_id),
+                    participant_id=min(participant_ids),
+                )
+            )
+            db.session.commit()
+            logger.error(message)
+        except Exception:
+            db.session.rollback()
+            logger.exception("Failed to check sync group %s for divergence.", group_id)
+
+
+def _divergence_candidates() -> List[int]:
+    """Return the ids of active groups whose members all wait at two or more of the group's barriers.
+
+    Dissolving groups and groups that already have a divergence record are
+    left out. One statement, in its own session.
+    """
+    member = and_(
+        ~Participant.failed,
+        Participant.status == "working",
     )
+    n_members = (
+        select(func.count())
+        .select_from(ParticipantLinkSyncGroup)
+        .join(Participant, Participant.id == ParticipantLinkSyncGroup.participant_id)
+        .where(
+            ParticipantLinkSyncGroup.sync_group_id == BarrierInstance.group_id,
+            ParticipantLinkSyncGroup.active.is_(True),
+            member,
+        )
+        .correlate(BarrierInstance)
+        .scalar_subquery()
+    )
+    query = (
+        select(BarrierInstance.group_id)
+        .join(
+            ParticipantLinkBarrier,
+            ParticipantLinkBarrier.barrier_instance_id == BarrierInstance.id,
+        )
+        .join(SyncGroup, SyncGroup.id == BarrierInstance.group_id)
+        .join(
+            ParticipantLinkSyncGroup,
+            and_(
+                ParticipantLinkSyncGroup.sync_group_id == BarrierInstance.group_id,
+                ParticipantLinkSyncGroup.participant_id
+                == ParticipantLinkBarrier.participant_id,
+                ParticipantLinkSyncGroup.active.is_(True),
+            ),
+        )
+        .join(Participant, Participant.id == ParticipantLinkBarrier.participant_id)
+        .where(
+            ParticipantLinkBarrier.released.is_(False),
+            member,
+            SyncGroup.active.is_(True),
+            SyncGroup.dissolving.isnot(True),
+            ~exists().where(
+                ErrorRecord.token
+                == func.concat(_divergence_token(""), BarrierInstance.group_id)
+            ),
+        )
+        .group_by(BarrierInstance.group_id)
+        .having(
+            and_(
+                func.count(func.distinct(BarrierInstance.barrier_id)) >= 2,
+                func.count(func.distinct(ParticipantLinkBarrier.participant_id))
+                == n_members,
+            )
+        )
+        .order_by(BarrierInstance.group_id)
+    )
+    with Session(bind=db.engine) as session:
+        return list(session.scalars(query))
+
+
+def _divergence_message(group) -> Optional[Tuple[str, Set[int]]]:
+    """Describe how ``group`` can't pass any of its barriers, or return ``None`` if it can.
+
+    Returns the message and the ids of the members it names.
+
+    That is when the group has its quorum and every active member waits at
+    a :class:`GroupBarrier` of the group, but none of those barriers has
+    them all, as when a barrier is inside a ``conditional`` that only some
+    members take. Each barrier waits for the members at the others, so
+    only ``late_after`` or ``max_wait_time`` can end the wait. The members
+    and their waits are read in one statement, so they are consistent with
+    each other. A member that a barrier lets through (see
+    :meth:`GroupBarrier._lets_through`) isn't stuck.
+    """
+    group_instances = select(BarrierInstance.id).where(
+        BarrierInstance.group_id == group.id
+    )
+    rows = db.session.execute(
+        select(ParticipantLinkSyncGroup.participant_id, ParticipantLinkBarrier)
+        .join(Participant, Participant.id == ParticipantLinkSyncGroup.participant_id)
+        .outerjoin(
+            ParticipantLinkBarrier,
+            and_(
+                ParticipantLinkBarrier.participant_id
+                == ParticipantLinkSyncGroup.participant_id,
+                ParticipantLinkBarrier.released.is_(False),
+                ParticipantLinkBarrier.barrier_instance_id.in_(group_instances),
+            ),
+        )
+        .where(
+            ParticipantLinkSyncGroup.sync_group_id == group.id,
+            ParticipantLinkSyncGroup.active.is_(True),
+            Participant.failed.is_(False),
+            Participant.status == "working",
+        )
+    ).all()
+    members = {participant_id for participant_id, _ in rows}
+    if len(members) < group.min_group_size or any(link is None for _, link in rows):
+        return None
+    waits = {}
+    for _, link in rows:
+        barrier = link.barrier_instance.get_barrier()
+        if isinstance(barrier, GroupBarrier):
+            waits.setdefault(barrier.id, (barrier, []))[1].append(link)
+    if (
+        len(waits) < 2
+        or {link.participant_id for _, links in waits.values() for link in links}
+        != members
+        or any(
+            {link.participant_id for link in links} == members
+            or barrier._waiters_let_through(link.participant for link in links)
+            for barrier, links in waits.values()
+        )
+    ):
+        return None
+    message = (
+        f"The members of '{group.group_type}' group {group.id} wait for each "
+        "other at different barriers, so none can pass: "
+        + "; ".join(
+            f"GroupBarrier '{barrier_id}' has participants "
+            + ", ".join(str(i) for i in sorted(link.participant_id for link in links))
+            for barrier_id, (_, links) in sorted(waits.items())
+        )
+        + ". Each GroupBarrier waits for every member of its group, so put the "
+        "barriers where every member reaches them in the same order, or have "
+        "members leave the group (leave_group) before their paths diverge. "
+        "Until late_after or max_wait_time moves someone on, nobody passes."
+    )
+    return message, members
+
+
+@contextmanager
+def fail_on_group_divergence():
+    """Raise :class:`GroupDivergenceError` after the block if :func:`check_barriers` recorded one during it.
+
+    Bot tests run inside it, so a divergence fails ``psynet test local``
+    with its message even though the poller found it in another process.
+    Records from before the block, such as an earlier run against the same
+    server, are ignored. The error is raised even if the block raised, as
+    bots stuck at diverged barriers fail on ``max_wait_time``.
+    """
+    with transaction():
+        start = db.session.query(func.max(ErrorRecord.id)).scalar() or 0
+    try:
+        yield
+    finally:
+        with transaction():
+            messages = [
+                message
+                for (message,) in db.session.query(ErrorRecord.message)
+                .filter(
+                    ErrorRecord.kind == GroupDivergenceError.__name__,
+                    ErrorRecord.id > start,
+                )
+                .order_by(ErrorRecord.id)
+            ]
+        if messages:
+            raise GroupDivergenceError("\n".join(messages))
 
 
 def _lock_round(group, node) -> bool:
     """Try the lock of the cued round ``node`` of ``group``, or return ``False`` if it is busy.
 
-    A release marks that round's node released, so newcomers' cues start the
-    next round. :meth:`~psynet.trial.main.SyncGroupNode.for_cue` holds the
-    same lock while a cue runs, so a busy lock defers the release to the next
+    A release closes that round's node, so newcomers' cues start the next
+    round. :meth:`~psynet.trial.main.SyncGroupNode.for_cue` holds the same
+    lock while a cue runs, so a busy lock defers the release to the next
     barrier check, instead of waiting while this request holds waiter rows.
-    The group's members are re-read under the lock, so a cue that committed
-    before it is counted. Visits outside a cued round need no lock.
+    Releases outside a round need no lock.
     """
     key = _round_lock_key(group, node)
     if key is None:
         return True
-    if not _execute_advisory_xact_lock(db.session, key, wait=False):
-        return False
-    db.session.expire(group, ["participant_links"])
-    return True
+    return _execute_advisory_xact_lock(db.session, key, wait=False)
 
 
 def _round_lock_key(group, node):
@@ -4687,41 +4859,6 @@ def _round_is_busy(group, node) -> bool:
     return False
 
 
-def _run_on_dissolve(group, members):
-    """Call ``on_dissolve`` of each barrier of ``group`` where some of ``members`` are waiting."""
-    reconstructed = {}
-    waiting = {}
-    for participant in members:
-        for link in list(participant.active_barriers.values()):
-            instance = link.barrier_instance
-            if instance is None or instance.group_id != group.id:
-                continue
-            barrier = _reconstructed_arrival_barrier(link, reconstructed)
-            if getattr(barrier, "on_dissolve", None) is None:
-                continue
-            waiting.setdefault(link.barrier_instance_id, (barrier, []))[1].append(
-                participant
-            )
-    for barrier, participants in waiting.values():
-        trials = [p.current_trial for p in participants]
-        try:
-            barrier.on_dissolve(
-                group=group,
-                participants=participants,
-                trials=trials,
-                node=_shared_node(group, trials),
-                barrier=barrier,
-            )
-        except Exception as err:
-            # Dissolving runs in other participants' requests, such as one
-            # returning the study, which must not fail because of this hook.
-            if is_transient_transaction_error(err):
-                raise
-            logger.exception(
-                "Barrier '%s' on_dissolve failed for group %s.", barrier.id, group.id
-            )
-
-
 def _top_up_wait_over(group) -> bool:
     """Return whether a group below its quorum has waited its ``top_up_wait`` for newcomers."""
     top_up_wait = getattr(group, "top_up_wait", None)
@@ -4748,12 +4885,16 @@ def _lock_free_participants(participants):
 def _lock_all_participants(participants):
     """Lock every participant's row without waiting, or return ``None`` if another transaction holds one.
 
-    Like :func:`_lock_free_participants`, but all or nothing. The rows it did
-    lock stay locked until this transaction ends.
+    Like :func:`_lock_free_participants`, but all or nothing. The locks are
+    taken in a savepoint, rolled back if any row was skipped, so the free
+    members' requests are not held up until this transaction ends. Opening
+    the savepoint flushes pending changes, so rolling it back keeps them.
     """
-    locked = _skip_locked_participant_ids(participants)
-    if any(participant.id not in locked for participant in participants):
-        return None
+    with db.session.begin_nested() as savepoint:
+        locked = _skip_locked_participant_ids(participants)
+        if any(participant.id not in locked for participant in participants):
+            savepoint.rollback()
+            return None
     return _still_working(participants)
 
 
@@ -4851,7 +4992,7 @@ class BarrierInstance(SQLBase, SQLMixin):
     announced_release_time = Column(Float)
     # The participant's module when the visit opened; see ``group_passed``.
     module_id = Column(String)
-    # The whole group was released here, as opposed to members released on a
+    # The group's release here passed it, as opposed to members released on a
     # time-out; ``GroupBarrier(pass_newcomers=True)`` lets later arrivals through.
     group_passed = Column(Boolean, default=False)
 
@@ -5025,9 +5166,9 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     # ``GroupBarrier.late_after``.
     page_deadline = Column(DateTime)
     # The group's cued round (a SyncGroupNode id) that the member last cued,
-    # or skipped if ``skipped_round``; set by ``SyncGroupNode.for_cue``. A
-    # GroupBarrier uses it to tell whom a round's barrier waits for. No
-    # foreign key, as on Trial.sync_group_id.
+    # or skipped if ``skipped_round``; set by ``SyncGroupNode.for_cue``, which
+    # uses it to reject cues of a round again. No foreign key, as on
+    # Trial.sync_group_id.
     round_node_id = Column(Integer)
     skipped_round = Column(Boolean, default=False)
 
@@ -5059,13 +5200,19 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     released = Column(Boolean, default=False)
     # A Regrouper released the participant without a group.
     sat_out = Column(Boolean, default=False)
+    # The group a Regrouper split placed the participant in at this visit;
+    # empty if the visit ended without one. ``Regrouper.role`` reads it. No
+    # foreign key, as on Trial.sync_group_id, so writing a visit doesn't wait
+    # for a request that holds the group's row.
+    sync_group_id = Column(Integer, index=True)
+    sync_group = relationship(
+        "SyncGroup",
+        primaryjoin="foreign(ParticipantLinkBarrier.sync_group_id) == SyncGroup.id",
+    )
     # The last page the participant answered before arriving, other than a
     # waiting page, ended on its time limit
     # (``Participant.timed_out_since_barrier``).
     ran_out_of_time = Column(Boolean, default=False)
-    # A Regrouper with ``keep_roles`` gave a newcomer this role for the
-    # coming split; it is kept once they play it.
-    role = Column(String)
     # With explicit waiting_logic there is no hold record, so the link keeps
     # the max_wait_time deadline for the poller.
     deadline_at = Column(DateTime)
@@ -5248,11 +5395,8 @@ def _time_out_overdue_waiters(sweep_ends):
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            participant = (
-                experiment._participant_request_query()
-                .with_for_update(of=Participant, nowait=True)
-                .populate_existing()
-                .get(participant_id)
+            participant = _lock_and_load_participant(
+                experiment._participant_request_query(), participant_id, nowait=True
             )
             if participant is not None:
                 _time_out_overdue_links(participant)
@@ -5361,12 +5505,7 @@ def reached_barrier_after_time_limit(participant, group) -> bool:
 def _interruptible_waiting_barrier(page, participant):
     """Return the barrier whose ``waiting_logic`` this page belongs to, if a release may end it.
 
-    Pages of a trial that is still waiting for its answer are left to run
-    to their end, so that the trial is not finalized without an answer.
-    Waiting logic only times out between passes, so a trial started there
-    is finished before the participant leaves it.
-    ``participant.current_trial`` is not cleared after a trial, so an
-    earlier, answered trial doesn't count.
+    Every such page may end, including a trial's; see :func:`_end_waiting_page`.
     """
     barrier = (getattr(page, "links", None) or {}).get("barrier")
     if not isinstance(barrier, Barrier) or barrier.release_grace is None:
@@ -5375,10 +5514,23 @@ def _interruptible_waiting_barrier(page, participant):
         return None
     if participant.failed:
         return None
-    trial = participant.current_trial
-    if trial is not None and not trial.complete:
-        return None
     return barrier
+
+
+#: ``failed_reason`` of a trial whose page a barrier's release ended before it was answered.
+INTERRUPTED_BY_RELEASE = "interrupted_by_release"
+
+
+def _end_waiting_page(participant):
+    """Fail the trial of the waiting page a release is ending, if it has not been answered.
+
+    A barrier with ``waiting_logic`` is never inside a trial's pages (see
+    :meth:`Barrier.receive_participant`), so an unanswered trial here was
+    started in the waiting logic.
+    """
+    trial = _trial_owning_page(participant)
+    if trial is not None and not trial.failed:
+        trial.fail(reason=INTERRUPTED_BY_RELEASE)
 
 
 def _forget_time_out(participant):
@@ -5387,7 +5539,18 @@ def _forget_time_out(participant):
 
 
 def _leave_waiting_logic(code_block, participant):
-    """Hand the participant back to the barrier whose waiting logic encloses this one, if any."""
+    """Hand the participant back to the barrier whose waiting logic encloses this one, if any.
+
+    A trial maker in a released pass may have prepared a trial whose pages
+    the participant never reached; it is failed and completed here.
+    """
+    from .timeline import _in_released_pass
+
+    trial = _in_released_pass(participant) and _trial_owning_page(participant)
+    if trial:
+        if not trial.failed:
+            trial.fail(reason=INTERRUPTED_BY_RELEASE)
+        trial.complete = True
     outer = code_block.links.get("barrier")
     participant.waiting_barrier_id = None if outer is None else outer.id
 
@@ -5453,7 +5616,7 @@ def waiting_status_payload(unique_id, barrier_id):
     Waiting pages fetch this about every 2 seconds. ``ends_page`` tells
     whether the participant's current page would now accept an interrupt
     (see :func:`released_waiting_barrier`); a released participant whose
-    page may not be ended, for example inside an unfinished trial, gets
+    page may not be ended, for example with ``release_grace=None``, gets
     ``released`` without ``ends_page`` and finishes the page normally.
     ``release_in_ms`` is the time left until
     :meth:`Barrier.expected_release_time`, or ``None``.
@@ -5665,12 +5828,20 @@ def _check_claimed_barrier_instance(instance, *, wait=False, already_claimed=Fal
     return True
 
 
+_WAITER_LOCKED_DEFERRAL = (
+    "because another request holds the row of a waiter or their group "
+    "(expected under load; "
+    "PostgreSQL logs it as 'could not obtain lock on row')."
+)
+
+
 def _evaluate_held_instance(instance_id):
     """Evaluate one already-claimed visit and commit.
 
     Sets the ORM ``lock_timeout`` so check/commit cannot wait forever while
-    the extra connection holds the visit key. Nested waiter ``NOWAIT`` misses
-    return ``(False, [])`` so last-arrival can retry. Author ``on_release``
+    the extra connection holds the visit key. Nested ``NOWAIT`` misses, on a
+    waiter's row or on the row of their group that accepts top-ups, roll
+    back the check and return ``(False, [])`` so last-arrival can retry. Author ``on_release``
     and spec errors also return ``(False, [])`` so the group stays waiting.
     Other non-transient check errors propagate so ``GET /timeline`` does not
     first-paint a hold. Released waiter ids are drained here so they cannot
@@ -5685,7 +5856,7 @@ def _evaluate_held_instance(instance_id):
     except Exception as err:
         if is_transient_transaction_error(err):
             logger.debug(
-                "Barrier '%s' instance %s deferred because a waiter is locked.",
+                "Barrier '%s' instance %s deferred " + _WAITER_LOCKED_DEFERRAL,
                 instance.barrier_id if instance is not None else None,
                 instance_id,
             )
@@ -5743,9 +5914,10 @@ def _run_pending_barrier_checks(instance_ids, *, wait=True):
     Last-arrival waits for the extra-connection claim so it can release
     without waiting for the 0.5 s poller. It does not skip partner cursors
     after that commit. Waiter rows stay ``FOR UPDATE NOWAIT`` during the
-    check. A blocking claim wait that hits ``lock_timeout`` raises so
-    ``GET /timeline`` can return HTTP 503. A waiter-row ``NOWAIT`` miss
-    still returns ``False`` so the caller can retry once.
+    check, as are the rows of their groups that accept top-ups. A blocking
+    claim wait that hits ``lock_timeout`` raises so ``GET /timeline`` can
+    return HTTP 503. A ``NOWAIT`` miss on a waiter's or group's row still
+    returns ``False`` so the caller can retry once.
 
     Unfilled waiter GET recovery must pass ``wait=False``. Those requests try
     the claim so a dropped last-arrival check can still finish, but they must
@@ -5772,7 +5944,7 @@ def _process_barrier_instance(instance_id, *, retry=False):
     """Try one barrier visit and report whether contention deferred it.
 
     Contention is another request holding the visit claim, or a locked
-    waiter. Author ``on_release`` and spec errors are reported the same way.
+    waiter or top-up group. Author ``on_release`` and spec errors are reported the same way.
     The poller retries once in the same sweep, then queues the visit like a
     checked one.
     """
@@ -5789,9 +5961,9 @@ def _process_barrier_instance(instance_id, *, retry=False):
     except Exception as err:
         db.session.rollback()
         if is_transient_transaction_error(err):
-            qualifier = " still locked on retry" if retry else " deferred"
+            qualifier = " deferred again on retry" if retry else " deferred"
             logger.debug(
-                "Barrier '%s' instance %s%s because a waiter is locked.",
+                "Barrier '%s' instance %s%s " + _WAITER_LOCKED_DEFERRAL,
                 barrier_id,
                 instance_id,
                 qualifier,
@@ -5828,15 +6000,10 @@ def _finish_dissolving_groups():
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            group = (
-                SyncGroup.query.filter_by(id=group_id)
-                .with_for_update(of=SyncGroup, key_share=True, skip_locked=True)
-                .populate_existing()
-                .first()
-            )
+            group = _lock_sync_group(group_id, skip_locked=True)
             if group is not None and group.active and group.dissolving:
                 group.check_numbers()
-                quorum = getattr(group, "min_group_size", None) or 0
+                quorum = group.min_group_size or 0
                 if 0 < quorum <= group.n_active_participants:
                     group.dissolving = False
                 else:
@@ -5891,10 +6058,20 @@ def check_barriers():
     of the two steps stops starting new work after
     ``_POLLER_SWEEP_BUDGET_SECONDS``, so thousands of idle waiters cannot
     keep the poller busy; the rest wait for later sweeps. One item can still
-    overrun the budget while it waits for a row lock. Live waiters still
-    check their own visit on each hold poll.
+    overrun the budget while it waits for a row lock. A waiter's page reload
+    (``GET /timeline``) or a bot's poll also checks their own visit; a
+    browser's hold poll does not. A sweep that found waiting visits ends by
+    reporting groups whose members wait at different barriers (see
+    :func:`_report_divergences`).
     """
     seen = set()
+    _check_barriers(seen)
+    if seen:
+        _report_divergences()
+
+
+def _check_barriers(seen):
+    """Do the work of :func:`check_barriers`, adding each visit checked to ``seen``."""
     with _defer_timeline_hold_wakes():
         _finish_dissolving_groups()
         _time_out_overdue_waiters(time.monotonic() + _POLLER_SWEEP_BUDGET_SECONDS)
@@ -5967,13 +6144,7 @@ def check_sync_groups():
                     get_config().get("timeline_lock_timeout_seconds"),
                     session=session,
                 )
-                group = (
-                    session.query(SyncGroup)
-                    .filter_by(id=group_id)
-                    .with_for_update(of=SyncGroup, skip_locked=True)
-                    .populate_existing()
-                    .first()
-                )
+                group = _lock_sync_group(group_id, session=session, skip_locked=True)
                 if group is None:
                     continue
                 group.check_numbers()

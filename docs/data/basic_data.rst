@@ -116,7 +116,14 @@ The trial pays its round's payoff as a bonus through ``score_answer`` and
 their trials' ``performance_reward``, and the export and the payments agree.
 Its ``player_round`` table also gives each trial's ``sync_group_outcome``,
 which says whether the player stayed to the end of the round or why they
-left it (see :ref:`round outcomes <sync-round-outcome>`).
+left it (see :ref:`round outcomes <sync-round-outcome>`). Its
+``team_round`` table reads the node of each team and round:
+
+.. literalinclude:: ../../demos/experiments/public_goods/experiment.py
+   :start-at: "team_round": [
+   :end-at: for n in teams
+   :dedent: 12
+   :append: ],
 
 Group membership, for groups formed by a grouper (see
 :doc:`/code/multiplayer/synchronization`), is stored in two tables:
@@ -126,7 +133,9 @@ Group membership, for groups formed by a grouper (see
     ``end_time`` (set when the group is closed) and
     ``n_active_participants``. Groups formed by a
     :class:`~psynet.sync.SimpleGrouper` also record ``initial_group_size``,
-    ``min_group_size``, ``max_group_size`` and ``accepts_top_ups``.
+    ``min_group_size``, ``max_group_size``, ``accepts_top_ups`` and
+    ``top_ups_stopped_at`` (when a group that accepted top-ups stopped
+    accepting them).
 
 ``participant_link_sync_group``
     One row per member of each group: ``participant_id``, ``sync_group_id``,

@@ -2,12 +2,11 @@
 
 Players first wait in a lobby until a cohort of ``COHORT_SIZE`` forms, or until
 at least ``MIN_COHORT_SIZE`` have waited ``SHORT_START_SECONDS``. Latecomers can
-still join a cohort until one of its players reaches round ``OPEN_UNTIL_ROUND``,
-which stops the cohort's top-ups.
+still join a cohort during its first ``OPEN_FOR_ROUNDS`` rounds.
 
-Each round, the :class:`~psynet.sync.Regrouper` pairs up the cohort's players,
-avoiding last round's partner, and gives each pair a proposer and a
-responder, alternating each player's role. It starts the round as soon as
+Each round, a :class:`~psynet.sync.Regrouper` (``PairingRegrouper``, in
+``pairing.py``) pairs up the cohort's players, avoiding last round's partner,
+and gives each pair a proposer and a responder, alternating each player's role. It starts the round as soon as
 the whole cohort is ready, or ``ROUND_DEADLINE_SECONDS`` after the first
 player is back, without the players who aren't ready yet. With an odd number
 of players, one who has played the most rounds sits that round out; a
@@ -34,19 +33,17 @@ after sitting out ``MAX_SIT_OUTS`` rounds or if their cohort falls apart.
 from typing import List
 
 import psynet.experiment
-from psynet.bot import BotDriver, advance_past_wait_pages
+from psynet.bot import BotDriver, advance_past_wait_pages, regroup_now
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.sync import (
     GroupBarrier,
-    Regrouper,
     SimpleGrouper,
     leave_group,
 )
 from psynet.timeline import (
-    CodeBlock,
     Module,
     PageMaker,
     Timeline,
@@ -57,6 +54,8 @@ from psynet.timeline import (
 )
 from psynet.trial.main import SyncGroupNode, Trial
 
+from .pairing import PairingRegrouper, last_partner_id
+
 COHORT = "cohort"
 PAIR = "pair"
 COHORT_SIZE = 4
@@ -64,7 +63,7 @@ MIN_COHORT_SIZE = 2
 SHORT_START_SECONDS = 60
 N_ROUNDS = 2
 MAX_SIT_OUTS = 2
-OPEN_UNTIL_ROUND = 2
+OPEN_FOR_ROUNDS = 1
 DECISION_SECONDS = 30
 # Longer than the decisions take, so a pair that finishes early is re-paired
 # with the rest of the cohort rather than without them.
@@ -98,7 +97,6 @@ def get_timeline():
                 "rounds",
                 keep_playing,
                 join(
-                    CodeBlock(stop_newcomers),
                     pairing,
                     switch(
                         "round",
@@ -169,14 +167,6 @@ def ended_early_page(participant):
     return InfoPage(text, time_estimate=5)
 
 
-def stop_newcomers(participant):
-    """Stop latecomers joining the cohort once a player reaches round ``OPEN_UNTIL_ROUND``."""
-    cohort = cohort_of(participant)
-    next_round = pairing.rounds_played(participant) + 1
-    if cohort is not None and next_round >= OPEN_UNTIL_ROUND:
-        cohort.stop_top_ups()
-
-
 def keep_playing(participant):
     cohort = cohort_of(participant)
     return (
@@ -221,12 +211,13 @@ SIT_OUT_TEXT = (
 )
 
 
-pairing = Regrouper(
+pairing = PairingRegrouper(
     PAIR,
     within=COHORT,
     roles=["proposer", "responder"],
     deadline=ROUND_DEADLINE_SECONDS,
     left_over="sit_out",
+    stop_top_ups_after_rounds=OPEN_FOR_ROUNDS,
     waiting_message=round_message,
     waiting_screen=pairing_up,
 )
@@ -442,19 +433,28 @@ class Exp(psynet.experiment.Experiment):
         assert _cohort_accepts_newcomers(bots[0])
         _play(bots)
         assert all("The offer of" in bot.current_page_text for bot in bots)
+        first_partner = {bot.id: bot.with_participant(last_partner_id) for bot in bots}
+        first_role = {bot.id: bot.with_participant(pairing.role) for bot in bots}
 
         # Round 2: one player lingers on their results, so the round starts at
         # the deadline without them, and one of the other three sits out.
+        # regroup_now brings the deadline forward, so the test doesn't wait.
         others = bots[:3]
         for bot in others:
             bot.take_page()
-        advance_past_wait_pages(others, timeout=WAIT_TIMEOUT)
+        regroup_now(others, pairing)
         assert not _cohort_accepts_newcomers(bots[0])
         sitting_out = [b for b in others if "sit out" in b.current_page_text]
         assert len(sitting_out) == 1
         # One of the pair closes their page. Once late, they leave the pair and
         # the cohort, so the rest of the cohort doesn't wait for them.
         stayer, leaver = [b for b in others if b not in sitting_out]
+        # Any two of the three could pair, so nobody meets last round's partner.
+        assert first_partner[stayer.id] != leaver.id
+        # Players who held different roles last round both switch.
+        if first_role[stayer.id] != first_role[leaver.id]:
+            for bot in (stayer, leaver):
+                assert bot.with_participant(pairing.role) != first_role[bot.id]
         _play([stayer])
         assert "Your partner was away" in stayer.current_page_text
         assert leaver.with_participant(lambda p: cohort_of(p) is None)

@@ -75,10 +75,7 @@ export async function activate({root, vars}) {
     }
 
     function drawnMembers() {
-        // Members who left stay drawn, faded, but are not in the event's members.
-        return Array.from(
-            root.querySelectorAll(".psynet-group-member[data-seat]:not(.psynet-group-member--left)")
-        )
+        return Array.from(root.querySelectorAll(".psynet-group-member[data-seat]"))
             .map(function (member) { return Number(member.dataset.seat); })
             .sort(function (a, b) { return a - b; });
     }

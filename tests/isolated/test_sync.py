@@ -74,7 +74,6 @@ from psynet.sync import (
     arrival_notice_payload,
     check_barriers,
     check_sync_groups,
-    group_seats,
     hold_message,
     leave_group,
     pending_arrival_notice_for,
@@ -98,6 +97,7 @@ from psynet.timeline_hold import (
     default_group_barrier_arrival_message,
     default_hold_progress,
 )
+from psynet.trial.main import _edit_group_runs
 from psynet.utils import call_function_with_context, get_config
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -112,6 +112,7 @@ from timeline_hold_helpers import (  # noqa: E402
     _hold_wake_publications,
     _json_hold_is_silent,
     _json_timeline,
+    _lock_participant_row,
     _participant_hold,
     _participant_row_is_locked,
     _process_response,
@@ -373,6 +374,22 @@ def test_pending_barrier_checks_are_discarded_on_rollback(
     db_session.rollback()
 
     assert _take_pending_barrier_checks() == []
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_nested_edits_to_a_group_s_trial_maker_runs_are_saved(
+    in_experiment_directory, db_session
+):
+    group = _pair_sync_group(get_experiment(), db_session)[1]
+    _edit_group_runs(group, "tm", lambda runs: runs.append({"members": []}))
+    db_session.commit()
+    _edit_group_runs(group, "tm", lambda runs: runs[-1]["members"].append(1))
+    db_session.commit()
+    db_session.expire_all()
+
+    assert group.trial_maker_runs == {"tm": [{"members": [1]}]}
 
 
 @pytest.mark.parametrize(
@@ -920,6 +937,69 @@ def test_join_skips_a_group_that_another_request_is_changing(
         _set_transaction_lock_timeout(1)
         assert grouper.choose_who_to_release([joiner]) == [joiner]
         assert joiner.active_sync_groups["top_up"].id == free.id
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_newcomer_waits_briefly_for_a_busy_group_instead_of_the_poller(
+    in_experiment_directory, db_session
+):
+    """Reaching the grouper, a newcomer joins a group another request holds once it commits."""
+    exp = get_experiment()
+    _members, group = _sync_group_of(exp, db_session, 2, group_type="top_up")
+    group.accepts_top_ups = True
+    group.max_group_size = 4
+    prompt, slow = _working_participants(exp, 2)
+    grouper = SimpleGrouper(
+        group_type="top_up",
+        initial_group_size=2,
+        max_group_size=4,
+        join_existing_groups=True,
+    )
+
+    def hold_group_row(other):
+        transaction = other.begin()
+        other.execute(
+            text("SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"),
+            {"id": group.id},
+        )
+        return transaction
+
+    def release_once_blocked(other, transaction, pid):
+        deadline = time.monotonic() + 10
+        while (
+            time.monotonic() < deadline
+            and not other.execute(
+                text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"), {"pid": pid}
+            ).scalar()
+        ):
+            time.sleep(0.01)
+        transaction.commit()
+
+    lock_timeout = "SELECT current_setting('lock_timeout')"
+    _set_transaction_lock_timeout(5)
+    newcomer_pid = db_session.execute(text("SELECT pg_backend_pid()")).scalar()
+    with db.engine.connect() as other:
+        releaser = threading.Thread(
+            target=release_once_blocked,
+            args=(other, hold_group_row(other), newcomer_pid),
+        )
+        releaser.start()
+        grouper._join_on_arrival(prompt)
+        releaser.join(30)
+    assert prompt.in_sync_group("top_up")
+    assert db_session.execute(text(lock_timeout)).scalar() == "5s"
+    db_session.commit()
+
+    _set_transaction_lock_timeout(5)
+    with db.engine.connect() as other:
+        transaction = hold_group_row(other)
+        grouper._join_on_arrival(slow)
+        assert not slow.in_sync_group("top_up")
+        assert db_session.execute(text(lock_timeout)).scalar() == "5s"
+        db_session.commit()
+        transaction.commit()
 
 
 @pytest.mark.parametrize("request_kind", ["response", "timeline"])
@@ -1734,6 +1814,8 @@ def test_finalize_barrier_arrivals_peeks_nested_checks_before_waiting(monkeypatc
     page = Page()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             return self
 
@@ -2050,6 +2132,8 @@ def test_finalize_barrier_arrivals_commits_checks_before_participant_relock(
     page = Page()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             return self
 
@@ -2104,6 +2188,8 @@ def test_finalize_barrier_arrivals_does_not_relock_after_losing_claim(monkeypatc
     hold = Hold()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             events.append("participant_relock")
             return self
@@ -2168,6 +2254,8 @@ def test_finalize_barrier_arrivals_uses_later_hold_after_lost_claim(monkeypatch)
     page = NextHold()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             events.append("participant_relock")
             return self
@@ -2234,6 +2322,8 @@ def test_finalize_barrier_arrivals_uses_already_advanced_page_after_lost_claim(
     page = Page()
 
     class Query:
+        session = SimpleNamespace(execute=lambda statement: None)
+
         def with_for_update(self, **kwargs):
             events.append("participant_relock")
             return self
@@ -3710,13 +3800,6 @@ def test_waiting_page_timeout_applies_on_the_next_request(
         exp.timeline = original_timeline
 
 
-_dissolve_calls = []
-
-
-def _record_dissolve(participants):
-    _dissolve_calls.append(sorted(p.id for p in participants))
-
-
 @pytest.mark.parametrize("below_quorum", ["fail", "continue_without_group"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
@@ -3728,14 +3811,11 @@ def test_dissolution_waits_for_a_busy_member_then_removes_everyone_at_once(
     exp = get_experiment()
     (waiter, busy, quitter), group = _sync_group_of(exp, db_session, 3)
     group.below_quorum = below_quorum
-    barrier = GroupBarrier(
-        id_="dissolve_at_once", group_type="main", on_dissolve=_record_dissolve
-    )
+    barrier = GroupBarrier(id_="dissolve_at_once", group_type="main")
     for participant in (waiter, busy):
         _arrive_at_group_barrier(exp, barrier, participant)
     _commit_barrier_arrivals()
     ids, group_id = sorted([waiter.id, busy.id]), group.id
-    _dissolve_calls.clear()
 
     with db.engine.connect() as busy_request, busy_request.begin():
         busy_request.execute(
@@ -3748,17 +3828,42 @@ def test_dissolution_waits_for_a_busy_member_then_removes_everyone_at_once(
         check_barriers()
         db.session.expire_all()
         assert Participant.query.get(waiter.id).in_sync_group("main")
-        assert _dissolve_calls == []
 
     check_barriers()
 
     db.session.expire_all()
-    assert _dissolve_calls == [ids]
     for participant_id in ids:
         participant = Participant.query.get(participant_id)
         assert not participant.in_sync_group("main")
         assert participant.failed == (below_quorum == "fail")
     assert SyncGroup.query.get(group_id).active is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_deferred_dissolution_leaves_free_members_rows_unlocked(
+    in_experiment_directory, db_session
+):
+    """Waiting for a busy member doesn't hold the free members' rows until the caller commits."""
+    exp = get_experiment()
+    (free, busy, quitter), group = _sync_group_of(exp, db_session, 3)
+
+    with _lock_participant_row(busy.id):
+        _set_transaction_lock_timeout(1)
+        quitter.fail("returned")
+        assert group.dissolving
+        assert not _participant_row_is_locked(free.id)
+        db.session.commit()
+
+    db.session.expire_all()
+    assert Participant.query.get(quitter.id).failed
+    assert not Participant.query.get(quitter.id).in_sync_group("main")
+    assert Participant.query.get(free.id).in_sync_group("main")
+
+    check_barriers()
+    db.session.expire_all()
+    assert not Participant.query.get(free.id).in_sync_group("main")
 
 
 @pytest.mark.parametrize(
@@ -3829,13 +3934,13 @@ def test_two_members_failing_at_once_do_not_deadlock(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_new_leader_is_a_member_who_is_not_busy(in_experiment_directory, db_session):
-    """Re-electing a leader skips a member whose own request holds their row."""
+def test_electing_a_busy_leader_does_not_wait(in_experiment_directory, db_session):
+    """Re-electing a leader doesn't wait for the new leader's own request."""
     exp = get_experiment()
-    (leader, busy, free), group = _sync_group_of(exp, db_session, 3)
+    (leader, busy, _), group = _sync_group_of(exp, db_session, 3)
     group.min_group_size = 1
     db.session.commit()
-    busy_id, free_id, group_id = busy.id, free.id, group.id
+    busy_id, group_id = busy.id, group.id
 
     with db.engine.connect() as busy_request, busy_request.begin():
         busy_request.execute(
@@ -3846,7 +3951,7 @@ def test_new_leader_is_a_member_who_is_not_busy(in_experiment_directory, db_sess
         leader.fail("left")
         db.session.commit()
 
-    assert SyncGroup.query.get(group_id).leader_id == free_id
+    assert SyncGroup.query.get(group_id).leader_id == busy_id
 
 
 @pytest.mark.parametrize(
@@ -5974,10 +6079,11 @@ def test_pending_arrival_notice_for_spec_error_returns_none(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_group_hold_reports_how_many_are_not_ready_yet(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, monkeypatch
 ):
     exp = get_experiment()
     first, second, third = _sync_group_of(exp, db_session, 3)[0]
+    publications = _hold_wake_publications(monkeypatch)
     barrier = GroupBarrier(
         id_="group_hold_remaining",
         group_type="main",
@@ -5995,6 +6101,7 @@ def test_group_hold_reports_how_many_are_not_ready_yet(
     db_session.commit()
     overlay = barrier.waiting_logic.overlay_html(first)
     assert "1 of 3 not ready yet" in overlay
+    assert "1 of 3 not ready yet" in _arrival_hold_messages(publications, first.id)[-1]
     assert pending_arrival_notice_for(third) == "2/3 of your group are ready."
 
 
@@ -6870,34 +6977,6 @@ def test_late_member_leaving_all_groups_can_fail_the_cohort_with_a_warning(
     assert "below_quorum='continue_without_group'" in caplog.text
 
 
-@pytest.mark.parametrize("late_action", ["leave_group", "leave_all_groups"])
-def test_timeline_warns_when_leaving_all_groups_would_fail_the_cohort(late_action):
-    def make_timeline():
-        return Timeline(
-            SimpleGrouper("cohort", initial_group_size=4, quorum=4),
-            SimpleGrouper(
-                "pair",
-                initial_group_size=2,
-                quorum=1,
-                below_quorum="continue_without_group",
-            ),
-            GroupBarrier(
-                id_="round", group_type="pair", late_after=30, late_action=late_action
-            ),
-            InfoPage("Done", time_estimate=1),
-        )
-
-    if late_action == "leave_all_groups":
-        with pytest.warns(
-            UserWarning, match="from all their groups, but grouper 'cohort"
-        ):
-            make_timeline()
-    else:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            make_timeline()
-
-
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
@@ -7141,66 +7220,6 @@ def test_group_barrier_late_after_removal_releases_waiters_after_dissolution(
         assert _removed_from_group_notice(p).startswith("Too few members")
 
 
-@pytest.mark.parametrize("below_quorum", ["fail", "continue_without_group"])
-@pytest.mark.parametrize(
-    "group_size",
-    [
-        {"initial_group_size": 2},
-        {
-            "initial_group_size": 4,
-            "start_short_after": 30,
-            "start_short_with": 2,
-            "max_wait_time": 60,
-        },
-    ],
-)
-def test_timeline_warns_when_a_late_member_would_fail_their_partner(
-    below_quorum, group_size
-):
-    def make_timeline():
-        return Timeline(
-            SimpleGrouper("pair", below_quorum=below_quorum, **group_size),
-            GroupBarrier(
-                id_="round", group_type="pair", late_after=30, late_action="leave_group"
-            ),
-            InfoPage("Done", time_estimate=1),
-        )
-
-    if below_quorum == "fail":
-        with pytest.warns(UserWarning, match="single late member fails everyone"):
-            make_timeline()
-    else:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            make_timeline()
-
-
-@pytest.mark.parametrize(
-    "stop_top_ups, top_up_wait", [(False, None), (True, None), (False, 30)]
-)
-def test_timeline_warns_about_late_members_once_top_ups_stop(stop_top_ups, top_up_wait):
-    def make_timeline():
-        return Timeline(
-            SimpleGrouper(
-                "team",
-                initial_group_size=2,
-                join_existing_groups=True,
-                top_up_wait=top_up_wait,
-            ),
-            GroupBarrier(id_="start", group_type="team", stop_top_ups=stop_top_ups),
-            GroupBarrier(
-                id_="round", group_type="team", late_after=30, late_action="leave_group"
-            ),
-            InfoPage("Done", time_estimate=1),
-        )
-
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        make_timeline()
-    warned = any("single late member fails everyone" in str(w.message) for w in caught)
-    assert warned == bool(stop_top_ups or top_up_wait)
-
-
 def test_timeline_warns_about_barriers_newcomers_can_reach_after_their_group():
     def make_timeline(*rounds, **start):
         return Timeline(
@@ -7326,33 +7345,6 @@ def test_removing_a_late_member_dissolves_a_group_without_top_ups(
 
     assert not partner.in_sync_group("cohort")
     assert partner.failed == (below_quorum == "fail")
-
-
-def _score_dissolved(participants, barrier):
-    for participant in participants:
-        participant.var.scored_at = barrier.id
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
-)
-def test_on_dissolve_runs_for_the_members_waiting_at_the_barrier(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    (waiter, answering, quitter), group = _sync_group_of(exp, db_session, 3)
-    group.below_quorum = "continue_without_group"
-    barrier = GroupBarrier(
-        id_="question_3", group_type="main", on_dissolve=_score_dissolved
-    )
-    _arrive_at_group_barrier(exp, barrier, waiter)
-    _commit_barrier_arrivals()
-
-    quitter.fail("returned")
-    db_session.commit()
-
-    assert waiter.var.get("scored_at") == "question_3"
-    assert answering.var.get("scored_at") is None
 
 
 @pytest.mark.parametrize(
@@ -7481,16 +7473,6 @@ def test_group_barrier_late_after_fail_missing_participants(
     assert set(released) == set(waiting_participants)
 
 
-def _fail_the_first_member(participant, group):
-    return (
-        "fail" if group_seats(group)[participant.id] == 0 else "continue_without_group"
-    )
-
-
-def _broken_below_quorum(participant, group):
-    raise RuntimeError("bug in the author's function")
-
-
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
@@ -7499,8 +7481,6 @@ def _broken_below_quorum(participant, group):
     [
         ("fail", [True, True]),
         ("continue_without_group", [False, False]),
-        (_fail_the_first_member, [True, False]),
-        (_broken_below_quorum, [True, True]),
     ],
 )
 def test_group_barrier_below_quorum(
@@ -7525,9 +7505,17 @@ def test_group_barrier_below_quorum(
         below_quorum=grouper.below_quorum,
     )
     group.last_barrier_pass_time = timenow()
-    db_session.add(group)
+    other_group = SimpleSyncGroup(
+        group_type="other",
+        initial_group_size=2,
+        max_group_size=2,
+        min_group_size=1,
+        accepts_top_ups=False,
+    )
+    db_session.add_all([group, other_group])
     for p in participants:
         group.add_participant(p)
+        other_group.add_participant(p)
     db_session.commit()
     db_session.expire(group)
 
@@ -7538,7 +7526,10 @@ def test_group_barrier_below_quorum(
     assert all(p.active_sync_groups.get("main") is None for p in participants)
     assert [p.failed for p in participants] == failed
     assert [p.sync_group_removal_reason("main") for p in participants] == [
-        "left_experiment" if was_failed else "group_dissolved" for was_failed in failed
+        "group_dissolved"
+    ] * len(participants)
+    assert [p.sync_group_removal_reason("other") for p in participants] == [
+        "left_experiment" if was_failed else None for was_failed in failed
     ]
     # Members who carry on alone are told why on their next page.
     for p, was_failed in zip(participants, failed):
@@ -7689,6 +7680,7 @@ def test_top_up_wait_limits_how_long_a_group_waits_for_newcomers(
     group.below_quorum_since -= timedelta(seconds=11)
     assert barrier.choose_who_to_release([waiter]) == [waiter]
     assert not waiter.failed and not group.accepts_top_ups
+    assert group.top_ups_stopped_at is not None
     assert waiter.sync_group_removal_reason("team") == "group_dissolved"
 
 
@@ -7768,76 +7760,168 @@ def test_latecomers_fill_a_team_until_it_passes_game_starts(
     assert lone.in_sync_group("team") and below_quorum.accepts_top_ups
 
 
+@pytest.mark.parametrize("stop_top_ups", [False, True])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_game_starts_waits_while_a_newcomer_is_joining(
+def test_group_barrier_counts_a_newcomer_joining_in_another_request(
+    in_experiment_directory, db_session, stop_top_ups
+):
+    """A barrier check on a group that accepts top-ups doesn't release it during a join in progress, and later counts the newcomer."""
+    exp = get_experiment()
+    grouper = SimpleGrouper(
+        "team", initial_group_size=4, quorum=2, join_existing_groups=True
+    )
+    game_starts = GroupBarrier(
+        id_="game_starts", group_type="team", stop_top_ups=stop_top_ups
+    )
+    *starters, newcomer, peeked = _working_participants(exp, 4)
+    group = grouper._make_group(starters, initial_group_size=4)
+    db_session.commit()
+    assert len(group.active_participants) == 2
+
+    def still_waiting():
+        db_session.expire_all()
+        return [p for p in starters if not game_starts.can_participant_exit(p)]
+
+    poller_pid, deferred, errors = [], [], []
+
+    def poll_barriers():
+        try:
+            poller_pid.append(
+                db.session.execute(text("SELECT pg_backend_pid()")).scalar()
+            )
+            deferred.append(_process_barrier_instance(instance_id))
+        except Exception as err:  # pragma: no cover - surfaced below
+            errors.append(err)
+        finally:
+            db.session.remove()
+
+    for participant in starters:
+        _arrive_at_group_barrier(exp, game_starts, participant)
+    db_session.commit()
+    _take_pending_barrier_checks()
+    instance_id = starters[0].active_barriers[game_starts.id].barrier_instance_id
+    with Session(bind=db.engine) as joiner:
+        joiner.execute(
+            text("SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"),
+            {"id": group.id},
+        )
+        joiner.add(
+            ParticipantLinkSyncGroup(
+                participant_id=newcomer.id,
+                sync_group_id=group.id,
+                active=True,
+                arrival_time=timenow(),
+            )
+        )
+        joiner.flush()
+        poller = threading.Thread(target=poll_barriers)
+        poller.start()
+        # The check finds the group busy and defers. A check that counted
+        # the members without the lock would instead block on its UPDATE of
+        # the group; the join then commits, and that check releases the
+        # starters without the newcomer.
+        deadline = time.monotonic() + 10
+        while poller.is_alive() and time.monotonic() < deadline:
+            blocked = (
+                poller_pid
+                and joiner.execute(
+                    text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"),
+                    {"pid": poller_pid[0]},
+                ).scalar()
+            )
+            if blocked:
+                break
+            time.sleep(0.05)
+        joiner.commit()
+    poller.join(30)
+    assert errors == []
+    assert deferred == [True]
+    assert still_waiting() == starters
+
+    check_barriers()
+    assert still_waiting() == starters
+    assert newcomer.in_sync_group("team") and group.accepts_top_ups
+
+    # A peek, which takes no lock, also counts a newcomer who joined meanwhile.
+    _arrive_at_group_barrier(exp, game_starts, newcomer)
+    with Session(bind=db.engine) as other:
+        other.add(
+            ParticipantLinkSyncGroup(
+                participant_id=peeked.id,
+                sync_group_id=group.id,
+                active=True,
+                arrival_time=timenow(),
+            )
+        )
+        other.commit()
+    assert not game_starts.would_release([*starters, newcomer])
+    _arrive_at_group_barrier(exp, game_starts, peeked)
+    _commit_barrier_arrivals()
+    assert still_waiting() == []
+    assert group.accepts_top_ups != stop_top_ups
+
+
+def _top_up_team_waiting_at(exp, db_session, barrier, n_starters=2):
+    """Return a team of ``n_starters`` that accepts top-ups, all waiting at ``barrier``, and the pending checks."""
+    grouper = SimpleGrouper(
+        "team", initial_group_size=4, quorum=2, join_existing_groups=True
+    )
+    starters = _working_participants(exp, n_starters)
+    group = grouper._make_group(starters, initial_group_size=4)
+    for participant in starters:
+        _arrive_at_group_barrier(exp, barrier, participant)
+    db_session.commit()
+    return starters, group, _take_pending_barrier_checks()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_group_barrier_check_on_a_busy_top_up_group_is_deferred_and_retried(
     in_experiment_directory, db_session
 ):
-    """A ``stop_top_ups`` barrier skips a group whose row a joiner holds, until the next check."""
+    """The last arrival and the poller report a check deferred while the group is busy, so they retry it."""
     exp = get_experiment()
-    grouper, game_starts = _lobby_recipe()
-    *starters, slow = [new_participant(exp) for _ in range(3)]
-    for p in (*starters, slow):
-        p.status = "working"
-    group = grouper._make_group(starters, initial_group_size=4)
-    grouper._join_existing_groups(slow)
-    for link in slow.sync_group_links:
-        link.arrival_time -= timedelta(seconds=121)
-    db_session.commit()
-
+    barrier = GroupBarrier(id_="game_starts", group_type="team")
+    starters, group, checks = _top_up_team_waiting_at(exp, db_session, barrier)
     with db.engine.connect() as joiner, joiner.begin():
         joiner.execute(
             text("SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"),
             {"id": group.id},
         )
-        game_starts.check_waiting_participants(starters)
-        assert slow.in_sync_group("team")
-        assert game_starts.choose_who_to_release(starters) == []
-    assert group.accepts_top_ups
-    game_starts.check_waiting_participants(starters)
-    assert slow.sync_group_removal_reason("team") == "late"
-    assert set(game_starts.choose_who_to_release(starters)) == set(starters)
-    assert not group.accepts_top_ups
+        assert _run_pending_barrier_checks(checks) is False
+        assert _process_barrier_instance(checks[0])
+    assert _run_pending_barrier_checks(checks)
+    db_session.expire_all()
+    assert all(barrier.can_participant_exit(p) for p in starters)
 
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_game_starts_counts_a_newcomer_who_joined_in_another_request(
+def test_group_barrier_check_counts_a_newcomer_who_joined_after_it_loaded_the_group(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    grouper, game_starts = _lobby_recipe()
-    *starters, newcomer, peeked = [new_participant(exp) for _ in range(4)]
-    for p in (*starters, newcomer, peeked):
-        p.status = "working"
-    group = grouper._make_group(starters, initial_group_size=4)
-    db_session.commit()
-
-    def join_in_another_request(participant):
-        with Session(bind=db.engine) as other:
-            other.add(
-                ParticipantLinkSyncGroup(
-                    participant_id=participant.id,
-                    sync_group_id=group.id,
-                    active=True,
-                    arrival_time=timenow(),
-                )
-            )
-            other.commit()
-
+    barrier = GroupBarrier(id_="game_starts", group_type="team")
+    starters, group, checks = _top_up_team_waiting_at(exp, db_session, barrier)
+    (newcomer,) = _working_participants(exp, 1)
     assert len(group.active_participants) == 2
-    join_in_another_request(newcomer)
-    assert game_starts.choose_who_to_release(starters) == []
-    assert group.accepts_top_ups
-
-    assert len(group.active_participants) == 3
-    join_in_another_request(peeked)
-    assert not game_starts.would_release([*starters, newcomer])
-    released = game_starts.choose_who_to_release([*starters, newcomer, peeked])
-    assert set(released) == {*starters, newcomer, peeked}
-    assert not group.accepts_top_ups
+    with Session(bind=db.engine) as other:
+        other.add(
+            ParticipantLinkSyncGroup(
+                participant_id=newcomer.id,
+                sync_group_id=group.id,
+                active=True,
+                arrival_time=timenow(),
+            )
+        )
+        other.commit()
+    barrier._check_instance(checks[0])
+    db_session.commit()
+    assert not any(barrier.can_participant_exit(p) for p in starters)
 
 
 @pytest.mark.parametrize(

@@ -32,7 +32,9 @@ A **barrier** makes every member of a group wait until all members have
 reached it. Barriers go wherever the design needs participants to be in the
 same place: before a round starts, after everyone has responded, or before
 results are shown. When the last member arrives, the barrier can run code for
-the whole group, such as scoring a round or assigning roles.
+the whole group, such as scoring a round or assigning roles. For cued rounds,
+where a barrier waits only for the members of its round, see
+:ref:`rounds-cued-trials`.
 
 In a trial maker, the group can also share its trials. One member acts as the
 **leader**: PsyNet picks the leader's next node as if they were taking the
@@ -248,8 +250,8 @@ Repeating this every round would make each player wait for their whole old
 group before they could be regrouped, and fail the group's members when one of
 them drops out. A **regrouper** is made for this instead. Each time
 participants reach it, it removes them from their previous group and splits
-those waiting into new groups. It keeps last round's partners apart where
-possible and gives out roles such as proposer and responder in turn. If the
+those waiting into new groups at random and gives out roles such as
+proposer and responder at random. If the
 players don't divide evenly into groups, the player who has played the most
 rounds **sits out** the round; they see a page saying so and play again in a
 later round. A player who is late for a split joins the next one. If no

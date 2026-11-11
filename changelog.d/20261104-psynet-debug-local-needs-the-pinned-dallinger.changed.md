@@ -1,1 +1,1 @@
-`psynet debug local` now relies on the launch login and start-up message helpers in the pinned Dallinger (master `6c70ab231` or later) and no longer falls back for older Dallinger versions.
+`psynet debug local` now relies on the launch login and start-up message helpers in Dallinger 13.0.0 or later and no longer falls back for older Dallinger versions.

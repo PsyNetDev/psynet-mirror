@@ -37,8 +37,8 @@ instead: pass ``names="anonymous"`` to
 :class:`~psynet.chatroom.ChatRoom`. Both then draw every other member as the
 same grey figure, labelled "Your partner" in a pair and "Another player" in
 a larger group. On a page whose group is a pair they agree; the chat
-counts the members who have appeared in the room, so with ``subgroups`` the
-two can differ.
+counts the members who have appeared in the room, so after someone leaves
+the two can differ.
 
 Showing pseudonyms on other pages
 ---------------------------------
@@ -101,12 +101,17 @@ default has 8 colours and 11 animals) give the most different pseudonyms.
 The class docstring of :class:`~psynet.pseudonym.PseudonymScheme` lists the
 methods to override: :meth:`~psynet.pseudonym.PseudonymScheme.assign`
 chooses each participant's pseudonym,
-:meth:`~psynet.pseudonym.PseudonymScheme.format_name` combines the colour
-and animal (override it for languages where the colour must agree with the
-animal), and :meth:`~psynet.pseudonym.PseudonymScheme.render_sticker`
-draws the animal in the participant's colour. The built-in animals use
-Microsoft Fluent Emoji pictures, and other animals their emoji; override
+:meth:`~psynet.pseudonym.PseudonymScheme.format_name` names the pair, and
+:meth:`~psynet.pseudonym.PseudonymScheme.render_sticker` draws the animal in
+the participant's colour. The built-in animals use Microsoft Fluent Emoji
+pictures, and other animals their emoji; override
 :meth:`~psynet.pseudonym.PseudonymScheme.artwork` to supply pictures.
+
+Each built-in name, such as "Blue fox", is translated as a whole, so that
+languages can make the colour agree with the animal. A scheme's own colours
+or animals get the two words joined instead, which can't agree; override
+:meth:`~psynet.pseudonym.PseudonymScheme.format_name` to name such pairs in
+full. Give new words new keys, since a built-in key keeps its built-in name.
 
 Pseudonyms in the dashboard and exports
 ---------------------------------------
@@ -118,4 +123,5 @@ stored.
 Exports keep the deployment ID, so after loading an export with the same
 PsyNet version, pseudonym scheme and locale, ``participant.pseudonym`` gives
 the names that participants saw, for example to read chat messages that
-mention them.
+mention them. Launching the loaded experiment again writes a new deployment
+ID, and so changes the names.
