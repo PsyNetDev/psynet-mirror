@@ -650,7 +650,7 @@ width of the page for more, so the display adapts to any screen.
 
 A page shows either progress or answers. On a decision page, members who
 have answered get a tick. A member has answered once they wait at a barrier
-of the group (:func:`~psynet.sync.is_waiting_at_barrier`), typically the barrier
+of the group, typically the barrier
 after the decision page. A member who reached the barrier because their
 page's time limit ran out gets a grey dash instead
 (:func:`~psynet.sync.reached_barrier_after_time_limit`), and screen readers announce

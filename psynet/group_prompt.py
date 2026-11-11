@@ -12,7 +12,7 @@ Design constraints:
   refers to members by seat (:func:`psynet.sync.group_seats`), which is also
   how :class:`~psynet.sync.GroupBarrier` reports live ticks.
 - By default a member has answered once they are waiting at a barrier of
-  the group (:func:`psynet.sync.is_waiting_at_barrier`), typically the barrier after
+  the group (``psynet.sync._is_waiting_at_barrier``), typically the barrier after
   the decision page. Live ticks come from that barrier's arrival updates, so
   they don't work with ``on_arrival_message=None``. A member who reached the
   barrier because their page's time limit ran out gets a dash instead of a
@@ -351,11 +351,11 @@ class GroupPrompt(Prompt):
 
     def _progress(self, member):
         """Return ``(answered, timed_out)`` for a member still in the group."""
-        from .sync import is_waiting_at_barrier, reached_barrier_after_time_limit
+        from .sync import _is_waiting_at_barrier, reached_barrier_after_time_limit
 
         if reached_barrier_after_time_limit(member, self.group):
             return False, True
-        return bool(is_waiting_at_barrier(member, self.group)), False
+        return bool(_is_waiting_at_barrier(member, self.group)), False
 
     def _member_html(self, member, seat, index, partner_label):
         _p = get_translator(context=True)

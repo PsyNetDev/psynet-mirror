@@ -5744,7 +5744,7 @@ def _waiting_links(participant, group):
     ]
 
 
-def is_waiting_at_barrier(participant, group) -> bool:
+def _is_waiting_at_barrier(participant, group) -> bool:
     """Return whether ``participant`` is waiting at a barrier of ``group``.
 
     This is how :class:`~psynet.group_prompt.GroupPrompt` decides by default
