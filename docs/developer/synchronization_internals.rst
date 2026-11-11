@@ -81,9 +81,11 @@ Barrier checks and participant requests take their locks in this order:
    ``trial_maker_runs`` also waits for the row, after locking any
    participant rows it needs.
 4. The advisory lock of a cued round. Barriers only try it and defer if it
-   is busy. A cue waits for it, but takes only a ``KEY SHARE`` lock on the
-   group row, through its trial's foreign key, which doesn't conflict with
-   ``FOR NO KEY UPDATE``.
+   is busy. Group dissolution tries it too, after the members' rows of step
+   5, and waits like it does for a busy member (see below); taking it out
+   of order can't deadlock, because it doesn't wait for it. A cue waits for
+   it, but takes only a ``KEY SHARE`` lock on the group row, through its
+   trial's foreign key, which doesn't conflict with ``FOR NO KEY UPDATE``.
 5. Members' rows when dissolving the group or failing late members, with
    ``SKIP LOCKED``, then the rows of links, trials and nodes, and of other
    groups.
@@ -91,9 +93,12 @@ Barrier checks and participant requests take their locks in this order:
 So, in framework code, a request holding a sync group row takes other
 participants' rows only with ``SKIP LOCKED`` or ``NOWAIT``:
 
-- Group dissolution locks the members' rows with ``SKIP LOCKED`` and is all
-  or nothing. If another member's request holds their row, nobody is removed
-  (the rows that were free are unlocked again, by rolling back a savepoint):
+- Group dissolution locks the members' rows with ``SKIP LOCKED``, then tries
+  the lock of each cued round they are still playing, and is all or nothing.
+  If another member's request holds their row, or a cue holds a round's
+  lock, nobody is removed (the rows that were free are unlocked again, by
+  rolling back a savepoint; a round lock taken before a busy one stays until
+  the transaction ends, as advisory locks outlive savepoints):
   the group is marked ``dissolving`` and the barrier poller tries the whole
   dissolution again on each sweep, so every member leaves the group, and
   learns why, at the same time. A group back at its quorum by then is no

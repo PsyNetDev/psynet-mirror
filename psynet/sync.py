@@ -2313,16 +2313,13 @@ class GroupBarrier(Barrier):
         group.last_barrier_pass_time = timenow()
         for link in group.participant_links:
             link.page_deadline = None
-        if node is not None:
-            # Closes the round to newcomers: their cues start the next. Done
-            # before stopping top-ups, so if that dissolves the group, the
-            # round counts as finished rather than dissolved.
-            node.sync_group_closed = True
         if self.stop_top_ups:
             group.stop_top_ups()
 
         trials = [p.current_trial for p in released]
         if node is not None:
+            # Closes the round to newcomers: their cues start the next.
+            node.sync_group_closed = True
             for participant in released:
                 trial = _round_trial(group, participant)
                 if trial is not None:
@@ -4499,8 +4496,12 @@ class SyncGroup(SQLBase, SQLMixin):
         The cued rounds that members are still playing get
         ``sync_group_dissolved_at`` (see :func:`_mark_rounds_dissolved`).
         Their round locks are tried without waiting too, as in
-        :func:`_lock_round`, and a busy one makes the dissolution wait like a
-        busy member.
+        :func:`_lock_round`, after the members' rows and in the same
+        savepoint, so a busy one makes the dissolution wait like a busy
+        member, and the members' rows are unlocked again. Round locks last
+        until the transaction ends, so a round lock taken before a busy one
+        is kept until then; members are usually all in one round, so there is
+        rarely one.
 
         Returns
         -------
@@ -4509,9 +4510,15 @@ class SyncGroup(SQLBase, SQLMixin):
         """
         self._dissolving_below_quorum = True
         try:
-            removed = _lock_all_participants(list(self.active_participants))
-            rounds = None if removed is None else _open_rounds(self, removed)
-            if rounds is None or not all(_lock_round(self, node) for node in rounds):
+            with db.session.begin_nested() as savepoint:
+                removed = _lock_all_participants(list(self.active_participants))
+                rounds = None if removed is None else _open_rounds(self, removed)
+                if rounds is None or not all(
+                    _lock_round(self, node) for node in rounds
+                ):
+                    savepoint.rollback()
+                    rounds = None
+            if rounds is None:
                 if not self.dissolving:
                     logger.debug(
                         "Dissolving sync group %s waits for a member's request "

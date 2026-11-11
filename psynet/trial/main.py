@@ -4528,7 +4528,8 @@ class SyncGroupNode(GenericTrialNode):
     #: :class:`~psynet.sync.GroupBarrier` has closed the round
     #: (``sync_group_closed``). So a round the group finished stays ``None``
     #: even if a member is still on a page after the barrier, and so does a
-    #: round whose trials all ended before the group dissolved. Written under
+    #: round whose remaining members' trials had all ended before the group
+    #: dissolved. Written under
     #: the round lock, like ``sync_group_closed``, so it is never set on a
     #: round that a barrier closed.
     sync_group_dissolved_at = Column(DateTime)

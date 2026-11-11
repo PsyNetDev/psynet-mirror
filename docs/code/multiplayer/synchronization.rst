@@ -409,8 +409,11 @@ round: the group's node gets
 it dissolved, if a member still in the group was in their trial on that
 node (its pages hadn't ended) and no group barrier had released the round.
 A round that a barrier released stays ``None``, even if a member was still
-on a page after the barrier, and so does a round whose trials had all
-ended, as when the group dissolves between rounds. So an export can tell a
+on a page after the barrier, and so does a round whose remaining members'
+trials had all ended, as when the group dissolves between rounds. A member
+still on a page after a release does get ``sync_group_outcome``
+``"group_dissolved"`` on their trial: the trial says how the player left the
+round, the node's column whether the round itself was cut short. So an export can tell a
 cancelled round from one still in progress even if no member finishes
 their trial, for example ``node.sync_group_dissolved_at is not None``,
 without storing anything of its own.
