@@ -448,15 +448,18 @@ def make_late_now(
 
 
 def _backdate_group(group, seconds):
-    """Move the group's last barrier pass, and its members' joining times and page deadlines, back by ``seconds``."""
+    """Move the group's last barrier pass, and its members' joining, leaving and page deadline times, back by ``seconds``.
+
+    Leaving times move too, so that someone who left before the last pass
+    isn't counted again in the next release's ``left``.
+    """
     shift = timedelta(seconds=seconds)
     if group.last_barrier_pass_time is not None:
         group.last_barrier_pass_time -= shift
     for link in group.participant_links:
-        if link.arrival_time is not None:
-            link.arrival_time -= shift
-        if link.page_deadline is not None:
-            link.page_deadline -= shift
+        for clock in ("arrival_time", "removal_time", "page_deadline"):
+            if getattr(link, clock) is not None:
+                setattr(link, clock, getattr(link, clock) - shift)
 
 
 def run_bots_to_completion(bots: List["BotDriver"], timeout: Optional[float] = 60.0):

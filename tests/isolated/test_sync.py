@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
+import psynet.bot
 from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.barrier_spec import (
     BarrierSpecError,
@@ -6927,6 +6928,33 @@ def test_make_late_now_needs_a_waiting_bot_and_late_after(
     db_session.commit()
     with pytest.raises(ValueError, match="'round' has no late_after"):
         make_late_now(bots, "round")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_make_late_now_does_not_count_an_earlier_leaver_again(
+    in_experiment_directory, db_session, monkeypatch
+):
+    monkeypatch.setattr(psynet.bot, "advance_past_wait_pages", lambda *a, **k: None)
+    exp = get_experiment()
+    waiter, quiet, earlier = [new_participant(exp) for _ in range(3)]
+    group = SimpleSyncGroup(group_type="main", initial_group_size=3, min_group_size=2)
+    db_session.add(group)
+    for p in (waiter, quiet, earlier):
+        p.status = "working"
+        group.add_participant(p)
+    group.remove_participant(earlier, reason="late")
+    group.last_barrier_pass_time = timenow()
+    barrier = GroupBarrier("round", group_type="main", late_after=30)
+    _arrive_at_group_barrier(exp, barrier, waiter)
+    db_session.commit()
+    group_id = group.id
+
+    make_late_now([SimpleNamespace(id=waiter.id)], "round")
+
+    group = SyncGroup.query.get(group_id)
+    assert group.members_who_left_since(group.last_barrier_pass_time) == []
 
 
 @pytest.mark.parametrize(
