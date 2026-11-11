@@ -4511,6 +4511,7 @@ class SyncGroup(SQLBase, SQLMixin):
         self._dissolving_below_quorum = True
         try:
             with db.session.begin_nested() as savepoint:
+                # Rolling back this savepoint also undoes the inner one in _lock_all_participants.
                 removed = _lock_all_participants(list(self.active_participants))
                 rounds = None if removed is None else _open_rounds(self, removed)
                 if rounds is None or not all(
@@ -4632,7 +4633,16 @@ def _record_leaving_the_round(group, participant, reason):
 
 
 def _open_rounds(group, participants):
-    """Return the nodes of the cued rounds of ``group`` in which ``participants`` have an unfinished trial."""
+    """Return the nodes of the cued rounds of ``group`` in which ``participants`` have an unfinished trial.
+
+    Expects the caller to hold the participants' row locks, and re-reads
+    their current trials under them, so a trial that a member's request
+    started or finished before the lock was taken is seen.
+    """
+    for participant in participants:
+        db.session.refresh(participant, ["current_trial_id", "_current_trial"])
+        if participant.current_trial is not None:
+            db.session.refresh(participant.current_trial, ["complete"])
     trials = [_round_trial(group, p) for p in participants]
     return list(
         {t.node_id: t.node for t in trials if t is not None and not t.complete}.values()
