@@ -170,8 +170,8 @@ The ``rock_paper_scissors`` demo builds it from its trials. The barrier
 that ends each round saves on each player's trial the action they played,
 their partner's action and the result (see ``score_round`` under
 "Barriers" in :doc:`/code/multiplayer/synchronization`). The action saved
-for someone who ran out of time is the random one played for them, which
-is in no answer. ``get_basic_data`` reads one row
+for someone who ran out of time is the random one played for them; it is
+not in ``trial.answer``, which stays ``None``. ``get_basic_data`` reads one row
 from every trial, including the trial of a player who left during the
 round:
 
