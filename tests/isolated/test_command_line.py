@@ -945,6 +945,23 @@ def test_reloader_ignores_only_other_develop_folders(own):
         assert not any(fnmatch(path, p) for p in patterns), path
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_develop_folder_is_in_a_parent_of_its_own():
+    """The reloader watches the development folder's parent, so keep it out of /tmp."""
+    from dallinger.config import get_config
+
+    from psynet.command_line import _develop_path
+    from psynet.isolated_environment import DEVELOP_FOLDERS_PARENT
+
+    config = get_config()
+    if not config.ready:
+        config.load()
+    assert _develop_path(config).parent == Path(DEVELOP_FOLDERS_PARENT)
+
+
 @pytest.mark.parametrize("browsers", [False, True])
 def test_launch_job_uses_the_login_it_was_enqueued_with(monkeypatch, capsys, browsers):
     """Another experiment's worker on the same Redis may run the launch job."""

@@ -118,6 +118,7 @@ from .end import RejectedConsentLogic, SuccessfulEndLogic, UnsuccessfulEndLogic
 from .error import ErrorRecord
 from .field import ImmutableVarStore, PythonDict
 from .graphics import PsyNetLogo
+from .isolated_environment import DEVELOP_FOLDERS_PARENT
 from .notifier import Notifier
 from .page import InfoPage
 from .participant import (
@@ -2612,6 +2613,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "clock_on": True,
             "color_mode": "light",
             "currency": "$",
+            # Not Dallinger's /tmp/dallinger_develop: Flask's reloader watches
+            # every .py file in the development folder's parent.
+            "dallinger_develop_directory": f"{DEVELOP_FOLDERS_PARENT}/dallinger_develop",
             "default_translator": "chat_gpt",
             "disable_browser_autotranslate": True,
             "disable_when_duration_exceeded": False,

@@ -1404,7 +1404,7 @@ def run_pre_auto_reload_checks():
             f'The dallinger_develop_directory setting "{develop_path}" contains '
             "a period, which Dallinger doesn't support. Set another folder in "
             "~/.dallingerconfig, for example "
-            "dallinger_develop_directory = /tmp/dallinger_develop"
+            "dallinger_develop_directory = /tmp/psynet_develop/dallinger_develop"
         )
 
     if get_editable_psynet_source() is not None:
@@ -1693,10 +1693,11 @@ def _reloader_exclude_patterns():
 def _other_develop_folder_patterns(develop_path):
     """Return reloader exclusions for the other debug servers' development folders.
 
-    ``flask run`` puts the parent of the development folder (usually ``/tmp``)
-    on ``sys.path``, so without these patterns each debug server would also
-    watch, and restart for, the folders that other debug servers write next
-    to it. ``fnmatch`` has no negation, so the patterns match every
+    ``flask run`` puts the parent of the development folder on ``sys.path``,
+    so without these patterns each debug server would also watch, and restart
+    for, the folders that other debug servers write next to it. PsyNet's
+    default parent holds only development folders; a development folder set
+    directly in ``/tmp`` still makes the reloader scan all of ``/tmp``. ``fnmatch`` has no negation, so the patterns match every
     ``dallinger_develop*`` name that differs from this server's own folder
     at some character, plus every longer name.
     """

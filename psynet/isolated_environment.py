@@ -4,7 +4,7 @@ Why this exists
 ---------------
 By default ``psynet debug local`` and PsyNet's tests share one local
 environment: the ``dallinger`` PostgreSQL database, the Redis server on port
-6379, web port 5000 and ``/tmp/dallinger_develop``. Tests need a clean
+6379, web port 5000 and ``/tmp/psynet_develop/dallinger_develop``. Tests need a clean
 environment, so they reset the database and Redis and stop local servers that
 use the same database. Before this module, running tests therefore wiped and
 stopped any experiment you were debugging.
@@ -82,6 +82,10 @@ READY_ENV_VAR = "_PSYNET_TEST_ENVIRONMENT_READY"
 
 DEFAULT_DATABASE_URL = "postgresql://dallinger:dallinger@localhost/dallinger"
 DEFAULT_REDIS_URL = "redis://localhost:6379"
+#: Parent of PsyNet's default development folders. Flask puts a development
+#: folder's parent on ``sys.path``, and its reloader then watches every
+#: ``.py`` file there, so this folder should hold development folders only.
+DEVELOP_FOLDERS_PARENT = "/tmp/psynet_develop"
 _DEFAULT_BASE_PORT = 5000
 _PORT_OFFSET = 100
 
@@ -293,7 +297,9 @@ class IsolatedEnvironment:
                 READY_ENV_VAR: "1",
                 "DATABASE_URL": session_database_url,
                 "base_port": str(base_port),
-                "dallinger_develop_directory": f"/tmp/dallinger_develop_{base_port}",
+                "dallinger_develop_directory": (
+                    f"{DEVELOP_FOLDERS_PARENT}/dallinger_develop_{base_port}"
+                ),
             }
             if not private_redis:
                 slot = (base_port - shared_base_port - _PORT_OFFSET) // 10

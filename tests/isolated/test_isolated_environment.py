@@ -141,7 +141,7 @@ def test_isolated_environment_uses_its_own_services():
         redis_port = int(first.env["REDIS_URL"].rsplit(":", 1)[1])
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
         develop_directory = Path(first.env["dallinger_develop_directory"])
-        develop_directory.mkdir(exist_ok=True)
+        develop_directory.mkdir(parents=True, exist_ok=True)
 
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()

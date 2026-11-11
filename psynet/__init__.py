@@ -69,7 +69,7 @@ def _make_debugger():
                         "pathMappings": [
                             {
                                 "localRoot": "${fileDirname}",
-                                "remoteRoot": "/tmp/dallinger_develop"
+                                "remoteRoot": "/tmp/psynet_develop/dallinger_develop"
                             }
                         ]
                     }
