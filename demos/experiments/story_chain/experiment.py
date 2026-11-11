@@ -230,28 +230,21 @@ def waiting_for_writer(participant, trial):
     )
 
 
-NO_GROUP_TEXT = (
-    "We couldn't find a group for you this time, so there is no story to "
-    "write. Thank you for waiting."
-)
-FINISHED_INTRO = "Here is the story your group wrote:"
-# By the reason the participant left their group, while the story is unfinished.
-EARLY_END_INTROS = {
-    "late": "You were away for too long, so your group went on without you. "
-    "Here is the story so far:",
-    "group_dissolved": "The others in your group left, so the story ended "
-    "early. Here it is:",
-}
-
-
 def final_page(participant: Participant):
+    # Why no group formed, the player was removed as late, or the group dissolved.
+    ended_early = participant.sync_group_removal_text(GROUP)
     group_id = participant.var.story_group_id
     if group_id is None:
-        return InfoPage(NO_GROUP_TEXT, time_estimate=5)
+        return InfoPage(
+            f"{ended_early} There is no story to write. Thank you for waiting.",
+            time_estimate=5,
+        )
     turns = group_turns(group_id)
     finished = len(turns) == N_TURNS and all(t.var.has("sentence") for t in turns)
-    reason = participant.sync_group_removal_reason(GROUP)
-    intro = FINISHED_INTRO if finished else EARLY_END_INTROS.get(reason, FINISHED_INTRO)
+    if ended_early and not finished:
+        intro = f"{ended_early} Here is the story so far:"
+    else:
+        intro = "Here is the story your group wrote:"
     story = story_text(group_id) or "(Nobody wrote a sentence.)"
     return ModularPage(
         "rate",

@@ -7454,6 +7454,45 @@ def test_leave_group_takes_the_participant_out_as_finished(
             leave_group("main", reason=reason)
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_sync_group_removal_text_explains_an_early_end(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    reasons = ["late", "waited_too_long", "group_dissolved", None, "moved_on"]
+    stayer, *leavers = [new_participant(exp) for _ in range(len(reasons) + 1)]
+    group = SimpleSyncGroup(
+        group_type="main",
+        initial_group_size=len(reasons) + 1,
+        min_group_size=1,
+        accepts_top_ups=False,
+    )
+    db_session.add(group)
+    for p in (stayer, *leavers):
+        p.status = "working"
+        group.add_participant(p)
+    db_session.commit()
+    for leaver, reason in zip(leavers, reasons):
+        group.remove_participant(leaver, reason=reason)
+    ungrouped = new_participant(exp)
+    ungrouped.ungrouped_group_types = ["main"]
+
+    assert [p.sync_group_removal_text("main") for p in leavers] == [
+        "You were away for too long, so your group went on without you.",
+        "The others in your group didn't arrive in time, so you left the group.",
+        "Too few members of your group remained, so the group ended early.",
+        "You were removed from your group.",
+        None,
+    ]
+    assert ungrouped.sync_group_removal_text("main") == (
+        "We couldn't find a group for you."
+    )
+    assert stayer.sync_group_removal_text("main") is None
+    assert stayer.sync_group_removal_text("other") is None
+
+
 @pytest.mark.parametrize("below_quorum", ["fail", "continue_without_group"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True

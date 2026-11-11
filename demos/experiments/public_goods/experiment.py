@@ -204,16 +204,8 @@ def game_over(participant):
 
 
 def game_ended_early(participant):
-    reason = participant.sync_group_removal_reason(GROUP)
-    if reason == "no_group_formed":
-        return InfoPage("Without a group, there is no game to play.", time_estimate=5)
-    if reason == "late":
-        text = "You were away for too long, so the game went on without you."
-    elif reason == "group_dissolved":
-        text = "Too few players remained, so the game ended early."
-    else:
-        # Removed from the dashboard, which records no reason.
-        text = "The game ended early for you."
+    # Why no group formed, the player was removed as late, or the group dissolved.
+    text = participant.sync_group_removal_text(GROUP)
     return InfoPage(f"{text} {bonus_text(participant)}", time_estimate=5)
 
 

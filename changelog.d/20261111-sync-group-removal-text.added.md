@@ -1,0 +1,1 @@
+Added `Participant.sync_group_removal_text(group_type)`, which returns a short translated sentence telling a participant why their group ended early, for example "You were away for too long, so your group went on without you.", or `None` if there is nothing to explain. The `public_goods` and `story_chain` demos use it on their last pages.

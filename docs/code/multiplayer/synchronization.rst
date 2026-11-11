@@ -1529,6 +1529,10 @@ For the rest of the timeline:
   A cued trial whose pages they were on in that group keeps the reason in
   ``sync_group_outcome``, even after they join another group (see
   :ref:`round outcomes <sync-round-outcome>`).
+  :meth:`participant.sync_group_removal_text("pair")
+  <psynet.participant.Participant.sync_group_removal_text>` gives a short,
+  translated sentence explaining an early end, as in ``game_ended_early``
+  above, or ``None`` if there is nothing to explain.
 - An answer submitted on the page where a member was removed for being late
   has ``response.too_late_for_group`` set, so analysis can leave it out.
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only
