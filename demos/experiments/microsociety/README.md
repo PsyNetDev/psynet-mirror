@@ -51,10 +51,8 @@ no tip. In the export, a member who is away but not yet removed is
 A member who runs out of time in a round stays in the society: they catch
 nothing that round, and the trial's `time_limit_reached` records it.
 
-A member left alone keeps playing, and the society dissolves if no newcomer
-joins within `TOP_UP_WAIT` seconds of the others leaving. This time includes
-the lone member's results and decision pages, so `TOP_UP_WAIT` is set well
-above them. So the society
+A member left alone keeps playing: they wait at the end of their next round
+for up to `TOP_UP_WAIT` seconds for a newcomer to join them. So the society
 only lasts while people keep arriving. With recruitment in bursts, a society
 can dwindle to one member between bursts and end; a later burst then starts
 new societies. Raise `TOP_UP_WAIT` if newcomers arrive slowly. A society

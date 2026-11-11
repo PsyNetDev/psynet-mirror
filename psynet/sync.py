@@ -1553,7 +1553,7 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
             raise
 
 
-def _group_barrier_outcome(group, members, waiting_ids):
+def _group_barrier_outcome(group, members, waiting_ids, barrier_id):
     """Return ``"dissolve"``, ``"release"`` or ``"wait"`` for one visit of ``group``.
 
     Pure: ``GroupBarrier.would_release`` passes the members it projects will
@@ -1562,7 +1562,9 @@ def _group_barrier_outcome(group, members, waiting_ids):
     and the visit releases once all of them are waiting.
     """
     if len(members) < group.min_group_size:
-        waits_for_top_ups = group.accepts_top_ups and not _top_up_wait_over(group)
+        waits_for_top_ups = group.accepts_top_ups and not _top_up_wait_over(
+            group, members, barrier_id
+        )
         return "wait" if waits_for_top_ups else "dissolve"
     if all(p.id in waiting_ids for p in members):
         return "release"
@@ -2297,7 +2299,9 @@ class GroupBarrier(Barrier):
                 continue
             group.check_numbers()
             members = group.active_participants
-            outcome = _group_barrier_outcome(group, members, waiting_participant_ids)
+            outcome = _group_barrier_outcome(
+                group, members, waiting_participant_ids, self.id
+            )
 
             if outcome == "dissolve":
                 # The group can never reach its quorum, so remove everyone
@@ -2415,7 +2419,7 @@ class GroupBarrier(Barrier):
                 for participant in group.active_participants
                 if participant.id not in late_ids
             ]
-            if _group_barrier_outcome(group, members, waiting_ids) != "wait":
+            if _group_barrier_outcome(group, members, waiting_ids, self.id) != "wait":
                 return True
         return any(
             self.group_type not in participant.active_sync_groups
@@ -2939,7 +2943,8 @@ class SimpleGrouper(Grouper):
         ``quorum`` waits for newcomers. Then the next check of the :class:`GroupBarrier`
         its members are waiting at stops top-ups and dissolves it; until a member
         reaches such a barrier, the group keeps accepting top-ups. The time counts
-        from when the group fell below its quorum. Members who reach that barrier's
+        from when all its remaining members are waiting at that barrier, or from
+        when the group fell below its quorum, if later. Members who reach that barrier's
         ``max_wait_time`` first are timed out, so give it a longer one, or
         ``late_after`` (see :ref:`groups_below_min_size`).
         Default: ``None``, waiting for newcomers without a limit.
@@ -5109,12 +5114,21 @@ def _round_is_busy(group, node) -> bool:
     return False
 
 
-def _top_up_wait_over(group) -> bool:
-    """Return whether a group below its quorum has waited its ``top_up_wait`` for newcomers."""
+def _top_up_wait_over(group, members, barrier_id) -> bool:
+    """Return whether a group below its quorum has waited its ``top_up_wait`` for newcomers at barrier ``barrier_id``.
+
+    The wait starts once the group is below its quorum and all its remaining
+    ``members`` have reached the barrier, so it doesn't run while they are
+    still on earlier pages.
+    """
     top_up_wait = getattr(group, "top_up_wait", None)
-    since = getattr(group, "below_quorum_since", None)
-    if top_up_wait is None or since is None:
+    below_quorum_since = getattr(group, "below_quorum_since", None)
+    if top_up_wait is None or below_quorum_since is None:
         return False
+    visits = [member.active_barriers.get(barrier_id) for member in members]
+    if any(visit is None for visit in visits):
+        return False
+    since = max([below_quorum_since, *(visit.arrival_time for visit in visits)])
     return (timenow() - since).total_seconds() >= top_up_wait
 
 

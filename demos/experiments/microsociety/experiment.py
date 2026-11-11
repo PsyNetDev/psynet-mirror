@@ -69,10 +69,9 @@ RESULTS_SECONDS = 10
 # Covers a newcomer reading the society's history before their first round.
 LATE_AFTER = 60
 GROUPING_WAIT = 120
-# How long a society left with one member waits for a newcomer before it
-# dissolves. Counted from when the others left, so it includes the lone
-# member's results and decision pages.
-TOP_UP_WAIT = 60
+# How long a lone member waits at the end of a round for a newcomer, before
+# the society dissolves.
+TOP_UP_WAIT = 30
 HISTORY_ROUNDS = 3
 TIPS_SHOWN = 3
 

@@ -7904,8 +7904,11 @@ def test_top_up_wait_limits_how_long_a_group_waits_for_newcomers(
     db_session.commit()
 
     quitter.fail("quit")
-    assert barrier.choose_who_to_release([waiter]) == []
     group.below_quorum_since -= timedelta(seconds=11)
+    _arrive_at_group_barrier(exp, barrier, waiter)
+    # The wait starts once the remaining members are all at the barrier.
+    assert barrier.choose_who_to_release([waiter]) == []
+    waiter.active_barriers["game_starts"].arrival_time -= timedelta(seconds=11)
     assert barrier.choose_who_to_release([waiter]) == [waiter]
     assert not waiter.failed and not group.accepts_top_ups
     assert group.top_ups_stopped_at is not None
@@ -8202,9 +8205,11 @@ def test_stop_top_ups_barrier_waits_for_a_team_below_quorum_and_the_method_disso
         return group, waiter
 
     group, waiter = team_that_lost_a_member()
+    _arrive_at_group_barrier(exp, game_starts, waiter)
     assert game_starts.choose_who_to_release([waiter]) == []
     assert group.accepts_top_ups and waiter.in_sync_group("team")
     group.below_quorum_since -= timedelta(seconds=61)
+    waiter.active_barriers["game_starts"].arrival_time -= timedelta(seconds=61)
     assert game_starts.choose_who_to_release([waiter]) == [waiter]
     assert waiter.sync_group_removal_reason("team") == "group_dissolved"
 

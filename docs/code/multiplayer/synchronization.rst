@@ -1272,12 +1272,13 @@ Two separate settings decide what happens when someone leaves a group:
       ``below_quorum="continue_without_group"``, its waiting players are
       released ungrouped and ``on_release`` isn't called.
     - The grouper's ``top_up_wait=seconds`` limits the wait below quorum:
-      once the group has been below its quorum that long without a newcomer
-      bringing it back up, the next check of the
+      once the group's remaining members have all waited that long at a
+      barrier, below its quorum and without a newcomer bringing it back up,
+      the next check of the
       :class:`~psynet.sync.GroupBarrier` its members are waiting at stops
       top-ups and dissolves it. Only such a barrier applies the limit, so a
       group whose members are all still on other pages keeps accepting
-      top-ups until one of them reaches it. This only helps members who are
+      top-ups until they have all reached it. This only helps members who are
       still waiting, so give that barrier a ``max_wait_time`` (20 seconds
       by default) longer than ``top_up_wait``, or ``late_after``, which
       removes the limit.
