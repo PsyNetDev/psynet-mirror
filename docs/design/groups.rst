@@ -166,6 +166,8 @@ has a demo to start from.
   `chatroom_simple <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/chatroom_simple>`__,
   `rock_paper_scissors <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/rock_paper_scissors>`__
   and `create_rate_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/create_rate_sync>`__.
+- **Members take turns**, each waiting while another acts:
+  `story_chain <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/story_chain>`__.
 - **A group shares a chain of stimuli**, each member rating the same one:
   `gibbs_within_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/gibbs_within_sync>`__.
 - **An open lobby that latecomers can join**, with groups that start short
@@ -217,6 +219,17 @@ votes.
 
 .. figure:: ../_static/images/design/groups/create_rate_sync.svg
    :alt: A grouper forms groups of three. Then, for each trial, members create an answer, wait at a barrier, rate the others' answers, wait at a barrier that counts the votes, and see the results.
+
+In ``demos/experiments/story_chain``, a group of three writes a story one
+sentence at a time, taking turns in seat order. While one member writes, the
+others wait at a barrier that shows them the story so far. The writer's
+sentence is stored on the turn as soon as they submit it. A writer who runs
+out of time adds nothing that turn; a member who leaves plays no more turns,
+and the next member in seat order writes in their place. The last one left
+goes on to the story so far.
+
+.. figure:: ../_static/images/design/groups/story_chain.svg
+   :alt: A grouper forms groups of three. Then, for each turn, the writer adds a sentence while the others wait at a barrier that shows them the story so far. Finally everyone rates the story.
 
 In ``demos/experiments/gibbs_within_sync``, a group of three shares a chain of
 stimuli. The leader's next stimulus is chosen as if they were taking the

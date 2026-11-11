@@ -20,7 +20,17 @@ moving on.
 import inspect
 import random
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, List, Literal, Optional, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Type,
+    Union,
+)
 
 from dallinger import db
 from dallinger.models import Node, Vector
@@ -1545,8 +1555,11 @@ class ChainTrialMaker(NetworkTrialMaker):
     sync_group_late_action
         What happens to a member who is later than ``sync_group_late_after``: ``"fail"``
         (default) fails them; ``"leave_group"`` removes them from the group, so the rest can go on
-        without them (see :ref:`sync-leaving-a-group`); ``"leave_all_groups"`` also removes them
-        from their other groups.
+        without them (see :ref:`sync-leaving-a-group`).
+
+    sync_group_also_leave
+        With ``sync_group_late_action="leave_group"``, the other group types a late member also
+        leaves, for example ``["cohort"]``. See ``also_leave`` in :class:`~psynet.sync.GroupBarrier`.
 
     sync_group_waiting_message
         Message on the waiting indicator at the trial maker's own sync-group waits
@@ -1640,6 +1653,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
         sync_group_late_action: LateAction = "fail",
+        sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
     ):
         if network_class is None:
@@ -1806,6 +1820,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             sync_group_max_wait_action=sync_group_max_wait_action,
             sync_group_late_after=sync_group_late_after,
             sync_group_late_action=sync_group_late_action,
+            sync_group_also_leave=sync_group_also_leave,
             sync_group_waiting_message=sync_group_waiting_message,
             n_participants_completion=n_participants_completion,
         )

@@ -4,7 +4,7 @@ import random
 from dataclasses import dataclass
 from functools import partial
 from math import isnan
-from typing import Any, Callable, List, Literal, Optional, Union
+from typing import Any, Callable, List, Literal, Optional, Sequence, Union
 
 import dallinger.experiment
 import dallinger.models
@@ -16,6 +16,7 @@ from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
     Column,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -357,6 +358,18 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         such as ``UnityPage``, adds nothing, so a trial whose pages are all of
         that kind keeps ``None``.
         Equals ``None`` until the participant submits a trial page.
+
+    time_limit_reached : bool or None
+        Whether the ``time_limit`` of the trial's latest timed page ran out
+        before it was answered, as in
+        :attr:`psynet.timeline.Response.time_limit_reached`. It is set when a
+        page of :meth:`~psynet.trial.main.Trial.show_trial` with a
+        ``time_limit`` is accepted, and kept through later untimed pages,
+        barrier waits and feedback; timed pages shown while the participant
+        waits at a barrier don't set it either. So for example a
+        :class:`~psynet.sync.GroupBarrier`'s ``on_release`` can read it after
+        a waiting page. Equals ``None`` until a timed page of the trial is
+        answered.
     """
 
     __tablename__ = "trial"
@@ -422,8 +435,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             "player in it, and why the player left the group when they leave "
             "it there, one of the reasons of "
             ":meth:`~psynet.sync.SyncGroup.remove_participant`, such as "
-            '``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or '
-            '``"removed"`` without a reason. The latest of these is kept. '
+            '``"late"``, ``"waited_too_long"``, ``"left_experiment"`` or '
+            '``"group_dissolved"``, or ``"removed"`` without a reason. The latest of these is kept. '
             "Barriers and departures after the trial's pages, such as in "
             ":meth:`show_feedback` or between rounds, write nothing. ``None`` "
             "while nothing has happened yet, and for ungrouped trials."
@@ -456,6 +469,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     repeat_trial_index = Column(Integer)
     n_repeat_trials = Column(Integer)
     time_taken = Column(Float)
+    time_limit_reached = Column(Boolean)
     _initial_assets = deferred(Column(PythonDict))
 
     time_credit_before_trial = Column(Float)
@@ -1283,9 +1297,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         - Put a :class:`~psynet.sync.GroupBarrier` in each round, for example
           in :meth:`show_trial`, so that members stay in step.
         - The barriers' ``on_release`` can read each member's answer so far
-          from ``trial.answer``: ``None`` there means the page ran out of
-          time. With several answer pages before a barrier, set
-          :attr:`accumulate_answers` to get them all.
+          from ``trial.answer``, and whether their timed page ran out of
+          time from :attr:`time_limit_reached`. With several answer pages
+          before a barrier, set :attr:`accumulate_answers` to get them all.
         - In a loop of rounds played by a fixed group, pass the loop value as
           ``round``, so that a definition can come from the loop. Otherwise a
           grouped cue's definition must not depend on the player's own
@@ -2109,8 +2123,11 @@ class TrialMaker(Module):
     sync_group_late_action
         What happens to a member who is later than ``sync_group_late_after``: ``"fail"``
         (default) fails them; ``"leave_group"`` removes them from the group, so the rest can go on
-        without them (see :ref:`sync-leaving-a-group`); ``"leave_all_groups"`` also removes them
-        from their other groups.
+        without them (see :ref:`sync-leaving-a-group`).
+
+    sync_group_also_leave
+        With ``sync_group_late_action="leave_group"``, the other group types a late member also
+        leaves, for example ``["cohort"]``. See ``also_leave`` in :class:`~psynet.sync.GroupBarrier`.
 
     sync_group_waiting_message
         Message on the waiting indicator at the trial maker's own sync-group waits
@@ -2142,6 +2159,7 @@ class TrialMaker(Module):
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
         sync_group_late_action: LateAction = "fail",
+        sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
@@ -2216,12 +2234,15 @@ class TrialMaker(Module):
                 sync_group_max_wait_action=(sync_group_max_wait_action, "fail"),
                 sync_group_late_after=(sync_group_late_after, None),
                 sync_group_late_action=(sync_group_late_action, "fail"),
+                sync_group_also_leave=(sync_group_also_leave, None),
                 sync_group_waiting_message=(sync_group_waiting_message, None),
             )
         _validate_group_timeouts(
             sync_group_max_wait_action,
             sync_group_late_after,
             sync_group_late_action,
+            sync_group_also_leave,
+            sync_group_type,
             prefix="sync_group_",
         )
         if sync_group_type is not None:
@@ -2248,6 +2269,7 @@ class TrialMaker(Module):
         self.sync_group_max_wait_action = sync_group_max_wait_action
         self.sync_group_late_after = sync_group_late_after
         self.sync_group_late_action = sync_group_late_action
+        self.sync_group_also_leave = sync_group_also_leave
         self.sync_group_waiting_message = sync_group_waiting_message
 
         elts = self.compile_elts()
@@ -2272,6 +2294,7 @@ class TrialMaker(Module):
             max_wait_action=self.sync_group_max_wait_action,
             late_after=self.sync_group_late_after,
             late_action=self.sync_group_late_action,
+            also_leave=self.sync_group_also_leave,
             waiting_message=self.sync_group_waiting_message,
         )
 
@@ -3383,8 +3406,11 @@ class NetworkTrialMaker(TrialMaker):
     sync_group_late_action
         What happens to a member who is later than ``sync_group_late_after``: ``"fail"``
         (default) fails them; ``"leave_group"`` removes them from the group, so the rest can go on
-        without them (see :ref:`sync-leaving-a-group`); ``"leave_all_groups"`` also removes them
-        from their other groups.
+        without them (see :ref:`sync-leaving-a-group`).
+
+    sync_group_also_leave
+        With ``sync_group_late_action="leave_group"``, the other group types a late member also
+        leaves, for example ``["cohort"]``. See ``also_leave`` in :class:`~psynet.sync.GroupBarrier`.
 
     sync_group_waiting_message
         Message on the waiting indicator at the trial maker's own sync-group waits
@@ -3464,6 +3490,7 @@ class NetworkTrialMaker(TrialMaker):
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
         sync_group_late_action: LateAction = "fail",
+        sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
@@ -3507,6 +3534,7 @@ class NetworkTrialMaker(TrialMaker):
             sync_group_max_wait_action=sync_group_max_wait_action,
             sync_group_late_after=sync_group_late_after,
             sync_group_late_action=sync_group_late_action,
+            sync_group_also_leave=sync_group_also_leave,
             sync_group_waiting_message=sync_group_waiting_message,
             n_participants_completion=n_participants_completion,
         )
@@ -4506,6 +4534,18 @@ class SyncGroupNode(GenericTrialNode):
     # after which the round takes no members who have no trial on it. Set
     # under the round lock that for_cue holds, so a cue reads it consistently.
     sync_group_closed = Column(Boolean, default=False)
+    #: When the group dissolved during this round, or ``None`` if it didn't.
+    #: Set when the group dissolves (see :ref:`groups_below_min_size`) while
+    #: a member still in the group is in their trial on this node (the
+    #: trial's ``complete`` is ``False``) and no
+    #: :class:`~psynet.sync.GroupBarrier` has closed the round
+    #: (``sync_group_closed``). So a round the group finished stays ``None``
+    #: even if a member is still on a page after the barrier, and so does a
+    #: round whose remaining members' trials had all ended before the group
+    #: dissolved. Written under
+    #: the round lock, like ``sync_group_closed``, so it is never set on a
+    #: round that a barrier closed.
+    sync_group_dissolved_at = Column(DateTime)
 
     def __init__(self, module_id, experiment, group, round_number, definition):
         super().__init__(module_id, experiment)
