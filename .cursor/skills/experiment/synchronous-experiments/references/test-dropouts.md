@@ -71,7 +71,8 @@ other timeouts in real time, so pass `advance_past_wait_pages` a `timeout`
 longer than the `max_wait_time` being tested. The
 default `test_check_bot` accepts bots that called `drop_out()` or
 `allow_failure()`; call `allow_failure()` for every bot the design fails on
-purpose, such as a partner left behind under the default
-`below_quorum="fail"`. If a late member fails the partners who were on time
-(PsyNet logs a warning when that happens) and the design didn't mean to,
-pass `below_quorum="continue_without_group"` rather than changing the test.
+purpose, such as a partner left behind under `below_quorum="fail"`. If a
+late member fails the partners who were on time and the design didn't mean
+to, pass `below_quorum="continue_without_group"` rather than changing the
+test. PsyNet rejects `late_action="leave_group"` with `below_quorum="fail"`
+at load; it can only log a warning for barriers built in `show_trial`.

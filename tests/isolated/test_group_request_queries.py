@@ -63,6 +63,7 @@ def _timeline(group_size, quorum=None):
             "room",
             initial_group_size=group_size,
             quorum=quorum or group_size,
+            below_quorum="fail",
         ),
         ModularPage("choose", "Choose", PushButtonControl(["a", "b"]), time_estimate=1),
         GroupBarrier(id_="room_gate", group_type="room"),

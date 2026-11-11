@@ -194,10 +194,11 @@ so if neither partner comes back, the next split waits for its deadline. A
 late player who comes back is told that they were away, and their game ends.
 
 Once the cohort has stopped top-ups, removing a late player dissolves it if
-that leaves it below its quorum (see :ref:`groups_below_min_size`). The
-default ``below_quorum="fail"`` would then fail the players who were on
-time, so the cohort's grouper sets ``below_quorum="continue_without_group"``,
-and they carry on without the cohort, which ends their game.
+that leaves it below its quorum (see :ref:`groups_below_min_size`).
+``below_quorum="fail"`` would then fail the players who were on time while
+the late player carries on, which the experiment rejects when it loads, so
+the cohort's grouper sets ``below_quorum="continue_without_group"``, and
+they carry on without the cohort, which ends their game.
 
 A player removed from their pair finishes the trial: its later group
 barriers let them straight through, and its feedback tells them they were

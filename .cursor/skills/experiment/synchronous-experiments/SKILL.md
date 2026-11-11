@@ -136,7 +136,12 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `stop_top_ups_after_rounds=n` rather than a `join_criterion`.
 - For a lobby that should not wait forever for a full group, use
   `SimpleGrouper(start_short_after=..., quorum=...)`; a short start forms a
-  group of at least the quorum (`start_short_with` overrides that). To let
+  group of at least the quorum (`start_short_with` overrides that). A
+  grouper whose `quorum` is below `initial_group_size`, or whose group type
+  has a barrier with `late_after`, must be given `below_quorum`, and
+  `late_after` must be given `late_action`; pair
+  `late_action="leave_group"` with `below_quorum="continue_without_group"`.
+  To let
   latecomers join only before the game starts, follow "Letting latecomers
   join before the game starts" in `code/multiplayer/synchronization`.
   If groups keep taking newcomers after that, pass `pass_newcomers=True` to

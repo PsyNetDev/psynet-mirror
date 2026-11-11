@@ -203,24 +203,20 @@ def test_fail_trials_on_premature_exit_true_emits_deprecation_warning():
 
 
 def test_sync_group_max_wait_time_with_late_after():
-    assert (
-        make_trial_maker(
-            sync_group_type="group", sync_group_late_after=60
-        ).sync_group_max_wait_time
-        is None
-    )
-    assert make_trial_maker(sync_group_type="group").sync_group_max_wait_time == 45
-    with pytest.raises(ValueError, match="Leave sync_group_max_wait_time unset"):
-        make_trial_maker(
-            sync_group_type="group",
-            sync_group_late_after=60,
-            sync_group_max_wait_time=80,
-        )
-    make_trial_maker(
+    late = dict(
         sync_group_type="group",
         sync_group_late_after=60,
-        sync_group_max_wait_time=None,
+        sync_group_late_action="leave_group",
     )
+    assert make_trial_maker(**late).sync_group_max_wait_time is None
+    assert make_trial_maker(sync_group_type="group").sync_group_max_wait_time == 45
+    with pytest.raises(ValueError, match="Leave sync_group_max_wait_time unset"):
+        make_trial_maker(**late, sync_group_max_wait_time=80)
+    make_trial_maker(**late, sync_group_max_wait_time=None)
+    with pytest.raises(
+        ValueError, match="Pass sync_group_late_action with sync_group_late_after"
+    ):
+        make_trial_maker(sync_group_type="group", sync_group_late_after=60)
 
 
 @pytest.mark.parametrize(
@@ -1497,7 +1493,11 @@ def test_repeats_without_a_trial_limit_name_the_missing_argument():
         ),
         ({"sync_group_late_after": 0}, "sync_group_late_after must be positive"),
         (
-            {"sync_group_late_after": 10, "sync_group_max_wait_action": "leave_group"},
+            {
+                "sync_group_late_after": 10,
+                "sync_group_late_action": "fail",
+                "sync_group_max_wait_action": "leave_group",
+            },
             "use sync_group_late_action",
         ),
         (

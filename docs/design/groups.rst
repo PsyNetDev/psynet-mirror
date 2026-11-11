@@ -84,10 +84,11 @@ they wait, up to the maximum.
 When someone leaves, a group that still has its **quorum**, the smallest
 size at which it can go on, carries on. Below it, the group either waits
 for a newcomer or is dissolved, and the grouper's ``below_quorum`` decides
-for those left: by default they are failed too, and with
+for those left: with ``below_quorum="fail"`` they are failed too, and with
 ``below_quorum="continue_without_group"`` they continue the experiment
 without the group (see :ref:`groups_below_min_size`). Decide this for every
-grouper. Failed
+grouper; PsyNet requires it for groups designed to shrink, such as those
+with a quorum below their size or whose barriers remove late members. Failed
 participants are paid for what they completed (see
 :doc:`/code/participants/payment`).
 

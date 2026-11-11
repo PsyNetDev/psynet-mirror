@@ -6898,17 +6898,22 @@ def test_group_barrier_max_wait_time_with_late_after():
     def barrier(**kwargs):
         return GroupBarrier(id_="round", group_type="group", **kwargs)
 
+    def late_barrier(**kwargs):
+        return barrier(late_after=30, late_action="fail", **kwargs)
+
     assert barrier().max_wait_time == 20
     assert barrier(max_wait_time=None).max_wait_time is None
-    assert barrier(late_after=30).max_wait_time is None
-    assert barrier(late_after=30, max_wait_time=None).max_wait_time is None
+    assert late_barrier().max_wait_time is None
+    assert late_barrier(max_wait_time=None).max_wait_time is None
     for max_wait_time in (300, _shrinking_max_wait_time):
         with pytest.raises(ValueError, match="Leave max_wait_time unset"):
-            barrier(late_after=30, max_wait_time=max_wait_time)
+            late_barrier(max_wait_time=max_wait_time)
     with pytest.raises(ValueError, match="late_after must be positive"):
-        barrier(late_after=0)
+        barrier(late_after=0, late_action="fail")
     with pytest.raises(ValueError, match="use late_action instead"):
-        barrier(late_after=30, max_wait_action="leave_group")
+        late_barrier(max_wait_action="leave_group")
+    with pytest.raises(ValueError, match="Pass late_action with late_after"):
+        barrier(late_after=30)
 
 
 @pytest.mark.parametrize(
@@ -6953,7 +6958,9 @@ def test_make_late_now_keeps_who_left_since_the_last_pass(
     group.remove_participant(earlier, reason="late")
     if passed_before:
         group.last_barrier_pass_time = timenow()
-    barrier = GroupBarrier("round", group_type="main", late_after=30)
+    barrier = GroupBarrier(
+        "round", group_type="main", late_after=30, late_action="fail"
+    )
     _arrive_at_group_barrier(exp, barrier, waiter)
     db_session.commit()
     group_id, earlier_id = group.id, earlier.id
@@ -7109,7 +7116,7 @@ def test_also_leave_removes_a_late_member_from_the_listed_groups_only(
     "kwargs, message",
     [
         (
-            dict(also_leave=["cohort"]),
+            dict(late_action="fail", also_leave=["cohort"]),
             "only takes effect with late_action='leave_group'",
         ),
         (dict(late_action="leave_group", also_leave="cohort"), "must be a list"),
@@ -7184,7 +7191,7 @@ def test_late_after_counts_from_joining_the_group(
 ):
     """A GroupBarrier removes members late since grouping or the last barrier, but not a newcomer."""
     exp = get_experiment()
-    grouper = SimpleGrouper("main", initial_group_size=3, quorum=2)
+    grouper = SimpleGrouper("main", initial_group_size=3, quorum=2, below_quorum="fail")
     participants = _working_participants(exp, 3)
     for participant in participants:
         _arrive_at_group_barrier(exp, grouper, participant)
@@ -7221,7 +7228,7 @@ def test_late_after_follows_a_timed_page(
 ):
     """A between-barrier timeout waits for a timed page's answer, but no longer."""
     exp = get_experiment()
-    grouper = SimpleGrouper("main", initial_group_size=7, quorum=2)
+    grouper = SimpleGrouper("main", initial_group_size=7, quorum=2, below_quorum="fail")
     participants = _working_participants(exp, 7)
     (
         waiting,
@@ -7451,6 +7458,39 @@ def test_timeline_warns_about_barriers_newcomers_can_reach_after_their_group():
     first = GroupBarrier(id_="round", group_type="team")
     assert warned_barriers(first, rounds(), pass_newcomers=True) == []
     assert warned_barriers(rounds(pass_newcomers=True), stop_top_ups=True) == ["round"]
+
+
+def test_groups_that_can_shrink_need_an_explicit_below_quorum():
+    with pytest.raises(ValueError, match="Pass below_quorum"):
+        SimpleGrouper("team", initial_group_size=3, quorum=2)
+    SimpleGrouper("team", initial_group_size=3, quorum=2, below_quorum="fail")
+
+    def make_timeline(pair, late_action="leave_group", cohort=None, also_leave=None):
+        return Timeline(
+            SimpleGrouper("cohort", initial_group_size=4, below_quorum=cohort),
+            SimpleGrouper("pair", initial_group_size=2, below_quorum=pair),
+            GroupBarrier(
+                id_="round",
+                group_type="pair",
+                late_after=30,
+                late_action=late_action,
+                also_leave=also_leave,
+            ),
+            InfoPage("Done", time_estimate=1),
+        )
+
+    with pytest.raises(ValueError, match="Pass below_quorum to SimpleGrouper"):
+        make_timeline(pair=None, late_action="fail")
+    make_timeline(pair="fail", late_action="fail")
+    with pytest.raises(ValueError, match="carry on alone"):
+        make_timeline(pair="fail")
+    # A late member also leaves the groups in also_leave.
+    ok = "continue_without_group"
+    with pytest.raises(ValueError, match="Pass below_quorum to SimpleGrouper"):
+        make_timeline(pair=ok, also_leave=["cohort"])
+    with pytest.raises(ValueError, match="carry on alone"):
+        make_timeline(pair=ok, also_leave=["cohort"], cohort="fail")
+    make_timeline(pair=ok, also_leave=["cohort"], cohort=ok)
 
 
 @pytest.mark.parametrize(
@@ -8077,7 +8117,11 @@ def test_group_barrier_counts_a_newcomer_joining_in_another_request(
     """A barrier check on a group that accepts top-ups doesn't release it during a join in progress, and later counts the newcomer."""
     exp = get_experiment()
     grouper = SimpleGrouper(
-        "team", initial_group_size=4, quorum=2, join_existing_groups=True
+        "team",
+        initial_group_size=4,
+        quorum=2,
+        join_existing_groups=True,
+        below_quorum="fail",
     )
     game_starts = GroupBarrier(
         id_="game_starts", group_type="team", stop_top_ups=stop_top_ups
@@ -8173,7 +8217,11 @@ def test_group_barrier_counts_a_newcomer_joining_in_another_request(
 def _top_up_team_waiting_at(exp, db_session, barrier, n_starters=2):
     """Return a team of ``n_starters`` that accepts top-ups, all waiting at ``barrier``, and the pending checks."""
     grouper = SimpleGrouper(
-        "team", initial_group_size=4, quorum=2, join_existing_groups=True
+        "team",
+        initial_group_size=4,
+        quorum=2,
+        join_existing_groups=True,
+        below_quorum="fail",
     )
     starters = _working_participants(exp, n_starters)
     group = grouper._make_group(starters, initial_group_size=4)

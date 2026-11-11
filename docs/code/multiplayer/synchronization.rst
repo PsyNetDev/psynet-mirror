@@ -457,7 +457,7 @@ progress even if no member finishes their trial, for example
 its own.
 
 With ``below_quorum="continue_without_group"`` the members carry on and the
-round's results are still stored (with the default ``"fail"``, the members
+round's results are still stored (with ``"fail"``, the members
 are failed and ``show_feedback`` doesn't run). Each trial's ``answer`` holds
 the player's latest answer, the round's trials are in ``node.all_trials``,
 and each trial's ``sync_group_outcome`` is
@@ -1142,10 +1142,14 @@ the maximum waiting time:
     :class:`~psynet.sync.GroupBarrier` yet: a member who hasn't reached the
     barrier within ``late_after`` seconds of the group's previous barrier
     pass, or of joining the group if that is later, is late, and is handled
-    by ``late_action``: ``"fail"`` (default) fails them, and ``"leave_group"``
-    removes them from the group. With ``"leave_group"``, ``also_leave`` lists
-    the other group types they leave too, such as ``["cohort"]`` for the
-    cohort a pair was formed in. Whichever
+    by ``late_action``, which you must then pass: ``"fail"`` fails them, and
+    ``"leave_group"`` removes them from the group. With ``"leave_group"``,
+    ``also_leave`` lists the other group types they leave too, such as
+    ``["cohort"]`` for the cohort a pair was formed in. Since late members
+    shrink these groups, their groupers must say what happens to the
+    remaining members with ``below_quorum`` (see :ref:`groups_below_min_size`);
+    the experiment checks this when it loads, and rejects
+    ``late_action="leave_group"`` with ``below_quorum="fail"``. Whichever
     action it is, the late member leaves the barrier's group with the
     reason ``"late"``, so ``participant.sync_group_removal_reason`` says
     ``"late"`` even when they are failed, and so does their cued trial's
@@ -1285,14 +1289,18 @@ Two separate settings decide what happens when someone leaves a group:
       a ``max_wait_time`` longer than ``top_up_wait`` plus the time members
       may take to reach it.
   - Without top-ups, the group is dissolved, and the grouper's
-    ``below_quorum`` decides for each remaining member: ``"fail"`` (default)
+    ``below_quorum`` decides for each remaining member: ``"fail"``
     fails them, telling them "Too few members of your group remained to
     continue, so we ended your session."; ``"continue_without_group"``
     lets them carry on without the group, and their next page says "Your
     partner is no longer in your group. Please continue." (or "Too few
     members of your group remained. Please continue." in larger groups; see
-    :ref:`sync-leaving-a-group`). So by default, one member who quits or is
-    late ends the session of everyone who was on time. All the members
+    :ref:`sync-leaving-a-group`). With ``"fail"``, one member who quits or is
+    late ends the session of everyone who was on time. ``below_quorum`` is
+    required when groups are designed to shrink: when ``quorum`` is below
+    ``initial_group_size``, or when a barrier of the group type, or one
+    listing it in ``also_leave``, has ``late_after``. Otherwise it defaults
+    to ``"fail"``, for groups that only shrink when a member quits. All the members
     leave together: if another member is in the
     middle of a request at that moment (for example submitting a page),
     nobody is removed yet, and the background barrier check dissolves the
@@ -1313,7 +1321,7 @@ settings together decide both fates:
    :header-rows: 1
 
    * - The departing member
-     - ``below_quorum="fail"`` (default)
+     - ``below_quorum="fail"``
      - ``below_quorum="continue_without_group"``
    * - quits or is failed (including by ``max_wait_action="fail"`` or
        ``late_action="fail"``)
@@ -1323,24 +1331,26 @@ settings together decide both fates:
      - leaver carries on alone, absent partner failed
      - both carry on alone
    * - was late, ``late_action="leave_group"``
-     - late member carries on alone, partner who was on time failed
+     - not allowed: the experiment raises an error when it loads
      - both carry on alone
 
-The default fails the members who were on time, so that a pair or group
-doesn't carry on short-handed without you deciding that it should. The last
-row is rarely what a pair wants, and PsyNet logs a warning when it happens.
-To let the members who were on time carry on, set
+``"fail"`` stops a pair or group from carrying on short-handed. Combined
+with ``late_action="leave_group"`` it would let the late member carry on
+while failing the partner who was on time, so the experiment rejects that
+combination when it loads; for a barrier it can't see then, such as one
+built in ``show_trial``, PsyNet logs a warning when it happens. To let the
+members who were on time carry on, set
 ``below_quorum="continue_without_group"`` on the grouper:
 
 .. code-block:: python
 
     SimpleGrouper("pair", initial_group_size=2, below_quorum="continue_without_group")
 
-``late_action="fail"`` instead ends the session for both. With
-``also_leave`` the same applies to the late member's groups of the listed
-types: a cohort without top-ups that one departure takes below its quorum
-fails all its other members, including those in other pairs, unless its
-grouper has ``below_quorum="continue_without_group"``.
+``late_action="fail"`` with ``below_quorum="fail"`` instead ends the session
+for both. With ``also_leave`` the same applies to the late member's groups
+of the listed types: a cohort without top-ups that one departure takes below
+its quorum fails all its other members, including those in other pairs,
+unless its grouper has ``below_quorum="continue_without_group"``.
 
 For example, a group of four that may start with two after a minute, and
 whose members carry on when others are slow or leave, combines these

@@ -3026,10 +3026,14 @@ class Timeline:
         self.check_group_policies()
 
     def check_group_policies(self):
-        """Warn about grouper and barrier settings that strand newcomers."""
-        from .sync import warn_if_newcomers_can_strand_group
+        """Check grouper and barrier settings that leave groups stranded or members failed."""
+        from .sync import (
+            check_group_dropout_policies,
+            warn_if_newcomers_can_strand_group,
+        )
 
         warn_if_newcomers_can_strand_group(self._barriers_in_order())
+        check_group_dropout_policies(self._barriers())
 
     def _barriers_in_order(self):
         """Yield ``(barrier, in_loop)`` once per barrier, in timeline order.

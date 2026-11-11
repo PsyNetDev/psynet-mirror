@@ -1641,17 +1641,25 @@ def _validate_group_timeouts(
     """Check a GroupBarrier's time-out options, naming them with ``prefix`` (e.g. ``"sync_group_"``)."""
     for name, value, allowed in [
         ("max_wait_action", max_wait_action, ("fail", "leave_group")),
-        ("late_action", late_action, get_args(LateAction)),
+        ("late_action", late_action, (None, *get_args(LateAction))),
     ]:
         name = prefix + name
         if value == "kick":
             raise ValueError(f"{name}='kick' was renamed {name}='leave_group'.")
         if value not in allowed:
+            allowed = [option for option in allowed if option is not None]
             raise ValueError(
                 f"{name} must be one of {', '.join(map(repr, allowed))}, got {value!r}."
             )
     if late_after is not None and late_after <= 0:
         raise ValueError(f"{prefix}late_after must be positive.")
+    if late_after is not None and late_action is None:
+        raise ValueError(
+            f"Pass {prefix}late_action with {prefix}late_after: 'fail' fails a "
+            "late member and sends them to the end of the experiment, and "
+            "'leave_group' removes them from the group so the others go on "
+            "without them."
+        )
     if late_after is not None and max_wait_action != "fail":
         raise ValueError(
             f"{prefix}max_wait_action has no effect with {prefix}late_after, which "
@@ -1843,18 +1851,22 @@ class GroupBarrier(Barrier):
         before ``late_action`` is applied to them. ``None`` (default) never treats anyone as late. A member on a
         page with a ``time_limit`` is never late before that limit has run out plus 10 seconds, so that an
         answer sent at the deadline can arrive; this timeout therefore need not cover the pages' time limits.
+        Requires ``late_action``, and the grouper of ``group_type`` (and of each type in ``also_leave``)
+        must then be given ``below_quorum``, which is checked when the experiment loads.
 
     late_action
-        What happens to a member who is later than ``late_after``: ``"fail"`` (default) fails them and sends
-        them to the end of the experiment; ``"leave_group"`` removes them from the group, so the rest can go on
-        without them (see :ref:`sync-leaving-a-group` for what the removed member sees).
+        What happens to a member who is later than ``late_after``, which requires it: ``"fail"`` fails them
+        and sends them to the end of the experiment; ``"leave_group"`` removes them from the group, so the
+        rest can go on without them (see :ref:`sync-leaving-a-group` for what the removed member sees).
+        ``"leave_group"`` can't be combined with a grouper's ``below_quorum="fail"``, which would fail the
+        members who were on time while the late one carries on; the experiment raises an error at load.
         With every action the member leaves this
         barrier's group with the reason ``"late"`` (with ``"fail"``, before they are failed), which their
         cued trial's :attr:`~psynet.trial.main.Trial.sync_group_outcome` records unless an earlier barrier
         in the trial's pages already released the group with them in it (then it stays ``"stayed"``). A
         group that this leaves below
-        its quorum dissolves as its ``below_quorum`` says, so with ``"fail"`` one late member can fail a whole
-        cohort. While a late member's own request is in progress, for example submitting a page, no late
+        its quorum dissolves as its ``below_quorum`` says, so with ``late_action="fail"`` and
+        ``below_quorum="fail"`` one late member can fail a whole cohort. While a late member's own request is in progress, for example submitting a page, no late
         member of the group is acted on until a check finds none of them busy; if that request
         brought them to this barrier, they are no longer late. So code a late member runs in their own
         request, such as a :class:`~psynet.timeline.CodeBlock` storing their answer, either runs before the
@@ -2008,7 +2020,7 @@ class GroupBarrier(Barrier):
         *,
         max_wait_action: Literal["fail", "leave_group"] = "fail",
         late_after: Optional[float] = None,
-        late_action: LateAction = "fail",
+        late_action: Optional[LateAction] = None,
         also_leave: Optional[Sequence[str]] = None,
         expected_wait=None,
         waiting_message=None,
@@ -2930,12 +2942,17 @@ class SimpleGrouper(Grouper):
         What happens to the members left when a group is dissolved below its ``quorum``
         (for when that happens, see :ref:`groups_below_min_size`). The member whose departure caused it is handled by their own
         cause instead (a barrier's ``max_wait_action`` or ``late_action``, or their
-        failure). ``"fail"`` (default) fails them, telling them "Too few members of your
+        failure). ``"fail"`` fails them, telling them "Too few members of your
         group remained to continue, so we ended your session." ``"continue_without_group"``
         lets them carry on with the experiment without the group, and their next page says
-        that their group ended (see :ref:`sync-leaving-a-group`). With the default, one
+        that their group ended (see :ref:`sync-leaving-a-group`). With ``"fail"``, one
         member who is late or leaves can end the session of everyone who was on time,
-        as in a pair, so pass ``"continue_without_group"`` unless that is what you want.
+        as in a pair.
+        Required when the groups are designed to shrink: when ``quorum`` is below
+        ``initial_group_size``, or when a :class:`GroupBarrier` of this group type in the
+        timeline has ``late_after`` (checked when the experiment loads). Otherwise it
+        defaults to ``"fail"``. A barrier's ``late_action="leave_group"`` needs
+        ``"continue_without_group"``.
         See :ref:`groups_below_min_size` for when the group is dissolved.
 
     top_up_wait
@@ -2986,7 +3003,7 @@ class SimpleGrouper(Grouper):
         batch_size: Union[int, str] = "initial_group_size",
         join_existing_groups: bool = False,
         join_criterion: Optional[Callable] = None,
-        below_quorum: str = "fail",
+        below_quorum: Optional[str] = None,
         start_short_after: Optional[float] = None,
         start_short_with: Optional[int] = None,
         quorum: Optional[int] = None,
@@ -3036,7 +3053,7 @@ class SimpleGrouper(Grouper):
         self.batch_size = batch_size
         self.join_existing_groups = join_existing_groups
         self.join_criterion = join_criterion
-        if below_quorum not in ("fail", "continue_without_group"):
+        if below_quorum not in (None, "fail", "continue_without_group"):
             hint = (
                 " The remaining members don't leave the group; it ends around them, "
                 "so use 'continue_without_group'."
@@ -3118,6 +3135,15 @@ class SimpleGrouper(Grouper):
                 "below quorum."
             )
         self.quorum = quorum
+        if below_quorum is None and quorum < initial_group_size:
+            raise ValueError(
+                f"SimpleGrouper('{group_type}') has a quorum ({quorum}) below "
+                f"initial_group_size ({initial_group_size}), so its groups can "
+                "shrink. Pass below_quorum='fail' to fail the remaining members "
+                "when a group falls below its quorum, or "
+                "below_quorum='continue_without_group' to let them carry on "
+                "without it."
+            )
         if (
             start_short_after is not None
             and self.max_wait_time is not None
@@ -3414,7 +3440,7 @@ class SimpleGrouper(Grouper):
             max_group_size=self.max_group_size,
             min_group_size=self.quorum,
             accepts_top_ups=self.join_existing_groups,
-            below_quorum=self.below_quorum,
+            below_quorum=self.below_quorum or "fail",
             top_up_wait=self.top_up_wait,
         )
 
@@ -4275,6 +4301,62 @@ def warn_if_newcomers_can_strand_group(barriers):
                 "to stop newcomers joining once the group passes it.",
                 UserWarning,
             )
+
+
+def check_group_dropout_policies(barriers):
+    """Check that groups which late members can shrink say what happens to the rest.
+
+    A :class:`GroupBarrier` with ``late_after`` removes late members from its
+    group, and from the groups in ``also_leave``, so each :class:`SimpleGrouper`
+    forming such a group must be given ``below_quorum``. With
+    ``late_action="leave_group"`` it must not be ``"fail"``, which would fail
+    the members who were on time while the late one carries on.
+
+    Parameters
+    ----------
+    barriers : iterable of Barrier
+        The barriers in the timeline. Barriers created inside a trial, such as
+        in ``Trial.show_trial``, or in a ``for_loop``, are not visible here;
+        :meth:`GroupBarrier._dissolve_after_late_removal` warns about those
+        at runtime.
+
+    Raises
+    ------
+    ValueError
+        If a grouper lacks ``below_quorum``, or combines ``below_quorum="fail"``
+        with a barrier's ``late_action="leave_group"``.
+    """
+    barriers = list(barriers)
+    groupers = {}
+    for barrier in barriers:
+        if isinstance(barrier, SimpleGrouper):
+            groupers.setdefault(barrier.group_type, []).append(barrier)
+    for barrier in barriers:
+        if not isinstance(barrier, GroupBarrier) or barrier.late_after is None:
+            continue
+        for group_type in [barrier.group_type, *barrier.also_leave]:
+            for grouper in groupers.get(group_type, []):
+                if grouper.below_quorum is None:
+                    raise ValueError(
+                        f"GroupBarrier '{barrier.id}' has late_after, so late "
+                        f"members leave their '{group_type}' groups. Pass "
+                        f"below_quorum to SimpleGrouper '{grouper.id}' to say "
+                        "what happens to the remaining members when a group "
+                        "falls below its quorum: 'fail' or "
+                        "'continue_without_group'."
+                    )
+                if barrier.late_action == "leave_group" and (
+                    grouper.below_quorum == "fail"
+                ):
+                    raise ValueError(
+                        f"GroupBarrier '{barrier.id}' has "
+                        "late_action='leave_group', but SimpleGrouper "
+                        f"'{grouper.id}' has below_quorum='fail', so a late "
+                        "member would carry on alone while the members who "
+                        "were on time are failed. Pass "
+                        "below_quorum='continue_without_group', or "
+                        "late_action='fail'."
+                    )
 
 
 def group_seats(group) -> Dict[int, int]:

@@ -103,7 +103,9 @@ def test_regrouper_waits_for_a_late_member_until_they_leave_the_within_group(
 ):
     """A member removed late from their pair holds up the next split while still in the cohort."""
     exp = get_experiment()
-    cohort_grouper = SimpleGrouper("cohort", initial_group_size=4, quorum=2)
+    cohort_grouper = SimpleGrouper(
+        "cohort", initial_group_size=4, quorum=2, below_quorum="fail"
+    )
     pairs = Regrouper("pair", within="cohort", group_size=2, deadline=30)
     cohort = _working_participants(exp, 4)
     _arrive(exp, cohort_grouper, cohort)
@@ -315,6 +317,7 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
         initial_group_size=4,
         start_short_after=10,
         start_short_with=2,
+        below_quorum="fail",
         waiting_message=waiting_message,
     )
     participants = _working_participants(exp, 2)
@@ -362,12 +365,18 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
 )
 def test_simple_grouper_checks_start_short_after(kwargs, message):
     with pytest.raises(ValueError, match=message):
-        SimpleGrouper("lobby", initial_group_size=4, **kwargs)
+        SimpleGrouper("lobby", initial_group_size=4, below_quorum="fail", **kwargs)
 
 
 def test_simple_grouper_quorum():
     def lobby(**kwargs):
-        return SimpleGrouper("lobby", initial_group_size=4, max_wait_time=120, **kwargs)
+        return SimpleGrouper(
+            "lobby",
+            initial_group_size=4,
+            max_wait_time=120,
+            below_quorum="fail",
+            **kwargs,
+        )
 
     short = {"start_short_after": 60, "start_short_with": 2}
     assert lobby(quorum=3).quorum == 3
@@ -399,6 +408,7 @@ def test_simple_grouper_accepts_callable_max_wait_time_with_start_short_after():
         start_short_after=10,
         start_short_with=2,
         max_wait_time=_five_minutes,
+        below_quorum="fail",
     )
 
 
@@ -566,7 +576,9 @@ def test_a_busy_player_does_not_hold_up_other_cohorts(
 
 
 def _cohort_and_pairs(exp, n, **kwargs):
-    cohort_grouper = SimpleGrouper("cohort", initial_group_size=n, quorum=2)
+    cohort_grouper = SimpleGrouper(
+        "cohort", initial_group_size=n, quorum=2, below_quorum="fail"
+    )
     pairs = Regrouper(
         "pair",
         within="cohort",
@@ -975,7 +987,9 @@ def test_backdating_reaches_the_deadline_after_quick_splits(
     A player still in last round's pair keeps their role meanwhile.
     """
     exp = get_experiment()
-    cohort_grouper = SimpleGrouper("cohort", initial_group_size=4, quorum=2)
+    cohort_grouper = SimpleGrouper(
+        "cohort", initial_group_size=4, quorum=2, below_quorum="fail"
+    )
     pairs = Regrouper(
         "pair",
         within="cohort",
@@ -1008,7 +1022,9 @@ def test_backdating_reaches_the_deadline_after_quick_splits(
 def test_backdating_reaches_the_every_tick(in_experiment_directory, db_session):
     """``regroup_now``'s backdating reaches the next ``every`` tick."""
     exp = get_experiment()
-    cohort_grouper = SimpleGrouper("cohort", initial_group_size=4, quorum=2)
+    cohort_grouper = SimpleGrouper(
+        "cohort", initial_group_size=4, quorum=2, below_quorum="fail"
+    )
     pairs = Regrouper("pair", within="cohort", group_size=2, every=600)
     players = _working_participants(exp, 4)
     _arrive(exp, cohort_grouper, players)

@@ -856,9 +856,10 @@ def test_late_after_in_a_round_fails_a_newcomer_waiting_outside_it(
 ):
     exp = get_experiment()
     cohort, newcomer, pair = _newcomer_in_round_0(exp)
-    in_round = GroupBarrier("submitted", group_type="pair", late_after=5)
+    late = dict(group_type="pair", late_after=5, late_action="fail")
+    in_round = GroupBarrier("submitted", **late)
     _arrive(exp, in_round, cohort[:1])
-    _arrive(exp, GroupBarrier("ready", group_type="pair", late_after=5), [newcomer])
+    _arrive(exp, GroupBarrier("ready", **late), [newcomer])
     _set_group_clocks_in_the_past(pair, seconds=10)
     in_round.check_waiting_participants(cohort[:1])
     # The round waits for the newcomer, who isn't at its barrier.
@@ -1523,7 +1524,7 @@ def test_late_removal_rechecks_a_timed_page_started_meanwhile(
     """A timed page the late member's request started since the group was read keeps them."""
     exp = get_experiment()
     (stayer, late), group = _sync_group_of(exp, db_session, 2)
-    barrier = GroupBarrier("late", group_type="main", late_after=5)
+    barrier = GroupBarrier("late", group_type="main", late_after=5, late_action="fail")
     _arrive(exp, barrier, [stayer])
     _set_group_clocks_in_the_past(group, seconds=10)
     db.session.commit()
@@ -1614,7 +1615,11 @@ def test_a_late_joiner_joins_the_open_round_and_its_barrier_waits_for_them(
     _cue_team(exp, [first, second], 0)
     _passes.clear()
     submitted = GroupBarrier(
-        "submitted", group_type="main", late_after=5, on_release=_record_pass
+        "submitted",
+        group_type="main",
+        late_after=5,
+        late_action="fail",
+        on_release=_record_pass,
     )
     _arrive(exp, submitted, [first])
     _set_group_clocks_in_the_past(group, seconds=10)

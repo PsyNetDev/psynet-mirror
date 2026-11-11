@@ -87,7 +87,7 @@ study.
   partner is no longer in your group. Please continue." She plays the rest
   of the timeline without a group (see :ref:`sync-leaving-a-group`).
 
-With the default ``below_quorum="fail"``, a dissolved group fails Ann
+With ``below_quorum="fail"``, a dissolved group fails Ann
 instead, and a group that still takes newcomers is not dissolved but waits
 at the barrier for one (see :ref:`groups_below_min_size`).
 

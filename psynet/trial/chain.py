@@ -1553,9 +1553,10 @@ class ChainTrialMaker(NetworkTrialMaker):
         :class:`~psynet.sync.GroupBarrier`.
 
     sync_group_late_action
-        What happens to a member who is later than ``sync_group_late_after``: ``"fail"``
-        (default) fails them; ``"leave_group"`` removes them from the group, so the rest can go on
-        without them (see :ref:`sync-leaving-a-group`).
+        What happens to a member who is later than ``sync_group_late_after``, which requires it:
+        ``"fail"`` fails them; ``"leave_group"`` removes them from the group, so the rest can go on
+        without them (see :ref:`sync-leaving-a-group`). See ``late_action`` in
+        :class:`~psynet.sync.GroupBarrier`.
 
     sync_group_also_leave
         With ``sync_group_late_action="leave_group"``, the other group types a late member also
@@ -1652,7 +1653,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
-        sync_group_late_action: LateAction = "fail",
+        sync_group_late_action: Optional[LateAction] = None,
         sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
     ):
