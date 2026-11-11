@@ -67,9 +67,10 @@ Start from the `get_basic_data` of the demo closest to the design:
   nodes.
 - `ultimatum_pairing`: pairs that change every round, with a table per
   pair from the nodes (see "Games with a regrouper" in `data/basic_data`).
-- `lowest_unique_number`: rooms that each play one round. Its `round`
-  counts the player's own trials, because no room has more than one round;
-  where a group plays several rounds, use `sync_group_round` instead.
+- Groups that each play one round, formed by a `Regrouper` without
+  `within`: number each player's own trials as their `round`
+  (`trial.position`); where a group plays several rounds, use
+  `sync_group_round` instead.
 
 If a per-round value exists only in participant variables or browser
 state, change the experiment to save it on the trial or node before any

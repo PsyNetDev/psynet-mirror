@@ -264,7 +264,7 @@ both answers to the prompt as speech bubbles:
    A player whose time ran out.
 
 To pay a bonus as well, return a score from ``score_answer`` and the bonus
-from ``compute_performance_reward``, as the ``lowest_unique_number`` demo
+from ``compute_performance_reward``, as the ``public_goods`` demo
 does; both run when the trial ends, after ``on_release``.
 
 .. _rounds-sitting-out:
@@ -325,34 +325,42 @@ regrouper (see :doc:`/data/basic_data`):
 Variations
 ----------
 
-**Larger groups and fixed rounds.** The ``lowest_unique_number`` demo
-regroups all waiting players into rooms of up to eight every 10 seconds,
-with ``every=10`` and no ``within``, for a fixed number of rounds. Each
-room is new, so its trials are all in round 0. A room can mix players at
-different rounds of the game, for example a latecomer playing their first
-round with others playing their second, so the export numbers each player's
-own trials as their round:
+**New groups from everyone waiting.** Without ``within``, a regrouper
+splits everyone waiting, not one cohort, so how many play together depends
+on how busy the experiment is. With ``every=10`` it splits them every 10
+seconds into groups of up to ``group_size``. Each group is new, so its
+trials are all in round 0, and a group can mix players at different rounds
+of the game; number each player's own trials as their round in the export
+(``trial.position``). Pass ``max_wait_action="continue_without_group"``
+and follow the regrouper with a :func:`~psynet.timeline.conditional` on
+``participant.in_sync_group(...)``, so that a player left with nobody to
+play with, such as a latecomer whose last round comes after everyone else
+has finished, carries on without a group instead of being failed:
 
-.. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
-   :pyobject: get_timeline
+.. code-block:: python
 
-A player left with nobody to play with, for example a latecomer whose
-last round comes after everyone else has finished, waits at the regrouper
-for up to a minute. Then ``max_wait_action="continue_without_group"`` lets
-them carry on without a room, and the ``conditional`` shows them a short
-page instead of the round, rather than failing them.
-
-Each player picks a number, and the room sees who has picked, who ran out
-of time and who is still deciding:
-
-.. figure:: ../../_static/images/rounds/dash.png
-   :width: 700
-   :alt: A room of five: three players with a tick, one with a grey dash, and one still deciding
-
-The barrier's ``on_release`` applies the winning rule once and saves the
-room's result in ``node.var.result`` (``"won"``, ``"no_unique_number"`` or
-``"one_choice"``), so the feedback and the export read it rather than apply
-the rule again.
+    for_loop(
+        label="rounds",
+        iterate_over=range(N_ROUNDS),
+        logic=join(
+            Regrouper(
+                "room",
+                group_size=8,
+                smallest_group=2,
+                every=10,
+                waiting_message=round_message,
+                max_wait_time=60,
+                max_wait_action="continue_without_group",
+            ),
+            conditional(
+                "in_room",
+                lambda participant: participant.in_sync_group("room"),
+                PickTrial.cue({"numbers": [1, 2, 3, 4, 5]}),
+                InfoPage("Nobody else was left to play this round with.", time_estimate=5),
+            ),
+        ),
+        time_estimate_per_iteration=PickTrial.time_estimate + 5,
+    )
 
 **A draw per group.** ``definition`` can also be a function, for example
 ``lambda group: {"target": random.choice(TARGETS)}``. It is called once per

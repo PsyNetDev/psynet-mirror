@@ -177,10 +177,9 @@ has a demo to start from.
 - **Part of the experiment needs enough people present**, with other work
   until then:
   `sync_quorum <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/sync_quorum>`__.
-- **Players get new partners every round**, from everyone waiting or from a
-  cohort that stays together:
-  `lowest_unique_number <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/lowest_unique_number>`__
-  and `ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__.
+- **Players get new partners every round**, within a cohort that stays
+  together:
+  `ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__.
 - **A team game carries on when members leave**, with fewer players, until
   too few remain:
   `public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__.
@@ -304,24 +303,18 @@ later round. A player who is late for a split joins the next one. If no
 further split comes within the regrouper's maximum waiting time, for example
 after the last round, they are failed by default
 (``max_wait_action="fail"``), unless the regrouper lets them continue
-without a group (``max_wait_action="continue_without_group"``), as
-``lowest_unique_number`` does.
+without a group (``max_wait_action="continue_without_group"``).
 
 A regrouper doesn't split players as soon as two are waiting, because that
 would pair whoever finished at the same moment, often the same people every
-round. It collects players first and splits them at a deadline. In
-``demos/experiments/lowest_unique_number``, every 10 seconds a regrouper
-splits everyone waiting into rooms of up to eight. Each player picks a number,
-and the lowest number that nobody else in the room picked wins.
-
-.. figure:: ../_static/images/design/groups/lowest_unique_number.svg
-   :alt: For each round, a regrouper splits everyone waiting into rooms of up to eight, players pick a number with a time limit, a barrier waits for the room, and players see who won.
+round. It collects players first and splits them at a deadline, for example
+every 10 seconds (``every=10``).
 
 Cohorts that regroup each round
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 When everyone waiting is split together, what a player experiences depends
-on how busy the experiment is: at a busy moment a room has eight players, at
+on how busy the experiment is: at a busy moment a group has eight players, at
 a quiet one two. To keep this the same for everyone, a grouper first forms
 **cohorts**, groups that stay together for the whole game (called *matching
 groups* in experimental economics). The regrouper then splits each cohort

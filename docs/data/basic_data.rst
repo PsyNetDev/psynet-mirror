@@ -102,8 +102,8 @@ the group ends. Cued trials of one group and round also share a
 and records in ``sync_group_closed`` whether a group barrier released the
 round and in ``sync_group_dissolved_at`` when the group dissolved during it
 (see :ref:`dissolved rounds <sync-dissolved-round>`);
-the ``lowest_unique_number`` demo builds a table per player and round and
-one per room from them (see :ref:`rounds-one-trial-per-player`). The
+the ``public_goods`` demo builds a table per player and round and
+one per team and round from them (see :ref:`rounds-one-trial-per-player`). The
 ``crowd_estimate`` demo does the same for a fixed group that plays one round
 per question; a player who answered on their own has a row with an empty
 ``crowd_id``. Its ``outcome`` column, from ``trial.sync_group_outcome``, says

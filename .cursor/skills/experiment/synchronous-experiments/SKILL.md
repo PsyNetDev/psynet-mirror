@@ -30,7 +30,6 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `demos/experiments/sync_quorum`, and
   `demos/experiments/gibbs_within_sync`; for games played in rounds, also
   `demos/experiments/ultimatum_pairing`,
-  `demos/experiments/lowest_unique_number`,
   `demos/experiments/crowd_estimate` and, for a fixed team that plays on
   when members leave, `demos/experiments/public_goods`; for taking turns,
   `demos/experiments/story_chain`.
@@ -111,7 +110,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `Regrouper(group_type, group_size=..., within=...)` at the start of each
   round instead of a grouper and closer. Pass `deadline=` to split once
   everyone is back or the timeout passes (`ultimatum_pairing`), or `every=`
-  for rounds on fixed ticks (`lowest_unique_number`). Participants who miss
+  for rounds on fixed ticks ("Variations" in
+  `code/multiplayer/writing_a_round_based_experiment`). Participants who miss
   a split join the next one rather than being failed. For players who stop
   responding mid-round, follow "Moving slow players on" in
   `code/multiplayer/writing_a_round_based_experiment`: use
@@ -176,8 +176,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   follow the three-way `switch` on
   `round_status` (paired, sat out, no cohort) in "One trial per player per
   round" of `code/multiplayer/writing_a_round_based_experiment`, as in
-  `ultimatum_pairing`; without one, a two-way `conditional` is enough, as in
-  `lowest_unique_number` (see "Rounds as cued trials").
+  `ultimatum_pairing`; without one, a two-way `conditional` is enough (see "Variations" in
+  `code/multiplayer/writing_a_round_based_experiment`).
 - Follow with a `conditional` on the same function for what a member who
   left, or anyone who never had a group, does instead, such as answering the
   rest of the question alone. With a `Regrouper` in the loop, it is also the

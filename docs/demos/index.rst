@@ -408,14 +408,6 @@ Groups
     trial per player, with the group's median on the node they share.
     :doc:`/code/multiplayer/synchronization`.
 
-`experiments/lowest_unique_number <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/lowest_unique_number>`__
-    ``Regrouper`` with ``every``: rooms of up to eight form every 10
-    seconds, and players who are too slow miss a round instead of being
-    failed. A ``GroupPrompt`` shows who has chosen and then everyone's
-    number. Each round is one cued trial per player, sharing a node with
-    the room. :doc:`/code/multiplayer/synchronization`,
-    :ref:`rounds-one-trial-per-player`.
-
 `experiments/story_chain <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/story_chain>`__
     Groups of three write a story one sentence at a time. Each turn is a
     cued round whose definition stores the writer, chosen by seat, and
@@ -442,8 +434,9 @@ Groups
     A repeated public goods game in groups of three that carries on with two
     when a member returns the study or stops responding, and tells the last
     player, and anyone without a group, why the game ended. Each round is one
-    cued trial per player that pays its bonus, with the group's pot on the
-    node they share. :doc:`/code/multiplayer/synchronization`.
+    cued trial per player that pays its bonus, including an extra bonus for
+    whoever put the most in the pot, with the group's pot on the node they
+    share. :doc:`/code/multiplayer/synchronization`.
 
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
     A multi-room chat written directly on WebSockets rather than

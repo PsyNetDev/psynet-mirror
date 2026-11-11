@@ -70,7 +70,7 @@ and platform docs when a study is near deployment.
 - `gibbs_within_sync` shows `GibbsTrialMaker(sync_group_type=...)`,
   `join_existing_groups=True`, a task-specific `join_criterion`, dropout
   simulation, and a top-up participant joining a still-active group.
-- `ultimatum_pairing` and `lowest_unique_number` show games played in rounds
+- `ultimatum_pairing` shows a game played in rounds
   with a `Regrouper`: one `Trial.cue` per player per round on a trial class
   with `sync_group_type`, group results on the shared `SyncGroupNode`,
   per-player results on the trial, and basic data read from trials and nodes.

@@ -282,8 +282,12 @@ placeholder rather than writing ``seconds_left`` into the text, which would
 stay fixed until the function is next called. The message switches within a
 few seconds of the time becoming known:
 
-.. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
-   :pyobject: round_message
+.. code-block:: python
+
+    def round_message(seconds_left):
+        if seconds_left is None:
+            return "Waiting for another player."
+        return "The next round starts in {SECONDS} s."
 
 Keeping a group in step
 -----------------------
@@ -654,9 +658,12 @@ of the group, typically the barrier
 after the decision page. A member who reached the barrier because their
 page's time limit ran out gets a grey dash instead
 (:func:`~psynet.sync.reached_barrier_after_time_limit`), and screen readers announce
-that they ran out of time (see the :ref:`picture <rounds-variations>` in
-:doc:`writing_a_round_based_experiment`). Pass ``show_progress=False`` to
+that they ran out of time. Pass ``show_progress=False`` to
 hide the ticks.
+
+.. figure:: ../../_static/images/rounds/dash.png
+   :width: 700
+   :alt: A group of five: three players with a tick, one with a grey dash, and one still deciding
 
 A page without ``answers`` updates live: ticks and dashes appear as members
 arrive at the group's barriers (this uses the barriers' arrival updates, so
@@ -702,7 +709,7 @@ the group (hidden, like the group, when there is no group to show). In the
         highlight={pid: "winner" for pid, n in choices.items() if n == 2},
     )
 
-Store the answers when the barrier releases, as the ``lowest_unique_number``
+Store the answers when the barrier releases, as the ``public_goods``
 demo does on the round's node in ``on_release``, rather than reading them
 from the group's current members: a member who has already moved on to the
 next round is no longer in the group, and would disappear if the page is
