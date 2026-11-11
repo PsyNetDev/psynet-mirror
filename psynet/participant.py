@@ -761,8 +761,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         returns ``None``), ``"finished"`` (left after playing
         their part), ``"left_experiment"`` (failed,
         including returning the study, and for a member's other groups
-        when a barrier's ``late_action="fail"`` or a dissolving group's
-        ``below_quorum="fail"`` fails them), or ``None`` if no
+        when a barrier's ``late_action="fail"`` or ``max_wait_action="fail"``,
+        or a dissolving group's ``below_quorum="fail"``, fails them), or ``None`` if no
         reason was recorded, for example after removal from the dashboard.
         A player sat out of their first round was never in a group, so this
         returns ``None`` for them; check :meth:`~psynet.sync.Regrouper.sat_out`
