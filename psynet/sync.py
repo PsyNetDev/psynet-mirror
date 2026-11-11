@@ -2258,6 +2258,11 @@ class GroupBarrier(Barrier):
             for left_group, reason in left:
                 left_group._remove_without_quorum_check(participant, reason)
             super().handle_max_wait_timeout(participant)
+            logger.info(
+                "GroupBarrier '%s': failing participant %s (waited too long)",
+                self.id,
+                participant.id,
+            )
             participant.append_failure_tags(
                 f"{hold}:barrier:{self.id}", "fail_on_timeout"
             )
@@ -4938,6 +4943,15 @@ def _top_up_wait_over(group) -> bool:
     return (timenow() - since).total_seconds() >= top_up_wait
 
 
+def _groups_left_on_failure(participant, group, reason):
+    """List the groups a failing ``participant`` leaves: ``group`` with ``reason``, then each other active group as ``"left_experiment"``."""
+    return [(group, reason)] + [
+        (other, "left_experiment")
+        for other in participant.active_sync_groups.values()
+        if other.id != group.id
+    ]
+
+
 def _lock_free_participants(participants):
     """Lock participants' rows without waiting and return the free ones.
 
@@ -4950,15 +4964,6 @@ def _lock_free_participants(participants):
     """
     locked = _skip_locked_participant_ids(participants)
     return _still_working([p for p in participants if p.id in locked])
-
-
-def _groups_left_on_failure(participant, group, reason):
-    """List the groups a failing ``participant`` leaves: ``group`` with ``reason``, then each other active group as ``"left_experiment"``."""
-    return [(group, reason)] + [
-        (other, "left_experiment")
-        for other in participant.active_sync_groups.values()
-        if other.id != group.id
-    ]
 
 
 def _lock_all_participants(participants):
