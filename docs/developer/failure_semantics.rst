@@ -52,7 +52,7 @@ calling ``fail()``, so fail routines no longer see those groups in
 ``active_sync_groups``:
 
 - a barrier's ``late_action="fail"`` removes the member from all their groups
-  (the barrier's as ``"late"``);
+  (the barrier's as ``"late"``, the others as ``"left_experiment"``);
 - a ``GroupBarrier``'s ``max_wait_action="fail"`` removes the waiter from all
   their groups (the barrier's as ``"waited_too_long"``, the others as
   ``"left_experiment"``);

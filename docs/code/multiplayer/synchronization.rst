@@ -961,9 +961,10 @@ the maximum waiting time:
     then handles late members instead; passing ``max_wait_time`` together
     with ``late_after`` raises an error. ``max_wait_action`` decides what
     happens to a participant who waits longer: ``"fail"`` (default) fails
-    them. At a :class:`~psynet.sync.GroupBarrier`, ``"leave_group"`` removes
-    them from the group (see :ref:`sync-leaving-a-group` for what they see
-    next); at a grouper, where they have no group yet,
+    them. At a :class:`~psynet.sync.GroupBarrier`, both actions first remove
+    them from the group as ``"waited_too_long"``; ``"fail"`` then fails them,
+    and with ``"leave_group"`` they carry on without it (see
+    :ref:`sync-leaving-a-group` for what they see next); at a grouper, where they have no group yet,
     ``"continue_without_group"`` lets them carry on without one, telling them
     "We couldn't find a partner for you in time. Please continue." (or "We
     couldn't form a group for you in time. Please continue." for larger
