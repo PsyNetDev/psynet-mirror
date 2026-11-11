@@ -2085,10 +2085,19 @@ class Page(Elt):
     def _time_limit_counts(self, participant):
         """Whether this page's time limit updates the participant's and trial's timeout flags.
 
-        Untimed pages, such as feedback, and pages shown while waiting at a
-        barrier keep the flags from the last timed page.
+        Untimed pages, pages shown while waiting at a barrier, and pages
+        after a trial is complete, such as a feedback notice whose time limit
+        only moves it on, keep the flags from the last timed page.
         """
-        return participant.waiting_barrier_id is None and self.time_limit is not None
+        from psynet.trial.main import Trial
+
+        trial = participant.current_trial
+        after_trial = isinstance(trial, Trial) and trial.complete
+        return (
+            participant.waiting_barrier_id is None
+            and self.time_limit is not None
+            and not after_trial
+        )
 
     def _reject_impossible_answer(self, answer):
         """Return a :class:`FailedValidation` for an answer the page cannot produce.

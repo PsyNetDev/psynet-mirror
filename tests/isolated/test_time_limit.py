@@ -215,6 +215,7 @@ def test_browser_timeout_answers_must_be_choices(in_experiment_directory, db_ses
 
 class _GuessTrial(Trial):
     time_estimate = 10
+    wait_for_feedback = False
 
     def show_trial(self, experiment, participant):
         return [
@@ -222,6 +223,9 @@ class _GuessTrial(Trial):
             ModularPage("again", "Again", TextControl(), time_limit=10),
             ModularPage("confirm", "Sure?", TextControl()),
         ]
+
+    def show_feedback(self, experiment, participant):
+        return InfoPage("Thanks.", time_estimate=5, time_limit=5)
 
 
 @pytest.mark.parametrize(
@@ -263,6 +267,18 @@ def test_a_trial_keeps_whether_its_timed_page_ran_out(
         participant.waiting_barrier_id = None
         assert trial.time_limit_reached is True
         assert _submit(exp, participant, "yes")["submission"] == "approved"
+        assert trial.time_limit_reached is True
+
+        # Nor does a timed page after the trial, such as a feedback notice,
+        # set either flag.
+        assert trial.complete
+        participant.timed_out_since_barrier = False
+        participant.page_deadline = timenow()
+        assert (
+            _submit(exp, participant, None, time_limit_reached=True)["submission"]
+            == "approved"
+        )
+        assert participant.timed_out_since_barrier is False
         assert trial.time_limit_reached is True
     finally:
         exp.timeline = original
