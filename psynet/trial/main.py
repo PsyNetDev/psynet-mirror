@@ -430,16 +430,21 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             ":meth:`Trial.cue` on a :class:`SyncGroupNode`, one of "
             ":data:`~psynet.sync.SyncGroupOutcome`. It is written during "
             "the trial's pages, that is, before :attr:`complete` is set: "
-            '``"stayed"`` when a :class:`~psynet.sync.GroupBarrier` in those '
+            '``"stayed"`` once a :class:`~psynet.sync.GroupBarrier` in those '
             "pages, such as in :meth:`show_trial`, releases the group with the "
-            "player in it, and why the player left the group when they leave "
-            "it there, one of the reasons of "
+            "player in it, after which it doesn't change. Before that, why the "
+            "player left the group, one of the reasons of "
             ":meth:`~psynet.sync.SyncGroup.remove_participant`, such as "
             '``"late"``, ``"waited_too_long"``, ``"left_experiment"`` or '
-            '``"group_dissolved"``, or ``"removed"`` without a reason. The latest of these is kept. '
-            "Barriers and departures after the trial's pages, such as in "
-            ":meth:`show_feedback` or between rounds, write nothing. ``None`` "
-            "while nothing has happened yet, and for ungrouped trials."
+            '``"group_dissolved"``, or ``"removed"`` without a reason. '
+            "Leaving after a release, for example by being late at a later "
+            "barrier, shows in "
+            ":meth:`~psynet.participant.Participant.sync_group_removal_reason` "
+            "and in the ``left`` of the next barrier's ``on_release`` "
+            "instead. Barriers and departures after the "
+            "trial's pages, such as in :meth:`show_feedback` or between "
+            "rounds, write nothing. ``None`` while nothing has happened yet, "
+            "and for ungrouped trials."
         ),
     )
     definition = Column(PythonObject)
@@ -1314,9 +1319,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           Once started, the trial runs to its end even if they leave the
           group, so :meth:`show_feedback` can explain every outcome.
         - :attr:`sync_group_outcome` records how the round ended for the
-          player: ``"stayed"`` once a barrier in the trial's pages released
-          the group with them in it, or why they left the group during
-          those pages.
+          player: ``"stayed"`` once a barrier in the trial's pages releases
+          the group with them in it, after which it doesn't change; before
+          that, why they left the group.
           A partner's is on their trial in
           ``self.node.all_trials``.
 

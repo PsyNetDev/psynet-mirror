@@ -177,10 +177,9 @@ def test_each_trial_records_how_its_round_ended_for_the_player(
     for participant in cohort:
         PairTrial.cue(round=0)[0].consume(exp, participant)
     _arrive(exp, GroupBarrier("offered", group_type="pair"), cohort)
-    # Leaving before the trial's pages end replaces an earlier barrier's release.
     pair.remove_participant(leaver, reason="late")
     _arrive(exp, GroupBarrier("answered", group_type="pair"), [stayer])
-    assert [p.current_trial.sync_group_outcome for p in cohort] == ["stayed", "late"]
+    assert [p.current_trial.sync_group_outcome for p in cohort] == ["stayed", "stayed"]
 
     stayer.current_trial.complete = True
     pair.remove_participant(stayer, reason="finished")
@@ -1310,6 +1309,12 @@ def _dissolved_after_complete(exp, group, stayer, leaver):
     return stayer
 
 
+def _dissolved_after_release(exp, group, stayer, leaver):
+    _arrive(exp, GroupBarrier("done", group_type="main"), [stayer, leaver])
+    leaver.fail("returned")
+    return stayer
+
+
 @pytest.mark.parametrize(
     "remove, outcome, n, fails",
     [
@@ -1322,6 +1327,7 @@ def _dissolved_after_complete(exp, group, stayer, leaver):
         (_dissolved_and_failed, "group_dissolved", 2, True),
         (_late_after_complete, None, 2, False),
         (_dissolved_after_complete, "stayed", 2, False),
+        (_dissolved_after_release, "stayed", 2, False),
     ],
     ids=[
         "fail",
@@ -1333,6 +1339,7 @@ def _dissolved_after_complete(exp, group, stayer, leaver):
         "dissolved_and_failed",
         "complete",
         "dissolved_after_complete",
+        "dissolved_after_release",
     ],
 )
 @in_consents_experiment
