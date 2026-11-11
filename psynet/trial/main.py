@@ -4,7 +4,7 @@ import random
 from dataclasses import dataclass
 from functools import partial
 from math import isnan
-from typing import Any, Callable, List, Literal, Optional, Union
+from typing import Any, Callable, List, Literal, Optional, Sequence, Union
 
 import dallinger.experiment
 import dallinger.models
@@ -2142,7 +2142,7 @@ class TrialMaker(Module):
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
         sync_group_late_action: LateAction = "fail",
-        sync_group_also_leave: Optional[List[str]] = None,
+        sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
@@ -3473,7 +3473,7 @@ class NetworkTrialMaker(TrialMaker):
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
         sync_group_late_action: LateAction = "fail",
-        sync_group_also_leave: Optional[List[str]] = None,
+        sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):

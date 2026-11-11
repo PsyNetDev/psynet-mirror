@@ -1218,6 +1218,16 @@ def test_sync_trial_maker_waiting_message_is_used_by_internal_barriers():
     )
 
 
+def test_sync_trial_maker_passes_also_leave_to_its_barrier():
+    trial_maker = make_trial_maker(
+        sync_group_type="main",
+        sync_group_late_after=60,
+        sync_group_late_action="leave_group",
+        sync_group_also_leave=["cohort"],
+    )
+    assert _init_barrier(trial_maker).also_leave == ["cohort"]
+
+
 def _run_step_after_barrier(elts, step, participant):
     """Run ``step`` where the timeline reaches it after a GroupBarrier's hold page."""
     hold_page = next(

@@ -1673,6 +1673,10 @@ def _validate_group_timeouts(
             f"{prefix}also_leave lists the barrier's own group type "
             f"{group_type!r}, which a late member leaves anyway."
         )
+    if len(set(also_leave)) < len(also_leave):
+        raise ValueError(
+            f"{prefix}also_leave lists a group type more than once: {also_leave!r}."
+        )
 
 
 def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):

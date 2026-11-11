@@ -6946,6 +6946,10 @@ def test_also_leave_removes_a_late_member_from_the_listed_groups_only(
         ),
         (dict(late_action="leave_group", also_leave="cohort"), "must be a list"),
         (dict(late_action="leave_group", also_leave=["pair"]), "own group type"),
+        (
+            dict(late_action="leave_group", also_leave=["cohort", "cohort"]),
+            "more than once",
+        ),
         (dict(late_action="leave_all_groups"), "late_action must be one of"),
     ],
 )

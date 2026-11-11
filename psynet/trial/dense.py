@@ -3,7 +3,7 @@ from __future__ import (  # Makes type hints lazy, so that classes can be define
 )
 
 import random
-from typing import Callable, List, Literal, Optional, Union
+from typing import Callable, List, Literal, Optional, Sequence, Union
 
 from ..sync import LateAction
 from ..utils import NoArgumentProvided, sample_from_surface_of_unit_sphere
@@ -229,7 +229,7 @@ class DenseTrialMaker(StaticTrialMaker):
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
         sync_group_late_action: LateAction = "fail",
-        sync_group_also_leave: Optional[List[str]] = None,
+        sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
     ):
         super().__init__(

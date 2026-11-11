@@ -20,7 +20,17 @@ moving on.
 import inspect
 import random
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, List, Literal, Optional, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Type,
+    Union,
+)
 
 from dallinger import db
 from dallinger.models import Node, Vector
@@ -1643,7 +1653,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
         sync_group_late_action: LateAction = "fail",
-        sync_group_also_leave: Optional[List[str]] = None,
+        sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
     ):
         if network_class is None:

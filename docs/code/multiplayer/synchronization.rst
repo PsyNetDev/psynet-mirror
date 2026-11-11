@@ -935,8 +935,8 @@ decisions each one needs. These settings carry them out:
   partway through a round is removed from their group by
   ``late_action="leave_group"``, but stays in the ``within`` group, so the
   next split waits for them until its deadline; adding
-  ``also_leave=["cohort"]``, with the ``within`` group's type, takes them out
-  of both (see :ref:`rounds-slow-players`).
+  ``also_leave=[<the within group's type>]``, for example ``["cohort"]``,
+  takes them out of both (see :ref:`rounds-slow-players`).
 
 Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
 :doc:`late_slow_and_leaving_players` follows these settings through concrete
@@ -1012,8 +1012,9 @@ the maximum waiting time:
 
 Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_`` prefix: ``sync_group_max_wait_time``,
-``sync_group_max_wait_action``, ``sync_group_late_after`` and
-``sync_group_late_action``. ``sync_group_max_wait_time`` defaults to 45
+``sync_group_max_wait_action``, ``sync_group_late_after``,
+``sync_group_late_action`` and ``sync_group_also_leave``.
+``sync_group_max_wait_time`` defaults to 45
 seconds, or, as at a barrier, to no limit with ``sync_group_late_after``,
 and passing both raises an error. Passing any of the others, or
 ``sync_group_waiting_message``, without ``sync_group_type`` also raises an
