@@ -25,8 +25,8 @@ get a page instead of a trial, and the basic data is read from trials and
 nodes.
 
 A player the experimenter removes from their pair on the dashboard gets no
-coins that round; one removed from the cohort is told they were removed
-from the game.
+coins that round; one removed from the cohort before their last round is
+told they were removed from the game.
 
 ## Usage
 
