@@ -11,6 +11,24 @@ that ends the round saves each player's action, their partner's action and
 the result on the player's trial, and `get_basic_data` exports one row per
 player per round from the trials.
 
+## Dropouts
+
+The demo doesn't handle dropouts; see `public_goods` for a game that carries
+on when players leave.
+
+- A player whose partner goes silent waits up to `PARTNER_WAIT_SECONDS` at
+  the next barrier and is then failed, as is a participant for whom no
+  partner arrives in that time.
+- A partner who is removed from the pair instead, for example by returning
+  the study or being failed elsewhere, dissolves it at once, and the
+  remaining player is failed with no wait.
+- Each trial's `sync_group_outcome` (the `outcome` column of the basic data)
+  is `"stayed"` if the round was scored. Otherwise it records how the player
+  left the pair: when a partner goes silent, the player who waited for them
+  leaves as `"waited_too_long"` and the silent partner as
+  `"group_dissolved"`. A round that was never scored has no results page and
+  `None` in the result columns.
+
 ## Usage
 
 For instructions on how to run PsyNet experiments like this one, visit the

@@ -10,24 +10,11 @@ loop value as ``round=`` because the pair stays together. Each player's
 choice is their trial's answer. When the barrier releases the pair, it
 saves on each player's trial the action they played, their partner's
 action and the result, and the results page and the basic data read them
-from there.
+from there. A player who runs out of time gets a random action; their
+answer stays ``None`` and ``trial.time_limit_reached`` is ``True``.
 
-- A player who runs out of time gets a random action, so every round has a
-  winner or a draw. Their answer stays ``None``; the action they played is
-  saved with the result.
-- The demo doesn't handle dropouts: a player whose partner goes silent
-  waits up to ``PARTNER_WAIT_SECONDS`` at the next barrier and is then
-  failed, as is a participant for whom no partner arrives in that time. A
-  partner who is removed from the pair instead, for example by returning
-  the study or being failed elsewhere, dissolves it at once, and the
-  remaining player is failed with no wait. See ``public_goods`` for a game
-  that carries on when players leave.
-- Each trial's ``sync_group_outcome`` is ``"stayed"`` if the round was
-  scored. Otherwise it records how the player left the pair, which doesn't
-  always show who dropped out: when a partner goes silent, the player who
-  waited for them is failed and leaves as ``"left_experiment"``, and the
-  silent partner then leaves as ``"group_dissolved"``
-  (https://gitlab.com/PsyNetDev/PsyNet/-/work_items/1162).
+The demo doesn't handle dropouts; see ``README.md`` for what happens when a
+player leaves.
 """
 
 import random
@@ -118,14 +105,13 @@ class RockPaperScissorsTrial(Trial):
     def score_round(cls, trials: List["RockPaperScissorsTrial"]):
         """Save each player's action, their partner's action and the result on the player's trial."""
         for trial in trials:
-            trial.var.timed_out = trial.response.time_limit_reached
             trial.var.action = trial.answer or random.choice(ACTIONS)
         # A pair needs both players to pass a barrier, so there are two trials.
         first, second = trials
         for trial, partner in [(first, second), (second, first)]:
             trial.var.partner_id = partner.participant_id
             trial.var.partner_action = partner.var.action
-            trial.var.partner_timed_out = partner.var.timed_out
+            trial.var.partner_timed_out = partner.time_limit_reached
             trial.var.result = _result(trial.var.action, partner.var.action)
             trial.var.points = POINTS[trial.var.result]
 
@@ -133,7 +119,7 @@ class RockPaperScissorsTrial(Trial):
         if self.sync_group_outcome != "stayed":
             # The round was never scored, so there is nothing to show.
             return None
-        if self.var.timed_out:
+        if self.time_limit_reached:
             you = f"You ran out of time, so we chose {self.var.action} for you"
         else:
             you = f"You chose {self.var.action}"
@@ -201,13 +187,13 @@ class Exp(psynet.experiment.Experiment):
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
                     # "stayed" if the round was scored; otherwise how the
-                    # player left the pair (see the module docstring).
+                    # player left the pair (see README.md).
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or never answered.
                     "choice": t.answer,
                     # The action played, random after a timeout.
                     "action": t.var.get("action"),
-                    "timed_out": t.var.get("timed_out"),
+                    "timed_out": t.time_limit_reached,
                     "partner_id": t.var.get("partner_id"),
                     "partner_action": t.var.get("partner_action"),
                     "partner_timed_out": t.var.get("partner_timed_out"),
