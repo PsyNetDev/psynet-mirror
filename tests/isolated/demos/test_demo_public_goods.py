@@ -36,7 +36,7 @@ class TestPublicGoods:
     @pytest.mark.parametrize(
         "answers, n_left, share, payoffs",
         [
-            # A departed player is not in the pot: two players share it.
+            # Two players played the round after a third left.
             ([10, 0], 1, 7.5, [7.5, 17.5]),
             # A player who ran out of time puts in nothing but still gets a share.
             ([4, 8, None], 0, 6, [12, 8, 16]),
