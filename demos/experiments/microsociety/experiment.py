@@ -372,6 +372,7 @@ class Exp(psynet.experiment.Experiment):
                     "tenure": t.position,
                     # "stayed" if the member was in the society when the round
                     # was scored; otherwise why they left it during the round.
+                    # None while the round is in progress.
                     "outcome": t.sync_group_outcome,
                     # None if the member ran out of time.
                     "spot": t.answer,

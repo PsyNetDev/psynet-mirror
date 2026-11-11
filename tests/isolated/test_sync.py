@@ -7949,6 +7949,9 @@ def test_top_up_wait_starts_when_the_last_remaining_member_arrives(
     _arrive_at_group_barrier(exp, barrier, late)
     assert barrier.choose_who_to_release([early, late]) == []
     late.active_barriers["game_starts"].arrival_time -= timedelta(seconds=11)
+    late.active_barriers["game_starts"].released = True
+    assert barrier.choose_who_to_release([early]) == []
+    late.active_barriers["game_starts"].released = False
     assert set(barrier.choose_who_to_release([early, late])) == {early, late}
     assert late.sync_group_removal_reason("team") == "group_dissolved"
 
