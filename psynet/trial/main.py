@@ -1352,8 +1352,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             without one never closes, and a latecomer can join it after the
             others have finished. If the participant has no trial in a
             closed round, the group finished it without them: the cue is skipped,
-            with no trial and no pages, and the round's later barriers don't
-            wait for them. ``participant.current_trial`` is then ``None``, so
+            with no trial and no pages. A later barrier in that round's
+            trial still waits for them, as every
+            :class:`~psynet.sync.GroupBarrier` waits for each active member,
+            until they leave the group or are removed, for example as late.
+            ``participant.current_trial`` is then ``None``, so
             guard later steps that read it, for example with a
             :func:`~psynet.timeline.conditional` on
             ``participant.current_trial is not None``. Rounds are ordered by
