@@ -171,20 +171,21 @@ barrier's ``max_wait_action`` and the grouper's ``below_quorum`` decide:
      - carries on alone
 
 Ann's release doesn't count as the pair passing the barrier, so
-``on_release`` doesn't run. Ann is removed from the pair as
-``"waited_too_long"`` before she is failed or moves on, so her trial
-records ``"waited_too_long"`` in every row, and so does
-``ann.sync_group_removal_reason("pair")``:
-when she carries on, she sees the notice "Your partner didn't arrive in
-time. Please continue."; when she is failed, her final page says "We
-waited too long for other participants, so we ended your session." Ben's
-trial records
-``"group_dissolved"`` in every row. So with the defaults both are failed,
+``on_release`` doesn't run. Ann leaves the pair as ``"waited_too_long"``
+before she is failed or moves on. So in every row her trial records
+``"waited_too_long"``, and so does ``ann.sync_group_removal_reason("pair")``.
+When she carries on, she sees the notice "Your partner didn't arrive in
+time. Please continue." When she is failed, she leaves her other groups,
+such as a cohort she shares with Ben, as ``"left_experiment"``, and her
+final page says "We waited too long for other participants, so we ended
+your session." Ben's trial records ``"group_dissolved"`` in every row.
+So with the defaults both are failed,
 including Ann, who was on time. To move on without the absent member instead,
 give the barrier ``late_after`` (see :ref:`sync-dropout-settings`).
 
 Checked by ``test_case_max_wait_time_runs_out`` in
-``tests/isolated/test_trial_cue_groups.py``, for all four rows.
+``tests/isolated/test_trial_cue_groups.py``, for all four rows, and
+for the ``"fail"`` rows with a cohort that Ann and Ben share.
 
 A group dissolves while a member is still on a round page
 ---------------------------------------------------------

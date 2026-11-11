@@ -20,6 +20,7 @@ from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     GroupBarrier,
     GroupDivergenceError,
+    SimpleSyncGroup,
     _hold_barrier_instance_claim,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
@@ -1512,12 +1513,14 @@ def test_case_a_slow_reader_between_runs_of_a_looped_module(
 
 
 @pytest.mark.parametrize(
-    "max_wait_action, below_quorum, waiter_fails, absent_fails",
+    "max_wait_action, below_quorum, shared_cohort, waiter_fails, absent_fails",
     [
-        ("fail", "fail", True, True),
-        ("fail", "continue_without_group", True, False),
-        ("leave_group", "fail", False, True),
-        ("leave_group", "continue_without_group", False, False),
+        ("fail", "fail", False, True, True),
+        ("fail", "fail", True, True, True),
+        ("fail", "continue_without_group", False, True, False),
+        ("fail", "continue_without_group", True, True, False),
+        ("leave_group", "fail", False, False, True),
+        ("leave_group", "continue_without_group", False, False, False),
     ],
 )
 @in_consents_experiment
@@ -1526,12 +1529,26 @@ def test_case_max_wait_time_runs_out(
     db_session,
     max_wait_action,
     below_quorum,
+    shared_cohort,
     waiter_fails,
     absent_fails,
 ):
     exp = get_experiment()
     (waiter, absent), group = _sync_group_of(exp, db_session, 2)
     group.below_quorum = below_quorum
+    if shared_cohort:
+        cohort = SimpleSyncGroup(
+            group_type="cohort",
+            initial_group_size=2,
+            max_group_size=2,
+            min_group_size=2,
+            n_active_participants=2,
+            below_quorum=below_quorum,
+            accepts_top_ups=False,
+        )
+        db_session.add(cohort)
+        for participant in (waiter, absent):
+            cohort.add_participant(participant)
     _cue_team(exp, [waiter, absent], 0)
     _passes.clear()
     submitted = GroupBarrier(
@@ -1548,7 +1565,11 @@ def test_case_max_wait_time_runs_out(
     assert (waiter.failed, absent.failed) == (waiter_fails, absent_fails)
     assert waiter.current_trial.sync_group_outcome == "waited_too_long"
     assert waiter.sync_group_removal_reason("main") == "waited_too_long"
+    if shared_cohort:
+        assert waiter.sync_group_removal_reason("cohort") == "left_experiment"
     if waiter_fails:
+        assert "fail_on_timeout" in waiter.failure_tags
+        assert "sync group below minimum size" not in waiter.failure_tags
         assert waiter.group_removal_notice is None
     else:
         assert waiter.group_removal_notice["text"] == (

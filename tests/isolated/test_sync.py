@@ -7648,6 +7648,39 @@ def test_waiter_leaving_a_pair_after_max_wait(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+@pytest.mark.parametrize("waiting_page", [False, True])
+def test_poller_failing_a_waiter_after_max_wait(
+    in_experiment_directory, db_session, waiting_page
+):
+    exp = get_experiment()
+    (waiter, absent), _ = _pair_sync_group(exp, db_session)
+    barrier = GroupBarrier(
+        id_="abandoned",
+        group_type="main",
+        max_wait_time=300,
+        waiting_logic=InfoPage("Filler", time_estimate=5) if waiting_page else None,
+    )
+    _arrive_at_group_barrier(exp, barrier, waiter)
+    db.session.commit()
+    rows = ParticipantLinkBarrier if waiting_page else TimelineHoldRecord
+    rows.query.filter_by(participant_id=waiter.id).update({"deadline_at": timenow()})
+    db.session.commit()
+    ids = waiter.id, absent.id
+
+    check_barriers()
+    db.session.expire_all()
+
+    waiter, absent = (Participant.query.get(i) for i in ids)
+    hold = "while_loop" if waiting_page else "timeline_hold"
+    assert set(waiter.failure_tags) == {f"{hold}:barrier:abandoned", "fail_on_timeout"}
+    assert waiter.sync_group_removal_reason("main") == "waited_too_long"
+    assert absent.sync_group_removal_reason("main") == "group_dissolved"
+    assert absent.failure_tags == ["sync group below minimum size"]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_stopping_top_ups_dissolves_a_group_below_quorum(
     in_experiment_directory, db_session
 ):
