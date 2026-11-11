@@ -156,7 +156,7 @@ def own_trials(participant: Participant) -> List["FishingTrial"]:
     )
 
 
-def life_stage(participant: Participant) -> str:
+def life_stage(participant: Participant) -> Optional[str]:
     """Return ``"playing"`` while the member keeps playing, otherwise why they stopped."""
     trials = own_trials(participant)
     last = trials[-1] if trials else None

@@ -8017,6 +8017,10 @@ def test_a_member_who_tops_up_a_group_is_a_newcomer_and_keeps_it_as_latest(
     assert "team" not in newcomer.active_sync_groups
     assert newcomer.latest_sync_group("team") == group
     assert group.is_newcomer(newcomer)
+    group.remove_participant(founder, reason="finished")
+    group.close()
+    assert founder.latest_sync_group("team") == group
+    assert not group.is_newcomer(founder)
     assert outsider.latest_sync_group("team") is None
     with pytest.raises(ValueError):
         group.is_newcomer(outsider)
