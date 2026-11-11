@@ -136,7 +136,9 @@ from the trial's
 from a missing answer. Its ``team_round`` table reads the node of each team
 and round, including ``dissolved_at`` from
 :attr:`~psynet.trial.main.SyncGroupNode.sync_group_dissolved_at`, set when
-the group dissolved during the round, which cancels it:
+the group dissolved during the round, which cancels it. Basic data must be
+JSON-serializable, so that datetime is exported as an ISO timestamp with
+:func:`~psynet.utils.serialise_datetime`:
 
 .. literalinclude:: ../../demos/experiments/public_goods/experiment.py
    :start-at: "team_round": [
