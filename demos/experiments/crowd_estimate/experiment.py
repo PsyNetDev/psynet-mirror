@@ -117,7 +117,7 @@ def left_group(participant):
 LEFT_BEFORE_MEDIAN_TEXTS = {
     "late": "Your estimate didn't reach your group in time",
     "group_dissolved": "Your group ended before you saw its median",
-    "removed": "You were removed from your group before you saw its median",
+    "removed_by_experimenter": "You were removed from your group before you saw its median",
 }
 
 

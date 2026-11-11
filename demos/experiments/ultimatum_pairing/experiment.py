@@ -122,7 +122,9 @@ def get_timeline():
                     "so the game ended early for you.",
                     time_estimate=5,
                 ),
-                "removed": InfoPage("You were removed from the game.", time_estimate=5),
+                "removed_by_experimenter": InfoPage(
+                    "You were removed from the game.", time_estimate=5
+                ),
                 "too_few_players": InfoPage(
                     "Not enough players stayed to keep playing, "
                     "so the game ended early.",
@@ -173,7 +175,7 @@ def game_over_reason(participant):
     # Being late takes a player out of their pair and their cohort; the
     # experimenter can remove them from the cohort on the dashboard.
     reason = participant.sync_group_removal_reason(COHORT)
-    if reason in ("late", "removed"):
+    if reason in ("late", "removed_by_experimenter"):
         return reason
     cohort = cohort_of(participant)
     if cohort is None or cohort.n_active_participants < 2:
@@ -235,7 +237,7 @@ OUTCOME_TEXTS = {
         "You were away for too long, so you got no coins this round, "
         "and the game is over for you."
     ),
-    "removed": "You were removed from your pair, so you got no coins this round.",
+    "removed_by_experimenter": "You were removed from your pair, so you got no coins this round.",
     "own_time_out": "You ran out of time, so nobody was paid.",
     "partner_away": "Your partner was away for too long, so nobody was paid.",
     "partner_left": "Your partner left, so nobody was paid.",
@@ -336,8 +338,8 @@ class OfferTrial(Trial):
         if self.sync_group_outcome == "late":
             return "away"
         # From the dashboard; the round may not have been scored yet.
-        if self.sync_group_outcome == "removed":
-            return "removed"
+        if self.sync_group_outcome == "removed_by_experimenter":
+            return "removed_by_experimenter"
         if self.node.var.result == "timed_out" and self.answer is None:
             return "own_time_out"
         return self.node.var.result
@@ -407,7 +409,7 @@ class Exp(psynet.experiment.Experiment):
                     "complete": t.complete,
                     # "stayed" if the player was in the group when the round
                     # was scored; otherwise "late" if they were taken out
-                    # before that for being away, or "removed" if the
+                    # before that for being away, or "removed_by_experimenter" if the
                     # experimenter removed them on the dashboard.
                     "outcome": t.sync_group_outcome,
                     # None if the player was away and never sent a decision.

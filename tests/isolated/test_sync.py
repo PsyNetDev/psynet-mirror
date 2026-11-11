@@ -1320,7 +1320,10 @@ def test_manual_sync_group_participant_kick(in_experiment_directory, db_session)
     assert "manual_failure" not in kicked_participant.failure_tags
     assert participants[0] not in group.active_participants
     assert participants[1] in group.active_participants
-    assert kicked_participant.sync_group_removal_reason("main") == "removed"
+    assert (
+        kicked_participant.sync_group_removal_reason("main")
+        == "removed_by_experimenter"
+    )
 
 
 @pytest.mark.parametrize(
@@ -6070,7 +6073,7 @@ def test_default_group_barrier_arrival_message_copy():
     )
     for kind, pair, group in [
         ("waited_too_long", "Your partner didn't", "Not everyone in your group"),
-        ("removed", "Your partner went on", "Your group went on"),
+        ("late", "Your partner went on", "Your group went on"),
     ]:
         for size, start in [(2, pair), (3, group)]:
             message = default_group_barrier_arrival_message(
@@ -7451,7 +7454,8 @@ def test_timeline_warns_about_barriers_newcomers_can_reach_after_their_group():
 
 
 @pytest.mark.parametrize(
-    "reason, dissolved", [("finished", False), ("moved_on", False), ("removed", True)]
+    "reason, dissolved",
+    [("finished", False), ("moved_on", False), ("removed_by_experimenter", True)],
 )
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True

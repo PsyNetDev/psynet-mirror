@@ -694,7 +694,7 @@ def test_regrouper_alternates_roles_and_counts_rounds(
     assert pairs.role(sitter) is None
     assert (pairs.rounds_sat_out(sitter), pairs.sat_out(sitter)) == (1, True)
     # cohort[0] was removed from their pair above, so the regrouper didn't move them on.
-    expected_reason = "removed" if sitter is cohort[0] else "moved_on"
+    expected_reason = "removed_by_experimenter" if sitter is cohort[0] else "moved_on"
     assert sitter.sync_group_removal_reason("pair") == expected_reason
     _arrive(exp, pairs, cohort[:3])
     assert "pair" in sitter.active_sync_groups

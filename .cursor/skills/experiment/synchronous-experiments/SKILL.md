@@ -365,11 +365,11 @@ with a group. List the cases and your decisions in the experiment's README.
 |---|---|---|
 | Runs out of time on a timed page (stays in the group) | `trial.time_limit_reached`; answer `None` or `time_limit_answer` | `bot.run_out_of_time()` |
 | Closes the tab or stops responding | reason `"late"`, from a barrier's `late_after` | Stop taking pages for that bot, then `make_late_now(bots, "<barrier id>")` once the others wait there |
-| Waits for others who never arrive | reason `"waited_too_long"`, from a barrier's `max_wait_action="leave_group"` | Wait out the barrier's `max_wait_time` |
+| Waits for others who never arrive | reason `"waited_too_long"`, from a barrier's `max_wait_time` | Wait out the barrier's `max_wait_time` |
 | Is left in a group below quorum | reason `"group_dissolved"`, from the grouper's `below_quorum` | Make enough members drop out or late |
 | Returns the study | reason `"left_experiment"` | `bot.drop_out()` |
 | Is failed by the experiment | reason `"left_experiment"` | `bot.allow_failure()`, then `bot.fail("reason")` |
-| Is removed on the dashboard | reason `"removed"` | `group.remove_participant(participant)` |
+| Is removed on the dashboard | reason `"removed_by_experimenter"` | `group.remove_participant(participant)` |
 | Arrives when no group can form (grouper `max_wait_action="continue_without_group"`; the default fails them) | reason `"no_group_formed"` | Send fewer bots than a group needs, even a short one with `quorum` or `start_short_after`, and wait out the grouper's `max_wait_time` |
 | Sits a round out at a `Regrouper` | not in a group; `regrouper.sat_out(participant)` | An odd number of bots with `left_over="sit_out"` |
 
@@ -382,14 +382,14 @@ PsyNet already tells a player removed by a barrier that their group went on
 without them. Pay by `self.sync_group_outcome` in `score_answer`, tell the
 others who left from `on_release`'s `left` argument, and map the reasons
 your game can meet to the text of the page after an early end, as in
-`public_goods`. Include `"removed"`, which a dashboard removal can give in
+`public_goods`. Include `"removed_by_experimenter"`, which a dashboard removal can give in
 any game; a missing reason raises `KeyError`:
 
 ```python
 ENDED_EARLY_TEXTS = {
     "late": "You were away for too long, so the game ended early for you.",
     "group_dissolved": "Too few players stayed, so the game ended early.",
-    "removed": "You were removed from the game.",
+    "removed_by_experimenter": "You were removed from the game.",
 }
 
 def game_ended_early(participant):

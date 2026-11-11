@@ -402,7 +402,7 @@ later:
 - why the player left the group before such a release: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
   ``"late"``, ``"waited_too_long"``, ``"left_experiment"``,
-  ``"group_dissolved"`` or ``"removed"`` (the values are listed in
+  ``"group_dissolved"`` or ``"removed_by_experimenter"`` (the values are listed in
   :data:`~psynet.sync.SyncGroupOutcome`);
 - ``None`` before either happens, and for a trial played without a group.
 
@@ -525,7 +525,7 @@ notice on the progress bar ("Your partner is ready.", or
 the waiting indicator also has a smaller second line saying how many members
 are not ready yet. Set ``notify_arrivals=False`` to turn both off, or pass
 ``on_arrival_message`` to change the notices. It receives ``kind``
-(``"notice"`` for the progress bar, ``"removed"`` for the notice a member
+(``"notice"`` for the progress bar, ``"late"`` for the notice a member
 sees after being removed for being late, ``"waited_too_long"`` for the one
 on the next page of a member removed after waiting too long), ``waiting_count`` and
 ``group_size``, and returns the text or ``None`` to hide it. For a notice it
@@ -536,7 +536,7 @@ have no side effects. Notices must fit on two lines of a phone screen:
 .. code-block:: python
 
     def arrival_message(*, kind, waiting_count, group_size, **kwargs):
-        if kind == "removed":
+        if kind == "late":
             return "Your partner went on without you. Please continue."
         if kind == "waited_too_long":
             return "Your partner didn't arrive in time. Please continue."
@@ -1034,7 +1034,7 @@ barrier settings are described in `Timeouts`_, and the grouper's
      - returned or failed
      - :meth:`~psynet.participant.ParticipantDriver.drop_out`
    * - Removed by the experimenter
-     - ``"removed"``
+     - ``"removed_by_experimenter"``
      - dashboard, or ``remove_participant``
      - ``remove_participant``
 
@@ -1626,7 +1626,7 @@ For the rest of the timeline:
   they are waiting there or sitting the round out),
   ``"finished"``, ``"left_experiment"`` (they failed or returned the study;
   a member failed for being late or waiting too long at this group's barrier
-  records ``"late"`` or ``"waited_too_long"`` instead) or ``"removed"`` (the
+  records ``"late"`` or ``"waited_too_long"`` instead) or ``"removed_by_experimenter"`` (the
   experimenter removed them on the dashboard).
   A cued trial whose pages they were on in that group keeps the reason in
   ``sync_group_outcome``, even after they join another group, unless a

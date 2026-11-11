@@ -1701,7 +1701,7 @@ def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
 
 #: Why a member left a group, see :meth:`SyncGroup.remove_participant`.
 RemovalReason = Literal[
-    "removed",
+    "removed_by_experimenter",
     "left_experiment",
     "late",
     "waited_too_long",
@@ -1951,7 +1951,7 @@ class GroupBarrier(Barrier):
         of three or more see remaining-not-ready copy on the hold overlay.
         Pairs show only the message. Set ``False`` to disable both. A
         member removed by ``"leave_group"`` is told either way; return ``None``
-        from ``on_arrival_message`` for ``kind="removed"`` or
+        from ``on_arrival_message`` for ``kind="late"`` or
         ``kind="waited_too_long"`` to hide it. To change the waiting indicator's
         progress line, return :func:`hold_message` from a
         ``waiting_message`` function.
@@ -1964,7 +1964,7 @@ class GroupBarrier(Barrier):
 
     on_arrival_message
         Optional callable that returns copy for one participant. It receives
-        ``kind`` (``"notice"``, ``"removed"`` or ``"waited_too_long"``), ``waiting_count``,
+        ``kind`` (``"notice"``, ``"late"`` or ``"waited_too_long"``), ``waiting_count``,
         ``group_size``, and the usual context arguments (``participant``, the
         one who sees the copy, ``group``, ``barrier``, ``experiment``). Return ``None`` to hide that
         surface. Same serialization rules as ``on_release``.
@@ -1977,7 +1977,7 @@ class GroupBarrier(Barrier):
         only on its arguments and have no side effects. Notices wrap onto at
         most two lines (overflow ellipsizes), so keep them to a short sentence.
 
-        ``"removed"`` is the progress-bar notice for someone removed by
+        ``"late"`` is the progress-bar notice for someone removed by
         ``late_action="leave_group"``, shown until they leave
         their page. It defaults to "Your partner went on without you. Please
         continue." or "Your group went on without you. Please continue.", and
@@ -1989,7 +1989,7 @@ class GroupBarrier(Barrier):
         "Not everyone in your group arrived in time. Please continue.".
 
         Check ``kind`` for each of these rather than treating everything
-        that isn't ``"removed"`` as a progress notice, or a removed member
+        that isn't ``"late"`` as a progress notice, or a removed member
         sees "Your partner is ready." after waiting too long.
 
     """
@@ -2531,10 +2531,10 @@ class GroupBarrier(Barrier):
                 group.id,
             )
 
-    def _tell_removed_participant(self, participant, group, group_size, kind="removed"):
+    def _tell_removed_participant(self, participant, group, group_size, kind="late"):
         """Show a removed participant a notice that they left their group.
 
-        A ``"removed"`` notice (late) lasts until they leave their current page;
+        A ``"late"`` notice lasts until they leave their current page;
         the late removal has locked their row, so their own request is not
         leaving that page meanwhile. A ``"waited_too_long"`` notice is shown on the page
         they move on to (see :meth:`psynet.timeline.Page.consume`). A failing
@@ -4306,10 +4306,8 @@ def leave_group(group_type: str, reason: RemovalReason = "finished"):
     -------
     CodeBlock
     """
-    if reason not in get_args(RemovalReason):
-        raise ValueError(
-            f"reason must be one of {get_args(RemovalReason)}, got {reason!r}."
-        )
+    if reason not in REMOVAL_REASONS:
+        raise ValueError(f"reason must be one of {REMOVAL_REASONS}, got {reason!r}.")
 
     def _leave(participant):
         group = participant.active_sync_groups.get(group_type)
@@ -4483,7 +4481,7 @@ class SyncGroup(SQLBase, SQLMixin):
     def remove_participant(
         self,
         participant: Participant,
-        reason: RemovalReason = "removed",
+        reason: RemovalReason = "removed_by_experimenter",
     ):
         """Remove a participant from the group.
 
@@ -4498,7 +4496,7 @@ class SyncGroup(SQLBase, SQLMixin):
             for their answer labels them "(left)" unless the reason is
             ``"moved_on"`` or ``"finished"`` (see :ref:`sync-showing-the-group`).
 
-            - ``"removed"`` (default): removed without a more specific
+            - ``"removed_by_experimenter"`` (default): removed without a more specific
               reason, for example from the dashboard.
             - ``"left_experiment"``, ``"waited_too_long"`` or
               ``"group_dissolved"``: they dropped out.
@@ -4518,7 +4516,9 @@ class SyncGroup(SQLBase, SQLMixin):
         """
         self._remove_without_quorum_check(participant, reason)
 
-    def _remove_without_quorum_check(self, participant, reason="removed"):
+    def _remove_without_quorum_check(
+        self, participant, reason="removed_by_experimenter"
+    ):
         """Remove ``participant`` as :meth:`remove_participant` does, but never dissolve the group below its quorum."""
         if reason not in REMOVAL_REASONS:
             raise ValueError(
@@ -4687,7 +4687,7 @@ class SimpleSyncGroup(SyncGroup):
     def remove_participant(
         self,
         participant: Participant,
-        reason: RemovalReason = "removed",
+        reason: RemovalReason = "removed_by_experimenter",
     ):
         super().remove_participant(participant, reason=reason)
         if reason not in _KEEPS_GROUP_REASONS:

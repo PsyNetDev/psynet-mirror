@@ -9,7 +9,8 @@ test drops one member of each pair, one by quitting
 and one by going silent:
 
 ```python
-LATE_AFTER = 5
+# Long, so the poller can't remove the silent member before make_late_now.
+LATE_AFTER = 60
 
 class Exp(psynet.experiment.Experiment):
     test_n_bots = 4

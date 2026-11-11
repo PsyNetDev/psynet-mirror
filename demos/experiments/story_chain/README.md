@@ -30,11 +30,11 @@ ended. The bot test plays a full story in which one writer runs out of time.
   written while the group dissolved still counts.
 - Someone who finds no group within `GROUPER_WAIT` seconds is told so and
   finishes.
+- A member the experimenter removes on the dashboard writes no more turns
+  and is told they were removed from their group.
 
 The `turn` export has one row per turn; its `finished` column tells a turn
 that stored `None` from one that never finished.
-- A member the experimenter removes on the dashboard writes no more turns
-  and is told they were removed from the story.
 
 ## Usage
 
