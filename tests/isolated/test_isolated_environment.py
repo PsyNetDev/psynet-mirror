@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 
 import pytest
 
+from psynet.command_line import _ensure_develop_folders_parent
 from psynet.isolated_environment import (
     DEFAULT_DATABASE_URL,
     DEFAULT_REDIS_URL,
@@ -144,7 +145,8 @@ def test_isolated_environment_uses_its_own_services():
         assert develop_directory == Path(
             f"/tmp/psynet_develop/dallinger_develop_{port}"
         )
-        develop_directory.mkdir(parents=True, exist_ok=True)
+        _ensure_develop_folders_parent(str(develop_directory.parent))
+        develop_directory.mkdir(exist_ok=True)
 
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()

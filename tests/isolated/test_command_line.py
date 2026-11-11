@@ -962,8 +962,8 @@ def test_develop_folder_defaults_to_a_parent_of_its_own():
     assert default == "/tmp/psynet_develop/dallinger_develop"
 
 
-def test_develop_folders_parent_is_shared_like_tmp(tmp_path):
-    """Every user can add development folders, and a symlink is refused."""
+def test_develop_folders_parent_is_shared_like_tmp(tmp_path, monkeypatch):
+    """Every user can add development folders; symlinks and closed folders are refused."""
     import stat
 
     from psynet.command_line import _ensure_develop_folders_parent
@@ -975,9 +975,14 @@ def test_develop_folders_parent_is_shared_like_tmp(tmp_path):
 
     link = tmp_path / "link"
     link.symlink_to(tmp_path)
-    with pytest.raises(click.ClickException, match="not a directory"):
+    with pytest.raises(click.ClickException, match="symlink"):
         _ensure_develop_folders_parent(str(link))
     assert stat.S_IMODE(tmp_path.stat().st_mode) != 0o1777
+
+    monkeypatch.setattr(os, "getuid", lambda: parent.stat().st_uid + 1)
+    monkeypatch.setattr(os, "access", lambda *args: False)
+    with pytest.raises(click.ClickException, match="Another user owns"):
+        _ensure_develop_folders_parent(str(parent))
 
 
 @pytest.mark.parametrize("browsers", [False, True])

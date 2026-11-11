@@ -1415,7 +1415,7 @@ def _ensure_develop_folders_parent(path):
     info = os.lstat(path)
     if not stat.S_ISDIR(info.st_mode):
         raise click.ClickException(
-            f"{path} is not a directory. Remove it, or set "
+            f"{path} is a symlink or not a directory. Remove it, or set "
             "dallinger_develop_directory to a folder elsewhere."
         )
     if info.st_uid == os.getuid():
