@@ -25,9 +25,8 @@ and the end of the timeline shows the page for the stored stage. See
 
 import json
 import random
-from typing import List
+from typing import List, Optional
 
-from dallinger import db
 from dominate import tags
 
 import psynet.experiment
@@ -161,15 +160,8 @@ def life_stage(participant: Participant) -> str:
     """Return ``"playing"`` while the member keeps playing, otherwise why they stopped."""
     trials = own_trials(participant)
     last = trials[-1] if trials else None
-    # Both are decided when a round is scored, and only for members who stayed.
-    retired = last is not None and last.var.get("retires", False)
-    played_max_rounds = (
-        len(trials) >= MAX_ROUNDS and last.sync_group_outcome == "stayed"
-    )
-    if retired:
-        return "retired"
-    if played_max_rounds:
-        return "played_max_rounds"
+    if last is not None and last.var.get("leaves_as"):
+        return last.var.leaves_as
     if GROUP not in participant.active_sync_groups:
         # "late", "group_dissolved", "removed", "left_experiment" or
         # "no_group_formed".
@@ -214,6 +206,17 @@ def _catch_label(spot, catch) -> str:
     if spot is None:
         return "didn't fish"
     return f"spot {spot}: {catch} fish"
+
+
+def _leaves_as(
+    trial: "FishingTrial", retiring: Optional["FishingTrial"]
+) -> Optional[str]:
+    """Return how a member who stayed in this round leaves the society after it, or ``None`` if they play on."""
+    if trial is retiring:
+        return "retired"
+    if trial.position + 1 >= MAX_ROUNDS:
+        return "played_max_rounds"
+    return None
 
 
 def _draw_catch(spot: int) -> int:
@@ -270,26 +273,26 @@ class FishingTrial(Trial):
         if too_many:
             seats = group_seats(group)
             retiring = min(trials, key=lambda t: seats[t.participant_id])
-        for trial in trials:
-            trial.var.retires = trial is retiring
         node.var.retired_id = retiring.participant_id if retiring else None
-        # They leave now, so the next round doesn't wait for them while they
-        # read their results. Their round still counts as "stayed".
         for trial in trials:
-            if trial.var.retires or len(own_trials(trial.participant)) >= MAX_ROUNDS:
+            trial.var.leaves_as = _leaves_as(trial, retiring)
+            if trial.var.leaves_as:
+                # They leave now, so the next round doesn't wait for them while
+                # they read their results. Their round still counts as "stayed".
                 group.remove_participant(trial.participant, reason="finished")
 
     def score_answer(self, answer, definition):
         """Return the fish the member caught this round."""
-        if answer is None or self.sync_group_outcome not in (
-            "stayed",
-            "group_dissolved",
-        ):
+        if answer is None:
             return 0
+        if self.sync_group_outcome == "stayed":
+            return self.var.catch
         if self.sync_group_outcome == "group_dissolved":
             # The society ended before the round was scored, so they fish alone.
             self.var.catch = _draw_catch(answer)
-        return self.var.catch
+            return self.var.catch
+        # They left during the round: "late", "removed" or "left_experiment".
+        return 0
 
     def compute_performance_reward(self, score):
         return FISH_VALUE * score
@@ -303,7 +306,7 @@ class FishingTrial(Trial):
             text = "You ran out of time, so you didn't fish this round."
         else:
             text = f"You fished at spot {self.answer} and caught {self.var.catch} fish."
-        if self.var.retires:
+        if self.var.leaves_as == "retired":
             text += " A new member has joined, so this was your last round."
         spots, catches = self.node.var.spots, self.node.var.catches
         return ModularPage(
@@ -374,7 +377,9 @@ class Exp(psynet.experiment.Experiment):
                     "spot": t.answer,
                     "timed_out": t.time_limit_reached,
                     "catch": t.var.get("catch"),
-                    "retired": t.var.get("retires"),
+                    # "retired" or "played_max_rounds" for a member's last
+                    # round, otherwise None.
+                    "leaves_as": t.var.get("leaves_as"),
                 }
                 for t in trials
             ],
@@ -514,9 +519,7 @@ class Exp(psynet.experiment.Experiment):
 
 
 def _in_society(bot):
-    participant = Participant.query.get(bot.id)
-    db.session.refresh(participant)
-    return GROUP in participant.active_sync_groups
+    return bot.with_participant(lambda p: GROUP in p.active_sync_groups)
 
 
 def _society_id(participant):
