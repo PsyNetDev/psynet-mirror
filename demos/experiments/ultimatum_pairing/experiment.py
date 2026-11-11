@@ -163,6 +163,8 @@ def round_message(seconds_left):
 
 def game_over_reason(participant):
     """Return why the player's game is over, or ``None`` while they keep playing."""
+    # The pairs the regrouper has put the player in, including one they were
+    # removed from; rounds they sat out don't count.
     if pairing.rounds_played(participant) >= N_ROUNDS:
         return "played_all_rounds"
     if pairing.rounds_sat_out(participant) >= MAX_SIT_OUTS:
