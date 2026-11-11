@@ -101,9 +101,8 @@ participants' rows only with ``SKIP LOCKED`` or ``NOWAIT``:
   If another member's request holds their row, or a cue holds a round's
   lock, nobody is removed (rolling back a savepoint unlocks the rows and
   releases the round locks taken in it; a round lock the transaction already
-  held, as a barrier check that dissolves the group does, stays until the
-  transaction ends):
-  the group is marked ``dissolving`` and the barrier poller tries the whole
+  held, as when a barrier's release check dissolves the group after taking
+  it, stays until the transaction ends): the group is marked ``dissolving`` and the barrier poller tries the whole
   dissolution again on each sweep, so every member leaves the group, and
   learns why, at the same time. A group back at its quorum by then is no
   longer dissolved.
