@@ -4424,7 +4424,10 @@ class SyncGroup(SQLBase, SQLMixin):
         was never in the group.
         """
         links = [
-            link for link in self.participant_links if link.participant == participant
+            link
+            for link in self.participant_links
+            if link.participant_id == participant.id
+            or (link.participant_id is None and link.participant is participant)
         ]
         if not links:
             raise ValueError(

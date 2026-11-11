@@ -57,7 +57,8 @@ from psynet.utils import serialise_datetime
 
 GROUP = "society"
 SOCIETY_SIZE = 3
-MAX_ROUNDS = 3
+# A safety limit: while newcomers keep arriving, members retire before it.
+MAX_ROUNDS = 2 * SOCIETY_SIZE
 # Average catches of the spots, which members don't see.
 SPOT_MEANS = [2, 4, 3, 9, 1, 5, 6, 3]
 N_SPOTS = len(SPOT_MEANS)
@@ -68,9 +69,10 @@ RESULTS_SECONDS = 10
 # Covers a newcomer reading the society's history before their first round.
 LATE_AFTER = 60
 GROUPING_WAIT = 120
-# How long a lone member waits at the end of a round for a newcomer, before
-# the society dissolves.
-TOP_UP_WAIT = 30
+# How long a society left with one member waits for a newcomer before it
+# dissolves. Counted from when the others left, so it includes the lone
+# member's results and decision pages.
+TOP_UP_WAIT = 60
 HISTORY_ROUNDS = 3
 TIPS_SHOWN = 3
 
@@ -395,7 +397,8 @@ class Exp(psynet.experiment.Experiment):
                 {
                     "participant_id": p.id,
                     "society_id": _society_id(p),
-                    # "playing" for a member who is away but not yet removed.
+                    # "playing" for a member who is away but not yet removed,
+                    # None for one who never joined a society.
                     "left_as": life_stage(p),
                     "rounds_played": len(own_trials(p)),
                     "tip": next(
@@ -434,46 +437,60 @@ class Exp(psynet.experiment.Experiment):
         retiree.take_page(response="Spot 4 is reliable.")
         assert retiree.current_page_text.startswith("You caught ")
 
-        # A founder goes quiet in their last round, so the round barrier
-        # removes them as late, and they leave no tip.
-        stayer, quiet = [bot for bot in founders if bot is not retiree]
-        _see_results([stayer, quiet, newcomers[0]])
-        society = [stayer, newcomers[0]]
+        # The next newcomer reads the tip and joins, so the next
+        # longest-serving founder retires: one member leaves per newcomer.
+        others = [bot for bot in founders if bot is not retiree]
+        _see_results([*others, newcomers[0]])
+        newcomers[1].take_page()
+        assert "Spot 4 is reliable." in newcomers[1].current_page_text
+        newcomers[1].take_page()
+        _play([*others, newcomers[0], newcomers[1]], [7, 4, 4, 4])
+        (retiree2,) = [
+            bot for bot in others if "your last round" in bot.current_page_text
+        ]
+        assert not _in_society(retiree2)
+        retiree2.take_page()
+        retiree2.take_page(response="Spot 7 is poor.")
+
+        # The last founder goes quiet, so the round barrier removes them as
+        # late, and they leave no tip.
+        (quiet,) = [bot for bot in others if bot is not retiree2]
+        society = newcomers[:2]
+        _see_results([quiet, *society])
         for bot in society:
             bot.take_page(response=4)
         make_late_now(society, "round_finished")
         quiet.take_page(response=4)
         assert "You were away for too long" in quiet.current_page_text
-        assert not _in_society(stayer)
-        _see_results(society)
-        assert stayer.current_page_label == "tip", stayer.current_page_label
-        stayer.take_page(response="Spot 7 is poor.")
 
-        # The next newcomer reads both tips and joins; the one after goes
-        # quiet on the history page and is removed as late.
-        for bot in newcomers[1:]:
-            bot.take_page()
-            assert "Spot 4 is reliable." in bot.current_page_text
-            assert "Spot 7 is poor." in bot.current_page_text
-        newcomers[1].take_page()
-        society = newcomers[:2]
+        # The next newcomer reads both tips, then goes quiet on the history
+        # page and is removed as late.
+        newcomers[2].take_page()
+        assert "Spot 4 is reliable." in newcomers[2].current_page_text
+        assert "Spot 7 is poor." in newcomers[2].current_page_text
+        _see_results(society)
         for bot in society:
             bot.take_page(response=4)
         make_late_now(society, "round_finished")
         newcomers[2].take_page()
         assert "You were away for too long" in newcomers[2].current_page_text
-        run_bots_to_completion(bots)
+        # The first newcomer reaches MAX_ROUNDS and leaves; the second, alone,
+        # waits for a newcomer until the society dissolves.
+        run_bots_to_completion(bots, timeout=TOP_UP_WAIT + 60)
 
         # Through JSON, as the dashboard and export read it.
         data = json.loads(json.dumps(self.get_basic_data()))
         rounds = data["society_round"]
-        assert [r["retired_id"] for r in rounds[:2]] == [None, retiree.id], rounds
+        assert [r["retired_id"] for r in rounds[:3]] == [
+            None,
+            retiree.id,
+            retiree2.id,
+        ], rounds
         left_rounds = [
             (r["participant_id"], r["outcome"])
             for r in data["member_round"]
             if r["outcome"] != "stayed"
         ]
-        # The second newcomer was left alone, and nobody came to join them.
         assert left_rounds == [
             (quiet.id, "late"),
             (newcomers[1].id, "group_dissolved"),
@@ -481,7 +498,7 @@ class Exp(psynet.experiment.Experiment):
         left_as = {m["participant_id"]: m["left_as"] for m in data["member"]}
         assert left_as == {
             retiree.id: "retired",
-            stayer.id: "played_max_rounds",
+            retiree2.id: "retired",
             quiet.id: "late",
             newcomers[0].id: "played_max_rounds",
             newcomers[1].id: "group_dissolved",
