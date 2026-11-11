@@ -109,7 +109,8 @@ per question; a player who answered on their own has a row with an empty
 ``crowd_id``. Its ``outcome`` column, from ``trial.sync_group_outcome``, says
 how the round ended for each player: ``"stayed"``, or why they last left the
 group during the round's pages, even after the median was shared;
-``timed_out`` says whether their estimate's time limit ran out, and
+``time_limit_reached``, from ``trial.time_limit_reached``, says whether
+their estimate's time limit ran out, and
 ``in_median`` whether it counted.
 
 Groups that stay together save their rounds the same way. The
