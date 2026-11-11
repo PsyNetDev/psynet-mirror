@@ -401,6 +401,13 @@ Groups
 `experiments/rock_paper_scissors <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/rock_paper_scissors>`__
     A two-player game with scored rounds and a chat after each round.
 
+`experiments/crowd_estimate <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/crowd_estimate>`__
+    A wisdom-of-crowds estimation game in an open lobby: groups of up to
+    four may start short and take latecomers until the game starts, and
+    anyone left without a group answers alone. Each question is one cued
+    trial per player, with the group's median on the node they share.
+    :doc:`/code/multiplayer/synchronization`.
+
 `experiments/lowest_unique_number <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/lowest_unique_number>`__
     ``Regrouper`` with ``every``: rooms of up to eight form every 10
     seconds, and players who are too slow miss a round instead of being
@@ -408,6 +415,14 @@ Groups
     number. Each round is one cued trial per player, sharing a node with
     the room. :doc:`/code/multiplayer/synchronization`,
     :ref:`rounds-one-trial-per-player`.
+
+`experiments/story_chain <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/story_chain>`__
+    Groups of three write a story one sentence at a time. Each turn is a
+    cued round whose definition stores the writer, chosen by seat, and
+    whose node stores the sentence as soon as the writer submits it. A
+    member who leaves plays no more turns, and the next seat writes in their
+    place.
+    :doc:`/code/multiplayer/writing_a_round_based_experiment`.
 
 `experiments/ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__
     An ultimatum game in cohorts, formed by a grouper that starts cohorts short

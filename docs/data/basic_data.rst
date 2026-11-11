@@ -98,9 +98,19 @@ re-formed every round, as by a :class:`~psynet.sync.Regrouper`, plays only
 round 0. The group's trials with the same
 ``sync_group_id`` and ``sync_group_round`` are one round. All three stay after
 the group ends. Cued trials of one group and round also share a
-:class:`~psynet.trial.main.SyncGroupNode`, which can hold the group's results;
+:class:`~psynet.trial.main.SyncGroupNode`, which can hold the group's results
+and records in ``sync_group_closed`` whether a group barrier released the
+round and in ``sync_group_dissolved_at`` when the group dissolved during it
+(see :ref:`dissolved rounds <sync-dissolved-round>`);
 the ``lowest_unique_number`` demo builds a table per player and round and
-one per room from them (see :ref:`rounds-one-trial-per-player`).
+one per room from them (see :ref:`rounds-one-trial-per-player`). The
+``crowd_estimate`` demo does the same for a fixed group that plays one round
+per question; a player who answered on their own has a row with an empty
+``crowd_id``. Its ``outcome`` column, from ``trial.sync_group_outcome``, says
+how the round ended for each player: ``"stayed"``, or why they last left the
+group during the round's pages, even after the median was shared;
+``timed_out`` says whether their estimate's time limit ran out, and
+``in_median`` whether it counted.
 
 Groups that stay together save their rounds the same way. The
 ``public_goods`` demo saves the group's ``contributions`` (``None`` for a
