@@ -3606,7 +3606,7 @@ class Regrouper(Grouper):
         super()._queue_check_on_arrival(barrier_instance)
 
     def _skips_arrival_release_check(self, barrier_instance):
-        """Return whether an arrival at ``barrier_instance`` cannot release anyone."""
+        """Return whether this arrival should skip the queued release check."""
         return (
             self.every is not None
             and (self.within is None or barrier_instance.group_id is not None)
