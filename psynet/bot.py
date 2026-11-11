@@ -7,10 +7,12 @@ from functools import cached_property
 from typing import List, Optional, Sequence, Union
 
 from dallinger import db
+from dallinger.models import timenow
 
 from psynet.db import transaction
 
 from .participant import Participant, ParticipantDriver, _status_is_waiting
+from .timeline import TIME_LIMIT_GRACE_SECONDS
 from .utils import NoArgumentProvided, get_logger, log_time_taken, wait_until
 
 logger = get_logger()
@@ -374,6 +376,87 @@ def _backdate_arrivals(barrier, participants, seconds):
         participant.active_barriers[barrier.id].arrival_time -= timedelta(
             seconds=seconds
         )
+
+
+def make_late_now(
+    bots: List["BotDriver"], barrier_id: str, timeout: Optional[float] = 10.0
+):
+    """Make the members who haven't reached a :class:`~psynet.sync.GroupBarrier` late now, then advance the bots past it.
+
+    A bot test would otherwise wait out the barrier's ``late_after`` in real
+    time to test a player who goes quiet. For each group of a bot waiting at
+    the barrier, this moves the group's clocks back: the time it last passed
+    a barrier, and its members' times of joining and page deadlines. They
+    move back by ``late_after``, or further if a quiet member's timed page
+    and the grace for its answer would otherwise keep them from being late.
+    The barrier's next check, when the waiting bots poll it, then removes
+    every member who isn't waiting there, with its ``late_action``. Bots not
+    waiting there, such as the quiet ones, aren't advanced: a quiet bot sees
+    that its group went on without it, and the test takes its page next.
+
+    Parameters
+    ----------
+    bots : list of BotDriver
+        Bots waiting at the barrier, and any others to advance with them.
+    barrier_id : str
+        The barrier's ID.
+    timeout : float, optional
+        Passed to :func:`advance_past_wait_pages`.
+
+    Raises
+    ------
+    ValueError
+        If none of the bots is waiting at the barrier, or it has no
+        ``late_after``.
+
+    Examples
+    --------
+    ::
+
+        bots[0].take_page(response=4)
+        bots[1].take_page(response=8)
+        make_late_now(bots, "round_finished")  # bots[2] goes quiet.
+    """
+    with transaction():
+        participants = [Participant.query.get(bot.id) for bot in bots]
+        waiting = [p for p in participants if barrier_id in p.active_barriers]
+        if not waiting:
+            raise ValueError(f"None of the bots is waiting at '{barrier_id}'.")
+        barrier = waiting[0].active_barriers[barrier_id].get_barrier()
+        late_after = getattr(barrier, "late_after", None)
+        if late_after is None:
+            raise ValueError(f"Barrier '{barrier_id}' has no late_after.")
+        groups = {}
+        for participant in waiting:
+            group = participant.active_sync_groups.get(barrier.group_type)
+            if group is not None:
+                groups[group.id] = group
+        now = timenow()
+        answer_arrival = 2 * TIME_LIMIT_GRACE_SECONDS
+        for group in groups.values():
+            seconds = late_after
+            for link in group.participant_links:
+                if (
+                    link.active
+                    and link.page_deadline is not None
+                    and barrier_id not in link.participant.active_barriers
+                ):
+                    left = (link.page_deadline - now).total_seconds()
+                    seconds = max(seconds, left + answer_arrival)
+            _backdate_group(group, seconds + 1)
+    advance_past_wait_pages(bots, timeout=timeout)
+
+
+def _backdate_group(group, seconds):
+    """Move the group's last barrier pass, and its members' joining times and page deadlines, back by ``seconds``."""
+    shift = timedelta(seconds=seconds)
+    if group.last_barrier_pass_time is not None:
+        group.last_barrier_pass_time -= shift
+    for link in group.participant_links:
+        if link.arrival_time is not None:
+            link.arrival_time -= shift
+        if link.page_deadline is not None:
+            link.page_deadline -= shift
 
 
 def run_bots_to_completion(bots: List["BotDriver"], timeout: Optional[float] = 60.0):

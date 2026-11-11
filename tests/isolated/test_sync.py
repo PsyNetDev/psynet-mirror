@@ -25,6 +25,7 @@ from psynet.barrier_spec import (
     barrier_from_spec_json,
     barrier_spec_json,
 )
+from psynet.bot import make_late_now
 from psynet.dashboard.sync_groups import (
     _fail_sync_group_participant,
     _get_grouper_progress,
@@ -6903,6 +6904,29 @@ def test_group_barrier_max_wait_time_with_late_after():
         barrier(late_after=0)
     with pytest.raises(ValueError, match="use late_action instead"):
         barrier(late_after=30, max_wait_action="leave_group")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_make_late_now_needs_a_waiting_bot_and_late_after(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    waiter, quiet = [new_participant(exp) for _ in range(2)]
+    group = SimpleSyncGroup(group_type="main", initial_group_size=2)
+    db_session.add(group)
+    for p in (waiter, quiet):
+        p.status = "working"
+        group.add_participant(p)
+    db_session.commit()
+    bots = [SimpleNamespace(id=p.id) for p in (waiter, quiet)]
+    with pytest.raises(ValueError, match="None of the bots is waiting at 'round'"):
+        make_late_now(bots, "round")
+    _arrive_at_group_barrier(exp, GroupBarrier("round", group_type="main"), waiter)
+    db_session.commit()
+    with pytest.raises(ValueError, match="'round' has no late_after"):
+        make_late_now(bots, "round")
 
 
 @pytest.mark.parametrize(

@@ -245,6 +245,12 @@ Other helpers ask about a bot's group or act in it:
   or next ``every`` tick would, then advances them, so the test doesn't
   wait for it, for example ``regroup_now(bots[:3], pairing)`` to start a
   round without a fourth player who is still reading their results.
+- :func:`~psynet.bot.make_late_now` makes the members who haven't reached a
+  :class:`~psynet.sync.GroupBarrier` late, as its ``late_after`` would,
+  then advances the bots waiting there, so a test of a player who goes
+  quiet doesn't wait in real time, for example
+  ``make_late_now(bots, "round_finished")`` after two of three players
+  have answered.
 
 When several groups play in one test, finish one group's story before driving
 the next: a barrier's ``late_after`` clock keeps running for a group while the

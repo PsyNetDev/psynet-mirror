@@ -16,7 +16,12 @@ happens when players run out of time or leave.
 from typing import List
 
 import psynet.experiment
-from psynet.bot import BotDriver, advance_past_wait_pages, run_bots_to_completion
+from psynet.bot import (
+    BotDriver,
+    advance_past_wait_pages,
+    make_late_now,
+    run_bots_to_completion,
+)
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
@@ -294,35 +299,49 @@ class Exp(psynet.experiment.Experiment):
         _see_results(bots)
         bots[0].take_page(response=4)
         bots[1].take_page(response=8)
-        bots[2].run_out_of_time()
-        advance_past_wait_pages(bots)
-        # A pot of 12 becomes 18: 6 tokens each.
-        text = bots[2].current_page_text
-        assert "You ran out of time and put in nothing, so you earned 16" in text, text
+        # bots[2] goes quiet, so the barrier removes them as late and the
+        # other two carry on. A pot of 12 becomes 18: 9 tokens each.
+        make_late_now(bots, "round_finished")
+        text = bots[0].current_page_text
+        assert text.startswith("One player has left the group."), text
+        assert "so you earned 15 tokens" in text, text
+        bots[2].take_page(response=5)
+        text = bots[2].current_page_text  # Paid for the first round only.
+        assert text == (
+            "You were away for too long, so your group went on without you. "
+            "Your bonus is $0.18."
+        ), text
 
-        _see_results(bots)
-        _play(bots, [0, 5, 7])
-        _see_results(bots)
-        text = bots[0].current_page_text  # 17 + 12 + 16 tokens
-        assert text == "The game is over. Your bonus is $0.90.", text
+        _see_results(bots[:2])
+        bots[0].take_page(response=6)
+        bots[1].run_out_of_time()
+        advance_past_wait_pages(bots[:2])
+        # A pot of 6 becomes 9: 4.5 tokens each.
+        text = bots[1].current_page_text
+        assert "You ran out of time and put in nothing, so you earned 14.5" in text
+        _see_results(bots[:2])
+        text = bots[0].current_page_text  # 17 + 15 + 8.5 tokens
+        assert text == "The game is over. Your bonus is $0.81.", text
         run_bots_to_completion(bots)
 
         data = self.get_basic_data()
         teams = data["team_round"]
         assert [(t["pot"], t["dissolved_at"], t["n_left"]) for t in teams] == [
             (18, None, 0),
-            (12, None, 0),
-            (12, None, 0),
+            (12, None, 1),
+            (6, None, 0),
         ], teams
-        assert teams[1]["contributions"] == {
-            str(bots[0].id): 4,
-            str(bots[1].id): 8,
-            str(bots[2].id): None,
+        assert teams[2]["contributions"] == {
+            str(bots[0].id): 6,
+            str(bots[1].id): None,
         }, teams
         rows = data["player_round"]
-        assert all(r["outcome"] == "stayed" for r in rows), rows
+        outcomes = [(r["participant_id"], r["round"], r["outcome"]) for r in rows]
+        assert [o for o in outcomes if o[2] != "stayed"] == [(bots[2].id, 1, "late")], (
+            outcomes
+        )
         timed_out = [(r["participant_id"], r["round"]) for r in rows if r["timed_out"]]
-        assert timed_out == [(bots[2].id, 1)], timed_out
+        assert timed_out == [(bots[1].id, 2)], timed_out
         for bot in bots:
             paid = sum(r["bonus"] for r in rows if r["participant_id"] == bot.id)
             reward = bot.with_participant(lambda p: p.performance_reward)
