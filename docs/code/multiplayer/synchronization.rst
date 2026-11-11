@@ -435,7 +435,7 @@ answered it. With ``accumulate_answers``, an unanswered trial's ``answer`` is
     def show_feedback(self, experiment, participant):
         score = self.var.get("score")
         if score is None and self.sync_group_outcome == "group_dissolved":
-            estimates = [t.answer.get("estimate") for t in self.node.all_trials]
+            estimates = [t.answer.get("estimate") for t in self.node.alive_trials]
             score = score_answers([e for e in estimates if e is not None])
         ...
 
@@ -802,7 +802,7 @@ reaches it after the group has gone waits there for members who are
 further on, until the barrier's time-outs remove someone. Give such a
 barrier ``pass_newcomers=True`` (see :ref:`sync-newcomers-at-passed-barriers`).
 
-So a trial has two round counters. ``sync_group_round`` counts the group's
+A trial has two round counters. ``sync_group_round`` counts the group's
 rounds, and is ``None`` on a trial played without a group. Use it for what
 the group shares, such as what a round shows and the group's rows in the
 export. ``trial.position`` counts the player's own trials in the
@@ -816,9 +816,11 @@ Every trial in a round gets the definition of the round's first cue. With
 a regrouper, a definition taken from the player's own position in the loop, as in
 ``logic=lambda i: OfferTrial.cue({"block": i})``, would fail: a pair that
 the regrouper forms from players at different rounds would cue two
-definitions for one round and get a ``ValueError``. Use a function taking
-``round`` or ``group`` instead, such as
-``OfferTrial.cue(lambda round: {"block": round})``. A round with no content
+definitions for one round and get a ``ValueError``. Pass a function
+instead: it runs once per round, for the round's first cue. A regrouper's
+groups play only round 0, so take what varies from ``group``, such as
+``OfferTrial.cue(lambda group: {"seed": group.id})``, or draw it at random in
+the function. A round with no content
 of its own needs no definition: ``OfferTrial.cue()`` gives every trial
 ``{}``.
 
