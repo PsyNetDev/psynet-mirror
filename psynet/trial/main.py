@@ -422,8 +422,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             "player in it, and why the player left the group when they leave "
             "it there, one of the reasons of "
             ":meth:`~psynet.sync.SyncGroup.remove_participant`, such as "
-            '``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or '
-            '``"removed"`` without a reason. The latest of these is kept. '
+            '``"late"``, ``"waited_too_long"``, ``"left_experiment"`` or '
+            '``"group_dissolved"``, or ``"removed"`` without a reason. The latest of these is kept. '
             "Barriers and departures after the trial's pages, such as in "
             ":meth:`show_feedback` or between rounds, write nothing. ``None`` "
             "while nothing has happened yet, and for ungrouped trials."

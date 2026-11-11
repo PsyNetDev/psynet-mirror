@@ -368,8 +368,8 @@ later:
   nothing;
 - why the player left the group: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
-  ``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or
-  ``"removed"`` if none was given (the values are listed in
+  ``"late"``, ``"waited_too_long"``, ``"left_experiment"`` or
+  ``"group_dissolved"``, or ``"removed"`` if none was given (the values are listed in
   :data:`~psynet.sync.SyncGroupOutcome`);
 - ``None`` before either happens, and for a trial played without a group.
 
