@@ -996,6 +996,15 @@ the maximum waiting time:
     others until they arrive or are late, so they need no ``max_wait_time``
     of their own.
 
+    A late member who is in the middle of a request of their own, such as
+    submitting a page, is left alone until the barrier's next check, a
+    moment later. If that request brought them to the barrier they are no
+    longer late. So a late member is never both removed and allowed to act:
+    code in their own request, such as a
+    :class:`~psynet.timeline.CodeBlock` that stores their answer, either runs
+    before the removal or sees it in their trial's ``sync_group_outcome``,
+    and needs no locks of its own.
+
     A member who has started a page with a ``time_limit``, other than a
     waiting page, since the group last passed a barrier (or since joining)
     is not late until that limit has run out plus 10 seconds, so that an

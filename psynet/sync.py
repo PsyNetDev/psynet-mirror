@@ -1847,7 +1847,10 @@ class GroupBarrier(Barrier):
         barrier's group with the reason ``"late"`` (with ``"fail"``, before they are failed), which their
         trial's :attr:`~psynet.trial.main.Trial.sync_group_outcome` records. A group that this leaves below
         its quorum dissolves as its ``below_quorum`` says, so with ``"fail"`` one late member can fail a whole
-        cohort.
+        cohort. A late member whose own request is in progress, for example submitting a page, is not acted
+        on until a later check, by which time that request has finished; if it brought them to this barrier,
+        they are no longer late. So code a late member runs in their own request, such as a
+        :class:`~psynet.timeline.CodeBlock` storing their answer, either runs before the removal or sees it.
 
     also_leave
         With ``late_action="leave_group"``, the other group types a late member also leaves, with the
@@ -2390,13 +2393,20 @@ class GroupBarrier(Barrier):
             if self.late_after is None:
                 continue
             late = self._late_between_barriers(group, waiting_ids)
-            if self.late_action == "fail" and late:
+            if not late:
+                continue
+            if self.late_action == "fail":
                 # All or nothing, as in dissolving: a late member whose own
                 # request holds their row would otherwise stay behind in a
                 # group that dissolves without them. All are late next check.
                 late = _lock_all_participants(late)
                 if late is None:
                     continue
+            else:
+                # A member busy in their own request stays until a later
+                # check, so that request never acts on a removal it can't see.
+                late = _lock_free_participants(late)
+            late = self._still_late(group, late, waiting_ids)
             if late:
                 removals.append((group, late, len(group.active_participants)))
         self._remove_late_participants(removals)
@@ -2494,9 +2504,9 @@ class GroupBarrier(Barrier):
     def _tell_removed_participant(self, participant, group, group_size, kind="removed"):
         """Show a removed participant a notice that they left their group.
 
-        A ``"removed"`` notice (late) lasts until they leave their current page,
-        and is skipped if their own request holds their row, since they are
-        leaving the page. A ``"waited_too_long"`` notice is shown on the page
+        A ``"removed"`` notice (late) lasts until they leave their current page;
+        the late removal has locked their row, so their own request is not
+        leaving that page meanwhile. A ``"waited_too_long"`` notice is shown on the page
         they move on to (see :meth:`psynet.timeline.Page.consume`). A failing
         message callback is logged rather than stopping the removal.
         """
@@ -2521,8 +2531,6 @@ class GroupBarrier(Barrier):
             return
         if kind == "waited_too_long":
             _set_next_page_notice(participant, text)
-            return
-        if not _lock_free_participants([participant]):
             return
         text = str(text)
         participant.group_removal_notice = {
@@ -2565,6 +2573,26 @@ class GroupBarrier(Barrier):
             if now > late_at:
                 late.append(participant)
         return late
+
+    def _still_late(self, group, locked, waiting_ids) -> list:
+        """Return the late members in ``locked`` who are still late now that their rows are locked.
+
+        Lateness is first decided from state read before the rows were
+        locked, and a member's own request may have committed since: they may
+        have reached this barrier, or started a timed page.
+        """
+        locked_ids = {participant.id for participant in locked}
+        for participant in locked:
+            db.session.expire(participant, ["active_barriers"])
+        for link in group.participant_links:
+            if link.participant_id in locked_ids:
+                db.session.refresh(link)
+        arrived = {p.id for p in locked if self._participant_is_waiting(p)}
+        late_ids = {
+            participant.id
+            for participant in self._late_between_barriers(group, waiting_ids | arrived)
+        }
+        return [participant for participant in locked if participant.id in late_ids]
 
 
 class Grouper(Barrier):

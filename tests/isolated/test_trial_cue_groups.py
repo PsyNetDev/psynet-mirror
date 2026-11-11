@@ -1367,6 +1367,63 @@ def test_late_action_fail_waits_for_a_busy_late_member_then_fails_both(
 
 
 @in_consents_experiment
+def test_late_action_leave_group_skips_a_late_member_busy_in_their_own_request(
+    in_experiment_directory, db_session
+):
+    """A late member whose own request holds their row is removed at a later check."""
+    exp = get_experiment()
+    (stayer, late), group = _sync_group_of(exp, db_session, 2)
+    group.below_quorum = "continue_without_group"
+    barrier = GroupBarrier(
+        "late", group_type="main", late_after=5, late_action="leave_group"
+    )
+    _arrive(exp, barrier, [stayer])
+    _backdate_group(group, seconds=10)
+    db.session.commit()
+    late_id = late.id
+
+    with db.engine.connect() as busy_request, busy_request.begin():
+        busy_request.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": late_id},
+        )
+        _set_transaction_lock_timeout(1)
+        barrier.check_waiting_participants([stayer])
+        db.session.commit()
+        assert "main" in Participant.query.get(late_id).active_sync_groups
+
+    barrier.check_waiting_participants([stayer])
+    db.session.commit()
+    assert Participant.query.get(late_id).sync_group_removal_reason("main") == "late"
+
+
+@pytest.mark.parametrize("late_action", ["fail", "leave_group"])
+@in_consents_experiment
+def test_a_member_who_reached_the_barrier_during_the_check_is_not_late(
+    in_experiment_directory, db_session, late_action
+):
+    """Lateness is rechecked once the member's row is locked.
+
+    The check is given only the waiters it read before the late member's
+    arrival committed.
+    """
+    exp = get_experiment()
+    (stayer, late), group = _sync_group_of(exp, db_session, 2)
+    barrier = GroupBarrier(
+        "late", group_type="main", late_after=5, late_action=late_action
+    )
+    _arrive(exp, barrier, [stayer])
+    _backdate_group(group, seconds=10)
+    _arrive_at_group_barrier(exp, barrier, late)
+    db.session.commit()
+
+    barrier.check_waiting_participants([stayer])
+    db.session.commit()
+    assert not late.failed
+    assert "main" in late.active_sync_groups
+
+
+@in_consents_experiment
 def test_late_action_fail_leaves_other_groups_as_left_experiment(
     in_experiment_directory, db_session
 ):

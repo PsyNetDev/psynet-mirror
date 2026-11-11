@@ -84,7 +84,7 @@ Barrier checks and participant requests take their locks in this order:
    is busy. A cue waits for it, but takes only a ``KEY SHARE`` lock on the
    group row, through its trial's foreign key, which doesn't conflict with
    ``FOR NO KEY UPDATE``.
-5. Members' rows when dissolving the group or failing late members, with
+5. Members' rows when dissolving the group or removing late members, with
    ``SKIP LOCKED``, then the rows of links, trials and nodes, and of other
    groups.
 
@@ -98,9 +98,16 @@ participants' rows only with ``SKIP LOCKED`` or ``NOWAIT``:
   dissolution again on each sweep, so every member leaves the group, and
   learns why, at the same time. A group back at its quorum by then is no
   longer dissolved.
-- A between-barrier timeout with ``"fail"`` also skips busy late members;
-  they are still late at the barrier's next check. ``"leave_group"`` only changes the
-  group's links, so it does not lock the member's row.
+- A between-barrier timeout (``late_after``) also skips busy late members:
+  with ``"fail"`` all or nothing, as in dissolution, and with
+  ``"leave_group"`` member by member. A skipped member is reconsidered at
+  the barrier's next check, which the poller makes on each sweep, and the
+  group waits for them meanwhile. Lateness is decided before the rows are
+  locked, so it is decided again for the members locked: one whose request
+  brought them to the barrier in between is no longer late. Removal writes
+  the member's links and trial outcome, so without the row lock a member's
+  own request could act on stale group state, for example storing an
+  answer after the rest of the group moved on without them.
 - ``sync_group.leader_id``, like ``participant_link_barrier.sync_group_id``
   and ``trial.sync_group_id``, has no foreign key: PostgreSQL re-checks a
   foreign key when a row written earlier in the transaction is updated
