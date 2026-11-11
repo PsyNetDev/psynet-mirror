@@ -5,13 +5,15 @@ It lives in its own module so that tests can import it without the experiment.
 
 from psynet.sync import Regrouper
 
+PAIR = "pair"
+
 
 def last_partner_id(participant):
     """Return the ID of the player's partner in their latest pair, or ``None``."""
     pairs = [
         link.sync_group
         for link in participant.sync_group_links
-        if link.sync_group.group_type == "pair"
+        if link.sync_group.group_type == PAIR
     ]
     if not pairs:
         return None
@@ -39,7 +41,7 @@ def times_held(participant, role):
     return sum(
         link.role == role
         for link in participant.sync_group_links
-        if link.sync_group.group_type == "pair"
+        if link.sync_group.group_type == PAIR
     )
 
 
