@@ -1062,7 +1062,8 @@ the maximum waiting time:
     removed while their own request is acting: code in their own request, such as a
     :class:`~psynet.timeline.CodeBlock` that stores their answer, either runs
     before the removal or sees it (``participant.sync_group_removal_reason``,
-    or a cued trial's ``sync_group_outcome``), and needs no locks of its own.
+    or, before the round's first release, a cued trial's
+    ``sync_group_outcome``), and needs no locks of its own.
 
     A member who has started a page with a ``time_limit``, other than a
     waiting page, since the group last passed a barrier (or since joining)
