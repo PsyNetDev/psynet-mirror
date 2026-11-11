@@ -6895,7 +6895,7 @@ def test_group_barrier_late_after_removes_missing_participants(
 def test_also_leave_removes_a_late_member_from_the_listed_groups_only(
     in_experiment_directory, db_session
 ):
-    """A member late for their pair also leaves the cohort, so the cohort doesn't wait for them."""
+    """A member late for their pair also leaves the cohort and stays in groups of unlisted types."""
     exp = get_experiment()
     barrier = GroupBarrier(
         id_="round",

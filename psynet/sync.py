@@ -1655,7 +1655,7 @@ def _validate_group_timeouts(
             f"{prefix}max_wait_action has no effect with {prefix}late_after, which "
             f"leaves no wait limit; use {prefix}late_action instead."
         )
-    if also_leave is None:
+    if not also_leave:
         return
     if late_action != "leave_group":
         raise ValueError(
