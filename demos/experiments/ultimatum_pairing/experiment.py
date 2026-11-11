@@ -150,7 +150,12 @@ def round_message(seconds_left):
 
 
 def ended_early(participant):
-    return pairing.rounds_played(participant) < N_ROUNDS
+    # Being late also takes a player out of the cohort, which ends their game;
+    # their round's results page already said so.
+    return (
+        pairing.rounds_played(participant) < N_ROUNDS
+        and participant.sync_group_removal_reason(COHORT) != "late"
+    )
 
 
 def ended_early_page(participant):
@@ -159,8 +164,6 @@ def ended_early_page(participant):
             f"You sat out {MAX_SIT_OUTS} rounds without a partner, "
             "so the game ended early for you."
         )
-    elif participant.sync_group_removal_reason(COHORT) == "late":
-        text = "You were away for too long, so the game ended early for you."
     else:
         text = "Not enough players stayed to keep playing, so the game ended early."
     return InfoPage(text, time_estimate=5)
@@ -222,7 +225,10 @@ pairing = PairingRegrouper(
 )
 
 OUTCOME_TEXTS = {
-    "away": "You were away for too long, so you got no coins this round.",
+    "away": (
+        "You were away for too long, so you got no coins this round, "
+        "and the game is over for you."
+    ),
     "own_time_out": "You ran out of time, so nobody was paid.",
     "partner_away": "Your partner was away for too long, so nobody was paid.",
     "partner_left": "Your partner left, so nobody was paid.",

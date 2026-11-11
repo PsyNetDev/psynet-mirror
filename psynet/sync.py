@@ -1701,6 +1701,7 @@ def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
 
 #: Why a member left a group, see :meth:`SyncGroup.remove_participant`.
 RemovalReason = Literal[
+    "removed",
     "left_experiment",
     "late",
     "waited_too_long",
@@ -1708,12 +1709,12 @@ RemovalReason = Literal[
     "moved_on",
     "finished",
 ]
-REMOVAL_REASONS = (None, *get_args(RemovalReason))
+REMOVAL_REASONS = get_args(RemovalReason)
 #: Values of :attr:`~psynet.trial.main.Trial.sync_group_outcome` other than
 #: ``None``: ``"stayed"`` once a barrier in the trial's pages releases the
 #: group with the player in it, after which it doesn't change; before that,
-#: a :data:`RemovalReason`, or ``"removed"`` for a removal without one.
-SyncGroupOutcome = Literal["stayed", "removed", RemovalReason]
+#: the :data:`RemovalReason` they left with.
+SyncGroupOutcome = Literal["stayed", RemovalReason]
 # Reasons for leaving that don't dissolve a group below its quorum.
 _KEEPS_GROUP_REASONS = ("finished", "moved_on")
 
@@ -4482,7 +4483,7 @@ class SyncGroup(SQLBase, SQLMixin):
     def remove_participant(
         self,
         participant: Participant,
-        reason: Optional[RemovalReason] = None,
+        reason: RemovalReason = "removed",
     ):
         """Remove a participant from the group.
 
@@ -4497,7 +4498,9 @@ class SyncGroup(SQLBase, SQLMixin):
             for their answer labels them "(left)" unless the reason is
             ``"moved_on"`` or ``"finished"`` (see :ref:`sync-showing-the-group`).
 
-            - ``None`` (default), ``"left_experiment"``, ``"waited_too_long"`` or
+            - ``"removed"`` (default): removed without a more specific
+              reason, for example from the dashboard.
+            - ``"left_experiment"``, ``"waited_too_long"`` or
               ``"group_dissolved"``: they dropped out.
             - ``"late"``: a barrier removed them for being late (with any
               ``late_action``).
@@ -4515,7 +4518,7 @@ class SyncGroup(SQLBase, SQLMixin):
         """
         self._remove_without_quorum_check(participant, reason)
 
-    def _remove_without_quorum_check(self, participant, reason=None):
+    def _remove_without_quorum_check(self, participant, reason="removed"):
         """Remove ``participant`` as :meth:`remove_participant` does, but never dissolve the group below its quorum."""
         if reason not in REMOVAL_REASONS:
             raise ValueError(
@@ -4684,7 +4687,7 @@ class SimpleSyncGroup(SyncGroup):
     def remove_participant(
         self,
         participant: Participant,
-        reason: Optional[RemovalReason] = None,
+        reason: RemovalReason = "removed",
     ):
         super().remove_participant(participant, reason=reason)
         if reason not in _KEEPS_GROUP_REASONS:
@@ -4746,7 +4749,7 @@ def _record_leaving_the_round(group, participant, reason):
         and not trial.complete
         and trial.sync_group_outcome != "stayed"
     ):
-        trial.sync_group_outcome = reason or "removed"
+        trial.sync_group_outcome = reason
 
 
 def _open_rounds(group, participants):

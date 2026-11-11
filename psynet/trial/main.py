@@ -436,7 +436,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             "player left the group, one of the reasons of "
             ":meth:`~psynet.sync.SyncGroup.remove_participant`, such as "
             '``"late"``, ``"waited_too_long"``, ``"left_experiment"`` or '
-            '``"group_dissolved"``, or ``"removed"`` without a reason. '
+            '``"group_dissolved"`` or ``"removed"``. '
             "Leaving after a release, for example by being late at a later "
             "barrier, shows in "
             ":meth:`~psynet.participant.Participant.sync_group_removal_reason` "

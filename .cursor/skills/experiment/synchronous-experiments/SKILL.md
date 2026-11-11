@@ -374,12 +374,17 @@ with a group.
 
 The removal reasons are those of `participant.sync_group_removal_reason`,
 and a cued trial's `sync_group_outcome`. Pay by `self.sync_group_outcome`
-in `score_answer`, and start the page after an early end with the standard
-sentence, as in `public_goods`:
+in `score_answer`, and map the reasons your game can meet to the text of the
+page after an early end, as in `public_goods`:
 
 ```python
+ENDED_EARLY_TEXTS = {
+    "late": "You were away for too long, so the game ended early for you.",
+    "group_dissolved": "Too few players stayed, so the game ended early.",
+}
+
 def game_ended_early(participant):
-    text = participant.sync_group_removal_text("team")  # "You were away for too long, …"
+    text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason("team")]
     return InfoPage(f"{text} Your bonus is ${participant.performance_reward:.2f}.")
 ```
 

@@ -402,7 +402,7 @@ later:
 - why the player left the group before such a release: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
   ``"late"``, ``"waited_too_long"``, ``"left_experiment"`` or
-  ``"group_dissolved"``, or ``"removed"`` if none was given (the values are listed in
+  ``"group_dissolved"`` or ``"removed"`` (the values are listed in
   :data:`~psynet.sync.SyncGroupOutcome`);
 - ``None`` before either happens, and for a trial played without a group.
 
@@ -1042,9 +1042,8 @@ For each case, decide:
 
 - **Pay:** ``score_answer`` can pay by ``trial.sync_group_outcome``, as in
   the ``public_goods`` demo's ``ContributionTrial.score_answer``.
-- **Feedback:** :meth:`participant.sync_group_removal_text(group_type)
-  <psynet.participant.Participant.sync_group_removal_text>` explains an early
-  end in a standard sentence; add game-specific text after it (see
+- **Feedback:** map the reasons your game can meet to your own text, as in
+  the ``public_goods`` demo's ``ENDED_EARLY_TEXTS`` (see
   `After leaving a group`_).
 - **Export:** export a row for every trial, with its ``sync_group_outcome``
   and ``time_limit_reached``, so that analysis can tell the cases apart.
@@ -1580,10 +1579,6 @@ For the rest of the timeline:
   ``sync_group_outcome``, even after they join another group, unless a
   barrier in those pages had already released the group with them in it
   (see :ref:`round outcomes <sync-round-outcome>`).
-  :meth:`participant.sync_group_removal_text("pair")
-  <psynet.participant.Participant.sync_group_removal_text>` gives a short,
-  translated sentence explaining an early end, as in ``game_ended_early``
-  above, or ``None`` if there is nothing to explain.
 - An answer submitted on the page where a member was removed for being late
   has ``response.too_late_for_group`` set, so analysis can leave it out.
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only

@@ -233,19 +233,28 @@ def waiting_for_writer(participant, trial):
     )
 
 
+# The ways a member can leave the group before the story's end.
+ENDED_EARLY_TEXTS = {
+    "late": "You were away for too long, so your group went on without you.",
+    "group_dissolved": "Too few members of your group stayed, so the story ended early.",
+    "removed": "You were removed from your group.",
+}
+
+
 def final_page(participant: Participant):
-    # Why no group formed, the player was removed as late, or the group dissolved.
-    ended_early = participant.sync_group_removal_text(GROUP)
     group_id = participant.var.story_group_id
     if group_id is None:
         return InfoPage(
-            f"{ended_early} There is no story to write. Thank you for waiting.",
+            "We couldn't find two other people to write with you. "
+            "Thank you for waiting.",
             time_estimate=5,
         )
     turns = group_turns(group_id)
     finished = len(turns) == N_TURNS and all(t.var.has("sentence") for t in turns)
-    if ended_early and not finished:
-        intro = f"{ended_early} Here is the story so far:"
+    # None while the member is still in the group.
+    reason = participant.sync_group_removal_reason(GROUP)
+    if reason is not None and not finished:
+        intro = f"{ENDED_EARLY_TEXTS[reason]} Here is the story so far:"
     else:
         intro = "Here is the story your group wrote:"
     story = story_text(group_id) or "(Nobody wrote a sentence.)"

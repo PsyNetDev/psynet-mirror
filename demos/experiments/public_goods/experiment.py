@@ -155,10 +155,8 @@ class ContributionTrial(Trial):
             # The last player keeps their tokens for the cancelled round,
             # whether or not they were already waiting at the barrier.
             return ENDOWMENT
-        if outcome == "late":
-            return 0
-        # Removed from the dashboard ("removed"). A player who returns the
-        # study ("left_experiment") is never scored: their trial doesn't finish.
+        # "late" or "removed". A player who returns the study
+        # ("left_experiment") is never scored: their trial doesn't finish.
         return 0
 
     def compute_performance_reward(self, score):
@@ -208,9 +206,18 @@ def game_over(participant):
     return InfoPage(f"The game is over. {bonus_text(participant)}", time_estimate=5)
 
 
+# The ways a player can leave the team before the game's end and still see a
+# page; a player who returns the study ("left_experiment") sees no more pages.
+ENDED_EARLY_TEXTS = {
+    "no_group_formed": "We couldn't find two other players for you.",
+    "late": "You were away for too long, so the game ended early for you.",
+    "group_dissolved": "Too few players stayed, so the game ended early.",
+    "removed": "You were removed from the game.",
+}
+
+
 def game_ended_early(participant):
-    # Why no group formed, the player was removed as late, or the group dissolved.
-    text = participant.sync_group_removal_text(GROUP)
+    text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason(GROUP)]
     return InfoPage(f"{text} {bonus_text(participant)}", time_estimate=5)
 
 
@@ -308,7 +315,7 @@ class Exp(psynet.experiment.Experiment):
         bots[2].take_page(response=5)
         text = bots[2].current_page_text  # Paid for the first round only.
         assert text == (
-            "You were away for too long, so your group went on without you. "
+            "You were away for too long, so the game ended early for you. "
             "Your bonus is $0.18."
         ), text
 

@@ -50,7 +50,6 @@ from .utils import (
     call_function_with_context,
     get_config,
     get_logger,
-    get_translator,
     keep_alive_session,
     organize_by_key,
 )
@@ -764,19 +763,21 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         their part), ``"left_experiment"`` (failed,
         including returning the study, and for a member's other groups
         when a barrier's ``late_action="fail"`` or ``max_wait_action="fail"``,
-        or a dissolving group's ``below_quorum="fail"``, fails them), or ``None`` if no
-        reason was recorded, for example after removal from the dashboard.
+        or a dissolving group's ``below_quorum="fail"``, fails them), or
+        ``"removed"`` (removed from the dashboard, or by
+        :meth:`~psynet.sync.SyncGroup.remove_participant` without a reason).
         A player sat out of their first round was never in a group, so this
         returns ``None`` for them; check :meth:`~psynet.sync.Regrouper.sat_out`
         or ``in_sync_group`` instead.
 
-        For a page after the game that says why it ended early,
-        :meth:`sync_group_removal_text` gives a standard sentence. Use the
-        reason to add game-specific detail::
+        To explain an early end, map the reasons your game can meet to your
+        own text::
 
-            reason = participant.sync_group_removal_reason("team")
-            if reason == "late":
-                text = "You were away for too long, so you got no points this round."
+            ENDED_EARLY_TEXTS = {
+                "late": "You were away for too long, so the game ended early for you.",
+                "group_dissolved": "Too few players stayed, so the game ended early.",
+            }
+            text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason("team")]
         """
         from .sync import _latest_sync_group_link
 
@@ -786,77 +787,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
             return "no_group_formed"
         latest = _latest_sync_group_link(self, group_type)
         return None if latest is None else latest.removal_reason
-
-    def sync_group_removal_text(self, group_type: str) -> Optional[str]:
-        """Return a short sentence telling the participant why their group of ``group_type`` ended early.
-
-        The sentence is translated and doesn't mention the game, so a page
-        after the game can show it followed by game-specific text, such as
-        the participant's bonus. It depends on
-        :meth:`sync_group_removal_reason`:
-
-        - ``"late"``: "You were away for too long, so your group went on
-          without you."
-        - ``"waited_too_long"``: "The others in your group didn't arrive in
-          time, so you left the group."
-        - ``"group_dissolved"``: "Too few members of your group remained, so
-          the group ended early."
-        - ``"no_group_formed"``: "We couldn't find a group for you."
-        - No reason, after they were in such a group, for example after
-          removal from the dashboard: "You were removed from your group."
-
-        Returns ``None`` when there is no early end to explain: the
-        participant is still in a group of ``group_type``, was never in one,
-        or left it as ``"moved_on"``, ``"finished"`` or
-        ``"left_experiment"``.
-
-        Parameters
-        ----------
-        group_type : str
-            The group type, as in :meth:`in_sync_group`.
-
-        Returns
-        -------
-        str or None
-            The sentence, or ``None``.
-
-        Examples
-        --------
-        ::
-
-            def game_ended_early(participant):
-                text = participant.sync_group_removal_text("team")
-                return InfoPage(f"{text} Your bonus is ${participant.performance_reward:.2f}.")
-        """
-        from .sync import _latest_sync_group_link
-
-        reason = self.sync_group_removal_reason(group_type)
-        if reason is None:
-            if self.in_sync_group(group_type):
-                return None
-            if _latest_sync_group_link(self, group_type) is None:
-                return None
-        _p = get_translator(context=True)
-        if reason == "late":
-            return _p(
-                "sync_group",
-                "You were away for too long, so your group went on without you.",
-            )
-        if reason == "waited_too_long":
-            return _p(
-                "sync_group",
-                "The others in your group didn't arrive in time, so you left the group.",
-            )
-        if reason == "group_dissolved":
-            return _p(
-                "sync_group",
-                "Too few members of your group remained, so the group ended early.",
-            )
-        if reason == "no_group_formed":
-            return _p("sync_group", "We couldn't find a group for you.")
-        if reason is None:
-            return _p("sync_group", "You were removed from your group.")
-        return None
 
     def in_sync_group(self, group_type: str) -> bool:
         """Return whether the participant is in an active group of ``group_type``.

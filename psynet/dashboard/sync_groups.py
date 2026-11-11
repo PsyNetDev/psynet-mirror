@@ -121,7 +121,7 @@ def _kick_sync_group_participant(participant_id, sync_group_id, kick_reason):
     if participant.failed or participant.status != "working":
         raise ValueError("Only active working participants can be kicked manually.")
 
-    active_group_link.sync_group.remove_participant(participant)
+    active_group_link.sync_group.remove_participant(participant, reason="removed")
     return participant
 
 
