@@ -2034,8 +2034,7 @@ class Page(Elt):
         metadata = {k: v for k, v in metadata.items() if k != "too_late_for_group"}
         if too_late_for_group:
             metadata = {**metadata, "too_late_for_group": True}
-        # Untimed pages, such as feedback or a framework wait, keep the flag.
-        if participant.waiting_barrier_id is None and self.time_limit is not None:
+        if self._time_limit_counts(participant):
             participant.timed_out_since_barrier = timed_out
         if answer == NoArgumentProvided:
             answer = self.format_answer(
@@ -2083,6 +2082,14 @@ class Page(Elt):
             return list(self.background_recording.sources)
         return []
 
+    def _time_limit_counts(self, participant):
+        """Whether this page's time limit updates the participant's and trial's timeout flags.
+
+        Untimed pages, such as feedback, and pages shown while waiting at a
+        barrier keep the flags from the last timed page.
+        """
+        return participant.waiting_barrier_id is None and self.time_limit is not None
+
     def _reject_impossible_answer(self, answer):
         """Return a :class:`FailedValidation` for an answer the page cannot produce.
 
@@ -2096,7 +2103,7 @@ class Page(Elt):
         trial = resp.trial
         if trial is not None:
             trial.response = resp
-            if self.time_limit is not None:
+            if self._time_limit_counts(participant):
                 trial.time_limit_reached = resp.time_limit_reached
             page_time = resp.metadata.get("time_taken")
             if page_time is not None:

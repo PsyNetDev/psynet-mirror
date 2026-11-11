@@ -238,6 +238,21 @@ def test_a_trial_keeps_whether_its_timed_page_ran_out(
         trial = participant.current_trial
         assert trial.time_limit_reached is None
 
+        def answer_timed_page_in_time():
+            page = ModularPage("timed", "Go", TextControl(), time_limit=10)
+            participant.page_deadline = None
+            resp = page.process_response(
+                raw_answer="x",
+                blobs={},
+                metadata={},
+                experiment=exp,
+                participant=participant,
+            )
+            page._accept_response(resp, exp, participant)
+
+        answer_timed_page_in_time()
+        assert trial.time_limit_reached is False
+
         participant.page_deadline = timenow()
         assert (
             _submit(exp, participant, None, time_limit_reached=True)["submission"]
@@ -245,10 +260,15 @@ def test_a_trial_keeps_whether_its_timed_page_ran_out(
         )
         assert trial.time_limit_reached is True
 
-        # Neither a barrier release ending a wait nor an untimed page clears it.
+        # Neither a barrier release ending a wait, a timed page shown while
+        # waiting at a barrier, nor an untimed page clears it.
         confirm = ModularPage("confirm", "Sure?", TextControl())
         exp._record_interrupted_response(confirm, participant, {})
         assert trial.response.metadata["interrupted"]
+        assert trial.time_limit_reached is True
+        participant.waiting_barrier_id = "barrier"
+        answer_timed_page_in_time()
+        participant.waiting_barrier_id = None
         assert trial.time_limit_reached is True
         assert _submit(exp, participant, "yes")["submission"] == "approved"
         assert trial.time_limit_reached is True

@@ -355,7 +355,7 @@ slow. ``trials`` only covers the members still in the group; on a group's
 node, ``node.all_trials`` lists every trial of the round, including those of
 members who have since left, each with its ``sync_group_role``.
 
-.. _sync-reading-rounds:
+.. _sync-timeouts-and-rounds:
 
 :attr:`trial.time_limit_reached <psynet.trial.main.Trial.time_limit_reached>`
 says whether a member's latest timed page ran out of time before their
