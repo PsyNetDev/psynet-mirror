@@ -1369,11 +1369,11 @@ For the rest of the timeline:
   grouped pages. The page after the barrier is built once the member has
   passed it, but a member who has left the group passes without waiting, so
   the group may not be scored yet. The page therefore reads the member's own
-  ``sync_group_outcome`` first, and only then the ``median`` that
-  ``on_release`` stored on the node and the trial's ``in_median``. If the
-  group ended instead, nothing stored them, and ``.get`` returns ``None``.
-  Either way, a member without a median to revise towards is told there is
-  nothing to revise:
+  ``sync_group_outcome`` first, ``"late"`` or ``"group_dissolved"`` (nothing
+  runs when a group ends, so it stored no median), and only then the
+  ``median`` that ``on_release`` stored on the node and the trial's
+  ``in_median``. A member without a median to revise towards is told why
+  there is nothing to revise:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
      :pyobject: EstimateTrial.revise_page
