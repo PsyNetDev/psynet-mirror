@@ -255,7 +255,7 @@ class Exp(psynet.experiment.Experiment):
                     # the study during it.
                     "complete": t.complete,
                     # "stayed" if the round was scored; otherwise why the
-                    # player left: "late", "left_experiment" or, for the
+                    # player left: "late", "removed", "left_experiment" or, for the
                     # last player of a cancelled round, "group_dissolved".
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or never answered.

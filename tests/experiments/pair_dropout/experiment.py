@@ -9,7 +9,12 @@ being late is told on the page they are on.
 """
 
 import psynet.experiment
-from psynet.bot import BotDriver, advance_past_wait_pages, run_bots_to_completion
+from psynet.bot import (
+    BotDriver,
+    advance_past_wait_pages,
+    make_late_now,
+    run_bots_to_completion,
+)
 from psynet.consent import MainConsent
 from psynet.page import InfoPage
 from psynet.sync import GroupBarrier, SimpleGrouper
@@ -76,7 +81,7 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages([stayer])
         self._assert_carries_on_alone(stayer)
 
-        advance_past_wait_pages([on_time], timeout=LATE_AFTER + 10)
+        make_late_now([on_time], "round_1")
         self._assert_carries_on_alone(on_time)
 
         assert (

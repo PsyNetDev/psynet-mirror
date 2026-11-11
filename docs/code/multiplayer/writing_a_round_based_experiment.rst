@@ -288,8 +288,9 @@ Ending the game
 
 The rounds loop runs while ``game_over_reason`` returns ``None``. The
 function names each way a player's game can end: they played their rounds,
-sat out too often, were removed for being late, or their cohort is down to
-one player:
+sat out too often, were removed for being late or by the experimenter on the
+dashboard, or their cohort is down to one player. (A player removed from just
+their pair is told so on that round's results page.)
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: game_over_reason

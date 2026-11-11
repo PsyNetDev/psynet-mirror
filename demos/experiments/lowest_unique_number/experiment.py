@@ -93,6 +93,7 @@ def get_timeline():
 
 
 AWAY_TEXT = "You were away for too long, so you missed this round."
+REMOVED_TEXT = "You were removed from your room, so you missed this round."
 NO_ROOM_TEXT = "Nobody else was left to play this round with, so you skip it."
 
 
@@ -181,6 +182,9 @@ class PickTrial(Trial):
         if self.sync_group_outcome == "late":
             # Taken out of the room mid-round by the barrier's late_after.
             return InfoPage(AWAY_TEXT, time_estimate=5)
+        if self.sync_group_outcome == "removed":
+            # By the experimenter, on the dashboard.
+            return InfoPage(REMOVED_TEXT, time_estimate=5)
         if self.answer is None:
             return InfoPage(
                 "You ran out of time, so you missed this round.", time_estimate=5
