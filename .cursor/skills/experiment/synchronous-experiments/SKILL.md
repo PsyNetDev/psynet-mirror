@@ -91,8 +91,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   after the barrier, set `accumulate_answers = True` and read the answer by
   page label. A partner still on the question page may not have answered
   yet when `show_feedback` runs. The outcome is
-  only written during the trial's pages, so for a barrier after
-  `show_trial` check `participant.sync_group_removal_reason(...)` instead.
+  only written during the trial's pages and until a barrier there releases
+  the group, so for a barrier after `show_trial`, or after an earlier
+  release in it, check `participant.sync_group_removal_reason(...)` instead.
 - For deterministic roles or turn order, use `psynet.sync.group_seats(group)`
   (seats in join order, stable while the group exists), as in
   `story_chain`; PsyNet does not guarantee the order of
@@ -291,9 +292,10 @@ Module("game", for_loop(
   `round_status` instead, as described above. A started trial runs to its
   end even if the player leaves the group, so its `show_feedback` explains every outcome, including being
   removed for lateness. Read how the round ended for each player from
-  `trial.sync_group_outcome` (`"stayed"`, or why they left, such as
-  `"late"`; written only during the trial's pages, so put the scoring
-  barrier in `show_trial`), a partner's from their trial in `self.node.all_trials`, rather
+  `trial.sync_group_outcome` (`"stayed"` once a barrier in the trial's
+  pages releases the group with them in it, after which it doesn't change;
+  before that, why they left, such as `"late"`; so put the scoring barrier
+  in `show_trial`), a partner's from their trial in `self.node.all_trials`, rather
   than from current group membership. A barrier's `waiting_screen` can take
   `trial` and `node` to show the round's state.
 

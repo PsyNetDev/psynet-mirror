@@ -1711,8 +1711,8 @@ RemovalReason = Literal[
 REMOVAL_REASONS = (None, *get_args(RemovalReason))
 #: Values of :attr:`~psynet.trial.main.Trial.sync_group_outcome` other than
 #: ``None``: ``"stayed"`` once a barrier in the trial's pages releases the
-#: group with the player in it, a :data:`RemovalReason`, or ``"removed"`` for
-#: a removal without one.
+#: group with the player in it, after which it doesn't change; before that,
+#: a :data:`RemovalReason`, or ``"removed"`` for a removal without one.
 SyncGroupOutcome = Literal["stayed", "removed", RemovalReason]
 # Reasons for leaving that don't dissolve a group below its quorum.
 _KEEPS_GROUP_REASONS = ("finished", "moved_on")
@@ -1823,8 +1823,8 @@ class GroupBarrier(Barrier):
 
     max_wait_action
         What happens to a member who waits longer than ``max_wait_time``. Either way they first leave the
-        group, which records ``"waited_too_long"`` as their removal reason and their cued trial's
-        ``sync_group_outcome``. ``"fail"`` (default) then fails them, after they leave their other groups as
+        group, which records ``"waited_too_long"`` as their removal reason and, unless a release has
+        already made it ``"stayed"``, their cued trial's ``sync_group_outcome``. ``"fail"`` (default) then fails them, after they leave their other groups as
         ``"left_experiment"``, and sends them to the end of the experiment; with ``"leave_group"`` they carry on with the
         experiment without the group (see :ref:`sync-leaving-a-group`).
         With ``"leave_group"``, their next page says "Your partner didn't arrive in time. Please continue." in a pair (see
@@ -1847,7 +1847,9 @@ class GroupBarrier(Barrier):
         without them (see :ref:`sync-leaving-a-group` for what the removed member sees).
         With every action the member leaves this
         barrier's group with the reason ``"late"`` (with ``"fail"``, before they are failed), which their
-        trial's :attr:`~psynet.trial.main.Trial.sync_group_outcome` records. A group that this leaves below
+        cued trial's :attr:`~psynet.trial.main.Trial.sync_group_outcome` records unless an earlier barrier
+        in the trial's pages already released the group with them in it (then it stays ``"stayed"``). A
+        group that this leaves below
         its quorum dissolves as its ``below_quorum`` says, so with ``"fail"`` one late member can fail a whole
         cohort. While a late member's own request is in progress, for example submitting a page, no late
         member of the group is acted on until a check finds none of them busy; if that request
@@ -4735,11 +4737,15 @@ def _record_leaving_the_round(group, participant, reason):
     """Record why the participant left ``group`` on the round they are playing in it, if any.
 
     That is their cued trial of ``group`` (see :func:`_round_trial`), if it
-    is not complete yet, so leaving between rounds, after the trial's pages
-    end, records nothing.
+    is not complete yet and no barrier has released the group with them in
+    it. Leaving after that, or between rounds, records nothing on the trial.
     """
     trial = _round_trial(group, participant)
-    if trial is not None and not trial.complete:
+    if (
+        trial is not None
+        and not trial.complete
+        and trial.sync_group_outcome != "stayed"
+    ):
         trial.sync_group_outcome = reason or "removed"
 
 

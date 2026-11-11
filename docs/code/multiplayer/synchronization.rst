@@ -395,10 +395,10 @@ and exports can read it rather than work it out from the player's groups
 later:
 
 - ``"stayed"``: a group barrier in the trial's pages (``show_trial``)
-  released the group. Barriers after the trial, such as in
-  ``show_feedback``, don't store it, and members who skipped the round get
-  nothing;
-- why the player left the group: a reason of
+  released the group with the player in it. After that the outcome doesn't
+  change. Barriers after the trial, such as in ``show_feedback``, don't
+  store it, and members who skipped the round get nothing;
+- why the player left the group before such a release: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
   ``"late"``, ``"waited_too_long"``, ``"left_experiment"`` or
   ``"group_dissolved"``, or ``"removed"`` if none was given (the values are listed in
@@ -406,12 +406,18 @@ later:
 - ``None`` before either happens, and for a trial played without a group.
 
 The outcome is only written during the trial's pages (``show_trial``), while
-:attr:`~psynet.trial.main.Trial.complete` is ``False``; the latest event
-there is kept, so leaving after an earlier barrier of the round replaces
-``"stayed"``. Once the pages have ended, the outcome is final: leaving the
-group in ``show_feedback``, between rounds or in a later module stores
-nothing, so put the barrier that decides the round in ``show_trial``.
-A partner's outcome is on their trial in ``node.all_trials``:
+:attr:`~psynet.trial.main.Trial.complete` is ``False``, and only until a
+barrier there releases the group with the player in it. So ``"stayed"``
+means the player took part in the round's first release, not that they
+stayed to the end of its pages: ``complete`` and
+``participant.sync_group_removal_reason(group_type)`` say that. A player who
+leaves later, for example by being late at a second barrier of the round,
+keeps ``"stayed"``; when that barrier releases the rest, its ``on_release``
+lists them in ``left``, so store there what it decides about them.
+Leaving the group in ``show_feedback``, between rounds or in a later
+module stores nothing either, so put the barrier that decides the round in
+``show_trial``. A partner's outcome is on their trial in
+``node.all_trials``:
 
 .. code-block:: python
 
@@ -442,13 +448,12 @@ it dissolved, if a member still in the group was in their trial on that
 node (its pages hadn't ended) and no group barrier had released the round.
 A round that a barrier released stays ``None``, even if a member was still
 on a page after the barrier, and so does a round whose remaining members'
-trials had all ended, as when the group dissolves between rounds. A member
-still on a page after a release does get ``sync_group_outcome``
-``"group_dissolved"`` on their trial: the trial says how the player left the
-round, the node's column whether the round itself was cut short. So an export can tell a
-cancelled round from one still in progress even if no member finishes
-their trial, for example ``node.sync_group_dissolved_at is not None``,
-without storing anything of its own.
+trials had all ended, as when the group dissolves between rounds. Likewise,
+the trials of members released by the barrier keep ``sync_group_outcome``
+``"stayed"``. So an export can tell a cancelled round from one still in
+progress even if no member finishes their trial, for example
+``node.sync_group_dissolved_at is not None``, without storing anything of
+its own.
 
 With ``below_quorum="continue_without_group"`` the members carry on and the
 round's results are still stored (with the default ``"fail"``, the members
@@ -457,7 +462,8 @@ the player's latest answer, the round's trials are in ``node.all_trials``,
 and each trial's ``sync_group_outcome`` is
 ``"group_dissolved"`` for every member still in the group when it dissolved,
 waiting at the barrier or still on a page, unless the trial's pages had
-already ended (see :ref:`round outcomes <sync-round-outcome>`).
+already ended or a barrier had already released the round (see
+:ref:`round outcomes <sync-round-outcome>`).
 If ``show_trial`` has pages after the barrier, set ``accumulate_answers =
 True`` on the trial class and read the answer given before the barrier by
 its page label, for example ``trial.answer["estimate"]``, so a later page
@@ -487,8 +493,9 @@ answered it. With ``accumulate_answers``, an unanswered trial's ``answer`` is
         ...
 
 If the barrier that didn't release is after ``show_trial``, for example in
-``show_feedback``, the trial's outcome isn't updated, because it is only
-written during the trial's pages, so check
+``show_feedback``, or comes after another barrier that released the round,
+the trial's outcome isn't updated, because it is only written during the
+trial's pages and until their first release, so check
 ``participant.sync_group_removal_reason(group_type) == "group_dissolved"``
 instead.
 
@@ -1039,8 +1046,10 @@ the maximum waiting time:
     the other group types they leave too, such as ``["cohort"]`` for the
     cohort a pair was formed in. Whichever
     action it is, the late member leaves the barrier's group with the
-    reason ``"late"``, so ``participant.sync_group_removal_reason`` and their
-    trial's ``sync_group_outcome`` say ``"late"`` even when they are failed.
+    reason ``"late"``, so ``participant.sync_group_removal_reason`` says
+    ``"late"`` even when they are failed, and so does their cued trial's
+    ``sync_group_outcome`` unless an earlier barrier of the round released
+    the group with them in it.
     Members who arrive on time wait for the
     others until they arrive or are late, so they need no ``max_wait_time``
     of their own.
@@ -1484,8 +1493,9 @@ For the rest of the timeline:
   a member failed for being late or waiting too long at this group's barrier
   records ``"late"`` or ``"waited_too_long"`` instead).
   A cued trial whose pages they were on in that group keeps the reason in
-  ``sync_group_outcome``, even after they join another group (see
-  :ref:`round outcomes <sync-round-outcome>`).
+  ``sync_group_outcome``, even after they join another group, unless a
+  barrier in those pages had already released the group with them in it
+  (see :ref:`round outcomes <sync-round-outcome>`).
 - An answer submitted on the page where a member was removed for being late
   has ``response.too_late_for_group`` set, so analysis can leave it out.
 - A :class:`~psynet.group_prompt.GroupPrompt` for that group type shows only
