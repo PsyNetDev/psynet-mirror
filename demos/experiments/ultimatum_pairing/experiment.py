@@ -54,10 +54,9 @@ from psynet.timeline import (
 )
 from psynet.trial.main import SyncGroupNode, Trial
 
-from .pairing import PairingRegrouper, last_partner_id
+from .pairing import PAIR, PairingRegrouper, last_partner_id
 
 COHORT = "cohort"
-PAIR = "pair"
 COHORT_SIZE = 4
 MIN_COHORT_SIZE = 2
 SHORT_START_SECONDS = 60

@@ -156,8 +156,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   never cuts a started argument short, so a barrier or cued trial runs whole.
   To end the rounds, pass the same `stop_if` to the `for_loop`. Put the
   grouper or `Regrouper` before the `join`, not among its arguments, or
-  everyone not yet grouped skips it. A round that is one cued trial needs
-  no `join`: with a cohort (`within=`), follow the three-way `switch` on
+  everyone not yet grouped skips it. In a round that is one cued trial, the
+  trial replaces the inner `join(..., stop_if=...)` around the round's
+  steps, as it runs whole anyway; the regrouper still goes first, in
+  `join(Regrouper(...), <switch or conditional>)`. With a cohort (`within=`),
+  follow the three-way `switch` on
   `round_status` (paired, sat out, no cohort) in "One trial per player per
   round" of `code/multiplayer/writing_a_round_based_experiment`, as in
   `ultimatum_pairing`; without one, a two-way `conditional` is enough, as in
