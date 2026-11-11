@@ -90,19 +90,6 @@ _DEFAULT_BASE_PORT = 5000
 _PORT_OFFSET = 100
 
 
-def ensure_develop_folders_parent():
-    """Create :data:`DEVELOP_FOLDERS_PARENT` so that every user can add folders to it.
-
-    Like ``/tmp``, it is world-writable with the sticky bit set, so users
-    can't remove each other's folders. Otherwise the first user to create it
-    would own it with the default mode ``0755``, and other users' debug and
-    test sessions could not create their development folders.
-    """
-    os.makedirs(DEVELOP_FOLDERS_PARENT, exist_ok=True)
-    if os.stat(DEVELOP_FOLDERS_PARENT).st_uid == os.getuid():
-        os.chmod(DEVELOP_FOLDERS_PARENT, 0o1777)
-
-
 def local_base_port(environ=None, directory="."):
     """Return Dallinger's ``base_port`` without importing the experiment.
 
@@ -302,7 +289,6 @@ class IsolatedEnvironment:
         )
         session_database_url = None
         try:
-            ensure_develop_folders_parent()
             session_database_url = create_database(
                 database_url, suffix=f"_test_{base_port}"
             )

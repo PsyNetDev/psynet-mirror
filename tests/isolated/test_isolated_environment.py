@@ -2,7 +2,6 @@ import fcntl
 import os
 import shutil
 import socket
-import stat
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -145,8 +144,7 @@ def test_isolated_environment_uses_its_own_services():
         assert develop_directory == Path(
             f"/tmp/psynet_develop/dallinger_develop_{port}"
         )
-        assert stat.S_IMODE(develop_directory.parent.stat().st_mode) == 0o1777
-        develop_directory.mkdir(exist_ok=True)
+        develop_directory.mkdir(parents=True, exist_ok=True)
 
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()

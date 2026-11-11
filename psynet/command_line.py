@@ -1391,16 +1391,50 @@ def _develop_path(config):
         raise click.ClickException(" ".join(str(err).split())) from err
 
 
+def _ensure_develop_folders_parent(path):
+    """Create the shared parent of development folders so every user can add to it.
+
+    Like ``/tmp``, it is world-writable with the sticky bit set, so users
+    can't remove each other's folders. Otherwise the first user to create it
+    would own it with mode ``0755`` and other users couldn't start a debug
+    server.
+
+    Raises
+    ------
+    click.ClickException
+        If ``path`` isn't a directory (for example a symlink, which a
+        ``chmod`` would follow) or another user owns it without letting
+        others write to it.
+    """
+    import stat
+
+    try:
+        os.mkdir(path)
+    except FileExistsError:
+        pass
+    info = os.lstat(path)
+    if not stat.S_ISDIR(info.st_mode):
+        raise click.ClickException(
+            f"{path} is not a directory. Remove it, or set "
+            "dallinger_develop_directory to a folder elsewhere."
+        )
+    if info.st_uid == os.getuid():
+        os.chmod(path, 0o1777)
+    elif not os.access(path, os.W_OK | os.X_OK):
+        raise click.ClickException(
+            f"Another user owns {path} and hasn't let others write to it. "
+            f"Ask them to run 'chmod 1777 {path}', or set "
+            "dallinger_develop_directory to a folder elsewhere."
+        )
+
+
 def run_pre_auto_reload_checks():
     config = get_config()
     if not config.ready:
         config.load()
 
     from .experiment_scaffold import get_editable_psynet_source
-    from .isolated_environment import (
-        DEVELOP_FOLDERS_PARENT,
-        ensure_develop_folders_parent,
-    )
+    from .isolated_environment import DEVELOP_FOLDERS_PARENT
 
     develop_path = _develop_path(config)
     if "." in str(develop_path):
@@ -1411,7 +1445,7 @@ def run_pre_auto_reload_checks():
             "dallinger_develop_directory = /tmp/psynet_develop/dallinger_develop"
         )
     if str(develop_path.parent) == DEVELOP_FOLDERS_PARENT:
-        ensure_develop_folders_parent()
+        _ensure_develop_folders_parent(DEVELOP_FOLDERS_PARENT)
 
     if get_editable_psynet_source() is not None:
         root_dir = str(psynet_dir())
@@ -1703,9 +1737,10 @@ def _other_develop_folder_patterns(develop_path):
     so without these patterns each debug server would also watch, and restart
     for, the folders that other debug servers write next to it. PsyNet's
     default parent holds only development folders; a development folder set
-    directly in ``/tmp`` still makes the reloader scan all of ``/tmp``. ``fnmatch`` has no negation, so the patterns match every
-    ``dallinger_develop*`` name that differs from this server's own folder
-    at some character, plus every longer name.
+    directly in ``/tmp`` still makes the reloader scan all of ``/tmp``.
+    ``fnmatch`` has no negation, so the patterns match every
+    ``dallinger_develop*`` name that differs from this server's own folder at
+    some character, plus every longer name.
     """
     develop_path = Path(develop_path)
     parent = glob.escape(str(develop_path.parent)) + os.sep
@@ -2385,7 +2420,7 @@ def _check_ssh_deploy_credentials(server, ingress):
 def _forget_tables_defined_in_experiment_directory():
     # We need to instruct SQLAlchemy to forget tables defined in the experiment directory,
     # because otherwise SQLAlchemy will get confused and throw errors when we run subsequent commands
-    # that import the same experiment from other locations (e.g. /tmp/psynet_develop/dallinger_develop).
+    # that import the same experiment from other locations (e.g. the development folder).
 
     from dallinger.db import Base
 
