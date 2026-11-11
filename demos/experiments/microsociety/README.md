@@ -7,8 +7,8 @@ where the others fished and what they caught, and each fish pays a bonus.
 
 The society keeps taking newcomers. A newcomer first reads the society's
 recent catches and the tips left by members who have gone, then joins the
-round in progress. At the end of that round the longest-serving member
-retires, so the society is back to three. A member also stops after
+round in progress. If that round had more than three members, the
+longest-serving member retires at its end. A member also stops after
 `MAX_ROUNDS` rounds. Members who retire or reach the cap leave a tip for
 those who come after them. This lets you study whether knowledge of the
 good spots survives the turnover of the people who found them.
@@ -32,10 +32,15 @@ the society, and the end of the timeline shows the page for it.
 |---|---|---|
 | `retired` | A newcomer played a round with the member, who was the longest-serving. | Leaves a tip. |
 | `played_max_rounds` | The member played `MAX_ROUNDS` rounds. | Leaves a tip. |
-| `late` | The member returned the study or closed the page, and so missed the end of a round (`LATE_AFTER`). | Earns nothing for that round; the others carry on. |
+| `late` | The member was inactive for longer than `LATE_AFTER`, for example by closing the page, and missed the end of a round. | Earns nothing for that round; the others carry on. Sees the page if they come back. |
+| `left_experiment` | The member returned the study or was failed. | Sees no page; the others carry on. |
 | `group_dissolved` | One member was left, and no newcomer joined within `TOP_UP_WAIT`. | Told the society ended. |
 | `removed` | The experimenter removed the member on the dashboard. | Told they were removed. |
 | `no_group_formed` | No society formed or had room within `GROUPING_WAIT`. | Told no society was found. |
+
+A member who leaves in their last round leaves for that reason and writes
+no tip. The `member` export table takes `left_as` from `life_stage` for
+members who never reached the end of the timeline.
 
 A member who runs out of time in a round stays in the society: they catch
 nothing that round, and the trial's `time_limit_reached` records it.
@@ -44,7 +49,10 @@ A member left alone keeps playing: they wait at the end of their next round
 for up to `TOP_UP_WAIT` seconds for a newcomer to join them. So the society
 only lasts while people keep arriving. With recruitment in bursts, a society
 can dwindle to one member between bursts and end; a later burst then starts
-new societies. Raise `TOP_UP_WAIT` if newcomers arrive slowly.
+new societies. Raise `TOP_UP_WAIT` if newcomers arrive slowly. A society
+takes one newcomer at a time (`max_group_size` is one above its size), so
+when several people arrive together, those beyond the first wait at the
+grouper and may end as `no_group_formed` after `GROUPING_WAIT`.
 
 ## Usage
 

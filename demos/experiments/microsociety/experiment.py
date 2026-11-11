@@ -5,9 +5,9 @@ a noisy number of fish around the spot's hidden average, then everyone sees
 where the others fished and what they caught. Each fish pays ``FISH_VALUE``.
 
 The society takes newcomers for as long as it lasts
-(``join_existing_groups=True``). When a newcomer has played a round, the
-longest-serving member of that round retires, so the society is back to
-three. A member also stops after ``MAX_ROUNDS`` rounds. Before leaving, a
+(``join_existing_groups=True``). When a round had more than three members
+because a newcomer joined it, the longest-serving member retires at its
+end. A member also stops after ``MAX_ROUNDS`` rounds. Before leaving, a
 member who retires or reaches the cap leaves a tip for future members, and a
 newcomer starts by reading the society's recent catches and tips. The
 question is whether what earlier members learned survives their departure.
@@ -26,6 +26,7 @@ and the end of the timeline shows the page for the stored stage. See
 import random
 from typing import List
 
+from dallinger import db
 from dominate import tags
 
 import psynet.experiment
@@ -39,7 +40,13 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl, TextControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, SimpleGrouper, group_seats, leave_group
+from psynet.sync import (
+    GroupBarrier,
+    SimpleGrouper,
+    SyncGroup,
+    group_seats,
+    leave_group,
+)
 from psynet.timeline import (
     CodeBlock,
     Module,
@@ -53,7 +60,7 @@ from psynet.trial.main import SyncGroupNode, Trial
 
 GROUP = "society"
 SOCIETY_SIZE = 3
-MAX_ROUNDS = 4
+MAX_ROUNDS = 3
 # Average catches of the spots, which members don't see.
 SPOT_MEANS = [2, 4, 3, 9, 1, 5, 6, 3]
 N_SPOTS = len(SPOT_MEANS)
@@ -68,6 +75,7 @@ GROUPING_WAIT = 120
 # the society dissolves.
 TOP_UP_WAIT = 30
 HISTORY_ROUNDS = 3
+TIPS_SHOWN = 3
 
 
 def get_timeline():
@@ -163,13 +171,17 @@ def own_trials(participant: Participant) -> List["FishingTrial"]:
 def life_stage(participant: Participant) -> str:
     """Return ``"playing"`` while the member keeps playing, otherwise why they stopped."""
     trials = own_trials(participant)
+    # Only a member who stayed until their round was scored can retire.
     if trials and trials[-1].var.get("retires"):
         return "retired"
+    # Checked before the round cap, so a member who leaves in their last
+    # round leaves for that reason and writes no tip.
+    if GROUP not in participant.active_sync_groups:
+        # "late", "group_dissolved", "removed", "left_experiment" or
+        # "no_group_formed".
+        return participant.sync_group_removal_reason(GROUP)
     if len(trials) >= MAX_ROUNDS:
         return "played_max_rounds"
-    if GROUP not in participant.active_sync_groups:
-        # "late", "group_dissolved", "removed" or "no_group_formed".
-        return participant.sync_group_removal_reason(GROUP)
     # A member left alone plays on: the round's barrier waits up to
     # TOP_UP_WAIT for a newcomer, then dissolves the society.
     return "playing"
@@ -181,10 +193,14 @@ def remember_why_they_left(participant: Participant):
 
 def history_page(participant: Participant):
     """Show a newcomer the society's latest rounds and the tips of members who have left."""
-    society = participant.active_sync_groups[GROUP]
+    # Read from the stored ID, because the newcomer may have left the
+    # society while on this page, which is made again when they submit it.
+    society = db.session.get(SyncGroup, participant.var.society_id)
     rounds = society.rounds("fishing")
     scored = [node for node in rounds if node.var.has("catches")]
-    tips = [t.var.tip for node in rounds for t in node.all_trials if t.var.has("tip")]
+    tips = [t.var.tip for node in rounds for t in node.all_trials if t.var.has("tip")][
+        -TIPS_SHOWN:
+    ]
     content = tags.div()
     with content:
         tags.p("Welcome to the society.")
@@ -318,7 +334,9 @@ def tip_page(participant: Participant):
 
 def save_tip(participant: Participant):
     """Store the tip on the member's last trial, where newcomers' history pages find it."""
-    if participant.var.left_as in ("retired", "played_max_rounds"):
+    if participant.var.left_as in ("retired", "played_max_rounds") and (
+        participant.answer.strip()
+    ):
         own_trials(participant)[-1].var.tip = participant.answer
 
 
@@ -381,8 +399,10 @@ class Exp(psynet.experiment.Experiment):
                 {
                     "participant_id": p.id,
                     "society_id": p.var.get("society_id"),
-                    # A stage of life_stage.
-                    "left_as": p.var.get("left_as"),
+                    # A stage of life_stage; for a member who never reached
+                    # the end of the timeline, their stage now, such as
+                    # "left_experiment", or "playing" while they're away.
+                    "left_as": p.var.get("left_as") or life_stage(p),
                     "rounds_played": len(own_trials(p)),
                     "tip": next(
                         (t.var.tip for t in own_trials(p) if t.var.has("tip")), None
@@ -392,11 +412,11 @@ class Exp(psynet.experiment.Experiment):
             ],
         }
 
-    test_n_bots = 5
+    test_n_bots = 6
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        founders, (first_newcomer, second_newcomer) = bots[:3], bots[3:]
+        founders, newcomers = bots[:3], bots[3:]
         for bot in founders:
             bot.take_page()
         advance_past_wait_pages(founders)
@@ -405,38 +425,47 @@ class Exp(psynet.experiment.Experiment):
 
         # A newcomer joins the society, reads its history and plays the
         # round in progress, so the longest-serving founder retires.
-        first_newcomer.take_page()
-        assert "Welcome to the society" in first_newcomer.current_page_text
-        assert "Round 1: spot 4" in first_newcomer.current_page_text
-        first_newcomer.take_page()
-        _play([*founders, first_newcomer], [4, 4, 6, 4])
+        newcomers[0].take_page()
+        assert "Welcome to the society" in newcomers[0].current_page_text
+        assert "Round 1: spot 4" in newcomers[0].current_page_text
+        newcomers[0].take_page()
+        _play([*founders, newcomers[0]], [4, 4, 6, 4])
         (retiree,) = [
             bot for bot in founders if "your last round" in bot.current_page_text
         ]
-        assert "your last round" not in first_newcomer.current_page_text
+        assert "your last round" not in newcomers[0].current_page_text
         retiree.take_page()
         assert retiree.current_page_label == "tip", retiree.current_page_label
         retiree.take_page(response="Spot 4 is reliable.")
         assert retiree.current_page_text.startswith("You caught ")
 
-        # A founder goes quiet, so the round barrier removes them as late.
-        stayers = [bot for bot in founders if bot is not retiree]
-        _see_results([*stayers, first_newcomer])
-        quiet = stayers[1]
-        society = [stayers[0], first_newcomer]
+        # A founder goes quiet in their last round, so the round barrier
+        # removes them as late, and they leave no tip.
+        stayer, quiet = [bot for bot in founders if bot is not retiree]
+        _see_results([stayer, quiet, newcomers[0]])
+        society = [stayer, newcomers[0]]
         for bot in society:
             bot.take_page(response=4)
         make_late_now(society, "round_finished")
         quiet.take_page(response=4)
         assert "You were away for too long" in quiet.current_page_text
-
-        # A second newcomer reads the retiree's tip.
         _see_results(society)
-        second_newcomer.take_page()
-        assert "Spot 4 is reliable." in second_newcomer.current_page_text
-        second_newcomer.take_page()
-        society.append(second_newcomer)
-        _play(society, [4, 4, 4])
+        assert stayer.current_page_label == "tip", stayer.current_page_label
+        stayer.take_page(response="Spot 7 is poor.")
+
+        # The next newcomer reads both tips and joins; the one after goes
+        # quiet on the history page and is removed as late.
+        for bot in newcomers[1:]:
+            bot.take_page()
+            assert "Spot 4 is reliable." in bot.current_page_text
+            assert "Spot 7 is poor." in bot.current_page_text
+        newcomers[1].take_page()
+        society = newcomers[:2]
+        for bot in society:
+            bot.take_page(response=4)
+        make_late_now(society, "round_finished")
+        newcomers[2].take_page()
+        assert "You were away for too long" in newcomers[2].current_page_text
         run_bots_to_completion(bots)
 
         data = self.get_basic_data()
@@ -447,18 +476,23 @@ class Exp(psynet.experiment.Experiment):
             for r in data["member_round"]
             if r["outcome"] != "stayed"
         ]
+        # The second newcomer was left alone, and nobody came to join them.
         assert left_rounds == [
             (quiet.id, "late"),
-            (second_newcomer.id, "group_dissolved"),
+            (newcomers[1].id, "group_dissolved"),
         ], left_rounds
         left_as = {m["participant_id"]: m["left_as"] for m in data["member"]}
-        assert left_as[retiree.id] == "retired", left_as
-        assert left_as[quiet.id] == "late", left_as
-        assert left_as[stayers[0].id] == "played_max_rounds", left_as
-        # The second newcomer was left alone, and nobody came to join them.
-        assert left_as[second_newcomer.id] == "group_dissolved", left_as
+        assert left_as == {
+            retiree.id: "retired",
+            stayer.id: "played_max_rounds",
+            quiet.id: "late",
+            newcomers[0].id: "played_max_rounds",
+            newcomers[1].id: "group_dissolved",
+            newcomers[2].id: "late",
+        }, left_as
         tips = {m["participant_id"]: m["tip"] for m in data["member"]}
         assert tips[retiree.id] == "Spot 4 is reliable.", tips
+        assert tips[quiet.id] is None, tips
 
 
 def _play(bots, spots):
