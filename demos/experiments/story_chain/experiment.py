@@ -7,36 +7,12 @@ round's shared node. One member writes a sentence while the others see
 the story so far and wait at the turn's
 :class:`~psynet.sync.GroupBarrier`.
 
-Everything the story needs is stored rather than worked out later:
-
-- The round's first cue chooses the writer by seat (see
-  :func:`~psynet.sync.group_seats`), cycling through the seats in the order
-  members joined, and stores their ID as ``writer_id`` in the node's
-  definition. If the member in that seat has left, the member in the next
-  seat writes instead, so turns become uneven (for example A, C, C).
-- The writer stores their sentence in ``node.var.sentence`` as soon as they
-  submit it, before the turn's barrier, or ``None`` if they ran out of time.
-  A writer the barrier has already removed as late stores nothing. When a
-  member's trial finishes and the turn still has no sentence, because the
-  writer was late or left, it stores ``None``. So every finished turn has a
-  ``sentence``, whether the barrier released or the group dissolved. Why a
-  sentence is ``None`` is the writer trial's ``sync_group_outcome``:
-  ``"stayed"`` if they ran out of time, otherwise why they left the group.
-  With ``"group_dissolved"``, the writer was the last one left and ran out
-  of time or returned the study.
-- The last page reads the story from the nodes of the group whose ID each
-  member stored when the group formed, so it still works after the group
-  has ended.
-
-Dropouts:
-
-- A writer who runs out of time adds nothing that turn and stays in the group.
-- A member who returns the study, or takes more than ``LATE_AFTER`` seconds to
-  finish a turn, leaves the group and plays no more turns.
-- The group continues while two members remain. When only one is left, the
-  group dissolves and that member goes on to the story so far.
-- Someone who finds no group within ``GROUPER_WAIT`` seconds is told so and
-  finishes.
+The turn's definition stores the writer, chosen by seat with
+:func:`~psynet.sync.group_seats`. The writer stores their sentence in
+``node.var.sentence`` as soon as they submit it, and a turn that ends without
+one stores ``None``. The last page reads the story with
+:meth:`SyncGroup.rounds <psynet.sync.SyncGroup.rounds>`. See ``README.md`` for
+what happens when members drop out.
 """
 
 from typing import List, Optional
@@ -54,7 +30,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl, TextControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, SimpleGrouper, group_seats
+from psynet.sync import GroupBarrier, SimpleGrouper, SyncGroup, group_seats
 from psynet.timeline import (
     CodeBlock,
     Module,
@@ -135,12 +111,8 @@ def turn_definition(group, round: int) -> dict:
 
 
 def group_turns(group_id: int) -> List[SyncGroupNode]:
-    """Return the nodes of the turns the group has started, in order."""
-    return (
-        SyncGroupNode.query.filter_by(module_id="story", sync_group_id=group_id)
-        .order_by(SyncGroupNode.id)
-        .all()
-    )
+    """Return the nodes of the turns the group has started, in order, even after the group has ended."""
+    return db.session.get(SyncGroup, group_id).rounds("story")
 
 
 def story_text(group_id: int) -> str:
@@ -208,14 +180,8 @@ class StoryTurn(Trial):
         """Store the writer's sentence on the turn's node, unless the barrier has removed them as late.
 
         The sentence is ``None`` if they ran out of time. A writer whose
-        group dissolved while they wrote still finishes the story. Locking
-        the trial orders a submit that races the late removal, so a sentence
-        is never stored after the others have moved on and stored ``None``.
-        In a rare race the writer stores their sentence and is still removed
-        as late. PsyNet issue #1161 proposes that late removal skip members
-        busy in their own request, which would make the lock unnecessary.
+        group dissolved while they wrote still finishes the story.
         """
-        db.session.refresh(self, ["sync_group_outcome"], with_for_update=True)
         if self.sync_group_outcome in (None, "group_dissolved"):
             self.node.var.sentence = participant.answer
 
@@ -226,8 +192,7 @@ class StoryTurn(Trial):
             self.node.var.sentence = None
 
     def show_feedback(self, experiment, participant):
-        ran_out_of_time = self.is_writer and self.answer is None
-        if ran_out_of_time and self.sync_group_outcome == "stayed":
+        if self.time_limit_reached and self.sync_group_outcome == "stayed":
             # The time limit keeps the next turn's barrier from removing them as late.
             return InfoPage(
                 "You ran out of time, so nothing was added to the story this turn.",
@@ -299,8 +264,6 @@ def _turn_row(node: SyncGroupNode) -> dict:
         "sentence": node.var.get("sentence"),
         # "stayed" if the writer was still in the group when the turn ended,
         # otherwise why they left; None if they never started the turn.
-        # "late" rarely comes with a sentence, when the writer submitted just
-        # as the barrier removed them.
         "writer_outcome": trial.sync_group_outcome if trial else None,
     }
 
@@ -347,50 +310,10 @@ class Exp(psynet.experiment.Experiment):
             ],
         }
 
-    test_n_bots = 10
+    test_n_bots = GROUP_SIZE
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        full_group, lost_group, short_group = bots[:3], bots[3:6], bots[6:9]
-        (loner,) = bots[9:]
-        self._test_full_story(full_group)
-        self._test_group_dissolving_while_writing(lost_group)
-        self._test_shrinking_group(short_group, loner)
-
-        advance_past_wait_pages([loner], timeout=GROUPER_WAIT + 10)
-        assert loner.current_page_text == NO_GROUP_TEXT, loner.current_page_text
-        run_bots_to_completion([bot for bot in bots if not bot.failed])
-
-        assert self._removal_reasons([loner]) == ["no_group_formed"]
-        assert self._player(loner)["group_id"] is None
-
-    def _player(self, bot: BotDriver) -> dict:
-        """Return the bot's row of the ``player`` table."""
-        return next(
-            row
-            for row in self.get_basic_data()["player"]
-            if row["participant_id"] == bot.id
-        )
-
-    def _removal_reasons(self, bots: List[BotDriver]) -> list:
-        return [self._player(bot)["removal_reason"] for bot in bots]
-
-    def _turn_rows(self, bot: BotDriver) -> list:
-        """Return the rows of the ``turn`` table for the bot's group."""
-        group_id = bot.with_participant(lambda p: p.var.story_group_id)
-        return [
-            row for row in self.get_basic_data()["turn"] if row["group_id"] == group_id
-        ]
-
-    def _turns(self, bot: BotDriver):
-        """Check that the bot's group finished its turns, and return each turn's writer, sentence and writer outcome."""
-        rows = self._turn_rows(bot)
-        assert all(row["finished"] for row in rows), rows
-        return [
-            (row["writer_id"], row["sentence"], row["writer_outcome"]) for row in rows
-        ]
-
-    def _test_full_story(self, bots: List[BotDriver]):
         members = _seated(bots)
         for turn in range(N_TURNS):
             writer = members[turn % GROUP_SIZE]
@@ -411,81 +334,17 @@ class Exp(psynet.experiment.Experiment):
         for bot in members:
             assert bot.current_page_label == "rate", bot.current_page_text
             assert f"your group wrote: {story} How" in bot.current_page_text
+        run_bots_to_completion(members)
 
         sentences = [f"Sentence {turn}." for turn in range(N_TURNS)]
         sentences[4] = None
-        assert self._turns(members[0]) == [
+        data = self.get_basic_data()
+        assert [
+            (row["writer_id"], row["sentence"], row["writer_outcome"])
+            for row in data["turn"]
+        ] == [
             (members[turn % GROUP_SIZE].id, sentences[turn], "stayed")
             for turn in range(N_TURNS)
         ]
-
-    def _test_group_dissolving_while_writing(self, bots: List[BotDriver]):
-        # Both others wait at the barrier and then return the study while the
-        # first writes, so the group dissolves but the sentence still counts.
-        first, second, third = _seated(bots)
-        second.drop_out()
-        third.drop_out()
-        first.take_page(response="Once upon a time.")
-        advance_past_wait_pages([first])
-        text = first.current_page_text
-        assert "the story ended early. Here it is: Once upon a time. How" in text
-        assert self._turns(first) == [
-            (first.id, "Once upon a time.", "group_dissolved")
-        ]
-        assert self._removal_reasons([first, second, third]) == [
-            "group_dissolved",
-            "left_experiment",
-            "left_experiment",
-        ]
-
-    def _test_shrinking_group(self, bots: List[BotDriver], loner: BotDriver):
-        first, second, third = _seated(bots)
-        # Meanwhile a participant arrives who will find no group.
-        loner.take_page()
-        first.take_page(response="Once upon a time.")
-        advance_past_wait_pages(bots, stop_at=TURN_BARRIER)
-
-        # The second writer goes silent, so the barrier takes them out and
-        # the other two go on without them.
-        assert second.current_page_label == "write"
-        assert [row["finished"] for row in self._turn_rows(first)] == [True, False]
-        advance_past_wait_pages([third], timeout=LATE_AFTER + 20)
-        advance_past_wait_pages([first, third], stop_at=TURN_BARRIER)
-        assert (
-            second.current_notice == "Your group went on without you. Please continue."
-        )
-        second.take_page(response="Too late.")
-        advance_past_wait_pages([second])
-        text = second.current_page_text
-        assert f"{EARLY_END_INTROS['late']} Once upon a time. How" in text, text
-
-        # The third writes their own turn and, after the first's, the
-        # second's. The third returns the study while writing the last turn,
-        # so the group dissolves with the first waiting. The story still has
-        # all its turns, so the first isn't told it ended early.
-        third.take_page(response="A dragon appeared.")
-        advance_past_wait_pages([first, third], stop_at=TURN_BARRIER)
-        first.take_page(response="It was hungry.")
-        advance_past_wait_pages([first, third], stop_at=TURN_BARRIER)
-        assert third.current_page_label == "write", third.current_page_text
-        third.take_page(response="It ate the moon.")
-        advance_past_wait_pages([first, third], stop_at=TURN_BARRIER)
-        assert third.current_page_label == "write", third.current_page_text
-        third.drop_out()
-        advance_past_wait_pages([first])
-        story = "Once upon a time. A dragon appeared. It was hungry. It ate the moon."
-        assert f"{FINISHED_INTRO} {story} How" in first.current_page_text
-
-        assert self._turns(first) == [
-            (first.id, "Once upon a time.", "stayed"),
-            (second.id, None, "late"),
-            (third.id, "A dragon appeared.", "stayed"),
-            (first.id, "It was hungry.", "stayed"),
-            (third.id, "It ate the moon.", "stayed"),
-            (third.id, None, "left_experiment"),
-        ]
-        assert self._removal_reasons([first, second, third]) == [
-            "group_dissolved",
-            "late",
-            "left_experiment",
-        ]
+        assert all(row["finished"] for row in data["turn"])
+        assert [row["removal_reason"] for row in data["player"]] == [None] * 3

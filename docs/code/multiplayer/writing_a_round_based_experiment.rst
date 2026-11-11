@@ -392,14 +392,8 @@ barrier closes the round:
 The sentence is stored in the writer's own request, so it is there before
 the barrier lets the others go on, and it is kept if the group dissolves
 while the writer is still writing. A writer the barrier has already removed
-for being late stores nothing. Locking their trial first orders a submit
-that races the removal, so a sentence is never stored after the others have
-moved on and stored ``None``. In a rare race the writer still stores their
-sentence and is then removed as late, so ``"late"`` can come with a
-sentence. `PsyNet issue #1161
-<https://gitlab.com/PsyNetDev/PsyNet/-/issues/1161>`__ proposes that late
-removal skip members busy in their own request, which would make the lock
-unnecessary:
+for being late stores nothing. The barrier never removes a member while
+their own request is in progress, so the check needs no lock:
 
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
    :pyobject: StoryTurn.save_sentence
@@ -422,9 +416,10 @@ chosen writer leaves between the turn's first cue and their own, they have
 no trial for the turn at all, and the export's ``writer_outcome`` is
 ``None``. The export has one row per turn, from the nodes and the writers'
 trials, and its ``finished`` column tells a turn that stored ``None`` from
-one that never finished. Each member stores their group's ID when the group forms, so the
-last page can read the story from the group's nodes even after the group
-has ended.
+one that never finished. Each member stores their group's ID when the
+group forms, so the last page can read the story with
+:meth:`SyncGroup.rounds("story") <psynet.sync.SyncGroup.rounds>` even after
+the group has ended.
 
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
 example to pair players by their earlier answers, and ``assign_roles``
