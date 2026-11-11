@@ -5,22 +5,23 @@ a noisy number of fish around the spot's hidden average, then everyone sees
 where the others fished and what they caught. Each fish pays ``FISH_VALUE``.
 
 The society takes newcomers for as long as it lasts
-(``join_existing_groups=True``). When a round had more than three members
-because a newcomer joined it, the longest-serving member retires at its
-end. A member also stops after ``MAX_ROUNDS`` rounds. Before leaving, a
-member who retires or reaches the cap leaves a tip for future members, and a
-newcomer starts by reading the society's recent catches and tips. The
-question is whether what earlier members learned survives their departure.
+(``join_existing_groups=True``). A newcomer is a pending member
+(``admit_newcomers="at_admission_point"``) until the start of the next
+round, a ``GroupBarrier(admission_point=True)`` that admits them and shows
+them the society's recent catches and tips (``newcomer_page``). When a round
+had more than three members because a newcomer joined it, the
+longest-serving member retires at its end. A member also stops after
+``MAX_ROUNDS`` rounds. Before leaving, a member who retires or reaches the
+cap leaves a tip for future members. The question is whether what earlier
+members learned survives their departure.
 
-Each round is one cued ``FishingTrial`` per member. The rounds loop cues
-without ``round=``, so a newcomer's cue joins the round in progress, or
-starts the next one, which the others then join. Each round ends at a single
-``GroupBarrier`` in ``show_trial``, whose release scores the round, so a
-newcomer never waits at a barrier the others have passed. Members are
-ranked by when they joined, which ``group_seats`` records. ``life_stage``
-names every way a membership ends; the loop runs while it is ``"playing"``,
-and the end of the timeline shows the page for the stored stage. See
-``README.md`` for the failure cases.
+Each round is one cued ``FishingTrial`` per member, after the round-start
+barrier, so every member of a round starts it together. Its
+``GroupBarrier`` in ``show_trial`` ends the round, and its release scores
+it. Members are ranked by when they were admitted, which ``group_seats``
+records. ``life_stage`` names every way a membership ends; the loop runs
+while it is ``"playing"``, and the end of the timeline shows the page for
+the stored stage. See ``README.md`` for the failure cases.
 """
 
 import json
@@ -68,9 +69,12 @@ RESULTS_SECONDS = 10
 # Covers a newcomer reading the society's history before their first round.
 LATE_AFTER = 60
 GROUPING_WAIT = 120
-# How long a lone member waits at the end of a round for a newcomer, before
+# How long a lone member waits at the start of a round for a newcomer, before
 # the society dissolves.
 TOP_UP_WAIT = 30
+# How long a newcomer waits for the next round to start before being turned
+# away; covers a round played by members who take their full time.
+NEWCOMER_MAX_WAIT = LATE_AFTER + DECISION_SECONDS + RESULTS_SECONDS
 HISTORY_ROUNDS = 3
 TIPS_SHOWN = 3
 
@@ -92,23 +96,34 @@ def get_timeline():
             max_group_size=SOCIETY_SIZE + 1,
             quorum=2,
             join_existing_groups=True,
+            admit_newcomers="at_admission_point",
+            # Two members play a round without waiting for a third.
+            target_group_size=2,
             below_quorum="continue_without_group",
             max_wait_time=GROUPING_WAIT,
             max_wait_action="continue_without_group",
             top_up_wait=TOP_UP_WAIT,
             waiting_message="Waiting for a society to join…",
         ),
-        conditional(
-            "newcomer",
-            is_newcomer,
-            PageMaker(history_page, time_estimate=20),
-        ),
         Module(
             "fishing",
             while_loop(
                 "rounds",
                 lambda participant: life_stage(participant) == "playing",
-                FishingTrial.cue(),
+                join(
+                    GroupBarrier(
+                        id_="round_starts",
+                        group_type=GROUP,
+                        waiting_message="Waiting for the next round to start…",
+                        late_after=LATE_AFTER,
+                        late_action="leave_group",
+                        admission_point=True,
+                        newcomer_max_wait=NEWCOMER_MAX_WAIT,
+                        newcomer_page=PageMaker(history_page, time_estimate=20),
+                    ),
+                    # The society may have dissolved at the barrier.
+                    conditional("in_society", in_society, FishingTrial.cue()),
+                ),
                 expected_repetitions=MAX_ROUNDS,
             ),
         ),
@@ -136,16 +151,19 @@ def get_timeline():
                 "no_group_formed": InfoPage(
                     "We couldn't find a society for you to join.", time_estimate=5
                 ),
+                "not_admitted": InfoPage(
+                    "The society you joined couldn't start a round with you, "
+                    "so you didn't play.",
+                    time_estimate=5,
+                ),
             },
         ),
         PageMaker(final_page, time_estimate=5),
     )
 
 
-def is_newcomer(participant: Participant) -> bool:
-    """Return whether the participant joined a society after it formed."""
-    society = participant.active_sync_groups.get(GROUP)
-    return society is not None and society.is_newcomer(participant)
+def in_society(participant: Participant) -> bool:
+    return participant.in_sync_group(GROUP)
 
 
 def own_trials(participant: Participant) -> List["FishingTrial"]:
@@ -163,8 +181,8 @@ def life_stage(participant: Participant) -> Optional[str]:
     if last is not None and last.var.get("leaves_as"):
         return last.var.leaves_as
     if GROUP not in participant.active_sync_groups:
-        # "late", "group_dissolved", "removed_by_experimenter", "left_experiment" or
-        # "no_group_formed".
+        # "late", "group_dissolved", "removed_by_experimenter", "left_experiment",
+        # "no_group_formed" or "not_admitted".
         return participant.sync_group_removal_reason(GROUP)
     return "playing"
 
@@ -415,7 +433,7 @@ class Exp(psynet.experiment.Experiment):
             ],
         }
 
-    test_n_bots = 6
+    test_n_bots = 7
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
@@ -424,11 +442,13 @@ class Exp(psynet.experiment.Experiment):
             bot.take_page()
         advance_past_wait_pages(founders)
         _play(founders, [4, 7, 1])
-        _see_results(founders)
 
-        # A newcomer joins the society, reads its history and plays the
-        # round in progress, so the longest-serving founder retires.
+        # A newcomer joins while the founders read their results. The next
+        # round's start admits them and shows them the society's history;
+        # they play that round, so the longest-serving founder retires.
         newcomers[0].take_page()
+        assert newcomers[0].is_waiting
+        _start_round(founders, newcomers[0])
         assert "Welcome to the society" in newcomers[0].current_page_text
         assert "Round 1: spot 4" in newcomers[0].current_page_text
         newcomers[0].take_page()
@@ -446,8 +466,8 @@ class Exp(psynet.experiment.Experiment):
         # The next newcomer reads the tip and joins, so the next
         # longest-serving founder retires: one member leaves per newcomer.
         others = [bot for bot in founders if bot is not retiree]
-        _see_results([*others, newcomers[0]])
         newcomers[1].take_page()
+        _start_round([*others, newcomers[0]], newcomers[1])
         assert "Spot 4 is reliable." in newcomers[1].current_page_text
         newcomers[1].take_page()
         _play([*others, newcomers[0], newcomers[1]], [7, 4, 4, 4])
@@ -462,7 +482,7 @@ class Exp(psynet.experiment.Experiment):
         # late, and they leave no tip.
         (quiet,) = [bot for bot in others if bot is not retiree2]
         society = newcomers[:2]
-        _see_results([quiet, *society])
+        _start_round([quiet, *society])
         for bot in society:
             bot.take_page(response=4)
         make_late_now(society, "round_finished")
@@ -472,17 +492,28 @@ class Exp(psynet.experiment.Experiment):
         # The next newcomer reads both tips, then goes quiet on the history
         # page and is removed as late.
         newcomers[2].take_page()
+        _start_round(society, newcomers[2])
         assert "Spot 4 is reliable." in newcomers[2].current_page_text
         assert "Spot 7 is poor." in newcomers[2].current_page_text
-        _see_results(society)
         for bot in society:
             bot.take_page(response=4)
         make_late_now(society, "round_finished")
         newcomers[2].take_page()
         assert "You were away for too long" in newcomers[2].current_page_text
-        # The first newcomer reaches MAX_ROUNDS and leaves; the second, alone,
-        # waits for a newcomer until the society dissolves.
-        run_bots_to_completion(bots, timeout=TOP_UP_WAIT + 60)
+
+        # A newcomer waits for the next round, but the first newcomer goes
+        # quiet, so the society is left with one member and dissolves: the
+        # other keeps their catch, and the waiting newcomer is turned away.
+        _start_round(society)
+        newcomers[3].take_page()
+        assert newcomers[3].is_waiting
+        society[1].take_page(response=4)
+        make_late_now([society[1]], "round_finished")
+        advance_past_wait_pages([newcomers[3]])
+        assert "couldn't start a round with you" in newcomers[3].current_page_text
+        society[0].take_page(response=4)
+        assert "You were away for too long" in society[0].current_page_text
+        run_bots_to_completion(bots)
 
         # Through JSON, as the dashboard and export read it.
         data = json.loads(json.dumps(self.get_basic_data()))
@@ -492,23 +523,25 @@ class Exp(psynet.experiment.Experiment):
             retiree.id,
             retiree2.id,
         ], rounds
-        left_rounds = [
+        left_rounds = {
             (r["participant_id"], r["outcome"])
             for r in data["member_round"]
             if r["outcome"] != "stayed"
-        ]
-        assert left_rounds == [
+        }
+        assert left_rounds == {
             (quiet.id, "late"),
+            (newcomers[0].id, "late"),
             (newcomers[1].id, "group_dissolved"),
-        ], left_rounds
+        }, left_rounds
         left_as = {m["participant_id"]: m["left_as"] for m in data["member"]}
         assert left_as == {
             retiree.id: "retired",
             retiree2.id: "retired",
             quiet.id: "late",
-            newcomers[0].id: "played_max_rounds",
+            newcomers[0].id: "late",
             newcomers[1].id: "group_dissolved",
             newcomers[2].id: "late",
+            newcomers[3].id: "not_admitted",
         }, left_as
         tips = {m["participant_id"]: m["tip"] for m in data["member"]}
         assert tips[retiree.id] == "Spot 4 is reliable.", tips
@@ -535,6 +568,8 @@ def _play(bots, spots):
     advance_past_wait_pages(bots)
 
 
-def _see_results(bots):
+def _start_round(bots, newcomer=None):
+    """Take the bots' results pages, then advance them and any ``newcomer`` past the round's start."""
     for bot in bots:
         bot.take_page()
+    advance_past_wait_pages([*bots, newcomer] if newcomer else bots)

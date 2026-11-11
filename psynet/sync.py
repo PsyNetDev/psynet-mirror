@@ -3112,8 +3112,10 @@ class SimpleGrouper(Grouper):
         With ``admit_newcomers="at_admission_point"``, which requires it, how
         many members the group tries to have: an admission point that would
         leave it with fewer admitted members waits up to ``top_up_wait`` for
-        newcomers, then carries on with whoever is there as long as they meet
-        the ``quorum``. Must be between ``quorum`` and ``max_group_size``.
+        newcomers (without a limit if ``top_up_wait`` is ``None``), then
+        carries on with whoever is there as long as they meet the ``quorum``.
+        Must be between ``quorum`` and ``max_group_size``; set it to the
+        ``quorum`` to carry on without waiting.
 
     max_groups
         Optional cap on how many of this grouper's groups may be active at

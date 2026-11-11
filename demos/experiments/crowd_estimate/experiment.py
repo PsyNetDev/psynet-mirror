@@ -70,6 +70,8 @@ def get_timeline():
             quorum=QUORUM,
             start_short_after=START_SHORT_AFTER,
             join_existing_groups=True,
+            # A latecomer plays from the next question; see sync_group_optional.
+            admit_newcomers="on_join",
             top_up_wait=TOP_UP_WAIT,
             below_quorum="continue_without_group",
             max_wait_time=LOBBY_WAIT,
@@ -123,6 +125,8 @@ LEFT_BEFORE_MEDIAN_TEXTS = {
 
 class EstimateTrial(Trial):
     sync_group_type = GROUP
+    # A player without a group answers on their own.
+    sync_group_optional = True
     # An estimate and a revised estimate; alone, only the estimate.
     time_estimate = 2 * ANSWER_SECONDS
     # The trial's answer holds both the estimate and the revised estimate.

@@ -15,7 +15,11 @@ Good reference for nesting a `Regrouper` inside persistent cohorts made by a
 `SimpleGrouper` with `start_short_after` and top-ups, with re-pairing that
 avoids last round's partner and alternates roles (short `form_groups` and
 `assign_roles` overrides in `pairing.py`) and `stop_top_ups_after_rounds`,
-which turns latecomers away once the cohort's second round starts. Its bot
+which turns latecomers away once the cohort's second round starts. With
+`admit_newcomers="at_admission_point"`, a latecomer is a pending member of
+the cohort until a split admits and pairs them, so nobody waits for them
+before that; one still pending when top-ups stop is told that the game
+closed to new players. Its bot
 test uses `regroup_now` to start a round at the deadline without waiting for
 it.
 Each round is one cued trial per player (`Trial.cue(...)` with

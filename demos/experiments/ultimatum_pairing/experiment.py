@@ -80,6 +80,10 @@ def get_timeline():
             quorum=MIN_COHORT_SIZE,
             start_short_after=SHORT_START_SECONDS,
             join_existing_groups=True,
+            # A latecomer joins at the next round's pairing, which admits
+            # them, and isn't counted or waited for until then.
+            admit_newcomers="at_admission_point",
+            target_group_size=MIN_COHORT_SIZE,
             waiting_message=lobby_message,
             waiting_screen=forming_cohort,
             max_wait_time=300,
@@ -124,6 +128,11 @@ def get_timeline():
                 ),
                 "removed_by_experimenter": InfoPage(
                     "You were removed from the game.", time_estimate=5
+                ),
+                "not_admitted": InfoPage(
+                    "Your group's game closed to new players before the next "
+                    "round, so there is no game for you.",
+                    time_estimate=5,
                 ),
                 "too_few_players": InfoPage(
                     "Not enough players stayed to keep playing, "
@@ -173,9 +182,10 @@ def game_over_reason(participant):
     if pairing.rounds_sat_out(participant) >= MAX_SIT_OUTS:
         return "sat_out_too_often"
     # Being late takes a player out of their pair and their cohort; the
-    # experimenter can remove them from the cohort on the dashboard.
+    # experimenter can remove them from the cohort on the dashboard; and a
+    # latecomer is turned away if the cohort closes before pairing them.
     reason = participant.sync_group_removal_reason(COHORT)
-    if reason in ("late", "removed_by_experimenter"):
+    if reason in ("late", "removed_by_experimenter", "not_admitted"):
         return reason
     cohort = cohort_of(participant)
     if cohort is None or cohort.n_active_participants < 2:

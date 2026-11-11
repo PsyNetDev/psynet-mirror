@@ -101,6 +101,7 @@ class Exp(psynet.experiment.Experiment):
                 max_group_size=None,
                 quorum=QUORUM,
                 join_existing_groups=True,
+                admit_newcomers="on_join",
                 waiting_logic=filler,
                 expected_wait=10 * AnimalTrial.time_estimate,
                 max_wait_time=120,
