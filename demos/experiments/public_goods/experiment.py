@@ -132,7 +132,9 @@ class ContributionTrial(Trial):
         )
 
     @classmethod
-    def score_round(cls, trials: List["ContributionTrial"], node: SyncGroupNode):
+    def score_round(
+        cls, trials: List["ContributionTrial"], node: SyncGroupNode, left: list
+    ):
         """Share the multiplied pot between the members who played the round."""
         # String keys, because node.var stores JSON. An answer of None means
         # the player ran out of time and put in nothing.
@@ -143,8 +145,9 @@ class ContributionTrial(Trial):
         node.var.pot = pot
         node.var.multiplied_pot = multiplied_pot
         node.var.share = share
-        # The round closes now, so no trials join after this.
-        node.var.n_left = len(node.all_trials) - len(trials)
+        # Members who left since the previous round was scored, including
+        # one who left while reading its results.
+        node.var.n_left = len(left)
         for trial in trials:
             trial.var.payoff = ENDOWMENT - (trial.answer or 0) + share
 
@@ -173,13 +176,8 @@ class ContributionTrial(Trial):
 
     def show_feedback(self, experiment, participant):
         node = self.node
-        n_left = node.var.n_left
-        if n_left == 0:
-            left = ""
-        elif n_left == 1:
-            left = "One player left during the round. "
-        else:
-            left = f"{n_left} players left during the round. "
+        # A group of three plays on with two, so at most one player leaves.
+        left = "One player has left the group. " if node.var.n_left else ""
         if self.answer is None:
             you = "You ran out of time and put in nothing"
         else:
@@ -280,7 +278,8 @@ class Exp(psynet.experiment.Experiment):
                     "round": n.sync_group_round,
                     "team_id": n.sync_group_id,
                     "node_id": n.id,
-                    # Set when the group dissolves during the round.
+                    # Set when the last player finishes the cancelled round,
+                    # so False if they return the study first (issue #1163).
                     "cancelled": n.var.get("cancelled", False),
                     # The rest are None until the round is scored, so in a
                     # cancelled round; a contribution of None means the
@@ -289,6 +288,8 @@ class Exp(psynet.experiment.Experiment):
                     "pot": n.var.get("pot"),
                     "multiplied_pot": n.var.get("multiplied_pot"),
                     "share": n.var.get("share"),
+                    # Players who left since the previous round was scored.
+                    "n_left": n.var.get("n_left"),
                 }
                 for n in teams
             ],
@@ -307,14 +308,14 @@ class Exp(psynet.experiment.Experiment):
         # Per round: the full game's team, the late players' team, whose last
         # round was cancelled, and the quitters' team, cancelled in round 0.
         teams = data["team_round"]
-        assert [(t["round"], t["pot"], t["cancelled"]) for t in teams] == [
-            (0, 18, False),
-            (0, 18, False),
-            (0, None, True),
-            (1, 12, False),
-            (1, 4, False),
-            (2, 12, False),
-            (2, None, True),
+        assert [(t["round"], t["pot"], t["cancelled"], t["n_left"]) for t in teams] == [
+            (0, 18, False, 0),
+            (0, 18, False, 0),
+            (0, None, True, None),
+            (1, 12, False, 0),
+            (1, 4, False, 1),
+            (2, 12, False, 0),
+            (2, None, True, None),
         ], teams
         assert all(
             t["contributions"] is t["multiplied_pot"] is t["share"] is None
@@ -396,7 +397,7 @@ class Exp(psynet.experiment.Experiment):
         assert "You ran out of time, so you put in nothing." in text, text
         advance_past_wait_pages([late_3, stayer], timeout=LATE_AFTER + 15)
         text = stayer.current_page_text
-        assert text.startswith("One player left during the round."), text
+        assert text.startswith("One player has left the group."), text
         assert "shared between 2 players: 3 tokens each" in text, text
         _check_late(late_2, "group", "$0.26")  # 13 tokens, and none for round 2
 
