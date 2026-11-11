@@ -237,6 +237,8 @@ class FishingTrial(Trial):
                     choices=list(range(1, N_SPOTS + 1)),
                     labels=[f"Spot {spot}" for spot in range(1, N_SPOTS + 1)],
                     arrange_vertically=False,
+                    # Four to a row.
+                    style="width: 22%",
                 ),
                 time_limit=DECISION_SECONDS,
                 time_estimate=5,
