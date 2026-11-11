@@ -89,7 +89,8 @@ study.
 
 With ``below_quorum="fail"``, a dissolved group fails Ann
 instead, and a group that still takes newcomers is not dissolved but waits
-at the barrier for one (see :ref:`groups_below_min_size`).
+at the barrier for one, unless it admits newcomers only at admission points
+and ``submitted`` isn't one (see :ref:`groups_below_min_size`).
 
 Checked by ``test_case_a_member_leaves_mid_round`` in
 ``tests/isolated/test_trial_cue_groups.py``, for both group sizes.
@@ -236,7 +237,10 @@ its start, so she waits at ``ready`` while Ann waits for her at
   :class:`~psynet.sync.GroupDivergenceError` and that message.
 
 To avoid this, stop top-ups before the game with ``stop_top_ups=True``
-(see :ref:`sync-lobby-top-ups`), and see :ref:`members at different
+(see :ref:`sync-lobby-top-ups`), or make ``ready`` an admission point with
+``admit_newcomers="at_admission_point"`` (see
+:ref:`sync-admission-points`), so that Cat passes the game's other barriers
+until ``ready`` admits her. See also :ref:`members at different
 barriers <rounds-group-barriers-in-loops>`.
 
 Checked by ``test_a_sweep_reports_members_waiting_for_each_other_at_different_barriers``

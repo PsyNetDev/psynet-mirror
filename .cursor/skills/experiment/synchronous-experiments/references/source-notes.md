@@ -41,8 +41,8 @@ and platform docs when a study is near deployment.
 - Trial makers support `sync_group_type`. When it is set, the leader's ordinary
   node allocation drives the group and followers receive matching trials.
 - Trial-maker synchronization uses internal `GroupBarrier`s namespaced with
-  the trial-maker id (for example `{id}__init_participant` and
-  `{id}__prepare_trial`); `sync_group_max_wait_time` defaults to 45 seconds.
+  the trial-maker id (`{id}__prepare_trial`, which also initializes members
+  and admits pending ones); `sync_group_max_wait_time` defaults to 45 seconds.
 - `wait_while` and `WaitPage` are useful for single-participant waits or
   background readiness, but they do not replace group barriers.
 - `RecruitmentCriterion`, `recruit_mode`, `target_n_participants`, and

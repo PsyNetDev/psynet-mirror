@@ -1952,6 +1952,8 @@ class TrialMaker(Module):
     * :meth:`~psynet.trial.main.TrialMaker.init_participant`
       (optional), a function that is run when the participant begins
       this sequence of trials, intended to initialize the participant's state.
+      With ``sync_group_type``, it runs when the trial preparation first
+      releases the participant with their group, just before their first trial.
       Make sure you call ``super().init_participant`` when overriding this.
 
     * :meth:`~psynet.trial.main.TrialMaker.finalize_trial`

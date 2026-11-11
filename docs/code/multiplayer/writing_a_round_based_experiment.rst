@@ -22,7 +22,10 @@ Forming cohorts
 A :class:`~psynet.sync.SimpleGrouper` forms the cohorts. It starts a cohort
 of four as soon as four players are waiting, or a smaller one after a
 minute (``start_short_after``), and lets latecomers join a cohort that has
-started (``join_existing_groups``; see :class:`~psynet.sync.SimpleGrouper`):
+started (``join_existing_groups``; see :class:`~psynet.sync.SimpleGrouper`).
+A latecomer is a pending member of the cohort until the next split admits
+them (``admit_newcomers="at_admission_point"``; see
+:ref:`sync-admission-points`), so nothing waits for them before that:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: SimpleGrouper(
@@ -32,7 +35,8 @@ started (``join_existing_groups``; see :class:`~psynet.sync.SimpleGrouper`):
 A latecomer who joined after the first rounds would soon have nobody left
 to play with, because the others finish their rounds and leave, so the
 regrouper below closes each cohort to latecomers when its second round
-starts (``stop_top_ups_after_rounds``).
+starts (``stop_top_ups_after_rounds``). A latecomer still waiting for a
+split then is turned away with removal reason ``"not_admitted"``.
 
 Pairing players each round
 --------------------------
@@ -366,9 +370,10 @@ has finished, carries on without a group instead of being failed:
 ``lambda group: {"target": random.choice(TARGETS)}``. It is called once per
 group and round, when the first member's trial creates the node, so the
 whole group plays the same draw. A player who is in no group of that type
-when the trial starts gets an ungrouped trial, with ``sync_group_id`` set to
-``None``; ``show_trial`` can check ``self.sync_group is None`` to give them
-a solo version. The ``crowd_estimate`` demo does this in a fixed group's
+when the trial starts gets an ungrouped trial if the trial class sets
+``sync_group_optional = True``, with ``sync_group_id`` set to ``None``
+(otherwise the cue raises an error); ``show_trial`` can check
+``self.sync_group is None`` to give them a solo version. The ``crowd_estimate`` demo does this in a fixed group's
 loop of questions, cued with ``round=question``, and exports each round's
 ``sync_group_outcome`` for each player.
 

@@ -425,9 +425,9 @@ Groups
 
 `experiments/microsociety <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety>`__
     A fishing microsociety of three whose members are replaced one at a
-    time: a newcomer reads the society's recent catches and the tips of
-    members who have left, joins the round in progress, and the
-    longest-serving member then retires and leaves a tip.
+    time: a newcomer is admitted at the start of the next round, where they
+    read the society's recent catches and the tips of members who have
+    left, and the longest-serving member then retires and leaves a tip.
     :doc:`/code/multiplayer/synchronization`.
 
 `experiments/public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__

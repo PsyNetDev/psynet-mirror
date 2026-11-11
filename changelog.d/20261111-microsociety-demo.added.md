@@ -1,1 +1,1 @@
-Added the `microsociety` demo: a fishing society of three whose members are replaced one at a time. A newcomer reads the society's recent catches and the tips of members who have left, joins the round in progress, and the longest-serving member then retires and leaves a tip.
+Added the `microsociety` demo: a fishing society of three whose members are replaced one at a time. A newcomer is admitted at the start of the next round, where they read the society's recent catches and the tips of members who have left, and the longest-serving member then retires and leaves a tip.

@@ -47,6 +47,25 @@ the grouper has a ``waiting_screen`` (see below).
     them; see `Groups below quorum`_ for how they stop, and for what they
     change when a member drops out.
 
+``admit_newcomers``
+    When a participant who joins an existing group starts taking part in it.
+    Required with ``join_existing_groups=True``; leaving it out warns and
+    uses ``"on_join"``. ``"on_join"`` makes them a member at once, which
+    suits a lobby whose game hasn't started. ``"at_admission_point"`` makes
+    them a *pending member* until the group's next admission point; see
+    :ref:`sync-admission-points`.
+
+``target_group_size``
+    Required with ``admit_newcomers="at_admission_point"``, between
+    ``quorum`` and ``max_group_size``. An admission point that would leave
+    the group with fewer members waits up to ``top_up_wait`` for newcomers
+    (without a limit if ``top_up_wait`` is ``None``). Set it to the
+    ``quorum`` not to wait.
+
+``max_groups`` (default: ``None``)
+    The most groups of this grouper that may be active at once. Once it is
+    reached, participants wait at the grouper for room in an existing group.
+
 ``max_group_size`` (default: ``initial_group_size``)
     The largest size a group can reach through ``join_existing_groups``;
     ``None`` means no limit. Setting it to anything else requires
@@ -749,16 +768,21 @@ as if the leader were taking the trial maker alone, and the other members get
 trials on the same node.
 
 The group starts each run of the trial maker together, also when a loop
-repeats it. The first member initialized, normally the leader, makes the
+repeats it: its trial preparation, a ``GroupBarrier`` before each trial,
+initializes the members it releases who haven't started the run, so the
+trial maker's ``init_participant`` runs there, not when the member enters
+it. The first member initialized, normally the leader, makes the
 run's choices (the participant group and the block order); the others copy
 them. PsyNet stores them, and the group's current block, in the group's
 ``trial_maker_runs`` column, keyed by trial maker id, one entry per run. It
 writes that column under the group's row lock, which custom code must take
 only after any participant rows it locks (see :ref:`sync-group-lock-order`).
-A newcomer
-who joins during a run, or a member promoted to leader, copies the current
-run's choices and block. A member who loops faster than the others waits
-for the whole group to start the next run.
+The trial preparation is an admission point (see
+:ref:`sync-admission-points`): a pending newcomer is admitted there, and
+then copies the current run's choices and block, as does a member promoted
+to leader. Pass ``sync_group_newcomer_max_wait`` to the trial maker when
+its group type admits newcomers at admission points. A member who loops
+faster than the others waits for the whole group to start the next run.
 
 The start of every trial is synchronized; add
 :class:`~psynet.sync.GroupBarrier` elements inside the trial, as in
@@ -859,22 +883,14 @@ tab. A bot test run by ``psynet test local`` then fails with a
 after its bots have finished or failed.
 
 The usual way into this is a member who joins during the game. For a
-fixed group that plays rounds, stop top-ups before the game, with
+fixed group that plays rounds, either stop top-ups before the game, with
 ``stop_top_ups=True`` on a barrier before the first round (see
-:ref:`sync-lobby-top-ups`). Otherwise a newcomer is a member like any
-other, and every barrier waits for them: their first cue joins the open
-round, or, with ``round=``, skips the rounds the group finished without
-them (see :ref:`a fixed group's loop <rounds-fixed-group-loop>`). But they
-go through the pages the group went through before they joined, so a
-barrier outside ``show_trial``, such as ``GroupBarrier("ready", ...)`` at
-the start of each iteration, holds the newcomer while the others wait for
-them in the round's trial.
-
-A barrier in a module where the group cues no rounds, such as one before a
-separate module of rounds, waits for every member too: a newcomer who
-reaches it after the group has gone waits there for members who are
-further on, until the barrier's time-outs remove someone. Stop top-ups before such a
-barrier (see :ref:`sync-newcomers-at-passed-barriers`).
+:ref:`sync-lobby-top-ups`), or admit newcomers only at the start of a round,
+with ``admit_newcomers="at_admission_point"`` (see
+:ref:`sync-admission-points`). With ``"on_join"`` a newcomer is a member
+like any other once they join, and every barrier waits for them, also one
+they reach after the group has gone, such as one before a separate module
+of rounds (see :ref:`sync-newcomers-at-passed-barriers`).
 
 A trial has two round counters. ``sync_group_round`` counts the group's
 rounds, and is ``None`` on a trial played without a group. Use it for what
@@ -913,49 +929,26 @@ value as ``round=``:
     )
 
 Each iteration is then the group's round of that number, whoever cues it
-first, so its definition can come from the loop. A member who joins late
-skips the rounds that the group finished without them: rounds where they
-have no trial and whose barrier in ``show_trial`` has released the group.
-They play the rest. A round's later barriers, such as one after the revise
-page, still wait for a member who skipped it, while that member waits at
-the next round's barrier, so stop top-ups before the game if the rounds
-have more than one barrier (see :ref:`members at different barriers <rounds-group-barriers-in-loops>`). A
-skipped round shows nothing and earns no time credit, but the progress bar moves on
-as if it had been played. A skipped cue leaves ``participant.current_trial``
-as ``None``, so code after the cue in the same iteration that reads the
-trial, such as a page showing ``participant.current_trial.answer``, should
-check for it first:
+first, so its definition can come from the loop. Cueing a round that the
+group finished without the member, one whose barrier in ``show_trial`` has
+released the group while they had no trial on it, raises an error: a
+member who joins during the game should be admitted at the start of a
+round (see :ref:`sync-admission-points`), or top-ups stopped before it.
+Cueing a round in which the member already has a trial of that class, for
+example after leaving and rejoining the group, also raises an error.
 
-.. code-block:: python
-
-    logic=lambda i: join(
-        EstimateTrial.cue({"question": i}, round=i),
-        conditional(
-            "played_round",
-            lambda participant: participant.current_trial is not None,
-            PageMaker(
-                lambda participant: InfoPage(
-                    f"You answered {participant.current_trial.answer}."
-                ),
-                time_estimate=5,
-            ),
-        ),
-    )
-
-A member who leaves the group plays the remaining
-iterations alone, with the same loop values. One who leaves and rejoins
-it skips a cue of a round in which they already have a trial of that
-class, even an open round.
-Rounds are ordered by when
+A cue by a participant who isn't in a group of the trial class's
+``sync_group_type``, for example because they left it, raises an error,
+unless the class sets ``sync_group_optional = True``; its trials are then
+played alone, with the same loop values. Rounds are ordered by when
 the group first plays them, so the loop values needn't increase. Don't
 pass ``round=`` with a
 regrouper: its groups mix players at different loop positions, whose trials
 would be split across rounds. A module whose cues pass ``round=`` runs once
 per participant, because a group's rounds belong to the module id: give
 each run its own module id. Its cues raise an error if the participant has
-run the module before. Cueing a round again after a later one, even one
-the participant skipped, or a trial class again in the same round, also
-raises an error.
+run the module before. Cueing a round again after a later one, or a trial
+class again in the same round, also raises an error.
 
 Classes cued in the same open round share its node and definition: if the
 members cue different classes, such as an offer trial for the proposer and
@@ -967,9 +960,7 @@ one after the other by trials of two classes need ``round=``, because the
 second cue would otherwise start the next round, the player already having
 a trial on the round's node. Pass both cues the same ``round=``, such as
 the loop value in a fixed group's loop. A member with a trial in the round
-joins it even after its barrier has released the group, while a late
-joiner without one skips the whole round, both phases, while the second
-phase's barriers wait for them.
+joins it even after its barrier has released the group.
 
 Custom barriers
 ~~~~~~~~~~~~~~~
@@ -1079,6 +1070,10 @@ that rarer (see `Timeouts`_). A :class:`~psynet.sync.Regrouper` with
      - :meth:`regrouper.sat_out(participant) <psynet.sync.Regrouper.sat_out>`
      - regrouper ``left_over``
      - an odd number of bots
+   * - Never admitted
+     - reason ``"not_admitted"``
+     - ``newcomer_max_wait``, top-ups stopping or the group ending (see :ref:`sync-admission-points`)
+     - a bot that joins while the group plays
 
 With a :class:`~psynet.sync.Regrouper`, a player who stops responding is
 removed from their group by ``late_action="leave_group"`` but stays in the
@@ -1262,9 +1257,12 @@ Two separate settings decide what happens when someone leaves a group:
   - While it accepts newcomers (``join_existing_groups=True``), it is never
     dissolved: its barriers wait for new members to join, until their
     ``max_wait_time``, or without a limit if the barrier sets
-    ``late_after``. If every member leaves, the group closes at the next
-    periodic sync-group check (every few seconds), and later arrivals form a
-    new one.
+    ``late_after``. With ``admit_newcomers="at_admission_point"`` only its
+    admission points wait, because only they can admit a newcomer; its
+    other barriers dissolve it (see :ref:`sync-admission-points`). If every
+    member leaves, and no pending member is waiting to be admitted, the
+    group closes at the next periodic sync-group check (every few seconds),
+    and later arrivals form a new one.
   - Top-ups never stop by themselves: a ``join_criterion`` that returns
     ``False`` only turns that newcomer away, and a group at its
     ``max_group_size`` takes newcomers again once a member leaves. They stop
@@ -1273,7 +1271,8 @@ Two separate settings decide what happens when someone leaves a group:
 
     - :meth:`group.stop_top_ups() <psynet.sync.SimpleSyncGroup.stop_top_ups>`
       stops them at once; a group already below its quorum is then
-      dissolved, however its members left.
+      dissolved, however its members left. Stopping top-ups in any way
+      turns away the group's pending members (``"not_admitted"``).
     - ``stop_top_ups=True`` on a :class:`~psynet.sync.GroupBarrier` stops
       them when the group passes that barrier, for example at the start of
       the game, so nobody joins a game already under way. A group below its
@@ -1474,21 +1473,69 @@ Letting latecomers join during the game
 
 A newcomer goes through the pages the team went through before they joined,
 including the barriers the team has already passed, such as
-``game_starts``. Every barrier waits for every active member, so the
-newcomer waits there for members who are further on, while the team waits
-for the newcomer at its next barrier. With ``late_after``, the newcomer's
-barrier then removes the members who were on time as late.
+``game_starts``. With ``admit_newcomers="on_join"``, every barrier waits
+for every member, so the newcomer waits there for members who are further
+on, while the team waits for the newcomer at its next barrier. With
+``late_after``, the newcomer's barrier then removes the members who were on
+time as late. So with ``"on_join"``, stop top-ups when the game starts,
+with ``stop_top_ups=True`` on the barrier before the first round, as above.
+If teams must keep accepting newcomers during the game, admit them at
+admission points instead.
 
-So stop top-ups when the game starts, with ``stop_top_ups=True`` on the
-barrier before the first round, as above. If teams must keep accepting
-newcomers during the game, put nothing that waits for the team between the
-grouper and the rounds, and end each round at a single barrier in its trial,
-as the ``microsociety`` demo does: a newcomer's cued trial then joins the
-round in progress, and nothing outside the round holds them.
+.. _sync-admission-points:
 
-:meth:`group.is_newcomer(participant) <psynet.sync.SyncGroup.is_newcomer>`
-tells a member who joined after the group formed from the members it formed
-with, for example to show newcomers what the group did before they came.
+Admission points
+^^^^^^^^^^^^^^^^
+
+With ``admit_newcomers="at_admission_point"``, a newcomer who joins an
+existing group is a *pending member* until an *admission point* of the
+group admits them. A pending member holds a seat, so the group's
+``max_group_size`` counts them, but nothing else counts them: not the
+quorum, the barriers, the choice of leader,
+:class:`~psynet.group_prompt.GroupPrompt` or
+:func:`~psynet.sync.group_seats`. The group's other barriers let them
+straight through, and a cue by a pending member raises an error. The
+admission points are:
+
+- a ``GroupBarrier(admission_point=True, newcomer_max_wait=...)``, for
+  example at the start of each round;
+- a synchronized trial maker's trial preparation, before each trial, with
+  the trial maker's ``sync_group_newcomer_max_wait``;
+- a :class:`~psynet.sync.Regrouper` with ``within`` the group type, at each
+  split.
+
+A pending member waits at the admission point with the group's members.
+Its release admits them, in the order they joined, so they pass it with
+the group as members; ``on_release`` gets them as ``admitted``. While
+fewer than the grouper's ``target_group_size`` members and admitted
+newcomers are waiting, an admission point waits up to the grouper's
+``top_up_wait`` for more. ``newcomer_page`` is shown only to the members
+that visit admitted, for example to show them what the group did before
+they came, from ``participant.latest_sync_group(...)``. The ``microsociety``
+demo starts each round this way:
+
+.. literalinclude:: ../../../demos/experiments/microsociety/experiment.py
+   :start-at: GroupBarrier(
+   :end-before: # The society may have dissolved
+   :dedent: 20
+
+A pending member is turned away, with removal reason ``"not_admitted"``,
+when they have waited ``newcomer_max_wait`` seconds since joining, when the
+group stops taking top-ups, or when it ends. They are never failed: they
+carry on without the group, and their next page says that we couldn't add
+them to a group in time (``on_arrival_message`` gets ``kind="not_admitted"``
+to change it). ``late_after`` counts for an admitted member from their
+admission or the group's last barrier pass, whichever is later.
+
+PsyNet stores when each member was admitted, in their link's
+``admitted_at``, and how many admission points they have passed, in
+``admission_points_passed``: :meth:`participant.sync_group_link(group_type)
+<psynet.participant.Participant.sync_group_link>` returns the link.
+``group.active_participants`` lists the admitted members, and
+``group.pending_participants`` the pending ones.
+
+PsyNet warns when the experiment loads if a group type admits newcomers at
+admission points but the timeline has none for it.
 
 .. _sync-leaving-a-group:
 
@@ -1542,11 +1589,12 @@ For the rest of the timeline:
   ``stop_if``: :func:`~psynet.timeline.for_loop` checks it before each
   iteration. Show something to the participants who left with a
   ``conditional`` afterwards. A round played as a trial added with
-  :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` needs no ``stop_if``
-  for that: a participant who is out of the group when the trial starts
-  gets an ungrouped trial, so ``show_trial`` can give them the solo version
-  of the round. In the ``crowd_estimate`` demo, they give their estimate
-  without the group's median:
+  :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` raises an error for a
+  participant who is out of the group when the trial starts, unless the
+  trial class sets ``sync_group_optional = True``: they then get an
+  ungrouped trial, so ``show_trial`` can give them the solo version of the
+  round. In the ``crowd_estimate`` demo, they give their estimate without
+  the group's median:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
      :pyobject: EstimateTrial.show_trial
@@ -1613,7 +1661,8 @@ For the rest of the timeline:
   them no group in time), ``"group_dissolved"``, ``"moved_on"`` (a
   :class:`~psynet.sync.Regrouper` took them out of their previous group, and
   they are waiting there or sitting the round out),
-  ``"finished"``, ``"left_experiment"`` (they failed or returned the study;
+  ``"finished"``, ``"not_admitted"`` (they were turned away before an
+  admission point admitted them), ``"left_experiment"`` (they failed or returned the study;
   a member failed for being late or waiting too long at this group's barrier
   records ``"late"`` or ``"waited_too_long"`` instead) or ``"removed_by_experimenter"`` (the
   experimenter removed them on the dashboard).

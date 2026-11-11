@@ -7,7 +7,7 @@ where the others fished and what they caught. Each fish pays ``FISH_VALUE``.
 The society takes newcomers for as long as it lasts
 (``join_existing_groups=True``). A newcomer is a pending member
 (``admit_newcomers="at_admission_point"``) until the start of the next
-round, a ``GroupBarrier(admission_point=True)`` that admits them and shows
+round, a ``GroupBarrier`` with ``admission_point=True`` that admits them and shows
 them the society's recent catches and tips (``newcomer_page``). When a round
 had more than three members because a newcomer joined it, the
 longest-serving member retires at its end. A member also stops after
