@@ -124,9 +124,10 @@ the group's members under it, while it decides, so a newcomer joins either
 before the check counts them or after it commits. If no free group has
 room but one was busy, the newcomer's own request waits up to a second for
 the best busy one, instead of waiting at the grouper for the barrier
-poller. That wait can't deadlock only because it holds no other group's
-row: the newcomer has no link in the group yet, so whoever holds the
-group's row has no reason to lock the newcomer's. Joins inside barrier
+poller. That lock is taken in a savepoint too, so a busy group found full
+after the wait is released. The wait can't deadlock only because it holds
+no other group's row: the newcomer has no link in the group yet, so whoever
+holds the group's row has no reason to lock the newcomer's. Joins inside barrier
 checks don't wait. The poller can still make a join that waits: after a
 check, it moves the waiters it released on through their timelines, and a
 waiter who reaches a grouper joins as their own request would. So it can

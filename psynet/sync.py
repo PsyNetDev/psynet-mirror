@@ -3096,8 +3096,9 @@ class SimpleGrouper(Grouper):
         holds the same lock while it counts a top-up group's members, so a
         newcomer joins either before the check or after it commits. A group
         another transaction is changing is skipped for the next candidate.
-        Each lock is taken in a savepoint, rolled back unless that group is
-        joined, so the joiner holds at most the row of the group it joins.
+        Each lock, including the one after a ``wait``, is taken in a
+        savepoint, rolled back unless that group is joined, so the joiner
+        holds at most the row of the group it joins.
         The joiner already holds its own participant row (or, in a barrier
         check, the waiters' rows), so this keeps the order participants
         before group.
@@ -3122,21 +3123,40 @@ class SimpleGrouper(Grouper):
         """
         busy = None
         for candidate in self._groups_to_join(participant):
-            with db.session.begin_nested() as savepoint:
-                group = _lock_sync_group(candidate.id, skip_locked=True)
-                if group is not None and self._has_room_to_join(group):
-                    return group
-                savepoint.rollback()
-            if group is None:
+            locked, group = self._lock_if_room_to_join(candidate.id, skip_locked=True)
+            if group is not None:
+                return group
+            if not locked:
                 busy = busy or candidate
         if wait and busy is not None:
-            group = _lock_sync_group(busy.id, wait_seconds=_JOIN_LOCK_WAIT_SECONDS)
-            if group is not None and self._has_room_to_join(group):
-                return group
+            _, group = self._lock_if_room_to_join(
+                busy.id, wait_seconds=_JOIN_LOCK_WAIT_SECONDS
+            )
+            return group
         return None
 
+    def _lock_if_room_to_join(self, group_id, **lock_options):
+        """Lock a group's row in a savepoint and keep the lock only if a newcomer may join.
+
+        Returns ``(locked, group)``: whether the row was locked, and the
+        group if it has room. A group without room has its savepoint rolled
+        back, releasing its row.
+        """
+        with db.session.begin_nested() as savepoint:
+            group = _lock_sync_group(group_id, **lock_options)
+            if group is not None and self._has_room_to_join(group):
+                return True, group
+            savepoint.rollback()
+        return group is not None, None
+
     def _has_room_to_join(self, group) -> bool:
-        """Re-count a locked group's members and return whether a newcomer may join it."""
+        """Re-count a locked group's members and return whether a newcomer may join it.
+
+        The recount corrects a stale stored count, but for a group without
+        room it is rolled back with the savepoint, so later newcomers repeat
+        it until :func:`check_sync_groups` corrects the count. That costs one
+        member query per arrival.
+        """
         if not group.active or not group.accepts_top_ups:
             return False
         n_members = len(group.active_participants)
