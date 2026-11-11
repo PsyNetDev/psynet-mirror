@@ -327,7 +327,7 @@ def save_tip(participant: Participant):
 
 
 def final_page(participant: Participant):
-    fish = sum(t.score for t in own_trials(participant))
+    fish = round(sum(t.score for t in own_trials(participant)))
     return InfoPage(
         f"You caught {fish} fish. Your bonus is ${participant.performance_reward:.2f}.",
         time_estimate=5,
