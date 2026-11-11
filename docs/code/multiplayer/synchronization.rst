@@ -975,76 +975,122 @@ Waiting and dropouts
 --------------------
 
 .. _sync-dropout-settings:
-
-Settings for each kind of dropout
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-:ref:`concept_groups` describes the ways participants leave a group and the
-decisions each one needs. These settings carry them out:
-
-- **Returning the study or being failed:** the grouper's ``below_quorum``
-  decides for the members who stay (see `Groups below quorum`_).
-- **Closing the tab or not responding:** a barrier's ``late_after`` and
-  ``late_action`` act on the member who is late. Without ``late_after``, the
-  barrier's ``max_wait_time`` and ``max_wait_action`` act on the members
-  waiting for them (see `Timeouts`_).
-- **Coming back after being removed:** see `After leaving a group`_ for what
-  they see and what the rest of the timeline does with them.
-- **Arriving when no group can form:** the grouper's ``max_wait_time``, with
-  ``start_short_after`` to start a smaller group, or
-  ``join_existing_groups`` to fill a gap in an existing one. Its
-  ``max_wait_action`` fails those left over, or with
-  ``"continue_without_group"`` lets them carry on (see `Timeouts`_).
-- **Falling behind in rounds with a** :class:`~psynet.sync.Regrouper`: a
-  player who isn't back by the split's deadline misses the round and joins
-  the next (see `Rounds with changing groups`_). One who stops responding
-  partway through a round is removed from their group by
-  ``late_action="leave_group"``, but stays in the ``within`` group, so the
-  next split waits for them until its deadline; adding
-  ``also_leave=[<the within group's type>]``, for example ``["cohort"]``,
-  takes them out of both (see :ref:`rounds-slow-players`).
-
-Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
-:doc:`late_slow_and_leaving_players` follows these settings through concrete
-cases.
-
 .. _sync-failure-cases:
 
-Failure cases to decide
-~~~~~~~~~~~~~~~~~~~~~~~
+Failure cases
+~~~~~~~~~~~~~
 
-For each case a group game can meet, decide what the player sees, how they
-are paid, and what the export records, then test it with bots. The
-``public_goods`` demo handles each one.
+:ref:`concept_groups` describes the ways participants leave a group. Each
+case below puts a player in one of three situations, and your code
+recognises the case by the value in the second column. For every case your
+design can meet, decide what the player and the others see, how the player
+is paid and what the export records, then test it with bots (see
+:ref:`bots_that_drop_out`). :doc:`late_slow_and_leaving_players` follows
+the cases through concrete designs.
 
-- **No group forms:** the grouper's ``max_wait_action``; with
-  ``"continue_without_group"`` the reason is ``"no_group_formed"`` (see
-  `Timeouts`_). Test with fewer bots than a group needs, waiting out the
-  grouper's ``max_wait_time``.
-- **A player runs out of time:** their answer is ``None``, or the page's
-  ``time_limit_answer``, and ``trial.time_limit_reached`` is ``True``; they
-  stay in the group (see :ref:`time limits in rounds
-  <sync-timeouts-and-rounds>`). Test with
-  :meth:`~psynet.participant.ParticipantDriver.run_out_of_time`.
-- **A player goes quiet:** a barrier's ``late_after`` removes them with its
-  ``late_action``, and their round's outcome is ``"late"`` (see
-  :ref:`round outcomes <sync-round-outcome>`). Test with
-  :func:`~psynet.bot.make_late_now`.
-- **The group falls below quorum:** the grouper's ``below_quorum``
-  dissolves the group, and the outcome is ``"group_dissolved"`` (see
-  :ref:`groups_below_min_size` and :ref:`dissolved rounds
-  <sync-dissolved-round>`). Test by making enough members late or drop out.
-- **A player leaves the study:** they return it or are failed, and leave
-  their groups as ``"left_experiment"``; the others carry on as above. Test
-  with :meth:`~psynet.participant.ParticipantDriver.drop_out`.
+**Still in the group.** A page's ``time_limit`` ran out (see
+:ref:`time limits in rounds <sync-timeouts-and-rounds>`).
 
-For each case, decide:
+.. list-table::
+   :header-rows: 1
+
+   * - Case
+     - Recognise it by
+     - Caused by
+     - Simulate with
+   * - Ran out of time
+     - ``trial.time_limit_reached``
+     - ``time_limit``
+     - :meth:`~psynet.participant.ParticipantDriver.run_out_of_time`
+
+**Left the group.** The reason comes from
+:meth:`participant.sync_group_removal_reason(group_type)
+<psynet.participant.Participant.sync_group_removal_reason>`. The round's
+trial holds the same value in ``sync_group_outcome`` until a barrier
+releases the group (see :ref:`round outcomes <sync-round-outcome>`). The
+barrier settings are described in `Timeouts`_, and the grouper's
+``below_quorum`` in `Groups below quorum`_.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Case
+     - Reason
+     - Caused by
+     - Simulate with
+   * - Went quiet
+     - ``"late"``
+     - barrier ``late_after``
+     - :func:`~psynet.bot.make_late_now`
+   * - Others never arrived
+     - ``"waited_too_long"``
+     - barrier ``max_wait_action``
+     - wait out ``max_wait_time``
+   * - Too few members left
+     - ``"group_dissolved"``
+     - grouper ``below_quorum``
+     - make members late or drop out
+   * - Left the study
+     - ``"left_experiment"``
+     - returned or failed
+     - :meth:`~psynet.participant.ParticipantDriver.drop_out`
+   * - Removed by the experimenter
+     - ``"removed"``
+     - dashboard
+     - —
+
+A player who comes back after being removed keeps their reason, so their
+next page can explain what happened (see `After leaving a group`_).
+
+**Without a group.** A grouper with
+``max_wait_action="continue_without_group"`` lets a player for whom no group
+forms carry on; ``start_short_after`` and ``join_existing_groups`` make
+that rarer (see `Timeouts`_). A :class:`~psynet.sync.Regrouper` with
+``left_over="sit_out"`` sits the odd player out of a round (see
+`Rounds with changing groups`_).
+
+.. list-table::
+   :header-rows: 1
+
+   * - Case
+     - Recognise it by
+     - Caused by
+     - Simulate with
+   * - No group formed
+     - reason ``"no_group_formed"``
+     - grouper ``max_wait_action``
+     - too few bots
+   * - Sat out a round
+     - :meth:`regrouper.sat_out(participant) <psynet.sync.Regrouper.sat_out>`
+     - regrouper ``left_over``
+     - an odd number of bots
+
+With a :class:`~psynet.sync.Regrouper`, a player who stops responding is
+removed from their group by ``late_action="leave_group"`` but stays in the
+``within`` group, so the next split waits for them until its deadline.
+``also_leave=[<the within group's type>]``, for example ``["cohort"]``,
+takes them out of both (see :ref:`rounds-slow-players`).
+
+Telling people what happened
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+When a barrier removes a player for being late or for waiting too long,
+PsyNet shows them a notice, such as "Your group went on without you.
+Please continue." Your pages only need to add the consequence for your
+game, as in the ``public_goods`` demo:
+
+.. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
+   :start-at: ENDED_EARLY_TEXTS = {
+   :end-before: def bonus_text
+
+The others learn who left from the ``left`` argument of ``on_release``
+(see :ref:`on_release arguments <sync-barrier-node>`); the demo's results page says "One player
+has left the group." when ``left`` isn't empty.
+
+For each case, also decide:
 
 - **Pay:** ``score_answer`` can pay by ``trial.sync_group_outcome``, as in
   the ``public_goods`` demo's ``ContributionTrial.score_answer``.
-- **Feedback:** map the reasons your game can meet to your own text, as in
-  the ``public_goods`` demo's ``ENDED_EARLY_TEXTS`` (see
-  `After leaving a group`_).
 - **Export:** export a row for every trial, with its ``sync_group_outcome``
   and ``time_limit_reached``, so that analysis can tell the cases apart.
 
