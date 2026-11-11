@@ -23,9 +23,11 @@ and the end of the timeline shows the page for the stored stage. See
 ``README.md`` for the failure cases.
 """
 
+import json
 import random
 from typing import List
 
+from dallinger import db
 from dominate import tags
 
 import psynet.experiment
@@ -39,7 +41,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl, TextControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, SimpleGrouper, group_seats, leave_group
+from psynet.sync import GroupBarrier, SimpleGrouper, group_seats
 from psynet.timeline import (
     CodeBlock,
     Module,
@@ -51,6 +53,7 @@ from psynet.timeline import (
     while_loop,
 )
 from psynet.trial.main import SyncGroupNode, Trial
+from psynet.utils import serialise_datetime
 
 GROUP = "society"
 SOCIETY_SIZE = 3
@@ -109,13 +112,9 @@ def get_timeline():
                 expected_repetitions=MAX_ROUNDS,
             ),
         ),
-        # Stored first, because leave_group records the members still in the
-        # society as "finished".
-        CodeBlock(remember_why_they_left),
-        leave_group(GROUP),
         switch(
             "leaving",
-            lambda participant: participant.var.left_as,
+            life_stage,
             {
                 "retired": leave_a_tip(
                     "A new member has taken your place, so you retire from the society."
@@ -160,22 +159,21 @@ def own_trials(participant: Participant) -> List["FishingTrial"]:
 def life_stage(participant: Participant) -> str:
     """Return ``"playing"`` while the member keeps playing, otherwise why they stopped."""
     trials = own_trials(participant)
-    # Set when the round is scored.
-    retired = bool(trials) and trials[-1].var.get("retires", False)
-    in_society = GROUP in participant.active_sync_groups
+    last = trials[-1] if trials else None
+    # Both are decided when a round is scored, and only for members who stayed.
+    retired = last is not None and last.var.get("retires", False)
+    played_max_rounds = (
+        len(trials) >= MAX_ROUNDS and last.sync_group_outcome == "stayed"
+    )
     if retired:
         return "retired"
-    if not in_society:
+    if played_max_rounds:
+        return "played_max_rounds"
+    if GROUP not in participant.active_sync_groups:
         # "late", "group_dissolved", "removed", "left_experiment" or
         # "no_group_formed".
         return participant.sync_group_removal_reason(GROUP)
-    if len(trials) >= MAX_ROUNDS:
-        return "played_max_rounds"
     return "playing"
-
-
-def remember_why_they_left(participant: Participant):
-    participant.var.left_as = life_stage(participant)
 
 
 def history_page(participant: Participant):
@@ -272,12 +270,22 @@ class FishingTrial(Trial):
         for trial in trials:
             trial.var.retires = trial is retiring
         node.var.retired_id = retiring.participant_id if retiring else None
+        # They leave now, so the next round doesn't wait for them while they
+        # read their results. Their round still counts as "stayed".
+        for trial in trials:
+            if trial.var.retires or len(own_trials(trial.participant)) >= MAX_ROUNDS:
+                group.remove_participant(trial.participant, reason="finished")
 
     def score_answer(self, answer, definition):
         """Return the fish the member caught this round."""
-        left_before_scoring = self.sync_group_outcome != "stayed"
-        if left_before_scoring or answer is None:
+        if answer is None or self.sync_group_outcome not in (
+            "stayed",
+            "group_dissolved",
+        ):
             return 0
+        if self.sync_group_outcome == "group_dissolved":
+            # The society ended before the round was scored, so they fish alone.
+            self.var.catch = _draw_catch(answer)
         return self.var.catch
 
     def compute_performance_reward(self, score):
@@ -377,7 +385,7 @@ class Exp(psynet.experiment.Experiment):
                     "catches": n.var.get("catches"),
                     "retired_id": n.var.get("retired_id"),
                     # Set if the society dissolved during the round.
-                    "dissolved_at": n.sync_group_dissolved_at,
+                    "dissolved_at": serialise_datetime(n.sync_group_dissolved_at),
                 }
                 for n in rounds
             ],
@@ -385,10 +393,8 @@ class Exp(psynet.experiment.Experiment):
                 {
                     "participant_id": p.id,
                     "society_id": _society_id(p),
-                    # A stage of life_stage; for a member who never reached
-                    # the end of the timeline, their stage now, such as
-                    # "left_experiment", or "playing" while they're away.
-                    "left_as": p.var.get("left_as") or life_stage(p),
+                    # "playing" for a member who is away but not yet removed.
+                    "left_as": life_stage(p),
                     "rounds_played": len(own_trials(p)),
                     "tip": next(
                         (t.var.tip for t in own_trials(p) if t.var.has("tip")), None
@@ -420,6 +426,7 @@ class Exp(psynet.experiment.Experiment):
             bot for bot in founders if "your last round" in bot.current_page_text
         ]
         assert "your last round" not in newcomers[0].current_page_text
+        assert not _in_society(retiree)
         retiree.take_page()
         assert retiree.current_page_label == "tip", retiree.current_page_label
         retiree.take_page(response="Spot 4 is reliable.")
@@ -435,6 +442,7 @@ class Exp(psynet.experiment.Experiment):
         make_late_now(society, "round_finished")
         quiet.take_page(response=4)
         assert "You were away for too long" in quiet.current_page_text
+        assert not _in_society(stayer)
         _see_results(society)
         assert stayer.current_page_label == "tip", stayer.current_page_label
         stayer.take_page(response="Spot 7 is poor.")
@@ -454,7 +462,8 @@ class Exp(psynet.experiment.Experiment):
         assert "You were away for too long" in newcomers[2].current_page_text
         run_bots_to_completion(bots)
 
-        data = self.get_basic_data()
+        # Through JSON, as the dashboard and export read it.
+        data = json.loads(json.dumps(self.get_basic_data()))
         rounds = data["society_round"]
         assert [r["retired_id"] for r in rounds[:2]] == [None, retiree.id], rounds
         left_rounds = [
@@ -479,6 +488,17 @@ class Exp(psynet.experiment.Experiment):
         tips = {m["participant_id"]: m["tip"] for m in data["member"]}
         assert tips[retiree.id] == "Spot 4 is reliable.", tips
         assert tips[quiet.id] is None, tips
+        dissolved = [
+            r for r in data["member_round"] if r["outcome"] == "group_dissolved"
+        ]
+        assert dissolved[0]["catch"] is not None, dissolved
+        assert rounds[-1]["dissolved_at"] is not None, rounds
+
+
+def _in_society(bot):
+    participant = Participant.query.get(bot.id)
+    db.session.refresh(participant)
+    return GROUP in participant.active_sync_groups
 
 
 def _society_id(participant):

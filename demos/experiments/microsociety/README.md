@@ -26,9 +26,12 @@ last trial, so no two participants write the same record.
 
 ## How memberships end
 
-`life_stage` names each case; the rounds loop runs while it is `"playing"`.
-The stage is stored as `participant.var.left_as` before the member leaves
-the society, and the end of the timeline shows the page for it.
+`life_stage` names each case from the member's trials and their removal
+reason; the rounds loop runs while it is `"playing"`, the end of the timeline
+shows the page for the case, and the `member` export table records it.
+Retiring members and members who played `MAX_ROUNDS` rounds leave the society
+when their last round is scored, so the next round doesn't wait while they
+read their results.
 
 | Stage | Caused by | What happens |
 |---|---|---|
@@ -36,13 +39,13 @@ the society, and the end of the timeline shows the page for it.
 | `played_max_rounds` | The member played `MAX_ROUNDS` rounds. | Leaves a tip. |
 | `late` | The member was inactive for longer than `LATE_AFTER`, for example by closing the page, and missed the end of a round. | Earns nothing for that round; the others carry on. Sees the page if they come back. |
 | `left_experiment` | The member returned the study or was failed. | Sees no page; the others carry on. |
-| `group_dissolved` | One member was left, and no newcomer joined within `TOP_UP_WAIT`. | Told the society ended. |
+| `group_dissolved` | One member was left, and no newcomer joined within `TOP_UP_WAIT`. | Keeps the catch of the round in progress, and is told the society ended. |
 | `removed` | The experimenter removed the member on the dashboard. | Told they were removed. |
 | `no_group_formed` | No society formed or had room within `GROUPING_WAIT`. | Told no society was found. |
 
 A member who leaves in their last round leaves for that reason and writes
-no tip. The `member` export table takes `left_as` from `life_stage` for
-members who never reached the end of the timeline.
+no tip. In the export, a member who is away but not yet removed is
+`"playing"`.
 
 A member who runs out of time in a round stays in the society: they catch
 nothing that round, and the trial's `time_limit_reached` records it.
