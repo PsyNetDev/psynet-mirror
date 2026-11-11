@@ -3358,6 +3358,9 @@ class Response(_Response):
         submitted this response on, including submissions rejected by
         validation. ``None`` for pages outside a trial, including feedback
         pages and pages submitted after the participant failed.
+        Recordings follow a different rule: a recording made on a feedback
+        page (:meth:`~psynet.trial.main.Trial.show_feedback`) is stored with
+        the trial that just finished.
     """
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
