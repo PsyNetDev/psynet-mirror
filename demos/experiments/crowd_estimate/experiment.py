@@ -34,9 +34,9 @@ from psynet.modular_page import ModularPage, NumberControl
 from psynet.page import InfoPage
 from psynet.sync import GroupBarrier, SimpleGrouper
 from psynet.timeline import (
+    CodeBlock,
     Module,
     PageMaker,
-    Response,
     Timeline,
     conditional,
     for_loop,
@@ -119,11 +119,12 @@ class EstimateTrial(Trial):
     accumulate_answers = True
 
     def show_trial(self, experiment, participant):
+        estimate = join(self.estimate_page(), CodeBlock(self.save_estimate_timed_out))
         if self.sync_group is None:
             # Alone, the estimate is the whole trial.
-            return self.estimate_page()
+            return estimate
         return join(
-            self.estimate_page(),
+            estimate,
             GroupBarrier(
                 id_="estimates",
                 group_type=GROUP,
@@ -152,6 +153,14 @@ class EstimateTrial(Trial):
             time_limit=ANSWER_SECONDS,
             time_estimate=ANSWER_SECONDS,
         )
+
+    def save_estimate_timed_out(self, participant):
+        """Store whether the estimate ran out of time.
+
+        ``trial.time_limit_reached`` can't say this later, because it follows
+        the trial's latest timed page, the revision.
+        """
+        self.var.estimate_timed_out = participant.last_response.time_limit_reached
 
     @classmethod
     def score_round(cls, trials: List["EstimateTrial"], node: SyncGroupNode):
@@ -212,8 +221,7 @@ class EstimateTrial(Trial):
             return "You left your group before you saw its median"
         if self.node.var.get("median") is None:
             return "Too few estimates arrived for a group median"
-        # Barriers don't change time_limit_reached, so it is still the estimate's.
-        if self.time_limit_reached:
+        if self.var.estimate_timed_out:
             return "You didn't give an estimate in time"
         return None
 
@@ -232,14 +240,6 @@ class Exp(psynet.experiment.Experiment):
         a missing answer is None rather than a missing row.
         """
         trials = EstimateTrial.query.order_by(EstimateTrial.id)
-        # trial.time_limit_reached follows the trial's latest timed page,
-        # which in a group is the revision, so read the estimate's response.
-        estimate_timed_out = {
-            r.trial_id: r.time_limit_reached
-            for r in Response.query.filter_by(
-                question="estimate", successful_validation=True
-            )
-        }
         crowds = SyncGroupNode.query.filter_by(module_id="game").order_by(
             SyncGroupNode.sync_group_round, SyncGroupNode.id
         )
@@ -261,7 +261,7 @@ class Exp(psynet.experiment.Experiment):
                     "estimate": t.answer.get("estimate"),
                     # Whether the estimate's time limit ran out, alone or in
                     # a group; None if the player left before answering it.
-                    "estimate_timed_out": estimate_timed_out.get(t.id),
+                    "estimate_timed_out": t.var.get("estimate_timed_out"),
                     # Whether the estimate counted towards the group's median;
                     # None for an answer given alone or a group without one.
                     "in_median": t.var.get("in_median"),
