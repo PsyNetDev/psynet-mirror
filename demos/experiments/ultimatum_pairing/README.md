@@ -19,7 +19,7 @@ which turns latecomers away once the cohort's second round starts. Its bot
 test uses `regroup_now` to start a round at the deadline without waiting for
 it.
 Each round is one cued trial per player (`Trial.cue(...)` with
-`sync_group_type = "pair"`, in a `switch` on the player's `round_status`), so
+`sync_group_type = PAIR`, in a `switch` on the player's `round_status`), so
 the pair's offer and result live on a node shared by its two trials, sit-outs
 get a page instead of a trial, and the basic data is read from trials and
 nodes.

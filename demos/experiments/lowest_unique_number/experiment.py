@@ -6,7 +6,7 @@ number, and the lowest number that nobody else in the room picked wins
 ``WIN_BONUS``.
 
 Each round is one cued ``PickTrial`` per player. Because the trial class has
-``sync_group_type = "room"``, the trials of a room's players share a node: the
+``sync_group_type = GROUP``, the trials of a room's players share a node: the
 room's results go in ``trial.node.var`` and each player's in ``trial.var``, and
 ``get_basic_data`` reads both back. The regrouper forms new rooms every round,
 so every room plays only its round 0. A room can mix players at different
