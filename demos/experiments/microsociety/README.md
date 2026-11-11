@@ -22,8 +22,9 @@ above the society's size, a `while_loop` of cued trials without `round=`
 to find the longest-serving member, `SyncGroup.is_newcomer` to tell
 newcomers from founders, and `SyncGroup.rounds` on
 `participant.latest_sync_group(...)` to show a newcomer the society's
-history, which still works if they leave while reading it. Tips are stored on the leaving member's
-last trial, so no two participants write the same record.
+history, which still works if they leave while reading it. Tips are stored
+on the leaving member's last trial, so no two participants write the same
+record.
 
 ## How memberships end
 

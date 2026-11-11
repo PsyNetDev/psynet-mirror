@@ -1277,11 +1277,13 @@ Two separate settings decide what happens when someone leaves a group:
       the next check of the
       :class:`~psynet.sync.GroupBarrier` its members are waiting at stops
       top-ups and dissolves it. Only such a barrier applies the limit, so a
-      group whose members are all still on other pages keeps accepting
-      top-ups until they have all reached it. This only helps members who are
-      still waiting, so give that barrier a ``max_wait_time`` (20 seconds
-      by default) longer than ``top_up_wait``, or ``late_after``, which
-      removes the limit.
+      group with a remaining member still on another page keeps accepting
+      top-ups until that member reaches it, or ``late_after`` removes them.
+      A barrier's ``max_wait_time`` (20 seconds by default) counts from each
+      member's own arrival, so the first to arrive also waits for the
+      others; give the barrier ``late_after``, which removes that limit, or
+      a ``max_wait_time`` longer than ``top_up_wait`` plus the time members
+      may take to reach it.
   - Without top-ups, the group is dissolved, and the grouper's
     ``below_quorum`` decides for each remaining member: ``"fail"`` (default)
     fails them, telling them "Too few members of your group remained to

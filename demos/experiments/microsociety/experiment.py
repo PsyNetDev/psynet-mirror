@@ -402,9 +402,10 @@ class Exp(psynet.experiment.Experiment):
                     "participant_id": p.id,
                     "society_id": _society_id(p),
                     # "playing" for a member who is away but not yet removed,
-                    # None for one who never joined a society.
+                    # None for one who hasn't been grouped yet.
                     "left_as": life_stage(p),
-                    "rounds_played": len(own_trials(p)),
+                    # Including a round they left during.
+                    "rounds_started": len(own_trials(p)),
                     "tip": next(
                         (t.var.tip for t in own_trials(p) if t.var.has("tip")), None
                     ),

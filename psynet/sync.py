@@ -1556,7 +1556,7 @@ def _advance_released_hold_waiters_after_commit(participant_ids):
 def _group_barrier_outcome(group, members, waiting_ids, barrier_id):
     """Return ``"dissolve"``, ``"release"`` or ``"wait"`` for one visit of ``group``.
 
-    Pure: ``GroupBarrier.would_release`` passes the members it projects will
+    Read-only: ``GroupBarrier.would_release`` passes the members it projects will
     remain, and ``choose_who_to_release`` the live ones, so the peek and the
     real release share one decision. ``members`` count towards the quorum,
     and the visit releases once all of them are waiting.
@@ -2941,12 +2941,14 @@ class SimpleGrouper(Grouper):
     top_up_wait
         With ``join_existing_groups=True``, how many seconds a group below its
         ``quorum`` waits for newcomers. Then the next check of the :class:`GroupBarrier`
-        its members are waiting at stops top-ups and dissolves it; until a member
-        reaches such a barrier, the group keeps accepting top-ups. The time counts
-        from when all its remaining members are waiting at that barrier, or from
-        when the group fell below its quorum, if later. Members who reach that barrier's
-        ``max_wait_time`` first are timed out, so give it a longer one, or
-        ``late_after`` (see :ref:`groups_below_min_size`).
+        its members are waiting at stops top-ups and dissolves it; until all its
+        remaining members have reached such a barrier, the group keeps accepting
+        top-ups. The time counts from when the last of them arrived there, or from
+        when the group fell below its quorum, if later. ``max_wait_time`` counts
+        from each member's own arrival, so the first to arrive also waits for the
+        others: give the barrier ``late_after``, which removes that limit, or a
+        ``max_wait_time`` longer than ``top_up_wait`` plus the time members may
+        take to reach it (see :ref:`groups_below_min_size`).
         Default: ``None``, waiting for newcomers without a limit.
 
     start_short_after

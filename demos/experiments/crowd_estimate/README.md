@@ -37,7 +37,8 @@ from the nodes.
   group answers every question together. After that, a latecomer waits in
   the lobby for a new group.
 - A group that falls below three before the game starts waits up to
-  `TOP_UP_WAIT` seconds for a latecomer to replace the member who left.
+  `TOP_UP_WAIT` seconds, once its remaining members reach the start of the
+  game, for a latecomer to replace the member who left.
 - Each estimate has a time limit of `ANSWER_SECONDS`; a player who runs
   out of time gives none.
 - A member who stops responding is removed as late, so nobody waits for them:

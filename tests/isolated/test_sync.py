@@ -7919,6 +7919,40 @@ def test_top_up_wait_limits_how_long_a_group_waits_for_newcomers(
     assert waiter.sync_group_removal_reason("team") == "group_dissolved"
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_top_up_wait_starts_when_the_last_remaining_member_arrives(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=3,
+        quorum=3,
+        join_existing_groups=True,
+        below_quorum="continue_without_group",
+        top_up_wait=10,
+    )
+    barrier = GroupBarrier(id_="game_starts", group_type="team")
+    quitter, early, late = [new_participant(exp) for _ in range(3)]
+    for p in (quitter, early, late):
+        p.status = "working"
+    group = grouper._make_group([quitter, early, late], initial_group_size=3)
+    db_session.commit()
+
+    quitter.fail("quit")
+    group.below_quorum_since -= timedelta(seconds=30)
+    _arrive_at_group_barrier(exp, barrier, early)
+    early.active_barriers["game_starts"].arrival_time -= timedelta(seconds=30)
+    assert barrier.choose_who_to_release([early]) == []
+    _arrive_at_group_barrier(exp, barrier, late)
+    assert barrier.choose_who_to_release([early, late]) == []
+    late.active_barriers["game_starts"].arrival_time -= timedelta(seconds=11)
+    assert set(barrier.choose_who_to_release([early, late])) == {early, late}
+    assert late.sync_group_removal_reason("team") == "group_dissolved"
+
+
 def _lobby_recipe():
     """The grouper and barrier of the "fill a team until the game starts" recipe."""
     grouper = SimpleGrouper(
