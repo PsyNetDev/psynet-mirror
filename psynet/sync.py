@@ -1822,10 +1822,12 @@ class GroupBarrier(Barrier):
         filler pages (for example trials used as filler).
 
     max_wait_action
-        What happens to a member who waits longer than ``max_wait_time``: ``"fail"`` (default) fails them and
-        sends them to the end of the experiment; ``"leave_group"`` removes them from the group, and they carry on with the
-        experiment without it (see :ref:`sync-leaving-a-group`).
-        Their next page says "Your partner didn't arrive in time. Please continue." in a pair (see
+        What happens to a member who waits longer than ``max_wait_time``. Either way they first leave the
+        group, which records ``"waited_too_long"`` as their removal reason and their cued trial's
+        ``sync_group_outcome``. ``"fail"`` (default) then fails them, after they leave their other groups as
+        ``"left_experiment"``, and sends them to the end of the experiment; with ``"leave_group"`` they carry on with the
+        experiment without the group (see :ref:`sync-leaving-a-group`).
+        With ``"leave_group"``, their next page says "Your partner didn't arrive in time. Please continue." in a pair (see
         ``on_arrival_message`` for larger groups); for how a :class:`~psynet.group_prompt.GroupPrompt`
         shows them, see :ref:`sync-showing-the-group`. It is the waiting member who leaves, not the absent ones; to move on
         without slow members, use ``late_after`` and ``late_action`` instead. If that takes
@@ -2230,15 +2232,43 @@ class GroupBarrier(Barrier):
             _queue_arrival_update(member.id, refresh=True)
 
     def handle_max_wait_timeout(self, participant: Participant):
-        """Remove from the sync group with ``"leave_group"``, then release the barrier link."""
+        """Remove the waiter from the sync group as ``"waited_too_long"``, then release the barrier link.
+
+        With ``max_wait_action="fail"`` the waiter also leaves their other
+        groups as ``"left_experiment"`` and is failed as a timeout before any
+        quorum is checked, as in :meth:`_remove_late_participants`, so a
+        group dissolving cannot fail them for its own reason first.
+        """
         group = participant.active_sync_groups.get(self.group_type)
-        if self.max_wait_action == "leave_group" and group is not None:
+        if group is None:
+            super().handle_max_wait_timeout(participant)
+        elif self.max_wait_action == "leave_group":
             group_size = len(group.active_participants)
             group.remove_participant(participant, reason="waited_too_long")
             self._tell_removed_participant(
                 participant, group, group_size, kind="waited_too_long"
             )
-        super().handle_max_wait_timeout(participant)
+            super().handle_max_wait_timeout(participant)
+        else:
+            # The poller's reconstructed barrier lacks _uses_timeline_hold.
+            link = participant.active_barriers.get(self.id)
+            on_hold = link is not None and link.timeline_hold is not None
+            hold = "timeline_hold" if on_hold else "while_loop"
+            left = _groups_left_on_failure(participant, group, "waited_too_long")
+            for left_group, reason in left:
+                left_group._remove_without_quorum_check(participant, reason)
+            super().handle_max_wait_timeout(participant)
+            logger.info(
+                "GroupBarrier '%s': failing participant %s (waited too long)",
+                self.id,
+                participant.id,
+            )
+            participant.append_failure_tags(
+                f"{hold}:barrier:{self.id}", "fail_on_timeout"
+            )
+            participant.fail()
+            for left_group, _ in left:
+                left_group.dissolve_if_below_quorum()
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
         """Release each waiting group that is ready, and dissolve those that can't reach their quorum.
@@ -2428,16 +2458,11 @@ class GroupBarrier(Barrier):
         left = {}
         for group, late, _ in removals:
             for participant in late:
-                groups = [(group, "late")]
-                active = participant.active_sync_groups
                 if fail:
-                    groups += [
-                        (other, "left_experiment")
-                        for other in active.values()
-                        if other.id != group.id
-                    ]
+                    groups = _groups_left_on_failure(participant, group, "late")
                 else:
-                    groups += [
+                    active = participant.active_sync_groups
+                    groups = [(group, "late")] + [
                         (active[group_type], "late")
                         for group_type in self.also_leave
                         if group_type in active
@@ -3146,6 +3171,9 @@ class SimpleGrouper(Grouper):
         holds the same lock while it counts a top-up group's members, so a
         newcomer joins either before the check or after it commits. A group
         another transaction is changing is skipped for the next candidate.
+        Each lock, including the one after a ``wait``, is taken in a
+        savepoint, rolled back unless that group is joined, so the joiner
+        holds at most the row of the group it joins.
         The joiner already holds its own participant row (or, in a barrier
         check, the waiters' rows), so this keeps the order participants
         before group.
@@ -3159,9 +3187,9 @@ class SimpleGrouper(Grouper):
             ``_JOIN_LOCK_WAIT_SECONDS`` for the best one instead of returning
             ``None``. For the newcomer's own request, which would otherwise
             wait at the grouper for the barrier poller; barrier checks don't
-            wait. The wait can't deadlock: the newcomer has no link in the
-            group yet, so whoever holds the group's row has no reason to
-            lock the newcomer's.
+            wait. The wait can't deadlock: it holds no other group's row,
+            and the newcomer has no link in the group yet, so whoever holds
+            the group's row has no reason to lock the newcomer's.
 
         Returns
         -------
@@ -3170,19 +3198,40 @@ class SimpleGrouper(Grouper):
         """
         busy = None
         for candidate in self._groups_to_join(participant):
-            group = _lock_sync_group(candidate.id, skip_locked=True)
-            if group is None:
+            locked, group = self._lock_if_room_to_join(candidate.id, skip_locked=True)
+            if group is not None:
+                return group
+            if not locked:
                 busy = busy or candidate
-            elif self._has_room_to_join(group):
-                return group
         if wait and busy is not None:
-            group = _lock_sync_group(busy.id, wait_seconds=_JOIN_LOCK_WAIT_SECONDS)
-            if group is not None and self._has_room_to_join(group):
-                return group
+            _, group = self._lock_if_room_to_join(
+                busy.id, wait_seconds=_JOIN_LOCK_WAIT_SECONDS
+            )
+            return group
         return None
 
+    def _lock_if_room_to_join(self, group_id, **lock_options):
+        """Lock a group's row in a savepoint and keep the lock only if a newcomer may join.
+
+        Returns ``(locked, group)``: whether the row was locked, and the
+        group if it has room. A group without room has its savepoint rolled
+        back, releasing its row.
+        """
+        with db.session.begin_nested() as savepoint:
+            group = _lock_sync_group(group_id, **lock_options)
+            if group is not None and self._has_room_to_join(group):
+                return True, group
+            savepoint.rollback()
+        return group is not None, None
+
     def _has_room_to_join(self, group) -> bool:
-        """Re-count a locked group's members and return whether a newcomer may join it."""
+        """Re-count a locked group's members and return whether a newcomer may join it.
+
+        The recount corrects a stale stored count, but for a group without
+        room it is rolled back with the savepoint, so later newcomers repeat
+        it until :func:`check_sync_groups` corrects the count. That costs one
+        member query per arrival.
+        """
         if not group.active or not group.accepts_top_ups:
             return False
         n_members = len(group.active_participants)
@@ -3652,7 +3701,7 @@ class Regrouper(Grouper):
         super()._queue_check_on_arrival(barrier_instance)
 
     def _skips_arrival_release_check(self, barrier_instance):
-        """Return whether an arrival at ``barrier_instance`` cannot release anyone."""
+        """Return whether this arrival should skip the queued release check."""
         return (
             self.every is not None
             and (self.within is None or barrier_instance.group_id is not None)
@@ -4968,6 +5017,15 @@ def _top_up_wait_over(group) -> bool:
     if top_up_wait is None or since is None:
         return False
     return (timenow() - since).total_seconds() >= top_up_wait
+
+
+def _groups_left_on_failure(participant, group, reason):
+    """List the groups a failing ``participant`` leaves: ``group`` with ``reason``, then each other active group as ``"left_experiment"``."""
+    return [(group, reason)] + [
+        (other, "left_experiment")
+        for other in participant.active_sync_groups.values()
+        if other.id != group.id
+    ]
 
 
 def _lock_free_participants(participants):

@@ -122,14 +122,18 @@ several groups at once, failing together, can deadlock in the same way.
 
 Joining an open group (``join_existing_groups=True``) locks the group row
 and re-counts its members under that lock, so two newcomers can't both take
-its last place; a busy group is skipped for the next candidate. A
+its last place; a busy group is skipped for the next candidate. Each
+candidate is locked in a savepoint, rolled back unless the newcomer joins
+that group, so a joiner holds at most one group row. A
 :class:`~psynet.sync.GroupBarrier` check holds the same lock, and reloads
 the group's members under it, while it decides, so a newcomer joins either
-before the check counts them or after it commits. If every open group is
-busy, the newcomer's own request waits up to a second for the best one,
-instead of waiting at the grouper for the barrier poller. That wait can't
-deadlock: the newcomer has no link in the group yet, so whoever holds the
-group's row has no reason to lock the newcomer's. Joins inside barrier
+before the check counts them or after it commits. If no free group has
+room but one was busy, the newcomer's own request waits up to a second for
+the best busy one, instead of waiting at the grouper for the barrier
+poller. That lock is taken in a savepoint too, so a busy group found full
+after the wait is released. The wait can't deadlock only because it holds
+no other group's row: the newcomer has no link in the group yet, so whoever
+holds the group's row has no reason to lock the newcomer's. Joins inside barrier
 checks don't wait. The poller can still make a join that waits: after a
 check, it moves the waiters it released on through their timelines, and a
 waiter who reaches a grouper joins as their own request would. So it can

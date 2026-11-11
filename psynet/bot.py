@@ -305,7 +305,9 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
     splits formed. The next check then splits the pools as the deadline or
     tick would. Group memberships and roles are untouched, so a player still
     in last round's group keeps their role. ``max_wait_time`` doesn't
-    move: it counts from the bots' real arrivals.
+    move: it counts from the bots' real arrivals. A player waiting alone for
+    cohort members who are still playing isn't released: that needs a second
+    deadline (or tick), so a single call leaves them waiting.
 
     Parameters
     ----------

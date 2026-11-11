@@ -170,8 +170,6 @@ then groups of two, and assigns roles at a barrier each time:
 Two groupers of the same type and size share a default ID, and so a waiting
 pool. Give them different ``id_`` values if they should not.
 
-.. _sync-rounds-with-changing-groups:
-
 .. _sync-regrouper-recipe:
 
 Rounds with changing groups
@@ -368,8 +366,8 @@ later:
   nothing;
 - why the player left the group: a reason of
   :meth:`~psynet.sync.SyncGroup.remove_participant`, for example
-  ``"late"``, ``"left_experiment"`` or ``"group_dissolved"``, or
-  ``"removed"`` if none was given (the values are listed in
+  ``"late"``, ``"waited_too_long"``, ``"left_experiment"`` or
+  ``"group_dissolved"``, or ``"removed"`` if none was given (the values are listed in
   :data:`~psynet.sync.SyncGroupOutcome`);
 - ``None`` before either happens, and for a trial played without a group.
 
@@ -977,9 +975,10 @@ the maximum waiting time:
     then handles late members instead; passing ``max_wait_time`` together
     with ``late_after`` raises an error. ``max_wait_action`` decides what
     happens to a participant who waits longer: ``"fail"`` (default) fails
-    them. At a :class:`~psynet.sync.GroupBarrier`, ``"leave_group"`` removes
-    them from the group (see :ref:`sync-leaving-a-group` for what they see
-    next); at a grouper, where they have no group yet,
+    them. At a :class:`~psynet.sync.GroupBarrier`, both actions first remove
+    them from the group as ``"waited_too_long"``; ``"fail"`` then fails them,
+    and with ``"leave_group"`` they carry on without it (see
+    :ref:`sync-leaving-a-group` for what they see next); at a grouper, where they have no group yet,
     ``"continue_without_group"`` lets them carry on without one, telling them
     "We couldn't find a partner for you in time. Please continue." (or "We
     couldn't form a group for you in time. Please continue." for larger
@@ -1113,7 +1112,7 @@ Two separate settings decide what happens when someone leaves a group:
       that regroups within this group (``within``) stops them when the
       regrouper starts its next split after ``n`` rounds in the group, for
       example ``1`` to let latecomers join a cohort only during its first
-      round (see :ref:`sync-rounds-with-changing-groups`). A cohort below
+      round (see :ref:`sync-regrouper-recipe`). A cohort below
       its quorum at that split is dissolved with nobody grouped; with
       ``below_quorum="continue_without_group"``, its waiting players are
       released ungrouped and ``on_release`` isn't called.
@@ -1437,7 +1436,9 @@ For the rest of the timeline:
   them no group in time), ``"group_dissolved"``, ``"moved_on"`` (a
   :class:`~psynet.sync.Regrouper` took them out of their previous group, and
   they are waiting there or sitting the round out),
-  ``"finished"`` or ``"left_experiment"`` (they failed or returned the study).
+  ``"finished"`` or ``"left_experiment"`` (they failed or returned the study;
+  a member failed for being late or waiting too long at this group's barrier
+  records ``"late"`` or ``"waited_too_long"`` instead).
   A cued trial whose pages they were on in that group keeps the reason in
   ``sync_group_outcome``, even after they join another group (see
   :ref:`round outcomes <sync-round-outcome>`).
