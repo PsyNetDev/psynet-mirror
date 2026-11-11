@@ -158,9 +158,9 @@ Moving slow players on
 The barrier after the decision page waits for
 both partners. A player who hasn't reached it within ``late_after`` seconds
 of the round's start is late. A late player has usually closed their page,
-so with ``late_action="leave_all_groups"`` they are removed from the pair and
-from the cohort: their partner carries on alone, and the next split doesn't
-wait for them. The narrower ``late_action="leave_group"`` removes them from
+so with ``late_action="leave_group"`` and ``also_leave=[COHORT]`` they are
+removed from the pair and from the cohort: their partner carries on alone,
+and the next split doesn't wait for them. Without ``also_leave`` they leave
 the pair only, so the next split would wait for them until its deadline
 (see :class:`~psynet.sync.GroupBarrier` and :ref:`sync-leaving-a-group`).
 A player on a page
@@ -351,7 +351,9 @@ group and round, when the first member's trial creates the node, so the
 whole group plays the same draw. A player who is in no group of that type
 when the trial starts gets an ungrouped trial, with ``sync_group_id`` set to
 ``None``; ``show_trial`` can check ``self.sync_group is None`` to give them
-a solo version.
+a solo version. The ``crowd_estimate`` demo does this in a fixed group's
+loop of questions, cued with ``round=question``, and exports each round's
+``sync_group_outcome`` for each player.
 
 **A fixed team that plays on with dropouts.** The ``public_goods`` demo
 forms teams of three once, with a :class:`~psynet.sync.SimpleGrouper` and
@@ -379,6 +381,62 @@ the barrier, the same call moves the trustee on: ``stop_at`` holds only bots
 the barrier hasn't released yet. The first turn's barrier closes the round
 to newcomers: a player who joins the pair after it starts the next round
 rather than joining a round whose first turn is over.
+
+**Turns in a fixed group.** In the ``story_chain`` demo, a group of three
+writes a story one sentence at a time. Each turn is one cued round in the
+group's loop, ``StoryTurn.cue(turn_definition, round=turn)`` (see
+:ref:`a fixed group's loop <rounds-fixed-group-loop>`). The definition
+function runs only at the turn's first cue, so it chooses the writer once,
+by seat with :func:`~psynet.sync.group_seats`, and the node's definition
+stores their ID for every member's trial and for the export:
+
+.. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
+   :pyobject: choose_writer
+
+The writer gets the writing page and then a code block that stores their
+sentence in ``node.var``, before the turn's barrier; the others go straight
+to the barrier, whose ``waiting_screen`` shows them the story so far. The
+barrier closes the round:
+
+.. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
+   :pyobject: StoryTurn.show_trial
+
+The sentence is stored in the writer's own request, so it is there before
+the barrier lets the others go on, and it is kept if the group dissolves
+while the writer is still writing. A writer the barrier has already removed
+for being late stores nothing. Locking their trial first orders a submit
+that races the removal, so a sentence is never stored after the others have
+moved on and stored ``None``. In a rare race the writer still stores their
+sentence and is then removed as late, so ``"late"`` can come with a
+sentence. `PsyNet issue #1161
+<https://gitlab.com/PsyNetDev/PsyNet/-/issues/1161>`__ proposes that late
+removal skip members busy in their own request, which would make the lock
+unnecessary:
+
+.. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
+   :pyobject: StoryTurn.save_sentence
+
+A turn can also end without a sentence, when the writer is late or leaves.
+Each member's trial stores ``None`` when it finishes if the turn has no
+sentence yet, so every finished turn has one, whether the barrier released
+or the group dissolved:
+
+.. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
+   :pyobject: StoryTurn.on_finalized
+
+When the sentence is ``None``, the writer trial's
+``sync_group_outcome`` says why: ``"stayed"`` if they ran out of time, or
+why they left the group, such as ``"late"`` if the barrier took them out or
+``"left_experiment"`` if they returned the study. With
+``"group_dissolved"``, the writer was the last one left and ran out of time
+or returned the study. If the
+chosen writer leaves between the turn's first cue and their own, they have
+no trial for the turn at all, and the export's ``writer_outcome`` is
+``None``. The export has one row per turn, from the nodes and the writers'
+trials, and its ``finished`` column tells a turn that stored ``None`` from
+one that never finished. Each member stores their group's ID when the group forms, so the
+last page can read the story from the group's nodes even after the group
+has ended.
 
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
 example to pair players by their earlier answers, and ``assign_roles``

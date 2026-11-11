@@ -47,11 +47,17 @@ have already failed. Otherwise, in this order, it:
 6. redirects the participant to ``unsuccessful_end``, unless they are already
    in an end branch or have completed the experiment.
 
-One exception to this order: a barrier's ``late_action="fail"`` removes the
-member from all their groups (the barrier's as ``"late"``), and a group
-dissolving with ``below_quorum="fail"`` removes them from that group (as
-``"group_dissolved"``), before calling ``fail()``, so fail routines no longer
-see those groups in ``active_sync_groups``.
+Three exceptions to this order remove the participant from groups before
+calling ``fail()``, so fail routines no longer see those groups in
+``active_sync_groups``:
+
+- a barrier's ``late_action="fail"`` removes the member from all their groups
+  (the barrier's as ``"late"``, the others as ``"left_experiment"``);
+- a ``GroupBarrier``'s ``max_wait_action="fail"`` removes the waiter from all
+  their groups (the barrier's as ``"waited_too_long"``, the others as
+  ``"left_experiment"``);
+- a group dissolving with ``below_quorum="fail"`` removes them from that group
+  (as ``"group_dissolved"``).
 
 Error recovery passes ``redirect_to_end=False`` because its exit plan handles
 the terminal page.

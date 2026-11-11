@@ -16,6 +16,7 @@ from psynet.timeline import (
     Response,
     Timeline,
 )
+from psynet.trial.main import Trial
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from timeline_hold_helpers import (  # noqa: E402
@@ -208,5 +209,60 @@ def test_browser_timeout_answers_must_be_choices(in_experiment_directory, db_ses
         # Nothing selected is still accepted, and validate is still skipped.
         payload = _submit(exp, participant, None, time_limit_reached=True)
         assert payload["submission"] == "approved"
+    finally:
+        exp.timeline = original
+
+
+class _GuessTrial(Trial):
+    time_estimate = 10
+
+    def show_trial(self, experiment, participant):
+        return [
+            ModularPage("guess", "Guess", TextControl(), time_limit=10),
+            ModularPage("again", "Again", TextControl(), time_limit=10),
+            ModularPage("confirm", "Sure?", TextControl()),
+        ]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_trial_keeps_whether_its_timed_page_ran_out(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    original = exp.timeline
+    exp.timeline = Timeline(_GuessTrial.cue({}), InfoPage("Done", time_estimate=1))
+    try:
+        (participant,) = _working_participants(exp, 1)
+        _json_timeline(exp, participant)
+        trial = participant.current_trial
+        assert trial.time_limit_reached is None
+
+        assert _submit(exp, participant, "7")["submission"] == "approved"
+        assert trial.time_limit_reached is False
+
+        participant.page_deadline = timenow()
+        assert (
+            _submit(exp, participant, None, time_limit_reached=True)["submission"]
+            == "approved"
+        )
+        assert trial.time_limit_reached is True
+
+        # Neither a barrier release ending a wait, a timed page shown while
+        # waiting at a barrier, nor an untimed page clears it.
+        confirm = ModularPage("confirm", "Sure?", TextControl())
+        exp._record_interrupted_response(confirm, participant, {})
+        assert trial.response.metadata["interrupted"]
+        assert trial.time_limit_reached is True
+        participant.waiting_barrier_id = "barrier"
+        waiting = ModularPage("timed", "Go", TextControl(), time_limit=10)
+        participant.page_deadline = None
+        resp = _respond(waiting, participant, "x")
+        waiting._accept_response(resp, exp, participant)
+        participant.waiting_barrier_id = None
+        assert trial.time_limit_reached is True
+        assert _submit(exp, participant, "yes")["submission"] == "approved"
+        assert trial.time_limit_reached is True
     finally:
         exp.timeline = original

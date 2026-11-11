@@ -171,16 +171,21 @@ barrier's ``max_wait_action`` and the grouper's ``below_quorum`` decide:
      - carries on alone
 
 Ann's release doesn't count as the pair passing the barrier, so
-``on_release`` doesn't run. Her trial
-records ``"waited_too_long"`` when she carries on (with the notice "Your
-partner didn't arrive in time. Please continue."), or
-``"left_experiment"`` when she is failed. Ben's trial records
-``"group_dissolved"`` in every row. So with the defaults both are failed,
-including Ann, who was on time. To move on without the absent member instead,
-give the barrier ``late_after`` (see :ref:`sync-dropout-settings`).
+``on_release`` doesn't run. Ann leaves the pair as ``"waited_too_long"``
+before she is failed or moves on. So in every row her trial records
+``"waited_too_long"``, and so does ``ann.sync_group_removal_reason("team")``.
+When she carries on, she sees the notice "Your partner didn't arrive in
+time. Please continue." When she is failed, she leaves her other groups,
+such as a cohort she shares with Ben, as ``"left_experiment"``, and her
+final page says "We waited too long for other participants, so we ended
+your session." Ben's trial records ``"group_dissolved"`` in every row. So
+with the defaults both are failed, including Ann, who was on time. To move
+on without the absent member instead, give the barrier ``late_after`` (see
+:ref:`sync-dropout-settings`).
 
 Checked by ``test_case_max_wait_time_runs_out`` in
-``tests/isolated/test_trial_cue_groups.py``, for all four rows.
+``tests/isolated/test_trial_cue_groups.py``, for all four rows, and
+for the ``"fail"`` rows with a cohort that Ann and Ben share.
 
 A group dissolves while a member is still on a round page
 ---------------------------------------------------------
@@ -196,6 +201,9 @@ below its quorum of three and is dissolved:
   estimate, ``submitted`` lets him straight through, and his next page says
   "Too few members of your group remained. Please continue." (in a pair: "Your partner is no longer in your group. Please
   continue.").
+- The round's node records when the group dissolved, in
+  ``sync_group_dissolved_at`` (see :ref:`dissolved rounds <sync-dissolved-round>`), so the
+  export shows the round as cancelled even if Ben never submits.
 
 Both estimates stay on their trials, in ``trial.answer["estimate"]``, so an
 export or ``on_finalized`` can score the round from ``node.all_trials`` (see
@@ -213,7 +221,8 @@ in ``tests/isolated/test_trial_cue_groups.py``, and the stored estimates by
 Members end up at different barriers
 ------------------------------------
 
-The pair still takes newcomers during the game, and each question starts
+Nothing stops the pair's top-ups, so it still takes newcomers during the
+game, and each question starts
 with a ``GroupBarrier(id_="ready", group_type="team")`` before the cue.
 Ann and Ben are in a round when Cat joins. Cat goes through the game from
 its start, so she waits at ``ready`` while Ann waits for her at

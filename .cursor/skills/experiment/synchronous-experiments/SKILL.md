@@ -30,8 +30,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `demos/experiments/sync_quorum`, and
   `demos/experiments/gibbs_within_sync`; for games played in rounds, also
   `demos/experiments/ultimatum_pairing`,
-  `demos/experiments/lowest_unique_number` and, for a fixed team that plays
-  on when members leave, `demos/experiments/public_goods`.
+  `demos/experiments/lowest_unique_number`,
+  `demos/experiments/crowd_estimate` and, for a fixed team that plays on
+  when members leave, `demos/experiments/public_goods`; for taking turns,
+  `demos/experiments/story_chain`.
 
 ## Choose the synchronization model
 
@@ -79,8 +81,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   (see "Release callbacks"). `on_release` doesn't run
   for members who left before the release or whose group dissolved, so read
   what it stores with `trial.var.get("score")` (or `participant.var.get`),
-  which returns `None` when it isn't set. Nothing runs when a group
-  dissolves, so with `below_quorum="continue_without_group"`, when a
+  which returns `None` when it isn't set. No experiment code runs when a
+  group dissolves; PsyNet only sets `node.sync_group_dissolved_at` on the
+  node of a round its group dissolved during, so exports should read that rather than store
+  their own marker from `score_answer`. With
+  `below_quorum="continue_without_group"`, when a
   member's cued trial has `sync_group_outcome == "group_dissolved"`,
   compute their result where it is needed (`show_feedback`, an export or
   `on_finalized`) from every stored `trial.answer` on `node.all_trials`.
@@ -90,8 +95,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   yet when `show_feedback` runs. The outcome is
   only written during the trial's pages, so for a barrier after
   `show_trial` check `participant.sync_group_removal_reason(...)` instead.
-- Sort `sync_group.participants` by participant ID before deterministic role
-  assignment; PsyNet does not guarantee the stored order.
+- For deterministic roles or turn order, use `psynet.sync.group_seats(group)`
+  (seats in join order, stable while the group exists), as in
+  `story_chain`; PsyNet does not guarantee the order of
+  `sync_group.participants`.
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries
   such as submit, rate, reveal, score, or bonus computation. PsyNet refuses
   `waiting_logic` on a barrier inside `show_trial`; use `waiting_screen` there.
@@ -107,8 +114,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   a split join the next one rather than being failed. For players who stop
   responding mid-round, follow "Moving slow players on" in
   `code/multiplayer/writing_a_round_based_experiment`: use
-  `late_action="leave_all_groups"` so that they also leave the `within`
-  group; see the quorum caveat there.
+  `late_action="leave_group"` with `also_leave=[<within group type>]` so
+  that they also leave the `within` group; see the quorum caveat there.
 - A member on a timed page isn't treated as late until its limit plus 10 s,
   so `late_after` need not cover the page (see "Timeouts" in
   `code/multiplayer/synchronization`); the demos use 30 s so that a
@@ -143,6 +150,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `code/multiplayer/synchronization`).
   To let participants who find no group carry on alone instead of being
   failed, pass the grouper `max_wait_action="continue_without_group"`.
+  `demos/experiments/crowd_estimate` shows this whole open-lobby workflow,
+  with each question as a cued trial whose ungrouped version lets a player
+  without a group answer alone.
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
   needs a group: stop a rounds loop with it in the `while_loop` condition,
   and give a synchronized trial maker a solo alternative, for example
@@ -287,7 +297,10 @@ Module("game", for_loop(
   `conditional` on `participant.in_sync_group(...)`, with a page as the
   other branch, so a player the regrouper sat out gets a page instead of a
   trial. With a cohort (`within=`), use the three-way `switch` on
-  `round_status` instead, as described above. A started trial runs to its
+  `round_status` instead, as described above. Where players without a
+  group play on alone, as in an open lobby, leave the cue unwrapped and
+  branch in `show_trial` on `self.sync_group is None`, as `crowd_estimate`
+  does. A started trial runs to its
   end even if the player leaves the group, so its `show_feedback` explains every outcome, including being
   removed for lateness. Read how the round ended for each player from
   `trial.sync_group_outcome` (`"stayed"`, or why they left, such as
@@ -379,7 +392,9 @@ silent member, and for how long to wait out timeouts in bot tests.
 - Do not leave default wait limits in place for real recruitment sessions
   without checking whether they are appropriate.
 - Do not assume top-ups are safe; define exactly which groups may accept late
-  participants.
+  participants. Top-ups never stop by themselves, and a `join_criterion` only
+  turns newcomers away; see "Groups below quorum" in
+  `code/multiplayer/synchronization` for the ways to stop them.
 - Do not set recruitment targets that leave stranded participants unable to form
   a full group.
 - Do not auto-reject participants who waited or were stranded by no-shows; plan

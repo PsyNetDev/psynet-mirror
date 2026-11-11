@@ -30,7 +30,9 @@ and platform docs when a study is near deployment.
   pairing does not wait for the 0.5 s poller; lock contention falls back to the
   poller.
   `quorum` (how many members a group needs to keep going), `max_group_size`,
-  `join_existing_groups`, and `join_criterion` control top-up behavior.
+  `join_existing_groups`, `join_criterion` (who may join) and `top_up_wait`
+  control top-up behavior; groups accept top-ups until they are stopped
+  explicitly (see "Groups below quorum" in the synchronization docs).
 - `psynet.sync.GroupCloser` closes a group before participants are regrouped
   with the same `group_type`.
 - `participant.sync_group` is convenient when the participant has one active
