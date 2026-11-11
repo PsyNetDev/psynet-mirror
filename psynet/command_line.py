@@ -1397,6 +1397,10 @@ def run_pre_auto_reload_checks():
         config.load()
 
     from .experiment_scaffold import get_editable_psynet_source
+    from .isolated_environment import (
+        DEVELOP_FOLDERS_PARENT,
+        ensure_develop_folders_parent,
+    )
 
     develop_path = _develop_path(config)
     if "." in str(develop_path):
@@ -1406,6 +1410,8 @@ def run_pre_auto_reload_checks():
             "~/.dallingerconfig, for example "
             "dallinger_develop_directory = /tmp/psynet_develop/dallinger_develop"
         )
+    if str(develop_path.parent) == DEVELOP_FOLDERS_PARENT:
+        ensure_develop_folders_parent()
 
     if get_editable_psynet_source() is not None:
         root_dir = str(psynet_dir())
@@ -2379,7 +2385,7 @@ def _check_ssh_deploy_credentials(server, ingress):
 def _forget_tables_defined_in_experiment_directory():
     # We need to instruct SQLAlchemy to forget tables defined in the experiment directory,
     # because otherwise SQLAlchemy will get confused and throw errors when we run subsequent commands
-    # that import the same experiment from other locations (e.g. /tmp/dallinger_develop).
+    # that import the same experiment from other locations (e.g. /tmp/psynet_develop/dallinger_develop).
 
     from dallinger.db import Base
 

@@ -949,17 +949,17 @@ def test_reloader_ignores_only_other_develop_folders(own):
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_develop_folder_is_in_a_parent_of_its_own():
+def test_develop_folder_defaults_to_a_parent_of_its_own():
     """The reloader watches the development folder's parent, so keep it out of /tmp."""
     from dallinger.config import get_config
 
-    from psynet.command_line import _develop_path
-    from psynet.isolated_environment import DEVELOP_FOLDERS_PARENT
+    from psynet.experiment import Experiment
 
     config = get_config()
     if not config.ready:
         config.load()
-    assert _develop_path(config).parent == Path(DEVELOP_FOLDERS_PARENT)
+    default = Experiment.config_defaults()["dallinger_develop_directory"]
+    assert default == "/tmp/psynet_develop/dallinger_develop"
 
 
 @pytest.mark.parametrize("browsers", [False, True])
