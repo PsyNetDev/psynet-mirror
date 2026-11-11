@@ -229,6 +229,7 @@ class DenseTrialMaker(StaticTrialMaker):
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
         sync_group_late_action: LateAction = "fail",
+        sync_group_also_leave: Optional[List[str]] = None,
         sync_group_waiting_message=None,
     ):
         super().__init__(
@@ -256,6 +257,7 @@ class DenseTrialMaker(StaticTrialMaker):
             sync_group_max_wait_action=sync_group_max_wait_action,
             sync_group_late_after=sync_group_late_after,
             sync_group_late_action=sync_group_late_action,
+            sync_group_also_leave=sync_group_also_leave,
             sync_group_waiting_message=sync_group_waiting_message,
         )
 

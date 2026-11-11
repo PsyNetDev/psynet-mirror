@@ -240,7 +240,7 @@ class StaticTrialMaker(ChainTrialMaker):
         so that in every given trial the SyncGroup works on the same node together.
         The other ``sync_group_*`` options raise an error without it.
 
-    sync_group_waiting_message, sync_group_max_wait_time, sync_group_max_wait_action, sync_group_late_after, sync_group_late_action
+    sync_group_waiting_message, sync_group_max_wait_time, sync_group_max_wait_action, sync_group_late_after, sync_group_late_action, sync_group_also_leave
         The message and time limits of the trial maker's own sync-group
         waits; see :class:`~psynet.trial.main.TrialMaker`.
 
@@ -318,6 +318,7 @@ class StaticTrialMaker(ChainTrialMaker):
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
         sync_group_late_action: LateAction = "fail",
+        sync_group_also_leave: Optional[List[str]] = None,
         sync_group_waiting_message=None,
     ):
         _reject_removed_balance_argument(
@@ -427,6 +428,7 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_max_wait_action=sync_group_max_wait_action,
             sync_group_late_after=sync_group_late_after,
             sync_group_late_action=sync_group_late_action,
+            sync_group_also_leave=sync_group_also_leave,
             sync_group_waiting_message=sync_group_waiting_message,
         )
 

@@ -934,8 +934,9 @@ decisions each one needs. These settings carry them out:
   the next (see `Rounds with changing groups`_). One who stops responding
   partway through a round is removed from their group by
   ``late_action="leave_group"``, but stays in the ``within`` group, so the
-  next split waits for them until its deadline; ``late_action="leave_all_groups"``
-  takes them out of both (see :ref:`rounds-slow-players`).
+  next split waits for them until its deadline; adding
+  ``also_leave=["cohort"]``, with the ``within`` group's type, takes them out
+  of both (see :ref:`rounds-slow-players`).
 
 Test each kind your design can meet with bots (see :ref:`bots_that_drop_out`).
 :doc:`late_slow_and_leaving_players` follows these settings through concrete
@@ -982,9 +983,10 @@ the maximum waiting time:
     :class:`~psynet.sync.GroupBarrier` yet: a member who hasn't reached the
     barrier within ``late_after`` seconds of the group's previous barrier
     pass, or of joining the group if that is later, is late, and is handled
-    by ``late_action``: ``"fail"`` (default) fails them, ``"leave_group"``
-    removes them from the group, and ``"leave_all_groups"`` removes them from
-    all their groups, such as the cohort a pair was formed in. Whichever
+    by ``late_action``: ``"fail"`` (default) fails them, and ``"leave_group"``
+    removes them from the group. With ``"leave_group"``, ``also_leave`` lists
+    the other group types they leave too, such as ``["cohort"]`` for the
+    cohort a pair was formed in. Whichever
     action it is, the late member leaves the barrier's group with the
     reason ``"late"``, so ``participant.sync_group_removal_reason`` and their
     trial's ``sync_group_outcome`` say ``"late"`` even when they are failed.
@@ -1062,8 +1064,8 @@ Two separate settings decide what happens when someone leaves a group:
 
 - **The member who leaves** is handled by why they left: a barrier's
   ``max_wait_action`` (they waited too long for the others) or
-  ``late_action`` (the others waited too long for them), each ``"fail"``,
-  ``"leave_group"`` or ``"leave_all_groups"``, or their own failure, for
+  ``late_action`` (the others waited too long for them), each ``"fail"``
+  or ``"leave_group"``, or their own failure, for
   example when they return the study.
 - **The members left behind** carry on as before while the group still has
   its ``quorum``. Below it, what happens depends on whether the group
@@ -1144,7 +1146,7 @@ settings together decide both fates:
    * - waited too long, ``max_wait_action="leave_group"``
      - leaver carries on alone, absent partner failed
      - both carry on alone
-   * - was late, ``late_action="leave_group"`` or ``"leave_all_groups"``
+   * - was late, ``late_action="leave_group"``
      - late member carries on alone, partner who was on time failed
      - both carry on alone
 
@@ -1159,8 +1161,8 @@ To let the members who were on time carry on, set
     SimpleGrouper("pair", initial_group_size=2, below_quorum="continue_without_group")
 
 ``late_action="fail"`` instead ends the session for both. With
-``late_action="leave_all_groups"`` the same applies to the late member's other
-groups: a cohort without top-ups that one departure takes below its quorum
+``also_leave`` the same applies to the late member's groups of the listed
+types: a cohort without top-ups that one departure takes below its quorum
 fails all its other members, including those in other pairs, unless its
 grouper has ``below_quorum="continue_without_group"``.
 

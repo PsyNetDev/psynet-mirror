@@ -1625,10 +1625,17 @@ def _lock_sync_group(
 
 
 #: What a :class:`GroupBarrier` does with a member who is late reaching it; see ``late_action``.
-LateAction = Literal["fail", "leave_group", "leave_all_groups"]
+LateAction = Literal["fail", "leave_group"]
 
 
-def _validate_group_timeouts(max_wait_action, late_after, late_action, prefix=""):
+def _validate_group_timeouts(
+    max_wait_action,
+    late_after,
+    late_action,
+    also_leave=None,
+    group_type=None,
+    prefix="",
+):
     """Check a GroupBarrier's time-out options, naming them with ``prefix`` (e.g. ``"sync_group_"``)."""
     for name, value, allowed in [
         ("max_wait_action", max_wait_action, ("fail", "leave_group")),
@@ -1647,6 +1654,24 @@ def _validate_group_timeouts(max_wait_action, late_after, late_action, prefix=""
         raise ValueError(
             f"{prefix}max_wait_action has no effect with {prefix}late_after, which "
             f"leaves no wait limit; use {prefix}late_action instead."
+        )
+    if also_leave is None:
+        return
+    if late_action != "leave_group":
+        raise ValueError(
+            f"{prefix}also_leave only takes effect with "
+            f"{prefix}late_action='leave_group'."
+        )
+    if not isinstance(also_leave, (list, tuple)) or not all(
+        isinstance(other, str) for other in also_leave
+    ):
+        raise ValueError(
+            f"{prefix}also_leave must be a list of group types, got {also_leave!r}."
+        )
+    if group_type in also_leave:
+        raise ValueError(
+            f"{prefix}also_leave lists the barrier's own group type "
+            f"{group_type!r}, which a late member leaves anyway."
         )
 
 
@@ -1813,13 +1838,18 @@ class GroupBarrier(Barrier):
     late_action
         What happens to a member who is later than ``late_after``: ``"fail"`` (default) fails them and sends
         them to the end of the experiment; ``"leave_group"`` removes them from the group, so the rest can go on
-        without them (see :ref:`sync-leaving-a-group` for what the removed member sees);
-        ``"leave_all_groups"`` also removes them from their other groups, such as the cohort a pair was
-        formed in, so those groups don't wait for them either. With every action the member leaves this
+        without them (see :ref:`sync-leaving-a-group` for what the removed member sees).
+        With every action the member leaves this
         barrier's group with the reason ``"late"`` (with ``"fail"``, before they are failed), which their
         trial's :attr:`~psynet.trial.main.Trial.sync_group_outcome` records. A group that this leaves below
         its quorum dissolves as its ``below_quorum`` says, so with ``"fail"`` one late member can fail a whole
         cohort.
+
+    also_leave
+        With ``late_action="leave_group"``, the other group types a late member also leaves, with the
+        reason ``"late"``, for example ``["cohort"]`` for the cohort a pair was formed in, so that the
+        cohort doesn't wait for them either. Their groups of other types keep them. ``None`` (default)
+        leaves only this barrier's group.
 
     on_release
         Optional callback invoked when the barrier releases the group. It may take
@@ -1963,6 +1993,7 @@ class GroupBarrier(Barrier):
         max_wait_action: Literal["fail", "leave_group"] = "fail",
         late_after: Optional[float] = None,
         late_action: LateAction = "fail",
+        also_leave: Optional[Sequence[str]] = None,
         expected_wait=None,
         waiting_message=None,
         notify_arrivals: bool = True,
@@ -1972,7 +2003,9 @@ class GroupBarrier(Barrier):
         stop_top_ups: bool = False,
         pass_newcomers: bool = False,
     ):
-        _validate_group_timeouts(max_wait_action, late_after, late_action)
+        _validate_group_timeouts(
+            max_wait_action, late_after, late_action, also_leave, group_type
+        )
         max_wait_time = _group_max_wait_time(max_wait_time, late_after, default=20)
         super().__init__(
             id_=id_,
@@ -1992,6 +2025,7 @@ class GroupBarrier(Barrier):
         self.notify_arrivals = bool(notify_arrivals)
         self.late_after = late_after
         self.late_action = late_action
+        self.also_leave = list(also_leave or [])
         self.stop_top_ups = bool(stop_top_ups)
         self.pass_newcomers = bool(pass_newcomers)
 
@@ -2378,24 +2412,31 @@ class GroupBarrier(Barrier):
 
         ``removals`` holds ``(group, late, group_size)`` for each group of this
         barrier with late members, ``group_size`` counted before the removal.
-        Late members leave this barrier's group as ``"late"``. With
-        ``late_action="leave_all_groups"`` they also leave their other groups,
-        such as a cohort, as ``"late"``; with ``late_action="fail"`` they
-        leave them as ``"left_experiment"`` and are then failed. Every late
-        member leaves every group, and is failed, before any quorum is
-        checked, so a group dissolving cannot dissolve or fail a late member
-        who was about to leave it too.
+        Late members leave this barrier's group as ``"late"``, and their
+        groups of the types in ``also_leave`` as ``"late"`` too; with
+        ``late_action="fail"`` they leave all their other groups as
+        ``"left_experiment"`` and are then failed. Every late member leaves
+        those groups, and is failed, before any quorum is checked, so a group
+        dissolving cannot dissolve or fail a late member who was about to
+        leave it too.
         """
         fail = self.late_action == "fail"
         left = {}
         for group, late, _ in removals:
             for participant in late:
                 groups = [(group, "late")]
-                if self.late_action != "leave_group":
+                active = participant.active_sync_groups
+                if fail:
                     groups += [
-                        (other, "left_experiment" if fail else "late")
-                        for other in participant.active_sync_groups.values()
+                        (other, "left_experiment")
+                        for other in active.values()
                         if other.id != group.id
+                    ]
+                else:
+                    groups += [
+                        (active[group_type], "late")
+                        for group_type in self.also_leave
+                        if group_type in active
                     ]
                 for left_group, reason in groups:
                     logger.info(

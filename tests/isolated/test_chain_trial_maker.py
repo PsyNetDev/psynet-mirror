@@ -229,6 +229,7 @@ def test_sync_group_max_wait_time_with_late_after():
         {"sync_group_max_wait_action": "leave_group"},
         {"sync_group_late_after": 30},
         {"sync_group_late_action": "leave_group"},
+        {"sync_group_also_leave": ["cohort"]},
         {"sync_group_waiting_message": "Waiting for your partner"},
     ],
 )
@@ -1488,6 +1489,13 @@ def test_repeats_without_a_trial_limit_name_the_missing_argument():
         (
             {"sync_group_late_after": 10, "sync_group_max_wait_action": "leave_group"},
             "use sync_group_late_action",
+        ),
+        (
+            {
+                "sync_group_late_action": "leave_group",
+                "sync_group_also_leave": ["main"],
+            },
+            "sync_group_also_leave lists the barrier's own group type",
         ),
         (
             {"sync_group_waiting_message": "{SECONDS} s"},

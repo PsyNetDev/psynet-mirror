@@ -2106,8 +2106,11 @@ class TrialMaker(Module):
     sync_group_late_action
         What happens to a member who is later than ``sync_group_late_after``: ``"fail"``
         (default) fails them; ``"leave_group"`` removes them from the group, so the rest can go on
-        without them (see :ref:`sync-leaving-a-group`); ``"leave_all_groups"`` also removes them
-        from their other groups.
+        without them (see :ref:`sync-leaving-a-group`).
+
+    sync_group_also_leave
+        With ``sync_group_late_action="leave_group"``, the other group types a late member also
+        leaves, for example ``["cohort"]``. See ``also_leave`` in :class:`~psynet.sync.GroupBarrier`.
 
     sync_group_waiting_message
         Message on the waiting indicator at the trial maker's own sync-group waits
@@ -2139,6 +2142,7 @@ class TrialMaker(Module):
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
         sync_group_late_action: LateAction = "fail",
+        sync_group_also_leave: Optional[List[str]] = None,
         sync_group_waiting_message=None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
@@ -2213,12 +2217,15 @@ class TrialMaker(Module):
                 sync_group_max_wait_action=(sync_group_max_wait_action, "fail"),
                 sync_group_late_after=(sync_group_late_after, None),
                 sync_group_late_action=(sync_group_late_action, "fail"),
+                sync_group_also_leave=(sync_group_also_leave, None),
                 sync_group_waiting_message=(sync_group_waiting_message, None),
             )
         _validate_group_timeouts(
             sync_group_max_wait_action,
             sync_group_late_after,
             sync_group_late_action,
+            sync_group_also_leave,
+            sync_group_type,
             prefix="sync_group_",
         )
         if sync_group_type is not None:
@@ -2245,6 +2252,7 @@ class TrialMaker(Module):
         self.sync_group_max_wait_action = sync_group_max_wait_action
         self.sync_group_late_after = sync_group_late_after
         self.sync_group_late_action = sync_group_late_action
+        self.sync_group_also_leave = sync_group_also_leave
         self.sync_group_waiting_message = sync_group_waiting_message
 
         elts = self.compile_elts()
@@ -2269,6 +2277,7 @@ class TrialMaker(Module):
             max_wait_action=self.sync_group_max_wait_action,
             late_after=self.sync_group_late_after,
             late_action=self.sync_group_late_action,
+            also_leave=self.sync_group_also_leave,
             waiting_message=self.sync_group_waiting_message,
         )
 
@@ -3380,8 +3389,11 @@ class NetworkTrialMaker(TrialMaker):
     sync_group_late_action
         What happens to a member who is later than ``sync_group_late_after``: ``"fail"``
         (default) fails them; ``"leave_group"`` removes them from the group, so the rest can go on
-        without them (see :ref:`sync-leaving-a-group`); ``"leave_all_groups"`` also removes them
-        from their other groups.
+        without them (see :ref:`sync-leaving-a-group`).
+
+    sync_group_also_leave
+        With ``sync_group_late_action="leave_group"``, the other group types a late member also
+        leaves, for example ``["cohort"]``. See ``also_leave`` in :class:`~psynet.sync.GroupBarrier`.
 
     sync_group_waiting_message
         Message on the waiting indicator at the trial maker's own sync-group waits
@@ -3461,6 +3473,7 @@ class NetworkTrialMaker(TrialMaker):
         sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
         sync_group_late_after: Optional[float] = None,
         sync_group_late_action: LateAction = "fail",
+        sync_group_also_leave: Optional[List[str]] = None,
         sync_group_waiting_message=None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
@@ -3504,6 +3517,7 @@ class NetworkTrialMaker(TrialMaker):
             sync_group_max_wait_action=sync_group_max_wait_action,
             sync_group_late_after=sync_group_late_after,
             sync_group_late_action=sync_group_late_action,
+            sync_group_also_leave=sync_group_also_leave,
             sync_group_waiting_message=sync_group_waiting_message,
             n_participants_completion=n_participants_completion,
         )
