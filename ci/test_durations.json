@@ -315,7 +315,7 @@
  "tests/playwright/adversarial_lifecycle.spec.js::default": 20.2,
  "tests/playwright/audio_meter_layout.spec.js::default": 0.3,
  "tests/playwright/audio_meter_layout.spec.js::legacy": 0.4,
- "tests/playwright/barrier_hold.spec.js::default": 26.6,
+ "tests/playwright/barrier_hold.spec.js::default": 46.6,
  "tests/playwright/broken_page_module.spec.js::default": 33.2,
  "tests/playwright/broken_page_module.spec.js::legacy": 27.2,
  "tests/playwright/demos/audio.spec.js::default": 70.6,
