@@ -545,7 +545,9 @@ def test_group_barrier_lets_removed_members_through(
     try:
         removed, partner = _working_participants(exp, 2)
         _arrive(exp, SimpleGrouper("pair", initial_group_size=2), [removed, partner])
-        removed.active_sync_groups["pair"].remove_participant(removed)
+        removed.active_sync_groups["pair"].remove_participant(
+            removed, reason="removed_by_experimenter"
+        )
         db_session.commit()
         _json_timeline(exp, removed)
         assert exp.timeline.get_current_elt(exp, removed).label == "after"
@@ -696,11 +698,15 @@ def test_regrouper_alternates_roles_and_counts_rounds(
         assert p.sync_group_removal_reason("pair") is None
     # A player removed from their pair, as by a kick, still sees their role.
     role = pairs.role(cohort[0])
-    cohort[0].active_sync_groups["pair"].remove_participant(cohort[0])
+    cohort[0].active_sync_groups["pair"].remove_participant(
+        cohort[0], reason="removed_by_experimenter"
+    )
     assert pairs.role(cohort[0]) == role
 
     # Three players left: one sits out, and plays first next round.
-    cohort[0].active_sync_groups["cohort"].remove_participant(cohort[3])
+    cohort[0].active_sync_groups["cohort"].remove_participant(
+        cohort[3], reason="removed_by_experimenter"
+    )
     _arrive(exp, pairs, cohort[:3])
     (sitter,) = [p for p in cohort[:3] if "pair" not in p.active_sync_groups]
     assert pairs.role(sitter) is None

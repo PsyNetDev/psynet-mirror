@@ -142,7 +142,9 @@ participant variable when the page is first built.
 
 ``sync_group.participants`` is a read-only list of the group's members; change
 membership with ``sync_group.add_participant(participant)`` and
-``sync_group.remove_participant(participant)``; in a timeline,
+``sync_group.remove_participant(participant, reason)``, where ``reason``
+says why they left (see
+:meth:`~psynet.participant.Participant.sync_group_removal_reason`); in a timeline,
 :func:`leave_group(group_type) <psynet.sync.leave_group>` takes the
 participant out of their group of that type, for example after their last
 round. The list has no guaranteed
@@ -1036,7 +1038,7 @@ barrier settings are described in `Timeouts`_, and the grouper's
    * - Removed by the experimenter
      - ``"removed_by_experimenter"``
      - dashboard, or ``remove_participant``
-     - ``remove_participant``
+     - ``remove_participant(participant, reason="removed_by_experimenter")``
 
 A player who comes back after being removed keeps their reason, so their
 next page can explain what happened (see `After leaving a group`_). Only

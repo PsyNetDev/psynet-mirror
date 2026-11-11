@@ -4593,11 +4593,7 @@ class SyncGroup(SQLBase, SQLMixin):
     def check_numbers(self):
         self.n_active_participants = len(self.active_participants)
 
-    def remove_participant(
-        self,
-        participant: Participant,
-        reason: RemovalReason = "removed_by_experimenter",
-    ):
+    def remove_participant(self, participant: Participant, reason: RemovalReason):
         """Remove a participant from the group.
 
         Parameters
@@ -4611,7 +4607,7 @@ class SyncGroup(SQLBase, SQLMixin):
             for their answer labels them "(left)" unless the reason is
             ``"moved_on"`` or ``"finished"`` (see :ref:`sync-showing-the-group`).
 
-            - ``"removed_by_experimenter"`` (default): removed without a more specific
+            - ``"removed_by_experimenter"``: removed without a more specific
               reason, for example from the dashboard.
             - ``"left_experiment"``, ``"waited_too_long"`` or
               ``"group_dissolved"``: they dropped out.
@@ -4631,9 +4627,7 @@ class SyncGroup(SQLBase, SQLMixin):
         """
         self._remove_without_quorum_check(participant, reason)
 
-    def _remove_without_quorum_check(
-        self, participant, reason="removed_by_experimenter"
-    ):
+    def _remove_without_quorum_check(self, participant, reason: RemovalReason):
         """Remove ``participant`` as :meth:`remove_participant` does, but never dissolve the group below its quorum."""
         if reason not in REMOVAL_REASONS:
             raise ValueError(
@@ -4799,11 +4793,7 @@ class SimpleSyncGroup(SyncGroup):
     #: or ``"continue_without_group"``.
     below_quorum = Column(String, default="fail")
 
-    def remove_participant(
-        self,
-        participant: Participant,
-        reason: RemovalReason = "removed_by_experimenter",
-    ):
+    def remove_participant(self, participant: Participant, reason: RemovalReason):
         super().remove_participant(participant, reason=reason)
         if reason not in _KEEPS_GROUP_REASONS:
             self.dissolve_if_below_quorum()

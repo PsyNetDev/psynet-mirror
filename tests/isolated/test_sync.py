@@ -7519,7 +7519,7 @@ def test_members_who_finish_dont_dissolve_the_group(
         group.add_participant(p)
     db_session.commit()
 
-    group.remove_participant(first)
+    group.remove_participant(first, reason="removed_by_experimenter")
     group.remove_participant(second, reason=reason)
 
     assert last.in_sync_group("main") is not dissolved

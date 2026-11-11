@@ -133,7 +133,7 @@ def test_a_pair_s_cued_trials_share_one_node_per_round(
     with pytest.raises(ValueError, match="already has the definition"):
         PairTrial.cue({"target": 8})[0].consume(exp, cohort[1])
 
-    pair.remove_participant(cohort[0])
+    pair.remove_participant(cohort[0], reason="removed_by_experimenter")
     assert trials[0].sync_group is pair
     PairTrial.cue({"target": 9})[0].consume(exp, cohort[0])
     ungrouped = cohort[0].current_trial
@@ -227,7 +227,7 @@ def test_only_ungrouped_trials_check_their_time_credit(
     cohort, _ = _paired(exp)
     pair = cohort[0].active_sync_groups["pair"]
     PairTrial.cue({})[0].consume(exp, cohort[0])
-    pair.remove_participant(cohort[1])
+    pair.remove_participant(cohort[1], reason="removed_by_experimenter")
     PairTrial.cue({})[0].consume(exp, cohort[1])
     with caplog.at_level(logging.INFO):
         for participant in cohort:
@@ -696,7 +696,7 @@ def test_an_explicit_round_skips_a_round_the_group_finished_without_the_player(
     joined = cue(newcomer, 1)
     assert joined.node is cohort[0].current_trial.node
     assert joined.definition == {"target": 1}
-    pair.remove_participant(cohort[1])
+    pair.remove_participant(cohort[1], reason="removed_by_experimenter")
     alone = cue(cohort[1], 2)
     assert alone.sync_group_id is None and alone.definition == {"target": 2}
 
@@ -1281,8 +1281,8 @@ def _waited_too_long(exp, group, stayer, leaver):
     return stayer
 
 
-def _removed_with_default_reason(exp, group, stayer, leaver):
-    group.remove_participant(leaver)
+def _removed_by_experimenter(exp, group, stayer, leaver):
+    group.remove_participant(leaver, reason="removed_by_experimenter")
     return leaver
 
 
@@ -1323,7 +1323,7 @@ def _dissolved_after_release(exp, group, stayer, leaver):
         (_late_at_barrier("fail"), "late", 3, True),
         (_late_at_barrier("leave_group"), "late", 2, False),
         (_waited_too_long, "waited_too_long", 2, False),
-        (_removed_with_default_reason, "removed_by_experimenter", 2, False),
+        (_removed_by_experimenter, "removed_by_experimenter", 2, False),
         (_dissolved_before_the_barrier, "group_dissolved", 2, False),
         (_dissolved_and_failed, "group_dissolved", 2, True),
         (_late_after_complete, None, 2, False),

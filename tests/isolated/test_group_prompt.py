@@ -107,7 +107,7 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
 
     # When a member leaves, the others fetch the seats again without them.
     published.clear()
-    group.remove_participant(first)
+    group.remove_participant(first, reason="removed_by_experimenter")
     _commit_barrier_arrivals()
     assert any(t.get("refresh") for t in published if t["participant_id"] == third.id)
 
@@ -298,5 +298,5 @@ def test_live_pages_redraw_the_group_when_someone_joins(
     assert redrawn_group_html(other.unique_id, named) == {"html": None}
     assert redrawn_group_html(first.unique_id, named[:-2]) == {"html": None}
     # A removed viewer keeps their drawing rather than one without "You".
-    group.remove_participant(first)
+    group.remove_participant(first, reason="removed_by_experimenter")
     assert redrawn_group_html(first.unique_id, named) == {"html": None}

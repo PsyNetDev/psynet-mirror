@@ -777,8 +777,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         when a barrier's ``late_action="fail"`` or ``max_wait_action="fail"``,
         or a dissolving group's ``below_quorum="fail"``, fails them), or
         ``"removed_by_experimenter"`` (removed from the dashboard, or by
-        :meth:`~psynet.sync.SyncGroup.remove_participant` without a more
-        specific reason).
+        :meth:`~psynet.sync.SyncGroup.remove_participant` with that reason).
         A player sat out of their first round was never in a group, so this
         returns ``None`` for them; check :meth:`~psynet.sync.Regrouper.sat_out`
         or ``in_sync_group`` instead.
