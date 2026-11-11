@@ -18,7 +18,7 @@ In each pair, the proposer offers part of
 offer they would accept.
 
 Each player's round is one cued ``OfferTrial``. Because the trial class has
-``sync_group_type = "pair"``, the two trials of a pair share a node: the
+``sync_group_type = PAIR``, the two trials of a pair share a node: the
 pair's offer and result go in ``trial.node.var`` and each player's coins in
 ``trial.var``, and ``get_basic_data`` reads both back.
 
