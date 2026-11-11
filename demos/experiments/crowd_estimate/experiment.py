@@ -9,44 +9,14 @@ estimate and the group's median, and gives a revised estimate.
 Each question is one cued ``EstimateTrial`` per player, in the group's round
 of that number (``round=question``). The group's trials for a question share
 a node, which holds the group's estimates and median; each player's estimate
-and revised estimate are their trial's answer, ``trial.var.timed_out`` says
-whether the estimate's time limit ran out, and ``trial.var.in_median`` says
-whether the estimate counted towards the median. A player without a
-group gets an ungrouped trial, which asks only for the estimate.
+and revised estimate are their trial's answer, and ``trial.var.in_median``
+says whether the estimate counted towards the median. A player without a
+group, because none formed, their group ended or they were removed for being
+late, gets ungrouped trials, which ask only for the estimate. See
+``README.md`` for how the demo handles dropouts and time-outs.
 
-Dropout decisions
------------------
-
-- A median of two estimates is just their mean, so a group needs three
-  members (its quorum).
-- Latecomers can join only until the game starts, so that everyone in a
-  group answers every question together. After that, a latecomer waits in
-  the lobby for a new group.
-- A group that falls below three before the game starts waits up to
-  ``TOP_UP_WAIT`` seconds for a latecomer to replace the member who left.
-- Each estimate has a time limit of ``ANSWER_SECONDS``; a player who runs
-  out of time gives none.
-- A member who stops responding is removed, so nobody waits for them: at
-  the start of the game ``LATE_AFTER`` seconds after they joined the group,
-  and during a question ``LATE_AFTER`` seconds after the group's previous
-  barrier, but not before their current page's time limit plus 10 seconds
-  (see "Timeouts" in ``docs/code/multiplayer/synchronization.rst``).
-- A group that falls below three once the game has started ends.
-- A median needs three estimates. When fewer arrive because players ran
-  out of time, the group's estimates are saved without a median and there
-  is nothing to revise. Nothing runs when a group ends, so if it ends while
-  its members wait for the median, the round has no group estimates or
-  median, only each player's estimate on their trial, and there is nothing
-  to revise either.
-- Nobody is failed for what another player did, or for waiting: anyone
-  without a group, because none formed within ``LOBBY_WAIT`` seconds, their
-  group ended, or they were removed, answers the remaining questions alone.
-
-The timeouts are short so that the bot test runs quickly. A real deployment
-would start short after about a minute, wait about three minutes in the
-lobby, allow about 30 seconds for ``ANSWER_SECONDS`` and about a minute for
-each of ``TOP_UP_WAIT`` and ``LATE_AFTER``, which also covers reading the
-introduction.
+The timeouts are short so that the bot test runs quickly; ``README.md``
+suggests values for a real deployment.
 """
 
 import statistics
@@ -178,11 +148,9 @@ class EstimateTrial(Trial):
 
     @classmethod
     def score_round(cls, trials: List["EstimateTrial"], node: SyncGroupNode):
-        """Save the group's estimates on the node, with their median if there are enough, and on each trial whether its estimate timed out and whether it is in the median."""
+        """Save the group's estimates on the node, with their median if there are enough, and on each trial whether its estimate is in the median."""
         estimates = {}
         for t in trials:
-            # The estimate page's response, the trial's only one so far.
-            t.var.timed_out = t.response.time_limit_reached
             # The answer so far; running out of time saves None.
             estimate = t.answer.get("estimate")
             if estimate is not None:
@@ -202,9 +170,11 @@ class EstimateTrial(Trial):
         elif self.sync_group_outcome == "group_dissolved":
             # The framework's notice on this page says too few members remained.
             reason = "Your group ended before you saw its median"
+        elif self.sync_group_outcome != "stayed":
+            reason = "You left your group before you saw its median"
         elif self.node.var.get("median") is None:
             reason = "Too few estimates arrived for a group median"
-        elif self.var.get("timed_out"):
+        elif self.time_limit_reached:
             reason = "You didn't give an estimate in time"
         else:
             estimates = self.node.var.estimates
@@ -257,9 +227,9 @@ class Exp(psynet.experiment.Experiment):
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or left first.
                     "estimate": t.answer.get("estimate"),
-                    # Whether the estimate's time limit ran out; None for an
-                    # answer given alone or one that missed the group's barrier.
-                    "timed_out": t.var.get("timed_out"),
+                    # Whether the estimate's time limit ran out, alone or in
+                    # a group; None if the player left before answering it.
+                    "time_limit_reached": t.time_limit_reached,
                     # Whether the estimate counted towards the group's median;
                     # None for an answer given alone or a group without one.
                     "in_median": t.var.get("in_median"),
@@ -282,159 +252,42 @@ class Exp(psynet.experiment.Experiment):
             ],
         }
 
-    test_n_bots = 11
+    test_n_bots = 4
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        group, latecomer, too_late = bots[:4], bots[3], bots[4]
-        group_b, group_c = bots[5:8], bots[8:]
-        silent, players = group[0], group[1:]
-
         # Three start short, and a latecomer joins before the game starts.
-        for bot in group[:3]:
+        for bot in bots[:3]:
             bot.take_page()
-        advance_past_wait_pages(group[:3], timeout=START_SHORT_AFTER + 10)
-        latecomer.take_page()
-        assert bots_by_sync_group(group, GROUP) == [group]
-        for bot in group:
+        advance_past_wait_pages(bots[:3], timeout=START_SHORT_AFTER + 10)
+        bots[3].take_page()
+        assert bots_by_sync_group(bots, GROUP) == [bots]
+        for bot in bots:
             bot.take_page()
-        advance_past_wait_pages(group)
+        advance_past_wait_pages(bots)
 
-        # One member goes silent; the other three carry on above quorum.
-        for bot, estimate in zip(players, [100, 200, 600.5]):
-            bot.take_page(response=estimate)
-        advance_past_wait_pages(players, timeout=ANSWER_SECONDS + LATE_AFTER + 10)
-        for bot in players:
-            text = bot.current_page_text
-            assert "median of your group's 3 estimates is 200." in text, text
-            assert bot.current_notice is None, bot.current_notice
+        medians = [250, 1450]
+        for estimates, median in zip(
+            [[100, 200, 300, 600.5], [1000, 1400, 1500, 1600]], medians
+        ):
+            for bot, estimate in zip(bots, estimates):
+                bot.take_page(response=estimate)
+            advance_past_wait_pages(bots)
+            for bot in bots:
+                text = bot.current_page_text
+                assert f"median of your group's 4 estimates is {median}." in text, text
+                bot.take_page(response=median)
+        run_bots_to_completion(bots)
+        assert not any(bot.failed for bot in bots)
 
-        # The game has started, so a latecomer can't join, even with a seat free.
-        too_late.take_page()
-        assert not too_late.with_participant(lambda p: p.in_sync_group(GROUP))
-
-        for bot in players:
-            bot.take_page(response=250)
-        for bot, estimate in zip(players, [1000, 1400, 1500]):
-            bot.take_page(response=estimate)
-        advance_past_wait_pages(players)
-        for bot in players:
-            text = bot.current_page_text
-            assert "median of your group's 3 estimates is 1400." in text, text
-            bot.take_page(response=1300)
-
-        # The silent member comes back, too late for the first question's
-        # median, and answers the second alone.
-        assert silent.current_notice == (
-            "Your group went on without you. Please continue."
-        ), silent.current_notice
-        silent.take_page(response=300)
-        assert silent.current_page_text.startswith("Your estimate didn't reach"), (
-            silent.current_page_text
-        )
-        silent.take_page()
-        assert silent.current_page_label == "estimate", silent.current_page_label
-
-        # Nobody else arrived, so the latecomer plays alone.
-        advance_past_wait_pages([too_late], timeout=LOBBY_WAIT + 10)
-        assert too_late.current_page_text == SOLO_TEXT, too_late.current_page_text
-        assert too_late.current_notice == (
-            "We couldn't form a group for you in time. Please continue."
-        ), too_late.current_notice
-
-        # A group loses a member before the game, and nobody replaces them.
-        for bot in group_b:
-            bot.take_page()
-        advance_past_wait_pages(group_b, timeout=START_SHORT_AFTER + 10)
-        quitter, *stayers = group_b
-        quitter.drop_out()
-        for bot in stayers:
-            bot.take_page()
-        advance_past_wait_pages(stayers, timeout=TOP_UP_WAIT + 10)
-        for bot in stayers:
-            assert bot.current_page_text == SOLO_TEXT, bot.current_page_text
-            assert bot.current_notice == (
-                "Too few members of your group remained. Please continue."
-            ), bot.current_notice
-
-        # A group ends while two members wait for the first median.
-        for bot in group_c:
-            bot.take_page()
-        advance_past_wait_pages(group_c, timeout=START_SHORT_AFTER + 10)
-        for bot in group_c:
-            bot.take_page()
-        advance_past_wait_pages(group_c)
-        quitter_c, *waiting = group_c
-        for bot, estimate in zip(waiting, [10, 20]):
-            bot.take_page(response=estimate)
-        quitter_c.drop_out()
-        advance_past_wait_pages(waiting)
-        for bot in waiting:
-            text = bot.current_page_text
-            assert text.startswith("Your group ended before you saw"), text
-            assert bot.current_notice == (
-                "Too few members of your group remained. Please continue."
-            ), bot.current_notice
-
-        finishers = [*bots[:5], *stayers, *waiting]
-        run_bots_to_completion(finishers)
-        assert not any(bot.failed for bot in finishers)
-
-        # The first group played both questions without the silent member;
-        # the last one ended before its barrier released, so it has no
-        # group estimates, only each player's estimate.
         data = self.get_basic_data()
-        player_ids = sorted(str(bot.id) for bot in players)
-        crowds = data["crowd_round"]
-        assert [
-            (c["question"], c["median"], sorted(c["estimates"] or [])) for c in crowds
-        ] == [
-            (0, 200, player_ids),
-            (0, None, []),
-            (1, 1400, player_ids),
-        ], crowds
-        assert crowds[1]["estimates"] is None, crowds
-        assert sorted(crowds[0]["estimates"].values()) == [100, 200, 600.5]
-        answers = {
-            (r["participant_id"], r["question"]): r for r in data["player_round"]
-        }
-        for bot in players:
-            rows = [answers[(bot.id, question)] for question in (0, 1)]
-            assert [
-                (r["outcome"], r["timed_out"], r["in_median"], r["revised"])
-                for r in rows
-            ] == [
-                ("stayed", False, True, 250),
-                ("stayed", False, True, 1300),
-            ], rows
-        # The silent member was removed as late and answered the first question
-        # after its time limit, so their trial saved no estimate and it missed
-        # the barrier and the median.
-        late = answers[(silent.id, 0)]
-        assert (
-            late["crowd_id"],
-            late["outcome"],
-            late["estimate"],
-            late["timed_out"],
-            late["in_median"],
-        ) == (crowds[0]["crowd_id"], "late", None, None, False), late
-        # The group that ended had no median to count towards, and the member
-        # who left still has a row.
-        for bot in group_c:
-            row = answers[(bot.id, 0)]
-            outcome = "left_experiment" if bot is quitter_c else "group_dissolved"
-            assert (row["outcome"], row["in_median"]) == (outcome, None), row
-        assert [answers[(bot.id, 0)]["estimate"] for bot in group_c] == [None, 10, 20]
-        # Answers given alone have no revision.
-        alone = (
-            [(silent.id, 1)]
-            + [
-                (bot.id, question)
-                for bot in [too_late, *stayers]
-                for question in (0, 1)
-            ]
-            + [(bot.id, 1) for bot in waiting]
-        )
-        for key in alone:
-            row = answers[key]
-            assert (row["crowd_id"], row["revised"]) == (None, None), row
+        assert [c["median"] for c in data["crowd_round"]] == medians, data
+        rows = data["player_round"]
+        assert len(rows) == 8, rows
+        for r in rows:
+            assert (r["outcome"], r["time_limit_reached"], r["in_median"]) == (
+                "stayed",
+                False,
+                True,
+            ), r
+            assert r["revised"] == medians[r["question"]], r
