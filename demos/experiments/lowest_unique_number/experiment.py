@@ -267,8 +267,9 @@ class Exp(psynet.experiment.Experiment):
                     # False while the trial runs or if the player left it; the
                     # choice is then the answer so far.
                     "complete": t.complete,
-                    # "stayed" if the player stayed to the end of the round,
-                    # "late" if they were taken out for being away.
+                    # "stayed" if the player was in the group when the round
+                    # was scored, "late" if they were taken out before that
+                    # for being away.
                     "outcome": t.sync_group_outcome,
                     "choice": t.answer,
                     # None if the player was away too long to play the round.
