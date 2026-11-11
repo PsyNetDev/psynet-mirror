@@ -1,0 +1,1 @@
+Removed the launch prompt that asked whether to continue when `requirements.txt` mentioned `computational-audition-lab/psynet`, PsyNet's old repository location. It also matched other repositories in that GitLab group, such as `psynet-integrity`, and stopped non-interactive runs of `psynet test local`.

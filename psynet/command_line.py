@@ -3116,18 +3116,6 @@ def run_pre_checks(
     exp._check_background_recording_pages()
     exp.check_python_dependencies()
 
-    try:
-        with open("requirements.txt", "r") as f:
-            for line in f.readlines():
-                if "computational-audition-lab/psynet" in line.lower():
-                    _confirm_deployment(
-                        "It looks like you're using an old version of PsyNet in requirements.txt "
-                        "(computational-audition-lab/psynet); "
-                        "the up-to-date version is located at PsyNetDev/PsyNet. Are you sure you want to continue?"
-                    )
-    except FileNotFoundError:
-        raise click.ClickException(_missing_requirements_message())
-
     if heroku and docker:
         _confirm_deployment(
             "Heroku deployment with Docker hasn't been working well recently; experiments have been failing to launch "
