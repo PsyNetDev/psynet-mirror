@@ -749,8 +749,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         Returns ``None`` if they are still in such a group or were never in
         one. Otherwise returns ``"late"`` (removed by a barrier's
         ``late_after``, with any ``late_action``, from its group or a group
-        listed in its ``also_leave``), ``"waited_too_long"`` (by its
-        ``max_wait_action="leave_group"``), ``"no_group_formed"`` (a grouper
+        listed in its ``also_leave``), ``"waited_too_long"`` (waited at a
+        barrier for longer than its ``max_wait_time``, with any
+        ``max_wait_action``), ``"no_group_formed"`` (a grouper
         with ``max_wait_action="continue_without_group"`` found them no group
         in time), ``"group_dissolved"`` (still in the group when it was
         dissolved below its quorum, with any ``below_quorum``), ``"moved_on"`` (a

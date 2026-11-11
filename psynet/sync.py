@@ -1822,10 +1822,12 @@ class GroupBarrier(Barrier):
         filler pages (for example trials used as filler).
 
     max_wait_action
-        What happens to a member who waits longer than ``max_wait_time``: ``"fail"`` (default) fails them and
-        sends them to the end of the experiment; ``"leave_group"`` removes them from the group, and they carry on with the
-        experiment without it (see :ref:`sync-leaving-a-group`).
-        Their next page says "Your partner didn't arrive in time. Please continue." in a pair (see
+        What happens to a member who waits longer than ``max_wait_time``. Either way they first leave the
+        group, which records ``"waited_too_long"`` as their removal reason and their cued trial's
+        ``sync_group_outcome``. ``"fail"`` (default) then fails them and
+        sends them to the end of the experiment; with ``"leave_group"`` they carry on with the
+        experiment without the group (see :ref:`sync-leaving-a-group`).
+        With ``"leave_group"``, their next page says "Your partner didn't arrive in time. Please continue." in a pair (see
         ``on_arrival_message`` for larger groups); for how a :class:`~psynet.group_prompt.GroupPrompt`
         shows them, see :ref:`sync-showing-the-group`. It is the waiting member who leaves, not the absent ones; to move on
         without slow members, use ``late_after`` and ``late_action`` instead. If that takes
@@ -2230,14 +2232,19 @@ class GroupBarrier(Barrier):
             _queue_arrival_update(member.id, refresh=True)
 
     def handle_max_wait_timeout(self, participant: Participant):
-        """Remove from the sync group with ``"leave_group"``, then release the barrier link."""
+        """Remove the waiter from the sync group as ``"waited_too_long"``, then release the barrier link.
+
+        Runs before ``max_wait_action="fail"`` fails them, so the removal
+        records why they left; only ``"leave_group"`` shows them a notice.
+        """
         group = participant.active_sync_groups.get(self.group_type)
-        if self.max_wait_action == "leave_group" and group is not None:
+        if group is not None:
             group_size = len(group.active_participants)
             group.remove_participant(participant, reason="waited_too_long")
-            self._tell_removed_participant(
-                participant, group, group_size, kind="waited_too_long"
-            )
+            if self.max_wait_action == "leave_group":
+                self._tell_removed_participant(
+                    participant, group, group_size, kind="waited_too_long"
+                )
         super().handle_max_wait_timeout(participant)
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):

@@ -1546,10 +1546,11 @@ def test_case_max_wait_time_runs_out(
 
     assert _waiting_at(submitted, [waiter]) == [] and _passes == []
     assert (waiter.failed, absent.failed) == (waiter_fails, absent_fails)
-    assert waiter.current_trial.sync_group_outcome == (
-        "left_experiment" if waiter_fails else "waited_too_long"
-    )
-    if not waiter_fails:
+    assert waiter.current_trial.sync_group_outcome == "waited_too_long"
+    assert waiter.sync_group_removal_reason("main") == "waited_too_long"
+    if waiter_fails:
+        assert waiter.group_removal_notice is None
+    else:
         assert waiter.group_removal_notice["text"] == (
             "Your partner didn't arrive in time. Please continue."
         )
