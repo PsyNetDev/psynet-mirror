@@ -46,6 +46,7 @@ from psynet.timeline import (
     PageMaker,
     Timeline,
     conditional,
+    join,
     switch,
     while_loop,
 )
@@ -108,15 +109,20 @@ def get_timeline():
                 expected_repetitions=MAX_ROUNDS,
             ),
         ),
-        # Stored before leaving the society changes the removal reason.
+        # Stored first, because leave_group records the members still in the
+        # society as "finished".
         CodeBlock(remember_why_they_left),
         leave_group(GROUP),
         switch(
             "leaving",
             lambda participant: participant.var.left_as,
             {
-                "retired": PageMaker(tip_page, time_estimate=30),
-                "played_max_rounds": PageMaker(tip_page, time_estimate=30),
+                "retired": leave_a_tip(
+                    "A new member has taken your place, so you retire from the society."
+                ),
+                "played_max_rounds": leave_a_tip(
+                    f"You have played your {MAX_ROUNDS} rounds."
+                ),
                 "group_dissolved": InfoPage(
                     "Too few members stayed, so the society ended for you.",
                     time_estimate=5,
@@ -133,7 +139,6 @@ def get_timeline():
                 ),
             },
         ),
-        CodeBlock(save_tip),
         PageMaker(final_page, time_estimate=5),
     )
 
@@ -155,19 +160,17 @@ def own_trials(participant: Participant) -> List["FishingTrial"]:
 def life_stage(participant: Participant) -> str:
     """Return ``"playing"`` while the member keeps playing, otherwise why they stopped."""
     trials = own_trials(participant)
-    # Only a member who stayed until their round was scored can retire.
-    if trials and trials[-1].var.get("retires"):
+    # Set when the round is scored.
+    retired = bool(trials) and trials[-1].var.get("retires", False)
+    in_society = GROUP in participant.active_sync_groups
+    if retired:
         return "retired"
-    # Checked before the round cap, so a member who leaves in their last
-    # round leaves for that reason and writes no tip.
-    if GROUP not in participant.active_sync_groups:
+    if not in_society:
         # "late", "group_dissolved", "removed", "left_experiment" or
         # "no_group_formed".
         return participant.sync_group_removal_reason(GROUP)
     if len(trials) >= MAX_ROUNDS:
         return "played_max_rounds"
-    # A member left alone plays on: the round's barrier waits up to
-    # TOP_UP_WAIT for a newcomer, then dissolves the society.
     return "playing"
 
 
@@ -177,14 +180,11 @@ def remember_why_they_left(participant: Participant):
 
 def history_page(participant: Participant):
     """Show a newcomer the society's latest rounds and the tips of members who have left."""
-    # Not active_sync_groups: the newcomer may have left the society while on
-    # this page, which is made again when they submit it.
+    # The newcomer may have left the society while reading this page.
     society = participant.latest_sync_group(GROUP)
     rounds = society.rounds("fishing")
     scored = [node for node in rounds if node.var.has("catches")]
-    tips = [t.var.tip for node in rounds for t in node.all_trials if t.var.has("tip")][
-        -TIPS_SHOWN:
-    ]
+    tips = [t.var.tip for node in rounds for t in node.all_trials if t.var.has("tip")]
     content = tags.div()
     with content:
         tags.p("Welcome to the society.")
@@ -199,7 +199,7 @@ def history_page(participant: Participant):
         if tips:
             tags.p("Tips from members who have left:")
             with tags.ul():
-                for tip in tips:
+                for tip in tips[-TIPS_SHOWN:]:
                     tags.li(tip)
     return InfoPage(content, time_estimate=20)
 
@@ -256,7 +256,7 @@ class FishingTrial(Trial):
 
     @classmethod
     def score_round(cls, trials: List["FishingTrial"], node: SyncGroupNode, group):
-        """Draw each member's catch, and retire the longest-serving member if a newcomer played."""
+        """Draw each member's catch, and retire the longest-serving member if the round had too many."""
         for trial in trials:
             trial.var.catch = (
                 None if trial.answer is None else _draw_catch(trial.answer)
@@ -265,7 +265,8 @@ class FishingTrial(Trial):
         node.var.spots = {str(t.participant_id): t.answer for t in trials}
         node.var.catches = {str(t.participant_id): t.var.catch for t in trials}
         retiring = None
-        if len(trials) > SOCIETY_SIZE:
+        too_many = len(trials) > SOCIETY_SIZE
+        if too_many:
             seats = group_seats(group)
             retiring = min(trials, key=lambda t: seats[t.participant_id])
         for trial in trials:
@@ -273,8 +274,11 @@ class FishingTrial(Trial):
         node.var.retired_id = retiring.participant_id if retiring else None
 
     def score_answer(self, answer, definition):
-        """Return the fish the member caught; none if they didn't fish or the round wasn't scored."""
-        return self.var.get("catch") or 0
+        """Return the fish the member caught this round."""
+        left_before_scoring = self.sync_group_outcome != "stayed"
+        if left_before_scoring or answer is None:
+            return 0
+        return self.var.catch
 
     def compute_performance_reward(self, score):
         return FISH_VALUE * score
@@ -285,16 +289,16 @@ class FishingTrial(Trial):
 
     def show_feedback(self, experiment, participant):
         if self.answer is None:
-            you = "You ran out of time, so you didn't fish this round."
+            text = "You ran out of time, so you didn't fish this round."
         else:
-            you = f"You fished at spot {self.answer} and caught {self.var.catch} fish."
+            text = f"You fished at spot {self.answer} and caught {self.var.catch} fish."
         if self.var.retires:
-            you += " A new member has joined, so this was your last round."
+            text += " A new member has joined, so this was your last round."
         spots, catches = self.node.var.spots, self.node.var.catches
         return ModularPage(
             "results",
             GroupPrompt(
-                f"{you} Here is what everyone caught:",
+                f"{text} Here is what everyone caught:",
                 participant=participant,
                 group=self.sync_group,
                 answers={pid: _catch_label(spots[pid], catches[pid]) for pid in spots},
@@ -303,29 +307,27 @@ class FishingTrial(Trial):
         )
 
 
-def tip_page(participant: Participant):
-    if participant.var.left_as == "retired":
-        intro = "A new member has taken your place, so you retire from the society."
-    else:
-        intro = f"You have played your {MAX_ROUNDS} rounds."
-    return ModularPage(
-        "tip",
-        f"{intro} Leave one tip for the members who come after you.",
-        TextControl(one_line=True),
-        time_estimate=30,
+def leave_a_tip(intro: str):
+    """Ask a member who is leaving in good standing for a tip, and save it."""
+    return join(
+        ModularPage(
+            "tip",
+            f"{intro} Leave one tip for the members who come after you.",
+            TextControl(one_line=True),
+            time_estimate=30,
+        ),
+        CodeBlock(save_tip),
     )
 
 
 def save_tip(participant: Participant):
-    """Store the tip on the member's last trial, where newcomers' history pages find it."""
-    if participant.var.left_as in ("retired", "played_max_rounds") and (
-        participant.answer.strip()
-    ):
+    """Store a non-blank tip on the member's last trial, where newcomers' history pages find it."""
+    if participant.answer.strip():
         own_trials(participant)[-1].var.tip = participant.answer
 
 
 def final_page(participant: Participant):
-    fish = sum(t.var.get("catch") or 0 for t in own_trials(participant))
+    fish = sum(t.score for t in own_trials(participant))
     return InfoPage(
         f"You caught {fish} fish. Your bonus is ${participant.performance_reward:.2f}.",
         time_estimate=5,

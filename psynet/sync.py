@@ -4427,7 +4427,9 @@ class SyncGroup(SQLBase, SQLMixin):
             link for link in self.participant_links if link.participant == participant
         ]
         if not links:
-            raise ValueError(f"Participant {participant.id} was never in group {self.id}.")
+            raise ValueError(
+                f"Participant {participant.id} was never in group {self.id}."
+            )
         latest = max(links, key=lambda link: (link.id is None, link.id or 0))
         return bool(latest.newcomer)
 
