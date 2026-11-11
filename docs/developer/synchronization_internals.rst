@@ -109,7 +109,8 @@ participants' rows only with ``SKIP LOCKED`` or ``NOWAIT``:
   check, which the poller makes on each sweep, and the group waits for
   them meanwhile. Lateness is decided before the rows are
   locked, so it is decided again for the members locked: one whose request
-  brought them to the barrier in between is no longer late. Removal writes
+  brought them to the barrier, or started a timed page, in between is no
+  longer late. Removal writes
   the member's links and trial outcome, so without the row lock a member's
   own request could act on stale group state, for example storing an
   answer after the rest of the group moved on without them.
