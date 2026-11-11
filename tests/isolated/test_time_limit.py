@@ -215,6 +215,7 @@ def test_browser_timeout_answers_must_be_choices(in_experiment_directory, db_ses
 
 class _GuessTrial(Trial):
     time_estimate = 10
+    wait_for_feedback = False
 
     def show_trial(self, experiment, participant):
         return [
@@ -222,6 +223,9 @@ class _GuessTrial(Trial):
             ModularPage("again", "Again", TextControl(), time_limit=10),
             ModularPage("confirm", "Sure?", TextControl()),
         ]
+
+    def show_feedback(self, experiment, participant):
+        return InfoPage("Thanks.", time_estimate=5, time_limit=5)
 
 
 @pytest.mark.parametrize(
@@ -232,7 +236,11 @@ def test_a_trial_keeps_whether_its_timed_page_ran_out(
 ):
     exp = get_experiment()
     original = exp.timeline
-    exp.timeline = Timeline(_GuessTrial.cue({}), InfoPage("Done", time_estimate=1))
+    exp.timeline = Timeline(
+        _GuessTrial.cue({}),
+        ModularPage("vote", "Vote", TextControl(), time_limit=10, time_estimate=10),
+        InfoPage("Done", time_estimate=1),
+    )
     try:
         (participant,) = _working_participants(exp, 1)
         _json_timeline(exp, participant)
@@ -263,6 +271,17 @@ def test_a_trial_keeps_whether_its_timed_page_ran_out(
         participant.waiting_barrier_id = None
         assert trial.time_limit_reached is True
         assert _submit(exp, participant, "yes")["submission"] == "approved"
+        assert trial.time_limit_reached is True
+
+        # Nor does a timed feedback page set either flag, but a later timed
+        # page outside the trial counts again.
+        assert trial.complete
+        participant.timed_out_since_barrier = False
+        for timed_out in [False, True]:
+            participant.page_deadline = timenow()
+            payload = _submit(exp, participant, None, time_limit_reached=True)
+            assert payload["submission"] == "approved"
+            assert participant.timed_out_since_barrier is timed_out
         assert trial.time_limit_reached is True
     finally:
         exp.timeline = original

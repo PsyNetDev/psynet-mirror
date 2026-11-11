@@ -5718,8 +5718,8 @@ def reached_barrier_after_time_limit(participant, group) -> bool:
     """Return whether ``participant`` reached the barrier of ``group`` they wait at because a time limit ran out.
 
     That is, they are waiting at a barrier of ``group`` that they reached
-    after the time limit of their latest timed page ran out; untimed pages in between,
-    such as feedback, don't count.
+    after the time limit of their latest timed page ran out; untimed pages in
+    between, and a trial's feedback pages even if timed, don't count.
     """
     return any(link.ran_out_of_time for _, link in _waiting_links(participant, group))
 
