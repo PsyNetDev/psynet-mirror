@@ -7988,6 +7988,37 @@ def test_latecomers_fill_a_team_until_it_passes_game_starts(
     assert lone.in_sync_group("team") and below_quorum.accepts_top_ups
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_member_who_tops_up_a_group_is_a_newcomer_and_keeps_it_as_latest(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=2,
+        max_group_size=3,
+        quorum=2,
+        join_existing_groups=True,
+    )
+    founder, other, newcomer, outsider = _working_participants(exp, 4)
+    group = grouper._make_group([founder, other], initial_group_size=2)
+    db_session.commit()
+    grouper._join_existing_groups(newcomer)
+    assert newcomer.active_sync_groups["team"] == group
+    assert not group.is_newcomer(founder)
+    assert group.is_newcomer(newcomer)
+
+    group.remove_participant(newcomer, reason="late")
+    assert "team" not in newcomer.active_sync_groups
+    assert newcomer.latest_sync_group("team") == group
+    assert group.is_newcomer(newcomer)
+    assert outsider.latest_sync_group("team") is None
+    with pytest.raises(ValueError):
+        group.is_newcomer(outsider)
+
+
 @pytest.mark.parametrize("stop_top_ups", [False, True])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True

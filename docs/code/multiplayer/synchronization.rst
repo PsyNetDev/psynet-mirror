@@ -1504,6 +1504,10 @@ Keep these in mind:
   ``microsociety`` demo does: a newcomer's cued trial then joins the round
   in progress, and nothing outside the round holds them.
 
+:meth:`group.is_newcomer(participant) <psynet.sync.SyncGroup.is_newcomer>`
+tells a member who joined after the group formed from the members it formed
+with, for example to show newcomers what the group did before they came.
+
 When the experiment loads, PsyNet warns about each barrier outside a loop
 that comes after a grouper with ``join_existing_groups=True`` and has neither
 setting, up to the first barrier with ``stop_top_ups=True``. It skips a
@@ -1543,6 +1547,14 @@ whose group ended under them are told on their next page. A
 :class:`~psynet.group_prompt.GroupPrompt` no longer draws the member who
 left, except with their answer on a results page (see
 :ref:`sync-showing-the-group`), and the barriers stop waiting for them.
+
+``participant.active_sync_groups`` no longer has the group once they leave
+it. :meth:`participant.latest_sync_group(group_type)
+<psynet.participant.Participant.latest_sync_group>` still returns it, so a
+page can show the group's history, for example with
+:meth:`~psynet.sync.SyncGroup.rounds`, whether or not they are still in it.
+A page made by a ``PageMaker`` is made again when it is submitted, so a page
+that reads ``active_sync_groups`` fails for a member who left while on it.
 
 For the rest of the timeline:
 

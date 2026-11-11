@@ -18,8 +18,10 @@ Good reference for a group that runs on with changing membership:
 above the society's size, a `while_loop` of cued trials without `round=`
 (so a newcomer's cue joins the round in progress), a round's single
 `GroupBarrier` whose `on_release` scores the round and uses `group_seats`
-to find the longest-serving member, and `SyncGroup.rounds` to show a
-newcomer the society's history. Tips are stored on the leaving member's
+to find the longest-serving member, `SyncGroup.is_newcomer` to tell
+newcomers from founders, and `SyncGroup.rounds` on
+`participant.latest_sync_group(...)` to show a newcomer the society's
+history, which still works if they leave while reading it. Tips are stored on the leaving member's
 last trial, so no two participants write the same record.
 
 ## How memberships end

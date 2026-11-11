@@ -744,6 +744,18 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     def active_sync_groups(self) -> Dict[str, "SyncGroup"]:
         return {group.group_type: group for group in self.sync_groups if group.active}
 
+    def latest_sync_group(self, group_type: str) -> Optional["SyncGroup"]:
+        """Return the participant's latest group of ``group_type``, or ``None`` if they had none.
+
+        Unlike ``active_sync_groups``, this includes a group they have left
+        or that has ended, so a page can still show that group's history,
+        for example with :meth:`~psynet.sync.SyncGroup.rounds`.
+        """
+        from .sync import _latest_sync_group_link
+
+        latest = _latest_sync_group_link(self, group_type)
+        return None if latest is None else latest.sync_group
+
     def sync_group_removal_reason(self, group_type: str) -> Optional[str]:
         """Return why the participant left their latest group of ``group_type``.
 

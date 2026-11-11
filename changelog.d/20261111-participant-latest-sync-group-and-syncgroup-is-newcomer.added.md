@@ -1,0 +1,1 @@
+Added `participant.latest_sync_group(group_type)`, which returns the participant's latest group of that type even after they left it or it ended, and `group.is_newcomer(participant)`, which says whether a member joined after the group formed (`join_existing_groups=True`).

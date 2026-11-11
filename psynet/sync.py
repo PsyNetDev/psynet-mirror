@@ -3280,7 +3280,7 @@ class SimpleGrouper(Grouper):
     def _join_existing_groups(self, participant: Participant, *, wait=False):
         group = self._claim_group_to_join(participant, wait=wait)
         if group is not None:
-            group.add_participant(participant)
+            group.add_participant(participant, newcomer=True)
             assert participant.active_sync_groups[self.group_type] == group
             group.check_numbers()
             group.check_leader()
@@ -4384,8 +4384,12 @@ class SyncGroup(SQLBase, SQLMixin):
         _load_link_participants(links)
         return _ReadOnlyParticipantList(link.participant for link in links)
 
-    def add_participant(self, participant: Participant):
+    def add_participant(self, participant: Participant, *, newcomer: bool = False):
         """Add a participant to the group (creates an active link).
+
+        ``newcomer`` records that they joined a group that had already formed,
+        as a grouper with ``join_existing_groups=True`` does; see
+        :meth:`is_newcomer`.
 
         If an active member already has the newcomer's derived pseudonym and
         this is the newcomer's first group, the newcomer is given a free one,
@@ -4407,8 +4411,25 @@ class SyncGroup(SQLBase, SQLMixin):
             sync_group=self,
             active=True,
             arrival_time=timenow(),
+            newcomer=newcomer,
         )
         _notify_membership_change(self, newcomer=participant)
+
+    def is_newcomer(self, participant: Participant) -> bool:
+        """Return whether ``participant`` joined the group after it formed.
+
+        ``True`` for a member who topped up a group formed by a grouper with
+        ``join_existing_groups=True``, and ``False`` for the members it formed
+        with, also after they leave. Raises ``ValueError`` if ``participant``
+        was never in the group.
+        """
+        links = [
+            link for link in self.participant_links if link.participant == participant
+        ]
+        if not links:
+            raise ValueError(f"Participant {participant.id} was never in group {self.id}.")
+        latest = max(links, key=lambda link: (link.id is None, link.id or 0))
+        return bool(latest.newcomer)
 
     @property
     def active_participants(self) -> List[Participant]:
@@ -5404,6 +5425,8 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     # Trial.sync_group_id.
     round_node_id = Column(Integer)
     skipped_round = Column(Boolean, default=False)
+    # The member joined after the group formed; see SyncGroup.is_newcomer.
+    newcomer = Column(Boolean, default=False)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
     participant = relationship(

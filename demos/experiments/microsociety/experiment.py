@@ -26,7 +26,6 @@ and the end of the timeline shows the page for the stored stage. See
 import random
 from typing import List
 
-from dallinger import db
 from dominate import tags
 
 import psynet.experiment
@@ -40,13 +39,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl, TextControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import (
-    GroupBarrier,
-    SimpleGrouper,
-    SyncGroup,
-    group_seats,
-    leave_group,
-)
+from psynet.sync import GroupBarrier, SimpleGrouper, group_seats, leave_group
 from psynet.timeline import (
     CodeBlock,
     Module,
@@ -101,7 +94,6 @@ def get_timeline():
             top_up_wait=TOP_UP_WAIT,
             waiting_message="Waiting for a society to join…",
         ),
-        CodeBlock(remember_society),
         conditional(
             "newcomer",
             is_newcomer,
@@ -146,18 +138,10 @@ def get_timeline():
     )
 
 
-def remember_society(participant: Participant):
-    """Store the participant's society ID, or ``None``, for the export."""
-    society = participant.active_sync_groups.get(GROUP)
-    participant.var.society_id = society.id if society else None
-
-
 def is_newcomer(participant: Participant) -> bool:
     """Return whether the participant joined a society after it formed."""
     society = participant.active_sync_groups.get(GROUP)
-    # Seats count from 0 in the order members joined, so the founders have
-    # the first SOCIETY_SIZE.
-    return society is not None and group_seats(society)[participant.id] >= SOCIETY_SIZE
+    return society is not None and society.is_newcomer(participant)
 
 
 def own_trials(participant: Participant) -> List["FishingTrial"]:
@@ -193,9 +177,9 @@ def remember_why_they_left(participant: Participant):
 
 def history_page(participant: Participant):
     """Show a newcomer the society's latest rounds and the tips of members who have left."""
-    # Read from the stored ID, because the newcomer may have left the
-    # society while on this page, which is made again when they submit it.
-    society = db.session.get(SyncGroup, participant.var.society_id)
+    # Not active_sync_groups: the newcomer may have left the society while on
+    # this page, which is made again when they submit it.
+    society = participant.latest_sync_group(GROUP)
     rounds = society.rounds("fishing")
     scored = [node for node in rounds if node.var.has("catches")]
     tips = [t.var.tip for node in rounds for t in node.all_trials if t.var.has("tip")][
@@ -398,7 +382,7 @@ class Exp(psynet.experiment.Experiment):
             "member": [
                 {
                     "participant_id": p.id,
-                    "society_id": p.var.get("society_id"),
+                    "society_id": _society_id(p),
                     # A stage of life_stage; for a member who never reached
                     # the end of the timeline, their stage now, such as
                     # "left_experiment", or "playing" while they're away.
@@ -493,6 +477,11 @@ class Exp(psynet.experiment.Experiment):
         tips = {m["participant_id"]: m["tip"] for m in data["member"]}
         assert tips[retiree.id] == "Spot 4 is reliable.", tips
         assert tips[quiet.id] is None, tips
+
+
+def _society_id(participant):
+    society = participant.latest_sync_group(GROUP)
+    return society.id if society else None
 
 
 def _play(bots, spots):
