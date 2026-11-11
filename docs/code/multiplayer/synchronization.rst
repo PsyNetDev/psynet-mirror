@@ -1452,11 +1452,10 @@ For the rest of the timeline:
   passed it, but a member who has left the group passes without waiting, so
   the group may not be scored yet. The page therefore reads the member's own
   ``sync_group_outcome`` first, such as ``"late"`` or ``"group_dissolved"``
-  (``on_release`` doesn't run when a group ends, so there is no median;
-  a member removed as late after the release, whose estimate is in the
-  median, is told only that they left), and only then the ``median`` that ``on_release`` stored on the node and
-  :attr:`Trial.time_limit_reached <psynet.trial.main.Trial.time_limit_reached>`,
-  rather than inferring a time-out from a missing estimate. A member
+  (``on_release`` doesn't run when a group ends, so there is no median),
+  and only then the ``median`` that ``on_release`` stored on the node and
+  whether the estimate timed out, which the trial stored right after the
+  estimate page, rather than inferring a time-out from a missing estimate. A member
   without a median to revise towards is told why there is nothing to revise:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
