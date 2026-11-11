@@ -306,9 +306,10 @@ Module("game", for_loop(
   removed for lateness. Read how the round ended for each player from
   `trial.sync_group_outcome` (`"stayed"` once a barrier in the trial's
   pages releases the group with them in it, after which it doesn't change;
-  before that, why they left, such as `"late"`; so put the scoring barrier
-  in `show_trial`), a partner's from their trial in `self.node.all_trials`, rather
-  than from current group membership. A barrier's `waiting_screen` can take
+  before that, why they left, such as `"late"`), a partner's from their
+  trial in `self.node.all_trials`, rather than from current group
+  membership. Put the scoring barrier in `show_trial`, because only
+  barriers there write the outcome. A barrier's `waiting_screen` can take
   `trial` and `node` to show the round's state.
 
 ## Recruitment and platform design
