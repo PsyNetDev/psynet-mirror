@@ -351,6 +351,8 @@ class Elt:
     expected_repetitions = None
     id = None
     created_within_page_maker = False
+    # Set on a trial's feedback page maker and everything it produces.
+    _trial_feedback = False
 
     def __init__(self):
         self.links = {}
@@ -2085,18 +2087,14 @@ class Page(Elt):
     def _time_limit_counts(self, participant):
         """Whether this page's time limit updates the participant's and trial's timeout flags.
 
-        Untimed pages, pages shown while waiting at a barrier, and pages
-        after a trial is complete, such as a feedback notice whose time limit
-        only moves it on, keep the flags from the last timed page.
+        Untimed pages, pages shown while waiting at a barrier, and a trial's
+        feedback pages, such as a notice whose time limit only moves it on,
+        keep the flags from the last timed page.
         """
-        from psynet.trial.main import Trial
-
-        trial = participant.current_trial
-        after_trial = isinstance(trial, Trial) and trial.complete
         return (
-            participant.waiting_barrier_id is None
-            and self.time_limit is not None
-            and not after_trial
+            self.time_limit is not None
+            and participant.waiting_barrier_id is None
+            and not self._trial_feedback
         )
 
     def _reject_impossible_answer(self, answer):
@@ -2898,6 +2896,8 @@ class PageMaker(Elt):
             elt.id = position + [i]
             elt.created_within_page_maker = True
             elt.links = {**self.links, **elt.links}
+            if self._trial_feedback:
+                elt._trial_feedback = True
         return res
 
     def impute_time_estimates(self, elts):

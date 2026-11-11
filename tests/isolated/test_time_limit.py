@@ -236,7 +236,11 @@ def test_a_trial_keeps_whether_its_timed_page_ran_out(
 ):
     exp = get_experiment()
     original = exp.timeline
-    exp.timeline = Timeline(_GuessTrial.cue({}), InfoPage("Done", time_estimate=1))
+    exp.timeline = Timeline(
+        _GuessTrial.cue({}),
+        ModularPage("vote", "Vote", TextControl(), time_limit=10, time_estimate=10),
+        InfoPage("Done", time_estimate=1),
+    )
     try:
         (participant,) = _working_participants(exp, 1)
         _json_timeline(exp, participant)
@@ -269,16 +273,15 @@ def test_a_trial_keeps_whether_its_timed_page_ran_out(
         assert _submit(exp, participant, "yes")["submission"] == "approved"
         assert trial.time_limit_reached is True
 
-        # Nor does a timed page after the trial, such as a feedback notice,
-        # set either flag.
+        # Nor does a timed feedback page set either flag, but a later timed
+        # page outside the trial counts again.
         assert trial.complete
         participant.timed_out_since_barrier = False
-        participant.page_deadline = timenow()
-        assert (
-            _submit(exp, participant, None, time_limit_reached=True)["submission"]
-            == "approved"
-        )
-        assert participant.timed_out_since_barrier is False
+        for timed_out in [False, True]:
+            participant.page_deadline = timenow()
+            payload = _submit(exp, participant, None, time_limit_reached=True)
+            assert payload["submission"] == "approved"
+            assert participant.timed_out_since_barrier is timed_out
         assert trial.time_limit_reached is True
     finally:
         exp.timeline = original

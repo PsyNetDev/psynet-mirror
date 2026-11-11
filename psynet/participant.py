@@ -485,8 +485,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     # out (for example to a failure page) keeps it.
     waiting_barrier_id = Column(String)
     # Whether the latest timed page answered outside waiting logic and outside
-    # a completed trial's later pages (such as feedback) since the last barrier
-    # ended on its time limit. The next barrier copies it onto the
+    # a trial's feedback since the last barrier ended on its time limit. The next barrier copies it onto the
     # visit and clears it; see ``ParticipantLinkBarrier.ran_out_of_time``.
     timed_out_since_barrier = Column(Boolean, default=False)
     page_count = Column(Integer)

@@ -209,9 +209,9 @@ participant's groups, for the ticks of :class:`~psynet.group_prompt.GroupPrompt`
 and of those among them whose latest timed page ran out of time
 (``ParticipantLinkBarrier.ran_out_of_time``), who get a dash. Pages record
 the time-out as it happens in ``Participant.timed_out_since_barrier``, which
-the next barrier copies onto the visit and clears; waiting pages and pages
-after a completed trial, such as feedback, leave it alone
-(``Page._time_limit_counts``).
+the next barrier copies onto the visit and clears; waiting pages and a trial's
+feedback pages leave it alone (``Page._time_limit_counts``; the feedback page
+maker marks the pages it makes with ``_trial_feedback``).
 Hold overlays for members who are already waiting are still sent with the
 update, so their counts can lag until the next arrival.
 

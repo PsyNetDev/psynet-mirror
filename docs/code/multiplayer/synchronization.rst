@@ -359,10 +359,10 @@ members who have since left, each with its ``sync_group_role``.
 says whether a member's latest timed page ran out of time before their
 answer, so ``on_release`` can score a timed-out answer differently. The trial
 keeps it through later untimed pages and barrier waits, including timed
-pages shown while waiting at a barrier, and through pages after the trial is
-complete, such as a feedback notice whose time limit only moves it on; the
-same pages don't make a member count as having run out of time at the next
-barrier. It is exported
+pages shown while waiting at a barrier, and through the trial's feedback
+pages, such as a notice whose time limit only moves it on. Feedback pages
+also don't count when the next barrier records who ran out of time, so a
+time-out on the trial still shows there after its feedback. It is exported
 with the trial. To read a group's rounds after the game, for example on a
 debrief page once the group has ended,
 :meth:`group.rounds(module_id) <psynet.sync.SyncGroup.rounds>` returns the
