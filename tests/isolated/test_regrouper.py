@@ -1,7 +1,6 @@
 import importlib.util
 import sys
 import time
-from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -34,6 +33,7 @@ from test_sync import (  # noqa: E402, F401
     _arrive_at_group_barrier,
     _audit_poller_skips,
     _commit_barrier_arrivals,
+    _freeze_clocks,
     _sweep_each_second_until_a_wait_ends,
 )
 from timeline_hold_helpers import _json_timeline, _working_participants  # noqa: E402
@@ -223,16 +223,9 @@ def test_regrouper_pools_split_on_time_while_the_poller_skips(
     in_experiment_directory, db_session, monkeypatch, timing
 ):
     """Two waiters are paired at the deadline or next tick while the third still plays, with no skip delaying it."""
+    # Arrive 1 s after an every=45 tick, so the next one is 44 s away.
+    set_clocks = _freeze_clocks(monkeypatch, start=time.time() // 45 * 45 + 46)
     exp = get_experiment()
-    if "every" in timing:
-        # Arrive 1 s after a tick, so the next one is 44 s away.
-        shift = (1 - time.time()) % 45
-        real_time, real_timenow = time.time, sync.timenow
-        monkeypatch.setattr(time, "time", lambda: real_time() + shift)
-        for module in (sync, timeline_hold):
-            monkeypatch.setattr(
-                module, "timenow", lambda: real_timenow() + timedelta(seconds=shift)
-            )
     cohort = _working_participants(exp, 3)
     _arrive(exp, SimpleGrouper("cohort", initial_group_size=3, quorum=3), cohort)
     pairs = Regrouper(
@@ -240,8 +233,8 @@ def test_regrouper_pools_split_on_time_while_the_poller_skips(
     )
     _arrive(exp, pairs, cohort[:2])
     db_session.commit()
-    seconds = timing.get("deadline", 44)
-    assert _sweep_each_second_until_a_wait_ends(monkeypatch, 50) == seconds
+    ended = _sweep_each_second_until_a_wait_ends(monkeypatch, set_clocks, 50)
+    assert ended == timing.get("deadline", 44) + 0.5
 
 
 class _CustomRelease(Regrouper):

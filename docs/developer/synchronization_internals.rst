@@ -65,11 +65,15 @@ re-checks don't delay due releases; while the poller is saturated they come
 later than 10 seconds. In ``tests/isolated/test_sync.py`` and
 ``test_regrouper.py``, an autouse fixture checks each visit a sweep skips
 as not yet due, and fails the test if that check released anyone or
-changed the visit; ``test_timed_waits_end_on_time_while_the_poller_skips``
-and ``test_regrouper_pools_split_on_time_while_the_poller_skips`` move
-every clock forward a second at a time to exercise each timing rule. When
-you add a timing rule, report it in ``_next_check_due`` and add it to one of
-those tests. Other barriers, including subclasses that
+changed the visit. ``test_timed_waits_end_on_time_while_the_poller_skips``
+(``late_after``, ``top_up_wait``, ``start_short_after``) and
+``test_regrouper_pools_split_on_time_while_the_poller_skips`` (``Regrouper``
+deadlines and ticks) freeze the clocks and step them forward a second at a
+time, so that fixture sees each wait end. ``newcomer_max_wait`` is also
+enforced outside the poller's check, so only
+``test_poller_skips_a_visit_until_its_wait_can_end`` covers its due time.
+When you add a timing rule, report it in ``_next_check_due`` and add it to
+the clock-stepping tests. Other barriers, including subclasses that
 override how a barrier releases without saying when, are due at every sweep,
 and so are visits whose check was deferred or failed. A visit whose check is
 deferred or fails is retried at most

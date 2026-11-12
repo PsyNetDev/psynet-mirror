@@ -4185,20 +4185,19 @@ def _audit_poller_skips(monkeypatch):
     assert not failures, failures
 
 
-def _sweep_each_second_until_a_wait_ends(monkeypatch, seconds):
-    """Run every clock a barrier check reads forward a second at a time, sweeping the poller each second, until a waiting visit changes.
+def _freeze_clocks(monkeypatch, start=None):
+    """Stop the wall clocks barrier checks read at ``start`` (epoch seconds, default now), and return a function that sets how far past it they are.
 
-    Returns the seconds that took, or ``None``. The wall clocks stand still
-    between steps, so slow sweeps can't end a wait early. The safety re-check
-    is off, so only the due times barriers report decide when skipped visits
-    are checked, and :func:`_audit_poller_skips` fails any skip that delayed
-    a release.
+    Call it before setting up waits, so they count from ``start``. That
+    function also moves ``time.monotonic`` forward; real time passing only
+    brings the poller's stored due times forward, which costs extra checks
+    but never misses a release.
     """
     from psynet import timeline_hold
 
-    monkeypatch.setattr("psynet.sync._POLLER_RECHECK_SECONDS", math.inf)
+    start = time.time() if start is None else start
+    start_timenow = psynet.sync.timenow() + timedelta(seconds=start - time.time())
     shift = [0]
-    start_timenow, start_time = psynet.sync.timenow(), time.time()
     real_monotonic = time.monotonic
 
     def shifted_timenow():
@@ -4206,16 +4205,29 @@ def _sweep_each_second_until_a_wait_ends(monkeypatch, seconds):
 
     monkeypatch.setattr(psynet.sync, "timenow", shifted_timenow)
     monkeypatch.setattr(timeline_hold, "timenow", shifted_timenow)
-    monkeypatch.setattr(time, "time", lambda: start_time + shift[0])
-    # Real time passing only brings stored due times forward: extra checks, never a missed release.
+    monkeypatch.setattr(time, "time", lambda: start + shift[0])
     monkeypatch.setattr(time, "monotonic", lambda: real_monotonic() + shift[0])
+    return lambda seconds: shift.__setitem__(0, seconds)
+
+
+def _sweep_each_second_until_a_wait_ends(monkeypatch, set_clocks, seconds):
+    """Sweep the poller at 0.5 s, 1.5 s, ... on clocks from :func:`_freeze_clocks`, until a waiting visit changes.
+
+    Returns the clock time of that sweep, or ``None`` after ``seconds``. A
+    wait due at a whole second therefore ends half a second later, whether
+    its rule compares with ``>`` or ``>=``. The safety re-check is off, so
+    only the due times barriers report decide when skipped visits are
+    checked, and :func:`_audit_poller_skips` fails any skip that delayed a
+    release.
+    """
+    monkeypatch.setattr("psynet.sync._POLLER_RECHECK_SECONDS", math.inf)
     check_barriers()
     start = psynet.sync._waiting_barrier_instance_ids()
-    for second in range(1, seconds + 1):
-        shift[0] = second
+    for second in range(seconds):
+        set_clocks(second + 0.5)
         check_barriers()
         if psynet.sync._waiting_barrier_instance_ids() != start:
-            return second
+            return second + 0.5
     return None
 
 
@@ -4337,6 +4349,7 @@ def test_poller_skips_a_visit_until_its_wait_can_end(
     in_experiment_directory, db_session, monkeypatch, setup
 ):
     """top_up_wait, newcomer_max_wait and start_short_after each decide when the poller checks again."""
+    _freeze_clocks(monkeypatch)
     exp = get_experiment()
     barrier, waiters = setup(exp, db_session)
     for waiter in waiters:
@@ -4378,12 +4391,14 @@ def test_timed_waits_end_on_time_while_the_poller_skips(
     in_experiment_directory, db_session, monkeypatch, setup, seconds
 ):
     """late_after, top_up_wait and start_short_after each end their wait on time, with no skip delaying it."""
+    set_clocks = _freeze_clocks(monkeypatch)
     exp = get_experiment()
     barrier, waiters = setup(exp, db_session)
     for waiter in waiters:
         _arrive_at_group_barrier(exp, barrier, waiter)
     db.session.commit()
-    assert _sweep_each_second_until_a_wait_ends(monkeypatch, seconds + 5) == seconds
+    ended = _sweep_each_second_until_a_wait_ends(monkeypatch, set_clocks, seconds + 5)
+    assert ended == seconds + 0.5
 
 
 @pytest.mark.parametrize("why", ["waiter_busy", "custom_release_rule"])
