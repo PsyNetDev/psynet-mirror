@@ -53,8 +53,9 @@ groups' members, in a fixed number of queries
 locked check only for visits where the answer is yes. For the built-in
 barriers the answer is yes whenever a check would change something: release
 or group anyone, remove or fail a late member, or send a new countdown. A
-visit whose waiters can't be released yet therefore costs the sweep no
-statements of its own, and a release comes at the first sweep after it
+visit whose waiters can't be released yet therefore usually costs the sweep
+no statements of its own (a ``Regrouper`` pool or a ``SimpleGrouper``
+with a countdown costs one), and a release comes at the first sweep after it
 becomes due. Inactive visits that still have waiters, and subclasses that
 override :meth:`~psynet.sync.Barrier.choose_who_to_release` or
 :meth:`~psynet.sync.Barrier.check_waiting_participants` without overriding

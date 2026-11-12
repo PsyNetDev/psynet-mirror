@@ -72,8 +72,10 @@ this module. That loop:
 - Applies ``max_wait_time`` to waiters whose hold or waiting-page deadline has
   passed. Their own request normally does this, so waiters who left would
   otherwise stay.
-- Finds waiting barrier instances and checks them least recently checked
-  first, new or changed ones with a head start, within a per-sweep time budget.
+- Finds waiting barrier instances, reads them all in one batch to see which
+  need a check (``Barrier.needs_check``), and checks those least recently
+  checked first, new or changed ones with a head start, within a per-sweep
+  time budget.
 - Claims each with a PostgreSQL advisory transaction lock on a dedicated
   connection, leaving definition and instance metadata available to arrival
   requests. That extra transaction stays open until this poller's
@@ -1584,9 +1586,8 @@ def _group_barrier_outcome(
 ):
     """Return ``"dissolve"``, ``"release"`` or ``"wait"`` for one visit of ``group``.
 
-    Read-only: ``GroupBarrier.needs_check`` passes the members it projects will
-    remain, and ``choose_who_to_release`` the live ones, so the peek and the
-    real release share one decision. ``members`` (admitted) and
+    Read-only: ``GroupBarrier.needs_check`` and ``choose_who_to_release``
+    both call it, so the peek and the real release share one decision. ``members`` (admitted) and
     ``admissible`` (pending members this admission point would admit) count
     towards the quorum, and the visit releases once all ``members`` are
     waiting. In a group that admits newcomers at admission points, only an
@@ -2608,7 +2609,9 @@ class GroupBarrier(Barrier):
         """
         waiting_ids = {participant.id for participant in waiting_participants}
         for group in self.get_waiting_groups(waiting_participants).values():
-            if group.accepts_top_ups:
+            if group.accepts_top_ups and group.id not in db.session.info.get(
+                _PEEKED_GROUPS_KEY, ()
+            ):
                 # A peek takes no lock, but still counts newcomers who have
                 # joined since this session loaded the group.
                 db.session.expire(group, ["participant_links"])
@@ -7001,6 +7004,9 @@ _PEEK_PARTICIPANT_OPTIONS = (
     lazyload(Participant._current_trial),
 )
 
+# Session info key: the groups whose members the batched peek just loaded.
+_PEEKED_GROUPS_KEY = "psynet_peeked_sync_groups"
+
 
 def _prime_sync_groups(participants):
     """Batch-load the active groups of ``participants``, with their members' links and participants.
@@ -7019,9 +7025,10 @@ def _prime_sync_groups(participants):
     groups = SyncGroup.query.filter(SyncGroup.id.in_(group_ids)).all()
     links = {group.id: [] for group in groups}
     for link in ParticipantLinkSyncGroup.query.filter(
-        ParticipantLinkSyncGroup.sync_group_id.in_(group_ids)
+        ParticipantLinkSyncGroup.sync_group_id.in_(list(links))
     ).order_by(ParticipantLinkSyncGroup.id):
         links[link.sync_group_id].append(link)
+    db.session.info[_PEEKED_GROUPS_KEY] = set(links)
     member_ids = {link.participant_id for group in links.values() for link in group}
     members = {
         participant.id: participant
@@ -7041,79 +7048,94 @@ def _visits_that_need_checks(instance_ids):
 
     One read, without locks, loads every visit's waiters, their groups and
     the groups' members in a fixed number of queries, then asks each
-    visit's barrier :meth:`Barrier.needs_check`, which costs no further
-    queries for the built-in barriers. Anything the peeks write is rolled
+    visit's barrier :meth:`Barrier.needs_check`, which for most built-in
+    barriers costs no further queries. Anything the peeks write is rolled
     back. An inactive visit that still has waiters, one whose barrier can't
     be trusted to peek (see :func:`_trusts_needs_check`), and one whose
     peek fails count as visits that need a check, so their full check
     runs: it moves leftover waiters onto the live visit and reports errors.
+    If the batched read itself fails, every visit counts.
     """
     if not instance_ids:
         return set()
     db.session.expire_all()
     nested = db.session.begin_nested()
     try:
-        instances = (
-            BarrierInstance.query.options(undefer(BarrierInstance.spec))
-            .filter(BarrierInstance.id.in_(instance_ids))
-            .all()
+        return _peek_visits(instance_ids)
+    except Exception as err:
+        if is_transient_transaction_error(err):
+            raise
+        logger.exception(
+            "The batched barrier peek failed; checking all %i waiting visits.",
+            len(instance_ids),
         )
-        links = (
-            ParticipantLinkBarrier.query.join(Participant)
-            .filter(
-                ParticipantLinkBarrier.barrier_instance_id.in_(instance_ids),
-                ~ParticipantLinkBarrier.released,
-                ~Participant.failed,
-                Participant.status == "working",
-            )
-            .options(
-                joinedload(ParticipantLinkBarrier.participant, innerjoin=True).options(
-                    lazyload(Participant.active_barriers),
-                    *_PEEK_PARTICIPANT_OPTIONS,
-                ),
-                selectinload(ParticipantLinkBarrier.timeline_hold),
-            )
-            .order_by(Participant.id)
-            .all()
-        )
-        waiters = list(
-            {link.participant_id: link.participant for link in links}.values()
-        )
-        _populate_active_barriers(waiters)
-        _populate_sync_group_links(waiters)
-        _prime_sync_groups(waiters)
-        waiting = {instance.id: [] for instance in instances}
-        for link in links:
-            current = link.participant.active_barriers.get(link.barrier_id)
-            if current is not None and current.barrier_instance_id == (
-                link.barrier_instance_id
-            ):
-                waiting[link.barrier_instance_id].append(link.participant)
-        due = set()
-        for instance in instances:
-            try:
-                barrier = instance.get_barrier()
-                if (
-                    not instance.active
-                    or not isinstance(barrier, Barrier)
-                    or not _trusts_needs_check(barrier)
-                    or barrier.needs_check(waiting[instance.id])
-                ):
-                    due.add(instance.id)
-            except BarrierSpecError:
-                due.add(instance.id)
-            except Exception as err:
-                if is_transient_transaction_error(err):
-                    raise
-                logger.exception(
-                    "Barrier instance %s failed a batched release peek.", instance.id
-                )
-                due.add(instance.id)
-        return due
+        return set(instance_ids)
     finally:
         nested.rollback()
+        db.session.info.pop(_PEEKED_GROUPS_KEY, None)
         for instance_id in instance_ids:
             _forget_barrier_from_spec(instance_id)
+
+
+def _peek_visits(instance_ids):
+    """Do the read and the peeks of :func:`_visits_that_need_checks`."""
+    instances = (
+        BarrierInstance.query.options(undefer(BarrierInstance.spec))
+        .filter(BarrierInstance.id.in_(instance_ids))
+        .all()
+    )
+    links = (
+        ParticipantLinkBarrier.query.join(Participant)
+        .filter(
+            ParticipantLinkBarrier.barrier_instance_id.in_(instance_ids),
+            ~ParticipantLinkBarrier.released,
+            ~Participant.failed,
+            Participant.status == "working",
+        )
+        .options(
+            joinedload(ParticipantLinkBarrier.participant, innerjoin=True).options(
+                lazyload(Participant.active_barriers),
+                *_PEEK_PARTICIPANT_OPTIONS,
+            ),
+            selectinload(ParticipantLinkBarrier.timeline_hold),
+        )
+        .order_by(Participant.id)
+        .all()
+    )
+    waiters = list({link.participant_id: link.participant for link in links}.values())
+    _populate_active_barriers(waiters)
+    _populate_sync_group_links(waiters)
+    _prime_sync_groups(waiters)
+    waiting = {instance.id: [] for instance in instances}
+    for link in links:
+        current = link.participant.active_barriers.get(link.barrier_id)
+        if (
+            link.barrier_instance_id in waiting
+            and current is not None
+            and current.barrier_instance_id == link.barrier_instance_id
+        ):
+            waiting[link.barrier_instance_id].append(link.participant)
+    due = set()
+    for instance in instances:
+        try:
+            barrier = instance.get_barrier()
+            if (
+                not instance.active
+                or not isinstance(barrier, Barrier)
+                or not _trusts_needs_check(barrier)
+                or barrier.needs_check(waiting[instance.id])
+            ):
+                due.add(instance.id)
+        except BarrierSpecError:
+            due.add(instance.id)
+        except Exception as err:
+            if is_transient_transaction_error(err):
+                raise
+            logger.exception(
+                "Barrier instance %s failed a batched release peek.", instance.id
+            )
+            due.add(instance.id)
+    return due
 
 
 def _process_barrier_instance(instance_id, *, retry=False):
@@ -7225,9 +7247,11 @@ def check_barriers():
     before the next check so a locked waiter cannot poison sibling checks.
 
     Each sweep first retries group dissolutions that waited for a busy member
-    and times out overdue waiters, then checks visits, least
-    recently checked first, with new or changed ones given a head start. Each
-    of the two steps stops starting new work after
+    and times out overdue waiters. One batched read then finds the visits
+    whose check would do anything (see :func:`_visits_that_need_checks`),
+    and only those are checked, least recently checked first, with new or
+    changed ones given a head start. The timeouts and the checks each stop
+    starting new work after
     ``_POLLER_SWEEP_BUDGET_SECONDS``, so thousands of idle waiters cannot
     keep the poller busy; the rest wait for later sweeps. One item can still
     overrun the budget while it waits for a row lock. A waiter's page reload

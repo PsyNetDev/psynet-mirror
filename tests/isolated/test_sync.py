@@ -73,6 +73,7 @@ from psynet.sync import (
     _take_pending_barrier_checks,
     _take_released_hold_waiter_ids,
     _visit_needs_check,
+    _visits_that_need_checks,
     arrival_notice_payload,
     check_barriers,
     check_sync_groups,
@@ -4320,6 +4321,37 @@ def test_poller_fails_a_late_member_while_the_rest_keep_waiting(
             break
     assert second + 0.5 == 30.5
     assert barrier._participant_is_waiting(waiter) and not busy.failed
+
+
+class _CustomReleaseGroupBarrier(GroupBarrier):
+    def choose_who_to_release(self, waiting_participants):
+        return super().choose_who_to_release(waiting_participants)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_poller_peek_falls_back_to_checking(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A custom release rule without needs_check, or a failed batched read, gets its visits checked."""
+    exp = get_experiment()
+    visits = {}
+    for barrier_class in (GroupBarrier, _CustomReleaseGroupBarrier):
+        (waiter, _), _ = _pair_sync_group(exp, db_session)
+        barrier = barrier_class(id_=barrier_class.__name__, group_type="main")
+        _arrive_at_group_barrier(exp, barrier, waiter)
+        db.session.commit()
+        visits[barrier_class] = waiter.active_barriers[barrier.id].barrier_instance_id
+    peek = _visits_that_need_checks
+    assert peek(list(visits.values())) == {visits[_CustomReleaseGroupBarrier]}
+
+    def broken(participants):
+        raise RuntimeError("broken load")
+
+    monkeypatch.setattr("psynet.sync._prime_sync_groups", broken)
+    assert peek(list(visits.values())) == set(visits.values())
+    assert Participant.query.count()
 
 
 def _arrival_hold_messages(publications, participant_id):
