@@ -1,0 +1,1 @@
+`SimpleGrouper(min_group_size=...)` is deprecated and emits a `FutureWarning`; pass `quorum=...` instead, the number of active members a group needs to keep going. `min_group_size=0` is read as `quorum=1`.

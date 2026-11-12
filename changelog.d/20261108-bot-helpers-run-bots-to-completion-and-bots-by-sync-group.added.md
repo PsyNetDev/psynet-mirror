@@ -1,0 +1,1 @@
+Added `psynet.bot.run_bots_to_completion(bots)`, which takes pages for several bots in turn until all have finished, for bots that still wait for each other, such as players a `Regrouper` keeps pairing, and `psynet.bot.bots_by_sync_group(bots, group_type)`, which sorts bots into their current groups so a test can find who plays with whom.

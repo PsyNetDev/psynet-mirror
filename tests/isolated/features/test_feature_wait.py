@@ -10,6 +10,8 @@ from psynet.pytest_psynet import path_to_demo_feature
 class TestExp:
     def test_exp(self, launched_experiment):
         bot = BotDriver()
+        bot.refresh_status()
+        assert bot.is_waiting
         bot.take_experiment()
 
         bot = Bot.query.one()

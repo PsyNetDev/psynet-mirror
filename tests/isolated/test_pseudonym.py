@@ -29,30 +29,30 @@ class _SeededScheme(PseudonymScheme):
 
 def test_neighbours_differ_and_deployments_shuffle_pseudonyms():
     scheme = _SeededScheme("deployment-a")
-    pseudonyms = [scheme.pseudonym(_participant(i)) for i in range(1, 89)]
+    pseudonyms = [scheme._pseudonym(_participant(i)) for i in range(1, 89)]
 
     assert len({p.name for p in pseudonyms}) == 88
     for a, b in zip(pseudonyms, pseudonyms[1:]):
         assert a.color != b.color and a.animal != b.animal
-    other = [_SeededScheme("deployment-b").pseudonym(_participant(i)) for i in (1, 2)]
+    other = [_SeededScheme("deployment-b")._pseudonym(_participant(i)) for i in (1, 2)]
     assert [p.name for p in other] != [p.name for p in pseudonyms[:2]]
     # Participants renamed in different groups get different replacements.
     taken = {("blue", "fox")}
-    replacements = {scheme.replacement(taken, _participant(i)) for i in range(5)}
+    replacements = {scheme.assign_distinct(_participant(i), taken) for i in range(5)}
     assert len(replacements) > 1 and not replacements & taken
-    blue_fox = scheme.make("blue", "fox")
+    blue_fox = scheme._make("blue", "fox")
     assert (blue_fox.name, blue_fox.emoji) == ("Blue fox", "🦊")
-    assert "--psynet-pseudonym-color: #0072B2" in blue_fox.icon_html
+    assert "--psynet-pseudonym-color: #0072B2" in blue_fox.sticker_html
     assert "pseudonym-animals/fox-lines.svg" in blue_fox.sticker_html
-    assert "sticker--dark" in scheme.make("black", "fox").sticker_html
+    assert "sticker--dark" in scheme._make("black", "fox").sticker_html
 
     class Shorthand(_SeededScheme):
         def colors(self):
             return {"navy": ("navy", "#003"), "named": ("named", "rebeccapurple")}
 
     shorthand = Shorthand("deployment-a")
-    assert "sticker--dark" in shorthand.make("navy", "fox").sticker_html
-    assert "sticker--dark" not in shorthand.make("named", "fox").sticker_html
+    assert "sticker--dark" in shorthand._make("navy", "fox").sticker_html
+    assert "sticker--dark" not in shorthand._make("named", "fox").sticker_html
 
 
 def test_schemes_and_stored_pseudonyms_can_be_customized():
@@ -61,20 +61,20 @@ def test_schemes_and_stored_pseudonyms_can_be_customized():
             return {"lion": ("lion", "🦁"), "bear": ("bear", "🐻")}
 
     class NamedTeams(Teams):
-        def name(self, color, animal):
+        def format_name(self, color, animal):
             return f"{self.animals()[animal][0].title()} ({self.colors()[color][0]})"
 
-    assert Teams("deployment-a").make("red", "bear").name == "Red bear"
+    assert Teams("deployment-a")._make("red", "bear").name == "Red bear"
     scheme = NamedTeams("deployment-a")
-    stored = scheme.pseudonym(_participant(1, ("red", "bear")))
+    stored = scheme._pseudonym(_participant(1, ("red", "bear")))
 
     assert stored.name == "Bear (red)"
     assert "psynet-pseudonym-sticker--emoji" in stored.sticker_html
     half_stored = _participant(1, ("red", None))
-    assert scheme.pseudonym(half_stored) == scheme.pseudonym(_participant(1))
-    assert scheme.pseudonym(_participant(2)).animal in {"lion", "bear"}
+    assert scheme._pseudonym(half_stored) == scheme._pseudonym(_participant(1))
+    assert scheme._pseudonym(_participant(2)).animal in {"lion", "bear"}
     with pytest.raises(ValueError, match="Unknown pseudonym animal 'fox'"):
-        scheme.make("red", "fox")
+        scheme._make("red", "fox")
 
 
 def test_built_in_names_are_translated_whole(monkeypatch):
@@ -93,8 +93,8 @@ def test_built_in_names_are_translated_whole(monkeypatch):
     assert set(psynet.pseudonym._BUILTIN_NAMES) == set(
         itertools.product(PseudonymScheme().colors(), PseudonymScheme().animals())
     )
-    assert Lions().make("blue", "fox").name == "Renard bleu"
-    assert Lions().make("blue", "lion").name == "Lion blue"
+    assert Lions()._make("blue", "fox").name == "Renard bleu"
+    assert Lions()._make("blue", "lion").name == "Lion blue"
 
 
 @pytest.mark.parametrize(
@@ -109,13 +109,13 @@ def test_stored_deployment_id_and_overrides_decide_pseudonyms(
 
     def names(deployment_id):
         exp.var.deployment_id = deployment_id
-        return [PseudonymScheme().pseudonym(p).name for p in participants]
+        return [PseudonymScheme()._pseudonym(p).name for p in participants]
 
     assert names("deployment-a") == names("deployment-a") != names("deployment-b")
 
     participants[0].set_pseudonym("red", "whale")
     assert participants[0].pseudonym.name == "Red whale"
-    assert "pseudonym_color" not in participants[0].to_dict()
+    assert {"pseudonym", "pseudonym_color"}.isdisjoint(participants[0].to_dict())
     rows = exp.table_data(0, 10, table="participant")["data"]
     assert {row["id"]: row["pseudonym"] for row in rows}[participants[0].id] == (
         "Red whale"

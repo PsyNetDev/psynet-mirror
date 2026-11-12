@@ -1,0 +1,1 @@
+Documented one cued trial per player per round as the way to write round-based group games, across the group design, synchronization, basic data and analysis pages and the multiplayer skills. The analysis example now matches a player's trials to their partner's by the `sync_group_id` and `sync_group_round` the trials record, which also works when players are regrouped.

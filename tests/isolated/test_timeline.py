@@ -34,13 +34,42 @@ from psynet.timeline import (
     Page,
     PageMaker,
     ProgressStage,
+    ReactiveGoTo,
     Timeline,
+    conditional,
     join,
     switch,
     while_loop,
 )
 from psynet.trial.chain import ChainNode, ChainTrial, ChainTrialMaker
 from psynet.utils import DuplicateKeyError
+
+
+def test_conditional_treats_a_truthy_result_as_true():
+    true_page, false_page = (
+        InfoPage("Yes", time_estimate=1),
+        InfoPage("No", time_estimate=1),
+    )
+    elts = conditional(
+        "sent", lambda participant: 4, true_page, false_page, log_chosen_branch=False
+    )
+    go_to = next(elt for elt in elts if isinstance(elt, ReactiveGoTo))
+    assert (
+        go_to.get_target(
+            experiment=None, participant=SimpleNamespace(module_state=None)
+        )
+        is go_to.targets[True]
+    )
+
+
+def test_switch_with_integer_keys_still_rejects_other_values():
+    pages = {n: InfoPage(str(n), time_estimate=1) for n in (0, 1)}
+    elts = switch("n", lambda participant: 2, pages, log_chosen_branch=False)
+    go_to = next(elt for elt in elts if isinstance(elt, ReactiveGoTo))
+    with pytest.raises(ValueError, match="not present among the target keys"):
+        go_to.get_target(
+            experiment=None, participant=SimpleNamespace(module_state=None)
+        )
 
 
 def test_merge_media_spec():
@@ -547,6 +576,7 @@ def test_check_barriers_settles_on_the_last_allowed_pass(monkeypatch):
     monkeypatch.setattr("psynet.sync._process_barrier_instance", lambda *a, **k: False)
     monkeypatch.setattr("psynet.sync._time_out_overdue_waiters", lambda *a: None)
     monkeypatch.setattr("psynet.sync._finish_dissolving_groups", lambda: None)
+    monkeypatch.setattr("psynet.sync._report_divergences", lambda: None)
 
     check_barriers()
     assert n["i"] == 4
@@ -1579,10 +1609,36 @@ def test_two_sync_trial_makers_keep_distinct_barrier_ids():
         for elt in timeline.all_elts
         if elt.links.get("barrier") is not None
     }
-    assert tm_1.with_namespace("init_participant") in ids
-    assert tm_2.with_namespace("init_participant") in ids
-    assert tm_1.with_namespace("prepare_trial") in ids
-    assert tm_2.with_namespace("prepare_trial") in ids
+    assert ids == {
+        tm_1.with_namespace("prepare_trial"),
+        tm_2.with_namespace("prepare_trial"),
+    }
+
+
+def test_a_group_admitting_at_admission_points_needs_one():
+    from psynet.sync import GroupBarrier, SimpleGrouper
+
+    def grouper():
+        return SimpleGrouper(
+            "main",
+            initial_group_size=2,
+            max_group_size=3,
+            target_group_size=2,
+            join_existing_groups=True,
+            use_admission_points=True,
+            below_quorum="continue_without_group",
+        )
+
+    with pytest.warns(UserWarning, match="no admission point"):
+        Timeline(grouper(), InfoPage("x", time_estimate=1))
+    with pytest.raises(ValueError, match="sync_group_newcomer_max_wait"):
+        Timeline(grouper(), new_trial_maker(sync_group_type="main"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        Timeline(
+            grouper(),
+            GroupBarrier("start", "main", admission_point=True, newcomer_max_wait=60),
+        )
 
 
 def test_estimate_credit__simple():
@@ -1898,12 +1954,13 @@ def test_async_code_block_initiate__no_stale_job():
 
 def test_async_code_block_initiate__stores_generated_code_block_id_from_timeline():
     timeline = Timeline(AsyncCodeBlock(_async_target, wait=False))
-    code_block = timeline.elts["main"][0]
+    code_block = next(
+        elt for elt in timeline.elts["main"] if isinstance(elt, CodeBlock)
+    )
     participant = _make_participant(stale_job=None)
     new_job = _new_job()
 
-    assert isinstance(code_block, CodeBlock)
-    assert code_block.id == ["main", 0]
+    assert code_block.id == ["main", timeline.elts["main"].index(code_block)]
 
     with patch("psynet.async_job.WorkerAsyncJob", return_value=new_job) as ctor:
         code_block.consume(MagicMock(), participant)

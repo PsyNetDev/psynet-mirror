@@ -260,6 +260,17 @@ def _bot_outcome_lines(result):
             "",
         ]
 
+    if result.group_removals is not None:
+        lines += [
+            *_section("REMOVALS FROM SYNC GROUPS"),
+            "  Bots that a group removed may still count above as completed.",
+            *(
+                _label_table([[r, n] for r, n in result.group_removals.items()])
+                or ["  None, other than members who finished or moved on."]
+            ),
+            "",
+        ]
+
     if result.bot_error_kinds:
         lines += [
             *_section(f"BOT ERRORS (n={result.bot_errors:,})"),

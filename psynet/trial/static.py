@@ -6,7 +6,7 @@ authors customize node eligibility with ``custom_node_filter`` and ranking with
 ``select_node``; network adaptation remains an implementation detail.
 """
 
-from typing import List, Literal, Optional, Union
+from typing import Callable, List, Literal, Optional, Sequence, Union
 
 from psynet.trial.chain import (
     Candidate,
@@ -16,9 +16,9 @@ from psynet.trial.chain import (
     ChainTrialMaker,
     _reject_removed_balance_argument,
 )
-from psynet.trial.main import _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME
 
-from ..utils import get_logger, is_method_overridden
+from ..sync import LateAction
+from ..utils import NoArgumentProvided, get_logger, is_method_overridden
 
 logger = get_logger()
 
@@ -238,10 +238,11 @@ class StaticTrialMaker(ChainTrialMaker):
         When this is set, then the ordinary node allocation logic will only apply to the 'leader'
         of each SyncGroup. The other members of this SyncGroup will follow that leader around,
         so that in every given trial the SyncGroup works on the same node together.
+        The other ``sync_group_*`` options raise an error without it.
 
-    sync_group_wait_content
-        Message shown by the trial maker's own sync-group waits. See
-        :class:`~psynet.trial.main.TrialMaker`.
+    sync_group_waiting_message, sync_group_max_wait_time, sync_group_max_wait_action, sync_group_late_after, sync_group_late_action, sync_group_also_leave, sync_group_newcomer_max_wait
+        The message and time limits of the trial maker's own sync-group
+        waits; see :class:`~psynet.trial.main.TrialMaker`.
 
     Attributes
     ----------
@@ -313,11 +314,13 @@ class StaticTrialMaker(ChainTrialMaker):
         assets=None,
         choose_participant_group: Optional[callable] = None,
         sync_group_type: Optional[str] = None,
-        sync_group_max_wait_time: Optional[float] = _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
-        sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
-        sync_group_timeout_between_barriers_time: Optional[float] = None,
-        sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
-        sync_group_wait_content=None,
+        sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
+        sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
+        sync_group_late_after: Optional[float] = None,
+        sync_group_late_action: Optional[LateAction] = None,
+        sync_group_also_leave: Optional[Sequence[str]] = None,
+        sync_group_waiting_message=None,
+        sync_group_newcomer_max_wait: Optional[float] = None,
     ):
         _reject_removed_balance_argument(
             "balance_across_nodes", balance_across_nodes, "node_order"
@@ -424,9 +427,11 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_type=sync_group_type,
             sync_group_max_wait_time=sync_group_max_wait_time,
             sync_group_max_wait_action=sync_group_max_wait_action,
-            sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
-            sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
-            sync_group_wait_content=sync_group_wait_content,
+            sync_group_late_after=sync_group_late_after,
+            sync_group_late_action=sync_group_late_action,
+            sync_group_also_leave=sync_group_also_leave,
+            sync_group_waiting_message=sync_group_waiting_message,
+            sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
         )
 
     def _selection_hook_overrides(self):

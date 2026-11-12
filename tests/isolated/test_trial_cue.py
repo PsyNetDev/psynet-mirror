@@ -1,6 +1,7 @@
 """Tests for transactional callbacks on :meth:`Trial.cue`."""
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from dallinger import db
@@ -11,8 +12,10 @@ from psynet.asset import Asset, ExternalAsset
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.db import transaction
 from psynet.experiment import get_experiment
+from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
+from psynet.timeline import Module, StartAccumulateAnswers
 from psynet.trial.main import GenericTrialNode, Trial
 
 
@@ -203,6 +206,130 @@ def test_cue_asset_callback_failure_rolls_back_trial_and_assets(
     assert CueTrial.query.count() == 0
     assert CueCreationRecord.query.count() == 0
     assert Asset.query.count() == assets_before
+
+
+class RewardTrial(CueTrial):
+    def score_answer(self, answer, definition):
+        assert self.participant is not None
+        return 1
+
+    def compute_performance_reward(self, score):
+        return 0.5 * score
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_a_trial_ending_in_the_request_that_cued_it_can_pay_its_participant(
+    db_session,
+    participant_and_node,
+    monkeypatch,
+):
+    experiment, participant, node = participant_and_node
+    monkeypatch.setattr(
+        RewardTrial,
+        "get_default_parent_node",
+        classmethod(lambda cls, participant, experiment: node),
+    )
+
+    # The trial may end before anything flushes it to the database.
+    with db.session.no_autoflush:
+        RewardTrial.cue(definition={})[0].consume(experiment, participant)
+        participant.current_trial.on_finalized()
+
+    assert participant.performance_reward == 0.5
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_trial_answer_follows_its_pages_until_the_trial_ends(
+    db_session, participant_and_node, monkeypatch
+):
+    """A barrier inside show_trial can read the answer so far from trial.answer."""
+    experiment, participant, node = participant_and_node
+    monkeypatch.setattr(
+        CueTrial,
+        "get_default_parent_node",
+        classmethod(lambda cls, participant, experiment: node),
+    )
+    CueTrial.cue(definition={})[0].consume(experiment, participant)
+    trial = participant.current_trial
+    page = ModularPage("pick", "Pick a number.", PushButtonControl([1, 2, 3]))
+
+    def submit(answer):
+        page._accept_response(
+            SimpleNamespace(answer=answer, trial=None), experiment, participant
+        )
+
+    submit(1)
+    assert trial.answer == 1
+    trial.failed = True
+    submit(2)
+    trial.failed, trial.complete = False, True
+    submit(3)
+    assert trial.answer == 1
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_trial_answer_accumulates_across_pages(
+    db_session, participant_and_node, monkeypatch
+):
+    """With accumulate_answers, trial.answer holds every page answered so far."""
+    experiment, participant, node = participant_and_node
+    monkeypatch.setattr(
+        CueTrial,
+        "get_default_parent_node",
+        classmethod(lambda cls, participant, experiment: node),
+    )
+    CueTrial.cue(definition={})[0].consume(experiment, participant)
+    StartAccumulateAnswers().consume(experiment, participant)
+    trial = participant.current_trial
+    for label, answer in [("first", 1), ("second", 2)]:
+        page = ModularPage(label, "Pick a number.", PushButtonControl([1, 2]))
+        page._accept_response(
+            SimpleNamespace(answer=answer, trial=None), experiment, participant
+        )
+        db.session.flush()
+    db.session.expire(trial)
+    assert trial.answer == {"first": 1, "second": 2}
+
+
+class AccumulatingTrial(CueTrial):
+    accumulate_answers = True
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_cued_trials_number_their_positions_within_each_module(
+    db_session, participant_and_node, monkeypatch
+):
+    experiment, participant, node = participant_and_node
+    monkeypatch.setattr(
+        CueTrial,
+        "get_default_parent_node",
+        classmethod(lambda cls, participant, experiment: node),
+    )
+
+    def cue_in_module(module_id, trial_classes):
+        Module(module_id, CueTrial.cue({})).start(participant)
+        trials = []
+        for trial_class in trial_classes:
+            trial_class.cue({})[0].consume(experiment, participant)
+            trials.append(participant.current_trial)
+        return trials
+
+    first = cue_in_module("first", [CueTrial, AccumulatingTrial, CueTrial])
+    second = cue_in_module("second", [CueTrial])
+    assert [t.position for t in first + second] == [0, 1, 2, 0]
+    assert [t.answer for t in first] == [None, {}, None]
 
 
 def test_cue_creation_context_requires_on_trial_created():

@@ -13,8 +13,7 @@ message persistence and history replay are all provided by the built-in
 ``ChatRoom`` component. Instead of the chat's participant list, a
 :class:`~psynet.group_prompt.GroupPrompt` above the chat shows the pair and
 ticks a partner who has pressed Next. The chat ends by itself after
-``CHAT_SECONDS``. The structure mirrors the
-rock-paper-scissors chatroom demo, minus the game logic.
+``CHAT_SECONDS``.
 """
 
 from typing import List
@@ -23,23 +22,16 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages
-from psynet.chatroom import ChatRoom, EnableChatrooms
+from psynet.chatroom import ChatMessage, ChatRoom, EnableChatrooms
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.sync import GroupBarrier, SimpleGrouper
 from psynet.timeline import Timeline, join
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
-from psynet.utils import get_logger
 
-logger = get_logger()
-
-GROUP_TYPE = "chat"
+GROUP = "chat"
 CHAT_SECONDS = 120
-
-
-class ChatTrialMaker(StaticTrialMaker):
-    pass
 
 
 class ChatTrial(StaticTrial):
@@ -47,17 +39,12 @@ class ChatTrial(StaticTrial):
 
     def show_trial(self, experiment, participant):
         return join(
-            GroupBarrier(
-                id_="wait_for_partner",
-                group_type=GROUP_TYPE,
-                content="Waiting for your partner",
-            ),
             self.chat_page(participant, topic=self.definition["topic"]),
             # Partners leave together, and the chat page ticks whoever has finished.
             GroupBarrier(
                 id_="finished_chatting",
-                group_type=GROUP_TYPE,
-                content="Waiting for your partner to finish chatting",
+                group_type=GROUP,
+                waiting_message="Waiting for your partner to finish chatting",
                 # Whoever presses Next first may wait out the rest of the chat.
                 max_wait_time=CHAT_SECONDS + 30,
             ),
@@ -69,22 +56,19 @@ class ChatTrial(StaticTrial):
             tags.h1("Chatroom")
             tags.p(f"Discuss the following topic with your partner: {topic}")
 
-        # The room_id is derived from this trial's sync group
-        # (``self.sync_group``), not from ``participant.sync_group``.
-        # ``self.sync_group`` always resolves to the group matching this trial
-        # maker's ``sync_group_type``, so it is safe even when a participant is a
-        # member of multiple sync groups. Both partners share the same
-        # ``self.sync_group.id`` and therefore meet in the same room.
+        # Both partners' trials have the same sync_group, so they meet in one room,
+        # even if they are also in groups of other types.
         return ModularPage(
             "chat",
             GroupPrompt(
                 prompt,
                 group=self.sync_group,
                 participant=participant,
-                show_names=True,
+                names="shown",
                 note="Press Next when you have finished; the chat also ends "
                 "by itself when the time runs out. "
-                "A tick shows when your partner has finished.",
+                "A tick shows when your partner has finished, "
+                "or a dash if their time ran out.",
             ),
             chatroom=ChatRoom(
                 room_id=f"chat_room_{self.sync_group.id}",
@@ -104,11 +88,12 @@ class Exp(psynet.experiment.Experiment):
     timeline = Timeline(
         EnableChatrooms(),
         SimpleGrouper(
-            group_type=GROUP_TYPE,
+            group_type=GROUP,
             initial_group_size=2,
-            content="Waiting for your partner",
+            waiting_message="Waiting for your partner",
+            max_wait_time=120,
         ),
-        ChatTrialMaker(
+        StaticTrialMaker(
             id_="chat",
             trial_class=ChatTrial,
             nodes=[
@@ -120,8 +105,8 @@ class Exp(psynet.experiment.Experiment):
             ],
             expected_trials_per_participant=1,
             max_trials_per_participant=1,
-            sync_group_type=GROUP_TYPE,
-            sync_group_wait_content="Waiting for your partner",
+            sync_group_type=GROUP,
+            sync_group_waiting_message="Waiting for your partner",
         ),
         InfoPage("That's the end of the experiment!", time_estimate=5),
     )
@@ -145,6 +130,16 @@ class Exp(psynet.experiment.Experiment):
             bots[0].get_current_page().chatroom.room_id
             == bots[1].get_current_page().chatroom.room_id
         )
+
+        bots[0].send_chat_message("Hello!")
+        assert bots[0].with_participant(
+            lambda participant: [
+                message.content
+                for message in ChatMessage.query.filter_by(
+                    participant_id=participant.id
+                )
+            ]
+        ) == ["Hello!"]
 
         bots[0].take_page()
         bots[1].take_page()

@@ -2,14 +2,17 @@ import json
 import time
 import uuid
 import warnings
+from datetime import timedelta
 from functools import cached_property
 from typing import List, Optional, Sequence, Union
 
 from dallinger import db
+from dallinger.models import timenow
 
 from psynet.db import transaction
 
-from .participant import Participant, ParticipantDriver
+from .participant import Participant, ParticipantDriver, _status_is_waiting
+from .timeline import TIME_LIMIT_GRACE_SECONDS
 from .utils import NoArgumentProvided, get_logger, log_time_taken, wait_until
 
 logger = get_logger()
@@ -217,7 +220,7 @@ class BotResponse:
 def advance_past_wait_pages(
     bots: List["BotDriver"],
     max_iterations: Optional[int] = None,
-    timeout: Optional[float] = None,
+    timeout: Optional[float] = NoArgumentProvided,
     stop_at: Union[str, Sequence[str]] = (),
 ):
     """
@@ -233,13 +236,19 @@ def advance_past_wait_pages(
     bots : list of BotDriver
         Bots to advance.
     max_iterations : int, optional
-        Deprecated; use ``timeout``. If given, stop after this many passes.
+        Deprecated; use ``timeout``. If given, also stop after this many passes.
     timeout : float, optional
-        Seconds to keep trying before giving up. Defaults to 10, or to no
-        limit when only ``max_iterations`` is given.
+        Seconds to keep trying before giving up. ``None`` means no limit.
+        Default: 10, or no limit if only ``max_iterations`` is given.
     stop_at : str or sequence of str
         ID or IDs of barriers to leave bots waiting at, for example a responder
         waiting for the proposer's offer while the test plays the proposer.
+        Only matches bots on the waiting indicator of a barrier, grouper or
+        regrouper with that ID that has no ``waiting_logic``, and only while
+        that barrier hasn't released them: bots it has released, for example
+        a turn-taking game's waiters once the writer submits, still catch up.
+        Bots on a ``WaitPage`` or on ``waiting_logic`` pages are always
+        advanced.
 
     Raises
     ------
@@ -247,8 +256,6 @@ def advance_past_wait_pages(
         If some bots are still waiting after ``timeout`` seconds (or
         ``max_iterations`` passes).
     """
-    from .page import WaitPage
-
     if max_iterations is not None:
         warnings.warn(
             "advance_past_wait_pages(max_iterations=...) is deprecated; "
@@ -256,8 +263,8 @@ def advance_past_wait_pages(
             FutureWarning,
             stacklevel=2,
         )
-    elif timeout is None:
-        timeout = 10.0
+    if timeout is NoArgumentProvided:
+        timeout = None if max_iterations is not None else 10.0
     stop_at = {stop_at} if isinstance(stop_at, str) else set(stop_at)
     deadline = None if timeout is None else time.monotonic() + timeout
     iteration = 0
@@ -266,14 +273,14 @@ def advance_past_wait_pages(
         waiting = []
         for bot in bots:
             # Last-arrival may have skipped this waiter while another bot was
-            # submitting. Refresh before reading the cached page.
+            # submitting. Refresh before reading the cached page, and decide
+            # from that status rather than the database: a release between the
+            # two would leave take_page submitting the stale waiting page.
             bot.refresh_status()
-            current_page = bot.get_current_page()
-            if getattr(current_page, "barrier_id", None) in stop_at:
+            page = bot.status.get("page") or {}
+            if page.get("barrier_id") in stop_at and not page.get("can_resume"):
                 continue
-            if isinstance(current_page, WaitPage) or getattr(
-                current_page, "is_timeline_hold", False
-            ):
+            if _status_is_waiting(bot.status):
                 waiting.append(bot)
                 bot.take_page()
         if not waiting:
@@ -287,6 +294,265 @@ def advance_past_wait_pages(
             raise RuntimeError(f"Bots {ids} are still waiting after {timeout} s.")
         if iteration >= 2:
             time.sleep(0.5)
+
+
+def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 10.0):
+    """Split the bots' pools at a :class:`~psynet.sync.Regrouper` now, then advance them past it.
+
+    A bot test would otherwise wait out the regrouper's ``deadline`` or its
+    next ``every`` tick, for example to test a round that starts without a
+    member who is still reading their results. This moves two clocks back by
+    one ``deadline`` (or ``every`` period): the bots' arrival times at the
+    regrouper and the creation times of the groups their pools' earlier
+    splits formed. The next check then splits the pools as the deadline or
+    tick would. Group memberships and roles are untouched, so a player still
+    in last round's group keeps their role. ``max_wait_time`` doesn't
+    move: it counts from the bots' real arrivals. A player waiting alone for
+    cohort members who are still playing isn't released: that needs a second
+    deadline (or tick), so a single call leaves them waiting.
+
+    Parameters
+    ----------
+    bots : list of BotDriver
+        Bots waiting at the regrouper, and any others to advance with them.
+        Only these bots' arrivals move back, so with ``every`` pass every bot
+        waiting in the pool.
+    regrouper : Regrouper
+        The regrouper from the timeline.
+    timeout : float, optional
+        Passed to :func:`advance_past_wait_pages`.
+
+    Raises
+    ------
+    ValueError
+        If the regrouper has neither ``deadline`` nor ``every``, or none of
+        the bots is waiting at it.
+
+    Examples
+    --------
+    ::
+
+        for bot in bots[:3]:
+            bot.take_page()  # The fourth player is still reading.
+        regroup_now(bots[:3], pairing)
+    """
+    period = regrouper.deadline or regrouper.every
+    if period is None:
+        raise ValueError(
+            f"Regrouper '{regrouper.id}' has no deadline or every, so it splits "
+            "a pool as soon as it is complete; use advance_past_wait_pages."
+        )
+    with transaction():
+        participants = [Participant.query.get(bot.id) for bot in bots]
+        waiting = [p for p in participants if regrouper.id in p.active_barriers]
+        if not waiting:
+            raise ValueError(f"None of the bots is waiting at '{regrouper.id}'.")
+        _backdate_arrivals(regrouper, waiting, period)
+        pools = {}
+        for participant in waiting:
+            group = regrouper.waiting_pool_group(participant)
+            pools[group and group.id] = group
+        for within_group in pools.values():
+            _backdate_splits(regrouper, within_group, period)
+    advance_past_wait_pages(bots, timeout=timeout)
+
+
+def _backdate_splits(regrouper, within_group, seconds):
+    """Move every split ``regrouper`` made in this pool back by ``seconds``.
+
+    All of them, not just the latest, because the pool's deadline counts from
+    its most recent split.
+    """
+    from .sync import SyncGroup
+
+    shift = timedelta(seconds=seconds)
+    for group in SyncGroup.query.filter(*regrouper._pool_splits(within_group)):
+        group.creation_time -= shift
+
+
+def _backdate_arrivals(barrier, participants, seconds):
+    """Move the participants' current arrivals at ``barrier`` back by ``seconds``."""
+    for participant in participants:
+        participant.active_barriers[barrier.id].arrival_time -= timedelta(
+            seconds=seconds
+        )
+
+
+def make_late_now(
+    bots: List["BotDriver"], barrier_id: str, timeout: Optional[float] = 10.0
+):
+    """Make the members who haven't reached a :class:`~psynet.sync.GroupBarrier` late now, then advance the bots past it.
+
+    A bot test would otherwise wait out the barrier's ``late_after`` in real
+    time to test a player who goes quiet. For each group of a bot waiting at
+    the barrier, this moves the group's clocks back: the time it last passed
+    a barrier, and its members' times of joining and page deadlines. They
+    move back by ``late_after``, or further if a quiet member's timed page
+    and the grace for its answer would otherwise keep them from being late.
+    The barrier's next check, when the waiting bots poll it, then removes
+    every member who isn't waiting there, with its ``late_action``. Bots not
+    waiting there, such as the quiet ones, aren't advanced: a quiet bot sees
+    that its group went on without it, and the test takes its page next.
+
+    Parameters
+    ----------
+    bots : list of BotDriver
+        Bots to advance; include the ones waiting at the barrier. Quiet
+        bots may be included and stay on their page.
+    barrier_id : str
+        The barrier's ID.
+    timeout : float, optional
+        Passed to :func:`advance_past_wait_pages`.
+
+    Raises
+    ------
+    ValueError
+        If none of the bots is waiting at the barrier, or it has no
+        ``late_after``.
+
+    Examples
+    --------
+    ::
+
+        bots[0].take_page(response=4)
+        bots[1].take_page(response=8)
+        make_late_now(bots, "round_finished")  # bots[2] goes quiet.
+    """
+    with transaction():
+        participants = [Participant.query.get(bot.id) for bot in bots]
+        waiting = [p for p in participants if barrier_id in p.active_barriers]
+        if not waiting:
+            raise ValueError(
+                f"None of the bots is waiting at '{barrier_id}'. If they were, "
+                "the barrier may already have released them; give it a longer "
+                "late_after."
+            )
+        barrier = waiting[0].active_barriers[barrier_id].get_barrier()
+        late_after = getattr(barrier, "late_after", None)
+        if late_after is None:
+            raise ValueError(f"Barrier '{barrier_id}' has no late_after.")
+        groups = {}
+        for participant in waiting:
+            group = participant.active_sync_groups.get(barrier.group_type)
+            if group is not None:
+                groups[group.id] = group
+        now = timenow()
+        answer_arrival = 2 * TIME_LIMIT_GRACE_SECONDS
+        for group in groups.values():
+            seconds = late_after
+            for link in group.participant_links:
+                if (
+                    link.active
+                    and link.page_deadline is not None
+                    and barrier_id not in link.participant.active_barriers
+                ):
+                    left = (link.page_deadline - now).total_seconds()
+                    seconds = max(seconds, left + answer_arrival)
+            _backdate_group(group, seconds + 1)
+    advance_past_wait_pages(bots, timeout=timeout)
+
+
+def _backdate_group(group, seconds):
+    """Move the group's last barrier pass, and its members' joining, admission, leaving and page deadline times, back by ``seconds``.
+
+    Leaving times move with the last pass, so that someone who left before it
+    isn't counted again in the next release's ``left``. Before the group's
+    first pass, ``left`` counts from the group's creation, which doesn't
+    move, so neither do leaving times.
+    """
+    shift = timedelta(seconds=seconds)
+    clocks = ["arrival_time", "admitted_at", "page_deadline"]
+    if group.last_barrier_pass_time is not None:
+        group.last_barrier_pass_time -= shift
+        clocks.append("removal_time")
+    for link in group.participant_links:
+        if link.active and link.admitted_at is None:
+            # A pending member's wait for admission keeps its own clock.
+            continue
+        for clock in clocks:
+            if getattr(link, clock) is not None:
+                setattr(link, clock, getattr(link, clock) - shift)
+
+
+def run_bots_to_completion(bots: List["BotDriver"], timeout: Optional[float] = 60.0):
+    """Take pages for bots in turn until all of them have finished the experiment.
+
+    Use this instead of calling ``run_to_completion`` on each bot when the bots
+    still wait for each other, for example players a
+    :class:`~psynet.sync.Regrouper` keeps pairing: one bot run to completion on
+    its own would wait at the next barrier for partners who never move. Each
+    pass takes one page for every bot that is still working, answering with
+    the page's bot response; a bot waiting at a barrier polls it, as a browser
+    would.
+
+    Parameters
+    ----------
+    bots : list of BotDriver
+        Bots to run.
+    timeout : float, optional
+        Seconds to keep going before giving up (default 60). ``None`` means
+        no limit.
+
+    Raises
+    ------
+    RuntimeError
+        If some bots are still working after ``timeout`` seconds.
+    """
+    deadline = None if timeout is None else time.monotonic() + timeout
+    first_pass = True
+    while True:
+        for bot in bots:
+            bot.refresh_status()
+        working = [bot for bot in bots if bot.is_working]
+        if not working:
+            return
+        if deadline is not None and time.monotonic() > deadline:
+            ids = [bot.id for bot in working]
+            raise RuntimeError(f"Bots {ids} are still working after {timeout} s.")
+        if not first_pass and all(_status_is_waiting(bot.status) for bot in working):
+            # Everyone waits, for example for a clock tick, so poll as a browser would.
+            time.sleep(0.5)
+        first_pass = False
+        for bot in working:
+            bot.take_page()
+
+
+def bots_by_sync_group(bots: List["BotDriver"], group_type: str):
+    """Return the bots grouped by their current group of ``group_type``.
+
+    Groupers and regroupers can group bots in any order, so a test can use this
+    to find who plays with whom. Bots not in a group of that type are left out.
+
+    Parameters
+    ----------
+    bots : list of BotDriver
+        Bots to sort into groups.
+    group_type : str
+        The group type, as in ``participant.in_sync_group(group_type)``.
+
+    Returns
+    -------
+    list of list of BotDriver
+        One list per group, ordered by group ID, each ordered by bot ID.
+
+    Examples
+    --------
+    ::
+
+        for first, second in bots_by_sync_group(bots, "pair"):
+            first.take_page(response="circle")
+            second.take_page(response="square")
+    """
+    groups = {}
+    for bot in sorted(bots, key=lambda bot: bot.id):
+        group_id = bot.with_participant(
+            lambda participant: getattr(
+                participant.active_sync_groups.get(group_type), "id", None
+            )
+        )
+        if group_id is not None:
+            groups.setdefault(group_id, []).append(bot)
+    return [groups[group_id] for group_id in sorted(groups)]
 
 
 class BotDriver(ParticipantDriver):

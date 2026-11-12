@@ -47,6 +47,18 @@ have already failed. Otherwise, in this order, it:
 6. redirects the participant to ``unsuccessful_end``, unless they are already
    in an end branch or have completed the experiment.
 
+Three exceptions to this order remove the participant from groups before
+calling ``fail()``, so fail routines no longer see those groups in
+``active_sync_groups``:
+
+- a barrier's ``late_action="fail"`` removes the member from all their groups
+  (the barrier's as ``"late"``, the others as ``"left_experiment"``);
+- a ``GroupBarrier``'s ``max_wait_action="fail"`` removes the waiter from all
+  their groups (the barrier's as ``"waited_too_long"``, the others as
+  ``"left_experiment"``);
+- a group dissolving with ``below_quorum="fail"`` removes them from that group
+  (as ``"group_dissolved"``).
+
 Error recovery passes ``redirect_to_end=False`` because its exit plan handles
 the terminal page.
 
@@ -73,12 +85,11 @@ Sync groups
 ~~~~~~~~~~~
 
 Removing a failed participant can drop a
-:class:`~psynet.sync.SimpleSyncGroup` below ``min_group_size``. If the group
-does not accept top-ups, it is dissolved at once: the remaining members are
-removed, and failed when ``fail_participants_below_min_size`` is ``True``. A
-barrier applies the same rule if it finds a group below minimum size. A group
-that accepts top-ups waits for newcomers instead, but closes once it has no
-active members left, whether they failed, were kicked or finished.
+:class:`~psynet.sync.SimpleSyncGroup` below its ``quorum``. Whether that
+dissolves the group, and what happens to
+its other members, is described in
+:ref:`groups_below_quorum`. A group that accepts top-ups closes once it
+has no active members left, whether they failed, were removed or finished.
 
 Recruiter exit events
 ---------------------

@@ -1,0 +1,1 @@
+Performance-test reports for experiments with sync groups now count the bots' removals from groups by reason (such as `late`, `not_admitted` or `group_dissolved`), since removed bots can still count as completed.

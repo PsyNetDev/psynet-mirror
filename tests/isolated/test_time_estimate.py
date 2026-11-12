@@ -44,3 +44,11 @@ def test_while_loop():
         expected_repetitions=3,
     )
     assert CreditEstimate(loop).get_max("time") == 3.0
+
+
+def test_while_loop_keeps_a_repeated_element():
+    page = InfoPage("Again", time_estimate=1.0)
+    loop = while_loop(
+        "again", condition=lambda: True, logic=[page, page], expected_repetitions=2
+    )
+    assert CreditEstimate(loop).get_max("time") == 4.0

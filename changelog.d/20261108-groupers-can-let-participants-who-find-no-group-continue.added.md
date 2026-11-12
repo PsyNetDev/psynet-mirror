@@ -1,0 +1,1 @@
+Added `max_wait_action` to groupers. With `max_wait_action="continue_without_group"`, a participant who waits longer than `max_wait_time` without finding a group continues the timeline without one instead of being failed, and their next page says "We couldn't find a partner for you in time. Please continue.".

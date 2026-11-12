@@ -101,7 +101,11 @@ the median is the typical delay, and the 95th percentile is what the slowest
 participants experience. *Bot outcomes* counts how each bot ended:
 participants that the experiment failed, for example at a prescreen or when
 a wait timed out, are under *Failed by the experiment*, and *Bot errors*
-lists errors such as ``HTTP 500 on /response``. Other sections cover
+lists errors such as ``HTTP 500 on /response``. In experiments with sync
+groups, *Removals from sync groups* counts removals of bots from groups, by
+removal reason (such as ``late`` or ``group_dissolved``; a bot removed from
+two groups counts twice); these bots may
+still have completed the experiment. Other sections cover
 runtimes, busy chains, requests answered busy or stale (which bots retry),
 wait pages, async job queue waits and worker use, and how the database grew.
 *Start-up vs steady state* splits the measures at the moment the first bot
@@ -297,7 +301,8 @@ same 208 bots got a 95th-percentile response time of 0.2 s with 100,000 to
 fresh database therefore measures the start of a study.
 
 Each test reports the rows in the growing tables before and after it, and
-the summary warns when the database grew by more than half. Compare those
+the summary warns when a table grew by more than half and by at least
+10,000 rows. Compare those
 rows with what the study will collect. If it will collect much more, test
 with that much data (see :ref:`performance_testing_reset`), or run a long
 test that ends near the planned total; response times that rise steadily
@@ -363,6 +368,10 @@ command prints how to destroy it when you're done:
 .. code-block:: bash
 
     psynet destroy ssh --server my-server --app my-experiment-perf
+
+The command asks whether to delete the app's data. Without a terminal, for
+example in a script or from an agent, add ``--remove-data --yes`` to delete
+it without asking (or ``--keep-data --yes`` to keep it).
 
 Runs refuse apps without the mark, such as ones deployed with ``psynet debug
 ssh``, and live deployments refuse the mark. They also refuse a database
