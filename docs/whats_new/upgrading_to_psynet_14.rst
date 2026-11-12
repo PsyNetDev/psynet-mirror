@@ -612,6 +612,9 @@ subclasses, ``get_waiting_participants(``, ``SimpleGrouper(``,
   smaller groups. A ``quorum`` below ``initial_group_size`` also needs
   ``below_quorum="fail"`` (the old behavior) or
   ``below_quorum="continue_without_group"``.
+  Participants failed because their group fell below its quorum now get the
+  failure tag ``sync group below quorum`` instead of
+  ``sync group below minimum size``; update analysis code that filters on it.
 * ``SimpleGrouper(join_existing_groups=True)`` now warns unless you say when
   newcomers start taking part: pass ``admit_newcomers="on_join"`` to keep
   the old behavior, or ``admit_newcomers="at_admission_point"`` to admit
