@@ -241,6 +241,10 @@ class PerformanceTestResult:
     #: eligible chain or node was busy, by trial maker (see
     #: measure.busy_early_finish_stats).
     busy_early_finishes: dict[str, dict] = field(default_factory=dict)
+    #: Bots' removals from sync groups by removal reason, most common first,
+    #: leaving out the routine ``finished`` and ``moved_on``; ``None`` if no
+    #: bot joined a sync group (see measure.group_removal_stats).
+    group_removals: dict[str, int] | None = None
     #: Async worker processes registered with RQ at the end of the test.
     n_rq_workers: int | None = None
     #: Jobs the async workers can run at once.

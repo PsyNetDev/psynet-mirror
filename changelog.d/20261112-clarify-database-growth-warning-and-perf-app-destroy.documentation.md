@@ -1,0 +1,1 @@
+The scalability docs now say that the database-growth warning also needs a table to grow by at least 10,000 rows, and that destroying a performance-test app without a terminal needs `--remove-data --yes` (or `--keep-data --yes`).
