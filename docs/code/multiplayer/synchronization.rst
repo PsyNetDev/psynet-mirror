@@ -1351,7 +1351,9 @@ Two separate settings decide what happens when someone leaves a group:
       ``max_wait_time``, the experiment refuses to load (or, for a barrier
       built in ``show_trial``, to show the trial) if a group could wait for
       newcomers at one without ``top_up_wait``, unless an earlier barrier
-      stops top-ups.
+      stops top-ups. The check can't see top-ups stopped in code or by a
+      ``Regrouper``'s ``stop_top_ups_after_rounds``, so such designs pass
+      ``top_up_wait`` too, even if it never applies.
   - Without top-ups, the group is dissolved, and the grouper's
     ``below_quorum`` decides for each remaining member: ``"fail"``
     fails them, telling them "Too few members of your group remained to
