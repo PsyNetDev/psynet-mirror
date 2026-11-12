@@ -41,6 +41,18 @@ msgstr "ରେକର୍ଡିଂ"
 msgid "Recording stopped"
 msgstr "ରେକର୍ଡିଂ ବନ୍ଦ ହୋଇଛି"
 
+#: psynet/chatroom.py
+#, fuzzy
+msgctxt "chat sender"
+msgid "You"
+msgstr "ଆପଣ"
+
+#: psynet/chatroom.py
+#, fuzzy, python-brace-format
+msgctxt "chat participant list"
+msgid "{NAME} (you)"
+msgstr "{NAME} (ଆପଣ)"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -500,6 +512,11 @@ msgid "Click Finish to finalize the session."
 msgstr "ସେସନ୍ ସମାପ୍ତ କରିବା ପାଇଁ ସମାପ୍ତ କରନ୍ତୁ ବଟନକୁ କ୍ଲିକ୍ କରନ୍ତୁ।"
 
 #: psynet/end.py
+#, fuzzy, python-brace-format
+msgid "This page continues by itself in {SECONDS} s."
+msgstr "ଏହି ପୃଷ୍ଠା {SECONDS} ସେକେଣ୍ଡରେ ନିଜେ ଆଗକୁ ବଢ଼ିବ।"
+
+#: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
 msgid "That's the end!"
@@ -521,6 +538,32 @@ msgstr "ଦୁଃଖରେ ଆମେ ଆଗରୁ ବନ୍ଦ କରିବା�
 msgctxt "final_page_unsuccessful"
 msgid "However, you will still be paid for the time you spent already."
 msgstr "ଯାହାହେଉ, ଆପଣ ଆଗରୁ ଜଣାଯାଇଥିବା ସମୟ ପାଇଁ ଦେବା ହେବ।"
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid "You took too long to reach the next step, so we ended your session."
+msgstr ""
+"ଆପଣ ପରବର୍ତ୍ତୀ ପଦକ୍ଷେପକୁ ପହଞ୍ଚିବାରେ ଅତ୍ୟଧିକ ସମୟ ନେଇଥିବାରୁ, ଆମେ ଆପଣଙ୍କ ସେସନ୍ "
+"ସମାପ୍ତ କରିଦେଲୁ।"
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid ""
+"Too few members of your group remained to continue, so we ended your "
+"session."
+msgstr ""
+"ଆପଣଙ୍କ ଦଳରେ ଚାଲୁ ରଖିବା ପାଇଁ ବହୁତ କମ୍ ସଦସ୍ୟ ରହିଥିବାରୁ, ଆମେ ଆପଣଙ୍କ ସେସନ୍ "
+"ସମାପ୍ତ କରିଦେଲୁ।"
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid "We waited too long for other participants, so we ended your session."
+msgstr ""
+"ଆମେ ଅନ୍ୟ ଅଂଶଗ୍ରହଣକାରୀଙ୍କ ପାଇଁ ବହୁତ ସମୟ ଅପେକ୍ଷା କରିଥିବାରୁ, ଆମେ ଆପଣଙ୍କ ସେସନ୍ "
+"ସମାପ୍ତ କରିଦେଲୁ।"
 
 #: psynet/end.py
 #, fuzzy
@@ -579,6 +622,78 @@ msgid ""
 msgstr ""
 "ଏହି ସେସନ୍ ଆଉ ଉପଲବ୍ଧ ନାହିଁ। ଏହା ହୁଏତ ସମାପ୍ତ ହୋଇଥାଇପାରେ, କିମ୍ବା ଆପଣ ଏହି ପୃଷ୍ଠା"
 " ଖୋଲିବା ପରଠାରୁ ଅଧ୍ୟୟନଟି ପୁନଃଆରମ୍ଭ ହୋଇଥାଇପାରେ।"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "has answered"
+msgstr "ଉତ୍ତର ଦେଇଛନ୍ତି"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} has answered."
+msgstr "{NAME} ଉତ୍ତର ଦେଇଛନ୍ତି।"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your group"
+msgstr "ଆପଣଙ୍କ ଦଳ"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Group"
+msgstr "ଦଳ"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another subgroup"
+msgstr "ଅନ୍ୟ ଉପଦଳ"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your subgroup"
+msgstr "ଆପଣଙ୍କ ଉପଦଳ"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} (left)"
+msgstr "{NAME} (ଚାଲିଗଲେ)"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} (out of time)"
+msgstr "{NAME} (ସମୟ ସରିଗଲା)"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} (dropped out)"
+msgstr "{NAME} (ମଝିରେ ଛାଡ଼ିଦେଲେ)"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "You"
+msgstr "ଆପଣ"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "ଆପଣଙ୍କ ସାଥୀ"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "ଅନ୍ୟ ଜଣେ ଖେଳାଳି"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -931,6 +1046,654 @@ msgstr "ଯଦି ଆପଣ କିଗୁଡିକ ଭୁଲିଯାନ୍ତି
 #, fuzzy
 msgid "The test will start on the next page."
 msgstr "ପରୀକ୍ଷା ଅଗାମୀ ପୃଷ୍ଠାରେ ଆରମ୍ଭ ହେବ ।"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange fox"
+msgstr "କମଳା ରଙ୍ଗର ଶିଆଳ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange owl"
+msgstr "କମଳା ରଙ୍ଗର ପେଚା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange otter"
+msgstr "କମଳା ରଙ୍ଗର ଉଦବିଳାବ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange panda"
+msgstr "କମଳା ରଙ୍ଗର ପାଣ୍ଡା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange tiger"
+msgstr "କମଳା ରଙ୍ଗର ବାଘ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange frog"
+msgstr "କମଳା ରଙ୍ଗର ବେଙ୍ଗ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange koala"
+msgstr "କମଳା ରଙ୍ଗର କୋଆଲା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange penguin"
+msgstr "କମଳା ରଙ୍ଗର ପେଙ୍ଗୁଇନ୍"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange rabbit"
+msgstr "କମଳା ରଙ୍ଗର ଠେକୁଆ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange whale"
+msgstr "କମଳା ରଙ୍ଗର ତିମି"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange cat"
+msgstr "କମଳା ରଙ୍ଗର ବିଲେଇ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue fox"
+msgstr "ହାଲୁକା ନୀଳ ଶିଆଳ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue owl"
+msgstr "ହାଲୁକା ନୀଳ ପେଚା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue otter"
+msgstr "ହାଲୁକା ନୀଳ ଉଦବିଳାବ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue panda"
+msgstr "ହାଲୁକା ନୀଳ ପାଣ୍ଡା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue tiger"
+msgstr "ହାଲୁକା ନୀଳ ବାଘ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue frog"
+msgstr "ହାଲୁକା ନୀଳ ବେଙ୍ଗ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue koala"
+msgstr "ହାଲୁକା ନୀଳ କୋଆଲା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue penguin"
+msgstr "ହାଲୁକା ନୀଳ ପେଙ୍ଗୁଇନ୍"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue rabbit"
+msgstr "ହାଲୁକା ନୀଳ ଠେକୁଆ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue whale"
+msgstr "ହାଲୁକା ନୀଳ ତିମି"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue cat"
+msgstr "ହାଲୁକା ନୀଳ ବିଲେଇ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green fox"
+msgstr "ସବୁଜ ଶିଆଳ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green owl"
+msgstr "ସବୁଜ ପେଚା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green otter"
+msgstr "ସବୁଜ ଉଦବିଳାବ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green panda"
+msgstr "ସବୁଜ ପାଣ୍ଡା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green tiger"
+msgstr "ସବୁଜ ବାଘ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green frog"
+msgstr "ସବୁଜ ବେଙ୍ଗ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green koala"
+msgstr "ସବୁଜ କୋଆଲା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green penguin"
+msgstr "ସବୁଜ ପେଙ୍ଗୁଇନ୍"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green rabbit"
+msgstr "ସବୁଜ ଠେକୁଆ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green whale"
+msgstr "ସବୁଜ ତିମି"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green cat"
+msgstr "ସବୁଜ ବିଲେଇ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow fox"
+msgstr "ହଳଦିଆ ଶିଆଳ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow owl"
+msgstr "ହଳଦିଆ ପେଚା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow otter"
+msgstr "ହଳଦିଆ ଉଦବିଳାବ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow panda"
+msgstr "ହଳଦିଆ ପାଣ୍ଡା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow tiger"
+msgstr "ହଳଦିଆ ବାଘ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow frog"
+msgstr "ହଳଦିଆ ବେଙ୍ଗ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow koala"
+msgstr "ହଳଦିଆ କୋଆଲା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow penguin"
+msgstr "ହଳଦିଆ ପେଙ୍ଗୁଇନ୍"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow rabbit"
+msgstr "ହଳଦିଆ ଠେକୁଆ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow whale"
+msgstr "ହଳଦିଆ ତିମି"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow cat"
+msgstr "ହଳଦିଆ ବିଲେଇ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue fox"
+msgstr "ନୀଳ ଶିଆଳ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue owl"
+msgstr "ନୀଳ ପେଚା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue otter"
+msgstr "ନୀଳ ଉଦବିଳାବ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue panda"
+msgstr "ନୀଳ ପାଣ୍ଡା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue tiger"
+msgstr "ନୀଳ ବାଘ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue frog"
+msgstr "ନୀଳ ବେଙ୍ଗ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue koala"
+msgstr "ନୀଳ କୋଆଲା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue penguin"
+msgstr "ନୀଳ ପେଙ୍ଗୁଇନ୍"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue rabbit"
+msgstr "ନୀଳ ଠେକୁଆ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue whale"
+msgstr "ନୀଳ ତିମି"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue cat"
+msgstr "ନୀଳ ବିଲେଇ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red fox"
+msgstr "ଲାଲ ଶିଆଳ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red owl"
+msgstr "ଲାଲ ପେଚା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red otter"
+msgstr "ଲାଲ ଉଦବିଳାବ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red panda"
+msgstr "ଲାଲ ପାଣ୍ଡା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red tiger"
+msgstr "ଲାଲ ବାଘ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red frog"
+msgstr "ଲାଲ ରଙ୍ଗର ବେଙ୍ଗ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red koala"
+msgstr "ଲାଲ ରଙ୍ଗର କୋଆଲା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red penguin"
+msgstr "ଲାଲ ରଙ୍ଗର ପେଙ୍ଗୁଇନ୍"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red rabbit"
+msgstr "ଲାଲ ରଙ୍ଗର ଠେକୁଆ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red whale"
+msgstr "ଲାଲ ରଙ୍ଗର ତିମି"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red cat"
+msgstr "ଲାଲ ରଙ୍ଗର ବିଲେଇ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink fox"
+msgstr "ଗୋଲାପୀ ରଙ୍ଗର ଶିଆଳ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink owl"
+msgstr "ଗୋଲାପୀ ରଙ୍ଗର ପେଚା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink otter"
+msgstr "ଗୋଲାପୀ ରଙ୍ଗର ଉଦବିଳାବ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink panda"
+msgstr "ଗୋଲାପୀ ରଙ୍ଗର ପାଣ୍ଡା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink tiger"
+msgstr "ଗୋଲାପୀ ରଙ୍ଗର ବାଘ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink frog"
+msgstr "ଗୋଲାପୀ ରଙ୍ଗର ବେଙ୍ଗ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink koala"
+msgstr "ଗୋଲାପୀ ରଙ୍ଗର କୋଆଲା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink penguin"
+msgstr "ଗୋଲାପୀ ରଙ୍ଗର ପେଙ୍ଗୁଇନ୍"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink rabbit"
+msgstr "ଗୋଲାପୀ ରଙ୍ଗର ଠେକୁଆ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink whale"
+msgstr "ଗୋଲାପୀ ରଙ୍ଗର ତିମି"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink cat"
+msgstr "ଗୋଲାପୀ ରଙ୍ଗର ବିଲେଇ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black fox"
+msgstr "କଳା ରଙ୍ଗର ଶିଆଳ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black owl"
+msgstr "କଳା ରଙ୍ଗର ପେଚା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black otter"
+msgstr "କଳା ରଙ୍ଗର ଉଦବିଳାବ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black panda"
+msgstr "କଳା ରଙ୍ଗର ପାଣ୍ଡା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black tiger"
+msgstr "କଳା ରଙ୍ଗର ବାଘ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black frog"
+msgstr "କଳା ରଙ୍ଗର ବେଙ୍ଗ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black koala"
+msgstr "କଳା ରଙ୍ଗର କୋଆଲା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black penguin"
+msgstr "କଳା ରଙ୍ଗର ପେଙ୍ଗୁଇନ୍"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black rabbit"
+msgstr "କଳା ରଙ୍ଗର ଠେକୁଆ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black whale"
+msgstr "କଳା ରଙ୍ଗର ତିମି"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black cat"
+msgstr "କଳା ରଙ୍ଗର ବିଲେଇ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "orange"
+msgstr "କମଳା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "light blue"
+msgstr "ହାଲୁକା ନୀଳ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "green"
+msgstr "ସବୁଜ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "yellow"
+msgstr "ହଳଦିଆ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "blue"
+msgstr "ନୀଳ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "red"
+msgstr "ଲାଲ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "pink"
+msgstr "ଗୋଲାପୀ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "black"
+msgstr "କଳା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "fox"
+msgstr "ଶିଆଳ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "owl"
+msgstr "ପେଚା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "otter"
+msgstr "ଉଦବିଳାବ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "panda"
+msgstr "ପାଣ୍ଡା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "tiger"
+msgstr "ବାଘ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "frog"
+msgstr "ବେଙ୍ଗ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "koala"
+msgstr "କୋଆଲା"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "penguin"
+msgstr "ପେଙ୍ଗୁଇନ୍"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "rabbit"
+msgstr "ଠେକୁଆ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "whale"
+msgstr "ତିମି"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "cat"
+msgstr "ବିଲେଇ"
+
+#: psynet/pseudonym.py
+#, fuzzy, python-brace-format
+msgctxt "pseudonym"
+msgid "{COLOR} {ANIMAL}"
+msgstr "{COLOR} {ANIMAL}"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -1323,6 +2086,18 @@ msgstr ""
 msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "ଆପଣଙ୍କର ପ୍ୟାନେଲ୍ କୁ ଫେରନ୍ତୁ"
+
+#: psynet/sync.py
+#, fuzzy, python-brace-format
+msgctxt "waiting"
+msgid "Your group is ready. Moving on in {SECONDS} s."
+msgstr "ଆପଣଙ୍କ ଗୋଷ୍ଠୀ ପ୍ରସ୍ତୁତ। {SECONDS} ସେକେଣ୍ଡରେ ଆଗକୁ ବଢ଼ୁଛୁ।"
+
+#: psynet/sync.py
+#, fuzzy, python-brace-format
+msgctxt "waiting"
+msgid "Moving on in {SECONDS} s."
+msgstr "{SECONDS} ସେକେଣ୍ଡରେ ଆଗକୁ ବଢ଼ୁଛୁ।"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -3631,6 +4406,12 @@ msgstr ""
 msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "ପୁନଃ ଆରମ୍ଭ କରନ୍ତୁ"
+
+#: psynet/timeline.py
+#, fuzzy, python-brace-format
+msgctxt "time_limit"
+msgid "{SECONDS} s left"
+msgstr "{SECONDS} ସେକେଣ୍ଡ ବାକି"
 
 #: psynet/timeline_hold.py
 #, fuzzy

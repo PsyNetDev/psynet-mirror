@@ -30,6 +30,17 @@ msgstr ""
 msgid "Recording stopped"
 msgstr ""
 
+#: psynet/chatroom.py:322
+msgctxt "chat sender"
+msgid "You"
+msgstr ""
+
+#: psynet/chatroom.py:323
+#, python-brace-format
+msgctxt "chat participant list"
+msgid "{NAME} (you)"
+msgstr ""
+
 #: psynet/demography/general.py:154
 msgctxt "gender"
 msgid "How do you identify yourself?"
@@ -390,11 +401,11 @@ msgctxt "experiment-feedback"
 msgid "If so, please provide a few words describing the problem."
 msgstr ""
 
-#: psynet/end.py:98
+#: psynet/end.py:118
 msgid "Finish"
 msgstr ""
 
-#: psynet/end.py:134
+#: psynet/end.py:157
 #, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""
@@ -402,7 +413,7 @@ msgid ""
 "the time you spent. "
 msgstr ""
 
-#: psynet/end.py:143
+#: psynet/end.py:166
 #, python-brace-format
 msgctxt "final-page-performance-reward"
 msgid ""
@@ -410,46 +421,68 @@ msgid ""
 "<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
 msgstr ""
 
-#: psynet/end.py:156
+#: psynet/end.py:179
 msgid "Click Finish to return to your panel."
 msgstr ""
 
-#: psynet/end.py:157
+#: psynet/end.py:181
 msgid "Click Finish to finalize the session."
 msgstr ""
 
-#: psynet/end.py:175
+#: psynet/end.py:187
+#, python-brace-format
+msgid "This page continues by itself in {SECONDS} s."
+msgstr ""
+
+#: psynet/end.py:208
 msgctxt "final_page_successful"
 msgid "That's the end!"
 msgstr ""
 
-#: psynet/end.py:180 psynet/end.py:319
+#: psynet/end.py:213 psynet/end.py:385
 #: psynet/templates/psynet_exit_recruiter.html:18
 #: psynet/templates/psynet_exit_recruiter.html:22
 msgid "Thank you for taking part."
 msgstr ""
 
-#: psynet/end.py:306
+#: psynet/end.py:368
 msgctxt "final_page_unsuccessful"
 msgid "Unfortunately we have to stop early."
 msgstr ""
 
-#: psynet/end.py:314
+#: psynet/end.py:380
 msgctxt "final_page_unsuccessful"
 msgid "However, you will still be paid for the time you spent already."
 msgstr ""
 
-#: psynet/end.py:370
+#: psynet/end.py:414
+msgctxt "final_page_unsuccessful"
+msgid "You took too long to reach the next step, so we ended your session."
+msgstr ""
+
+#: psynet/end.py:419
+msgctxt "final_page_unsuccessful"
+msgid ""
+"Too few members of your group remained to continue, so we ended your "
+"session."
+msgstr ""
+
+#: psynet/end.py:429
+msgctxt "final_page_unsuccessful"
+msgid "We waited too long for other participants, so we ended your session."
+msgstr ""
+
+#: psynet/end.py:487
 msgctxt "final_page_rejected_consent"
 msgid "You chose not to continue."
 msgstr ""
 
-#: psynet/end.py:371
+#: psynet/end.py:488
 msgctxt "final_page_rejected_consent"
 msgid "You may close this page."
 msgstr ""
 
-#: psynet/end.py:375
+#: psynet/end.py:492
 msgid "We will return you to your panel in a few seconds."
 msgstr ""
 
@@ -459,27 +492,91 @@ msgid ""
 "grant it."
 msgstr ""
 
-#: psynet/experiment.py:4170 psynet/experiment.py:7849
+#: psynet/experiment.py:4179 psynet/experiment.py:8030
 msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 
-#: psynet/experiment.py:4243
+#: psynet/experiment.py:4260
 msgctxt "timeline_problem"
 msgid "This session has already ended. Please reload the page."
 msgstr ""
 
-#: psynet/experiment.py:4583
+#: psynet/experiment.py:4691
 msgid "The experiment is temporarily busy. Please try again."
 msgstr ""
 
-#: psynet/experiment.py:4617
+#: psynet/experiment.py:4725
 msgctxt "error"
 msgid ""
 "This session is no longer available. It may have ended, or the study may "
 "have been restarted since you opened this page."
+msgstr ""
+
+#: psynet/group_prompt.py:221 psynet/group_prompt.py:476
+msgctxt "group prompt"
+msgid "has answered"
+msgstr ""
+
+#: psynet/group_prompt.py:222
+#, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} has answered."
+msgstr ""
+
+#: psynet/group_prompt.py:266
+msgctxt "group prompt"
+msgid "Your group"
+msgstr ""
+
+#: psynet/group_prompt.py:268
+msgctxt "group prompt"
+msgid "Group"
+msgstr ""
+
+#: psynet/group_prompt.py:272
+msgctxt "group prompt"
+msgid "Another subgroup"
+msgstr ""
+
+#: psynet/group_prompt.py:274
+msgctxt "group prompt"
+msgid "Your subgroup"
+msgstr ""
+
+#: psynet/group_prompt.py:379
+#, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} (left)"
+msgstr ""
+
+#: psynet/group_prompt.py:381
+#, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} (out of time)"
+msgstr ""
+
+#: psynet/group_prompt.py:382
+#, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} (dropped out)"
+msgstr ""
+
+#: psynet/group_prompt.py:425
+msgctxt "group prompt"
+msgid "You"
+msgstr ""
+
+#: psynet/group_prompt.py:429
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr ""
+
+#: psynet/group_prompt.py:431
+msgctxt "group prompt"
+msgid "Another player"
 msgstr ""
 
 #: psynet/modular_page.py:240
@@ -544,7 +641,7 @@ msgid ""
 "connection and press Next again."
 msgstr ""
 
-#: psynet/page.py:713 psynet/prescreen/__init__.py:2124
+#: psynet/page.py:734 psynet/prescreen/__init__.py:2124
 msgctxt "status"
 msgid "Working..."
 msgstr ""
@@ -751,6 +848,547 @@ msgstr ""
 
 #: psynet/prescreen/vocabtest.py:916
 msgid "The test will start on the next page."
+msgstr ""
+
+#: psynet/pseudonym.py:67
+msgctxt "pseudonym"
+msgid "Orange fox"
+msgstr ""
+
+#: psynet/pseudonym.py:68
+msgctxt "pseudonym"
+msgid "Orange owl"
+msgstr ""
+
+#: psynet/pseudonym.py:69
+msgctxt "pseudonym"
+msgid "Orange otter"
+msgstr ""
+
+#: psynet/pseudonym.py:70
+msgctxt "pseudonym"
+msgid "Orange panda"
+msgstr ""
+
+#: psynet/pseudonym.py:71
+msgctxt "pseudonym"
+msgid "Orange tiger"
+msgstr ""
+
+#: psynet/pseudonym.py:72
+msgctxt "pseudonym"
+msgid "Orange frog"
+msgstr ""
+
+#: psynet/pseudonym.py:73
+msgctxt "pseudonym"
+msgid "Orange koala"
+msgstr ""
+
+#: psynet/pseudonym.py:74
+msgctxt "pseudonym"
+msgid "Orange penguin"
+msgstr ""
+
+#: psynet/pseudonym.py:75
+msgctxt "pseudonym"
+msgid "Orange rabbit"
+msgstr ""
+
+#: psynet/pseudonym.py:76
+msgctxt "pseudonym"
+msgid "Orange whale"
+msgstr ""
+
+#: psynet/pseudonym.py:77
+msgctxt "pseudonym"
+msgid "Orange cat"
+msgstr ""
+
+#: psynet/pseudonym.py:78
+msgctxt "pseudonym"
+msgid "Light blue fox"
+msgstr ""
+
+#: psynet/pseudonym.py:79
+msgctxt "pseudonym"
+msgid "Light blue owl"
+msgstr ""
+
+#: psynet/pseudonym.py:80
+msgctxt "pseudonym"
+msgid "Light blue otter"
+msgstr ""
+
+#: psynet/pseudonym.py:81
+msgctxt "pseudonym"
+msgid "Light blue panda"
+msgstr ""
+
+#: psynet/pseudonym.py:82
+msgctxt "pseudonym"
+msgid "Light blue tiger"
+msgstr ""
+
+#: psynet/pseudonym.py:83
+msgctxt "pseudonym"
+msgid "Light blue frog"
+msgstr ""
+
+#: psynet/pseudonym.py:84
+msgctxt "pseudonym"
+msgid "Light blue koala"
+msgstr ""
+
+#: psynet/pseudonym.py:85
+msgctxt "pseudonym"
+msgid "Light blue penguin"
+msgstr ""
+
+#: psynet/pseudonym.py:86
+msgctxt "pseudonym"
+msgid "Light blue rabbit"
+msgstr ""
+
+#: psynet/pseudonym.py:87
+msgctxt "pseudonym"
+msgid "Light blue whale"
+msgstr ""
+
+#: psynet/pseudonym.py:88
+msgctxt "pseudonym"
+msgid "Light blue cat"
+msgstr ""
+
+#: psynet/pseudonym.py:89
+msgctxt "pseudonym"
+msgid "Green fox"
+msgstr ""
+
+#: psynet/pseudonym.py:90
+msgctxt "pseudonym"
+msgid "Green owl"
+msgstr ""
+
+#: psynet/pseudonym.py:91
+msgctxt "pseudonym"
+msgid "Green otter"
+msgstr ""
+
+#: psynet/pseudonym.py:92
+msgctxt "pseudonym"
+msgid "Green panda"
+msgstr ""
+
+#: psynet/pseudonym.py:93
+msgctxt "pseudonym"
+msgid "Green tiger"
+msgstr ""
+
+#: psynet/pseudonym.py:94
+msgctxt "pseudonym"
+msgid "Green frog"
+msgstr ""
+
+#: psynet/pseudonym.py:95
+msgctxt "pseudonym"
+msgid "Green koala"
+msgstr ""
+
+#: psynet/pseudonym.py:96
+msgctxt "pseudonym"
+msgid "Green penguin"
+msgstr ""
+
+#: psynet/pseudonym.py:97
+msgctxt "pseudonym"
+msgid "Green rabbit"
+msgstr ""
+
+#: psynet/pseudonym.py:98
+msgctxt "pseudonym"
+msgid "Green whale"
+msgstr ""
+
+#: psynet/pseudonym.py:99
+msgctxt "pseudonym"
+msgid "Green cat"
+msgstr ""
+
+#: psynet/pseudonym.py:100
+msgctxt "pseudonym"
+msgid "Yellow fox"
+msgstr ""
+
+#: psynet/pseudonym.py:101
+msgctxt "pseudonym"
+msgid "Yellow owl"
+msgstr ""
+
+#: psynet/pseudonym.py:102
+msgctxt "pseudonym"
+msgid "Yellow otter"
+msgstr ""
+
+#: psynet/pseudonym.py:103
+msgctxt "pseudonym"
+msgid "Yellow panda"
+msgstr ""
+
+#: psynet/pseudonym.py:104
+msgctxt "pseudonym"
+msgid "Yellow tiger"
+msgstr ""
+
+#: psynet/pseudonym.py:105
+msgctxt "pseudonym"
+msgid "Yellow frog"
+msgstr ""
+
+#: psynet/pseudonym.py:106
+msgctxt "pseudonym"
+msgid "Yellow koala"
+msgstr ""
+
+#: psynet/pseudonym.py:107
+msgctxt "pseudonym"
+msgid "Yellow penguin"
+msgstr ""
+
+#: psynet/pseudonym.py:108
+msgctxt "pseudonym"
+msgid "Yellow rabbit"
+msgstr ""
+
+#: psynet/pseudonym.py:109
+msgctxt "pseudonym"
+msgid "Yellow whale"
+msgstr ""
+
+#: psynet/pseudonym.py:110
+msgctxt "pseudonym"
+msgid "Yellow cat"
+msgstr ""
+
+#: psynet/pseudonym.py:111
+msgctxt "pseudonym"
+msgid "Blue fox"
+msgstr ""
+
+#: psynet/pseudonym.py:112
+msgctxt "pseudonym"
+msgid "Blue owl"
+msgstr ""
+
+#: psynet/pseudonym.py:113
+msgctxt "pseudonym"
+msgid "Blue otter"
+msgstr ""
+
+#: psynet/pseudonym.py:114
+msgctxt "pseudonym"
+msgid "Blue panda"
+msgstr ""
+
+#: psynet/pseudonym.py:115
+msgctxt "pseudonym"
+msgid "Blue tiger"
+msgstr ""
+
+#: psynet/pseudonym.py:116
+msgctxt "pseudonym"
+msgid "Blue frog"
+msgstr ""
+
+#: psynet/pseudonym.py:117
+msgctxt "pseudonym"
+msgid "Blue koala"
+msgstr ""
+
+#: psynet/pseudonym.py:118
+msgctxt "pseudonym"
+msgid "Blue penguin"
+msgstr ""
+
+#: psynet/pseudonym.py:119
+msgctxt "pseudonym"
+msgid "Blue rabbit"
+msgstr ""
+
+#: psynet/pseudonym.py:120
+msgctxt "pseudonym"
+msgid "Blue whale"
+msgstr ""
+
+#: psynet/pseudonym.py:121
+msgctxt "pseudonym"
+msgid "Blue cat"
+msgstr ""
+
+#: psynet/pseudonym.py:122
+msgctxt "pseudonym"
+msgid "Red fox"
+msgstr ""
+
+#: psynet/pseudonym.py:123
+msgctxt "pseudonym"
+msgid "Red owl"
+msgstr ""
+
+#: psynet/pseudonym.py:124
+msgctxt "pseudonym"
+msgid "Red otter"
+msgstr ""
+
+#: psynet/pseudonym.py:125
+msgctxt "pseudonym"
+msgid "Red panda"
+msgstr ""
+
+#: psynet/pseudonym.py:126
+msgctxt "pseudonym"
+msgid "Red tiger"
+msgstr ""
+
+#: psynet/pseudonym.py:127
+msgctxt "pseudonym"
+msgid "Red frog"
+msgstr ""
+
+#: psynet/pseudonym.py:128
+msgctxt "pseudonym"
+msgid "Red koala"
+msgstr ""
+
+#: psynet/pseudonym.py:129
+msgctxt "pseudonym"
+msgid "Red penguin"
+msgstr ""
+
+#: psynet/pseudonym.py:130
+msgctxt "pseudonym"
+msgid "Red rabbit"
+msgstr ""
+
+#: psynet/pseudonym.py:131
+msgctxt "pseudonym"
+msgid "Red whale"
+msgstr ""
+
+#: psynet/pseudonym.py:132
+msgctxt "pseudonym"
+msgid "Red cat"
+msgstr ""
+
+#: psynet/pseudonym.py:133
+msgctxt "pseudonym"
+msgid "Pink fox"
+msgstr ""
+
+#: psynet/pseudonym.py:134
+msgctxt "pseudonym"
+msgid "Pink owl"
+msgstr ""
+
+#: psynet/pseudonym.py:135
+msgctxt "pseudonym"
+msgid "Pink otter"
+msgstr ""
+
+#: psynet/pseudonym.py:136
+msgctxt "pseudonym"
+msgid "Pink panda"
+msgstr ""
+
+#: psynet/pseudonym.py:137
+msgctxt "pseudonym"
+msgid "Pink tiger"
+msgstr ""
+
+#: psynet/pseudonym.py:138
+msgctxt "pseudonym"
+msgid "Pink frog"
+msgstr ""
+
+#: psynet/pseudonym.py:139
+msgctxt "pseudonym"
+msgid "Pink koala"
+msgstr ""
+
+#: psynet/pseudonym.py:140
+msgctxt "pseudonym"
+msgid "Pink penguin"
+msgstr ""
+
+#: psynet/pseudonym.py:141
+msgctxt "pseudonym"
+msgid "Pink rabbit"
+msgstr ""
+
+#: psynet/pseudonym.py:142
+msgctxt "pseudonym"
+msgid "Pink whale"
+msgstr ""
+
+#: psynet/pseudonym.py:143
+msgctxt "pseudonym"
+msgid "Pink cat"
+msgstr ""
+
+#: psynet/pseudonym.py:144
+msgctxt "pseudonym"
+msgid "Black fox"
+msgstr ""
+
+#: psynet/pseudonym.py:145
+msgctxt "pseudonym"
+msgid "Black owl"
+msgstr ""
+
+#: psynet/pseudonym.py:146
+msgctxt "pseudonym"
+msgid "Black otter"
+msgstr ""
+
+#: psynet/pseudonym.py:147
+msgctxt "pseudonym"
+msgid "Black panda"
+msgstr ""
+
+#: psynet/pseudonym.py:148
+msgctxt "pseudonym"
+msgid "Black tiger"
+msgstr ""
+
+#: psynet/pseudonym.py:149
+msgctxt "pseudonym"
+msgid "Black frog"
+msgstr ""
+
+#: psynet/pseudonym.py:150
+msgctxt "pseudonym"
+msgid "Black koala"
+msgstr ""
+
+#: psynet/pseudonym.py:151
+msgctxt "pseudonym"
+msgid "Black penguin"
+msgstr ""
+
+#: psynet/pseudonym.py:152
+msgctxt "pseudonym"
+msgid "Black rabbit"
+msgstr ""
+
+#: psynet/pseudonym.py:153
+msgctxt "pseudonym"
+msgid "Black whale"
+msgstr ""
+
+#: psynet/pseudonym.py:154
+msgctxt "pseudonym"
+msgid "Black cat"
+msgstr ""
+
+#: psynet/pseudonym.py:226
+msgctxt "pseudonym color"
+msgid "orange"
+msgstr ""
+
+#: psynet/pseudonym.py:227
+msgctxt "pseudonym color"
+msgid "light blue"
+msgstr ""
+
+#: psynet/pseudonym.py:228
+msgctxt "pseudonym color"
+msgid "green"
+msgstr ""
+
+#: psynet/pseudonym.py:229
+msgctxt "pseudonym color"
+msgid "yellow"
+msgstr ""
+
+#: psynet/pseudonym.py:230
+msgctxt "pseudonym color"
+msgid "blue"
+msgstr ""
+
+#: psynet/pseudonym.py:231
+msgctxt "pseudonym color"
+msgid "red"
+msgstr ""
+
+#: psynet/pseudonym.py:232
+msgctxt "pseudonym color"
+msgid "pink"
+msgstr ""
+
+#: psynet/pseudonym.py:233
+msgctxt "pseudonym color"
+msgid "black"
+msgstr ""
+
+#: psynet/pseudonym.py:241
+msgctxt "pseudonym animal"
+msgid "fox"
+msgstr ""
+
+#: psynet/pseudonym.py:242
+msgctxt "pseudonym animal"
+msgid "owl"
+msgstr ""
+
+#: psynet/pseudonym.py:243
+msgctxt "pseudonym animal"
+msgid "otter"
+msgstr ""
+
+#: psynet/pseudonym.py:244
+msgctxt "pseudonym animal"
+msgid "panda"
+msgstr ""
+
+#: psynet/pseudonym.py:245
+msgctxt "pseudonym animal"
+msgid "tiger"
+msgstr ""
+
+#: psynet/pseudonym.py:246
+msgctxt "pseudonym animal"
+msgid "frog"
+msgstr ""
+
+#: psynet/pseudonym.py:247
+msgctxt "pseudonym animal"
+msgid "koala"
+msgstr ""
+
+#: psynet/pseudonym.py:248
+msgctxt "pseudonym animal"
+msgid "penguin"
+msgstr ""
+
+#: psynet/pseudonym.py:249
+msgctxt "pseudonym animal"
+msgid "rabbit"
+msgstr ""
+
+#: psynet/pseudonym.py:250
+msgctxt "pseudonym animal"
+msgid "whale"
+msgstr ""
+
+#: psynet/pseudonym.py:251
+msgctxt "pseudonym animal"
+msgid "cat"
+msgstr ""
+
+#: psynet/pseudonym.py:301
+#, python-brace-format
+msgctxt "pseudonym"
+msgid "{COLOR} {ANIMAL}"
 msgstr ""
 
 #: psynet/recruiters.py:514
@@ -1042,6 +1680,18 @@ msgstr ""
 #: psynet/recruiters.py:3578
 msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
+msgstr ""
+
+#: psynet/sync.py:3876
+#, python-brace-format
+msgctxt "waiting"
+msgid "Your group is ready. Moving on in {SECONDS} s."
+msgstr ""
+
+#: psynet/sync.py:3877
+#, python-brace-format
+msgctxt "waiting"
+msgid "Moving on in {SECONDS} s."
 msgstr ""
 
 #: psynet/templates/ad.html:39
@@ -2657,37 +3307,37 @@ msgctxt "timeline_problem"
 msgid "Getting ready, please wait..."
 msgstr ""
 
-#: psynet/templates/macros/timeline-shell.html:104
+#: psynet/templates/macros/timeline-shell.html:106
 msgctxt "timeline"
 msgid "Reward"
 msgstr ""
 
-#: psynet/templates/macros/timeline-shell.html:115
+#: psynet/templates/macros/timeline-shell.html:117
 msgctxt "timeline_reward"
 msgid "Reward earned so far"
 msgstr ""
 
-#: psynet/templates/macros/timeline-shell.html:117
+#: psynet/templates/macros/timeline-shell.html:119
 msgctxt "timeline_reward"
 msgid "for time"
 msgstr ""
 
-#: psynet/templates/macros/timeline-shell.html:119
+#: psynet/templates/macros/timeline-shell.html:121
 msgctxt "timeline_reward"
 msgid "for performance"
 msgstr ""
 
-#: psynet/templates/macros/timeline-shell.html:126
+#: psynet/templates/macros/timeline-shell.html:128
 msgctxt "timeline"
 msgid "Comment"
 msgstr ""
 
-#: psynet/templates/macros/timeline-shell.html:134
+#: psynet/templates/macros/timeline-shell.html:136
 msgctxt "timeline_problem"
 msgid "Leave"
 msgstr ""
 
-#: psynet/templates/macros/timeline-shell.html:139
+#: psynet/templates/macros/timeline-shell.html:141
 msgctxt "timeline_problem"
 msgid "Leave without finishing."
 msgstr ""
@@ -2745,37 +3395,37 @@ msgid ""
 "space. You can also come back later."
 msgstr ""
 
-#: psynet/templates/timeline-page.html:240
+#: psynet/templates/timeline-page.html:254
 msgctxt "timeline_comment"
 msgid "Leave a comment"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:241
+#: psynet/templates/timeline-page.html:255
 msgctxt "timeline_comment"
 msgid "Write a comment here"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:243
+#: psynet/templates/timeline-page.html:257
 msgctxt "timeline_comment"
 msgid "Send comment"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:254
+#: psynet/templates/timeline-page.html:268
 msgctxt "alert_ok"
 msgid "OK"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:263
+#: psynet/templates/timeline-page.html:277
 msgctxt "timeline_resume"
 msgid "Are you ready?"
 msgstr ""
 
-#: psynet/templates/timeline-page.html:265
+#: psynet/templates/timeline-page.html:279
 msgctxt "timeline_resume"
 msgid "Click the button when you're ready to continue the experiment."
 msgstr ""
 
-#: psynet/templates/timeline-page.html:268
+#: psynet/templates/timeline-page.html:282
 msgctxt "timeline_resume"
 msgid ""
 "Note: if you see this message a lot, it might be because your browser has an"
@@ -2784,44 +3434,50 @@ msgid ""
 "from the current page), and/or try manually disabling your extensions."
 msgstr ""
 
-#: psynet/templates/timeline-page.html:271
+#: psynet/templates/timeline-page.html:285
 msgctxt "timeline_resume"
 msgid "Resume"
 msgstr ""
 
-#: psynet/timeline_hold.py:220
+#: psynet/timeline.py:2232
+#, python-brace-format
+msgctxt "time_limit"
+msgid "{SECONDS} s left"
+msgstr ""
+
+#: psynet/timeline_hold.py:242
 msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr ""
 
-#: psynet/timeline_hold.py:222
+#: psynet/timeline_hold.py:244
 msgctxt "timeline_hold"
 msgid "Your group went on without you. Please continue."
 msgstr ""
 
-#: psynet/timeline_hold.py:224
+#: psynet/timeline_hold.py:246
 msgctxt "timeline_hold"
 msgid "Your partner is ready."
 msgstr ""
 
-#: psynet/timeline_hold.py:225
+#: psynet/timeline_hold.py:247
 #, python-brace-format
 msgctxt "timeline_hold"
 msgid "{ARRIVED}/{TOTAL} of your group are ready."
 msgstr ""
 
-#: psynet/timeline_hold.py:237
+#: psynet/timeline_hold.py:264
 #, python-brace-format
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr ""
 
-#: psynet/timeline_hold.py:673
+#: psynet/timeline_hold.py:707
 msgctxt "timeline_hold"
 msgid "Waiting for other participants…"
 msgstr ""
 
-#: psynet/timeline_hold.py:677
+#: psynet/timeline_hold.py:711
 msgctxt "timeline_hold"
 msgid "Please wait, the experiment should continue shortly..."
 msgstr ""

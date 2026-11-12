@@ -41,6 +41,18 @@ msgstr "ᱨᱮᱠᱚᱨᱰ ᱦᱚᱭᱮᱫ ᱠᱟᱱᱟ"
 msgid "Recording stopped"
 msgstr "ᱨᱮᱠᱚᱨᱰ ᱵᱚᱸᱫ ᱮᱱᱟ"
 
+#: psynet/chatroom.py
+#, fuzzy
+msgctxt "chat sender"
+msgid "You"
+msgstr "ᱟᱢ"
+
+#: psynet/chatroom.py
+#, fuzzy, python-brace-format
+msgctxt "chat participant list"
+msgid "{NAME} (you)"
+msgstr "{NAME} (ᱟᱢ)"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -497,6 +509,11 @@ msgid "Click Finish to finalize the session."
 msgstr "ᱪᱟᱹᱵᱟ ᱠᱚᱱᱛᱮ ᱟᱢᱮᱱ ᱥᱮᱥᱤᱭᱚᱱ ᱠᱚᱱ ᱠᱷᱚᱱᱛᱮᱭᱟᱜᱼᱟ᱾"
 
 #: psynet/end.py
+#, fuzzy, python-brace-format
+msgid "This page continues by itself in {SECONDS} s."
+msgstr "ᱱᱚᱣᱟ ᱯᱮᱡ {SECONDS} ᱥᱮᱠᱮᱱᱰ ᱨᱮ ᱟᱡᱛᱮ ᱞᱟᱦᱟ ᱪᱟᱞᱟᱣᱟ᱾"
+
+#: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
 msgid "That's the end!"
@@ -518,6 +535,32 @@ msgstr "ᱫᱩᱠᱷ ᱥᱟᱶ, ᱟᱞᱮ ᱢᱟᱲᱟᱝ ᱛᱮ ᱛᱷᱟᱢᱟ
 msgctxt "final_page_unsuccessful"
 msgid "However, you will still be paid for the time you spent already."
 msgstr "ᱢᱮᱱᱠᱷᱟᱱ, ᱟᱢ ᱢᱟᱲᱟᱝ ᱠᱷᱚᱱ ᱠᱷᱚᱨᱚᱪ ᱟᱠᱟᱫ ᱚᱠᱛᱚ ᱨᱮᱭᱟᱜ ᱯᱩᱭᱥᱟᱹ ᱮᱢ ᱧᱟᱢᱟ᱾"
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid "You took too long to reach the next step, so we ended your session."
+msgstr ""
+"ᱟᱢ ᱞᱟᱦᱟ ᱫᱷᱟᱯ ᱨᱮ ᱦᱤᱡᱩᱜ ᱞᱟᱹᱜᱤᱫ ᱟᱹᱰᱤ ᱚᱠᱛᱚ ᱦᱟᱛᱟᱣ ᱠᱮᱫᱟ, ᱚᱱᱟᱛᱮ ᱟᱞᱮ ᱟᱢᱟᱜ ᱥᱮᱥᱤᱭᱚᱱ "
+"ᱪᱟᱹᱵᱟ ᱠᱮᱫᱟ᱾"
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid ""
+"Too few members of your group remained to continue, so we ended your "
+"session."
+msgstr ""
+"ᱞᱟᱦᱟ ᱪᱟᱞᱟᱣ ᱞᱟᱹᱜᱤᱫ ᱟᱢᱟᱜ ᱜᱨᱩᱯ ᱨᱮ ᱟᱹᱰᱤ ᱠᱚᱢ ᱦᱚᱲ ᱠᱚ ᱛᱟᱦᱮᱸ ᱠᱮᱫᱟ, ᱚᱱᱟᱛᱮ ᱟᱞᱮ ᱟᱢᱟᱜ "
+"ᱥᱮᱥᱤᱭᱚᱱ ᱪᱟᱹᱵᱟ ᱠᱮᱫᱟ᱾"
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid "We waited too long for other participants, so we ended your session."
+msgstr ""
+"ᱟᱞᱮ ᱮᱴᱟᱜ ᱦᱚᱲ ᱠᱚ ᱞᱟᱹᱜᱤᱫ ᱟᱹᱰᱤ ᱚᱠᱛᱚ ᱛᱟᱹᱝᱜᱤ ᱠᱮᱫᱟ, ᱚᱱᱟᱛᱮ ᱟᱞᱮ ᱟᱢᱟᱜ ᱥᱮᱥᱤᱭᱚᱱ ᱪᱟᱹᱵᱟ "
+"ᱠᱮᱫᱟ᱾"
 
 #: psynet/end.py
 #, fuzzy
@@ -574,6 +617,78 @@ msgid ""
 msgstr ""
 "ᱱᱚᱣᱟ ᱥᱮᱥᱚᱱ ᱫᱚ ᱱᱤᱛ ᱟᱨ ᱧᱟᱢᱚᱜ ᱵᱟᱝᱟ। ᱱᱚᱣᱟ ᱢᱩᱪᱟᱫ ᱦᱩᱭ ᱞᱮᱱᱟ ᱦᱚᱭ ᱥᱟᱨ, ᱟᱨ ᱟᱢ ᱱᱚᱣᱟ "
 "ᱯᱟᱱᱟ ᱡᱷᱤᱡ ᱞᱮᱱ ᱛᱟᱭᱚᱢ ᱥᱴᱟᱰᱤ ᱫᱚ ᱫᱚᱦᱲᱟ ᱮᱦᱚᱵ ᱦᱩᱭ ᱞᱮᱱᱟ ᱦᱚᱭ ᱥᱟᱨ।"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "has answered"
+msgstr "ᱡᱚᱵᱟᱵ ᱮᱢ ᱠᱮᱫᱟ"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} has answered."
+msgstr "{NAME} ᱡᱚᱵᱟᱵ ᱮᱢ ᱠᱮᱫᱟ।"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your group"
+msgstr "ᱟᱢᱟᱜ ᱜᱨᱩᱯ"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Group"
+msgstr "ᱜᱨᱩᱯ"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another subgroup"
+msgstr "ᱮᱴᱟᱜ ᱠᱷᱩᱸᱴ ᱜᱨᱩᱯ"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your subgroup"
+msgstr "ᱟᱢᱟᱜ ᱠᱷᱩᱸᱴ ᱜᱨᱩᱯ"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} (left)"
+msgstr "{NAME} (ᱚᱰᱚᱜ ᱠᱮᱫᱟ)"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} (out of time)"
+msgstr "{NAME} (ᱚᱠᱛᱚ ᱪᱟᱵᱟ ᱮᱱᱟ)"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} (dropped out)"
+msgstr "{NAME} (ᱵᱟᱹᱜᱤ ᱠᱮᱫᱟ)"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "You"
+msgstr "ᱟᱢ"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "ᱟᱢᱟᱜ ᱡᱚᱲᱤᱫᱟᱨ"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "ᱮᱴᱟᱜ ᱠᱷᱮᱞᱚᱲᱤ"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -918,6 +1033,654 @@ msgstr "Apni key bhuli jaya tahen, pratyek page re print kariya."
 #, fuzzy
 msgid "The test will start on the next page."
 msgstr "Test next page re start kariya."
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange fox"
+msgstr "ᱱᱟᱨᱟᱝᱜᱤ ᱥᱤᱭᱟᱹᱞ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange owl"
+msgstr "ᱱᱟᱨᱟᱝᱜᱤ ᱩᱞᱩ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange otter"
+msgstr "ᱱᱟᱨᱟᱝᱜᱤ ᱚᱴᱟᱨ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange panda"
+msgstr "ᱱᱟᱨᱟᱝᱜᱤ ᱯᱟᱱᱰᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange tiger"
+msgstr "ᱱᱟᱨᱟᱝᱜᱤ ᱵᱟᱜᱷ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange frog"
+msgstr "ᱱᱟᱨᱟᱝᱜᱤ ᱵᱷᱮᱠ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange koala"
+msgstr "ᱱᱟᱨᱟᱝᱜᱤ ᱠᱳᱣᱟᱞᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange penguin"
+msgstr "ᱱᱟᱨᱟᱝᱜᱤ ᱯᱮᱝᱜᱩᱭᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange rabbit"
+msgstr "ᱱᱟᱨᱟᱝᱜᱤ ᱥᱟᱥᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange whale"
+msgstr "ᱱᱟᱨᱟᱝᱜᱤ ᱵᱟᱞᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange cat"
+msgstr "ᱱᱟᱨᱟᱝᱜᱤ ᱵᱤᱞᱟᱹᱲᱤ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue fox"
+msgstr "ᱦᱟᱞᱠᱟ ᱱᱤᱞ ᱥᱤᱭᱟᱹᱞ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue owl"
+msgstr "ᱦᱟᱞᱠᱟ ᱱᱤᱞ ᱩᱞᱩ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue otter"
+msgstr "ᱦᱟᱞᱠᱟ ᱱᱤᱞ ᱚᱴᱟᱨ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue panda"
+msgstr "ᱦᱟᱞᱠᱟ ᱱᱤᱞ ᱯᱟᱱᱰᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue tiger"
+msgstr "ᱦᱟᱞᱠᱟ ᱱᱤᱞ ᱵᱟᱜᱷ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue frog"
+msgstr "ᱦᱟᱞᱠᱟ ᱱᱤᱞ ᱵᱷᱮᱠ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue koala"
+msgstr "ᱦᱟᱞᱠᱟ ᱱᱤᱞ ᱠᱳᱣᱟᱞᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue penguin"
+msgstr "ᱦᱟᱞᱠᱟ ᱱᱤᱞ ᱯᱮᱝᱜᱩᱭᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue rabbit"
+msgstr "ᱦᱟᱞᱠᱟ ᱱᱤᱞ ᱥᱟᱥᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue whale"
+msgstr "ᱦᱟᱞᱠᱟ ᱱᱤᱞ ᱵᱟᱞᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue cat"
+msgstr "ᱦᱟᱞᱠᱟ ᱱᱤᱞ ᱵᱤᱞᱟᱹᱲᱤ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green fox"
+msgstr "ᱦᱟᱹᱨᱤᱭᱟᱹ ᱥᱤᱭᱟᱹᱞ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green owl"
+msgstr "ᱦᱟᱹᱨᱤᱭᱟᱹ ᱩᱞᱩ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green otter"
+msgstr "ᱦᱟᱹᱨᱤᱭᱟᱹ ᱚᱴᱟᱨ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green panda"
+msgstr "ᱦᱟᱹᱨᱤᱭᱟᱹ ᱯᱟᱱᱰᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green tiger"
+msgstr "ᱦᱟᱹᱨᱤᱭᱟᱹ ᱵᱟᱜᱷ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green frog"
+msgstr "ᱦᱟᱹᱨᱤᱭᱟᱹ ᱵᱷᱮᱠ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green koala"
+msgstr "ᱦᱟᱹᱨᱤᱭᱟᱹ ᱠᱳᱣᱟᱞᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green penguin"
+msgstr "ᱦᱟᱹᱨᱤᱭᱟᱹ ᱯᱮᱝᱜᱩᱭᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green rabbit"
+msgstr "ᱦᱟᱹᱨᱤᱭᱟᱹ ᱥᱟᱥᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green whale"
+msgstr "ᱦᱟᱹᱨᱤᱭᱟᱹ ᱵᱟᱞᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green cat"
+msgstr "ᱦᱟᱹᱨᱤᱭᱟᱹ ᱵᱤᱞᱟᱹᱲᱤ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow fox"
+msgstr "ᱥᱚᱱᱟ ᱥᱤᱭᱟᱹᱞ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow owl"
+msgstr "ᱥᱚᱱᱟ ᱩᱞᱩ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow otter"
+msgstr "ᱥᱚᱱᱟ ᱚᱴᱟᱨ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow panda"
+msgstr "ᱥᱚᱱᱟ ᱯᱟᱱᱰᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow tiger"
+msgstr "ᱥᱚᱱᱟ ᱵᱟᱜᱷ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow frog"
+msgstr "ᱥᱚᱱᱟ ᱵᱷᱮᱠ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow koala"
+msgstr "ᱥᱚᱱᱟ ᱠᱳᱣᱟᱞᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow penguin"
+msgstr "ᱥᱚᱱᱟ ᱯᱮᱝᱜᱩᱭᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow rabbit"
+msgstr "ᱥᱚᱱᱟ ᱥᱟᱥᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow whale"
+msgstr "ᱥᱚᱱᱟ ᱵᱟᱞᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow cat"
+msgstr "ᱥᱚᱱᱟ ᱵᱤᱞᱟᱹᱲᱤ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue fox"
+msgstr "ᱱᱤᱞ ᱥᱤᱭᱟᱹᱞ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue owl"
+msgstr "ᱱᱤᱞ ᱩᱞᱩ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue otter"
+msgstr "ᱱᱤᱞ ᱚᱴᱟᱨ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue panda"
+msgstr "ᱱᱤᱞ ᱯᱟᱱᱰᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue tiger"
+msgstr "ᱱᱤᱞ ᱵᱟᱜᱷ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue frog"
+msgstr "ᱱᱤᱞ ᱵᱷᱮᱠ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue koala"
+msgstr "ᱱᱤᱞ ᱠᱳᱣᱟᱞᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue penguin"
+msgstr "ᱱᱤᱞ ᱯᱮᱝᱜᱩᱭᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue rabbit"
+msgstr "ᱱᱤᱞ ᱥᱟᱥᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue whale"
+msgstr "ᱱᱤᱞ ᱵᱟᱞᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue cat"
+msgstr "ᱱᱤᱞ ᱵᱤᱞᱟᱹᱲᱤ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red fox"
+msgstr "ᱟᱨᱟᱜ ᱥᱤᱭᱟᱹᱞ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red owl"
+msgstr "ᱟᱨᱟᱜ ᱩᱞᱩ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red otter"
+msgstr "ᱟᱨᱟᱜ ᱚᱴᱟᱨ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red panda"
+msgstr "ᱟᱨᱟᱜ ᱯᱟᱱᱰᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red tiger"
+msgstr "ᱟᱨᱟᱜ ᱵᱟᱜᱷ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red frog"
+msgstr "ᱞᱟᱞ ᱵᱷᱮᱠ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red koala"
+msgstr "ᱞᱟᱞ ᱠᱳᱣᱟᱞᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red penguin"
+msgstr "ᱞᱟᱞ ᱯᱮᱝᱜᱩᱭᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red rabbit"
+msgstr "ᱞᱟᱞ ᱥᱟᱥᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red whale"
+msgstr "ᱞᱟᱞ ᱵᱟᱞᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red cat"
+msgstr "ᱞᱟᱞ ᱵᱤᱞᱟᱹᱲᱤ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink fox"
+msgstr "ᱜᱩᱞᱟᱹᱯᱤ ᱥᱤᱭᱟᱹᱞ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink owl"
+msgstr "ᱜᱩᱞᱟᱹᱯᱤ ᱩᱞᱩ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink otter"
+msgstr "ᱜᱩᱞᱟᱹᱯᱤ ᱚᱴᱟᱨ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink panda"
+msgstr "ᱜᱩᱞᱟᱹᱯᱤ ᱯᱟᱱᱰᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink tiger"
+msgstr "ᱜᱩᱞᱟᱹᱯᱤ ᱵᱟᱜᱷ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink frog"
+msgstr "ᱜᱩᱞᱟᱹᱯᱤ ᱵᱷᱮᱠ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink koala"
+msgstr "ᱜᱩᱞᱟᱹᱯᱤ ᱠᱳᱣᱟᱞᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink penguin"
+msgstr "ᱜᱩᱞᱟᱹᱯᱤ ᱯᱮᱝᱜᱩᱭᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink rabbit"
+msgstr "ᱜᱩᱞᱟᱹᱯᱤ ᱥᱟᱥᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink whale"
+msgstr "ᱜᱩᱞᱟᱹᱯᱤ ᱵᱟᱞᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink cat"
+msgstr "ᱜᱩᱞᱟᱹᱯᱤ ᱵᱤᱞᱟᱹᱲᱤ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black fox"
+msgstr "ᱦᱮᱸᱫᱮ ᱥᱤᱭᱟᱹᱞ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black owl"
+msgstr "ᱦᱮᱸᱫᱮ ᱩᱞᱩ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black otter"
+msgstr "ᱦᱮᱸᱫᱮ ᱚᱴᱟᱨ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black panda"
+msgstr "ᱦᱮᱸᱫᱮ ᱯᱟᱱᱰᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black tiger"
+msgstr "ᱦᱮᱸᱫᱮ ᱵᱟᱜᱷ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black frog"
+msgstr "ᱦᱮᱸᱫᱮ ᱵᱷᱮᱠ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black koala"
+msgstr "ᱦᱮᱸᱫᱮ ᱠᱳᱣᱟᱞᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black penguin"
+msgstr "ᱦᱮᱸᱫᱮ ᱯᱮᱝᱜᱩᱭᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black rabbit"
+msgstr "ᱦᱮᱸᱫᱮ ᱥᱟᱥᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black whale"
+msgstr "ᱦᱮᱸᱫᱮ ᱵᱟᱞᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black cat"
+msgstr "ᱦᱮᱸᱫᱮ ᱵᱤᱞᱟᱹᱲᱤ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "orange"
+msgstr "ᱱᱟᱨᱟᱝᱜᱤ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "light blue"
+msgstr "ᱦᱟᱞᱠᱟ ᱱᱤᱞ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "green"
+msgstr "ᱦᱟᱹᱨᱤᱭᱟᱹ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "yellow"
+msgstr "ᱦᱟᱹᱞᱫᱤ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "blue"
+msgstr "ᱱᱤᱞ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "red"
+msgstr "ᱟᱨᱟᱜ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "pink"
+msgstr "ᱜᱩᱞᱟᱹᱯᱤ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "black"
+msgstr "ᱦᱮᱸᱫᱮ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "fox"
+msgstr "ᱥᱤᱭᱟᱹᱞ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "owl"
+msgstr "ᱩᱞᱩ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "otter"
+msgstr "ᱚᱴᱟᱨ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "panda"
+msgstr "ᱯᱟᱱᱰᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "tiger"
+msgstr "ᱵᱟᱜᱷ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "frog"
+msgstr "ᱵᱷᱮᱠ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "koala"
+msgstr "ᱠᱳᱣᱟᱞᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "penguin"
+msgstr "ᱯᱮᱝᱜᱩᱭᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "rabbit"
+msgstr "ᱥᱟᱥᱟ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "whale"
+msgstr "ᱵᱟᱞᱤᱱ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "cat"
+msgstr "ᱵᱤᱞᱟᱹᱲᱤ"
+
+#: psynet/pseudonym.py
+#, fuzzy, python-brace-format
+msgctxt "pseudonym"
+msgid "{COLOR} {ANIMAL}"
+msgstr "{COLOR} {ANIMAL}"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -1288,6 +2051,18 @@ msgstr ""
 msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "ᱡᱚᱯᱚᱦ ᱞᱮᱫᱮᱯᱮ ᱴᱮ ᱥᱟᱛᱟᱹᱨ ᱠᱟᱹᱲ ᱢᱟᱱᱟᱹᱜᱮ ᱾"
+
+#: psynet/sync.py
+#, fuzzy, python-brace-format
+msgctxt "waiting"
+msgid "Your group is ready. Moving on in {SECONDS} s."
+msgstr "ᱟᱢᱟᱜ ᱜᱟᱹᱴᱷ ᱛᱮᱭᱟᱨ ᱜᱮᱭᱟ। {SECONDS} ᱥᱮᱠᱮᱱᱰ ᱨᱮ ᱞᱟᱦᱟᱜ ᱢᱮ।"
+
+#: psynet/sync.py
+#, fuzzy, python-brace-format
+msgctxt "waiting"
+msgid "Moving on in {SECONDS} s."
+msgstr "{SECONDS} ᱥᱮᱠᱮᱱᱰ ᱨᱮ ᱞᱟᱦᱟᱜ ᱢᱮ।"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -3589,6 +4364,12 @@ msgstr "ᱟᱢᱟᱱ ᱠᱚᱢᱮᱱᱴ ᱥᱴᱚᱨᱫ"
 msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "ᱱᱚ"
+
+#: psynet/timeline.py
+#, fuzzy, python-brace-format
+msgctxt "time_limit"
+msgid "{SECONDS} s left"
+msgstr "{SECONDS} ᱥᱮᱠᱮᱱᱰ ᱵᱟᱹᱠᱤ"
 
 #: psynet/timeline_hold.py
 #, fuzzy
