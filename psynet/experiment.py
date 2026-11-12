@@ -168,6 +168,7 @@ from .timeline import (
     PreDeployRoutine,
     RecruitmentCriterion,
     Response,
+    ResponseNotReady,
     Timeline,
     WebSocketElt,
     _ending_released_pass,
@@ -724,13 +725,6 @@ def _is_replacement_gunicorn_worker(worker):
 _PLACEHOLDER_TIMELINE = Timeline(InfoPage("Placeholder timeline", time_estimate=5))
 
 
-def _rejected_payload(message, retry_after=None):
-    payload = {"submission": "rejected", "message": message}
-    if retry_after is not None:
-        payload["retry_after"] = retry_after
-    return payload
-
-
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     """
     The main experiment class from which to inherit when building experiments.
@@ -970,8 +964,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     realtime_games : ``list``
         The game types of the experiment's live sessions (see
         :mod:`psynet.live_session`). PsyNet adds every
-        :class:`~psynet.live_session.LiveSession` defined or imported before
-        the experiment class, so list only other game types it plays.
+        :class:`~psynet.live_session.LiveSession` with a ``channel`` that is
+        defined or imported before the experiment class, whichever module
+        defines it, so list only other game types the experiment plays. A
+        ``LiveSession`` defined after the experiment class stops the
+        experiment at launch.
         Default: ``[]``.
 
 
@@ -2929,14 +2926,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         PsyNet's pages send :attr:`~psynet.participant.Participant.websocket_scope`
         as the connection's scope. A live session's game page adds a ``.``
-        and a name for the browser tab, since Dallinger's real-time engine
-        tells a player's open pages apart by their scope.
+        and a name for its connection, of up to 64 letters, digits and
+        dots, since Dallinger's real-time engine tells a player's open pages
+        apart by their scope. PsyNet's own messages to a participant go to
+        the connections whose scope is the token alone.
         """
         participant = Participant.query.get(int(participant_id))
         if participant is None or not isinstance(scope, str):
             return False
-        token, dot, tab = scope.partition(".")
-        if dot and not tab:
+        token, dot, name = scope.partition(".")
+        if dot and not re.fullmatch(r"[A-Za-z0-9.]{1,64}", name):
             return False
         return hmac.compare_digest(token.encode(), participant.websocket_scope.encode())
 
@@ -4448,16 +4447,23 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 # Optional, so that a page class that doesn't extend Page
                 # still works.
                 check_ready = getattr(event, "check_ready_for_response", None)
-                refusal = (
+                not_ready = (
                     None
                     if check_ready is None
                     else check_ready(experiment=self, participant=participant)
                 )
-                if isinstance(refusal, str):
-                    refusal = FailedValidation(message=refusal)
-                if refusal is not None:
+                if isinstance(not_ready, ResponseNotReady):
                     return ResponseResult(
-                        payload=_rejected_payload(refusal.message, refusal.retry_after)
+                        payload={
+                            "submission": "rejected",
+                            "message": not_ready.message,
+                            "retry_after": not_ready.retry_after,
+                        }
+                    )
+                if not_ready is not None:
+                    raise TypeError(
+                        f"{type(event).__name__}.check_ready_for_response must "
+                        f"return None or a ResponseNotReady, not {not_ready!r}."
                     )
                 response = event.process_response(
                     raw_answer=raw_answer,
@@ -4491,16 +4497,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     validation, FailedValidation
                 )
                 if not response.successful_validation:
-                    if validation.retry_after is not None:
-                        # The response is saved, so resending it would save
-                        # another each time.
-                        logger.warning(
-                            "%s's validate returned a FailedValidation with "
-                            "retry_after, which only check_ready_for_response "
-                            "can use. The participant submits again instead.",
-                            type(event).__name__,
-                        )
-                    return ResponseResult(payload=_rejected_payload(validation.message))
+                    return ResponseResult(
+                        payload={
+                            "submission": "rejected",
+                            "message": validation.message,
+                        }
+                    )
 
                 recording_uploads = []
                 if getattr(response, "_deferred_recording_answer", False) is True:
@@ -4781,16 +4783,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             f"Timeline hold skip did not settle after {_MAX_BARRIER_WALK_PASSES} steps."
         )
 
-    def response_rejected(self, message, retry_after=None):
-        if retry_after is None:
-            logger.warning(
-                "The response was rejected with the following message: '%s'.", message
-            )
-            return success_response(submission="rejected", message=message)
-        logger.info("The response was refused for now: '%s'.", message)
-        return success_response(
-            submission="rejected", message=message, retry_after=retry_after
+    def response_rejected(self, message):
+        logger.warning(
+            "The response was rejected with the following message: '%s'.", message
         )
+        return success_response(submission="rejected", message=message)
 
     @classmethod
     def busy_response(cls):
@@ -8177,14 +8174,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         clock.close("render")
         if payload.get("submission") == "rejected":
-            retry_after = payload.get("retry_after")
-            if retry_after is None:
-                # An override written as response_rejected(self, message)
-                # takes no retry_after.
-                return finish(exp.response_rejected(payload["message"]))
-            return finish(
-                exp.response_rejected(payload["message"], retry_after=retry_after)
-            )
+            if "retry_after" in payload:
+                # Not the participant's to correct, so response_rejected
+                # isn't told: the page resends the response by itself.
+                logger.info("The response was refused for now: %r.", payload["message"])
+                return finish(success_response(**payload))
+            return finish(exp.response_rejected(payload["message"]))
         return finish(success_response(**payload))
 
     @classmethod

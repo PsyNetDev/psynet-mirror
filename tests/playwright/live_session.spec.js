@@ -49,7 +49,7 @@ test("a live session page joins its session, shows a rejected message and moves 
       participant: psynetTemplateData.websocketScope,
       pageScope: dallinger.pageScope
     }));
-    expect(scopes.game).toBe(scopes.participant + "." + scopes.pageScope);
+    expect(scopes.game).toBe(scopes.participant + "." + scopes.pageScope + ".1");
     // A framework variable, so no deprecated window copy.
     expect(await first.evaluate(() => "liveSession" in window)).toBe(false);
 

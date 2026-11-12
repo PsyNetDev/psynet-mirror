@@ -72,52 +72,6 @@
     };
   }
 
-  // Keeps the current page's state and its Dallinger socket, which opens
-  // when first asked for. When the participant moves to another page, or
-  // ``reset`` runs, the old page's socket closes and the next call starts
-  // the new page afresh.
-  //
-  // ``pageId`` returns the current page's id. ``options.newPage`` returns
-  // the fields a new page's state starts with, besides its ``pageId`` and
-  // ``socket``, ``options.open`` opens the socket for a page's state, and
-  // ``options.closed`` is called with the state after its socket closes.
-  function createPageScopedSocket(pageId, options) {
-    let page = null;
-
-    function current() {
-      let id = pageId();
-      if (page === null || page.pageId !== id) {
-        close();
-        page = Object.assign({ pageId: id, socket: null }, options.newPage());
-      }
-      return page;
-    }
-
-    function socket() {
-      let state = current();
-      if (state.socket === null) {
-        state.socket = options.open(state);
-      }
-      return state.socket;
-    }
-
-    function close() {
-      if (page !== null && page.socket !== null) {
-        let closing = page.socket;
-        page.socket = null;
-        closing.close();
-        options.closed(page);
-      }
-    }
-
-    function reset() {
-      close();
-      page = null;
-    }
-
-    return { current: current, socket: socket, reset: reset };
-  }
-
   /**
    * ``psynet.liveSession`` lets a page with a ``LiveSessionControl`` play
    * the live session its group started: send the game messages, and show
@@ -133,11 +87,15 @@
    * it reconnects by itself and rejoins. The same page open in another tab
    * plays as the same player.
    *
-   * ``psynet.js`` creates ``psynet.liveSession`` with this function. The
-   * connection is Dallinger's ``/experiment-socket``, joined to the session.
-   * Its scope is the participant's ``websocketScope``, which the
-   * experiment's ``accept_websocket_connection`` checks, then a ``.`` and
-   * ``dallinger.pageScope``, which tells the participant's tabs apart.
+   * ``PsyNetLiveSession.activatePage``, the page code of a
+   * ``LiveSessionControl``, creates ``psynet.liveSession`` with this
+   * function. The connection is
+   * Dallinger's ``/experiment-socket``, joined to the session. Its scope is
+   * the participant's ``websocketScope``, which the experiment's
+   * ``accept_websocket_connection`` checks, then a ``.`` and a name for this
+   * page's connection: ``dallinger.pageScope``, which tells the
+   * participant's tabs apart, and a count of the connections the tab has
+   * opened, since the game pages it shows one after another each open one.
    *
    * @param {function} liveSession - Returns the page's ``liveSession``
    *   variable: the control's ``initializerId``, ``autoAdvance``,
@@ -145,8 +103,7 @@
    *   ``sessionId`` and ``gameChannel``, which are ``null`` without a
    *   session, or nothing on a page without a
    *   ``LiveSessionControl``
-   * @param {Object} page - ``id()`` returns the current page's id, which
-   *   changes when the participant moves on, ``websocketScope()`` returns
+   * @param {Object} page - ``websocketScope()`` returns
    *   the participant's websocket scope, ``ready()`` says whether the page
    *   is ready to submit, ``nextPage()`` submits it,
    *   ``setNextButtonHidden(hidden)`` hides or shows its Next button, and
@@ -155,6 +112,7 @@
    */
   function createLiveSession(liveSession, page) {
     let api = null;
+    let connections = 0;
 
     function session() {
       let current = liveSession();
@@ -169,28 +127,60 @@
           "The participant's group hasn't started a live session at the " +
             "initializer " +
             JSON.stringify(current.initializerId) +
-            ". Check the LiveSessionControl's initializer id, and that the " +
-            "page comes after that initializer. A participant removed from " +
-            "their group there has no session, which the page can check " +
-            "with psynet.liveSession.hasSession.",
+            ", because the participant was removed from their group " +
+            "there. Check psynet.liveSession.hasSession before the page " +
+            "plays.",
         );
       }
       return current;
     }
 
-    let pages = createPageScopedSocket(page.id, {
-      newPage: newPage,
-      open: openSocket,
-      closed: (state) => {
-        state.away.stop();
-        clearTimeout(state.connectionTimer);
-        page.showNotice(AWAY_NOTICE, null);
-      },
-    });
+    // The current page's state, from its first use of psynet.liveSession
+    // until the participant leaves the page.
+    let currentPage = null;
+
+    function pageState() {
+      if (currentPage === null) {
+        currentPage = newPage();
+      }
+      return currentPage;
+    }
+
+    // The page's Dallinger socket, which opens when first asked for.
+    function pageSocket() {
+      let state = pageState();
+      if (state.socket === null) {
+        state.socket = openSocket(state);
+      }
+      return state.socket;
+    }
+
+    // Run as each page with a LiveSessionControl activates. Returns the
+    // page's cleanup, which leaves the session.
+    function activatePage() {
+      let control = liveSession();
+      if (control.sessionId == null && control.noSessionMessage) {
+        page.showNotice(NO_SESSION_NOTICE, control.noSessionMessage);
+      }
+      return () => {
+        page.showNotice(NO_SESSION_NOTICE, null);
+        let state = currentPage;
+        currentPage = null;
+        if (state !== null) {
+          state.left = true;
+          state.socket?.close();
+          state.away.stop();
+          clearTimeout(state.connectionTimer);
+          page.showNotice(AWAY_NOTICE, null);
+        }
+      };
+    }
 
     function newPage() {
       let state = {
         session: session(),
+        socket: null,
+        left: false,
         startedView: null,
         startedCallbacks: [],
         ended: false,
@@ -251,7 +241,7 @@
         window.addEventListener(
           "timelinePageReady",
           () => {
-            if (page.id() === state.pageId) {
+            if (!state.left) {
               page.nextPage();
             }
           },
@@ -265,27 +255,29 @@
     // DISCONNECTED_DELAY_MS, and the server then holds the participant's
     // response until the result is saved.
     function hideNextButtonWhileConnected(state, socket) {
-      let downSince = Date.now();
-      function check() {
-        let now = Date.now();
-        if (socket.raw.readyState === WebSocket.OPEN) {
-          downSince = null;
-        } else if (downSince === null) {
-          downSince = now;
+      function down() {
+        if (state.connectionTimer === null && !state.left) {
+          state.connectionTimer = setTimeout(
+            () => page.setNextButtonHidden(false),
+            DISCONNECTED_DELAY_MS,
+          );
         }
-        page.setNextButtonHidden(
-          downSince === null || now - downSince < DISCONNECTED_DELAY_MS,
-        );
-        state.connectionTimer = setTimeout(check, 1000);
       }
-      check();
+      page.setNextButtonHidden(true);
+      down();
+      socket.raw.addEventListener("open", () => {
+        clearTimeout(state.connectionTimer);
+        state.connectionTimer = null;
+        page.setNextButtonHidden(true);
+      });
+      socket.raw.addEventListener("close", down);
     }
 
     function openSocket(state) {
       let socket = dallinger.openExperimentSocket({
         session: state.session.sessionId,
         gameChannel: state.session.gameChannel,
-        scope: page.websocketScope() + "." + dallinger.pageScope,
+        scope: [page.websocketScope(), dallinger.pageScope, ++connections].join("."),
         // Set at open, so it hands each message to the page's predict
         // callback, whenever the page sets one.
         predict: (view, payload) => {
@@ -342,8 +334,8 @@
      * @returns {Object} ``psynet.liveSession``
      */
     function onStarted(callback) {
-      pages.socket();
-      let state = pages.current();
+      pageSocket();
+      let state = pageState();
       if (state.ended) {
         return api;
       }
@@ -388,7 +380,7 @@
      *   once the connection is closed or refused
      */
     function send(type, message) {
-      let gameSocket = pages.socket();
+      let gameSocket = pageSocket();
       return gameSocket.send(gameSocket.gameChannel, { type: type, message: message });
     }
 
@@ -413,8 +405,8 @@
      * @returns {Object} ``psynet.liveSession``
      */
     function onView(callback) {
-      pages.socket();
-      pages.current().viewCallbacks.push(callback);
+      pageSocket();
+      pageState().viewCallbacks.push(callback);
       return api;
     }
 
@@ -434,8 +426,8 @@
      * @returns {Object} ``psynet.liveSession``
      */
     function onPlayersAway(callback) {
-      pages.socket();
-      let state = pages.current();
+      pageSocket();
+      let state = pageState();
       state.awayCallbacks.push(callback);
       let away = state.away.reported();
       if (away.length > 0) {
@@ -466,8 +458,8 @@
      * @returns {Object} ``psynet.liveSession``
      */
     function predict(callback) {
-      pages.socket();
-      pages.current().predict = callback;
+      pageSocket();
+      pageState().predict = callback;
       return api;
     }
 
@@ -483,7 +475,7 @@
      * @returns {Object|null} The predicted view
      */
     function predictedView() {
-      return pages.socket().predictedView();
+      return pageSocket().predictedView();
     }
 
     /**
@@ -507,8 +499,8 @@
      * @returns {Object} ``psynet.liveSession``
      */
     function interpolate(callback) {
-      pages.socket();
-      pages.current().interpolate = callback;
+      pageSocket();
+      pageState().interpolate = callback;
       return api;
     }
 
@@ -523,8 +515,8 @@
      * @returns {Object|null} The interpolated view
      */
     function interpolatedView() {
-      let socket = pages.socket();
-      if (pages.current().interpolate === null) {
+      let socket = pageSocket();
+      if (pageState().interpolate === null) {
         throw new Error(
           "Set psynet.liveSession.interpolate's callback before calling interpolatedView."
         );
@@ -534,7 +526,7 @@
 
     function passOn(name) {
       return function (callback) {
-        pages.socket()[name](callback);
+        pageSocket()[name](callback);
         return api;
       };
     }
@@ -562,7 +554,7 @@
        * @member {boolean} started
        */
       get started() {
-        return pages.current().startedView !== null;
+        return pageState().startedView !== null;
       },
       /**
        * Whether the session has ended. ``onView``'s callbacks see it already
@@ -571,7 +563,7 @@
        * @member {boolean} ended
        */
       get ended() {
-        return pages.current().ended;
+        return pageState().ended;
       },
       send: send,
       onStarted: onStarted,
@@ -631,25 +623,36 @@
      * @member {dallinger.Socket} socket
      */
     // Not enumerable, since reading it joins the session.
-    Object.defineProperty(api, "socket", { get: pages.socket });
-    // For psynet.resetPageState and psynet.activatePageJavascript, not for
-    // pages.
-    Object.defineProperty(api, "resetPageState", {
-      value: () => {
-        page.showNotice(NO_SESSION_NOTICE, null);
-        pages.reset();
-      },
-    });
-    Object.defineProperty(api, "showNoSessionNotice", {
-      value: () => {
-        let current = liveSession();
-        if (current && current.sessionId == null && current.noSessionMessage) {
-          page.showNotice(NO_SESSION_NOTICE, current.noSessionMessage);
-        }
-      },
-    });
+    Object.defineProperty(api, "socket", { get: pageSocket });
+    // For PsyNetLiveSession.activatePage, not for pages.
+    Object.defineProperty(api, "activatePage", { value: activatePage });
     return api;
   }
 
-  window.PsyNetLiveSession = { create: createLiveSession };
+  // The page code of a LiveSessionControl. Creates ``psynet.liveSession``
+  // for the first such page the document shows, and returns the page's
+  // cleanup. This script can load before psynet.js, so it can't create
+  // ``psynet.liveSession`` as it loads.
+  function activatePage(psynet) {
+    if (!psynet.liveSession) {
+      psynet.liveSession = createLiveSession(() => psynet.var.liveSession, {
+        websocketScope: () => window.psynetTemplateData.websocketScope,
+        ready: () => psynet.pageReady,
+        nextPage: () => psynet.nextPage(),
+        setNextButtonHidden: (hidden) => {
+          let button = document.getElementById("next-button");
+          if (button) {
+            button.style.display = hidden ? "none" : "";
+          }
+        },
+        showNotice: (id, text) => psynet.showStatusNotice(id, text),
+      });
+    }
+    return psynet.liveSession.activatePage();
+  }
+
+  window.PsyNetLiveSession = {
+    create: createLiveSession,
+    activatePage: activatePage,
+  };
 })();

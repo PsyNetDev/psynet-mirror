@@ -719,7 +719,7 @@ class TestCheckedConnections:
         assert not accept(str(participant.id), None)
         assert not accept(str(participant.id), "é")
 
-    def test_a_token_can_be_followed_by_a_name_for_the_browser_tab(
+    def test_a_token_can_be_followed_by_a_name_for_the_connection(
         self, in_experiment_directory, db_session
     ):
         experiment = get_experiment()
@@ -728,10 +728,12 @@ class TestCheckedConnections:
         accept = experiment.accept_websocket_connection
         token = participant.websocket_scope
 
-        assert accept(str(participant.id), token + ".tab-1")
-        assert not accept(str(participant.id), token + ".")
-        assert not accept(str(participant.id), token + "tab-1")
-        assert not accept(str(participant.id), other.websocket_scope + ".tab-1")
+        assert accept(str(participant.id), token + ".k3x9load.2")
+        assert accept(str(participant.id), token + "." + "a" * 64)
+        for name in ("", "a" * 65, "tab-1", "tab 1", "é", "tab\n"):
+            assert not accept(str(participant.id), token + "." + name), name
+        assert not accept(str(participant.id), token + "tab1")
+        assert not accept(str(participant.id), other.websocket_scope + ".tab1")
 
     def test_chat_handlers_only_take_checked_messages(
         self, in_experiment_directory, db_session, monkeypatch
