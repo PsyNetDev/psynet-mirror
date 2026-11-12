@@ -2767,9 +2767,19 @@ def _check_local_image_packages(local_packages):
     if "psynet" in local_packages:
         from .experiment_scaffold import get_editable_psynet_source
 
-        if get_editable_psynet_source() is None:
+        source = get_editable_psynet_source()
+        if source is None:
             raise click.UsageError(
                 "--use-local-psynet needs an editable PsyNet checkout."
+            )
+        running = Path(__file__).resolve().parent.parent
+        if running != source:
+            raise click.UsageError(
+                f"--use-local-psynet would build the editable PsyNet checkout at "
+                f"{source}, but this command is running PsyNet from {running} "
+                "(for example because PYTHONPATH points at another checkout or "
+                "worktree). Install the checkout you want to deploy in editable "
+                "mode in its own virtual environment, and run the command from there."
             )
 
 
@@ -5902,7 +5912,10 @@ def test__local(
         # previously made a remote `psynet test ssh` look like it had done
         # nothing at all.
         click.echo(f"Running {exp.test_n_bots} bot(s) against the existing server...")
-        exp.test_experiment()
+        from .sync import fail_on_group_divergence
+
+        with fail_on_group_divergence():
+            exp.test_experiment()
         click.echo(f"Bot test passed ({exp.test_n_bots} bot(s)).")
         return
 

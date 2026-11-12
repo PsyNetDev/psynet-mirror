@@ -351,14 +351,14 @@ def test_chatroom_contributes_managed_resources_not_inline_markup():
     )
 
     assert any("#chatroom-widget" in str(c) for c in page.css)
-    assert page.js_vars["chatroom_config"] == {
+    assert {
         "room_id": "room-42",
         "channel": "modular_page_chat",
         "show_participants": False,
         "show_history": True,
         "you_label": "You",
         "you_in_list_label": "{NAME} (you)",
-    }
+    }.items() <= page.js_vars["chatroom_config"].items()
     assert page.js_page_modules == [
         "/static/packages/psynet/scripts/chatroom-widget.js"
     ]

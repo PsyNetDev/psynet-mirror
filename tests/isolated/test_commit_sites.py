@@ -61,6 +61,7 @@ COMMIT_SITES = {
     "sync.py::check_sync_groups": _OWNS_JOB,
     "sync.py::_finish_dissolving_groups": _OWNS_JOB,
     "sync.py::_time_out_overdue_waiters": _OWNS_JOB,
+    "sync.py::_report_divergences": _OWNS_JOB,
     "timeline.py::Module.prepare_assets_for_deployment": _OWNS_DEPLOY,
     "timeline.py::Module.nodes_register_in_db": _OWNS_DEPLOY,
     "timeline.py::Module.nodes_stage_assets": _OWNS_DEPLOY,

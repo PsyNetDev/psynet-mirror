@@ -2,7 +2,7 @@
 
 Multiplayer pages (chat rooms, group displays) need to tell participants
 apart without revealing recruitment IDs. This module gives every participant
-a pseudonym made of a colour and an animal, with an icon combining the two.
+a pseudonym made of a colour and an animal, shown as the animal in that colour.
 
 Design constraints:
 
@@ -17,9 +17,10 @@ Design constraints:
   participants get different pseudonyms, and neighbours differ in both
   colour and animal, which helps colour-blind participants.
   Participants whose IDs differ by a multiple of 88 share a pseudonym.
-- Only keys are stored when an experiment overrides a pseudonym, in the
-  participant's ``pseudonym_color`` and ``pseudonym_animal`` columns; labels
-  are translated when shown.
+- Only keys are stored when an experiment overrides a pseudonym, or when
+  joining a first group makes one distinct, in the participant's
+  ``pseudonym_color`` and ``pseudonym_animal`` columns; labels are
+  translated when shown.
 - Experiments customize pseudonyms by subclassing :class:`PseudonymScheme`
   and setting :attr:`psynet.experiment.Experiment.pseudonym_scheme`.
 """
@@ -166,14 +167,13 @@ class Pseudonym:
     name
         Translated name, for example ``"Blue fox"``.
     css_color
-        CSS colour for the participant's icon.
+        CSS colour for the participant's animal.
     emoji
         The animal's emoji.
-    icon_html
-        HTML for the participant's icon: the animal on a coloured disc.
     sticker_html
-        HTML for a larger picture of the animal in the participant's colour,
-        as in :class:`~psynet.group_prompt.GroupPrompt`.
+        HTML for a picture of the animal in the participant's colour, as in
+        :class:`~psynet.group_prompt.GroupPrompt` and chat rooms. Its size
+        follows the font size.
     """
 
     color: str
@@ -181,7 +181,6 @@ class Pseudonym:
     name: str
     css_color: str
     emoji: str
-    icon_html: Markup
     sticker_html: Markup
 
     def to_dict(self) -> dict:
@@ -192,7 +191,6 @@ class Pseudonym:
             "name": self.name,
             "css_color": self.css_color,
             "emoji": self.emoji,
-            "icon_html": str(self.icon_html),
             "sticker_html": str(self.sticker_html),
         }
 
@@ -211,11 +209,17 @@ class PseudonymScheme:
         class Exp(psynet.experiment.Experiment):
             pseudonym_scheme = TeamScheme()
 
-    Override :meth:`colors` and :meth:`animals` to change the vocabulary,
-    :meth:`assign` to change who gets which pseudonym, :meth:`name` to name
-    the pairs of a custom vocabulary in full, and :meth:`icon_html`,
-    :meth:`sticker_html` or :meth:`artwork` for the pictures. Call
-    :meth:`~psynet.participant.Participant.set_pseudonym` to give one
+    These methods are the hooks to override:
+
+    - :meth:`colors` and :meth:`animals`, the vocabulary;
+    - :meth:`assign` and :meth:`seed`, who gets which pseudonym;
+    - :meth:`assign_distinct`, the pseudonym given to a newcomer whose
+      pseudonym an active member of their first group already has;
+    - :meth:`format_name`, the names, for example to name the pairs of a
+      custom vocabulary in full;
+    - :meth:`render_sticker` and :meth:`artwork`, the pictures.
+
+    Call :meth:`~psynet.participant.Participant.set_pseudonym` to give one
     participant a particular pseudonym.
     """
 
@@ -285,7 +289,7 @@ class PseudonymScheme:
             self._deployment_seed = str(deployment_id)
         return self._deployment_seed
 
-    def name(self, color: str, animal: str) -> str:
+    def format_name(self, color: str, animal: str) -> str:
         """Return the translated name for a pair of colour and animal keys.
 
         Each pair of built-in keys has its own translated message, such as
@@ -303,23 +307,10 @@ class PseudonymScheme:
         )
         return name[:1].upper() + name[1:]
 
-    def icon_html(self, css_color: str, emoji: str, name: str) -> Markup:
-        """Return HTML for a participant's icon: the animal on a coloured disc.
-
-        The icon is hidden from screen readers, because pages show the name
-        next to it. Pages insert this HTML as it is, so an override must
-        return :class:`~markupsafe.Markup` and escape its arguments, as
-        :meth:`Markup.format <markupsafe.Markup.format>` does.
-        """
-        return Markup(
-            '<span class="psynet-pseudonym-icon" aria-hidden="true" title="{}"'
-            ' style="--psynet-pseudonym-color: {}">{}</span>'
-        ).format(name, css_color, emoji)
-
     def artwork(self, animal: str, emoji: str) -> Optional[Tuple[str, str]]:
         """Return URLs of an animal's ``(shape, lines)`` SVGs, or ``None`` to use its emoji.
 
-        :meth:`sticker_html` fills the shape's outline with the participant's
+        :meth:`render_sticker` fills the shape's outline with the participant's
         colour and draws the lines on top. The built-in animals use Microsoft
         Fluent Emoji artwork (MIT licence); animals added by an override, or
         given a different emoji, get ``None``.
@@ -332,15 +323,17 @@ class PseudonymScheme:
             package_static_url("psynet", f"{folder}/{animal}-lines.svg"),
         )
 
-    def sticker_html(
+    def render_sticker(
         self, css_color: str, animal: str, emoji: str, name: str
     ) -> Markup:
         """Return HTML for the animal drawn in the participant's colour.
 
         Uses :meth:`artwork` when there is some, and otherwise tints the
-        emoji. Lines turn light on dark colours. Like :meth:`icon_html`, it
-        is hidden from screen readers and an override must return
-        :class:`~markupsafe.Markup`.
+        emoji. Lines turn light on dark colours. The picture is hidden from
+        screen readers, because pages show the name next to it. Pages insert
+        this HTML as it is, so an override must return
+        :class:`~markupsafe.Markup` and escape its arguments, as
+        :meth:`Markup.format <markupsafe.Markup.format>` does.
         """
         classes = "psynet-pseudonym-sticker"
         if _is_dark(css_color):
@@ -355,10 +348,11 @@ class PseudonymScheme:
             ).format(classes, name, css_color, emoji, emoji)
         return _artwork_sticker(classes, css_color, *artwork, name)
 
-    def replacement(self, taken, participant) -> Optional[Tuple[str, str]]:
+    def assign_distinct(self, participant, taken) -> Optional[Tuple[str, str]]:
         """Return ``(color, animal)`` keys that nobody in ``taken`` has, or ``None`` if all are used.
 
-        Used to give a new group member a pseudonym that differs from the
+        Used to give a newcomer to their first group, whose derived
+        pseudonym an active member already has, one that differs from the
         others'. ``taken`` is a collection of ``(color, animal)`` pairs. The
         default prefers a pair whose colour and animal are both unused, and
         picks among those using :meth:`seed` and the participant's ID, so
@@ -383,14 +377,14 @@ class PseudonymScheme:
             return None
         return random.Random(f"{self.seed()}:{participant.id}").choice(candidates)
 
-    def pseudonym(self, participant) -> Pseudonym:
+    def _pseudonym(self, participant) -> Pseudonym:
         """Return this participant's pseudonym."""
         color, animal = participant.pseudonym_color, participant.pseudonym_animal
         if color is None or animal is None:
             color, animal = self.assign(participant)
-        return self.make(color, animal)
+        return self._make(color, animal)
 
-    def make(self, color: str, animal: str) -> Pseudonym:
+    def _make(self, color: str, animal: str) -> Pseudonym:
         """Return the :class:`Pseudonym` for a pair of keys."""
         colors, animals = self.colors(), self.animals()
         if color not in colors:
@@ -398,15 +392,14 @@ class PseudonymScheme:
         if animal not in animals:
             raise ValueError(f"Unknown pseudonym animal {animal!r}.")
         css_color, emoji = colors[color][1], animals[animal][1]
-        name = self.name(color, animal)
+        name = self.format_name(color, animal)
         return Pseudonym(
             color=color,
             animal=animal,
             name=name,
             css_color=css_color,
             emoji=emoji,
-            icon_html=self.icon_html(css_color, emoji, name),
-            sticker_html=self.sticker_html(css_color, animal, emoji, name),
+            sticker_html=self.render_sticker(css_color, animal, emoji, name),
         )
 
 

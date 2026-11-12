@@ -365,6 +365,37 @@ migration instructions in the error.
 12. Changed defaults and option markup
 --------------------------------------
 
+Two changes affect code in almost any experiment, so check them first.
+Search for ``var.get(`` and ``conditional(``.
+
+* ``participant.var.get(name)`` (and ``var.get`` on ``experiment.var``,
+  nodes, networks and trials) returns ``None`` for a missing variable, like
+  ``dict.get``, instead of raising ``KeyError``. Where the error was wanted,
+  for example inside ``try`` / ``except KeyError``, read
+  ``participant.var.name`` instead, or check ``participant.var.has(name)``:
+
+  .. code-block:: python
+
+      # Before: relied on the KeyError
+      try:
+          score = participant.var.get("score")
+      except KeyError:
+          score = 0
+      # After
+      score = participant.var.score if participant.var.has("score") else 0
+* :func:`~psynet.timeline.conditional` now converts its condition's result
+  with ``bool()``, so a condition may return any value. Before, a value
+  other than ``True``, ``False``, ``1`` or ``0``, such as ``None``, ``2`` or
+  a list, raised an error; now ``None`` and an empty list choose
+  ``logic_if_false``, and other values ``logic_if_true``. A condition that
+  relied on the error to catch a bug should return a ``bool`` explicitly.
+
+  .. code-block:: python
+
+      # Before, this raised an error, because the condition returns a list;
+      # now a non-empty list chooses the first branch
+      conditional("has_answers", lambda participant: participant.var.answers, ...)
+
 * Phones and tablets are allowed by default. Set
   ``allow_mobile_devices = false`` to keep a study desktop-only.
 * ``force_google_chrome`` now defaults to ``false`` and is deprecated, so
@@ -588,11 +619,13 @@ templates that changes the database.
 -----------------------
 
 Search for code that changes ``SyncGroup.participants``, custom ``Barrier``
-subclasses, ``get_waiting_participants(`` and ``SimpleGrouper(``.
+subclasses, ``get_waiting_participants(``, ``SimpleGrouper(``,
+``waiting_logic=``, ``.sync_group`` on trials and ``ParticipantFailRoutine``.
 
 * Change group membership with ``SyncGroup.add_participant()`` and
-  ``SyncGroup.remove_participant()``. ``SyncGroup.participants`` is
-  read-only and lists only active members.
+  ``SyncGroup.remove_participant(participant, reason=...)``, which needs a
+  reason such as ``"removed_by_experimenter"``. ``SyncGroup.participants``
+  is read-only and lists only active members.
 * Custom barriers implement ``check_waiting_participants()`` and
   ``choose_who_to_release()`` instead of overriding ``check()``. Barrier
   state is saved as data, so custom release state must be JSON-compatible
@@ -602,6 +635,119 @@ subclasses, ``get_waiting_participants(`` and ``SimpleGrouper(``.
   ``get_waiting_participants_from_barrier_id`` is removed.
 * ``SimpleGrouper`` IDs now include the group size. Pass the same ``id_``
   to two groupers that should share a waiting pool.
+* ``SimpleGrouper(min_group_size=...)`` is now ``quorum=...``: how many
+  active members a group needs to keep going. The old name still works with
+  a ``FutureWarning``. A grouper for groups of three or more without
+  ``quorum`` warns: pass ``quorum=initial_group_size`` to keep failing a group
+  as soon as one member leaves, or a smaller number if your code handles
+  smaller groups. A ``quorum`` below ``initial_group_size`` also needs
+  ``below_quorum="fail"`` (the old behavior) or
+  ``below_quorum="continue_without_group"``.
+  Participants failed because their group fell below its quorum now get the
+  failure tag ``sync group below quorum`` instead of
+  ``sync group below minimum size``; update analysis code that filters on it.
+* ``SimpleGrouper(join_existing_groups=True)`` now warns unless you say when
+  newcomers start taking part: pass ``use_admission_points=False`` to keep
+  the old behavior, or ``use_admission_points=True`` to admit
+  them only at admission points (see :ref:`sync-admission-points`).
+* A ``quorum`` (or ``min_group_size``) larger than ``max_group_size`` now
+  raises a ``ValueError``, because such a group could never reach it. Lower
+  the quorum, or raise ``max_group_size``:
+
+  .. code-block:: python
+
+      # Before: accepted, but a group of at most 3 can never have 4 members
+      SimpleGrouper("team", initial_group_size=2, max_group_size=3,
+                    min_group_size=4, join_existing_groups=True)
+      # After
+      SimpleGrouper("team", initial_group_size=2, max_group_size=3,
+                    quorum=2, join_existing_groups=True,
+                    use_admission_points=False)
+* Pages shown from a barrier's ``waiting_logic``, such as filler trials,
+  now end when the barrier releases the participant, ``release_grace``
+  seconds (3 by default) after the browser notices, instead of running to
+  their end. The page saves an empty response with ``"interrupted": True``
+  in its metadata, and its trial, any trial that the rest of that pass of
+  ``waiting_logic`` reaches, and one the trial maker prepared for its next
+  pass are failed with ``failed_reason="interrupted_by_release"``. These
+  failed trials still count towards ``n_created_trials`` (so later trials'
+  ``position`` skips them) and ``max_trials_per_block``, but not towards
+  completed-trial targets, so count played filler trials with
+  ``n_completed_trials`` or ``complete``. The interrupted page calls
+  ``Experiment.process_response`` with ``interrupted=True``, which is why an
+  override must accept ``**kwargs`` (see step 16). Pass
+  ``release_grace=None`` to keep letting each waiting page run to its end:
+
+  .. code-block:: python
+
+      # Before: the filler page always ran to its end
+      GroupBarrier(id_="ready", group_type="team", waiting_logic=filler)
+      # After, to keep that behavior
+      GroupBarrier(id_="ready", group_type="team", waiting_logic=filler,
+                   release_grace=None)
+* ``Trial.sync_group`` now returns the group the trial was played in
+  (``trial.sync_group_id``), also after the participant has left it,
+  instead of the participant's current group of the trial maker's type. Code
+  that wants the current group should look it up on the participant:
+
+  .. code-block:: python
+
+      # Before: the participant's current group, or None once they left
+      group = trial.sync_group
+      # After, for a trial maker with sync_group_type="team"
+      group = participant.active_sync_groups.get("team")
+* A member failed by a :class:`~psynet.sync.GroupBarrier` for being late
+  (``late_action="fail"``) or for waiting too long
+  (``max_wait_action="fail"``, the default), including at a synchronized
+  trial maker's barriers, now leaves all their groups before being failed,
+  and a member failed because their group dissolved
+  (``below_quorum="fail"``) first leaves that group. So a
+  ``ParticipantFailRoutine`` no longer finds those groups in
+  ``participant.active_sync_groups``. Other failures, such as returning the
+  study, still run the routines while the participant is in their groups.
+  Read the group they left with ``participant.latest_sync_group()``:
+
+  .. code-block:: python
+
+      # Before
+      def record_team(participant):
+          participant.var.team_id = participant.active_sync_groups["team"].id
+      # After
+      def record_team(participant):
+          team = participant.latest_sync_group("team")
+          participant.var.team_id = None if team is None else team.id
+
+      ParticipantFailRoutine("record_team", record_team)
+* A trial maker's ``sync_group_max_wait_time`` without ``sync_group_type``
+  has no effect and now warns; remove it or set ``sync_group_type``.
+* In bot tests, ``advance_past_wait_pages(bots, max_iterations=...)`` is
+  deprecated; pass ``timeout=`` (seconds) instead.
+
+If you used a PsyNet 14.0 release candidate, also make these changes. The
+old options of barriers, groupers and trial makers raise an error naming
+the replacement:
+
+* ``GroupBarrier(notify_arrivals=False)`` becomes
+  ``GroupBarrier(on_arrival_message=None)``. Drop ``notify_arrivals=True``.
+* ``GroupBarrier``'s ``timeout_between_barriers_time`` and
+  ``timeout_between_barriers_action`` were renamed ``late_after`` and
+  ``late_action``; on trial makers, ``sync_group_timeout_between_barriers_time``
+  and ``sync_group_timeout_between_barriers_action`` were renamed
+  ``sync_group_late_after`` and ``sync_group_late_action``. ``late_action`` no
+  longer defaults to ``"fail"``, so pass it whenever you pass ``late_after``,
+  and write ``"leave_group"`` for ``"kick"``. Remove ``max_wait_time`` (or
+  ``sync_group_max_wait_time``) where you pass ``late_after``: it now
+  defaults to no limit there, and a limit raises an error.
+* ``content=`` on ``wait_while``, ``AsyncCodeBlock``, barriers and groupers
+  becomes ``waiting_message=``, and trial makers' ``sync_group_wait_content``
+  becomes ``sync_group_waiting_message``.
+* ``fail_participants_below_min_size=False`` becomes
+  ``below_quorum="continue_without_group"``, and
+  ``fail_participants_below_min_size=True`` becomes ``below_quorum="fail"``.
+  ``SimpleSyncGroup.dissolve_if_below_min_size()`` was renamed
+  ``dissolve_if_below_quorum()``.
+* Synchronized trial makers no longer have an ``{id}__init_participant``
+  barrier; look for ``{id}__prepare_trial`` instead.
 
 See :doc:`/code/multiplayer/synchronization`.
 
@@ -688,6 +834,10 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
   ``"4"``) rather than image names. Find the asset key of the chosen image
   with ``LanguageVocabularyTrial.image_keys[definition["order"][int(answer) - 1]]``;
   the correct image is ``"image_correct"``.
+* An unfinished trial, abandoned or still running at export time, can now
+  have an ``answer``: the answer so far, copied from its pages before
+  ``format_answer`` runs. Filter on ``complete`` as well as ``failed`` when
+  analysing answers.
 
 See :doc:`/data/what_an_export_contains`.
 

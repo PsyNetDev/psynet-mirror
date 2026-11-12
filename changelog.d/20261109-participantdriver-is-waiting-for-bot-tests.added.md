@@ -1,0 +1,1 @@
+Added `ParticipantDriver.is_waiting` (and so `BotDriver.is_waiting`), which says whether a bot is on a waiting page, for example at a barrier, so bot tests no longer need to read the cached status or render the page to find out.

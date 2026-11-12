@@ -3,9 +3,9 @@
 Barrier instances must survive across web workers, but persisting an entire
 ``Barrier`` object also captures waiting pages and incidental ORM state.
 This module stores the importable barrier class, release-hook state, scalar
-presentation (``content``, timeouts), and arrival-notice settings. Waiting
+presentation (``waiting_message``, timeouts), and arrival-notice settings. Waiting
 pages and hold-page construction (``waiting_logic``, ``waiting_screen``,
-``_uses_timeline_hold``, ``_waiting_loop_markers`` and the expected
+``_uses_timeline_hold`` and the expected
 repetitions of ``waiting_logic``) stay on the live timeline object.
 See :class:`~psynet.sync.Barrier` for which methods are live-only.
 Callback identity is kept separate from the ORM receiver selected for one
@@ -16,7 +16,6 @@ bound.
 import hashlib
 import json
 
-from jsonpickle.unpickler import loadclass
 from jsonpickle.util import importable_name
 from markupsafe import Markup
 
@@ -25,6 +24,7 @@ from psynet.serialize import (
     SerializedCallable,
     callable_from_path,
     callable_to_path,
+    load_class,
     serialize_callable,
 )
 from psynet.utils import finalize_template_value
@@ -34,14 +34,14 @@ SPEC_VERSION = 1
 _PAGE_FIELDS = {
     "_uses_timeline_hold",
     "_waiting_logic_repetitions",
-    "_waiting_loop_markers",
     "waiting_logic",
     "waiting_logic_expected_repetitions",
     "waiting_screen",
+    "newcomer_page",
 }
 
 _PRESENTATION_FIELDS = {
-    "content",
+    "waiting_message",
     "expected_wait",
     "fix_time_credit",
     "max_wait_action",
@@ -49,7 +49,7 @@ _PRESENTATION_FIELDS = {
     "release_grace",
 }
 
-_NOTIFICATION_FIELDS = {"notify_arrivals", "on_arrival_message"}
+_NOTIFICATION_FIELDS = {"on_arrival_message"}
 
 _EXCLUDED_FROM_STATE = _PAGE_FIELDS | _PRESENTATION_FIELDS | _NOTIFICATION_FIELDS
 
@@ -59,7 +59,7 @@ class BarrierSpecError(ValueError):
 
 
 def _importable_class_path(cls, context):
-    """Return an import path that round-trips through ``loadclass``."""
+    """Return an import path that round-trips through ``load_class``."""
     path = importable_name(cls)
     qualname = getattr(cls, "__qualname__", "")
     if "<locals>" in path or "<locals>" in qualname:
@@ -67,7 +67,7 @@ def _importable_class_path(cls, context):
             f"{context} is a local class and cannot be reconstructed. "
             "Define the class at module level."
         )
-    loaded = loadclass(path)
+    loaded = load_class(path)
     if loaded is None:
         raise BarrierSpecError(
             f"{context} class {path!r} cannot be imported after encoding."
@@ -134,7 +134,7 @@ def barrier_from_spec_json(serialized):
             f"Unsupported barrier spec version {spec.get('version')!r}."
         )
     try:
-        barrier_class = loadclass(spec["class"])
+        barrier_class = load_class(spec["class"])
     except (KeyError, ImportError, AttributeError) as err:
         raise BarrierSpecError(
             "Barrier spec class is missing or cannot be imported."
@@ -246,7 +246,7 @@ def _decode_value(value):
             arguments=_decode_value(value["arguments"]),
         )
     if kind == "orm":
-        model = loadclass(value["class"])
+        model = load_class(value["class"])
         if model is None:
             raise BarrierSpecError(f"ORM class {value['class']!r} cannot be imported.")
         identifiers = _decode_value(value["identifiers"])
@@ -260,7 +260,7 @@ def _decode_value(value):
     if kind == "markup":
         return Markup(value["html"])
     if kind == "class":
-        cls = loadclass(value["path"])
+        cls = load_class(value["path"])
         if cls is None:
             raise BarrierSpecError(f"Class {value['path']!r} cannot be imported.")
         return cls

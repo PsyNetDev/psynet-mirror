@@ -395,5 +395,6 @@
   "reference/shell_completion": "reference/command_line",
   "demos/complete_studies/carillon": "demos/index",
   "demos/complete_studies/emotions-scales": "demos/index",
-  "demos/complete_studies/pitch-matching": "demos/index"
+  "demos/complete_studies/pitch-matching": "demos/index",
+  "skills/basic-data-dyadic-experiment": "skills/basic-data-group-experiment"
 }

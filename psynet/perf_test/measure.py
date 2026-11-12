@@ -428,7 +428,45 @@ def bot_outcome_stats(after_participant_id, errored_bot_ids):
         median_trial_count=median_trials,
         max_trial_count=max_trials,
         busy_early_finishes=busy_early_finish_stats(after_participant_id),
+        group_removals=group_removal_stats(after_participant_id),
     )
+
+
+def group_removal_stats(after_participant_id):
+    """Return how often sync groups removed the test's bots, by removal reason.
+
+    A bot that a group removed, for example for being ``late``, can still
+    complete the experiment, so the bot outcomes don't show these removals.
+    The routine reasons ``finished`` and ``moved_on`` are left out.
+
+    Returns
+    -------
+    dict or None
+        Removals by reason, most common first; ``None`` if no bot joined a
+        sync group.
+    """
+    from dallinger import db
+    from sqlalchemy import func
+
+    from psynet.sync import _KEEPS_GROUP_REASONS, ParticipantLinkSyncGroup
+
+    link = ParticipantLinkSyncGroup
+    rows = (
+        db.session.query(link.removal_reason, func.count(link.id))
+        .filter(link.participant_id > after_participant_id)
+        .group_by(link.removal_reason)
+        .all()
+    )
+    if not rows:
+        return None
+    removals = Counter(
+        {
+            reason: n
+            for reason, n in rows
+            if reason is not None and reason not in _KEEPS_GROUP_REASONS
+        }
+    )
+    return dict(removals.most_common())
 
 
 def busy_early_finish_stats(after_participant_id):
