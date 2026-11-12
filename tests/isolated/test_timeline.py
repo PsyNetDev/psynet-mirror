@@ -549,6 +549,7 @@ def test_check_barriers_stops_after_max_passes(monkeypatch):
 
     monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
     monkeypatch.setattr("psynet.sync._waiting_barrier_instance_ids", _waiting)
+    monkeypatch.setattr("psynet.sync._poller_checked_visits", {})
     monkeypatch.setattr("psynet.sync._process_barrier_instance", lambda *a, **k: False)
     monkeypatch.setattr("psynet.sync._time_out_overdue_waiters", lambda *a: None)
     monkeypatch.setattr("psynet.sync._finish_dissolving_groups", lambda: None)
@@ -573,6 +574,7 @@ def test_check_barriers_settles_on_the_last_allowed_pass(monkeypatch):
 
     monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
     monkeypatch.setattr("psynet.sync._waiting_barrier_instance_ids", _waiting)
+    monkeypatch.setattr("psynet.sync._poller_checked_visits", {})
     monkeypatch.setattr("psynet.sync._process_barrier_instance", lambda *a, **k: False)
     monkeypatch.setattr("psynet.sync._time_out_overdue_waiters", lambda *a: None)
     monkeypatch.setattr("psynet.sync._finish_dissolving_groups", lambda: None)

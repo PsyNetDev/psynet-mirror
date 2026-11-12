@@ -535,8 +535,10 @@ happens around the barrier check:
 * Dissolving a group fails each remaining member separately: their refresh,
   ``fail()``, trial lock, hold lookup and flushes cost about 10–12
   statements per member. The test sets a ceiling of 14 per member.
-* An idle ``check_barriers`` sweep fully re-checks every waiting visit (15
-  statements each), even when nothing changed. ``check_sync_groups`` counts
+* A ``check_barriers`` check of a waiting visit costs 15 statements. An idle
+  sweep skips the visits whose last check said no release can be due yet
+  and that nothing has changed since; it re-checks them every 10 seconds.
+  ``check_sync_groups`` counts
   every active group's members in one statement, and locks and recounts only
   the groups whose stored counts are stale or that may close, so idle groups
   cost it nothing. Neither depends on group size. A ``check_barriers`` sweep that found waiting visits then looks for

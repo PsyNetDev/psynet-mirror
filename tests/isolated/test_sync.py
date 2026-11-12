@@ -19,6 +19,7 @@ from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 import psynet.bot
+import psynet.sync
 from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.barrier_spec import (
     BarrierSpecError,
@@ -4131,6 +4132,160 @@ def test_check_barriers_spreads_idle_visits_over_sweeps(
         check_barriers()
         released.append(sum(_barrier_link_released(*waiter) for waiter in waiters))
     assert released == [1, 2, 3]
+
+
+def _count_poller_checks(monkeypatch):
+    """Return the list of visits each later ``check_barriers`` call checks, cleared per call."""
+    checked = []
+    process = psynet.sync._process_barrier_instance
+
+    def counting(instance_id, *, retry=False):
+        checked.append(instance_id)
+        return process(instance_id, retry=retry)
+
+    monkeypatch.setattr("psynet.sync._process_barrier_instance", counting)
+
+    def sweep():
+        checked.clear()
+        check_barriers()
+        db.session.expire_all()
+        return list(checked)
+
+    return sweep
+
+
+def _seconds_until_release_can_be_due():
+    """Return how long until the poller's only remembered visit can next release, by its last check."""
+    ((_, _, due),) = psynet.sync._poller_checked_visits.values()
+    return None if due is None else due - time.monotonic()
+
+
+class _CustomReleaseGroupBarrier(GroupBarrier):
+    def choose_who_to_release(self, waiting_participants):
+        return super().choose_who_to_release(waiting_participants)
+
+
+@pytest.mark.parametrize("change", ["timed_page", "returned"])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_poller_skips_a_visit_until_a_member_can_be_late(
+    in_experiment_directory, db_session, monkeypatch, change
+):
+    """Unchanged, it waits for late_after or the 10 s re-check; a partner's change makes it due."""
+    exp = get_experiment()
+    (waiter, partner), group = _pair_sync_group(exp, db_session)
+    barrier = GroupBarrier(
+        id_="slow_partner", group_type="main", late_after=30, late_action="fail"
+    )
+    _arrive_at_group_barrier(exp, barrier, waiter)
+    db.session.commit()
+    sweep = _count_poller_checks(monkeypatch)
+
+    (instance_id,) = sweep()
+    assert _seconds_until_release_can_be_due() == pytest.approx(30, abs=2)
+    assert sweep() == []
+    monkeypatch.setattr("psynet.sync._POLLER_RECHECK_SECONDS", 0)
+    assert sweep() == [instance_id]
+    monkeypatch.setattr("psynet.sync._POLLER_RECHECK_SECONDS", 10)
+    assert sweep() == []
+
+    if change == "timed_page":
+        partner.sync_group_link("main").page_deadline = timenow()
+    else:
+        partner.status = "returned"
+    db.session.commit()
+    assert sweep() == [instance_id]
+
+
+def _waiting_for_top_ups(exp, db_session):
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=2,
+        join_existing_groups=True,
+        use_admission_points=False,
+        below_quorum="continue_without_group",
+        top_up_wait=40,
+    )
+    quitter, waiter = _working_participants(exp, 2)
+    grouper._make_group([quitter, waiter], initial_group_size=2)
+    db_session.commit()
+    quitter.fail("quit")
+    return GroupBarrier(id_="game_starts", group_type="team"), [waiter]
+
+
+def _waiting_with_a_newcomer(exp, db_session):
+    _, founders, (newcomer,) = _society(exp, db_session)
+    barrier = GroupBarrier(
+        "generation_start",
+        group_type="society",
+        admission_point=True,
+        newcomer_max_wait=40,
+    )
+    return barrier, [founders[0], newcomer]
+
+
+def _waiting_to_start_short(exp, db_session):
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=4,
+        quorum=2,
+        below_quorum="fail",
+        start_short_after=40,
+        max_wait_time=80,
+    )
+    return grouper, _working_participants(exp, 2)
+
+
+@pytest.mark.parametrize(
+    "setup", [_waiting_for_top_ups, _waiting_with_a_newcomer, _waiting_to_start_short]
+)
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_poller_skips_a_visit_until_its_wait_can_end(
+    in_experiment_directory, db_session, monkeypatch, setup
+):
+    """top_up_wait, newcomer_max_wait and start_short_after each say when to check again."""
+    exp = get_experiment()
+    barrier, waiters = setup(exp, db_session)
+    for waiter in waiters:
+        _arrive_at_group_barrier(exp, barrier, waiter)
+    db.session.commit()
+    sweep = _count_poller_checks(monkeypatch)
+
+    assert len(sweep()) == 1
+    assert _seconds_until_release_can_be_due() == pytest.approx(40, abs=2)
+    assert sweep() == []
+
+
+@pytest.mark.parametrize("why", ["waiter_busy", "custom_release_rule"])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_poller_checks_some_unchanged_visits_at_every_sweep(
+    in_experiment_directory, db_session, monkeypatch, why
+):
+    """A deferred check, or a subclass that changes the release rule, gets no skip."""
+    exp = get_experiment()
+    (waiter, _), _ = _pair_sync_group(exp, db_session)
+    barrier_class = (
+        _CustomReleaseGroupBarrier if why == "custom_release_rule" else GroupBarrier
+    )
+    barrier = barrier_class(
+        id_="unskipped", group_type="main", late_after=30, late_action="fail"
+    )
+    _arrive_at_group_barrier(exp, barrier, waiter)
+    db.session.commit()
+    sweep = _count_poller_checks(monkeypatch)
+
+    if why == "waiter_busy":
+        with _lock_participant_row(waiter.id):
+            (instance_id, _retry) = sweep()
+    else:
+        (instance_id,) = sweep()
+    assert _seconds_until_release_can_be_due() is None
+    assert sweep() == [instance_id]
 
 
 def _arrival_hold_messages(publications, participant_id):

@@ -49,8 +49,8 @@ _JITTER = 2
 # refresh, trial lock, hold lookup and flushes (about 10 each). Lower is better.
 _DISSOLVE_PER_MEMBER = 14
 
-# Snapshot: each sweep fully re-checks every waiting visit, even when nothing
-# changed. Lower is better. check_sync_groups locks no idle group.
+# Snapshot: a sweep's full check of a waiting visit. Lower is better.
+# check_sync_groups locks no idle group.
 _SWEEP_PER_VISIT = 15
 _SYNC_GROUPS_PER_GROUP = 0
 
@@ -177,18 +177,26 @@ def test_dissolving_a_group_costs_a_fixed_amount_per_member(exp):
 
 
 def test_poller_sweeps_cost_a_fixed_amount_per_group(exp, monkeypatch):
-    """Idle sweeps of check_barriers and check_sync_groups scale with groups, not members."""
+    """Idle sweeps of check_barriers and check_sync_groups scale with groups, not members.
+
+    An idle check_barriers sweep skips visits that can't release yet, so
+    its cost per visit is pinned on the sweep that re-checks them.
+    """
     monkeypatch.setattr(sync, "_POLLER_SWEEP_BUDGET_SECONDS", 60)
     exp.timeline = _timeline(2)
-    barriers, groups = {}, {}
+    skipping, rechecking, groups = {}, {}, {}
     for n_groups, new_groups in ((1, 1), (3, 2)):
         for _ in range(new_groups):
             ids = _group_on_choose_page(exp, 2)
             _post(ids[0], "a")
         sync.check_barriers()
-        barriers[n_groups] = _count(sync.check_barriers)
+        skipping[n_groups] = _count(sync.check_barriers)
+        monkeypatch.setattr(sync, "_POLLER_RECHECK_SECONDS", 0)
+        rechecking[n_groups] = _count(sync.check_barriers)
+        monkeypatch.setattr(sync, "_POLLER_RECHECK_SECONDS", 10)
         groups[n_groups] = _count(sync.check_sync_groups)
-    assert barriers[3] - barriers[1] == 2 * _SWEEP_PER_VISIT, barriers
+    assert skipping[3] == skipping[1], skipping
+    assert rechecking[3] - rechecking[1] == 2 * _SWEEP_PER_VISIT, rechecking
     assert groups[3] - groups[1] == 2 * _SYNC_GROUPS_PER_GROUP, groups
 
 

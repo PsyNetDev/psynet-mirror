@@ -45,10 +45,24 @@ then applies ``max_wait_time`` to waiters whose deadline has
 passed, since nobody else would: their own request normally does it. This
 covers waiters at the default wait indicator and at explicit
 ``waiting_logic`` pages, whose link records its own deadline, even if they
-are still partway through a filler page. It then checks waiting visits,
-least recently checked first, with a 5-second head start for visits that
+are still partway through a filler page. It then checks waiting visits in
+the order they became due, with a 5-second head start for visits that
 are new or whose waiters or sync group changed since this process last
-checked them. A visit whose check is deferred or fails is retried at most
+checked them. A visit whose group's other members changed, for example by
+starting a timed page, is due at once but without the head start: which of
+a group's visits is checked first can decide who is released, for example
+when members are late. An unchanged visit whose last check released
+nobody is due when its barrier says a release could next become due: the
+next time a member becomes late, a ``top_up_wait`` or ``newcomer_max_wait``
+runs out, a :class:`~psynet.sync.SimpleGrouper` can start short, or a
+:class:`~psynet.sync.Regrouper` deadline or tick comes (see
+``Barrier._next_check_due``). Until then it is checked again every 10
+seconds, in case that time missed something the release depends on, but
+only after the visits that are due, so that with many waiting visits these
+re-checks don't delay due releases. Other barriers, including subclasses that
+override how a barrier releases without saying when, are due at every sweep,
+and so are visits whose check was deferred or failed. A visit whose check is
+deferred or fails is retried at most
 once in the same sweep and then queued like a checked one, and a waiter
 whose timeout fails goes behind the other overdue waiters, so a broken item
 cannot hold up the rest. Each of

@@ -172,6 +172,39 @@ def test_every_regrouper_leaves_the_split_to_the_poller(
     assert _waiting(pairs, loner) == []
 
 
+@pytest.mark.parametrize(
+    "timing, players_arrived_ago, seconds_to_wait",
+    [
+        (dict(deadline=30), 0, 30),
+        (dict(deadline=30, left_over="sit_out"), 40, 20),
+        (dict(every=45), 0, None),
+    ],
+)
+@in_consents_experiment
+def test_poller_skips_a_regrouper_pool_until_its_deadline_or_tick(
+    in_experiment_directory,
+    db_session,
+    monkeypatch,
+    timing,
+    players_arrived_ago,
+    seconds_to_wait,
+):
+    """A lone waiter's pool is left until the deadline, extra deadline or next tick."""
+    exp = get_experiment()
+    cohort = _working_participants(exp, 3)
+    _arrive(exp, SimpleGrouper("cohort", initial_group_size=3, quorum=3), cohort)
+    pairs = Regrouper("pair", within="cohort", group_size=2, **timing)
+    _arrive(exp, pairs, cohort[:1])
+    _backdate_arrivals(pairs, cohort[:1], players_arrived_ago)
+    db_session.commit()
+    if seconds_to_wait is None:
+        seconds_to_wait = _latest_tick(time.time(), 45) + 45 - time.time()
+
+    sync.check_barriers()
+    ((_, _, due),) = sync._poller_checked_visits.values()
+    assert due - time.monotonic() == pytest.approx(seconds_to_wait, abs=2)
+
+
 class _CustomRelease(Regrouper):
     def choose_who_to_release(self, waiting_participants):
         return super().choose_who_to_release(waiting_participants)
