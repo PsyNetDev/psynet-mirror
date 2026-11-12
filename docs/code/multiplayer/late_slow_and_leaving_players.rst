@@ -90,7 +90,7 @@ study.
 With ``below_quorum="fail"``, a dissolved group fails Ann
 instead, and a group that still takes newcomers is not dissolved but waits
 at the barrier for one, unless it admits newcomers only at admission points
-and ``submitted`` isn't one (see :ref:`groups_below_min_size`).
+and ``submitted`` isn't one (see :ref:`groups_below_quorum`).
 
 Checked by ``test_case_a_member_leaves_mid_round`` in
 ``tests/isolated/test_trial_cue_groups.py``, for both group sizes.

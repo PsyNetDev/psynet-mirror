@@ -88,7 +88,7 @@ Removing a failed participant can drop a
 :class:`~psynet.sync.SimpleSyncGroup` below its ``quorum``. Whether that
 dissolves the group, and what happens to
 its other members, is described in
-:ref:`groups_below_min_size`. A group that accepts top-ups closes once it
+:ref:`groups_below_quorum`. A group that accepts top-ups closes once it
 has no active members left, whether they failed, were removed or finished.
 
 Recruiter exit events

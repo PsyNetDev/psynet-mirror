@@ -103,7 +103,7 @@ submitted trials are kept.
 
 **Groups.** Barriers can time out participants who wait too long, and
 groupers can let the remaining members continue when a group is dissolved
-for becoming too small (``below_quorum``; see :ref:`groups_below_min_size`). A new dashboard page shows
+for becoming too small (``below_quorum``; see :ref:`groups_below_quorum`). A new dashboard page shows
 active groups and waiting participants, and participants see when their
 partners are ready. Group membership changes through
 ``SyncGroup.add_participant()`` and ``remove_participant()``, and custom

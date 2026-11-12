@@ -1881,7 +1881,7 @@ class GroupBarrier(Barrier):
     """
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
     have reached the Barrier. It also checks the group against its ``quorum``: a group below it
-    can't proceed, and waits for newcomers or is dissolved (see :ref:`groups_below_min_size`).
+    can't proceed, and waits for newcomers or is dissolved (see :ref:`groups_below_quorum`).
 
     It waits for every active member of the group, wherever they are in the
     timeline, until they leave the group: with :func:`leave_group`,
@@ -1955,7 +1955,7 @@ class GroupBarrier(Barrier):
         ``on_arrival_message`` for larger groups); for how a :class:`~psynet.group_prompt.GroupPrompt`
         shows them, see :ref:`sync-showing-the-group`. It is the waiting member who leaves, not the absent ones; to move on
         without slow members, use ``late_after`` and ``late_action`` instead. If that takes
-        the group below its quorum, see :ref:`groups_below_min_size` for whether it
+        the group below its quorum, see :ref:`groups_below_quorum` for whether it
         is dissolved.
 
     late_after
@@ -1979,7 +1979,7 @@ class GroupBarrier(Barrier):
         in the trial's pages already released the group with them in it (then it stays ``"stayed"``). A
         group without top-ups that this leaves below
         its quorum dissolves as its ``below_quorum`` says, so with ``late_action="fail"`` and
-        ``below_quorum="fail"`` one late member can fail a whole cohort (see :ref:`groups_below_min_size`
+        ``below_quorum="fail"`` one late member can fail a whole cohort (see :ref:`groups_below_quorum`
         for groups that accept top-ups). Removal is all or nothing: while a late member's own request is in
         progress, for example submitting a page, no late member of the group is acted on until a check
         finds none of them busy, usually the next one, so the removal can come a check later; if that request
@@ -2040,7 +2040,7 @@ class GroupBarrier(Barrier):
         the barrier that starts a game, so nobody joins it once it is under way.
         Only affects groups formed with ``join_existing_groups=True``. A group
         below its quorum doesn't pass, so it keeps waiting here for a newcomer,
-        up to the grouper's ``top_up_wait``, if set (see :ref:`groups_below_min_size`).
+        up to the grouper's ``top_up_wait``, if set (see :ref:`groups_below_quorum`).
         Pending members are turned away as ``"not_admitted"``; at an admission
         point, those waiting here are admitted first.
 
@@ -3098,7 +3098,7 @@ class SimpleGrouper(Grouper):
     quorum
         How many active members a group needs to keep going. A group whose
         members fail or leave until it has fewer than this is below quorum; it
-        then waits for newcomers or is dissolved (see :ref:`groups_below_min_size`).
+        then waits for newcomers or is dissolved (see :ref:`groups_below_quorum`).
         Defaults to ``start_short_with`` if given, and otherwise to
         ``initial_group_size``, so that a group needs all its members; for
         groups of three or more, leaving it out warns. Must be at most
@@ -3118,7 +3118,7 @@ class SimpleGrouper(Grouper):
         Participants already waiting at the grouper join such a group on the next barrier check.
         Groups that have closed or stopped accepting top-ups, and groups with no
         active members, are not joined. Groups keep accepting top-ups until you stop
-        them (see :ref:`groups_below_min_size`).
+        them (see :ref:`groups_below_quorum`).
         This behavior can be further customized via the ``join_criterion`` argument.
         Pass ``admit_newcomers`` to say when such a newcomer starts taking part.
 
@@ -3158,11 +3158,11 @@ class SimpleGrouper(Grouper):
         if the participant should be allowed to join the group, and ``False`` otherwise.
         To be used in conjunction with ``join_existing_groups=True``. Returning ``False``
         only turns that newcomer away; the group keeps accepting top-ups (see
-        :ref:`groups_below_min_size`).
+        :ref:`groups_below_quorum`).
 
     below_quorum
         What happens to the members left when a group is dissolved below its ``quorum``
-        (for when that happens, see :ref:`groups_below_min_size`). The member whose departure caused it is handled by their own
+        (for when that happens, see :ref:`groups_below_quorum`). The member whose departure caused it is handled by their own
         cause instead (a barrier's ``max_wait_action`` or ``late_action``, or their
         failure). ``"fail"`` fails them, telling them "Too few members of your
         group remained to continue, so we ended your session." ``"continue_without_group"``
@@ -3175,7 +3175,7 @@ class SimpleGrouper(Grouper):
         timeline has ``late_after`` (checked when the experiment loads). Otherwise it
         defaults to ``"fail"``. A barrier's ``late_action="leave_group"`` needs
         ``"continue_without_group"``.
-        See :ref:`groups_below_min_size` for when the group is dissolved.
+        See :ref:`groups_below_quorum` for when the group is dissolved.
 
     top_up_wait
         With ``join_existing_groups=True``, how many seconds a group below its
@@ -3187,7 +3187,7 @@ class SimpleGrouper(Grouper):
         from each member's own arrival, so the first to arrive also waits for the
         others: give the barrier ``late_after``, which removes that limit, or a
         ``max_wait_time`` longer than ``top_up_wait`` plus the time members may
-        take to reach it (see :ref:`groups_below_min_size`).
+        take to reach it (see :ref:`groups_below_quorum`).
         Default: ``None``, waiting for newcomers without a limit.
 
     start_short_after
@@ -4702,7 +4702,7 @@ def leave_group(group_type: str, reason: RemovalReason = "finished"):
         default, ``"finished"``, doesn't dissolve the group by itself, even
         if it leaves the group below its quorum; but the group's next
         :class:`GroupBarrier` can still dissolve it then, unless it is
-        waiting for newcomers (see :ref:`groups_below_min_size`).
+        waiting for newcomers (see :ref:`groups_below_quorum`).
 
     Returns
     -------
@@ -5048,7 +5048,7 @@ class SyncGroup(SQLBase, SQLMixin):
             Leaving with ``"finished"`` or ``"moved_on"`` doesn't dissolve
             the group by itself; other reasons can. Either way, the group's
             next :class:`GroupBarrier` can dissolve a group left below its
-            quorum. See :ref:`groups_below_min_size` for the full rule.
+            quorum. See :ref:`groups_below_quorum` for the full rule.
         """
         self._remove_without_quorum_check(participant, reason)
 
@@ -5226,9 +5226,9 @@ class SimpleSyncGroup(SyncGroup):
         For a group formed with ``join_existing_groups=True``, for example once
         the game has started, so nobody joins it under way. From then on it
         is treated as a group without top-ups (see
-        :ref:`groups_below_min_size`); its pending members are turned away
+        :ref:`groups_below_quorum`); its pending members are turned away
         as ``"not_admitted"``, and a group already below its
-        quorum is dissolved, usually at once. :ref:`groups_below_min_size` lists
+        quorum is dissolved, usually at once. :ref:`groups_below_quorum` lists
         the other ways top-ups stop.
         """
         self._stop_top_ups()
@@ -5299,7 +5299,7 @@ class SyncGroupRound(SQLBase, SQLMixin):
         cued round takes no members who have no trial in it.
     dissolved_at : datetime or None
         When the group dissolved during the round, or ``None`` if it didn't.
-        Set when the group dissolves (see :ref:`groups_below_min_size`) while
+        Set when the group dissolves (see :ref:`groups_below_quorum`) while
         a member still in the group is in their trial in this round (the
         trial's ``complete`` is ``False``) and the round is not closed. So a
         round the group finished stays ``None`` even if a member is still on

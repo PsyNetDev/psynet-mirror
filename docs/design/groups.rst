@@ -86,7 +86,7 @@ size at which it can go on, carries on. Below it, the group either waits
 for a newcomer or is dissolved, and the grouper's ``below_quorum`` decides
 for those left: with ``below_quorum="fail"`` they are failed too, and with
 ``below_quorum="continue_without_group"`` they continue the experiment
-without the group (see :ref:`groups_below_min_size`). Decide this for every
+without the group (see :ref:`groups_below_quorum`). Decide this for every
 grouper; PsyNet requires it for groups designed to shrink, such as those
 with a quorum below their size or whose barriers remove late members. Failed
 participants are paid for what they completed (see
@@ -290,7 +290,7 @@ start of the next round, an **admission point** (see
 :ref:`sync-admission-points`). A group
 that falls below its quorum before the game starts can wait a little while
 for a latecomer to replace the member who left (see
-:ref:`groups_below_min_size` for when a group ends).
+:ref:`groups_below_quorum` for when a group ends).
 
 In ``demos/experiments/crowd_estimate``, groups of up to four play a
 wisdom-of-crowds game; a group of three may start after a short wait. For

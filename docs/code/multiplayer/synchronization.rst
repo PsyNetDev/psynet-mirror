@@ -259,7 +259,7 @@ When the cohorts take latecomers (``join_existing_groups=True`` on their
 grouper), ``stop_top_ups_after_rounds=n`` lets them join only during
 the cohort's first ``n`` rounds: the next split, even one in
 which everyone waiting sits out, stops the cohort's top-ups (see
-:ref:`groups_below_min_size`). A cohort below its quorum at that split is
+:ref:`groups_below_quorum`). A cohort below its quorum at that split is
 dissolved instead, with nobody grouped; with the cohort grouper's
 ``below_quorum="continue_without_group"``, its waiting players are released
 ungrouped, without calling ``on_release``.
@@ -870,7 +870,7 @@ for only by leaving the group, with :func:`~psynet.sync.leave_group` or by
 being removed, for example as late (see :ref:`sync-leaving-a-group`). Every
 release is the group's pass, except letting one member go after
 ``max_wait_time`` and letting the waiting members go because the group
-dissolved below its quorum (see :ref:`groups_below_min_size`). A pass runs
+dissolved below its quorum (see :ref:`groups_below_quorum`). A pass runs
 ``on_release`` and counts for ``left`` and ``late_after``; a dissolution
 does neither and closes no round. If every member a pass releases is in
 the same round's trial, the pass closes that round (setting its
@@ -1194,7 +1194,7 @@ the maximum waiting time:
     ``also_leave`` lists the other group types they leave too, such as
     ``["cohort"]`` for the cohort a pair was formed in. Since late members
     shrink these groups, their groupers must say what happens to the
-    remaining members with ``below_quorum`` (see :ref:`groups_below_min_size`);
+    remaining members with ``below_quorum`` (see :ref:`groups_below_quorum`);
     the experiment checks this when it loads, and rejects
     ``late_action="leave_group"`` with ``below_quorum="fail"``. Whichever
     action it is, the late member leaves the barrier's group with the
@@ -1235,7 +1235,7 @@ the maximum waiting time:
     before they arrive. Removing a late member from the group can also take
     the group below its ``quorum``, which can dissolve it and by default fail
     the members who arrived on time (see
-    :ref:`groups below quorum <groups_below_min_size>`).
+    :ref:`groups below quorum <groups_below_quorum>`).
 
 Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_`` prefix: ``sync_group_max_wait_time``,
@@ -1281,9 +1281,9 @@ has ``max_wait_action="continue_without_group"``.
 At later barriers, ``max_wait_time`` needs to cover how much longer some
 members take over the previous page than others. A member who times out
 there can take the group below its ``quorum``, with the consequences
-described under :ref:`groups_below_min_size` below.
+described under :ref:`groups_below_quorum` below.
 
-.. _groups_below_min_size:
+.. _groups_below_quorum:
 
 Groups below quorum
 ~~~~~~~~~~~~~~~~~~~

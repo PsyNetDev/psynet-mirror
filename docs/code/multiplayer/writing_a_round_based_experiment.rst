@@ -199,7 +199,7 @@ so if neither partner comes back, the next split waits for its deadline. A
 late player who comes back is told that they were away, and their game ends.
 
 Once the cohort has stopped top-ups, removing a late player dissolves it if
-that leaves it below its quorum (see :ref:`groups_below_min_size`).
+that leaves it below its quorum (see :ref:`groups_below_quorum`).
 ``below_quorum="fail"`` would then fail the players who were on time while
 the late player carries on, which the experiment rejects when it loads, so
 the cohort's grouper sets ``below_quorum="continue_without_group"``, and
@@ -335,7 +335,7 @@ regrouper doesn't wait for them in later rounds. It removes them with
 so players who finish first don't end the round of those still playing.
 The cohort's next barrier, here the regrouper's next split, can still
 dissolve it if it is below its quorum then (see
-:ref:`groups_below_min_size`).
+:ref:`groups_below_quorum`).
 
 After that, a ``switch`` on ``game_over_reason`` shows a page for each early
 end that still needs explaining. A player removed for being late has
