@@ -62,7 +62,10 @@ runs out, a :class:`~psynet.sync.SimpleGrouper` can start short, or a
 seconds, in case that time missed something the release depends on, but
 only after the visits that are due, so that with many waiting visits these
 re-checks don't delay due releases; while the poller is saturated they come
-later than 10 seconds. Other barriers, including subclasses that
+later than 10 seconds. If such a re-check releases anyone, the poller logs a
+warning naming the barrier, because that release came late: its
+``_next_check_due``, or what the poller fingerprints, missed something.
+Other barriers, including subclasses that
 override how a barrier releases without saying when, are due at every sweep,
 and so are visits whose check was deferred or failed. A visit whose check is
 deferred or fails is retried at most

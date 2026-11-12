@@ -7108,9 +7108,25 @@ def _check_held_instance(instance_id):
     return ok
 
 
-def _check_and_skip_held_instance(instance_id):
-    """Evaluate one visit and skip waiters this poller just released."""
+def _check_and_skip_held_instance(instance_id, *, recheck=False):
+    """Evaluate one visit and skip waiters this poller just released.
+
+    A ``recheck`` is the poller's safety re-check of a visit it was skipping
+    (see :func:`_visits_due`). If that releases anyone, the barrier's
+    :meth:`Barrier._next_check_due`, or the fingerprint of what it reads,
+    missed something, so this logs a warning.
+    """
     ok, released_ids = _evaluate_held_instance(instance_id)
+    if recheck and released_ids:
+        instance = BarrierInstance.query.get(instance_id)
+        logger.warning(
+            "Barrier '%s' released participant(s) %s only at the poller's "
+            "%g-second safety re-check, so the release came late. Its "
+            "_next_check_due() missed something the release depends on.",
+            instance.barrier_id if instance is not None else None,
+            ", ".join(str(released_id) for released_id in released_ids),
+            _POLLER_RECHECK_SECONDS,
+        )
     _advance_released_hold_waiters_after_commit(released_ids)
     return ok
 
@@ -7164,8 +7180,11 @@ def _run_pending_barrier_checks(instance_ids, *, wait=True):
     return all_claimed
 
 
-def _process_barrier_instance(instance_id, *, retry=False):
+def _process_barrier_instance(instance_id, *, retry=False, recheck=False):
     """Try one barrier visit and report whether contention deferred it.
+
+    ``recheck`` marks the poller's safety re-check of a skipped visit (see
+    :func:`_check_and_skip_held_instance`).
 
     Contention is another request holding the visit claim, or a locked
     waiter or top-up group. Author ``on_release`` and spec errors are reported the same way.
@@ -7180,7 +7199,7 @@ def _process_barrier_instance(instance_id, *, retry=False):
         with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
             if not claimed:
                 return True
-            if not _check_and_skip_held_instance(instance_id):
+            if not _check_and_skip_held_instance(instance_id, recheck=recheck):
                 return True
             return False
     except Exception as err:
@@ -7242,7 +7261,7 @@ def _finish_dissolving_groups():
 
 
 def _visits_due(waiting, sweep_ends):
-    """Yield the waiting visits that are due, in check order, until ``sweep_ends``.
+    """Yield ``(instance_id, is_recheck)`` for the waiting visits that are due, in check order, until ``sweep_ends``.
 
     At least one is yielded if any is due.
 
@@ -7287,7 +7306,7 @@ def _visits_due(waiting, sweep_ends):
     for index, instance_id in enumerate(order):
         if index and time.monotonic() >= sweep_ends:
             return
-        yield instance_id
+        yield instance_id, due[instance_id][0]
 
 
 def check_barriers():
@@ -7344,18 +7363,20 @@ def _check_barriers(seen):
                     f"{_MAX_BARRIER_WALK_PASSES} passes."
                 )
             seen.update(waiting)
-            deferred_ids = []
-            for instance_id in _visits_due(waiting, sweep_ends):
-                if _process_barrier_instance(instance_id):
-                    deferred_ids.append(instance_id)
+            deferred = []
+            for instance_id, recheck in _visits_due(waiting, sweep_ends):
+                if _process_barrier_instance(instance_id, recheck=recheck):
+                    deferred.append((instance_id, recheck))
                 else:
                     _remember_poller_check(instance_id, waiting[instance_id])
-            for instance_id in deferred_ids:
+            for instance_id, recheck in deferred:
                 # Even if still deferred: a visit whose check keeps failing
                 # must not stay ahead of every other visit.
-                deferred = _process_barrier_instance(instance_id, retry=True)
+                still_deferred = _process_barrier_instance(
+                    instance_id, retry=True, recheck=recheck
+                )
                 _remember_poller_check(
-                    instance_id, waiting[instance_id], deferred=deferred
+                    instance_id, waiting[instance_id], deferred=still_deferred
                 )
 
 

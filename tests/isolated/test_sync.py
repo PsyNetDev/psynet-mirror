@@ -1,4 +1,5 @@
 import json
+import math
 import sys
 import threading
 import time
@@ -4139,9 +4140,9 @@ def _count_poller_checks(monkeypatch):
     checked = []
     process = psynet.sync._process_barrier_instance
 
-    def counting(instance_id, *, retry=False):
+    def counting(instance_id, **kwargs):
         checked.append(instance_id)
-        return process(instance_id, retry=retry)
+        return process(instance_id, **kwargs)
 
     monkeypatch.setattr("psynet.sync._process_barrier_instance", counting)
 
@@ -4295,6 +4296,43 @@ def test_poller_checks_some_unchanged_visits_at_every_sweep(
         (instance_id,) = sweep()
     assert _seconds_until_release_can_be_due() is None
     assert sweep() == [instance_id]
+
+
+class _MissedDueTimeBarrier(GroupBarrier):
+    """Releases on a flag that its ``_next_check_due`` doesn't report."""
+
+    ready = False
+
+    def choose_who_to_release(self, waiting_participants):
+        return list(waiting_participants) if self.ready else []
+
+    def _next_check_due(self, waiting_participants):
+        return math.inf
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_poller_warns_when_only_the_safety_recheck_releases(
+    in_experiment_directory, db_session, monkeypatch, caplog
+):
+    """A release the due time missed still happens at the re-check, with a warning naming the barrier."""
+    exp = get_experiment()
+    (waiter, _), _ = _pair_sync_group(exp, db_session)
+    _arrive_at_group_barrier(
+        exp, _MissedDueTimeBarrier(id_="missed_due", group_type="main"), waiter
+    )
+    db.session.commit()
+    sweep = _count_poller_checks(monkeypatch)
+    (instance_id,) = sweep()
+
+    monkeypatch.setattr(_MissedDueTimeBarrier, "ready", True)
+    assert sweep() == []
+    monkeypatch.setattr("psynet.sync._POLLER_RECHECK_SECONDS", 0)
+    with caplog.at_level("WARNING", logger="psynet"):
+        assert sweep() == [instance_id]
+    assert _barrier_link_released(waiter.id, "missed_due")
+    assert "Barrier 'missed_due' released participant(s)" in caplog.text
 
 
 def _arrival_hold_messages(publications, participant_id):
