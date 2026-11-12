@@ -1036,7 +1036,14 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     monkeypatch.setenv("FLASK_RUN_PORT", "")
     monkeypatch.setenv("FLASK_RUN_EXCLUDE_PATTERNS", "")
     monkeypatch.setenv("base_port", "")
+    monkeypatch.setenv("_PSYNET_DEVELOPMENT_SERVER_WARNING", "")
+    monkeypatch.setattr(
+        "psynet.command_line._ticking_game_warning",
+        lambda mode: f"Views are late in {mode} mode.",
+    )
+    monkeypatch.setattr("psynet.command_line.deployment_info.read", lambda key: "live")
     _debug_auto_reload(_Ctx(), archive=None, no_browsers=no_browsers)
+    assert capsys.readouterr().err == "Warning: Views are late in live mode.\n"
     job = launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
     assert calls == [({"skip_flask": False, "port": 5010}, job)]
     assert os.environ["FLASK_RUN_PORT"] == os.environ["base_port"] == "5010"
@@ -1064,11 +1071,8 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
         monkeypatch.delenv("_PSYNET_TEST_ENVIRONMENT_READY", raising=False)
     opened = []
     monkeypatch.setattr(develop, "open_browser", opened.append)
-    monkeypatch.setattr(
-        "psynet.command_line._ticking_game_warning",
-        lambda mode: f"Views are late in {mode} mode.",
-    )
-    monkeypatch.setattr("psynet.command_line.deployment_info.read", lambda key: "live")
+    # The job gets the warning from the command, not from the experiment.
+    monkeypatch.setattr("psynet.command_line._ticking_game_warning", None)
     job(5001)
     deadline = time.monotonic() + 5
     while len(opened) < (0 if no_browsers else 2) and time.monotonic() < deadline:

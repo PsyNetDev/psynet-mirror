@@ -702,6 +702,11 @@ def sandbox(*args, **kwargs):
     )
 
 
+# Holds the development server warning for the launch job, which runs in a
+# worker that the command starts.
+_DEVELOPMENT_SERVER_WARNING_ENV_VAR = "_PSYNET_DEVELOPMENT_SERVER_WARNING"
+
+
 def _ticking_game_warning(mode):
     """The warning ``psynet debug local`` and ``psynet deploy local`` give when
     they run the development server for an experiment with a live session that
@@ -751,9 +756,6 @@ def _run_local(ctx, docker, archive, legacy, no_browsers, mode, context_group):
             elif docker:
                 _debug_docker(ctx, archive=None, no_browsers=no_browsers)
             else:
-                warning = _ticking_game_warning(mode)
-                if warning:
-                    click.echo(f"Warning: {warning}", err=True)
                 _debug_auto_reload(ctx, archive=None, no_browsers=no_browsers)
         finally:
             kill_psynet_worker_processes()
@@ -1600,8 +1602,10 @@ def _launch_app_and_report(port, auth=None):
         )
     )
     after = []
-    # The warning printed at the start has scrolled away by now.
-    warning = _ticking_game_warning(deployment_info.read("mode"))
+    # The warning printed at the start has scrolled away by now. It comes
+    # from the command, because the worker that runs this job can belong to
+    # another experiment.
+    warning = os.environ.get(_DEVELOPMENT_SERVER_WARNING_ENV_VAR)
     if warning:
         after.append(("Warning", warning))
     if os.environ.get(READY_ENV_VAR):
@@ -1793,6 +1797,10 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     os.environ["FLASK_RUN_EXCLUDE_PATTERNS"] = os.pathsep.join(
         _reloader_exclude_patterns()
     )
+    warning = _ticking_game_warning(deployment_info.read("mode"))
+    if warning:
+        click.echo(f"Warning: {warning}", err=True)
+    os.environ[_DEVELOPMENT_SERVER_WARNING_ENV_VAR] = warning or ""
     debug_kwargs = {"skip_flask": False, "port": port}
     develop_module.launch_app_and_open_browser = (
         launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
