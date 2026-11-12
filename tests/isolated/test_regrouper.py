@@ -29,9 +29,12 @@ from psynet.utils import get_psynet_root
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
-from test_sync import (  # noqa: E402
+from test_sync import (  # noqa: E402, F401
     _arrive_at_group_barrier,
+    _audit_release_peeks,
     _commit_barrier_arrivals,
+    _freeze_clocks,
+    _sweep_each_second_until_a_wait_ends,
 )
 from timeline_hold_helpers import _json_timeline, _working_participants  # noqa: E402
 
@@ -170,6 +173,26 @@ def test_every_regrouper_leaves_the_split_to_the_poller(
     loner = _working_participants(exp, 1)
     _arrive(exp, pairs, loner)
     assert _waiting(pairs, loner) == []
+
+
+@pytest.mark.parametrize("timing", [dict(deadline=30), dict(every=45)])
+@in_consents_experiment
+def test_regrouper_pools_split_on_time(
+    in_experiment_directory, db_session, monkeypatch, timing
+):
+    """Two waiters are paired at the first sweep after the deadline or next tick while the third still plays."""
+    # Arrive 1 s after an every=45 tick, so the next one is 44 s away.
+    set_clocks = _freeze_clocks(monkeypatch, start=time.time() // 45 * 45 + 46)
+    exp = get_experiment()
+    cohort = _working_participants(exp, 3)
+    _arrive(exp, SimpleGrouper("cohort", initial_group_size=3, quorum=3), cohort)
+    pairs = Regrouper(
+        "pair", within="cohort", group_size=2, max_wait_time=120, **timing
+    )
+    _arrive(exp, pairs, cohort[:2])
+    db_session.commit()
+    ended = _sweep_each_second_until_a_wait_ends(set_clocks, 50)
+    assert ended == timing.get("deadline", 44) + 0.5
 
 
 class _CustomRelease(Regrouper):
@@ -342,6 +365,33 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
     db_session.commit()
     group = participants[0].sync_group
     assert (group.initial_group_size, group.quorum) == (2, 2)
+
+
+@in_consents_experiment
+def test_simple_grouper_countdown_ends_when_a_waiter_leaves(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """The poller tells the one left waiting that the short start is off."""
+    exp = get_experiment()
+    published = []
+    monkeypatch.setattr(timeline_hold, "_publish_wakes", published.extend)
+    grouper = SimpleGrouper(
+        "lobby",
+        initial_group_size=4,
+        start_short_after=10,
+        start_short_with=2,
+        below_quorum="fail",
+        waiting_message="Starting in {SECONDS} s",
+    )
+    stays, leaves = _working_participants(exp, 2)
+    _arrive(exp, grouper, [stays, leaves])
+    leaves.fail("left")
+    db_session.commit()
+    published.clear()
+    sync.check_barriers()
+    assert [w["participant_id"] for w in published if w["reason"] == "countdown"] == [
+        stays.id
+    ]
 
 
 @pytest.mark.parametrize(

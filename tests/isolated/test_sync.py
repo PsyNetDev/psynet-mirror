@@ -127,6 +127,65 @@ from timeline_hold_helpers import (  # noqa: E402
 )
 
 
+def _visit_people(instance_id):
+    """Return who waits at a visit, who belongs to the waiters' groups, and the countdown announced to the waiters, read in a fresh session."""
+    with Session(bind=db.engine) as session:
+        waiting = session.execute(
+            text(
+                "SELECT l.participant_id FROM participant_link_barrier l "
+                "JOIN participant p ON p.id = l.participant_id "
+                "WHERE l.barrier_instance_id = :id AND NOT l.released "
+                "AND NOT p.failed AND p.status = 'working' ORDER BY 1"
+            ),
+            {"id": instance_id},
+        ).all()
+        members = session.execute(
+            text(
+                "SELECT participant_id, sync_group_id FROM participant_link_sync_group "
+                "WHERE active AND sync_group_id IN ("
+                " SELECT g.sync_group_id FROM participant_link_sync_group g"
+                " JOIN participant_link_barrier l ON l.participant_id = g.participant_id"
+                " WHERE l.barrier_instance_id = :id AND NOT l.released AND g.active"
+                ") ORDER BY 1, 2"
+            ),
+            {"id": instance_id},
+        ).all()
+        countdown = session.execute(
+            text("SELECT announced_release_time FROM barrier_instance WHERE id = :id"),
+            {"id": instance_id},
+        ).scalar()
+    return waiting, members, countdown
+
+
+@pytest.fixture(autouse=True)
+def _audit_release_peeks(monkeypatch):
+    """Fail the test if the poller passes over a visit whose check would change it.
+
+    Each visit the batched peek says can't release is checked at once, and
+    must come out with the same waiters, in the same groups, with the same
+    countdown.
+    """
+    peek = psynet.sync._visits_that_would_release
+    failures = []
+
+    def audited(instance_ids):
+        could_release = peek(instance_ids)
+        for instance_id in sorted(set(instance_ids) - could_release):
+            before = _visit_people(instance_id)
+            if psynet.sync._process_barrier_instance(instance_id):
+                continue
+            if _visit_people(instance_id) != before:
+                failures.append(
+                    f"The poller passed over barrier visit {instance_id}, but its "
+                    "check changed it: would_release() misses something."
+                )
+        return could_release
+
+    monkeypatch.setattr("psynet.sync._visits_that_would_release", audited)
+    yield
+    assert not failures, failures
+
+
 def get_random_id():
     return str(uuid.uuid4())
 
@@ -4133,6 +4192,136 @@ def test_check_barriers_spreads_idle_visits_over_sweeps(
     assert released == [1, 2, 3]
 
 
+def _freeze_clocks(monkeypatch, start=None):
+    """Stop the wall clocks barrier checks read at ``start`` (epoch seconds, default now), and return a function that sets how far past it they are.
+
+    Call it before setting up waits, so they count from ``start``.
+    """
+    from psynet import timeline_hold
+
+    start = time.time() if start is None else start
+    start_timenow = psynet.sync.timenow() + timedelta(seconds=start - time.time())
+    shift = [0]
+
+    def shifted_timenow():
+        return start_timenow + timedelta(seconds=shift[0])
+
+    monkeypatch.setattr(psynet.sync, "timenow", shifted_timenow)
+    monkeypatch.setattr(timeline_hold, "timenow", shifted_timenow)
+    monkeypatch.setattr(time, "time", lambda: start + shift[0])
+    return lambda seconds: shift.__setitem__(0, seconds)
+
+
+def _sweep_each_second_until_a_wait_ends(set_clocks, seconds):
+    """Sweep the poller at 0.5 s, 1.5 s, ... on clocks from :func:`_freeze_clocks`, until a waiting visit changes.
+
+    Returns the clock time of that sweep, or ``None`` after ``seconds``. A
+    wait due at a whole second therefore ends half a second later, whether
+    its rule compares with ``>`` or ``>=``.
+    """
+    check_barriers()
+    start = psynet.sync._waiting_barrier_instance_ids()
+    for second in range(seconds):
+        set_clocks(second + 0.5)
+        check_barriers()
+        if psynet.sync._waiting_barrier_instance_ids() != start:
+            return second + 0.5
+    return None
+
+
+def _waiting_for_a_late_partner(exp, db_session):
+    (waiter, _), _ = _pair_sync_group(exp, db_session)
+    barrier = GroupBarrier(
+        id_="slow_partner", group_type="main", late_after=30, late_action="fail"
+    )
+    return barrier, [waiter]
+
+
+def _waiting_for_top_ups(exp, db_session):
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=2,
+        join_existing_groups=True,
+        use_admission_points=False,
+        below_quorum="continue_without_group",
+        top_up_wait=40,
+    )
+    quitter, waiter = _working_participants(exp, 2)
+    grouper._make_group([quitter, waiter], initial_group_size=2)
+    db_session.commit()
+    quitter.fail("quit")
+    barrier = GroupBarrier(id_="game_starts", group_type="team", max_wait_time=120)
+    return barrier, [waiter]
+
+
+def _waiting_to_start_short(exp, db_session):
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=4,
+        quorum=2,
+        below_quorum="fail",
+        start_short_after=40,
+        max_wait_time=80,
+    )
+    return grouper, _working_participants(exp, 2)
+
+
+@pytest.mark.parametrize(
+    "setup, seconds",
+    [
+        (_waiting_for_a_late_partner, 30),
+        (_waiting_for_top_ups, 40),
+        (_waiting_to_start_short, 40),
+    ],
+)
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_timed_waits_end_on_time(
+    in_experiment_directory, db_session, monkeypatch, setup, seconds
+):
+    """late_after, top_up_wait and start_short_after each end their wait at the first sweep after it runs out."""
+    set_clocks = _freeze_clocks(monkeypatch)
+    exp = get_experiment()
+    barrier, waiters = setup(exp, db_session)
+    for waiter in waiters:
+        _arrive_at_group_barrier(exp, barrier, waiter)
+    db.session.commit()
+    assert (
+        _sweep_each_second_until_a_wait_ends(set_clocks, seconds + 5) == seconds + 0.5
+    )
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_poller_fails_a_late_member_while_the_rest_keep_waiting(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A member past late_after is failed at the next sweep, though the barrier still waits for another member's timed page."""
+    set_clocks = _freeze_clocks(monkeypatch)
+    exp = get_experiment()
+    (waiter, late, busy), group = _sync_group_of(exp, db_session, 3)
+    group.quorum = 2
+    busy.sync_group_link("main").page_deadline = psynet.sync.timenow() + timedelta(
+        seconds=120
+    )
+    barrier = GroupBarrier(
+        id_="slow_partner", group_type="main", late_after=30, late_action="fail"
+    )
+    _arrive_at_group_barrier(exp, barrier, waiter)
+    db.session.commit()
+    check_barriers()
+    for second in range(35):
+        set_clocks(second + 0.5)
+        check_barriers()
+        db.session.expire_all()
+        if late.failed:
+            break
+    assert second + 0.5 == 30.5
+    assert barrier._participant_is_waiting(waiter) and not busy.failed
+
+
 def _arrival_hold_messages(publications, participant_id):
     """Return arrival-update overlay HTML published to one participant."""
     return [
@@ -7742,7 +7931,7 @@ def test_late_member_leaving_a_pair_fails_the_partner_with_a_warning(
 def test_group_barrier_would_release_predicts_late_after(
     in_experiment_directory, db_session, action, quorum, accepts_top_ups
 ):
-    """The release peek must see the late member the check will remove."""
+    """The release peek must see the late member the check will remove, even when nobody is released."""
     exp = get_experiment()
     barrier = GroupBarrier(
         id_=f"would_release_between_{action}_{quorum}_{accepts_top_ups}",
@@ -7771,7 +7960,7 @@ def test_group_barrier_would_release_predicts_late_after(
     # A group that accepts top-ups waits below its minimum instead of dissolving.
     expected = set() if accepts_top_ups and quorum == 3 else set(waiting_participants)
 
-    assert barrier.would_release(waiting_participants) is bool(expected)
+    assert barrier.would_release(waiting_participants) is True
     assert len(group.active_participants) == 3
     assert not db_session.dirty
 

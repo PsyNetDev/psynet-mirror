@@ -2593,11 +2593,11 @@ class GroupBarrier(Barrier):
                 ) from err
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
-        """Return whether this group visit would release, without mutating state.
+        """Return whether a check of this group visit would release or remove anyone, without mutating state.
 
         Mirrors :meth:`check_waiting_participants` followed by
-        :meth:`choose_who_to_release`: late members that the between-barrier
-        timeout would remove or fail count as already gone, and group size is
+        :meth:`choose_who_to_release`: any member late between barriers
+        counts, because the check removes or fails them, and group size is
         recounted rather than read from ``n_active_participants``.
         """
         waiting_ids = {participant.id for participant in waiting_participants}
@@ -2607,24 +2607,15 @@ class GroupBarrier(Barrier):
                 # joined since this session loaded the group.
                 db.session.expire(group, ["participant_links"])
             # Approximate: the check keeps a late member who is busy in their
-            # own request. A wrong "yes" only makes this request wait for the
-            # visit claim; the member is removed at a later sweep.
-            late_ids = (
-                {
-                    participant.id
-                    for participant in self._late_between_barriers(group, waiting_ids)
-                }
-                if self._waiting_members(group, waiting_participants)
-                else set()
-            )
-            members = [
-                participant
-                for participant in group.active_participants
-                if participant.id not in late_ids
-            ]
+            # own request. A wrong "yes" only costs a check that changes
+            # nothing; the member is removed at a later sweep.
+            if self._waiting_members(group, waiting_participants) and (
+                self._late_between_barriers(group, waiting_ids)
+            ):
+                return True
             outcome = _group_barrier_outcome(
                 group,
-                members,
+                group.active_participants,
                 waiting_ids,
                 self.id,
                 self._admissible(group, waiting_ids),
@@ -3659,8 +3650,10 @@ class SimpleGrouper(Grouper):
         return released
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
-        """Return whether a check would form a group or let a waiter join one."""
+        """Return whether a check would form a group, let a waiter join one, or send a new countdown."""
         if super().would_release(waiting_participants):
+            return True
+        if self._stale_countdown(waiting_participants) is not None:
             return True
         if not self.join_existing_groups:
             return False
@@ -3713,24 +3706,32 @@ class SimpleGrouper(Grouper):
             return None
         return self._short_start_time(self.get_waiting_participants(participant))
 
+    def _stale_countdown(self, waiting_participants):
+        """Return the pool's visit and the short start time to announce, or ``None`` if the waiters' countdown is up to date."""
+        message = getattr(self, "waiting_message", None)
+        if self.start_short_after is None or (
+            not isinstance(message, SerializedCallable)
+            and "{SECONDS}" not in str(message or "")
+        ):
+            return None
+        start = self._short_start_time(waiting_participants)
+        instance = BarrierInstance._active_instance(self.id, None)
+        if instance is None or instance.announced_release_time == start:
+            return None
+        return instance, start
+
     def _refresh_countdowns(self, waiting_participants, released):
         """Send those still waiting the new short start time, and its message, when it changes.
 
         Runs inside the serialized barrier check, so simultaneous arrivals and
         departures are all seen.
         """
-        message = getattr(self, "waiting_message", None)
-        if self.start_short_after is None or (
-            not isinstance(message, SerializedCallable)
-            and "{SECONDS}" not in str(message or "")
-        ):
-            return
         released_ids = {p.id for p in released}
         remaining = [p for p in waiting_participants if p.id not in released_ids]
-        start = self._short_start_time(remaining)
-        instance = BarrierInstance._active_instance(self.id, None)
-        if instance is None or instance.announced_release_time == start:
+        stale = self._stale_countdown(remaining)
+        if stale is None:
             return
+        instance, start = stale
         instance.announced_release_time = start
         hold_page = _BarrierHoldPage(self)
         for member in remaining:
@@ -6968,6 +6969,146 @@ def _run_pending_barrier_checks(instance_ids, *, wait=True):
     return all_claimed
 
 
+def _trusts_would_release(barrier):
+    """Return whether ``barrier.would_release`` answers for its own release rules.
+
+    A subclass that overrides :meth:`Barrier.choose_who_to_release` or
+    :meth:`Barrier.check_waiting_participants` below the class that defines
+    ``would_release`` may release when the inherited peek says no.
+    """
+    mro = type(barrier).__mro__
+
+    def definer(name):
+        return next(i for i, cls in enumerate(mro) if name in cls.__dict__)
+
+    peek = definer("would_release")
+    return all(
+        definer(name) >= peek
+        for name in ("choose_who_to_release", "check_waiting_participants")
+    )
+
+
+# Release peeks read neither, and the poller peeks every waiting visit.
+_PEEK_PARTICIPANT_OPTIONS = (
+    lazyload(Participant.module_state),
+    lazyload(Participant._current_trial),
+)
+
+
+def _prime_sync_groups(participants):
+    """Batch-load the active groups of ``participants``, with their members' links and participants.
+
+    Each link is pointed at its group, which also keeps the groups alive:
+    the session's identity map holds them only weakly.
+    """
+    group_ids = {
+        link.sync_group_id
+        for participant in participants
+        for link in participant.sync_group_links
+        if link.active
+    }
+    if not group_ids:
+        return
+    groups = SyncGroup.query.filter(SyncGroup.id.in_(group_ids)).all()
+    links = {group.id: [] for group in groups}
+    for link in ParticipantLinkSyncGroup.query.filter(
+        ParticipantLinkSyncGroup.sync_group_id.in_(group_ids)
+    ).order_by(ParticipantLinkSyncGroup.id):
+        links[link.sync_group_id].append(link)
+    member_ids = {link.participant_id for group in links.values() for link in group}
+    members = {
+        participant.id: participant
+        for participant in Participant.query.filter(
+            Participant.id.in_(member_ids)
+        ).options(*_PEEK_PARTICIPANT_OPTIONS)
+    }
+    for group in groups:
+        set_committed_value(group, "participant_links", links[group.id])
+        for link in links[group.id]:
+            set_committed_value(link, "sync_group", group)
+            set_committed_value(link, "participant", members.get(link.participant_id))
+
+
+def _visits_that_would_release(instance_ids):
+    """Return the visits among ``instance_ids`` whose check could release anyone.
+
+    One read, without locks, loads every visit's waiters, their groups and
+    the groups' members in a fixed number of queries, then asks each
+    visit's barrier :meth:`Barrier.would_release`, which costs no further
+    queries for the built-in barriers. Anything the peeks write is rolled
+    back. An inactive visit that still has waiters, one whose barrier can't
+    be trusted to peek (see :func:`_trusts_would_release`), and one whose
+    peek fails count as visits that could release, so their full check
+    runs: it moves leftover waiters onto the live visit and reports errors.
+    """
+    if not instance_ids:
+        return set()
+    db.session.expire_all()
+    nested = db.session.begin_nested()
+    try:
+        instances = (
+            BarrierInstance.query.options(undefer(BarrierInstance.spec))
+            .filter(BarrierInstance.id.in_(instance_ids))
+            .all()
+        )
+        links = (
+            ParticipantLinkBarrier.query.join(Participant)
+            .filter(
+                ParticipantLinkBarrier.barrier_instance_id.in_(instance_ids),
+                ~ParticipantLinkBarrier.released,
+                ~Participant.failed,
+                Participant.status == "working",
+            )
+            .options(
+                joinedload(ParticipantLinkBarrier.participant, innerjoin=True).options(
+                    lazyload(Participant.active_barriers),
+                    *_PEEK_PARTICIPANT_OPTIONS,
+                ),
+                selectinload(ParticipantLinkBarrier.timeline_hold),
+            )
+            .order_by(Participant.id)
+            .all()
+        )
+        waiters = list(
+            {link.participant_id: link.participant for link in links}.values()
+        )
+        _populate_active_barriers(waiters)
+        _populate_sync_group_links(waiters)
+        _prime_sync_groups(waiters)
+        waiting = {instance.id: [] for instance in instances}
+        for link in links:
+            current = link.participant.active_barriers.get(link.barrier_id)
+            if current is not None and current.barrier_instance_id == (
+                link.barrier_instance_id
+            ):
+                waiting[link.barrier_instance_id].append(link.participant)
+        due = set()
+        for instance in instances:
+            try:
+                barrier = instance.get_barrier()
+                if (
+                    not instance.active
+                    or not isinstance(barrier, Barrier)
+                    or not _trusts_would_release(barrier)
+                    or barrier.would_release(waiting[instance.id])
+                ):
+                    due.add(instance.id)
+            except BarrierSpecError:
+                due.add(instance.id)
+            except Exception as err:
+                if is_transient_transaction_error(err):
+                    raise
+                logger.exception(
+                    "Barrier instance %s failed a batched release peek.", instance.id
+                )
+                due.add(instance.id)
+        return due
+    finally:
+        nested.rollback()
+        for instance_id in instance_ids:
+            _forget_barrier_from_spec(instance_id)
+
+
 def _process_barrier_instance(instance_id, *, retry=False):
     """Try one barrier visit and report whether contention deferred it.
 
@@ -7120,8 +7261,11 @@ def _check_barriers(seen):
                     f"{_MAX_BARRIER_WALK_PASSES} passes."
                 )
             seen.update(waiting)
+            could_release = _visits_that_would_release(list(waiting))
             deferred_ids = []
-            for instance_id in _visits_due(waiting, sweep_ends):
+            for instance_id in _visits_due(
+                {i: f for i, f in waiting.items() if i in could_release}, sweep_ends
+            ):
                 if _process_barrier_instance(instance_id):
                     deferred_ids.append(instance_id)
                 else:

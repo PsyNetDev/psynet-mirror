@@ -49,9 +49,9 @@ _JITTER = 2
 # refresh, trial lock, hold lookup and flushes (about 10 each). Lower is better.
 _DISSOLVE_PER_MEMBER = 14
 
-# Snapshot: each sweep fully re-checks every waiting visit, even when nothing
-# changed. Lower is better. check_sync_groups locks no idle group.
-_SWEEP_PER_VISIT = 15
+# Idle visits cost nothing per visit: one batched peek covers them all, and
+# check_sync_groups locks no idle group.
+_SWEEP_PER_VISIT = 0
 _SYNC_GROUPS_PER_GROUP = 0
 
 
@@ -177,7 +177,7 @@ def test_dissolving_a_group_costs_a_fixed_amount_per_member(exp):
 
 
 def test_poller_sweeps_cost_a_fixed_amount_per_group(exp, monkeypatch):
-    """Idle sweeps of check_barriers and check_sync_groups scale with groups, not members."""
+    """Idle sweeps of check_barriers and check_sync_groups cost the same for 1 and 3 waiting groups."""
     monkeypatch.setattr(sync, "_POLLER_SWEEP_BUDGET_SECONDS", 60)
     exp.timeline = _timeline(2)
     barriers, groups = {}, {}
