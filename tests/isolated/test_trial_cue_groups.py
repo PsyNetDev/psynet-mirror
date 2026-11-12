@@ -21,6 +21,7 @@ from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     GroupBarrier,
     GroupDivergenceError,
+    SimpleGrouper,
     SimpleSyncGroup,
     SyncGroupRound,
     _hold_barrier_instance_claim,
@@ -32,7 +33,12 @@ from psynet.sync import (
 )
 from psynet.timeline import Module, Timeline, join
 from psynet.trial.chain import ChainNode
-from psynet.trial.main import GenericTrialNetwork, GenericTrialNode, Trial
+from psynet.trial.main import (
+    GenericTrialNetwork,
+    GenericTrialNode,
+    Trial,
+    _PrepareTrialBarrier,
+)
 from psynet.trial.static import StaticNode, StaticTrialMaker
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -1124,6 +1130,47 @@ def test_a_trial_maker_s_next_trials_close_its_round(
     assert first.closed_at is not None and second.closed_at is None
     assert [t.sync_group_outcome for t in first.trials] == ["stayed", "stayed"]
     assert pair.rounds(trial_maker.id) == [first, second]
+
+
+@in_consents_experiment
+def test_preparing_trials_admits_pending_members_to_the_new_round(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    grouper = SimpleGrouper(
+        "pair",
+        initial_group_size=2,
+        max_group_size=3,
+        quorum=2,
+        target_group_size=2,
+        join_existing_groups=True,
+        admit_newcomers="at_admission_point",
+        top_up_wait=30,
+        below_quorum="continue_without_group",
+    )
+    founders = _working_participants(exp, 2)
+    pair = grouper._make_group(founders, initial_group_size=2)
+    (newcomer,) = _working_participants(exp, 1)
+    grouper._join_existing_groups(newcomer)
+    db_session.commit()
+    trial_maker = CustomStaticTrialMaker(
+        id_="paired_static",
+        trial_class=PairTrial,
+        nodes=[StaticNode(definition={})],
+        expected_trials_per_participant=1,
+        max_trials_per_participant=1,
+        sync_group_type="pair",
+        sync_group_newcomer_max_wait=60,
+    )
+    monkeypatch.setitem(exp.timeline.trial_makers, trial_maker.id, trial_maker)
+    trial_maker.pre_deploy_routine(exp)
+    members = [*founders, newcomer]
+    for participant in members:
+        participant.start_module(trial_maker)
+    _arrive(exp, _PrepareTrialBarrier(trial_maker), members)
+    assert pair.active_participants == members
+    (group_round,) = {p.current_trial.group_round for p in members}
+    assert set(group_round.trials) == {p.current_trial for p in members}
 
 
 @in_consents_experiment

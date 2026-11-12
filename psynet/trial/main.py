@@ -3266,18 +3266,15 @@ class TrialMaker(Module):
         self._init_released_members(group, participants, experiment)
         self._close_group_rounds(group)
 
-        leader = group.leader
-
+        leader, followers = group.leader, group.active_followers
         leader.current_trial, leader.trial_status = self._prepare_trial(
-            experiment=experiment, participant=group.leader
+            experiment=experiment, participant=leader
         )
-        for follower in group.active_followers:
+        for follower in followers:
             follower.current_trial, follower.trial_status = self._prepare_trial(
-                experiment=experiment,
-                participant=follower,
-                leader=group.leader,
+                experiment=experiment, participant=follower, leader=leader
             )
-        self._start_group_round(group, [leader, *group.active_followers])
+        self._start_group_round(group, [leader, *followers])
 
     def _close_group_rounds(self, group: SyncGroup):
         """Close the group's rounds of this trial maker that no barrier in the trial closed.
