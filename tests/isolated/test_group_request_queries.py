@@ -4,7 +4,8 @@
 tests drive real ``/timeline`` and ``/response`` requests from a cold session
 to form a group, then pin the requests around the barrier (arriving from a
 page and the hold poll while waiting), what it costs for a member to leave,
-for a group to dissolve, and for one idle sweep of each poller. Arriving and
+for a group to dissolve, and for one idle sweep of each poller, including
+``check_barriers`` sweeps over each kind of waiting visit. Arriving and
 leaving compare two group sizes, so a statement that runs once per member
 fails; dissolving and the sweeps pin their per-member or per-group slope. Fewer statements are an
 improvement: lower the numbers here and in
@@ -25,10 +26,19 @@ from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sqlalchemy_profiling import sqlalchemy_profile
-from psynet.sync import GroupBarrier, ParticipantLinkBarrier, SimpleGrouper
+from psynet.sync import (
+    GroupBarrier,
+    ParticipantLinkBarrier,
+    Regrouper,
+    SimpleGrouper,
+)
 from psynet.timeline import Timeline
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_sync import (  # noqa: E402
+    _arrive_at_group_barrier,
+    _commit_barrier_arrivals,
+)
 from timeline_hold_helpers import _working_participants  # noqa: E402
 
 pytestmark = [
@@ -190,6 +200,86 @@ def test_poller_sweeps_cost_a_fixed_amount_per_group(exp, monkeypatch):
         groups[n_groups] = _count(sync.check_sync_groups)
     assert barriers[3] - barriers[1] == 2 * _SWEEP_PER_VISIT, barriers
     assert groups[3] - groups[1] == 2 * _SYNC_GROUPS_PER_GROUP, groups
+
+
+def _arrive(exp, barrier, participants):
+    for participant in participants:
+        _arrive_at_group_barrier(exp, barrier, participant)
+    _commit_barrier_arrivals()
+
+
+def _pair_waiting_for_a_late_partner(exp, db_session, i):
+    pair = _working_participants(exp, 2)
+    SimpleGrouper("main", initial_group_size=2)._make_group(pair, initial_group_size=2)
+    db_session.commit()
+    waiter = pair[0]
+    barrier = GroupBarrier(
+        id_="slow_partner", group_type="main", late_after=600, late_action="fail"
+    )
+    _arrive(exp, barrier, [waiter])
+
+
+def _group_waiting_for_top_ups(exp, db_session, i):
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=2,
+        join_existing_groups=True,
+        use_admission_points=False,
+        below_quorum="continue_without_group",
+        top_up_wait=600,
+    )
+    quitter, waiter = _working_participants(exp, 2)
+    grouper._make_group([quitter, waiter], initial_group_size=2)
+    db_session.commit()
+    quitter.fail("quit")
+    _arrive(exp, GroupBarrier(id_="game_starts", group_type="team"), [waiter])
+
+
+def _grouper_counting_down_to_start_short(exp, db_session, i):
+    grouper = SimpleGrouper(
+        f"team_{i}",
+        initial_group_size=4,
+        quorum=2,
+        below_quorum="fail",
+        start_short_after=600,
+        max_wait_time=1200,
+        waiting_message="Starting in {SECONDS} s",
+    )
+    _arrive(exp, grouper, _working_participants(exp, 2))
+
+
+def _regrouper_pool_waiting_for_its_deadline(exp, db_session, i):
+    cohort = _working_participants(exp, 3)
+    _arrive(exp, SimpleGrouper("cohort", initial_group_size=3, quorum=3), cohort)
+    pairs = Regrouper(
+        "pair", within="cohort", group_size=2, deadline=600, max_wait_time=1200
+    )
+    _arrive(exp, pairs, cohort[:2])
+
+
+@pytest.mark.parametrize(
+    "add_visit, per_visit",
+    [
+        (_pair_waiting_for_a_late_partner, 0),
+        (_group_waiting_for_top_ups, 0),
+        (_grouper_counting_down_to_start_short, 1),
+        (_regrouper_pool_waiting_for_its_deadline, 1),
+    ],
+)
+def test_idle_sweeps_cost_a_fixed_amount_per_waiting_visit(
+    exp, db_session, monkeypatch, add_visit, per_visit
+):
+    """An idle check_barriers sweep costs the documented statements per waiting visit of each kind."""
+    monkeypatch.setattr(sync, "_POLLER_SWEEP_BUDGET_SECONDS", 60)
+    counts, n_visits = {}, {}
+    for n, new_visits in ((1, range(1)), (3, range(1, 3))):
+        for i in new_visits:
+            add_visit(exp, db_session, i)
+        sync.check_barriers()
+        n_visits[n] = len(sync._waiting_barrier_instance_ids())
+        counts[n] = _count(sync.check_barriers)
+    assert n_visits[3] - n_visits[1] == 2, n_visits
+    assert counts[3] - counts[1] == 2 * per_visit, counts
 
 
 def test_barrier_requests_do_not_grow_with_group_size(exp):

@@ -74,7 +74,8 @@ new work after 0.2 seconds, and later sweeps reach the remaining visits.
 One timeout or check can still overrun while it waits for a row lock. The
 batched read is not limited: it costs about half a millisecond per waiting
 visit, mostly building ORM objects, so beyond about 400 waiting visits a
-sweep takes longer than its interval.
+sweep takes longer than its interval. The nightly ASV benchmark
+``slow.barrier_poller`` tracks this time at 100 and 300 waiting visits.
 
 .. _sync-group-lock-order:
 
