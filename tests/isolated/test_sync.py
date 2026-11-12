@@ -8392,6 +8392,30 @@ def test_a_newcomer_joins_the_group_with_the_most_free_seats(
     assert with_pending.id < without_pending.id
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_pending_member_alone_at_an_admission_point_makes_nobody_late(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    group, founders, (newcomer,) = _society(exp, db_session)
+    start = GroupBarrier(
+        "round_starts",
+        group_type="society",
+        admission_point=True,
+        newcomer_max_wait=600,
+        late_after=30,
+        late_action="leave_group",
+    )
+    _set_group_clocks_in_the_past(group, 120)
+    _arrive_at_group_barrier(exp, start, newcomer)
+    _commit_barrier_arrivals()
+    check_barriers()
+    assert group.active_participants == founders
+    assert start._participant_is_waiting(newcomer)
+
+
 @pytest.mark.parametrize("how", ["newcomer_max_wait", "stop_top_ups", "closed"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True

@@ -1964,7 +1964,8 @@ class GroupBarrier(Barrier):
     late_after
         Acts on members who haven't reached this barrier yet: the longest each may take to reach it, in seconds,
         counted from the group's previous barrier pass or from when the group admitted them, whichever is later,
-        before ``late_action`` is applied to them; pending members are never late. ``None`` (default) never treats anyone as late. A member on a
+        before ``late_action`` is applied to them; pending members are never late, and nobody is late while
+        only pending members wait here. ``None`` (default) never treats anyone as late. A member on a
         page with a ``time_limit`` is never late before that limit has run out plus 10 seconds, so that an
         answer sent at the deadline can arrive; this timeout therefore need not cover the pages' time limits.
         Requires ``late_action``, and the grouper of ``group_type`` (and of each type in ``also_leave``)
@@ -2639,6 +2640,10 @@ class GroupBarrier(Barrier):
         for group in self.get_waiting_groups(waiting_participants).values():
             group.check_numbers()
             if self.late_after is None:
+                continue
+            if not self._waiting_members(group, waiting_participants):
+                # Only pending members wait here: the group hasn't reached
+                # this barrier yet, so nobody is late for it.
                 continue
             late = self._late_between_barriers(group, waiting_ids)
             if not late:
