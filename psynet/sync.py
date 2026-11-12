@@ -1433,7 +1433,7 @@ class Barrier(EltCollection):
         )
         waiting_participants.sort(key=lambda p: p.id)
 
-        logger.info(
+        logger.debug(
             "Barrier '%s' currently has %i participant(s) waiting",
             self.id,
             len(waiting_participants),
