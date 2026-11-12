@@ -3837,7 +3837,8 @@ def get_lucid_settings(
         the participant is terminated via the front-end. If the participant has closed the tab, the recruiter
         clock terminates them one minute later instead.
 
-    bid_incidence: int, default 66, the bid incidence. Bid incidence is the number of completes/(number of completes +
+    bid_incidence: int
+        Default 66, the bid incidence. Bid incidence is the number of completes/(number of completes +
         participants who did not pass the qualifications). It is a percentage, so if you expect 66% of the participants
         to pass the qualifications, set it to 66. Set it to a realistic value, but as high as possible.
 

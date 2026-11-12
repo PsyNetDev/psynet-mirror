@@ -412,10 +412,10 @@ def linspace(lower, upper, length: int):
     Parameters
     ----------
 
-    lower : number
+    lower : float
         The lower bound.
 
-    upper : number
+    upper : float
         The upper bound.
 
     length : int
