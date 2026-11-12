@@ -180,18 +180,12 @@ Kinds of group experiment
 Most group experiments are one of these kinds, or combine several. They are
 listed in order of complexity, each with a demo to start from:
 
-- `One group for the whole experiment`_: a discussion or a repeated game,
-  members taking turns, a shared chain of stimuli, or a part that needs
-  enough people present.
-- `Groups that latecomers can join`_: an open lobby whose groups start
-  short and fill up.
-- `New groups for each round`_: players get new partners every round.
-- `Cohorts that regroup each round`_: new partners every round, but only
-  from a cohort that stays together.
-- `Groups that carry on when members leave`_: a team game that goes on with
-  fewer players until too few remain.
-- `Groups whose members change`_: a group that runs on while newcomers join
-  and members retire.
+- `One group for the whole experiment`_
+- `Groups that latecomers can join`_
+- `New groups for each round`_
+- `Cohorts that regroup each round`_
+- `Groups that carry on when members leave`_
+- `Groups whose members change`_
 
 Each diagram shows a demo's timeline as a sequence of blocks; a dashed box
 repeats. :doc:`/demos/index` lists every demo.
