@@ -695,6 +695,12 @@ def test_a_cued_trial_s_leave_group_barrier_needs_a_group_that_survives_it(
         cohort[0].current_trial._show_trial(exp, cohort[0])
     cohort[0].active_sync_groups["pair"].below_quorum = "continue_without_group"
     cohort[0].current_trial._show_trial(exp, cohort[0])
+    # A group still taking newcomers could wait for them forever.
+    cohort[0].active_sync_groups["pair"].accepts_top_ups = True
+    with pytest.raises(ValueError, match="Pass top_up_wait"):
+        cohort[0].current_trial._show_trial(exp, cohort[0])
+    cohort[0].active_sync_groups["pair"].top_up_wait = 30
+    cohort[0].current_trial._show_trial(exp, cohort[0])
 
 
 @in_consents_experiment

@@ -1976,7 +1976,8 @@ class GroupBarrier(Barrier):
         and sends them to the end of the experiment; ``"leave_group"`` removes them from the group, so the
         rest can go on without them (see :ref:`sync-leaving-a-group` for what the removed member sees).
         ``"leave_group"`` can't be combined with a grouper's ``below_quorum="fail"``, which would fail the
-        members who were on time while the late one carries on; the experiment raises an error at load.
+        members who were on time while the late one carries on; the experiment raises an error at load, or
+        when a trial shows a barrier built in ``show_trial``.
         With every action the member leaves this
         barrier's group with the reason ``"late"`` (with ``"fail"``, before they are failed), which their
         trial in the group's round records in :attr:`~psynet.trial.main.Trial.sync_group_outcome` unless an earlier barrier
@@ -3496,8 +3497,9 @@ class SimpleGrouper(Grouper):
 
         Closed groups and groups whose members have all left are skipped:
         joining an empty group would start a group of one and bypass
-        ``batch_size``. Uses the stored member counts, which a concurrent
-        join may have made stale.
+        ``batch_size``. Counts pending members live but uses the stored
+        count of admitted members, which a concurrent join may have made
+        stale; :meth:`_has_room_to_join` recounts under the group's lock.
         """
         if not self.join_existing_groups:
             return
@@ -4627,7 +4629,13 @@ def check_group_dropout_policies(barriers):
             barrier.group_type not in top_ups_stopped
         ):
             for grouper in groupers.get(barrier.group_type, []):
-                _check_top_up_wait(barrier, grouper)
+                _check_top_up_wait(
+                    barrier,
+                    grouper.join_existing_groups,
+                    grouper.top_up_wait,
+                    grouper.admit_newcomers,
+                    f"SimpleGrouper '{grouper.id}'",
+                )
         if barrier.stop_top_ups:
             top_ups_stopped.add(barrier.group_type)
         if barrier.late_after is None:
@@ -4667,16 +4675,26 @@ def check_late_removal_policies(barriers, participant):
     ------
     ValueError
         If a barrier with ``late_action="leave_group"`` acts on a group with
-        ``below_quorum="fail"``.
+        ``below_quorum="fail"``, or a ``late_after`` barrier acts on a group
+        that could wait there for newcomers without a ``top_up_wait``.
     """
     groups = None
     for barrier in barriers:
-        if not isinstance(barrier, GroupBarrier) or barrier.late_action != (
-            "leave_group"
-        ):
+        if not isinstance(barrier, GroupBarrier) or barrier.late_after is None:
             continue
         if groups is None:
             groups = participant.active_sync_groups
+        group = groups.get(barrier.group_type)
+        if isinstance(group, SimpleSyncGroup):
+            _check_top_up_wait(
+                barrier,
+                group.accepts_top_ups,
+                group.top_up_wait,
+                group.admit_newcomers,
+                f"the '{barrier.group_type}'",
+            )
+        if barrier.late_action != "leave_group":
+            continue
         for group_type in [barrier.group_type, *barrier.also_leave]:
             group = groups.get(group_type)
             if isinstance(group, SimpleSyncGroup):
@@ -4685,21 +4703,19 @@ def check_late_removal_policies(barriers, participant):
                 )
 
 
-def _check_top_up_wait(barrier, grouper):
-    """Reject a ``late_after`` barrier at which ``grouper``'s groups could wait for newcomers without a limit."""
-    if not grouper.join_existing_groups or grouper.top_up_wait is not None:
+def _check_top_up_wait(
+    barrier, takes_newcomers, top_up_wait, admit_newcomers, groups_label
+):
+    """Reject a ``late_after`` barrier at which groups taking newcomers could wait for them without a limit."""
+    if barrier.late_after is None or not takes_newcomers or top_up_wait is not None:
         return
-    if grouper.admit_newcomers == "at_admission_point" and not barrier.admission_point:
+    if admit_newcomers == "at_admission_point" and not barrier.admission_point:
         return
     raise ValueError(
         f"GroupBarrier '{barrier.id}' has late_after, so it has no "
-        f"max_wait_time, and SimpleGrouper '{grouper.id}' groups wait there "
+        f"max_wait_time, and {groups_label} groups wait there "
         "for newcomers while they are below their quorum"
-        + (
-            " or target_group_size"
-            if grouper.admit_newcomers == "at_admission_point"
-            else ""
-        )
+        + (" or target_group_size" if admit_newcomers == "at_admission_point" else "")
         + ". Pass top_up_wait to the grouper to limit that wait, or stop "
         "top-ups before this barrier with stop_top_ups=True on an earlier "
         "GroupBarrier."

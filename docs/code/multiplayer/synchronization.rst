@@ -1303,7 +1303,9 @@ Two separate settings decide what happens when someone leaves a group:
   - While it accepts newcomers (``join_existing_groups=True``), a member
     leaving doesn't dissolve it: its barriers wait for new members to join,
     until their ``max_wait_time``, or, if the barrier sets ``late_after``,
-    until the grouper's ``top_up_wait``, which is then required. With ``admit_newcomers="at_admission_point"`` only its
+    until the grouper's ``top_up_wait``, which is then required (checked
+    when the experiment loads, or when a trial shows a barrier built in
+    ``show_trial``). With ``admit_newcomers="at_admission_point"`` only its
     admission points wait, because only they can admit a newcomer; its
     other barriers dissolve it when they next check it, so a member left
     below the quorum mid-round is released from the round's barrier with
