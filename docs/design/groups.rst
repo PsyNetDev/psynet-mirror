@@ -365,9 +365,9 @@ whom nobody waits for, until the group reaches an **admission point**, such
 as the barrier that starts the next round (see :ref:`sync-admission-points`).
 A newcomer who isn't admitted in time is turned away, not failed.
 
-In `microsociety <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety>`__, a society of three
-fishes, round after round. Each round, every member picks a fishing spot
-and catches some fish, a barrier scores the round, and everyone sees where
+In `microsociety <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety>`__, three players
+form a fishing society that plays round after round. Each round, every
+member picks a fishing spot and catches some fish, a barrier scores the round, and everyone sees where
 the others fished and what they caught. A newcomer is admitted at the start
 of a round, where they see the society's recent catches and the tips left by
 earlier members. When a newcomer has made the society four, its
