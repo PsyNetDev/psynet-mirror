@@ -63,8 +63,11 @@ seconds, in case that time missed something the release depends on, but
 only after the visits that are due, so that with many waiting visits these
 re-checks don't delay due releases; while the poller is saturated they come
 later than 10 seconds. If such a re-check releases anyone, the poller logs a
-warning naming the barrier, because that release came late: its
-``_next_check_due``, or what the poller fingerprints, missed something.
+warning naming the barrier, because that release probably came late: if it
+recurs, the barrier's ``_next_check_due``, or what the poller fingerprints,
+misses something. Whether a check is only the re-check is decided just
+before it, from a fresh fingerprint of that visit, so a participant
+arriving or a due time passing during the sweep doesn't trigger it.
 Other barriers, including subclasses that
 override how a barrier releases without saying when, are due at every sweep,
 and so are visits whose check was deferred or failed. A visit whose check is

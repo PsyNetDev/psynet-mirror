@@ -6424,11 +6424,16 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
             )
 
 
-def _waiting_barrier_instance_ids():
+def _waiting_barrier_instance_ids(instance_id=None):
     """Snapshot barrier visits that still have working waiters.
 
     Include inactive rows. A last-arrival snapshot can mark the visit
     finished while a concurrent arriver's link committed after that SELECT.
+
+    Parameters
+    ----------
+    instance_id : int, optional
+        Only snapshot this visit.
 
     Returns
     -------
@@ -6444,7 +6449,17 @@ def _waiting_barrier_instance_ids():
     group = SyncGroup.__table__.c
     link = ParticipantLinkSyncGroup
     working = and_(~Participant.failed, Participant.status == "working")
+    visits = [] if instance_id is None else [BarrierInstance.id == instance_id]
     with Session(bind=db.engine) as session:
+        visit_groups = (
+            []
+            if instance_id is None
+            else [
+                link.sync_group_id.in_(
+                    session.query(BarrierInstance.group_id).filter(*visits)
+                )
+            ]
+        )
         members = (
             session.query(
                 link.sync_group_id.label("group_id"),
@@ -6466,7 +6481,7 @@ def _waiting_barrier_instance_ids():
             )
             .join(Participant, Participant.id == link.participant_id)
             .join(SyncGroup, SyncGroup.id == link.sync_group_id)
-            .filter(link.active.is_(True), SyncGroup.active.is_(True))
+            .filter(link.active.is_(True), SyncGroup.active.is_(True), *visit_groups)
             .group_by(link.sync_group_id)
             .subquery()
         )
@@ -6508,6 +6523,7 @@ def _waiting_barrier_instance_ids():
                 ~ParticipantLinkBarrier.released,
                 ~Participant.failed,
                 Participant.status == "working",
+                *visits,
             )
             .group_by(BarrierInstance.id, SyncGroup.id, *members.c)
             .order_by(BarrierInstance.id)
@@ -7111,18 +7127,19 @@ def _check_held_instance(instance_id):
 def _check_and_skip_held_instance(instance_id, *, recheck=False):
     """Evaluate one visit and skip waiters this poller just released.
 
-    A ``recheck`` is the poller's safety re-check of a visit it was skipping
-    (see :func:`_visits_due`). If that releases anyone, the barrier's
-    :meth:`Barrier._next_check_due`, or the fingerprint of what it reads,
-    missed something, so this logs a warning.
+    A ``recheck`` is the poller's safety re-check of a visit it would
+    otherwise skip (see :func:`_is_safety_recheck`). If that releases anyone,
+    the release probably came late, so this logs a warning.
     """
     ok, released_ids = _evaluate_held_instance(instance_id)
     if recheck and released_ids:
         instance = BarrierInstance.query.get(instance_id)
         logger.warning(
-            "Barrier '%s' released participant(s) %s only at the poller's "
-            "%g-second safety re-check, so the release came late. Its "
-            "_next_check_due() missed something the release depends on.",
+            "Barrier '%s' released participant(s) %s at the poller's safety "
+            "re-check, before the time its last check said a release could "
+            "be due, so the release may have come up to %g seconds late. If "
+            "this recurs, the barrier's _next_check_due() probably misses "
+            "something the release depends on.",
             instance.barrier_id if instance is not None else None,
             ", ".join(str(released_id) for released_id in released_ids),
             _POLLER_RECHECK_SECONDS,
@@ -7180,11 +7197,8 @@ def _run_pending_barrier_checks(instance_ids, *, wait=True):
     return all_claimed
 
 
-def _process_barrier_instance(instance_id, *, retry=False, recheck=False):
+def _process_barrier_instance(instance_id, *, retry=False):
     """Try one barrier visit and report whether contention deferred it.
-
-    ``recheck`` marks the poller's safety re-check of a skipped visit (see
-    :func:`_check_and_skip_held_instance`).
 
     Contention is another request holding the visit claim, or a locked
     waiter or top-up group. Author ``on_release`` and spec errors are reported the same way.
@@ -7199,6 +7213,7 @@ def _process_barrier_instance(instance_id, *, retry=False, recheck=False):
         with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
             if not claimed:
                 return True
+            recheck = _is_safety_recheck(instance_id)
             if not _check_and_skip_held_instance(instance_id, recheck=recheck):
                 return True
             return False
@@ -7260,8 +7275,26 @@ def _finish_dissolving_groups():
             logger.exception("Failed to finish dissolving sync group %s.", group_id)
 
 
+def _is_safety_recheck(instance_id):
+    """Return whether checking this visit now is only the poller's safety re-check.
+
+    That is, its last check said when a release can next be due, that time
+    hasn't come, and nothing the poller fingerprints has changed since. This
+    reads a fresh fingerprint, not the sweep's snapshot, so a participant
+    arriving or a due time passing while the sweep checked other visits
+    doesn't count.
+    """
+    last = _poller_checked_visits.get(instance_id)
+    if last is None:
+        return False
+    fingerprint, _checked_at, next_due = last
+    if next_due is None or next_due <= time.monotonic():
+        return False
+    return _waiting_barrier_instance_ids(instance_id).get(instance_id) == fingerprint
+
+
 def _visits_due(waiting, sweep_ends):
-    """Yield ``(instance_id, is_recheck)`` for the waiting visits that are due, in check order, until ``sweep_ends``.
+    """Yield the waiting visits that are due, in check order, until ``sweep_ends``.
 
     At least one is yielded if any is due.
 
@@ -7306,7 +7339,7 @@ def _visits_due(waiting, sweep_ends):
     for index, instance_id in enumerate(order):
         if index and time.monotonic() >= sweep_ends:
             return
-        yield instance_id, due[instance_id][0]
+        yield instance_id
 
 
 def check_barriers():
@@ -7363,20 +7396,18 @@ def _check_barriers(seen):
                     f"{_MAX_BARRIER_WALK_PASSES} passes."
                 )
             seen.update(waiting)
-            deferred = []
-            for instance_id, recheck in _visits_due(waiting, sweep_ends):
-                if _process_barrier_instance(instance_id, recheck=recheck):
-                    deferred.append((instance_id, recheck))
+            deferred_ids = []
+            for instance_id in _visits_due(waiting, sweep_ends):
+                if _process_barrier_instance(instance_id):
+                    deferred_ids.append(instance_id)
                 else:
                     _remember_poller_check(instance_id, waiting[instance_id])
-            for instance_id, recheck in deferred:
+            for instance_id in deferred_ids:
                 # Even if still deferred: a visit whose check keeps failing
                 # must not stay ahead of every other visit.
-                still_deferred = _process_barrier_instance(
-                    instance_id, retry=True, recheck=recheck
-                )
+                deferred = _process_barrier_instance(instance_id, retry=True)
                 _remember_poller_check(
-                    instance_id, waiting[instance_id], deferred=still_deferred
+                    instance_id, waiting[instance_id], deferred=deferred
                 )
 
 
