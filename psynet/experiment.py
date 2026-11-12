@@ -2908,12 +2908,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Accept a websocket connection only from one of the participant's own pages.
 
         PsyNet's pages send :attr:`~psynet.participant.Participant.websocket_scope`
-        as the connection's scope.
+        as the connection's scope. A live session's game page adds a ``.``
+        and a name for the browser tab, since Dallinger's real-time engine
+        tells a player's open pages apart by their scope.
         """
         participant = Participant.query.get(int(participant_id))
-        return participant is not None and hmac.compare_digest(
-            (scope or "").encode(), participant.websocket_scope.encode()
-        )
+        if participant is None or not isinstance(scope, str):
+            return False
+        token, dot, tab = scope.partition(".")
+        if dot and not tab:
+            return False
+        return hmac.compare_digest(token.encode(), participant.websocket_scope.encode())
 
     def handle_websocket_message(
         self,
