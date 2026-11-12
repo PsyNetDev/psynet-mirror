@@ -10,6 +10,10 @@ The server keeps one state for the whole group, applies each player's
 messages to it in order, and sends each player's page its own view of the
 game. Each session, with its messages, is saved with the experiment's data.
 
+If you haven't built a live game before, start with the
+:doc:`tutorial <live_session_tutorial>`, which works through three demo
+games.
+
 A live session has three pieces:
 
 1. The game, a subclass of :class:`~psynet.live_session.LiveSession`, with a
