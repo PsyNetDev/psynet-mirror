@@ -17,7 +17,7 @@ from psynet.experiment import Request
 from psynet.modular_page import ModularPage
 from psynet.participant import DriverStopped, ParticipantDriver
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.timeline import FailedValidation, Response
+from psynet.timeline import Response, ResponseNotReady
 
 MEDIA_HEADERS = {"wav": b"RIFF\x00\x00\x00\x00WAVE", "webm": b"\x1a\x45\xdf\xa3"}
 
@@ -324,10 +324,11 @@ def test_submit_response_sends_it_again_after_a_retry_after(monkeypatch):
     assert slept == [2, 1.5]
 
 
-@pytest.mark.parametrize("retry_after", [0, "1"])
+@pytest.mark.parametrize("retry_after", [0, "1", None])
 def test_retry_after_is_a_positive_number(retry_after):
-    with pytest.raises(ValueError, match="retry_after must be None or a positive"):
-        FailedValidation("Wait.", retry_after=retry_after)
+    with pytest.raises(ValueError, match="retry_after must be a positive number"):
+        ResponseNotReady("Wait.", retry_after=retry_after)
+    assert ResponseNotReady("Wait.").retry_after == 1
 
 
 def test_submit_response_sends_hold_resume_for_timeline_holds(monkeypatch):

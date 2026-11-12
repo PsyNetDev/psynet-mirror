@@ -130,15 +130,17 @@ are no longer part of this pipeline. Put database preparation in
 Before ``process_response``, and inside the same ``forbid_commits`` block,
 ``POST /response`` calls the page's
 :meth:`~psynet.timeline.Page.check_ready_for_response`. ``ModularPage`` passes
-the call to its control. A refusal ends the request with a rejection before
-anything is written: no ``Response`` row, and no ``time_taken`` on the trial.
-A string becomes a ``FailedValidation`` without ``retry_after``, which the
-browser treats like a failed ``validate``. A ``FailedValidation`` with
-``retry_after`` puts it in the rejection payload. ``psynet.waitIfRetryLater``
-then shows the message in a status notice and resends the same submission
-after that many seconds, and the bot driver sleeps and resends, with no limit
-on attempts. ``LiveSessionControl`` uses this to keep a game page open until
-its session's result is saved.
+the call to its control. A :class:`~psynet.timeline.ResponseNotReady` ends the
+request with a rejection before anything is written: no ``Response`` row, and
+no ``time_taken`` on the trial. Its ``retry_after`` goes in the rejection payload, and the route
+answers without calling the experiment's ``response_rejected``, since the
+participant has nothing to correct. ``psynet.waitIfRetryLater`` then shows
+the message in a status notice and resends the same submission after that
+many seconds, and the bot driver sleeps and resends. Neither limits its
+attempts, so the page has to stop refusing by itself.
+``LiveSessionControl`` uses this to keep a game page open until its session's
+result is saved, and raises an error for a session that is still running more
+than a minute after its game's ``max_duration``, which can no longer end.
 
 Participant-facing write phases use a bounded PostgreSQL ``lock_timeout`` so
 unexpected contention fails safely instead of occupying a web worker
@@ -612,24 +614,40 @@ Live session sockets
 --------------------
 
 ``psynet.liveSession`` joins a page with a ``LiveSessionControl`` to its live
-session, over Dallinger's ``/experiment-socket`` route. The control adds the
-session's id and game channel to the page's ``js_vars`` each time the page
-renders, through ``get_render_js_vars``. The socket's scope is the
-participant's ``websocketScope``, a ``.`` and ``dallinger.pageScope``, which
-names the page load, so the session can tell two tabs, or two loads of the
-same page, apart. ``Experiment.accept_websocket_connection`` checks the part
-before the ``.``. PsyNet's own directed messages, such as a timeline hold's
-wake, name the bare ``websocketScope``, so game sockets don't receive them.
+session, over Dallinger's ``/experiment-socket`` route. The control
+contributes everything the page needs through the component hooks:
 
-A tab closes its game socket when its page changes. The same game page open in
-a second tab plays as the same player. Once one tab moves the participant on,
-the other's submission is refused, like any stale tab's.
+* ``get_js_dependencies`` loads ``live-session.js``, so only documents that
+  show a game page load it;
+* ``get_js_page_code`` calls ``PsyNetLiveSession.activatePage``, which creates
+  ``psynet.liveSession`` for the first game page a document shows, shows the
+  no-session notice, and returns the cleanup that closes the page's game
+  socket;
+* ``get_render_js_vars`` adds the session's id and game channel to the page's
+  ``js_vars`` each time the page renders. It raises an error for a participant
+  who hasn't reached an initializer with the control's ``initializer_id``.
+
+The socket's scope is the participant's ``websocketScope``, a ``.``,
+``dallinger.pageScope``, another ``.`` and a count of the game sockets the
+document has opened. ``dallinger.pageScope`` names the document, which tells
+two tabs apart, and the count tells apart the game pages one document shows
+in turn, so the real-time engine never takes a new page's messages for an
+earlier page's. ``Experiment.accept_websocket_connection`` checks the part
+before the first ``.``, and accepts up to 64 letters, digits and dots after
+it. PsyNet's own directed messages, such as a timeline hold's wake, name the
+bare ``websocketScope``, so game sockets don't receive them.
+
+The same game page open in a second tab plays as the same player. Once one tab
+moves the participant on, the other's submission is refused, like any stale
+tab's.
 
 When the control's ``auto_advance`` is on, which is the default, the game
 socket's ``onResultSaved`` and ``onRefused`` call ``psynet.nextPage()``. If
 the page isn't ready yet, as when a reload finds the session already ended,
-the call waits for ``timelinePageReady``, and is dropped if the page has
-changed by then.
+the call waits for ``timelinePageReady``, and is dropped if the participant
+has left the page by then. The page hides its Next button while its game
+socket is connected, and shows it again once the socket has been closed for
+ten seconds.
 
 Adding new frontend components
 ------------------------------

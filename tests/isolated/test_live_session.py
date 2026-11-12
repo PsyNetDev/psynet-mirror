@@ -106,9 +106,17 @@ def _pair(db_session, members):
     return members, initializer
 
 
+def _reach(initializer, member):
+    """Run the initializer's first step, which every participant who reaches
+    it takes, one who has left the group included."""
+    first, *barrier = initializer.resolve()
+    assert barrier
+    first.consume(get_experiment(), member)
+
+
 def _arrive(initializer, member):
     """Arrive as the response route does: commit, then check the barrier."""
-    initializer._forget_session(member)
+    _reach(initializer, member)
     initializer.receive_participant(member)
     initializer.waiting_logic.consume(get_experiment(), member)
     db.session.commit()
@@ -136,10 +144,9 @@ def test_a_participant_who_reaches_the_initializer_again_has_no_session_yet(pair
     session_id = _pair_session(pair)
     assert live_session_id(members[1], initializer.id) == session_id
 
-    # The step ahead of the barrier, which a participant who has left the
-    # group passes without arriving at it.
-    forget, *_ = initializer.resolve()
-    forget.consume(get_experiment(), members[1])
+    # A participant who has left the group passes the barrier without
+    # arriving at it.
+    _reach(initializer, members[1])
 
     assert live_session_id(members[1], initializer.id) is None
     assert live_session_id(members[0], initializer.id) == session_id
@@ -159,7 +166,7 @@ def test_a_session_starts_from_its_initializer_s_settings(pair):
     assert _pick_numbers().initial_state(["1"])["pick_bonus"] == 0
 
 
-def test_an_initializer_s_settings_must_be_json_the_game_takes(registry):
+def test_an_initializer_s_settings_must_be_json_the_game_takes(registry, monkeypatch):
     class Fixed(LiveSession):
         channel = "fixed"
 
@@ -183,16 +190,71 @@ def test_an_initializer_s_settings_must_be_json_the_game_takes(registry):
             id_="game", group_type="pair", game_type=game_type, settings=settings
         )
 
+    # A group's release rebuilds the initializer, so it has to find the game.
+    with pytest.raises(TypeError, match="'game' can't be saved: .* is a local class"):
+        initializer(Fixed, None)
+    for game_type in (Fixed, Varied):
+        game_type.__qualname__ = game_type.__name__
+        monkeypatch.setitem(globals(), game_type.__name__, game_type)
+
     with pytest.raises(TypeError, match="Fixed.initial_state takes no settings"):
         initializer(Fixed, {"rounds": 3})
     with pytest.raises(TypeError, match="settings for Varied can't be saved as JSON"):
         initializer(Varied, {"rounds": {3}})
+    with pytest.raises(TypeError, match="Varied.initial_state needs settings"):
+        initializer(Varied, None)
+    assert initializer(Fixed, None).settings is None
     given = {"rounds": (3, 5)}
     assert initializer(Varied, given).settings == {"rounds": [3, 5]}
     # A test calls the game with settings directly.
     assert _game_part(Varied().initial_state(["1"], {"rounds": 3})) == {
         "settings": {"rounds": 3}
     }
+
+
+def _trial_initializer(settings):
+    """An initializer as a trial's show_trial builds one for each participant,
+    from the trial's definition."""
+    return LiveSessionInitializer(
+        id_="trial_game",
+        group_type="pair",
+        game_type=type(_pick_numbers()),
+        settings=settings,
+    )
+
+
+def test_each_round_s_initializers_start_a_session_with_that_round_s_settings(pair):
+    members, _ = pair
+    bonuses = []
+    for pick_bonus in (0.1, 0.2):
+        for member in members:
+            _arrive(_trial_initializer({"pick_bonus": pick_bonus}), member)
+        session_id = live_session_id(members[0], "trial_game")
+        assert live_session_id(members[1], "trial_game") == session_id
+        bonuses.append(store.realtime_state(session_id)["pick_bonus"])
+
+    assert bonuses == [0.1, 0.2]
+
+
+def test_the_members_of_a_group_must_arrive_with_the_same_settings(pair):
+    members, _ = pair
+    _arrive(_trial_initializer({"pick_bonus": 0.1}), members[0])
+
+    with pytest.raises(
+        ValueError,
+        match=f"Participant {members[1].id} arrived at the LiveSessionInitializer "
+        "'trial_game' with settings that differ from those of the members of "
+        "their group who are waiting there.",
+    ):
+        _arrive(_trial_initializer({"pick_bonus": 0.2}), members[1])
+
+
+def test_an_initializer_s_settings_can_t_use_a_key_its_saved_form_reserves():
+    with pytest.raises(
+        TypeError,
+        match="LiveSessionInitializer 'trial_game' can't be saved: .*'__type__'",
+    ):
+        _trial_initializer({"__type__": "fast"})
 
 
 def _rendered_js_vars(page, participant, monkeypatch):
@@ -214,6 +276,13 @@ def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch)
         "game", "Play.", LiveSessionControl(initializer.id), time_estimate=5
     )
 
+    with pytest.raises(
+        ValueError,
+        match=f"Participant {members[0].id} hasn't reached a "
+        f"LiveSessionInitializer with the id '{initializer.id}'. Check the id",
+    ):
+        _rendered_js_vars(page, members[0], monkeypatch)
+    _reach(initializer, members[0])
     assert _rendered_js_vars(page, members[0], monkeypatch)["liveSession"] == {
         "initializerId": initializer.id,
         "sessionId": None,
@@ -245,6 +314,7 @@ def test_a_live_session_page_can_leave_moving_on_to_its_javascript(pair, monkeyp
         time_estimate=5,
     )
 
+    _reach(initializer, members[0])
     js_vars = _rendered_js_vars(page, members[0], monkeypatch)
 
     assert js_vars["liveSession"]["autoAdvance"] is False
@@ -262,6 +332,7 @@ def test_a_live_session_page_can_change_or_hide_its_player_left_notice(
         time_estimate=5,
     )
 
+    _reach(initializer, members[0])
     js_vars = _rendered_js_vars(page, members[0], monkeypatch)
 
     assert js_vars["liveSession"]["playerLeftMessage"] == message
@@ -279,6 +350,7 @@ def test_a_live_session_page_can_change_or_hide_its_no_session_notice(
         time_estimate=5,
     )
 
+    _reach(initializer, members[0])
     js_vars = _rendered_js_vars(page, members[0], monkeypatch)
 
     assert js_vars["liveSession"]["noSessionMessage"] == message
@@ -300,6 +372,7 @@ def test_a_page_variable_can_t_share_the_control_s_name(pair, monkeypatch):
         time_estimate=5,
         js_vars={"liveSession": "mine"},
     )
+    _reach(initializer, members[0])
 
     with pytest.raises(
         ValueError,
@@ -1791,6 +1864,32 @@ def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
     assert _submit_on_the_game_page(members[0])["submission"] == "approved"
     assert _accepted_answers(members[0]) == [outcome, outcome]
     assert _reward(members[0]) == pytest.approx(0.53)
+
+
+def test_the_game_page_fails_once_its_session_can_no_longer_end(pair, monkeypatch):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    control = _game_page().control
+    row = db.session.get(RealtimeSession, session_id)
+    max_duration = _pick_numbers().max_duration
+
+    def refusal_after(seconds):
+        row.start_time = timenow() - datetime.timedelta(seconds=seconds)
+        db.session.commit()
+        return control.check_ready_for_response(get_experiment(), members[0])
+
+    # A minute past max_duration is left for saving the result.
+    assert refusal_after(max_duration + 55).retry_after == 1
+    with pytest.raises(
+        RuntimeError,
+        match=f"Live session {session_id} is still running after 12\\d seconds, "
+        "though its game's max_duration is 60",
+    ):
+        refusal_after(max_duration + 65)
+
+    # A game without a max_duration can run as long as it likes.
+    monkeypatch.setattr(type(_pick_numbers()), "max_duration", None)
+    assert refusal_after(max_duration + 65).retry_after == 1
 
 
 @pytest.mark.parametrize(

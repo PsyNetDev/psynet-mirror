@@ -529,7 +529,6 @@
     psynet.resetPageState = function () {
       psynet.waiting.stop();
       psynet.runPageCleanupCallbacks();
-      psynet.liveSession.resetPageState();
       psynet.clearPageEventListeners();
       psynet.comments = [];
       psynet.page = {
@@ -634,7 +633,6 @@
     psynet.activatePageJavascript = async function () {
       let activated = [];
       let context = psynet.getPageActivationContext();
-      psynet.liveSession.showNoSessionNotice();
       try {
         for (let src of psynetTemplateData.legacyJsLinks || []) {
           // Legacy js_links force a full reload, so a clean document load uses
@@ -4684,22 +4682,6 @@
   }
 
   window.psynet = psynet;
-  psynet.liveSession = window.PsyNetLiveSession.create(
-    () => psynet.var.liveSession,
-    {
-      id: () => psynet.var.pageUuid,
-      websocketScope: () => psynetTemplateData.websocketScope,
-      ready: () => psynet.pageReady,
-      nextPage: () => psynet.nextPage(),
-      setNextButtonHidden: (hidden) => {
-        let button = document.getElementById("next-button");
-        if (button) {
-          button.style.display = hidden ? "none" : "";
-        }
-      },
-      showNotice: (id, text) => psynet.showStatusNotice(id, text),
-    },
-  );
   if (window.psynetLayout) {
     psynet.layout = window.psynetLayout;
   }

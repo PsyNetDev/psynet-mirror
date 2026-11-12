@@ -1,23 +1,31 @@
 """LiveSessionControl, the control that joins a game page to its session.
 
-``get_render_js_vars`` gives the page's ``live-session.js`` the session's id
-and channel each time the page renders. ``check_ready_for_response`` refuses
-the page's response until the session's result is saved, and ``validate``
-then sets the answer to the outcome and pays the outcome bonus once per
-session.
+The control has the page load ``live-session.js``. Its page code creates
+``psynet.liveSession`` and leaves the session when the participant leaves
+the page. ``get_render_js_vars`` gives the script the session's id and
+channel each time the page renders. ``check_ready_for_response`` refuses the
+page's response until the session's result is saved, and ``validate`` then
+sets the answer to the outcome and pays the outcome bonus once per session.
 """
 
+from dallinger import db
+from dallinger.models import RealtimeSession, timenow
+
 from ..modular_page import ModularPage, NullControl
-from ..timeline import FailedValidation
+from ..timeline import ResponseNotReady
 from ..utils import get_translator
 from .bonus import _add_bonus, _check_bonus
-from .initializer import live_session_id
+from .initializer import _check_reached_initializer, live_session_id
 from .messages import _game_channel, _session_game_type
 from .result import live_session_result
 
 # Seconds a page waits before resending a response refused because the
 # session's result isn't saved yet.
 _RETRY_AFTER = 1
+
+# Seconds past its max_duration that a session may take to save its result.
+# One still running after that will never end.
+_SAVING_MARGIN = 60
 
 # The default text of a notice, translated as the page renders.
 _DEFAULT = object()
@@ -96,8 +104,9 @@ class LiveSessionControl(NullControl):
         session_id = live_session_id(participant, self.initializer_id)
         if session_id is None or live_session_result(session_id) is not None:
             return None
+        _check_session_can_still_end(session_id)
         _p = get_translator(context=True)
-        return FailedValidation(
+        return ResponseNotReady(
             _p(
                 "live_session",
                 "The game isn't over yet. The page will move on once it is.",
@@ -134,7 +143,14 @@ class LiveSessionControl(NullControl):
                 "control's. Remove the page's validate."
             )
 
+    def get_js_dependencies(self):
+        return ["/static/scripts/live-session.js"]
+
+    def get_js_page_code(self):
+        return ["return PsyNetLiveSession.activatePage(psynet);"]
+
     def get_render_js_vars(self, experiment, participant):
+        _check_reached_initializer(participant, self.initializer_id)
         session_id = live_session_id(participant, self.initializer_id)
         _p = get_translator(context=True)
         player_left = self.player_left_message
@@ -155,3 +171,20 @@ class LiveSessionControl(NullControl):
                 "noSessionMessage": no_session,
             }
         }
+
+
+def _check_session_can_still_end(session_id):
+    max_duration = _session_game_type(session_id).max_duration
+    if max_duration is None:
+        return
+    start_time = (
+        db.session.query(RealtimeSession.start_time).filter_by(id=session_id).scalar()
+    )
+    running_for = (timenow() - start_time).total_seconds()
+    if running_for > max_duration + _SAVING_MARGIN:
+        raise RuntimeError(
+            f"Live session {session_id} is still running after "
+            f"{running_for:.0f} seconds, though its game's max_duration is "
+            f"{max_duration:g}, so its game page can't move on. The worker "
+            "that runs the experiment's live sessions has probably stopped."
+        )

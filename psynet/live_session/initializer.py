@@ -3,8 +3,9 @@ live_session_id, which finds it.
 
 When the barrier releases a group, it starts a Dallinger real-time session
 and stores its id in each member's ``live_sessions``, keyed by the
-initializer's id. Reaching the initializer again clears that entry first, so
-a page finds only the session from the participant's latest visit.
+initializer's id. Reaching the initializer sets that entry to ``None`` first,
+so a page finds only the session from the participant's latest visit, and an
+id without an entry is one whose initializer the participant never reached.
 """
 
 import inspect
@@ -12,8 +13,9 @@ import json
 
 from dallinger.realtime import RealtimeGame, create_realtime_session
 
+from ..barrier_spec import BarrierSpecError, barrier_spec_json
 from ..bot import Bot
-from ..sync import GroupBarrier
+from ..sync import BarrierBehaviorMismatch, GroupBarrier
 from ..timeline import CodeBlock, join
 from .game import LiveSession
 from .ready_step import _new_session_settings
@@ -52,8 +54,9 @@ class LiveSessionInitializer(GroupBarrier):
         define that as ``initial_state(self, players, settings)``. In a
         trial's ``show_trial``, pass the trial's ``definition`` to play each
         trial's game with that trial's settings. The members of a group must
-        all arrive with the same settings, so give the trial maker the
-        group's ``sync_group_type``, which gives them the same trial.
+        all arrive with the same settings, so give the trial class, or its
+        trial maker, the group's ``sync_group_type``, which gives them the
+        same trial.
 
     **kwargs
         Any other parameter of :class:`~psynet.sync.GroupBarrier`, such as
@@ -77,8 +80,7 @@ class LiveSessionInitializer(GroupBarrier):
                 "those of psynet test, would never move. Define bot to return "
                 "a bot's next message."
             )
-        if settings is not None:
-            settings = _checked_settings(game_type, settings)
+        settings = _checked_settings(game_type, settings)
         super().__init__(
             id_=id_,
             group_type=group_type,
@@ -87,6 +89,25 @@ class LiveSessionInitializer(GroupBarrier):
         )
         self.game_type = game_type
         self.settings = settings
+        try:
+            barrier_spec_json(self)
+        except BarrierSpecError as error:
+            raise TypeError(
+                f"The LiveSessionInitializer {id_!r} can't be saved: {error}"
+            ) from None
+
+    def receive_participant(self, participant):
+        try:
+            return super().receive_participant(participant)
+        except BarrierBehaviorMismatch:
+            raise ValueError(
+                f"Participant {participant.id} arrived at the "
+                f"LiveSessionInitializer {self.id!r} with settings that differ "
+                "from those of the members of their group who are waiting "
+                "there. The members of a group must all arrive with the same "
+                "settings, so if they come from a trial's definition, give "
+                "the trial class, or its trial maker, the group's sync_group_type."
+            ) from None
 
     def resolve(self):
         # Ahead of the barrier, which a participant who has left the group
@@ -119,6 +140,16 @@ class LiveSessionInitializer(GroupBarrier):
 # Checked when the timeline is built, since an error while a group is
 # released is only logged, and leaves the group waiting.
 def _checked_settings(game_type, settings):
+    initial_state = inspect.signature(game_type.initial_state)
+    if settings is None:
+        try:
+            initial_state.bind(None, [])
+        except TypeError:
+            raise TypeError(
+                f"{game_type.__name__}.initial_state needs settings. Give the "
+                "LiveSessionInitializer its settings."
+            ) from None
+        return None
     try:
         # A copy, as JSON has it, which is how the state will hold it.
         settings = json.loads(json.dumps(settings, allow_nan=False))
@@ -127,7 +158,7 @@ def _checked_settings(game_type, settings):
             f"The settings for {game_type.__name__} can't be saved as JSON: {error}"
         ) from None
     try:
-        inspect.signature(game_type.initial_state).bind(None, [], settings)
+        initial_state.bind(None, [], settings)
     except TypeError:
         raise TypeError(
             f"{game_type.__name__}.initial_state takes no settings. Define it "
@@ -147,16 +178,22 @@ def live_session_id(participant, initializer_id):
     return _live_session_ids(participant).get(initializer_id)
 
 
+def _check_reached_initializer(participant, initializer_id):
+    if initializer_id not in _live_session_ids(participant):
+        raise ValueError(
+            f"Participant {participant.id} hasn't reached a "
+            f"LiveSessionInitializer with the id {initializer_id!r}. Check the "
+            "id, and that the page comes after that initializer."
+        )
+
+
 def _live_session_ids(participant):
     return participant.live_sessions or {}
 
 
 def _set_live_session_id(participant, initializer_id, session_id):
-    session_ids = {
-        key: value
-        for key, value in _live_session_ids(participant).items()
-        if key != initializer_id
+    # A new dict, which is what marks the column as changed.
+    participant.live_sessions = {
+        **_live_session_ids(participant),
+        initializer_id: session_id,
     }
-    if session_id is not None:
-        session_ids[initializer_id] = session_id
-    participant.live_sessions = session_ids

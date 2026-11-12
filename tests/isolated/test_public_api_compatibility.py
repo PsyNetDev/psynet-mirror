@@ -1,7 +1,6 @@
 """Regression tests for public APIs retained during export refactoring."""
 
 import json
-import logging
 from types import SimpleNamespace
 from unittest.mock import Mock, PropertyMock, patch
 
@@ -11,7 +10,7 @@ from flask import Response as FlaskResponse
 
 from psynet.artifact import ArtifactStorage
 from psynet.experiment import Experiment, ResponseResult
-from psynet.timeline import FailedValidation
+from psynet.timeline import ResponseNotReady
 
 
 @pytest.mark.parametrize(
@@ -89,30 +88,47 @@ def test_experiment_passes_client_ip_to_legacy_page_response_override(monkeypatc
         _process_response_on(LegacyPage(), monkeypatch, "203.0.113.5")
 
 
-def test_validate_cannot_ask_the_page_to_resend_its_response(monkeypatch, caplog):
+def test_a_page_can_refuse_a_response_for_now_before_reading_it(monkeypatch):
     class Page:
         is_timeline_hold = False
+        not_ready = ResponseNotReady("Please wait.", retry_after=2)
 
-        def process_response(self, **kwargs):
-            return SimpleNamespace(answer=kwargs["raw_answer"], metadata={})
+        def check_ready_for_response(self, experiment, participant):
+            return self.not_ready
 
-        def _reject_impossible_answer(self, answer):
-            return None
+    page = Page()
+    # The page has no process_response, so the response is never read.
+    assert _process_response_on(page, monkeypatch).payload == {
+        "submission": "rejected",
+        "message": "Please wait.",
+        "retry_after": 2,
+    }
 
-        def validate(self, response, **kwargs):
-            return FailedValidation("Try again.", retry_after=2)
-
-    with caplog.at_level(logging.WARNING):
-        result = _process_response_on(Page(), monkeypatch)
-
-    assert result.payload == {"submission": "rejected", "message": "Try again."}
-    assert "only check_ready_for_response can use" in caplog.text
+    page.not_ready = "Please wait."
+    with pytest.raises(TypeError, match="Page.check_ready_for_response must return"):
+        _process_response_on(page, monkeypatch)
 
 
-def test_an_override_of_response_rejected_without_retry_after_still_works():
+@pytest.mark.parametrize(
+    "payload, body",
+    [
+        ({"message": "No."}, {"rejected": "No."}),
+        # A response to send again later isn't the experiment's to reject.
+        (
+            {"message": "Wait.", "retry_after": 2},
+            {
+                "status": "success",
+                "submission": "rejected",
+                "message": "Wait.",
+                "retry_after": 2,
+            },
+        ),
+    ],
+)
+def test_response_rejected_is_called_only_for_a_response_to_correct(payload, body):
     class LegacyExperiment:
         def process_response(self, *args, **kwargs):
-            return ResponseResult(payload={"submission": "rejected", "message": "No."})
+            return ResponseResult(payload={"submission": "rejected", **payload})
 
         def response_rejected(self, message):
             return FlaskResponse(json.dumps({"rejected": message}))
@@ -134,4 +150,4 @@ def test_an_override_of_response_rejected_without_retry_after_still_works():
     ):
         response = Experiment.route_response()
 
-    assert json.loads(response.get_data()) == {"rejected": "No."}
+    assert json.loads(response.get_data()) == body

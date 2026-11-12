@@ -287,6 +287,11 @@ def _barrier_walk_budget():
     yield False
 
 
+class BarrierBehaviorMismatch(ValueError):
+    """A participant arrived at a barrier whose waiting pool was started by a
+    barrier with the same ID and different behavior."""
+
+
 class _BarrierAuthorHookError(Exception):
     """Author ``on_release`` failed; last-arrival keeps the group waiting."""
 
@@ -6160,7 +6165,7 @@ class BarrierInstance(SQLBase, SQLMixin):
     def _validate_behavior(self, behavior_hash):
         """Reject incompatible reuse of one active waiting pool."""
         if self.behavior_hash != behavior_hash:
-            raise ValueError(
+            raise BarrierBehaviorMismatch(
                 f"Barrier ID '{self.barrier_id}' was reused with different behavior "
                 "while its waiting pool is active. Use a different barrier ID."
             )

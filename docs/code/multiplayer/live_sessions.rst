@@ -73,7 +73,12 @@ them, and its `API reference <dallinger-realtime-api_>`_ describes each
 method and setting that comes from ``RealtimeGame``.
 
 Define each game, or import it, before the experiment class. PsyNet then adds
-it to the experiment's ``realtime_games``, so you don't list it there.
+it to the experiment's ``realtime_games``, so you don't list it there. It adds
+every game with a ``channel`` that Python has loaded by then, including one
+that a module you import defines for another experiment, so each needs a
+channel of its own, whether or not this experiment's timeline plays it. A
+game defined after the experiment class stops the experiment at launch, with
+an error that names it.
 
 Messages and the state
 ----------------------
@@ -183,10 +188,11 @@ The game's other methods get only the state, so ``initial_state`` keeps what
 they need in it. To vary the settings from trial to trial, return the
 initializer and the game page from a trial's ``show_trial``, and pass the
 trial's ``definition`` as the settings. Every member of a group has to
-arrive with the same settings: a member whose settings differ from the rest
-of their group's gets an error. Trials that a group plays in one round share
-a definition, so set ``sync_group_type`` on the trial class and cue one
-trial per player (see :ref:`rounds-cued-trials`). Such a trial needs a
+arrive with the same settings: a member whose settings differ from those of
+the members already waiting gets an error that says so. Trials that a group
+plays in one round share a definition, so set ``sync_group_type`` on the
+trial class and cue one trial per player (see :ref:`rounds-cued-trials`).
+Such a trial needs a
 :class:`~psynet.sync.GroupBarrier` in its ``show_trial``, and the initializer
 is one.
 
@@ -294,6 +300,11 @@ No session
     control's ``no_session_message`` changes or turns off. The page's
     JavaScript should check ``psynet.liveSession.hasSession`` first, as above,
     and do nothing more without a session.
+
+    That is different from a page whose control names an initializer the
+    participant never reached, because its ``initializer_id`` is misspelt or
+    the page comes before the initializer. PsyNet raises an error when it
+    shows such a page.
 
 Joining in time
     The page joins the session when its JavaScript first uses
@@ -441,6 +452,13 @@ every session needs a time limit. A session still running at the game's
 ``max_duration``, 10 minutes unless the game sets it, ends with the reason
 ``"max_duration"``. ``max_duration = None`` removes the limit, so set it only
 if the game always ends by itself, even when players leave.
+
+The limit also tells PsyNet when a session can no longer end, for example
+because the worker that runs the experiment's sessions has stopped. If a
+session is still running more than a minute after its ``max_duration``, its
+game page stops waiting: the participant sees PsyNet's error page, and a bot
+fails with an error that names the session. Without a ``max_duration``, the
+page waits as long as the session runs.
 
 A game can pay bonuses, which are added to each player's performance reward,
 in two ways. Each bonus must be a number of 0 or more. For a bonus based on
