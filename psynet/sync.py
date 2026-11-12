@@ -268,10 +268,7 @@ _MAX_RELEASE_WALK_STEPS = 1000
 # checks, once each step has run this long; the rest wait for later sweeps.
 _POLLER_SWEEP_BUDGET_SECONDS = 0.2
 
-# How much sooner a new or changed visit is re-checked than an unchanged one.
-_POLLER_CHANGE_HEAD_START_SECONDS = 5.0
-
-# Poller-process memory: instance id -> (fingerprint, monotonic check time).
+# Poller-process memory: instance id -> monotonic time of its last check.
 _poller_checked_visits = {}
 
 # Poller-process memory: overdue waiters whose last timeout attempt raised.
@@ -379,7 +376,9 @@ def _visit_needs_check(instance_id):
                         for_update=False,
                         nowait=False,
                     )
-                    result = bool(barrier.needs_check(waiting))
+                    result = bool(waiting) and (
+                        not _trusts_needs_check(barrier) or barrier.needs_check(waiting)
+                    )
         finally:
             nested.rollback()
             _forget_barrier_from_spec(instance_id)
@@ -1191,9 +1190,8 @@ class Barrier(EltCollection):
         The default is ``True`` whenever anyone is waiting, so a barrier
         without an override is checked at every poller sweep. A subclass of
         a built-in barrier that overrides :meth:`choose_who_to_release` or
-        :meth:`check_waiting_participants` inherits the built-in's
-        ``needs_check``; the poller checks it at every sweep unless it
-        overrides this too, but ``GET /timeline`` uses the inherited method.
+        :meth:`check_waiting_participants` is treated as needing a check
+        whenever anyone waits, unless it overrides this too.
         """
         return bool(waiting_participants)
 
@@ -6316,40 +6314,22 @@ def _waiting_barrier_instance_ids():
 
     Include inactive rows. A last-arrival snapshot can mark the visit
     finished while a concurrent arriver's link committed after that SELECT.
-
-    Returns
-    -------
-    dict
-        Maps each visit's instance id to a fingerprint of its waiters and
-        sync group, so the poller can tell which visits changed since it
-        last checked them.
+    Returns the visits' instance ids, sorted.
     """
     with Session(bind=db.engine) as session:
         rows = (
-            session.query(
-                BarrierInstance.id,
-                BarrierInstance.active,
-                func.count(ParticipantLinkBarrier.id),
-                func.max(ParticipantLinkBarrier.id),
-                SyncGroup.active,
-                SyncGroup.n_active_participants,
-                SyncGroup.leader_id,
-            )
-            .join(
-                ParticipantLinkBarrier,
-                ParticipantLinkBarrier.barrier_instance_id == BarrierInstance.id,
-            )
+            session.query(ParticipantLinkBarrier.barrier_instance_id)
             .join(Participant, Participant.id == ParticipantLinkBarrier.participant_id)
-            .outerjoin(SyncGroup, SyncGroup.id == BarrierInstance.group_id)
             .filter(
+                ParticipantLinkBarrier.barrier_instance_id.isnot(None),
                 ~ParticipantLinkBarrier.released,
                 ~Participant.failed,
                 Participant.status == "working",
             )
-            .group_by(BarrierInstance.id, SyncGroup.id)
-            .order_by(BarrierInstance.id)
+            .distinct()
+            .order_by(ParticipantLinkBarrier.barrier_instance_id)
         )
-        return {instance_id: tuple(fingerprint) for instance_id, *fingerprint in rows}
+        return [instance_id for (instance_id,) in rows]
 
 
 def _overdue_waiter_ids():
@@ -7235,26 +7215,18 @@ def _finish_dissolving_groups():
             logger.exception("Failed to finish dissolving sync group %s.", group_id)
 
 
-def _visits_due(waiting, sweep_ends):
-    """Yield waiting visits in check order until ``sweep_ends``, at least one.
+def _visits_due(instance_ids, sweep_ends):
+    """Yield visits in check order until ``sweep_ends``, at least one.
 
-    Least recently checked visits come first. Visits that are new to this
-    process, or whose fingerprint changed since it last checked them, get a
-    head start of ``_POLLER_CHANGE_HEAD_START_SECONDS``, so they are checked
-    promptly without starving unchanged visits whose release depends on time.
+    Visits this process hasn't checked come first, then the least recently
+    checked, so visits that need a check at every sweep can't crowd out the
+    rest when they don't all fit in the budget.
     """
-    now = time.monotonic()
 
     def priority(instance_id):
-        last = _poller_checked_visits.get(instance_id)
-        if last is None:
-            return (now - _POLLER_CHANGE_HEAD_START_SECONDS, instance_id)
-        fingerprint, checked_at = last
-        if fingerprint != waiting[instance_id]:
-            checked_at -= _POLLER_CHANGE_HEAD_START_SECONDS
-        return (checked_at, instance_id)
+        return (_poller_checked_visits.get(instance_id, float("-inf")), instance_id)
 
-    for index, instance_id in enumerate(sorted(waiting, key=priority)):
+    for index, instance_id in enumerate(sorted(instance_ids, key=priority)):
         if index and time.monotonic() >= sweep_ends:
             return
         yield instance_id
@@ -7273,8 +7245,8 @@ def check_barriers():
     Each sweep first retries group dissolutions that waited for a busy member
     and times out overdue waiters. One batched read then finds the visits
     whose check would do anything (see :func:`_visits_that_need_checks`),
-    and only those are checked, least recently checked first, with new or
-    changed ones given a head start. The timeouts and the checks each stop
+    and only those are checked, unchecked ones first, then the least
+    recently checked. The timeouts and the checks each stop
     starting new work after
     ``_POLLER_SWEEP_BUDGET_SECONDS``, so thousands of idle waiters cannot
     keep the poller busy; the rest wait for later sweeps. One item can still
@@ -7303,11 +7275,7 @@ def _check_barriers(seen):
             if not seen:
                 for instance_id in set(_poller_checked_visits) - set(snapshot):
                     del _poller_checked_visits[instance_id]
-            waiting = {
-                instance_id: fingerprint
-                for instance_id, fingerprint in snapshot.items()
-                if instance_id not in seen
-            }
+            waiting = [i for i in snapshot if i not in seen]
             if not waiting:
                 return
             if not can_work:
@@ -7316,25 +7284,18 @@ def _check_barriers(seen):
                     f"{_MAX_BARRIER_WALK_PASSES} passes."
                 )
             seen.update(waiting)
-            need_checks = _visits_that_need_checks(list(waiting))
+            need_checks = _visits_that_need_checks(waiting)
             deferred_ids = []
-            for instance_id in _visits_due(
-                {i: f for i, f in waiting.items() if i in need_checks}, sweep_ends
-            ):
+            for instance_id in _visits_due(need_checks, sweep_ends):
                 if _process_barrier_instance(instance_id):
                     deferred_ids.append(instance_id)
                 else:
-                    _remember_poller_check(instance_id, waiting[instance_id])
+                    _poller_checked_visits[instance_id] = time.monotonic()
             for instance_id in deferred_ids:
                 # Even if still deferred: a visit whose check keeps failing
                 # must not stay ahead of every other visit.
                 _process_barrier_instance(instance_id, retry=True)
-                _remember_poller_check(instance_id, waiting[instance_id])
-
-
-def _remember_poller_check(instance_id, fingerprint):
-    """Record that this process checked a visit in the given state."""
-    _poller_checked_visits[instance_id] = (fingerprint, time.monotonic())
+                _poller_checked_visits[instance_id] = time.monotonic()
 
 
 def check_sync_groups():

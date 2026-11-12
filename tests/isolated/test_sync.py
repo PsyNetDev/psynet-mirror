@@ -4240,12 +4240,28 @@ def _sweep_each_second_until_a_wait_ends(set_clocks, seconds):
     wait due at a whole second therefore ends half a second later, whether
     its rule compares with ``>`` or ``>=``.
     """
+
+    def waiting():
+        with Session(bind=db.engine) as session:
+            return set(
+                session.query(
+                    ParticipantLinkBarrier.barrier_instance_id,
+                    ParticipantLinkBarrier.participant_id,
+                )
+                .join(Participant)
+                .filter(
+                    ~ParticipantLinkBarrier.released,
+                    ~Participant.failed,
+                    Participant.status == "working",
+                )
+            )
+
     check_barriers()
-    start = psynet.sync._waiting_barrier_instance_ids()
+    start = waiting()
     for second in range(seconds):
         set_clocks(second + 0.5)
         check_barriers()
-        if psynet.sync._waiting_barrier_instance_ids() != start:
+        if waiting() != start:
             return second + 0.5
     return None
 
@@ -4379,6 +4395,8 @@ def test_poller_peek_falls_back_to_checking(
     peek = _visits_that_need_checks
     assert peek(list(visits.values())) == {visits[_CustomReleaseGroupBarrier]}
     assert not db.session().in_transaction()
+    assert [_visit_needs_check(visits[c]) for c in visits] == [False, True]
+    db.session.commit()
 
     def broken(participants):
         raise RuntimeError("broken load")

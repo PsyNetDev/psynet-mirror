@@ -68,10 +68,10 @@ every visit the peek passes over and fails the test if that check changes
 the visit's row, its waiters, or their groups and members; when a check
 learns to change something new, teach ``needs_check`` too. Because the
 audit checks those visits itself, the tests of when the poller ends a wait
-turn it off (``_freeze_clocks``). The visits to check go least
-recently checked first, with a 5-second head start for visits that
-are new or whose waiters or sync group changed since this process last
-checked them. A visit whose check is deferred or fails is retried at most
+turn it off (``_freeze_clocks``). The visits to check go in the order
+this process last checked them, never-checked ones first, so visits
+that need a check at every sweep cannot crowd out the rest. A visit whose
+check is deferred or fails is retried at most
 once in the same sweep and then queued like a checked one, and a waiter
 whose timeout fails goes behind the other overdue waiters, so a broken item
 cannot hold up the rest. The timeouts and the checks each stop starting
@@ -79,8 +79,7 @@ new work after 0.2 seconds, and later sweeps reach the remaining visits.
 One timeout or check can still overrun while it waits for a row lock. The
 batched read is not limited: it costs about half a millisecond per waiting
 visit, mostly building ORM objects, so beyond about 400 waiting visits a
-sweep takes longer than its interval. The nightly ASV benchmark
-``slow.barrier_poller`` tracks this time at 100 and 300 waiting visits.
+sweep takes longer than its interval.
 
 .. _sync-group-lock-order:
 

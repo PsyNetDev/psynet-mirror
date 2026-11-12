@@ -541,9 +541,7 @@ happens around the barrier check:
   ``test_idle_sweeps_cost_a_fixed_amount_per_waiting_visit`` pins the cost
   per waiting visit of each kind: none for a pair waiting for a late partner
   or a group waiting for top-ups, and one for a ``SimpleGrouper`` counting
-  down to start short or a ``Regrouper`` pool. The time such a sweep takes
-  at 100 and 300 waiting visits is tracked by the nightly ASV benchmark
-  ``slow.barrier_poller``. ``check_sync_groups`` counts
+  down to start short or a ``Regrouper`` pool. ``check_sync_groups`` counts
   every active group's members in one statement, and locks and recounts only
   the groups whose stored counts are stale or that may close, so idle groups
   cost it nothing. Neither depends on group size. A ``check_barriers`` sweep that found waiting visits then looks for
