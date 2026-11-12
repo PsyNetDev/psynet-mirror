@@ -4133,6 +4133,151 @@ def test_check_barriers_spreads_idle_visits_over_sweeps(
     assert released == [1, 2, 3]
 
 
+def _freeze_clocks(monkeypatch, start=None):
+    """Stop the wall clocks barrier checks read at ``start`` (epoch seconds, default now), and return a function that sets how far past it they are.
+
+    Call it before setting up waits, so they count from ``start``.
+    """
+    from psynet import timeline_hold
+
+    start = time.time() if start is None else start
+    start_timenow = timenow() + timedelta(seconds=start - time.time())
+    shift = [0]
+
+    def shifted_timenow():
+        return start_timenow + timedelta(seconds=shift[0])
+
+    monkeypatch.setattr("psynet.sync.timenow", shifted_timenow)
+    monkeypatch.setattr(timeline_hold, "timenow", shifted_timenow)
+    monkeypatch.setattr(time, "time", lambda: start + shift[0])
+    return lambda seconds: shift.__setitem__(0, seconds)
+
+
+def _keep_the_poller_busy(monkeypatch, exp, n_visits=5):
+    """Make each sweep check one visit, and add ``n_visits`` that wait for a partner who never comes.
+
+    Each idle visit is checked once, so later visits are new to the poller.
+    A visit then waits up to ``n_visits`` sweeps for its turn, unless its
+    ``next_due_at`` puts it first.
+    """
+    monkeypatch.setattr("psynet.sync._POLLER_SWEEP_BUDGET_SECONDS", 0)
+    grouper = SimpleGrouper("idle_pair", initial_group_size=2)
+    barrier = GroupBarrier(id_="idle", group_type="idle_pair", max_wait_time=600)
+    for _ in range(n_visits):
+        waiter, absent = _working_participants(exp, 2)
+        grouper._make_group([waiter, absent], initial_group_size=2)
+        db.session.commit()
+        _arrive_at_group_barrier(exp, barrier, waiter)
+        _commit_barrier_arrivals()
+    for _ in range(n_visits):
+        check_barriers()
+
+
+def _sweep_each_second_until_a_wait_ends(set_clocks, seconds):
+    """Sweep the poller at 0.5 s, 1.5 s, ... on clocks from :func:`_freeze_clocks`, until a waiting visit changes.
+
+    Returns the clock time of that sweep, or ``None`` after ``seconds``. A
+    wait due at a whole second therefore ends half a second later, whether
+    its rule compares with ``>`` or ``>=``.
+    """
+
+    def waiting():
+        with Session(bind=db.engine) as session:
+            return set(
+                session.query(
+                    ParticipantLinkBarrier.barrier_instance_id,
+                    ParticipantLinkBarrier.participant_id,
+                )
+                .join(Participant)
+                .filter(
+                    ~ParticipantLinkBarrier.released,
+                    ~Participant.failed,
+                    Participant.status == "working",
+                )
+            )
+
+    check_barriers()
+    start = waiting()
+    for second in range(seconds):
+        set_clocks(second + 0.5)
+        check_barriers()
+        if waiting() != start:
+            return second + 0.5
+    return None
+
+
+def _waiting_for_a_late_partner(exp, db_session):
+    (waiter, _), _ = _pair_sync_group(exp, db_session)
+    barrier = GroupBarrier(
+        id_="slow_partner", group_type="main", late_after=30, late_action="fail"
+    )
+    return barrier, [waiter]
+
+
+def _waiting_for_top_ups(exp, db_session, leave=lambda p: p.fail("quit")):
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=2,
+        join_existing_groups=True,
+        use_admission_points=False,
+        below_quorum="continue_without_group",
+        top_up_wait=40,
+    )
+    quitter, waiter = _working_participants(exp, 2)
+    grouper._make_group([quitter, waiter], initial_group_size=2)
+    db_session.commit()
+    leave(quitter)
+    barrier = GroupBarrier(id_="game_starts", group_type="team", max_wait_time=120)
+    return barrier, [waiter]
+
+
+def _waiting_for_top_ups_after_a_return(exp, db_session):
+    def leave(participant):
+        participant.status = "returned"
+
+    return _waiting_for_top_ups(exp, db_session, leave=leave)
+
+
+def _waiting_to_start_short(exp, db_session):
+    grouper = SimpleGrouper(
+        "team",
+        initial_group_size=4,
+        quorum=2,
+        below_quorum="fail",
+        start_short_after=40,
+        max_wait_time=80,
+    )
+    return grouper, _working_participants(exp, 2)
+
+
+@pytest.mark.parametrize(
+    "setup, seconds",
+    [
+        (_waiting_for_a_late_partner, 30),
+        (_waiting_for_top_ups, 40),
+        (_waiting_for_top_ups_after_a_return, 40),
+        (_waiting_to_start_short, 40),
+    ],
+)
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_timed_waits_end_on_time(
+    in_experiment_directory, db_session, monkeypatch, setup, seconds
+):
+    """late_after, top_up_wait and start_short_after each end their wait at the first sweep after it runs out, however many other visits wait."""
+    set_clocks = _freeze_clocks(monkeypatch)
+    exp = get_experiment()
+    _keep_the_poller_busy(monkeypatch, exp)
+    barrier, waiters = setup(exp, db_session)
+    for waiter in waiters:
+        _arrive_at_group_barrier(exp, barrier, waiter)
+    _commit_barrier_arrivals()
+    assert (
+        _sweep_each_second_until_a_wait_ends(set_clocks, seconds + 5) == seconds + 0.5
+    )
+
+
 def _arrival_hold_messages(publications, participant_id):
     """Return arrival-update overlay HTML published to one participant."""
     return [

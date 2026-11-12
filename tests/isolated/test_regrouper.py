@@ -32,6 +32,9 @@ if str(_ISOLATED_DIR) not in sys.path:
 from test_sync import (  # noqa: E402
     _arrive_at_group_barrier,
     _commit_barrier_arrivals,
+    _freeze_clocks,
+    _keep_the_poller_busy,
+    _sweep_each_second_until_a_wait_ends,
 )
 from timeline_hold_helpers import _json_timeline, _working_participants  # noqa: E402
 
@@ -170,6 +173,26 @@ def test_every_regrouper_leaves_the_split_to_the_poller(
     loner = _working_participants(exp, 1)
     _arrive(exp, pairs, loner)
     assert _waiting(pairs, loner) == []
+
+
+@pytest.mark.parametrize("timing", [dict(deadline=30), dict(every=45)])
+@in_consents_experiment
+def test_regrouper_pools_split_on_time(
+    in_experiment_directory, db_session, monkeypatch, timing
+):
+    """Two waiters are paired at the first sweep after the deadline or next tick while the third still plays, however many other visits wait."""
+    # Arrive 1 s after an every=45 tick, so the next one is 44 s away.
+    set_clocks = _freeze_clocks(monkeypatch, start=time.time() // 45 * 45 + 46)
+    exp = get_experiment()
+    _keep_the_poller_busy(monkeypatch, exp)
+    cohort = _working_participants(exp, 3)
+    _arrive(exp, SimpleGrouper("cohort", initial_group_size=3, quorum=3), cohort)
+    pairs = Regrouper(
+        "pair", within="cohort", group_size=2, max_wait_time=120, **timing
+    )
+    _arrive(exp, pairs, cohort[:2])
+    ended = _sweep_each_second_until_a_wait_ends(set_clocks, 50)
+    assert ended == timing.get("deadline", 44) + 0.5
 
 
 class _CustomRelease(Regrouper):
