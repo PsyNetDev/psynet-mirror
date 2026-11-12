@@ -1344,7 +1344,10 @@ Two separate settings decide what happens when someone leaves a group:
       member's own arrival, so the first to arrive also waits for the
       others; give the barrier ``late_after``, which removes that limit, or
       a ``max_wait_time`` longer than ``top_up_wait`` plus the time members
-      may take to reach it.
+      may take to reach it. Since a ``late_after`` barrier has no
+      ``max_wait_time``, the experiment refuses to load if a group could
+      wait for newcomers at one without ``top_up_wait``, unless an earlier
+      barrier stops top-ups.
   - Without top-ups, the group is dissolved, and the grouper's
     ``below_quorum`` decides for each remaining member: ``"fail"``
     fails them, telling them "Too few members of your group remained to

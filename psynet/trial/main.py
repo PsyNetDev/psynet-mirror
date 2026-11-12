@@ -61,6 +61,7 @@ from ..sync import (
     _group_max_wait_time,
     _reject_release_candidate_options,
     _validate_group_timeouts,
+    check_late_removal_policies,
 )
 from ..timeline import (
     CodeBlock,
@@ -1679,16 +1680,18 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             participant=participant,
             trial_maker=self.trial_maker,
         )
+        barriers = list(_group_barriers(logic))
         if (
             self.group_round is not None
             and self.group_round.trial_maker_id is None
-            and not _contains_group_barrier(logic)
+            and not barriers
         ):
             raise ValueError(
                 f"{type(self).__name__} is played in groups (sync_group_type="
                 f"{self.sync_group_type!r}), so show_trial needs a GroupBarrier "
                 "to close each round."
             )
+        check_late_removal_policies(barriers, participant)
         return logic
 
     @classmethod
@@ -4555,19 +4558,22 @@ def _record_sync_group(trial, participant, group, group_round=None):
     trial.sync_group_role = None if link is None else link.role
 
 
-def _contains_group_barrier(logic) -> bool:
-    """Return whether timeline logic, possibly in nested lists, contains a :class:`~psynet.sync.GroupBarrier`.
+def _group_barriers(logic):
+    """Yield the :class:`~psynet.sync.GroupBarrier` objects in timeline logic, possibly in nested lists.
 
     Barriers already resolved into timeline elements, for example by ``join``
     or ``conditional``, are found through the elements' ``barrier`` link.
     Barriers built later, inside a nested ``PageMaker``, are not visible.
     """
     if isinstance(logic, (list, tuple)):
-        return any(_contains_group_barrier(item) for item in logic)
+        for item in logic:
+            yield from _group_barriers(item)
+        return
+    if not isinstance(logic, GroupBarrier):
+        links = getattr(logic, "links", None) or {}
+        logic = links.get("barrier")
     if isinstance(logic, GroupBarrier):
-        return True
-    links = getattr(logic, "links", None) or {}
-    return isinstance(links.get("barrier"), GroupBarrier)
+        yield logic
 
 
 def _cued_trial_position(participant):

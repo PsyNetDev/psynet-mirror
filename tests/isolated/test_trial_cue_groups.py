@@ -676,6 +676,27 @@ def test_a_grouped_cued_trial_needs_a_group_barrier(
         cohort[0].current_trial._show_trial(exp, cohort[0])
 
 
+class LateVoteTrial(VoteTrial):
+    def show_trial(self, experiment, participant):
+        return GroupBarrier(
+            "voted", group_type="pair", late_after=30, late_action="leave_group"
+        )
+
+
+@in_consents_experiment
+def test_a_cued_trial_s_leave_group_barrier_needs_a_group_that_survives_it(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    LateVoteTrial.cue({})[0].consume(exp, cohort[0])
+    cohort[0].active_sync_groups["pair"].below_quorum = "fail"
+    with pytest.raises(ValueError, match="carry on alone"):
+        cohort[0].current_trial._show_trial(exp, cohort[0])
+    cohort[0].active_sync_groups["pair"].below_quorum = "continue_without_group"
+    cohort[0].current_trial._show_trial(exp, cohort[0])
+
+
 @in_consents_experiment
 def test_alternating_trial_classes_advance_the_round(
     in_experiment_directory, db_session

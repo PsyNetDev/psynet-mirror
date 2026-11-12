@@ -59,6 +59,7 @@ from psynet.sync import (
     _check_claimed_barrier_instance,
     _check_held_instance,
     _claim_barrier_instance,
+    _group_barrier_outcome,
     _has_active_sync_group,
     _hold_barrier_instance_claim,
     _hold_instance_id_for_page,
@@ -7533,6 +7534,57 @@ def test_groups_that_can_shrink_need_an_explicit_below_quorum():
     with pytest.raises(ValueError, match="carry on alone"):
         make_timeline(pair=ok, also_leave=["cohort"], cohort="fail")
     make_timeline(pair=ok, also_leave=["cohort"], cohort=ok)
+
+
+def test_a_custom_grouper_s_group_without_a_quorum_passes_its_barrier():
+    member = SimpleNamespace(id=1)
+    group = SyncGroup(group_type="custom")
+    assert _group_barrier_outcome(group, [member], {1}, "round") == "release"
+
+
+@pytest.mark.parametrize(
+    "admit_newcomers, admission_point, top_up_wait, stopped_before, raises",
+    [
+        ("on_join", False, None, False, True),
+        ("on_join", False, 60, False, False),
+        ("on_join", False, None, True, False),
+        ("at_admission_point", False, None, False, False),
+        ("at_admission_point", True, None, False, True),
+    ],
+)
+def test_late_after_barriers_need_a_top_up_wait_while_groups_take_newcomers(
+    admit_newcomers, admission_point, top_up_wait, stopped_before, raises
+):
+    def make_timeline():
+        return Timeline(
+            SimpleGrouper(
+                "team",
+                initial_group_size=2,
+                join_existing_groups=True,
+                admit_newcomers=admit_newcomers,
+                target_group_size=(
+                    2 if admit_newcomers == "at_admission_point" else None
+                ),
+                top_up_wait=top_up_wait,
+                below_quorum="continue_without_group",
+            ),
+            GroupBarrier("lobby", group_type="team", stop_top_ups=stopped_before),
+            GroupBarrier(
+                "round",
+                group_type="team",
+                late_after=30,
+                late_action="leave_group",
+                admission_point=admission_point,
+                newcomer_max_wait=60 if admission_point else None,
+            ),
+            InfoPage("Done", time_estimate=1),
+        )
+
+    if raises:
+        with pytest.raises(ValueError, match="Pass top_up_wait"):
+            make_timeline()
+    else:
+        make_timeline()
 
 
 @pytest.mark.parametrize(

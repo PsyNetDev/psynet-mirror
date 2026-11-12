@@ -1591,7 +1591,7 @@ def _group_barrier_outcome(
     newcomers_can_help = group.accepts_top_ups and (
         admission_point or group.admit_newcomers != "at_admission_point"
     )
-    if len(candidates) < group.quorum:
+    if len(candidates) < (group.quorum or 1):
         waits_for_top_ups = newcomers_can_help and not _top_up_wait_over(
             group, candidates, barrier_id
         )
@@ -2044,7 +2044,8 @@ class GroupBarrier(Barrier):
         Only affects groups formed with ``join_existing_groups=True``. A group
         below its quorum doesn't pass, so it keeps waiting here for a newcomer,
         up to the grouper's ``top_up_wait``, if set (see :ref:`groups_below_quorum`).
-        Pending members are turned away as ``"not_admitted"``; at an admission
+        A group with ``admit_newcomers="at_admission_point"`` waits only if
+        this barrier is an admission point; otherwise it is dissolved. Pending members are turned away as ``"not_admitted"``; at an admission
         point, those waiting here are admitted first.
 
     admission_point
@@ -2718,7 +2719,12 @@ class GroupBarrier(Barrier):
                 self._tell_removed_participant(participant, group, group_size)
 
     def _dissolve_after_late_removal(self, group, late):
-        """Dissolve ``group`` if losing ``late`` left it below quorum, logging a warning if that fails the rest."""
+        """Dissolve ``group`` if losing ``late`` left it below quorum, logging a warning if that fails the rest.
+
+        The load-time and ``show_trial`` checks reject this combination; the
+        warning covers barriers neither sees, such as those built in a
+        ``for_loop``.
+        """
         had_others = group.n_active_participants > 0
         group.dissolve_if_below_quorum()
         dissolves = group.n_active_participants == 0 or group.dissolving
@@ -3191,7 +3197,12 @@ class SimpleGrouper(Grouper):
         others: give the barrier ``late_after``, which removes that limit, or a
         ``max_wait_time`` longer than ``top_up_wait`` plus the time members may
         take to reach it (see :ref:`groups_below_quorum`).
-        Default: ``None``, waiting for newcomers without a limit.
+        Default: ``None``, waiting for newcomers without a limit. Required
+        (checked when the experiment loads) if the groups could wait for
+        newcomers at a barrier with ``late_after``: any of the group type's
+        such barriers with ``admit_newcomers="on_join"``, or its admission
+        points with ``"at_admission_point"``, unless an earlier barrier has
+        ``stop_top_ups=True``.
 
     start_short_after
         If set, a group may start with fewer than ``batch_size`` participants once the
@@ -4563,27 +4574,46 @@ def check_group_dropout_policies(barriers):
     ``late_action="leave_group"`` it must not be ``"fail"``, which would fail
     the members who were on time while the late one carries on.
 
+    A barrier with ``late_after`` has no ``max_wait_time``, so a group that
+    falls below its quorum there while it waits for newcomers would wait
+    forever once they stop coming. Groupers whose groups may wait for
+    newcomers at such a barrier, before a ``stop_top_ups=True`` barrier
+    stops their top-ups, must therefore set ``top_up_wait``.
+
     Parameters
     ----------
     barriers : iterable of Barrier
-        The barriers in the timeline. Barriers created inside a trial, such as
-        in ``Trial.show_trial``, or in a ``for_loop``, are not visible here;
-        :meth:`GroupBarrier._dissolve_after_late_removal` warns about those
-        at runtime.
+        The barriers in the timeline, in timeline order. Barriers built inside a trial's
+        ``show_trial`` are checked by
+        :func:`check_late_removal_policies` when the trial is shown; those
+        built in a ``for_loop`` or another ``PageMaker`` are not visible, and
+        :meth:`GroupBarrier._dissolve_after_late_removal` warns about them at
+        runtime.
 
     Raises
     ------
     ValueError
-        If a grouper lacks ``below_quorum``, or combines ``below_quorum="fail"``
-        with a barrier's ``late_action="leave_group"``.
+        If a grouper lacks ``below_quorum``, combines ``below_quorum="fail"``
+        with a barrier's ``late_action="leave_group"``, or lacks a
+        ``top_up_wait`` that such a barrier needs.
     """
     barriers = list(barriers)
     groupers = {}
     for barrier in barriers:
         if isinstance(barrier, SimpleGrouper):
             groupers.setdefault(barrier.group_type, []).append(barrier)
+    top_ups_stopped = set()
     for barrier in barriers:
-        if not isinstance(barrier, GroupBarrier) or barrier.late_after is None:
+        if not isinstance(barrier, GroupBarrier):
+            continue
+        if barrier.late_after is not None and (
+            barrier.group_type not in top_ups_stopped
+        ):
+            for grouper in groupers.get(barrier.group_type, []):
+                _check_top_up_wait(barrier, grouper)
+        if barrier.stop_top_ups:
+            top_ups_stopped.add(barrier.group_type)
+        if barrier.late_after is None:
             continue
         for group_type in [barrier.group_type, *barrier.also_leave]:
             for grouper in groupers.get(group_type, []):
@@ -4596,18 +4626,78 @@ def check_group_dropout_policies(barriers):
                         "falls below its quorum: 'fail' or "
                         "'continue_without_group'."
                     )
-                if barrier.late_action == "leave_group" and (
-                    grouper.below_quorum == "fail"
-                ):
-                    raise ValueError(
-                        f"GroupBarrier '{barrier.id}' has "
-                        "late_action='leave_group', but SimpleGrouper "
-                        f"'{grouper.id}' has below_quorum='fail', so a late "
-                        "member would carry on alone while the members who "
-                        "were on time are failed. Pass "
-                        "below_quorum='continue_without_group', or "
-                        "late_action='fail'."
-                    )
+                _check_late_action(
+                    barrier, grouper.below_quorum, f"SimpleGrouper '{grouper.id}'"
+                )
+
+
+def check_late_removal_policies(barriers, participant):
+    """Check barriers built at runtime against the stored groups they remove late members from.
+
+    :func:`check_group_dropout_policies` only sees the timeline's top-level
+    barriers, so :meth:`psynet.trial.main.Trial._show_trial` calls this for
+    the barriers in ``show_trial``, using the ``below_quorum`` stored on
+    ``participant``'s groups.
+
+    Parameters
+    ----------
+    barriers : iterable of Barrier
+        The barriers to check.
+    participant : Participant
+        The participant whose active groups the barriers act on.
+
+    Raises
+    ------
+    ValueError
+        If a barrier with ``late_action="leave_group"`` acts on a group with
+        ``below_quorum="fail"``.
+    """
+    groups = None
+    for barrier in barriers:
+        if not isinstance(barrier, GroupBarrier) or barrier.late_action != (
+            "leave_group"
+        ):
+            continue
+        if groups is None:
+            groups = participant.active_sync_groups
+        for group_type in [barrier.group_type, *barrier.also_leave]:
+            group = groups.get(group_type)
+            if isinstance(group, SimpleSyncGroup):
+                _check_late_action(
+                    barrier, group.below_quorum, f"the '{group_type}' grouper"
+                )
+
+
+def _check_top_up_wait(barrier, grouper):
+    """Reject a ``late_after`` barrier at which ``grouper``'s groups could wait for newcomers without a limit."""
+    if not grouper.join_existing_groups or grouper.top_up_wait is not None:
+        return
+    if grouper.admit_newcomers == "at_admission_point" and not barrier.admission_point:
+        return
+    raise ValueError(
+        f"GroupBarrier '{barrier.id}' has late_after, so it has no "
+        f"max_wait_time, and SimpleGrouper '{grouper.id}' groups wait there "
+        "for newcomers while they are below their quorum"
+        + (
+            " or target_group_size"
+            if grouper.admit_newcomers == "at_admission_point"
+            else ""
+        )
+        + ". Pass top_up_wait to the grouper to limit that wait, or stop "
+        "top-ups before this barrier with stop_top_ups=True on an earlier "
+        "GroupBarrier."
+    )
+
+
+def _check_late_action(barrier, below_quorum, grouper_label):
+    """Reject ``late_action="leave_group"`` on a group whose ``below_quorum`` is ``"fail"``."""
+    if barrier.late_action == "leave_group" and below_quorum == "fail":
+        raise ValueError(
+            f"GroupBarrier '{barrier.id}' has late_action='leave_group', but "
+            f"{grouper_label} has below_quorum='fail', so a late member would "
+            "carry on alone while the members who were on time are failed. "
+            "Pass below_quorum='continue_without_group', or late_action='fail'."
+        )
 
 
 def check_admission_points(barriers):
@@ -5667,7 +5757,7 @@ def _divergence_message(group) -> Optional[Tuple[str, Set[int]]]:
         )
     ).all()
     members = {participant_id for participant_id, _ in rows}
-    if len(members) < group.quorum or any(link is None for _, link in rows):
+    if len(members) < (group.quorum or 1) or any(link is None for _, link in rows):
         return None
     waits = {}
     for _, link in rows:
