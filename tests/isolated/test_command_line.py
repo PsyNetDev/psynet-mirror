@@ -135,8 +135,12 @@ class TestCommandLine(object):
         from psynet import command_line, experiment_scaffold
 
         monkeypatch.chdir(tmp_path)
+        running_checkout = Path(command_line.__file__).resolve().parent.parent
+        editable_source = running_checkout
         monkeypatch.setattr(
-            experiment_scaffold, "get_editable_psynet_source", lambda: tmp_path
+            experiment_scaffold,
+            "get_editable_psynet_source",
+            lambda: editable_source,
         )
 
         def build_and_place(source, destination):
@@ -157,6 +161,10 @@ class TestCommandLine(object):
             command_line._check_local_image_packages(local_packages)
 
         Path("Dockerfile").write_text("COPY *local-image-pins.txt ./\n")
+        editable_source = tmp_path
+        with pytest.raises(click.UsageError, match=str(running_checkout)):
+            command_line._check_local_image_packages(local_packages)
+        editable_source = running_checkout
         command_line._check_local_image_packages(local_packages)
         with command_line._local_image_packages(local_packages):
             assert Path("psynet-1.0-py3-none-any.whl").exists()
