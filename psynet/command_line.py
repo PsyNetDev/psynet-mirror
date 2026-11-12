@@ -702,6 +702,25 @@ def sandbox(*args, **kwargs):
     )
 
 
+def _ticking_game_warning(mode):
+    """The warning ``psynet debug local`` and ``psynet deploy local`` give when
+    they run the development server for an experiment with a live session that
+    ticks, or ``None``. ``mode`` is the deployment's mode, ``"debug"`` or
+    ``"live"``."""
+    from .experiment import import_local_experiment
+
+    games = import_local_experiment()["class"].realtime_games
+    if not any(game.tick_rate for game in games):
+        return None
+    command = "psynet debug local" if mode == "debug" else "psynet deploy local"
+    return (
+        "This experiment has a live session with ticks. The development server "
+        "sometimes delivers the game's views late, in bursts, so other players' "
+        f"movement stalls or jumps. Run {command} --legacy instead, which uses "
+        "gunicorn, like a deployed experiment."
+    )
+
+
 def _run_local(ctx, docker, archive, legacy, no_browsers, mode, context_group):
     """
     Debug the experiment locally (this should normally be your first choice).
@@ -732,6 +751,9 @@ def _run_local(ctx, docker, archive, legacy, no_browsers, mode, context_group):
             elif docker:
                 _debug_docker(ctx, archive=None, no_browsers=no_browsers)
             else:
+                warning = _ticking_game_warning(mode)
+                if warning:
+                    click.echo(f"Warning: {warning}", err=True)
                 _debug_auto_reload(ctx, archive=None, no_browsers=no_browsers)
         finally:
             kill_psynet_worker_processes()
@@ -1578,6 +1600,10 @@ def _launch_app_and_report(port, auth=None):
         )
     )
     after = []
+    # The warning printed at the start has scrolled away by now.
+    warning = _ticking_game_warning(deployment_info.read("mode"))
+    if warning:
+        after.append(("Warning", warning))
     if os.environ.get(READY_ENV_VAR):
         after.append(("Other terminals", _isolated_session_export_line(os.environ)))
     develop.echo_ready(details, after=after)

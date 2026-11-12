@@ -127,6 +127,19 @@ are no longer part of this pipeline. Put database preparation in
 ``pre_render()``, customize response data through ``ResponseResult``, and keep
 ``render()`` read-only.
 
+Before ``process_response``, and inside the same ``forbid_commits`` block,
+``POST /response`` calls the page's
+:meth:`~psynet.timeline.Page.check_ready_for_response`. ``ModularPage`` passes
+the call to its control. A refusal ends the request with a rejection before
+anything is written: no ``Response`` row, and no ``time_taken`` on the trial.
+A string becomes a ``FailedValidation`` without ``retry_after``, which the
+browser treats like a failed ``validate``. A ``FailedValidation`` with
+``retry_after`` puts it in the rejection payload. ``psynet.waitIfRetryLater``
+then shows the message in a status notice and resends the same submission
+after that many seconds, and the bot driver sleeps and resends, with no limit
+on attempts. ``LiveSessionControl`` uses this to keep a game page open until
+its session's result is saved.
+
 Participant-facing write phases use a bounded PostgreSQL ``lock_timeout`` so
 unexpected contention fails safely instead of occupying a web worker
 indefinitely. ``GET /timeline?mode=json`` and ``POST /response`` return
@@ -214,6 +227,7 @@ PsyNet:
 * stops page media and invalidates outstanding media loads;
 * clears Lucid termination state;
 * runs registered page cleanup callbacks and event-listener cleanup;
+* closes the page's live session connection, if it has one;
 * resets page-scoped response and JavaScript state.
 
 2. Commit the new fragment
@@ -594,6 +608,29 @@ skipped its own later hold, an ordinary POST of the previous hold uuid is
 catch-up, not a multi-tab reject. Hold-resume overlays catch up the same way
 so the browser can swap in place.
 
+Live session sockets
+--------------------
+
+``psynet.liveSession`` joins a page with a ``LiveSessionControl`` to its live
+session, over Dallinger's ``/experiment-socket`` route. The control adds the
+session's id and game channel to the page's ``js_vars`` each time the page
+renders, through ``get_render_js_vars``. The socket's scope is the
+participant's ``websocketScope``, a ``.`` and ``dallinger.pageScope``, which
+names the page load, so the session can tell two tabs, or two loads of the
+same page, apart. ``Experiment.accept_websocket_connection`` checks the part
+before the ``.``. PsyNet's own directed messages, such as a timeline hold's
+wake, name the bare ``websocketScope``, so game sockets don't receive them.
+
+A tab closes its game socket when its page changes. The same game page open in
+a second tab plays as the same player. Once one tab moves the participant on,
+the other's submission is refused, like any stale tab's.
+
+When the control's ``auto_advance`` is on, which is the default, the game
+socket's ``onResultSaved`` and ``onRefused`` call ``psynet.nextPage()``. If
+the page isn't ready yet, as when a reload finds the session already ended,
+the call waits for ``timelinePageReady``, and is dropped if the page has
+changed by then.
+
 Adding new frontend components
 ------------------------------
 
@@ -601,6 +638,8 @@ For new Prompt and Control components:
 
 * keep templates focused on markup;
 * use ``get_js_vars()`` for serialized page configuration;
+* use ``get_render_js_vars(experiment, participant)`` for configuration that
+  depends on the participant, read each time the page renders;
 * use ``get_js_dependencies()`` for classic load-once libraries;
 * use ``get_js_page_code()`` for short inline activation snippets;
 * use ``get_js_page_modules()`` for per-page module behavior;
@@ -637,6 +676,12 @@ Key implementation and test locations
 * ``psynet/resources/scripts/psynet.js`` — browser lifecycle orchestration.
 * ``psynet/resources/scripts/websocket-channel.js`` — shared WebSocket channel
   framing and reconnect lifecycle.
+* ``psynet/resources/scripts/live-session.js`` — ``psynet.liveSession``, a game
+  page's connection to its live session.
+* ``psynet/live_session/`` — live sessions on the server: the game class, its
+  method wrappers, the initializer, the control and the ready step.
+* ``tests/isolated/test_live_session.py``, ``tests/javascript/live-session.test.mjs``
+  and ``tests/playwright/live_session.spec.js`` — live sessions.
 * ``psynet/timeline_hold.py`` — durable hold state, accounting, and wake
   publication.
 * ``psynet/experiment.py`` — GET hold resolution (``_resolve_get_timeline_hold``,

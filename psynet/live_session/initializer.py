@@ -1,0 +1,162 @@
+"""LiveSessionInitializer, the group barrier that starts a session, and
+live_session_id, which finds it.
+
+When the barrier releases a group, it starts a Dallinger real-time session
+and stores its id in each member's ``live_sessions``, keyed by the
+initializer's id. Reaching the initializer again clears that entry first, so
+a page finds only the session from the participant's latest visit.
+"""
+
+import inspect
+import json
+
+from dallinger.realtime import RealtimeGame, create_realtime_session
+
+from ..bot import Bot
+from ..sync import GroupBarrier
+from ..timeline import CodeBlock, join
+from .game import LiveSession
+from .ready_step import _new_session_settings
+
+
+class LiveSessionInitializer(GroupBarrier):
+    """Starts a live session for each group that reaches this point in the
+    timeline.
+
+    Like a :class:`~psynet.sync.GroupBarrier`, it waits for every member of
+    the participant's group to arrive. It then starts a session of
+    ``game_type`` with the members as its players, and the group moves on
+    together. A later page finds the session with :func:`live_session_id`. A
+    group that arrives again, for example in a loop, plays a new session.
+
+    Parameters
+    ----------
+
+    id_
+        A name for this initializer, which pages pass to
+        :func:`live_session_id` to find the group's session.
+
+    group_type
+        The ``group_type`` of the :class:`~psynet.sync.Grouper` whose groups
+        play the game.
+
+    game_type
+        The game the group plays, a :class:`LiveSession` subclass with a
+        ``bot`` method. Define it at the top level of a file, such as
+        ``experiment.py``, not inside a function or another class.
+
+    settings
+        Settings for the sessions this initializer starts, such as the
+        number of rounds: a dict, or any other value that can be saved as
+        JSON. The game's ``initial_state`` gets it as a second argument, so
+        define that as ``initial_state(self, players, settings)``. In a
+        trial's ``show_trial``, pass the trial's ``definition`` to play each
+        trial's game with that trial's settings. The members of a group must
+        all arrive with the same settings, so give the trial maker the
+        group's ``sync_group_type``, which gives them the same trial.
+
+    **kwargs
+        Any other parameter of :class:`~psynet.sync.GroupBarrier`, such as
+        ``max_wait_time``, except ``on_release``, which the initializer uses
+        to start the session.
+    """
+
+    def __init__(self, id_: str, group_type: str, game_type, settings=None, **kwargs):
+        if not (isinstance(game_type, type) and issubclass(game_type, LiveSession)):
+            raise TypeError(
+                f"game_type must be a LiveSession subclass, not {game_type!r}."
+            )
+        if game_type.channel is None:
+            raise TypeError(
+                f"{game_type.__name__} has no channel, so it can't be played. "
+                "Set its channel to a name for the game."
+            )
+        if game_type.bot is RealtimeGame.bot:
+            raise TypeError(
+                f"{game_type.__name__} has no bot method, so its bots, such as "
+                "those of psynet test, would never move. Define bot to return "
+                "a bot's next message."
+            )
+        if settings is not None:
+            settings = _checked_settings(game_type, settings)
+        super().__init__(
+            id_=id_,
+            group_type=group_type,
+            on_release=LiveSessionInitializer._release,
+            **kwargs,
+        )
+        self.game_type = game_type
+        self.settings = settings
+
+    def resolve(self):
+        # Ahead of the barrier, which a participant who has left the group
+        # passes without arriving at it.
+        return join(CodeBlock(self._forget_session), super().resolve())
+
+    def _forget_session(self, participant):
+        _set_live_session_id(participant, self.id, None)
+
+    # on_release has to be importable by name, and gets the barrier rebuilt
+    # from its saved settings.
+    @staticmethod
+    def _release(participants, barrier):
+        barrier._start_session(participants)
+
+    def _start_session(self, participants):
+        token = _new_session_settings.set(self.settings)
+        try:
+            session_id = create_realtime_session(
+                self.game_type,
+                [member.id for member in participants],
+                bots=[member.id for member in participants if isinstance(member, Bot)],
+            )
+        finally:
+            _new_session_settings.reset(token)
+        for member in participants:
+            _set_live_session_id(member, self.id, session_id)
+
+
+# Checked when the timeline is built, since an error while a group is
+# released is only logged, and leaves the group waiting.
+def _checked_settings(game_type, settings):
+    try:
+        # A copy, as JSON has it, which is how the state will hold it.
+        settings = json.loads(json.dumps(settings, allow_nan=False))
+    except (TypeError, ValueError) as error:
+        raise TypeError(
+            f"The settings for {game_type.__name__} can't be saved as JSON: {error}"
+        ) from None
+    try:
+        inspect.signature(game_type.initial_state).bind(None, [], settings)
+    except TypeError:
+        raise TypeError(
+            f"{game_type.__name__}.initial_state takes no settings. Define it "
+            "as initial_state(self, players, settings)."
+        ) from None
+    return settings
+
+
+def live_session_id(participant, initializer_id):
+    """Return the id of the session that ``participant``'s group started at
+    the :class:`LiveSessionInitializer` with the id ``initializer_id``.
+
+    Returns ``None`` if the group hasn't started one there since the
+    participant last arrived, for example because the group broke up while
+    it waited.
+    """
+    return _live_session_ids(participant).get(initializer_id)
+
+
+def _live_session_ids(participant):
+    return participant.live_sessions or {}
+
+
+def _set_live_session_id(participant, initializer_id, session_id):
+    session_ids = {
+        key: value
+        for key, value in _live_session_ids(participant).items()
+        if key != initializer_id
+    }
+    if session_id is not None:
+        session_ids[initializer_id] = session_id
+    participant.live_sessions = session_ids

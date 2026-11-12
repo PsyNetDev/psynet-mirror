@@ -404,6 +404,12 @@ class ExperimentMeta(type):
         cls.css = cls.css.copy()
         cls.css_links = cls.css_links.copy()
 
+        from .live_session import live_session_game_types
+
+        listed = dct.get("realtime_games", getattr(cls, "_listed_realtime_games", []))
+        cls._listed_realtime_games = list(listed)
+        cls.realtime_games = list(dict.fromkeys([*listed, *live_session_game_types()]))
+
         if hasattr(cls, "test_create_bots"):
             raise RuntimeError(
                 "Experiment.test_create_bots has been removed, please do not override it. Instead you should put "
@@ -718,6 +724,13 @@ def _is_replacement_gunicorn_worker(worker):
 _PLACEHOLDER_TIMELINE = Timeline(InfoPage("Placeholder timeline", time_estimate=5))
 
 
+def _rejected_payload(message, retry_after=None):
+    payload = {"submission": "rejected", "message": message}
+    if retry_after is not None:
+        payload["retry_after"] = retry_after
+    return payload
+
+
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     """
     The main experiment class from which to inherit when building experiments.
@@ -953,6 +966,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         this when it deploys the app, and later updates of the app build them
         in again. Don't set it yourself.
         Default: unset.
+
+    realtime_games : ``list``
+        The game types of the experiment's live sessions (see
+        :mod:`psynet.live_session`). PsyNet adds every
+        :class:`~psynet.live_session.LiveSession` defined or imported before
+        the experiment class, so list only other game types it plays.
+        Default: ``[]``.
 
 
 
@@ -3100,6 +3120,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         cls.check_stale_ad_page_override()
         cls.check_unused_dallinger_quality_checks()
         cls.check_stale_bonus_override()
+        cls.check_live_session_games()
         PsyNetProlificRecruiterMixin.check_screen_out_config(config)
 
         parser = configparser.ConfigParser()
@@ -3377,6 +3398,26 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "`bad_data` or `did_not_attend`). Fail participants during "
                 "the timeline instead, for example with `fail()` or "
                 "`UnsuccessfulEndPage`."
+            )
+
+    @classmethod
+    def check_live_session_games(cls):
+        """Check that each live session game is defined or imported before
+        the experiment class, since PsyNet adds only those to
+        ``realtime_games``."""
+        from .live_session import live_session_game_types
+
+        listed = {game_type.channel for game_type in cls.realtime_games}
+        missing = [
+            game_type.__name__
+            for game_type in live_session_game_types()
+            if game_type.channel not in listed
+        ]
+        if missing:
+            raise RuntimeError(
+                f"{', '.join(missing)} must be defined or imported before the "
+                f"experiment class, {cls.__name__}, for PsyNet to add them to "
+                "its realtime_games."
             )
 
     @classmethod
@@ -4404,6 +4445,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             with forbid_commits(
                 f"Response processing for {_timeline_step_name(event)}"
             ):
+                # Optional, so that a page class that doesn't extend Page
+                # still works.
+                check_ready = getattr(event, "check_ready_for_response", None)
+                refusal = (
+                    None
+                    if check_ready is None
+                    else check_ready(experiment=self, participant=participant)
+                )
+                if isinstance(refusal, str):
+                    refusal = FailedValidation(message=refusal)
+                if refusal is not None:
+                    return ResponseResult(
+                        payload=_rejected_payload(refusal.message, refusal.retry_after)
+                    )
                 response = event.process_response(
                     raw_answer=raw_answer,
                     blobs=blobs,
@@ -4436,12 +4491,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     validation, FailedValidation
                 )
                 if not response.successful_validation:
-                    return ResponseResult(
-                        payload={
-                            "submission": "rejected",
-                            "message": validation.message,
-                        }
-                    )
+                    if validation.retry_after is not None:
+                        # The response is saved, so resending it would save
+                        # another each time.
+                        logger.warning(
+                            "%s's validate returned a FailedValidation with "
+                            "retry_after, which only check_ready_for_response "
+                            "can use. The participant submits again instead.",
+                            type(event).__name__,
+                        )
+                    return ResponseResult(payload=_rejected_payload(validation.message))
 
                 recording_uploads = []
                 if getattr(response, "_deferred_recording_answer", False) is True:
@@ -4722,11 +4781,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             f"Timeline hold skip did not settle after {_MAX_BARRIER_WALK_PASSES} steps."
         )
 
-    def response_rejected(self, message):
-        logger.warning(
-            "The response was rejected with the following message: '%s'.", message
+    def response_rejected(self, message, retry_after=None):
+        if retry_after is None:
+            logger.warning(
+                "The response was rejected with the following message: '%s'.", message
+            )
+            return success_response(submission="rejected", message=message)
+        logger.info("The response was refused for now: '%s'.", message)
+        return success_response(
+            submission="rejected", message=message, retry_after=retry_after
         )
-        return success_response(submission="rejected", message=message)
 
     @classmethod
     def busy_response(cls):
@@ -4984,6 +5048,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     resources.files("psynet")
                     / "resources/scripts/websocket-channel.js",
                     "/static/scripts/websocket-channel.js",
+                ),
+                (
+                    resources.files("psynet") / "resources/scripts/live-session.js",
+                    "/static/scripts/live-session.js",
                 ),
                 (
                     resources.files("psynet")
@@ -8109,7 +8177,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         clock.close("render")
         if payload.get("submission") == "rejected":
-            return finish(exp.response_rejected(payload["message"]))
+            retry_after = payload.get("retry_after")
+            if retry_after is None:
+                # An override written as response_rejected(self, message)
+                # takes no retry_after.
+                return finish(exp.response_rejected(payload["message"]))
+            return finish(
+                exp.response_rejected(payload["message"], retry_after=retry_after)
+            )
         return finish(success_response(**payload))
 
     @classmethod

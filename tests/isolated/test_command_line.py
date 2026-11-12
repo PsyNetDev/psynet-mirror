@@ -910,6 +910,30 @@ class TestCommandLine(object):
 #
 
 
+def test_local_runs_warn_about_the_development_server_for_a_game_with_ticks(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from psynet.command_line import _ticking_game_warning
+
+    def experiment_with(*tick_rates):
+        games = [SimpleNamespace(tick_rate=rate) for rate in tick_rates]
+        experiment = SimpleNamespace(realtime_games=games)
+        monkeypatch.setattr(
+            "psynet.experiment.import_local_experiment",
+            lambda: {"class": experiment},
+        )
+
+    experiment_with(0, 20)
+    assert "Run psynet debug local --legacy" in _ticking_game_warning("debug")
+    assert "Run psynet deploy local --legacy" in _ticking_game_warning("live")
+    experiment_with(0)
+    assert _ticking_game_warning("debug") is None
+    experiment_with()
+    assert _ticking_game_warning("debug") is None
+
+
 def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     """Legacy debug defaults to four workers so a quartet extra waiter can POST."""
     from psynet.command_line import LEGACY_DEBUG_GUNICORN_THREADS, _debug_legacy
@@ -1040,6 +1064,11 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
         monkeypatch.delenv("_PSYNET_TEST_ENVIRONMENT_READY", raising=False)
     opened = []
     monkeypatch.setattr(develop, "open_browser", opened.append)
+    monkeypatch.setattr(
+        "psynet.command_line._ticking_game_warning",
+        lambda mode: f"Views are late in {mode} mode.",
+    )
+    monkeypatch.setattr("psynet.command_line.deployment_info.read", lambda key: "live")
     job(5001)
     deadline = time.monotonic() + 5
     while len(opened) < (0 if no_browsers else 2) and time.monotonic() < deadline:
@@ -1054,6 +1083,7 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
         "http://127.0.0.1:5001/dashboard (user admin, password s3cret)"
     )
     assert block["Full log"].endswith("logs.jsonl")
+    assert block["Warning"] == "Views are late in live mode."
     assert ("Other terminals" in block) is no_browsers
     if no_browsers:
         assert block["Other terminals"] == (

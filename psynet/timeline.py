@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Unio
 from bs4 import BeautifulSoup
 from dallinger import db
 from dallinger.models import timenow
+from dallinger.realtime.utils import is_number
 from dominate import tags
 from jsonpickle.util import importable_name
 from markupsafe import Markup
@@ -2218,6 +2219,20 @@ class Page(Elt):
         """
         return raw_answer
 
+    def check_ready_for_response(self, experiment, participant):
+        """
+        Check whether the page can accept the participant's response yet.
+        PsyNet calls it before reading the response. Return ``None`` to accept
+        it, as the default does, or a :class:`psynet.timeline.FailedValidation`
+        with a ``retry_after`` to refuse it for now, for example on a page
+        that waits for something else to finish. The page then resends the
+        same response after ``retry_after`` seconds. A message string, or a
+        ``FailedValidation`` without ``retry_after``, refuses the response as
+        a failed ``validate`` does, and the participant has to submit it
+        again. A refused response leaves nothing in the database.
+        """
+        return None
+
     def validate(self, response, **kwargs):
         """
         Takes the :class:`psynet.timeline.Response` object
@@ -2295,6 +2310,10 @@ class Page(Elt):
             or get_config().get("show_early_exit_button", False)
         )
 
+    def _js_vars_for(self, experiment, participant):
+        """The page's ``js_vars`` when it renders for ``participant``."""
+        return self.js_vars
+
     def render(self, experiment, participant, partial_mode=False):
         from .utils import get_config
 
@@ -2339,7 +2358,7 @@ class Page(Elt):
         self._check_spa_template_contract(
             inplace_timeline_transitions=config.get("inplace_timeline_transitions"),
         )
-        js_vars = {**self.js_vars, **internal_js_vars}
+        js_vars = {**self._js_vars_for(experiment, participant), **internal_js_vars}
         inplace_timeline_transitions = config.get("inplace_timeline_transitions")
         show_early_exit_button = self.early_exit_available(experiment, participant)
         if show_early_exit_button:
@@ -3330,8 +3349,31 @@ def _trial_owning_page(participant):
 
 
 class FailedValidation:
-    def __init__(self, message="Invalid response, please try again."):
+    """Returned by a page's ``validate``, or its
+    :meth:`~psynet.timeline.Page.check_ready_for_response`, to refuse a
+    response.
+
+    Parameters
+    ----------
+
+    message
+        The message shown to the participant.
+
+    retry_after
+        For a response the page can accept only later, the number of seconds
+        after which the page resends it by itself, showing ``message``
+        meanwhile. Use it with ``check_ready_for_response``, which refuses the
+        response before PsyNet saves anything. ``validate`` runs once the
+        response is saved, so PsyNet ignores ``retry_after`` there and logs a
+        warning. With the default, ``None``, the participant can change their
+        response and submit it again.
+    """
+
+    def __init__(self, message="Invalid response, please try again.", retry_after=None):
+        if retry_after is not None and not (is_number(retry_after) and retry_after > 0):
+            raise ValueError("retry_after must be None or a positive number.")
         self.message = message
+        self.retry_after = retry_after
 
 
 @register_table

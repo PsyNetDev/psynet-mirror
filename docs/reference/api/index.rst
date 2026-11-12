@@ -66,6 +66,7 @@ They are generated from the source code and grouped like the
    :maxdepth: 1
 
    sync
+   live_session
    chatroom
    pseudonym
    group_prompt

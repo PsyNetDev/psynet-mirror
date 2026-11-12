@@ -17,7 +17,7 @@ from psynet.experiment import Request
 from psynet.modular_page import ModularPage
 from psynet.participant import DriverStopped, ParticipantDriver
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.timeline import Response
+from psynet.timeline import FailedValidation, Response
 
 MEDIA_HEADERS = {"wav": b"RIFF\x00\x00\x00\x00WAVE", "webm": b"\x1a\x45\xdf\xa3"}
 
@@ -293,6 +293,41 @@ def test_submit_response_does_not_retry_when_the_page_uuid_is_unchanged(
         driver._submit_response(driver.status, {})
 
     assert posted == ["hold-a"]
+
+
+def test_submit_response_sends_it_again_after_a_retry_after(monkeypatch):
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.id = 7
+    driver.experiment = SimpleNamespace(base_url="http://psynet.test")
+    driver.response_files = {}
+    driver.status = _driver_page_status("page-a")
+    replies = [
+        {"submission": "rejected", "message": "Wait.", "retry_after": 2},
+        {"submission": "rejected", "message": "Wait.", "retry_after": 1.5},
+        {"submission": "approved"},
+    ]
+    posted = []
+    slept = []
+
+    def fake_post(_url, data=None, files=None):
+        posted.append(json.loads(data["json"])["page_uuid"])
+        return _driver_http_response(replies[len(posted) - 1])
+
+    driver.__dict__["_http_session"] = SimpleNamespace(post=fake_post)
+    monkeypatch.setattr(driver, "_fetch_status", lambda: None)
+    monkeypatch.setattr(driver, "_sleep", slept.append)
+    monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
+
+    driver._submit_response(driver.status, {})
+
+    assert posted == ["page-a", "page-a", "page-a"]
+    assert slept == [2, 1.5]
+
+
+@pytest.mark.parametrize("retry_after", [0, "1"])
+def test_retry_after_is_a_positive_number(retry_after):
+    with pytest.raises(ValueError, match="retry_after must be None or a positive"):
+        FailedValidation("Wait.", retry_after=retry_after)
 
 
 def test_submit_response_sends_hold_resume_for_timeline_holds(monkeypatch):

@@ -16,7 +16,7 @@
   // Legacy globals remain available through configurable accessors while
   // experiments migrate, allowing accesses to warn or fail with useful errors.
   const LEGACY_JS_VAR_GLOBAL_MODES = new Set(["warn", "error", "off"]);
-  const RESERVED_JS_VAR_GLOBALS = new Set(["pageUuid"]);
+  const RESERVED_JS_VAR_GLOBALS = new Set(["pageUuid", "liveSession"]);
   let legacyJsVarGlobalStates = new Map();
   let warnedLegacyJsVarGlobalCollisionKeys = new Set();
   let warnedLegacyJsVarGlobalLockedKeys = new Set();
@@ -529,6 +529,7 @@
     psynet.resetPageState = function () {
       psynet.waiting.stop();
       psynet.runPageCleanupCallbacks();
+      psynet.liveSession.resetPageState();
       psynet.clearPageEventListeners();
       psynet.comments = [];
       psynet.page = {
@@ -633,6 +634,7 @@
     psynet.activatePageJavascript = async function () {
       let activated = [];
       let context = psynet.getPageActivationContext();
+      psynet.liveSession.showNoSessionNotice();
       try {
         for (let src of psynetTemplateData.legacyJsLinks || []) {
           // Legacy js_links force a full reload, so a clean document load uses
@@ -3872,26 +3874,82 @@
     };
 
     psynet.showWakingNotice = function (visible) {
-      let notice = document.getElementById("psynet-waking-notice");
-      if (!visible) {
+      psynet.showStatusNotice(
+        "psynet-waking-notice",
+        visible
+          ? psynetTemplateData.strings?.wakingUp ||
+              "Getting ready, please wait..."
+          : null,
+      );
+    };
+
+    // Shows ``text`` in a notice at the top of the page, or removes the
+    // notice if ``text`` is null. Notices with different ids stack, in the
+    // order they were first shown.
+    psynet.showStatusNotice = function (id, text) {
+      let notice = document.getElementById(id);
+      if (text === null) {
         notice?.remove();
         return;
       }
-      if (notice) return;
+      if (notice) {
+        if (notice.textContent !== text) notice.textContent = text;
+        return;
+      }
+      let stack = document.getElementById("psynet-status-notices");
+      if (!stack) {
+        stack = document.createElement("div");
+        stack.id = "psynet-status-notices";
+        stack.style.cssText =
+          "position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 1080; " +
+          "display: flex; flex-direction: column; align-items: center; gap: 0.5rem;";
+        document.body.appendChild(stack);
+      }
       notice = document.createElement("div");
-      notice.id = "psynet-waking-notice";
+      notice.id = id;
       notice.className = "alert alert-info";
       notice.setAttribute("role", "status");
-      notice.style.cssText =
-        "position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 1080;";
-      document.body.appendChild(notice);
+      notice.style.cssText = "margin: 0;";
+      stack.appendChild(notice);
       // Screen readers announce a status region's text only if it changes
       // after the region is in the page.
       setTimeout(() => {
-        notice.textContent =
-          psynetTemplateData.strings?.wakingUp ||
-          "Getting ready, please wait...";
+        notice.textContent = text;
       }, 0);
+    };
+
+    // If the server refused the response and asked for it to be resent
+    // later, returns {delayMs, message}. Otherwise returns null.
+    psynet.retryLaterRejection = function (request) {
+      if (request.status !== 200) return null;
+      let body;
+      try {
+        body = JSON.parse(request.response);
+      } catch (error) {
+        return null;
+      }
+      let seconds = body?.retry_after;
+      if (
+        body?.submission !== "rejected" ||
+        !Number.isFinite(seconds) ||
+        seconds <= 0
+      ) {
+        return null;
+      }
+      return { delayMs: seconds * 1000, message: body.message };
+    };
+
+    psynet.waitIfRetryLater = async function (request) {
+      // Return true, after waiting, when a rejected response should be resent.
+      let rejection = psynet.retryLaterRejection(request);
+      if (rejection === null) {
+        psynet.showStatusNotice("psynet-retry-notice", null);
+        return false;
+      }
+      psynet.log.info("The response can't be accepted yet; sending it again later.");
+      psynet.showStatusNotice("psynet-retry-notice", rejection.message);
+      await new Promise((resolve) => setTimeout(resolve, rejection.delayMs));
+      return true;
     };
 
     psynet.waitIfAppIsWaking = async function (request, retry, options = {}) {
@@ -4291,6 +4349,10 @@
               send(false);
               return;
             }
+            if (await psynet.waitIfRetryLater(request)) {
+              send(false);
+              return;
+            }
             const busyRetryMs = psynet.isBusyResponse(request)
               ? psynet.busyRetryDelayMs(busyRetries, options, Date.now() - firstSentAt)
               : null;
@@ -4622,6 +4684,22 @@
   }
 
   window.psynet = psynet;
+  psynet.liveSession = window.PsyNetLiveSession.create(
+    () => psynet.var.liveSession,
+    {
+      id: () => psynet.var.pageUuid,
+      websocketScope: () => psynetTemplateData.websocketScope,
+      ready: () => psynet.pageReady,
+      nextPage: () => psynet.nextPage(),
+      setNextButtonHidden: (hidden) => {
+        let button = document.getElementById("next-button");
+        if (button) {
+          button.style.display = hidden ? "none" : "";
+        }
+      },
+      showNotice: (id, text) => psynet.showStatusNotice(id, text),
+    },
+  );
   if (window.psynetLayout) {
     psynet.layout = window.psynetLayout;
   }

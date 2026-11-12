@@ -1,0 +1,157 @@
+"""LiveSessionControl, the control that joins a game page to its session.
+
+``get_render_js_vars`` gives the page's ``live-session.js`` the session's id
+and channel each time the page renders. ``check_ready_for_response`` refuses
+the page's response until the session's result is saved, and ``validate``
+then sets the answer to the outcome and pays the outcome bonus once per
+session.
+"""
+
+from ..modular_page import ModularPage, NullControl
+from ..timeline import FailedValidation
+from ..utils import get_translator
+from .bonus import _add_bonus, _check_bonus
+from .initializer import live_session_id
+from .messages import _game_channel, _session_game_type
+from .result import live_session_result
+
+# Seconds a page waits before resending a response refused because the
+# session's result isn't saved yet.
+_RETRY_AFTER = 1
+
+# The default text of a notice, translated as the page renders.
+_DEFAULT = object()
+
+
+class LiveSessionControl(NullControl):
+    """The part of a game page where the participant plays the live session
+    their group started at a :class:`LiveSessionInitializer`.
+
+    Give it the initializer's id, and list the JavaScript file that plays the
+    game in the page's ``js_page_modules``:
+
+    ::
+
+        ModularPage(
+            "rock_paper_scissors",
+            Prompt(tags.div(tags.p(id="status"), ...)),
+            LiveSessionControl("rock_paper_scissors"),
+            js_page_modules=["/static/rock_paper_scissors.js"],
+            time_estimate=30,
+        )
+
+    PsyNet sets the page's answer to the session's outcome, and pays the
+    game's :meth:`~LiveSession.bonus` when the participant leaves the page.
+    The page can't have a ``validate`` of its own.
+    :doc:`/code/multiplayer/live_sessions` explains how to write the page's
+    JavaScript.
+
+    Parameters
+    ----------
+
+    initializer_id
+        The ``id_`` of the :class:`LiveSessionInitializer` that started the
+        session.
+
+    auto_advance
+        Whether the page moves on by itself once the session's result is
+        saved, with its Next button hidden until then. A participant
+        without a session still sees the button, and so does one whose page
+        has been disconnected for ten seconds. Set it to ``False`` to
+        move on from the page's JavaScript instead, for example after
+        showing the result for a few seconds.
+
+    player_left_message
+        What a notice at the top of the page says while another player has
+        left the game page and not come back, such as "Your partner has
+        left." By default it says "Another player has left the game." Set it
+        to ``None`` for no notice, for a page that shows this its own way.
+
+    no_session_message
+        What a notice at the top of the page says to a participant whose
+        group didn't start a session, for example because they were removed
+        from a group that took too long to arrive. By default it says "Your
+        group couldn't start the game." Set it to ``None`` for no notice.
+
+    **kwargs
+        Any other parameter of :class:`~psynet.modular_page.Control`, such as
+        ``show_next_button``.
+    """
+
+    def __init__(
+        self,
+        initializer_id,
+        auto_advance=True,
+        player_left_message=_DEFAULT,
+        no_session_message=_DEFAULT,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.initializer_id = initializer_id
+        self.auto_advance = auto_advance
+        self.player_left_message = player_left_message
+        self.no_session_message = no_session_message
+
+    def check_ready_for_response(self, experiment, participant):
+        session_id = live_session_id(participant, self.initializer_id)
+        if session_id is None or live_session_result(session_id) is not None:
+            return None
+        _p = get_translator(context=True)
+        return FailedValidation(
+            _p(
+                "live_session",
+                "The game isn't over yet. The page will move on once it is.",
+            ),
+            retry_after=_RETRY_AFTER,
+        )
+
+    def validate(self, response, participant, **kwargs):
+        # check_ready_for_response has already seen the session end, and an
+        # ended session's row doesn't change, so this result is final.
+        session_id = live_session_id(participant, self.initializer_id)
+        if session_id is None:
+            response.answer = None
+            return None
+        result = live_session_result(session_id)
+        response.answer = result.outcome
+        paid = participant.live_session_bonuses_paid or []
+        if result.record_complete and session_id not in paid:
+            game = _session_game_type(session_id)()
+            what = f"{type(game).__name__}.bonus"
+            amount = game.bonus(result.outcome, result.end_reason, str(participant.id))
+            _add_bonus(participant, _check_bonus(amount, what))
+            participant.live_session_bonuses_paid = [*paid, session_id]
+        return None
+
+    def _check_page(self, page):
+        if (
+            page._validate_function is not None
+            or type(page).validate is not ModularPage.validate
+        ):
+            raise TypeError(
+                f"The page {page.label!r} has a LiveSessionControl and a "
+                "validate function of its own, which would replace the "
+                "control's. Remove the page's validate."
+            )
+
+    def get_render_js_vars(self, experiment, participant):
+        session_id = live_session_id(participant, self.initializer_id)
+        _p = get_translator(context=True)
+        player_left = self.player_left_message
+        if player_left is _DEFAULT:
+            player_left = _p("live_session", "Another player has left the game.")
+        no_session = self.no_session_message
+        if no_session is _DEFAULT:
+            no_session = _p("live_session", "Your group couldn't start the game.")
+        return {
+            "liveSession": {
+                "initializerId": self.initializer_id,
+                "sessionId": session_id,
+                "gameChannel": (
+                    None if session_id is None else _game_channel(session_id)
+                ),
+                "autoAdvance": self.auto_advance,
+                "playerLeftMessage": player_left,
+                "noSessionMessage": no_session,
+            }
+        }

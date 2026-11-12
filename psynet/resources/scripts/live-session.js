@@ -1,0 +1,655 @@
+(function () {
+  "use strict";
+
+  // The type of PsyNet's Ready message.
+  const READY = "psynet_ready";
+
+  // How long a player must have been away before onPlayersAway reports them,
+  // so that a player whose page reloads isn't reported.
+  const AWAY_DELAY_MS = 5000;
+  const DISCONNECTED_DELAY_MS = 10000;
+
+  const AWAY_NOTICE = "psynet-player-away-notice";
+  const NO_SESSION_NOTICE = "psynet-no-session-notice";
+
+  // Calls report with the players who have been away for AWAY_DELAY_MS,
+  // each time that list changes.
+  function awayTracker(report) {
+    let since = new Map();
+    let reported = [];
+    let timer = null;
+    let lastAway = "[]";
+
+    function check() {
+      clearTimeout(timer);
+      timer = null;
+      let now = Date.now();
+      let due = [];
+      let next = Infinity;
+      since.forEach((time, player) => {
+        if (now - time >= AWAY_DELAY_MS) {
+          due.push(player);
+        } else {
+          next = Math.min(next, time + AWAY_DELAY_MS);
+        }
+      });
+      if (next !== Infinity) {
+        timer = setTimeout(check, next - now);
+      }
+      if (due.length !== reported.length || due.some((player, i) => player !== reported[i])) {
+        reported = due;
+        report(due.slice());
+      }
+    }
+
+    return {
+      update(away) {
+        // Most views don't change who is away.
+        let key = JSON.stringify(away);
+        if (key === lastAway) {
+          return;
+        }
+        lastAway = key;
+        let now = Date.now();
+        away.forEach((player) => {
+          if (!since.has(player)) {
+            since.set(player, now);
+          }
+        });
+        Array.from(since.keys()).forEach((player) => {
+          if (!away.includes(player)) {
+            since.delete(player);
+          }
+        });
+        check();
+      },
+      // Stops without reporting, for a page that has gone.
+      stop() {
+        clearTimeout(timer);
+        timer = null;
+      },
+      reported: () => reported.slice(),
+    };
+  }
+
+  // Keeps the current page's state and its Dallinger socket, which opens
+  // when first asked for. When the participant moves to another page, or
+  // ``reset`` runs, the old page's socket closes and the next call starts
+  // the new page afresh.
+  //
+  // ``pageId`` returns the current page's id. ``options.newPage`` returns
+  // the fields a new page's state starts with, besides its ``pageId`` and
+  // ``socket``, ``options.open`` opens the socket for a page's state, and
+  // ``options.closed`` is called with the state after its socket closes.
+  function createPageScopedSocket(pageId, options) {
+    let page = null;
+
+    function current() {
+      let id = pageId();
+      if (page === null || page.pageId !== id) {
+        close();
+        page = Object.assign({ pageId: id, socket: null }, options.newPage());
+      }
+      return page;
+    }
+
+    function socket() {
+      let state = current();
+      if (state.socket === null) {
+        state.socket = options.open(state);
+      }
+      return state.socket;
+    }
+
+    function close() {
+      if (page !== null && page.socket !== null) {
+        let closing = page.socket;
+        page.socket = null;
+        closing.close();
+        options.closed(page);
+      }
+    }
+
+    function reset() {
+      close();
+      page = null;
+    }
+
+    return { current: current, socket: socket, reset: reset };
+  }
+
+  /**
+   * ``psynet.liveSession`` lets a page with a ``LiveSessionControl`` play
+   * the live session its group started: send the game messages, and show
+   * the views the game sends back.
+   *
+   * The page joins the session when it first uses ``psynet.liveSession``,
+   * and leaves it when the participant moves on. Once it has checked the
+   * server's time, it tells the game the player is ready, and the game
+   * starts when every player is. Unless the control's
+   * ``auto_advance`` is ``False``, the page hides its Next button and moves
+   * on by itself once the session's result is saved, or if the server
+   * refuses its connection. If the connection drops,
+   * it reconnects by itself and rejoins. The same page open in another tab
+   * plays as the same player.
+   *
+   * ``psynet.js`` creates ``psynet.liveSession`` with this function. The
+   * connection is Dallinger's ``/experiment-socket``, joined to the session.
+   * Its scope is the participant's ``websocketScope``, which the
+   * experiment's ``accept_websocket_connection`` checks, then a ``.`` and
+   * ``dallinger.pageScope``, which tells the participant's tabs apart.
+   *
+   * @param {function} liveSession - Returns the page's ``liveSession``
+   *   variable: the control's ``initializerId``, ``autoAdvance``,
+   *   ``playerLeftMessage`` and ``noSessionMessage``, and the session's
+   *   ``sessionId`` and ``gameChannel``, which are ``null`` without a
+   *   session, or nothing on a page without a
+   *   ``LiveSessionControl``
+   * @param {Object} page - ``id()`` returns the current page's id, which
+   *   changes when the participant moves on, ``websocketScope()`` returns
+   *   the participant's websocket scope, ``ready()`` says whether the page
+   *   is ready to submit, ``nextPage()`` submits it,
+   *   ``setNextButtonHidden(hidden)`` hides or shows its Next button, and
+   *   ``showNotice(id, text)`` shows ``text`` in a notice at the top of the
+   *   page, or removes the notice if ``text`` is null
+   */
+  function createLiveSession(liveSession, page) {
+    let api = null;
+
+    function session() {
+      let current = liveSession();
+      if (!current) {
+        throw new Error(
+          "This page has no live session to play: its control isn't a " +
+            "LiveSessionControl.",
+        );
+      }
+      if (current.sessionId == null) {
+        throw new Error(
+          "The participant's group hasn't started a live session at the " +
+            "initializer " +
+            JSON.stringify(current.initializerId) +
+            ". Check the LiveSessionControl's initializer id, and that the " +
+            "page comes after that initializer. A participant removed from " +
+            "their group there has no session, which the page can check " +
+            "with psynet.liveSession.hasSession.",
+        );
+      }
+      return current;
+    }
+
+    let pages = createPageScopedSocket(page.id, {
+      newPage: newPage,
+      open: openSocket,
+      closed: (state) => {
+        state.away.stop();
+        clearTimeout(state.connectionTimer);
+        page.showNotice(AWAY_NOTICE, null);
+      },
+    });
+
+    function newPage() {
+      let state = {
+        session: session(),
+        startedView: null,
+        startedCallbacks: [],
+        ended: false,
+        predict: null,
+        interpolate: null,
+        viewCallbacks: [],
+        awayCallbacks: [],
+        connectionTimer: null,
+      };
+      state.away = awayTracker((players) => {
+        let message = state.session.playerLeftMessage;
+        if (message) {
+          page.showNotice(AWAY_NOTICE, players.length > 0 ? message : null);
+        }
+        callEach(state.awayCallbacks, players);
+      });
+      return state;
+    }
+
+    function callEach(callbacks, ...args) {
+      callbacks.slice().forEach((callback) => {
+        try {
+          callback(...args);
+        } catch (error) {
+          console.error(error);
+        }
+      });
+    }
+
+    // Passes on a view, and, once the session has ended, nothing after it.
+    function receive(state, view, details) {
+      // A failed session's final view can be null. A page that opens after
+      // the end gets no onStarted, which would turn its controls back on.
+      if (
+        !state.ended &&
+        state.startedView === null &&
+        view !== null &&
+        view.live_session.started_at !== null
+      ) {
+        state.startedView = view;
+        callEach(state.startedCallbacks.splice(0), view);
+      }
+      callEach(state.viewCallbacks, view, details);
+      if (state.ended) {
+        state.away.update([]);
+      } else if (view !== null) {
+        state.away.update(view.live_session.away);
+      }
+    }
+
+    // The result can arrive before the page is ready, as when the page
+    // reloads after the session ended, and nextPage alerts the participant
+    // then.
+    function moveOn(state) {
+      if (page.ready()) {
+        page.nextPage();
+      } else {
+        window.addEventListener(
+          "timelinePageReady",
+          () => {
+            if (page.id() === state.pageId) {
+              page.nextPage();
+            }
+          },
+          { once: true },
+        );
+      }
+    }
+
+    // Hides the Next button while the page is connected. Only the connection
+    // moves the page on, so the button comes back once it has been down for
+    // DISCONNECTED_DELAY_MS, and the server then holds the participant's
+    // response until the result is saved.
+    function hideNextButtonWhileConnected(state, socket) {
+      let downSince = Date.now();
+      function check() {
+        let now = Date.now();
+        if (socket.raw.readyState === WebSocket.OPEN) {
+          downSince = null;
+        } else if (downSince === null) {
+          downSince = now;
+        }
+        page.setNextButtonHidden(
+          downSince === null || now - downSince < DISCONNECTED_DELAY_MS,
+        );
+        state.connectionTimer = setTimeout(check, 1000);
+      }
+      check();
+    }
+
+    function openSocket(state) {
+      let socket = dallinger.openExperimentSocket({
+        session: state.session.sessionId,
+        gameChannel: state.session.gameChannel,
+        scope: page.websocketScope() + "." + dallinger.pageScope,
+        // Set at open, so it hands each message to the page's predict
+        // callback, whenever the page sets one.
+        predict: (view, payload) => {
+          if (state.predict === null || payload.type === READY) {
+            return view;
+          }
+          return state.predict(view, payload.type, payload.message);
+        },
+        interpolate: (a, b, fraction) =>
+          state.interpolate === null ? b : state.interpolate(a, b, fraction),
+      });
+      // Sent again after each reconnect, in case the connection dropped
+      // before the game read it. The game ignores a repeat.
+      let readyDue = false;
+      socket.onOpen(() => {
+        readyDue = true;
+      });
+      socket.onClock(() => {
+        if (readyDue) {
+          readyDue = false;
+          socket.send(socket.gameChannel, { type: READY, message: {} });
+        }
+      });
+      if (state.session.autoAdvance) {
+        hideNextButtonWhileConnected(state, socket);
+        socket.onResultSaved(() => moveOn(state));
+        socket.onRefused(() => moveOn(state));
+      }
+      socket.onView((view, details) => {
+        if (state.ended) {
+          return;
+        }
+        state.ended = details.ended !== null;
+        receive(state, view, details);
+      });
+      // The ending carries the final view, which can arrive before the view
+      // itself, and is all a page that joins after the end gets.
+      socket.onEnded((reason, view) => {
+        if (!state.ended) {
+          state.ended = true;
+          receive(state, view, null);
+        }
+      });
+      return socket;
+    }
+
+    /**
+     * Call ``callback`` once the session has started, with the first view
+     * after the start, or at once if it already has. Until then the game
+     * rejects the page's messages. Once the session has ended, it doesn't
+     * run, so a page that opens after the end keeps its controls disabled.
+     *
+     * @param {function} callback - Called with the view
+     * @returns {Object} ``psynet.liveSession``
+     */
+    function onStarted(callback) {
+      pages.socket();
+      let state = pages.current();
+      if (state.ended) {
+        return api;
+      }
+      if (state.startedView !== null) {
+        callback(state.startedView);
+      } else {
+        state.startedCallbacks.push(callback);
+      }
+      return api;
+    }
+
+    /**
+     * Disable each of ``elements`` until the session starts, so the
+     * participant can't play before then.
+     *
+     * @example
+     * psynet.liveSession.disableUntilStarted(...root.querySelectorAll("button"));
+     *
+     * @param {...HTMLElement} elements - Elements with a ``disabled``
+     *   property, such as buttons and inputs
+     * @returns {Object} ``psynet.liveSession``
+     */
+    function disableUntilStarted(...elements) {
+      elements.forEach((element) => (element.disabled = true));
+      return onStarted(() => {
+        elements.forEach((element) => (element.disabled = false));
+      });
+    }
+
+    /**
+     * Send the game a message, which it reads as the ``LiveMessage`` with
+     * this ``type``. If the game rejects it, ``onRejected``'s callback gets
+     * its number and the reason. The game ignores messages sent after the
+     * session ends, which still get a number.
+     *
+     * @example
+     * psynet.liveSession.send("choose", { action: "rock" });
+     *
+     * @param {string} type - The message's ``type``
+     * @param {Object} [message] - Its fields
+     * @returns {number|undefined} The message's number, or ``undefined``
+     *   once the connection is closed or refused
+     */
+    function send(type, message) {
+      let gameSocket = pages.socket();
+      return gameSocket.send(gameSocket.gameChannel, { type: type, message: message });
+    }
+
+    /**
+     * Call ``callback`` with each new view of the game, what the game's
+     * ``view`` returns for this player, starting when the page joins and
+     * ending with the final view. Once the session has ended, ``ended`` is
+     * ``true``, and no more views come. A page that opens after the session
+     * has ended gets just the final view. Its ``live_session`` says who is
+     * ready, when the session started and who has left.
+     *
+     * If the session failed, the final view can be ``null``, so check
+     * ``ended`` before reading the view.
+     *
+     * The callback's second argument is the view's details, which
+     * Dallinger's ``Socket.onView`` describes. It is ``null`` for a final
+     * view that came with the ending, so check ``ended`` and not
+     * ``details.ended``.
+     *
+     * @param {function} callback - Called with each view, which can be
+     *   ``null`` at the end, and its details, which can be ``null`` too
+     * @returns {Object} ``psynet.liveSession``
+     */
+    function onView(callback) {
+      pages.socket();
+      pages.current().viewCallbacks.push(callback);
+      return api;
+    }
+
+    /**
+     * Call ``callback`` with the player ids of the other players who have
+     * left the game page and not come back, each time that list changes,
+     * including to an empty list when they're all back or the session ends.
+     * A player counts once they've been away for a few seconds, so a reload
+     * doesn't. A player who hasn't opened the game page yet hasn't left. A
+     * callback added while players are away gets them at once.
+     *
+     * PsyNet shows the control's ``player_left_message`` in a notice while
+     * anyone is away, so use this for a display of your own, with
+     * ``player_left_message=None``.
+     *
+     * @param {function} callback - Called with a list of player ids
+     * @returns {Object} ``psynet.liveSession``
+     */
+    function onPlayersAway(callback) {
+      pages.socket();
+      let state = pages.current();
+      state.awayCallbacks.push(callback);
+      let away = state.away.reported();
+      if (away.length > 0) {
+        callEach([callback], away);
+      }
+      return api;
+    }
+
+    /**
+     * Say how the game changes this player's view when it applies one of the
+     * page's messages, so that ``predictedView`` can show the page's
+     * messages as soon as they're sent, before the game's view arrives.
+     *
+     * ``callback(view, type, message)`` gets a copy of a view, and a message
+     * as it was passed to ``send``, and returns the view as it will be once
+     * the game has applied the message. It can change the view it's given
+     * and return nothing. Set it before the page sends anything.
+     *
+     * @example
+     * psynet.liveSession.predict((view, type, message) => {
+     *   if (type === "choose" && message.round === view.round) {
+     *     view.chosen = true;
+     *   }
+     * });
+     *
+     * @param {function} callback - Called with a view, the message's
+     *   ``type`` and its fields
+     * @returns {Object} ``psynet.liveSession``
+     */
+    function predict(callback) {
+      pages.socket();
+      pages.current().predict = callback;
+      return api;
+    }
+
+    /**
+     * Return the newest view, with the page's messages that the game hasn't
+     * applied yet applied by ``predict``'s callback, in the order they were
+     * sent. Draw from it in ``onView``, and again after ``send``, so the
+     * player sees their own moves at once. A message the game rejects is
+     * undone by the next view. Before the first view it's ``null``, and once
+     * the session has ended it's the final view. Don't change the view it
+     * returns.
+     *
+     * @returns {Object|null} The predicted view
+     */
+    function predictedView() {
+      return pages.socket().predictedView();
+    }
+
+    /**
+     * Say how to draw the game between two of its tick views, so that
+     * ``interpolatedView`` can show other players moving smoothly instead
+     * of jumping from one tick to the next. It needs a game whose
+     * ``tick_rate`` is above 0.
+     *
+     * ``callback(a, b, fraction)`` gets two tick views and how far between
+     * them to draw, from 0 to 1, and returns a new view in between. Unlike
+     * ``predict``'s callback, it must leave ``a`` and ``b`` unchanged, since
+     * they're the tick views the page keeps.
+     *
+     * @example
+     * psynet.liveSession.interpolate((a, b, fraction) => ({
+     *   ...b,
+     *   x: a.x + (b.x - a.x) * fraction,
+     * }));
+     *
+     * @param {function} callback - Called with two views and a fraction
+     * @returns {Object} ``psynet.liveSession``
+     */
+    function interpolate(callback) {
+      pages.socket();
+      pages.current().interpolate = callback;
+      return api;
+    }
+
+    /**
+     * Return the view to draw other players from: the game two tick
+     * intervals in the past, made by ``interpolate``'s callback from the
+     * tick views either side of that time. Call it each time the page
+     * draws, and draw the player's own piece from ``predictedView``. Before
+     * the first tick view it's ``null``, and once the session has ended it's
+     * the final view. Don't change the view it returns.
+     *
+     * @returns {Object|null} The interpolated view
+     */
+    function interpolatedView() {
+      let socket = pages.socket();
+      if (pages.current().interpolate === null) {
+        throw new Error(
+          "Set psynet.liveSession.interpolate's callback before calling interpolatedView."
+        );
+      }
+      return socket.interpolatedView();
+    }
+
+    function passOn(name) {
+      return function (callback) {
+        pages.socket()[name](callback);
+        return api;
+      };
+    }
+
+    api = {
+      /**
+       * Whether the participant's group started a session at the page's
+       * initializer. A participant removed from their group there has none.
+       * PsyNet then shows the control's ``no_session_message`` in a notice,
+       * and the other methods throw. Reading it doesn't join the session.
+       *
+       * @member {boolean} hasSession
+       */
+      get hasSession() {
+        let current = liveSession();
+        return Boolean(current && current.sessionId != null);
+      },
+      /**
+       * Whether the page has had a view from after the session started
+       * and before it ended, so it stays ``false`` on a page that opens
+       * after the end. Check ``ended`` first. ``onView``'s callbacks see it
+       * already updated for the view they get. Reading it doesn't join the
+       * session.
+       *
+       * @member {boolean} started
+       */
+      get started() {
+        return pages.current().startedView !== null;
+      },
+      /**
+       * Whether the session has ended. ``onView``'s callbacks see it already
+       * updated for the final view. Reading it doesn't join the session.
+       *
+       * @member {boolean} ended
+       */
+      get ended() {
+        return pages.current().ended;
+      },
+      send: send,
+      onStarted: onStarted,
+      disableUntilStarted: disableUntilStarted,
+      onView: onView,
+      onPlayersAway: onPlayersAway,
+      predict: predict,
+      predictedView: predictedView,
+      interpolate: interpolate,
+      interpolatedView: interpolatedView,
+      /**
+       * Call ``callback`` with the number of each message the game rejected
+       * and the reason, such as a field of the wrong type.
+       *
+       * @function onRejected
+       * @param {function} callback - Called with the number and the reason
+       * @returns {Object} ``psynet.liveSession``
+       */
+      onRejected: passOn("onRejected"),
+      /**
+       * Call ``callback`` once, when the page learns the session has ended,
+       * with why it ended and this player's final view. Dallinger's
+       * ``Socket.onEnded`` lists the reasons.
+       *
+       * @function onEnded
+       * @param {function} callback - Called with the reason and the view
+       * @returns {Object} ``psynet.liveSession``
+       */
+      onEnded: passOn("onEnded"),
+      /**
+       * Call ``callback`` once the session's result has been saved, after
+       * it ends. The page then moves on by itself, unless the control's
+       * ``auto_advance`` is ``False``.
+       *
+       * @function onResultSaved
+       * @param {function} callback - Called once the result is saved
+       * @returns {Object} ``psynet.liveSession``
+       */
+      onResultSaved: passOn("onResultSaved"),
+      /**
+       * Call ``callback`` with the close code and reason if the server
+       * refuses the page's connection, as it does long after the session
+       * ended. The page then gets no ``onEnded`` or ``onResultSaved``. It
+       * moves on by itself unless the control's ``auto_advance`` is
+       * ``False``, in which case move on here too.
+       *
+       * @function onRefused
+       * @param {function} callback - Called with the code and the reason
+       * @returns {Object} ``psynet.liveSession``
+       */
+      onRefused: passOn("onRefused"),
+    };
+    /**
+     * The page's Dallinger socket for the session, for anything else, such
+     * as ``serverTime`` or ``sessionTime``.
+     *
+     * @member {dallinger.Socket} socket
+     */
+    // Not enumerable, since reading it joins the session.
+    Object.defineProperty(api, "socket", { get: pages.socket });
+    // For psynet.resetPageState and psynet.activatePageJavascript, not for
+    // pages.
+    Object.defineProperty(api, "resetPageState", {
+      value: () => {
+        page.showNotice(NO_SESSION_NOTICE, null);
+        pages.reset();
+      },
+    });
+    Object.defineProperty(api, "showNoSessionNotice", {
+      value: () => {
+        let current = liveSession();
+        if (current && current.sessionId == null && current.noSessionMessage) {
+          page.showNotice(NO_SESSION_NOTICE, current.noSessionMessage);
+        }
+      },
+    });
+    return api;
+  }
+
+  window.PsyNetLiveSession = { create: createLiveSession };
+})();
