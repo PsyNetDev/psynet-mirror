@@ -49,9 +49,10 @@ are still partway through a filler page. It then checks waiting visits in
 the order they became due, with a 5-second head start for visits that
 are new or whose waiters or sync group changed since this process last
 checked them. A visit whose group's other members changed, for example by
-starting a timed page, is due at once but without the head start: which of
-a group's visits is checked first can decide who is released, for example
-when members are late. An unchanged visit whose last check released
+starting a timed page, or whose clocks a bot helper such as
+:func:`~psynet.bot.make_late_now` moved back, is due at once but without
+the head start: which of a group's visits is checked first can decide who
+is released, for example when members are late. An unchanged visit whose last check released
 nobody is due when its barrier says a release could next become due: the
 next time a member becomes late, a ``top_up_wait`` or ``newcomer_max_wait``
 runs out, a :class:`~psynet.sync.SimpleGrouper` can start short, or a

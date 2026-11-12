@@ -72,8 +72,13 @@ this module. That loop:
 - Applies ``max_wait_time`` to waiters whose hold or waiting-page deadline has
   passed. Their own request normally does this, so waiters who left would
   otherwise stay.
-- Finds waiting barrier instances and checks them least recently checked
-  first, new or changed ones with a head start, within a per-sweep time budget.
+- Finds waiting barrier instances and checks the due ones in the order they
+  became due, within a per-sweep time budget. New visits, and visits whose
+  waiters or sync group changed, are due with a head start; a change to the
+  group's other members makes a visit due without one. An unchanged visit is
+  due when its last check said a release could be
+  (``Barrier._next_check_due``), and is otherwise re-checked every 10 seconds
+  after the other due visits.
 - Claims each with a PostgreSQL advisory transaction lock on a dedicated
   connection, leaving definition and instance metadata available to arrival
   requests. That extra transaction stays open until this poller's
@@ -1560,7 +1565,13 @@ class Barrier(EltCollection):
         return None
 
     def _known_next_check_due(self, waiting_participants) -> Optional[float]:
-        """Return :meth:`_next_check_due`, or ``None`` if a subclass changed the release rule without overriding it."""
+        """Return :meth:`_next_check_due`, or ``None`` if a subclass changed the release rule without overriding it.
+
+        Only the public methods in ``_RELEASE_RULE_METHODS`` count. A subclass
+        that overrides a private release helper, such as ``_late_times`` or
+        ``_admissible``, without ``_next_check_due`` still gets skipped, and
+        relies on the poller's 10-second re-check.
+        """
         cls = type(self)
         owner = _defining_class(cls, "_next_check_due")
         for name in _RELEASE_RULE_METHODS:
@@ -6417,12 +6428,24 @@ def _waiting_barrier_instance_ids():
         Maps each visit's instance id to a pair of fingerprints, so the
         poller can tell which visits changed since it last checked them:
         one of its waiters and sync group, and one of what else
-        :meth:`Barrier._next_check_due` reads, such as the members' page
-        deadlines and the group's last barrier pass.
+        :meth:`Barrier._next_check_due` reads: the waiters' arrival times,
+        the group's last barrier pass, its members' joining, admission and
+        page deadline times, and when the barrier last formed groups in
+        this pool.
     """
     group = SyncGroup.__table__.c
     link = ParticipantLinkSyncGroup
     working = and_(~Participant.failed, Participant.status == "working")
+    formed = SyncGroup.__table__.alias()
+    last_split = (
+        select(func.max(formed.c.creation_time))
+        .where(
+            formed.c.grouper_id == BarrierInstance.barrier_id,
+            formed.c.within_group_id.is_not_distinct_from(BarrierInstance.group_id),
+        )
+        .correlate(BarrierInstance)
+        .scalar_subquery()
+    )
     with Session(bind=db.engine) as session:
         members = (
             session.query(
@@ -6434,8 +6457,13 @@ def _waiting_barrier_instance_ids():
                 func.count(link.id)
                 .filter(working & link.admitted_at.is_(None))
                 .label("n_pending"),
-                func.array_agg(aggregate_order_by(link.page_deadline, link.id)).label(
-                    "page_deadlines"
+                *(
+                    func.array_agg(aggregate_order_by(clock, link.id)).label(clock.key)
+                    for clock in (
+                        link.page_deadline,
+                        link.arrival_time,
+                        link.admitted_at,
+                    )
                 ),
             )
             .join(Participant, Participant.id == link.participant_id)
@@ -6464,6 +6492,12 @@ def _waiting_barrier_instance_ids():
                 group.accepts_top_ups,
                 group.top_ups_stopped_at,
                 group.below_quorum_since,
+                func.array_agg(
+                    aggregate_order_by(
+                        ParticipantLinkBarrier.arrival_time, ParticipantLinkBarrier.id
+                    )
+                ),
+                last_split,
                 *list(members.c)[1:],
             )
             .join(

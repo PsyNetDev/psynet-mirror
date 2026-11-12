@@ -4165,14 +4165,14 @@ class _CustomReleaseGroupBarrier(GroupBarrier):
         return super().choose_who_to_release(waiting_participants)
 
 
-@pytest.mark.parametrize("change", ["timed_page", "returned"])
+@pytest.mark.parametrize("change", ["timed_page", "returned", "made_late_now"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_poller_skips_a_visit_until_a_member_can_be_late(
     in_experiment_directory, db_session, monkeypatch, change
 ):
-    """Unchanged, it waits for late_after or the 10 s re-check; a partner's change makes it due."""
+    """Unchanged, it waits for late_after or the 10 s re-check; a partner's change, or make_late_now's backdating, makes it due."""
     exp = get_experiment()
     (waiter, partner), group = _pair_sync_group(exp, db_session)
     barrier = GroupBarrier(
@@ -4192,8 +4192,10 @@ def test_poller_skips_a_visit_until_a_member_can_be_late(
 
     if change == "timed_page":
         partner.sync_group_link("main").page_deadline = timenow()
-    else:
+    elif change == "returned":
         partner.status = "returned"
+    else:
+        psynet.bot._backdate_group(group, 31)
     db.session.commit()
     assert sweep() == [instance_id]
 
@@ -4215,14 +4217,15 @@ def _waiting_for_top_ups(exp, db_session):
 
 
 def _waiting_with_a_newcomer(exp, db_session):
-    _, founders, (newcomer,) = _society(exp, db_session)
+    group, founders, (newcomer,) = _society(exp, db_session, target_group_size=4)
+    group.top_up_wait = 60
     barrier = GroupBarrier(
         "generation_start",
         group_type="society",
         admission_point=True,
         newcomer_max_wait=40,
     )
-    return barrier, [founders[0], newcomer]
+    return barrier, [*founders, newcomer]
 
 
 def _waiting_to_start_short(exp, db_session):
@@ -4246,7 +4249,7 @@ def _waiting_to_start_short(exp, db_session):
 def test_poller_skips_a_visit_until_its_wait_can_end(
     in_experiment_directory, db_session, monkeypatch, setup
 ):
-    """top_up_wait, newcomer_max_wait and start_short_after each say when to check again."""
+    """top_up_wait, newcomer_max_wait and start_short_after each decide when the poller checks again."""
     exp = get_experiment()
     barrier, waiters = setup(exp, db_session)
     for waiter in waiters:
@@ -4254,9 +4257,15 @@ def test_poller_skips_a_visit_until_its_wait_can_end(
     db.session.commit()
     sweep = _count_poller_checks(monkeypatch)
 
-    assert len(sweep()) == 1
+    (instance_id,) = sweep()
     assert _seconds_until_release_can_be_due() == pytest.approx(40, abs=2)
-    assert sweep() == []
+    monkeypatch.setattr("psynet.sync._POLLER_RECHECK_SECONDS", 60)
+    monotonic = time.monotonic
+    for seconds_later, checked in [(0, []), (38, []), (42, [instance_id])]:
+        monkeypatch.setattr(
+            time, "monotonic", lambda later=seconds_later: monotonic() + later
+        )
+        assert sweep() == checked
 
 
 @pytest.mark.parametrize("why", ["waiter_busy", "custom_release_rule"])

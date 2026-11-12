@@ -177,7 +177,7 @@ def test_every_regrouper_leaves_the_split_to_the_poller(
     [
         (dict(deadline=30), 0, 30),
         (dict(deadline=30, left_over="sit_out"), 40, 20),
-        (dict(every=45), 0, None),
+        (dict(every=45), 0, 44),
     ],
 )
 @in_consents_experiment
@@ -189,7 +189,7 @@ def test_poller_skips_a_regrouper_pool_until_its_deadline_or_tick(
     players_arrived_ago,
     seconds_to_wait,
 ):
-    """A lone waiter's pool is left until the deadline, extra deadline or next tick."""
+    """A lone waiter's pool is left until the deadline, extra deadline or next tick, or until regroup_now backdates it."""
     exp = get_experiment()
     cohort = _working_participants(exp, 3)
     _arrive(exp, SimpleGrouper("cohort", initial_group_size=3, quorum=3), cohort)
@@ -197,12 +197,21 @@ def test_poller_skips_a_regrouper_pool_until_its_deadline_or_tick(
     _arrive(exp, pairs, cohort[:1])
     _backdate_arrivals(pairs, cohort[:1], players_arrived_ago)
     db_session.commit()
-    if seconds_to_wait is None:
-        seconds_to_wait = _latest_tick(time.time(), 45) + 45 - time.time()
+    if "every" in timing:
+        # Start 1 s after a tick, so the check can't straddle the next one.
+        shift = (1 - time.time()) % 45
+        real_time = time.time
+        monkeypatch.setattr(time, "time", lambda: real_time() + shift)
 
     sync.check_barriers()
-    ((_, _, due),) = sync._poller_checked_visits.values()
+    ((_, checked_at, due),) = sync._poller_checked_visits.values()
     assert due - time.monotonic() == pytest.approx(seconds_to_wait, abs=2)
+
+    _backdate_arrivals(pairs, cohort[:1], 1)
+    db_session.commit()
+    sync.check_barriers()
+    ((_, rechecked_at, _),) = sync._poller_checked_visits.values()
+    assert rechecked_at > checked_at
 
 
 class _CustomRelease(Regrouper):
