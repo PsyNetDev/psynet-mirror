@@ -162,6 +162,11 @@ class ReleaseAllBarrier(Barrier):
         return waiting_participants
 
 
+class BrokenDueTimesBarrier(ReleaseAllBarrier):
+    def _due_times(self, waiting_participants):
+        raise RuntimeError("broken due times")
+
+
 class SpecErrorBarrier(Barrier):
     def choose_who_to_release(self, waiting_participants):
         raise BarrierSpecError("broken")
@@ -5995,6 +6000,21 @@ def test_a_due_visit_whose_check_is_deferred_waits_its_turn(
         free_released = _barrier_link_released(free.id, "b_free")
         trans.rollback()
     assert free_released
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_failing_due_time_does_not_undo_a_release(
+    in_experiment_directory, db_session, caplog
+):
+    """An error while working out when to check a visit again is logged, and the release stands."""
+    (waiter,) = _working_participants(get_experiment(), 1)
+    BrokenDueTimesBarrier(id_="broken_hint").receive_participant(waiter)
+    db.session.commit()
+    check_barriers()
+    assert _barrier_link_released(waiter.id, "broken_hint")
+    assert "could not work out when to check this visit again" in caplog.text
 
 
 @pytest.mark.parametrize(

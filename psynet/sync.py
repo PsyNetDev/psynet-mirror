@@ -1511,9 +1511,10 @@ class Barrier(EltCollection):
                 # A locking SELECT can miss waiters that ``EXISTS`` still
                 # sees. Do not mark the visit finished from that snapshot.
                 instance.active = _barrier_instance_has_waiters(instance)
-            instance.next_due_at = self._next_due_time(
-                [p for p in still_waiting if not p.failed]
-            )
+            if waiting_participants or not instance.active:
+                instance.next_due_at = self._next_due_time(
+                    [p for p in still_waiting if not p.failed]
+                )
         return waiting_participants
 
     def _next_due_time(self, waiting_participants) -> Optional[float]:
@@ -2718,11 +2719,11 @@ class GroupBarrier(Barrier):
                 *group.active_participants,
                 *self._admissible(group, waiting_ids),
             ]
-            for below_target in (False, True):
+            if len(candidates) < (group.quorum or 1):
+                times.append(_top_up_wait_ends(group, candidates, self.id))
+            elif len(candidates) < (group.target_group_size or 0):
                 times.append(
-                    _top_up_wait_ends(
-                        group, candidates, self.id, below_target=below_target
-                    )
+                    _top_up_wait_ends(group, candidates, self.id, below_target=True)
                 )
         return [t.timestamp() for t in times if t is not None]
 
@@ -4405,11 +4406,14 @@ class Regrouper(Grouper):
         if self.deadline is None:
             return []
         times = []
-        for within_group, pool in self._pools(waiting_participants):
-            if self.within is not None and within_group is None:
-                continue
-            reference = self._deadline_reference(within_group, pool)
-            times += [reference + self.deadline, reference + 2 * self.deadline]
+        # The deadline reference queries the last split; a savepoint keeps a
+        # failed query from aborting the check's release.
+        with db.session.begin_nested():
+            for within_group, pool in self._pools(waiting_participants):
+                if self.within is not None and within_group is None:
+                    continue
+                reference = self._deadline_reference(within_group, pool)
+                times += [reference + self.deadline, reference + 2 * self.deadline]
         return times
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
@@ -6102,7 +6106,7 @@ class BarrierInstance(SQLBase, SQLMixin):
     announced_release_time = Column(Float)
     # When a time-based rule next lets a check of this visit change
     # something, in epoch seconds; set by each check (see ``_next_due_time``).
-    next_due_at = Column(Float, index=True)
+    next_due_at = Column(Float)
 
     definition = relationship("BarrierDefinition", back_populates="instances")
     group = relationship("SyncGroup")
@@ -7179,8 +7183,9 @@ def check_barriers():
     before the next check so a locked waiter cannot poison sibling checks.
 
     Each sweep first retries group dissolutions that waited for a busy member
-    and times out overdue waiters, then checks visits, least
-    recently checked first, with new or changed ones given a head start. Each
+    and times out overdue waiters, then checks visits: first those whose
+    ``next_due_at`` has come (each due time once), then the least recently
+    checked, with new or changed ones given a head start. Each
     of the two steps stops starting new work after
     ``_POLLER_SWEEP_BUDGET_SECONDS``, so thousands of idle waiters cannot
     keep the poller busy; the rest wait for later sweeps. One item can still

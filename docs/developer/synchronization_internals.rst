@@ -50,7 +50,9 @@ Visits whose ``next_due_at`` has come go first: each check of a visit
 records there when a time-based rule (``late_after``, ``top_up_wait``,
 ``start_short_after``, or a :class:`~psynet.sync.Regrouper` deadline or
 ``every`` tick) next lets a check change something (see
-``Barrier._due_times``). The other visits follow least recently checked
+``Barrier._due_times``). A due visit goes first once per due time, so one
+whose check is deferred or fails then waits its turn. The other visits
+follow least recently checked
 first, with a 5-second head start for visits that
 are new or whose waiters or sync group changed since this process last
 checked them. This rotation also covers what ``next_due_at`` misses, such
