@@ -47,11 +47,12 @@ covers waiters at the default wait indicator and at explicit
 ``waiting_logic`` pages, whose link records its own deadline, even if they
 are still partway through a filler page. It then checks waiting visits in
 the order they became due, with a 5-second head start for visits that
-are new or whose waiters or sync group changed since this process last
-checked them. A visit whose group's other members changed, for example by
-starting a timed page, or whose clocks a bot helper such as
-:func:`~psynet.bot.make_late_now` moved back, is due at once but without
-the head start: which of a group's visits is checked first can decide who
+are new or whose waiters, or sync group's activity, size or leader,
+changed since this process last checked them. A visit whose group's other
+members changed, for example by starting a timed page, whose group's
+dissolving, top-up, quorum or last barrier pass state changed, or whose
+clocks a bot helper such as :func:`~psynet.bot.make_late_now` moved back,
+is due at once but without the head start: which of a group's visits is checked first can decide who
 is released, for example when members are late. An unchanged visit whose last check released
 nobody is due when its barrier says a release could next become due: the
 next time a member becomes late, a ``top_up_wait`` or ``newcomer_max_wait``
@@ -60,7 +61,8 @@ runs out, a :class:`~psynet.sync.SimpleGrouper` can start short, or a
 ``Barrier._next_check_due``). Until then it is checked again every 10
 seconds, in case that time missed something the release depends on, but
 only after the visits that are due, so that with many waiting visits these
-re-checks don't delay due releases. Other barriers, including subclasses that
+re-checks don't delay due releases; while the poller is saturated they come
+later than 10 seconds. Other barriers, including subclasses that
 override how a barrier releases without saying when, are due at every sweep,
 and so are visits whose check was deferred or failed. A visit whose check is
 deferred or fails is retried at most

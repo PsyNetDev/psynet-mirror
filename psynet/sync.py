@@ -74,11 +74,13 @@ this module. That loop:
   otherwise stay.
 - Finds waiting barrier instances and checks the due ones in the order they
   became due, within a per-sweep time budget. New visits, and visits whose
-  waiters or sync group changed, are due with a head start; a change to the
-  group's other members makes a visit due without one. An unchanged visit is
-  due when its last check said a release could be
+  waiters or sync group's activity, size or leader changed, are due with a
+  head start; other changes, such as to the group's other members or its
+  top-up, quorum or last pass state, make a visit due without one. An
+  unchanged visit is due when its last check said a release could be
   (``Barrier._next_check_due``), and is otherwise re-checked every 10 seconds
-  after the other due visits.
+  after the other due visits, so later than that while the poller is
+  saturated.
 - Claims each with a PostgreSQL advisory transaction lock on a dedicated
   connection, leaving definition and instance metadata available to arrival
   requests. That extra transaction stays open until this poller's
@@ -308,6 +310,7 @@ _RELEASE_RULE_METHODS = (
     "check_waiting_participants",
     "choose_who_to_release",
     "ready_to_group",
+    "group",
 )
 
 
@@ -1569,8 +1572,10 @@ class Barrier(EltCollection):
 
         Only the public methods in ``_RELEASE_RULE_METHODS`` count. A subclass
         that overrides a private release helper, such as ``_late_times`` or
-        ``_admissible``, without ``_next_check_due`` still gets skipped, and
-        relies on the poller's 10-second re-check.
+        ``_admissible``, or that changes which waiters and groups a check
+        sees through ``get_waiting_groups`` or ``waiting_pool_group``,
+        without ``_next_check_due`` still gets skipped, and relies on the
+        poller's 10-second re-check.
         """
         cls = type(self)
         owner = _defining_class(cls, "_next_check_due")
@@ -2738,7 +2743,10 @@ class GroupBarrier(Barrier):
         waiting_ids = {p.id for p in waiting_participants}
         times = []
         for group in self.get_waiting_groups(waiting_participants).values():
-            times += [late_at for _, late_at in self._late_times(group, waiting_ids)]
+            if self._waiting_members(group, waiting_participants):
+                times += [
+                    late_at for _, late_at in self._late_times(group, waiting_ids)
+                ]
             admissible = self._admissible(group, waiting_ids)
             candidates = [*group.active_participants, *admissible]
             for below_target in (False, True):
@@ -6427,25 +6435,15 @@ def _waiting_barrier_instance_ids():
     dict
         Maps each visit's instance id to a pair of fingerprints, so the
         poller can tell which visits changed since it last checked them:
-        one of its waiters and sync group, and one of what else
-        :meth:`Barrier._next_check_due` reads: the waiters' arrival times,
-        the group's last barrier pass, its members' joining, admission and
-        page deadline times, and when the barrier last formed groups in
-        this pool.
+        one of its waiters and its sync group's activity, size and leader,
+        and one of what else :meth:`Barrier._next_check_due` reads: the
+        waiters' arrival times, the group's dissolving, top-up, quorum and
+        last barrier pass state, and its members' joining, admission and
+        page deadline times.
     """
     group = SyncGroup.__table__.c
     link = ParticipantLinkSyncGroup
     working = and_(~Participant.failed, Participant.status == "working")
-    formed = SyncGroup.__table__.alias()
-    last_split = (
-        select(func.max(formed.c.creation_time))
-        .where(
-            formed.c.grouper_id == BarrierInstance.barrier_id,
-            formed.c.within_group_id.is_not_distinct_from(BarrierInstance.group_id),
-        )
-        .correlate(BarrierInstance)
-        .scalar_subquery()
-    )
     with Session(bind=db.engine) as session:
         members = (
             session.query(
@@ -6497,7 +6495,6 @@ def _waiting_barrier_instance_ids():
                         ParticipantLinkBarrier.arrival_time, ParticipantLinkBarrier.id
                     )
                 ),
-                last_split,
                 *list(members.c)[1:],
             )
             .join(
@@ -7250,18 +7247,21 @@ def _visits_due(waiting, sweep_ends):
     At least one is yielded if any is due.
 
     Visits come in the order they became due. Visits that are new to this
-    process, or whose waiters or sync group changed since it last checked
-    them, are due with a head start of ``_POLLER_CHANGE_HEAD_START_SECONDS``,
-    so they are checked promptly without starving the others. A visit whose
-    group's other members changed is due at once but without a head start,
-    so visits whose own waiters changed still come first: which of a group's
-    visits is checked first can decide who is released, for example when
-    members are late. An unchanged visit whose last check said when its release can next be
-    due (see :meth:`Barrier._next_check_due`) is due then; other unchanged
-    visits are due at once. Until then it is re-checked
-    ``_POLLER_RECHECK_SECONDS`` after that check, after every other due
-    visit, so that with many waiting visits these re-checks don't delay
-    releases that are due.
+    process, or whose waiters, or sync group's activity, size or leader,
+    changed since it last checked them, are due with a head start of
+    ``_POLLER_CHANGE_HEAD_START_SECONDS``, so they are checked promptly
+    without starving the others. Any other change that
+    :func:`_waiting_barrier_instance_ids` fingerprints, such as to the
+    group's other members or its top-up, quorum or last pass state, makes a
+    visit due at once but without a head start, so visits whose own waiters
+    changed still come first: which of a group's visits is checked first can
+    decide who is released, for example when members are late. An unchanged
+    visit whose last check said when its release can next be due (see
+    :meth:`Barrier._next_check_due`) is due then; other unchanged visits are
+    due at once. Until then it is re-checked ``_POLLER_RECHECK_SECONDS``
+    after that check, after every other due visit, so that with many waiting
+    visits these re-checks don't delay releases that are due; while the
+    poller is saturated, they can come later than that.
     """
     now = time.monotonic()
 
