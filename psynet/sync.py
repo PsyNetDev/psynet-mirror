@@ -176,6 +176,7 @@ from sqlalchemy.orm import (
     object_session,
     relationship,
     selectinload,
+    undefer,
 )
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -458,9 +459,11 @@ def _hold_barrier_instance_claim(instance_id, *, wait=False):
     """
     with db.engine.connect() as conn:
         with conn.begin():
-            _set_transaction_lock_timeout(
-                get_config().get("timeline_lock_timeout_seconds"), session=conn
-            )
+            if wait:
+                # A try-lock never waits, so it needs no lock timeout.
+                _set_transaction_lock_timeout(
+                    get_config().get("timeline_lock_timeout_seconds"), session=conn
+                )
             acquired = _execute_advisory_xact_lock(conn, instance_id, wait=wait)
             yield acquired
 
@@ -5170,6 +5173,10 @@ class SimpleSyncGroup(SyncGroup):
     A SyncGroup that is created by a SimpleGrouper.
     """
 
+    # Queries for SyncGroup load these columns too, rather than in a second
+    # query when one is first read.
+    load_with_base_class = True
+
     initial_group_size = Column(Integer)
     max_group_size = Column(Integer)
     #: How many active members the group needs to keep going.
@@ -6714,7 +6721,9 @@ def _evaluate_held_instance(instance_id):
     """
     db.session.expire_all()
     _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
-    instance = BarrierInstance.query.get(instance_id)
+    instance = BarrierInstance.query.options(undefer(BarrierInstance.spec)).get(
+        instance_id
+    )
     try:
         with db.session.begin_nested():
             ok = _check_claimed_barrier_instance(instance, already_claimed=True)
@@ -6811,15 +6820,13 @@ def _process_barrier_instance(instance_id, *, retry=False):
     Contention is another request holding the visit claim, or a locked
     waiter or top-up group. Author ``on_release`` and spec errors are reported the same way.
     The poller retries once in the same sweep, then queues the visit like a
-    checked one.
+    checked one. Errors during the check itself are logged with the barrier
+    ID by :func:`_evaluate_held_instance`.
     """
-    barrier_id = None
     try:
         with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
             if not claimed:
                 return True
-            instance = BarrierInstance.query.get(instance_id)
-            barrier_id = None if instance is None else instance.barrier_id
             if not _check_and_skip_held_instance(instance_id):
                 return True
             return False
@@ -6828,16 +6835,14 @@ def _process_barrier_instance(instance_id, *, retry=False):
         if is_transient_transaction_error(err):
             qualifier = " deferred again on retry" if retry else " deferred"
             logger.debug(
-                "Barrier '%s' instance %s%s " + _WAITER_LOCKED_DEFERRAL,
-                barrier_id,
+                "Barrier instance %s%s " + _WAITER_LOCKED_DEFERRAL,
                 instance_id,
                 qualifier,
             )
             return True
         qualifier = " on retry" if retry else ""
         logger.exception(
-            "Failed to process barrier '%s' instance %s%s.",
-            barrier_id,
+            "Failed to process barrier instance %s%s.",
             instance_id,
             qualifier,
         )
