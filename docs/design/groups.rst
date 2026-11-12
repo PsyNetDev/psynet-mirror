@@ -113,8 +113,10 @@ Groups can go through the experiment in two ways, **cued trials** or a
        round, after a regrouper when partners change (see
        `New groups for each round`_). The trials of a group's round share a
        :class:`~psynet.sync.SyncGroupRound` that holds the group's results.
-     - ``public_goods``, ``ultimatum_pairing``, ``story_chain``,
-       ``microsociety``
+     - `public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__,
+       `ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__,
+       `story_chain <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/story_chain>`__,
+       `microsociety <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety>`__
    * - A group working through a stimulus set or a chain together, each
        member getting a trial on the same stimulus
      - **A synchronized trial maker**: a trial maker with a group type
@@ -122,7 +124,8 @@ Groups can go through the experiment in two ways, **cued trials** or a
        nodes and keeps them in step from trial to trial. Each time it
        prepares the group's trials, they share a new
        :class:`~psynet.sync.SyncGroupRound`.
-     - ``create_rate_sync``, ``gibbs_within_sync``
+     - `create_rate_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/create_rate_sync>`__,
+       `gibbs_within_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/gibbs_within_sync>`__
 
 Either way, each trial records the group, the player's role and the round,
 and how the round ended for the player (``trial.sync_group_outcome``), so
