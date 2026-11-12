@@ -5970,6 +5970,36 @@ def test_check_barriers_skips_locked_waiters_and_continues(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_a_due_visit_whose_check_is_deferred_waits_its_turn(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A due visit whose waiter is busy goes first once, not every sweep."""
+    monkeypatch.setattr("psynet.sync._POLLER_SWEEP_BUDGET_SECONDS", 0)
+    exp = get_experiment()
+    locked, free = _working_participants(exp, 2)
+    ReleaseAllBarrier(id_="a_locked").receive_participant(locked)
+    ReleaseAllBarrier(id_="b_free").receive_participant(free)
+    BarrierInstance.query.filter_by(barrier_id="a_locked").one().next_due_at = (
+        time.time() - 1
+    )
+    db.session.commit()
+
+    with db.engine.connect() as conn:
+        trans = conn.begin()
+        conn.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": locked.id},
+        )
+        check_barriers()
+        check_barriers()
+        free_released = _barrier_link_released(free.id, "b_free")
+        trans.rollback()
+    assert free_released
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_two_pollers_process_one_barrier_instance_once(
     in_experiment_directory, db_session
 ):

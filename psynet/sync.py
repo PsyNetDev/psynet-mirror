@@ -1517,6 +1517,18 @@ class Barrier(EltCollection):
         return waiting_participants
 
     def _next_due_time(self, waiting_participants) -> Optional[float]:
+        """Return :meth:`_compute_next_due_time`, or ``None`` with a logged error if it fails, so a hint cannot undo a release."""
+        try:
+            return self._compute_next_due_time(waiting_participants)
+        except Exception:
+            logger.exception(
+                "Barrier '%s': could not work out when to check this visit "
+                "again; the poller's rotation will check it.",
+                self.id,
+            )
+            return None
+
+    def _compute_next_due_time(self, waiting_participants) -> Optional[float]:
         """Return the next time, in epoch seconds, that a time-based rule lets a check of this visit change something.
 
         The poller checks visits whose time has come before the rest. Only
@@ -7134,12 +7146,18 @@ def _visits_due(waiting, sweep_ends):
 
     def priority(instance_id):
         next_due_at, fingerprint = waiting[instance_id]
-        if next_due_at is not None and next_due_at <= epoch_now:
-            return (0, next_due_at, instance_id)
         last = _poller_checked_visits.get(instance_id)
+        # A check that was deferred or failed leaves its past time in place;
+        # the visit then waits its turn rather than going first every sweep.
+        if (
+            next_due_at is not None
+            and next_due_at <= epoch_now
+            and (last is None or last[0] != next_due_at)
+        ):
+            return (0, next_due_at, instance_id)
         if last is None:
             return (1, now - _POLLER_CHANGE_HEAD_START_SECONDS, instance_id)
-        checked_fingerprint, checked_at = last
+        _, checked_fingerprint, checked_at = last
         if checked_fingerprint != fingerprint:
             checked_at -= _POLLER_CHANGE_HEAD_START_SECONDS
         return (1, checked_at, instance_id)
@@ -7209,17 +7227,19 @@ def _check_barriers(seen):
                 if _process_barrier_instance(instance_id):
                     deferred_ids.append(instance_id)
                 else:
-                    _remember_poller_check(instance_id, waiting[instance_id][1])
+                    _remember_poller_check(instance_id, waiting[instance_id])
             for instance_id in deferred_ids:
                 # Even if still deferred: a visit whose check keeps failing
                 # must not stay ahead of every other visit.
                 _process_barrier_instance(instance_id, retry=True)
-                _remember_poller_check(instance_id, waiting[instance_id][1])
+                _remember_poller_check(instance_id, waiting[instance_id])
 
 
-def _remember_poller_check(instance_id, fingerprint):
-    """Record that this process checked a visit in the given state."""
-    _poller_checked_visits[instance_id] = (fingerprint, time.monotonic())
+def _remember_poller_check(instance_id, state):
+    """Record that this process checked a visit in the given ``(next_due_at, fingerprint)`` state, and any due time it acted on."""
+    next_due_at, fingerprint = state
+    acted_on = next_due_at if next_due_at and next_due_at <= time.time() else None
+    _poller_checked_visits[instance_id] = (acted_on, fingerprint, time.monotonic())
 
 
 def check_sync_groups():
