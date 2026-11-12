@@ -2610,10 +2610,14 @@ class GroupBarrier(Barrier):
             # Approximate: the check keeps a late member who is busy in their
             # own request. A wrong "yes" only makes this request wait for the
             # visit claim; the member is removed at a later sweep.
-            late_ids = {
-                participant.id
-                for participant in self._late_between_barriers(group, waiting_ids)
-            }
+            late_ids = (
+                {
+                    participant.id
+                    for participant in self._late_between_barriers(group, waiting_ids)
+                }
+                if self._waiting_members(group, waiting_participants)
+                else set()
+            )
             members = [
                 participant
                 for participant in group.active_participants
@@ -3204,7 +3208,8 @@ class SimpleGrouper(Grouper):
         ``max_wait_time`` longer than ``top_up_wait`` plus the time members may
         take to reach it (see :ref:`groups_below_quorum`).
         Default: ``None``, waiting for newcomers without a limit. Required
-        (checked when the experiment loads) if the groups could wait for
+        (checked when the experiment loads, or when a trial shows a barrier
+        built in ``show_trial``) if the groups could wait for
         newcomers at a barrier with ``late_after``: any of the group type's
         such barriers with ``admit_newcomers="on_join"``, or its admission
         points with ``"at_admission_point"``, unless an earlier barrier has
