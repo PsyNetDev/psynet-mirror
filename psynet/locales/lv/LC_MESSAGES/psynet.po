@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (tu)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "Jūsu partneris"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "Cits spēlētājs"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -633,6 +645,18 @@ msgstr "{NAME} ir atbildējis."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "beidzās laiks"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} beidzās atvēlētais laiks."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "Jūsu grupa"
 
@@ -645,50 +669,14 @@ msgstr "Grupa"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "Cita apakšgrupa"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "Jūsu apakšgrupa"
+msgid "You"
+msgstr "Jūs"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (pameta grupu)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (laiks beidzies)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (izstājās)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "Jūs"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "Jūsu partneris"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "Cits spēlētājs"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1629,7 +1617,7 @@ msgid "otter"
 msgstr "ūdrs"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "panda"
 msgstr "panda"
@@ -1647,7 +1635,7 @@ msgid "frog"
 msgstr "varde"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "koala"
 msgstr "koala"
@@ -1677,7 +1665,7 @@ msgid "cat"
 msgstr "kaķis"
 
 #: psynet/pseudonym.py
-#, fuzzy, python-brace-format
+#, fuzzy, python-brace-format, psynet-kept-source
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
 msgstr "{COLOR} {ANIMAL}"
@@ -2065,6 +2053,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "Atgriezties pie sava paneļa"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Gaida citus dalībniekus…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "Mums neizdevās laikus atrast jums partneri. Lūdzu, turpiniet."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "Mums neizdevās laikus izveidot jums grupu. Lūdzu, turpiniet."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2076,6 +2082,18 @@ msgstr "Jūsu grupa ir gatava. Turpināsim pēc {SECONDS} s."
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "Turpināsim pēc {SECONDS} s."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "Jūsu partneris vairs nav jūsu grupā. Lūdzu, turpiniet."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "Jūsu grupā ir palicis pārāk maz dalībnieku. Lūdzu, turpiniet."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4398,6 +4416,24 @@ msgstr "Atlikušas {SECONDS} s"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "Mums neizdevās laikus pievienot jūs grupai. Lūdzu, turpiniet."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "Jūsu partneris neieradās laikus. Lūdzu, turpiniet."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "Ne visi jūsu grupas dalībnieki ieradās laikus. Lūdzu, turpiniet."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "Jūsu partneris turpināja bez jums. Lūdzu, turpiniet."
 
@@ -4424,12 +4460,6 @@ msgstr "{ARRIVED}/{TOTAL} no jūsu grupas ir gatavi."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} no {TOTAL} vēl nav gatavi"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "Gaida citus dalībniekus…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

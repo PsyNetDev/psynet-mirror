@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (ikaw)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "Kapareha mo"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "Isa pang manlalaro"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -642,6 +654,18 @@ msgstr "Nakasagot na si {NAME}."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "Naubusan ng oras"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "Naubusan ng oras si {NAME}."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "Grupo mo"
 
@@ -654,50 +678,14 @@ msgstr "Grupo"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "Isa pang subgrupo"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "Subgrupo mo"
+msgid "You"
+msgstr "Ikaw"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (umalis)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (naubusan ng oras)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (hindi na nagpatuloy)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "Ikaw"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "Kapareha mo"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "Isa pang manlalaro"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1655,13 +1643,13 @@ msgid "owl"
 msgstr "kuwago"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "otter"
 msgstr "otter"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "panda"
 msgstr "panda"
@@ -1679,13 +1667,13 @@ msgid "frog"
 msgstr "palaka"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "koala"
 msgstr "koala"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "penguin"
 msgstr "penguin"
@@ -2108,6 +2096,28 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "Bumalik sa iyong panel"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Naghihintay para sa ibang mga kalahok…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr ""
+"Hindi kami nakahanap ng kapareha para sa iyo sa tamang oras. Mangyaring "
+"magpatuloy."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr ""
+"Hindi kami nakabuo ng grupo para sa iyo sa tamang oras. Mangyaring "
+"magpatuloy."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2119,6 +2129,22 @@ msgstr "Handa na ang inyong grupo. Magpapatuloy sa loob ng {SECONDS} seg."
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "Magpapatuloy sa loob ng {SECONDS} seg."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr ""
+"Hindi na kabilang sa inyong grupo ang inyong kapareha. Mangyaring "
+"magpatuloy."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr ""
+"Napakakaunting miyembro na lang ng inyong grupo ang natira. Mangyaring "
+"magpatuloy."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4527,6 +4553,28 @@ msgstr "May natitira pang {SECONDS} segundo"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr ""
+"Hindi ka namin naisama sa isang grupo sa tamang oras. Mangyaring magpatuloy."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr ""
+"Hindi dumating sa tamang oras ang iyong kasamahan. Mangyaring magpatuloy."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr ""
+"Hindi nakarating sa tamang oras ang lahat ng miyembro ng inyong grupo. "
+"Mangyaring magpatuloy."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "Nagpatuloy ang iyong kasamahan nang wala ka. Mangyaring magpatuloy."
 
@@ -4553,12 +4601,6 @@ msgstr "{ARRIVED}/{TOTAL} sa inyong grupo ay handa na."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} sa {TOTAL} ay hindi pa handa"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "Naghihintay para sa ibang mga kalahok…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

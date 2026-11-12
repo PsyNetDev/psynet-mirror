@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (নহাক)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "নহাক্কী পার্টনার"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "অতোপ্পা প্লেয়ার"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -636,6 +648,18 @@ msgstr "{NAME} উত্তর পীরক্লে।"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "মতম লোইরে"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} মতম লোইরে।"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "নহাক্কী গ্রুপ"
 
@@ -648,50 +672,14 @@ msgstr "গ্রুপ"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "অতোপ্পা সাবগ্রুপ"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "নহাক্কী সাবগ্রুপ"
+msgid "You"
+msgstr "নহাক"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (চৎখ্রে)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (মতম লৌথোক্লে)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (থাদোক্লে)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "নহাক"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "নহাক্কী পার্টনার"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "অতোপ্পা প্লেয়ার"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1680,7 +1668,7 @@ msgid "cat"
 msgstr "বিড়াল"
 
 #: psynet/pseudonym.py
-#, fuzzy, python-brace-format
+#, fuzzy, python-brace-format, psynet-kept-source
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
 msgstr "{COLOR} {ANIMAL}"
@@ -2076,6 +2064,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "আপোনাৰ পেনেললৈ উভতি যাওক।"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "অন্য অংশগ্রহণকারীদের জন্য অপেক্ষা করছি…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "মতমদা নঙোন্দা পার্টনার অমা ফংদ্রে। মখা চৎথো।"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "মতমদা নঙোন্দা গ্রুপ অমা শেম্বা ঙমদ্রে। মখা চৎথো।"
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2087,6 +2093,18 @@ msgstr "নখোইগী গ্রুপ প্রস্তুত ওইরে
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "{SECONDS} সেকেন্ডগী মতুংদা মখা চৎকনি।"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "নখোইগী পার্টনার অদু হৌজিক নখোইগী গ্রুপতা লৈত্রে। মখা চৎথো।"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "নখোইগী গ্রুপদা মেম্বার ময়াম লৈত্রে। মখা চৎথো।"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4417,6 +4435,24 @@ msgstr "{SECONDS} সেকেন্ড লৈরে"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "মতমদা অদোমবু দল অমদা হাপচিনবা ঙমদ্রে। অনুগ্ৰহ কৰি মখা চত্থো।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "নাক্কা মতমদা লাকত্রে। অনুগ্ৰহ কৰি মখা চত্থো।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "নাক্কা গী দলদা মতমদা মখল অমা লাকত্রে। অনুগ্ৰহ কৰি মখা চত্থো।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "নাক্কা অদোম বিনা মখা চত্থখ্রে। অনুগ্ৰহ কৰি মখা চত্থো।"
 
@@ -4443,12 +4479,6 @@ msgstr "নাক্কা গী {ARRIVED}/{TOTAL} পাঙথোকখ্র�
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} তে {TOTAL} হৌদৌমখ্রে তায়মখ্রে"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "অন্য অংশগ্রহণকারীদের জন্য অপেক্ষা করছি…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

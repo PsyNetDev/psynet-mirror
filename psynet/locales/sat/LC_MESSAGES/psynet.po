@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (ᱟᱢ)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "ᱟᱢᱟᱜ ᱡᱚᱲᱤᱫᱟᱨ"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "ᱮᱴᱟᱜ ᱠᱷᱮᱞᱚᱲᱤ"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -633,6 +645,18 @@ msgstr "{NAME} ᱡᱚᱵᱟᱵ ᱮᱢ ᱠᱮᱫᱟ।"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "ᱚᱠᱛᱚ ᱪᱟᱵᱟ ᱮᱱᱟ"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} ᱚᱠᱛᱚ ᱪᱟᱵᱟ ᱮᱱᱟ।"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "ᱟᱢᱟᱜ ᱜᱨᱩᱯ"
 
@@ -645,50 +669,14 @@ msgstr "ᱜᱨᱩᱯ"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "ᱮᱴᱟᱜ ᱠᱷᱩᱸᱴ ᱜᱨᱩᱯ"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "ᱟᱢᱟᱜ ᱠᱷᱩᱸᱴ ᱜᱨᱩᱯ"
+msgid "You"
+msgstr "ᱟᱢ"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (ᱚᱰᱚᱜ ᱠᱮᱫᱟ)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (ᱚᱠᱛᱚ ᱪᱟᱵᱟ ᱮᱱᱟ)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (ᱵᱟᱹᱜᱤ ᱠᱮᱫᱟ)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "ᱟᱢ"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "ᱟᱢᱟᱜ ᱡᱚᱲᱤᱫᱟᱨ"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "ᱮᱴᱟᱜ ᱠᱷᱮᱞᱚᱲᱤ"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1677,7 +1665,7 @@ msgid "cat"
 msgstr "ᱵᱤᱞᱟᱹᱲᱤ"
 
 #: psynet/pseudonym.py
-#, fuzzy, python-brace-format
+#, fuzzy, python-brace-format, psynet-kept-source
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
 msgstr "{COLOR} {ANIMAL}"
@@ -2052,6 +2040,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "ᱡᱚᱯᱚᱦ ᱞᱮᱫᱮᱯᱮ ᱴᱮ ᱥᱟᱛᱟᱹᱨ ᱠᱟᱹᱲ ᱢᱟᱱᱟᱹᱜᱮ ᱾"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "ᱟᱢᱟ ᱠᱚᱱᱟᱜ ᱞᱟᱹᱜᱤ ᱠᱚ ᱠᱚᱱᱟᱜ ᱞᱟᱹᱜᱤ…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "ᱚᱠᱛᱚ ᱨᱮ ᱟᱢ ᱞᱟᱹᱜᱤ ᱡᱚᱲᱤ ᱵᱟᱝ ᱧᱟᱢ ᱠᱮᱫᱟᱞᱮ। ᱞᱟᱦᱟᱜ ᱢᱮ।"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "ᱚᱠᱛᱚ ᱨᱮ ᱟᱢ ᱞᱟᱹᱜᱤ ᱜᱟᱹᱴᱷ ᱵᱟᱝ ᱵᱮᱱᱟᱣ ᱠᱮᱫᱟᱞᱮ। ᱞᱟᱦᱟᱜ ᱢᱮ।"
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2063,6 +2069,18 @@ msgstr "ᱟᱢᱟᱜ ᱜᱟᱹᱴᱷ ᱛᱮᱭᱟᱨ ᱜᱮᱭᱟ। {SECONDS} �
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "{SECONDS} ᱥᱮᱠᱮᱱᱰ ᱨᱮ ᱞᱟᱦᱟᱜ ᱢᱮ।"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "ᱟᱢᱟᱜ ᱡᱚᱲᱤ ᱟᱢᱟᱜ ᱜᱟᱹᱴᱷ ᱨᱮ ᱟᱨ ᱵᱟᱝ ᱢᱮᱱᱟᱜᱼᱟ। ᱞᱟᱦᱟᱜ ᱢᱮ।"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "ᱟᱢᱟᱜ ᱜᱟᱹᱴᱷ ᱨᱮ ᱟᱹᱰᱤ ᱠᱚᱢ ᱦᱚᱲ ᱛᱟᱦᱮᱱ ᱠᱮᱫᱟ। ᱞᱟᱦᱟᱜ ᱢᱮ।"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4374,6 +4392,24 @@ msgstr "{SECONDS} ᱥᱮᱠᱮᱱᱰ ᱵᱟᱹᱠᱤ"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "ᱚᱠᱛᱚ ᱨᱮ ᱟᱞᱮ ᱟᱢ ᱫᱚ ᱫᱚᱞ ᱨᱮ ᱥᱮᱞᱮᱫ ᱵᱟᱝ ᱫᱟᱲᱮ ᱞᱮᱱᱟ। ᱫᱚᱭᱟ ᱠᱟᱛᱮ ᱞᱮᱛᱟᱲ ᱢᱮ।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "ᱟᱢᱟᱜ ᱞᱟᱹᱜᱤ ᱚᱠᱛᱚ ᱨᱮ ᱵᱟᱝ ᱦᱤᱡ ᱞᱮᱱᱟ। ᱫᱚᱭᱟ ᱠᱟᱛᱮ ᱞᱮᱛᱟᱲ ᱢᱮ।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "ᱟᱢᱟᱜ ᱫᱚᱞ ᱨᱮ ᱡᱚᱛᱚ ᱦᱚᱲ ᱚᱠᱛᱚ ᱨᱮ ᱵᱟᱝ ᱦᱤᱡ ᱞᱮᱱᱟ। ᱫᱚᱭᱟ ᱠᱟᱛᱮ ᱞᱮᱛᱟᱲ ᱢᱮ।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "ᱟᱢ ᱵᱟᱝ ᱥᱟᱶ ᱟᱢᱟᱜ ᱞᱟᱹᱜᱤ ᱥᱮᱱ ᱮᱱᱟ। ᱫᱚᱭᱟ ᱠᱟᱛᱮ ᱞᱮᱛᱟᱲ ᱢᱮ।"
 
@@ -4400,12 +4436,6 @@ msgstr "{TOTAL} ᱠᱚ {ARRIVED} ᱟᱢ ᱠᱚᱱᱟᱜ ᱞᱟᱹᱜᱤ"
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{TOTAL} ᱠᱚ {REMAINING} ᱟᱢ ᱠᱚᱱᱟᱜ ᱞᱟᱹᱜᱤ"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "ᱟᱢᱟ ᱠᱚᱱᱟᱜ ᱞᱟᱹᱜᱤ ᱠᱚ ᱠᱚᱱᱟᱜ ᱞᱟᱹᱜᱤ…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (du)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "Äre Partner"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "En anere Spiller"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -638,6 +650,18 @@ msgstr "{NAME} huet geäntwert."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "Zäit ofgelaf"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "D'Zäit ass fir {NAME} ofgelaf."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "Äre Grupp"
 
@@ -650,50 +674,14 @@ msgstr "Grupp"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "En aneren Ënnergrupp"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "Ären Ënnergrupp"
+msgid "You"
+msgstr "Dir"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (fort)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (Zäit eriwwer)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (ausgestigen)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "Dir"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "Äre Partner"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "En anere Spiller"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1582,7 +1570,7 @@ msgid "Black cat"
 msgstr "Schwaarz Kaz"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym color"
 msgid "orange"
 msgstr "orange"
@@ -1696,7 +1684,7 @@ msgid "cat"
 msgstr "Kaz"
 
 #: psynet/pseudonym.py
-#, fuzzy, python-brace-format
+#, fuzzy, python-brace-format, psynet-kept-source
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
 msgstr "{COLOR} {ANIMAL}"
@@ -2093,6 +2081,27 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "Zréck bei Äre Panel"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Waarden op aner Participanten…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr ""
+"Mir konnten net rechtzäiteg e Partner fir Iech fannen. Fuert w.e.g. weider."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr ""
+"Mir konnten net rechtzäiteg eng Grupp fir Iech zesummestellen. Fuert w.e.g. "
+"weider."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2104,6 +2113,19 @@ msgstr "Är Grupp ass prett. Et geet an {SECONDS} s weider."
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "Et geet an {SECONDS} s weider."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "Äre Partner ass net méi an Ärer Grupp. Fuert w.e.g. weider."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr ""
+"Ze wéineg Membere vun Ärer Grupp sinn iwwereg bliwwen. Fuert w.e.g. weider."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4476,6 +4498,26 @@ msgstr "Nach {SECONDS} s"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr ""
+"Mir konnten Iech net rechtzäiteg an eng Grupp ophuelen. Fuert w.e.g. weider."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "Äre Partner ass net rechtzäiteg ukomm. Fuert w.e.g. weider."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr ""
+"Net jiddereen an Ärer Grupp ass rechtzäiteg ukomm. Fuert w.e.g. weider."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "Äre Partner ass ouni Iech weidergaang. Fuert w.e.g. weider."
 
@@ -4502,12 +4544,6 @@ msgstr "{ARRIVED}/{TOTAL} vun Ärer Grupp sinn prett."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} vun {TOTAL} nach net prett"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "Waarden op aner Participanten…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

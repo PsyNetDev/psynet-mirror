@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (þú)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "Félagi þinn"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "Annar leikmaður"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -636,6 +648,18 @@ msgstr "{NAME} hefur svarað."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "tíminn rann út"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "Tíminn hjá {NAME} rann út."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "Hópurinn þinn"
 
@@ -648,50 +672,14 @@ msgstr "Hópur"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "Annar undirhópur"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "Undirhópurinn þinn"
+msgid "You"
+msgstr "Þú"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (hefur yfirgefið hópinn)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (tíminn rann út)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (hætti)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "Þú"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "Félagi þinn"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "Annar leikmaður"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1637,7 +1625,7 @@ msgid "otter"
 msgstr "otur"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "panda"
 msgstr "panda"
@@ -1685,7 +1673,7 @@ msgid "cat"
 msgstr "köttur"
 
 #: psynet/pseudonym.py
-#, fuzzy, python-brace-format
+#, fuzzy, python-brace-format, psynet-kept-source
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
 msgstr "{COLOR} {ANIMAL}"
@@ -2080,6 +2068,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "Fara aftur til þjónustuveitanda þíns"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Bíð eftir öðrum þátttakendum…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "Okkur tókst ekki að finna félaga fyrir þig í tæka tíð. Haldið áfram."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "Okkur tókst ekki að mynda hóp fyrir þig í tæka tíð. Haldið áfram."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2091,6 +2097,18 @@ msgstr "Hópurinn þinn er tilbúinn. Haldið áfram eftir {SECONDS} s."
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "Haldið áfram eftir {SECONDS} s."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "Félagi þinn er ekki lengur í hópnum þínum. Haldið áfram."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "Of fáir úr hópnum þínum urðu eftir. Haldið áfram."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4429,6 +4447,25 @@ msgstr "{SECONDS} s eftir"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "Ekki tókst að bæta þér í hóp í tæka tíð. Vinsamlegast haltu áfram."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "Félagi þinn kom ekki í tæka tíð. Vinsamlegast haltu áfram."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr ""
+"Ekki náðu allir í hópnum þínum að mæta í tæka tíð. Vinsamlegast haltu áfram."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "Félagi þinn hélt áfram án þín. Vinsamlegast haltu áfram."
 
@@ -4455,12 +4492,6 @@ msgstr "{ARRIVED}/{TOTAL} í hópnum þínum eru tilbúnir."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} af {TOTAL} ekki tilbúnir ennþá"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "Bíð eftir öðrum þátttakendum…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

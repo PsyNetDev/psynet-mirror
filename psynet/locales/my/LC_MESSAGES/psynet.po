@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (သင်)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "သင့်ပါတနာ"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "အခြားကစားသမား"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -639,6 +651,18 @@ msgstr "{NAME} ဖြေပြီးပါပြီ။"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "အချိန်ကုန်သွားပါပြီ"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} အချိန်ကုန်သွားပါပြီ။"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "သင့်အဖွဲ့"
 
@@ -651,50 +675,14 @@ msgstr "အဖွဲ့"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "အခြားအဖွဲ့ခွဲ"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "သင့်အဖွဲ့ခွဲ"
+msgid "You"
+msgstr "သင်"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (ထွက်သွားသည်)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (အချိန်ကုန်သွားသည်)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (ကစားမှုမှ ထွက်သွားသည်)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "သင်"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "သင့်ပါတနာ"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "အခြားကစားသမား"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1697,7 +1685,7 @@ msgid "cat"
 msgstr "ကြောင်"
 
 #: psynet/pseudonym.py
-#, fuzzy, python-brace-format
+#, fuzzy, python-brace-format, psynet-kept-source
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
 msgstr "{COLOR} {ANIMAL}"
@@ -2093,6 +2081,28 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "သင့်ရဲ့ပနယ်ထံ ပြန်သွားပါ။"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "အခြားပါဝင်သူများကို စောင့်နေပါသည်..."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr ""
+"သင့်အတွက် အချိန်မီ အဖော်တစ်ဦးကို ရှာမတွေ့ခဲ့ပါ။ ကျေးဇူးပြု၍ "
+"ဆက်လက်လုပ်ဆောင်ပါ။"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr ""
+"သင့်အတွက် အချိန်မီ အဖွဲ့တစ်ဖွဲ့ ဖွဲ့စည်းပေးနိုင်ခြင်း မရှိခဲ့ပါ။ ကျေးဇူးပြု၍"
+" ဆက်လက်လုပ်ဆောင်ပါ။"
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2104,6 +2114,20 @@ msgstr "သင့်အဖွဲ့ အဆင်သင့်ဖြစ်ပါ�
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "{SECONDS} စက္ကန့်အတွင်း ဆက်လက်သွားပါမည်။"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "သင့်အဖော်သည် သင့်အဖွဲ့တွင် မရှိတော့ပါ။ ကျေးဇူးပြု၍ ဆက်လက်လုပ်ဆောင်ပါ။"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr ""
+"သင့်အဖွဲ့တွင် အဖွဲ့ဝင်အရေအတွက် မလုံလောက်တော့ပါ။ ကျေးဇူးပြု၍ "
+"ဆက်လက်လုပ်ဆောင်ပါ။"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4466,6 +4490,28 @@ msgstr "{SECONDS} စက္ကန့် ကျန်ရှိသည်"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr ""
+"သင့်ကို အဖွဲ့တစ်ခုထဲသို့ အချိန်မီ ထည့်သွင်းမပေးနိုင်ခဲ့ပါ။ ကျေးဇူးပြု၍ "
+"ဆက်လက်လုပ်ဆောင်ပါ။"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "သင့်အဖော် အချိန်မီ မရောက်လာပါ။ ကျေးဇူးပြု၍ ဆက်လက်လုပ်ဆောင်ပါ။"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr ""
+"သင့်အဖွဲ့ဝင်အားလုံး အချိန်မီ ရောက်ရှိလာခြင်း မရှိပါ။ ကျေးဇူးပြု၍ "
+"ဆက်လက်လုပ်ဆောင်ပါ။"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr ""
 "သင့်အဖော်က သင့်မပါဘဲ ဆက်လက်လုပ်ဆောင်သွားပါပြီ။ ကျေးဇူးပြု၍ "
@@ -4496,12 +4542,6 @@ msgstr "သင့်အဖွဲ့ဝင် {TOTAL} ယောက်ထဲမှ
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} ခု {TOTAL} ခုမှ မပြင်ဆင်ရသေးပါ"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "အခြားပါဝင်သူများကို စောင့်နေပါသည်..."
 
 #: psynet/timeline_hold.py
 #, fuzzy

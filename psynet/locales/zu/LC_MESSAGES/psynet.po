@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (wena)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "Uzakwenu"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "Omunye umdlali"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -637,6 +649,18 @@ msgstr "{NAME} uphendulile."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "uphelelwe isikhathi"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} uphelelwe isikhathi."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "Iqembu lakho"
 
@@ -649,50 +673,14 @@ msgstr "Iqembu"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "Elinye iqembu elincane"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "Iqembu lakho elincane"
+msgid "You"
+msgstr "Wena"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (uhambile)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (isikhathi siphelile)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (uhoxile)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "Wena"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "Uzakwenu"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "Omunye umdlali"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -2085,6 +2073,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "Buyela kuphaneli yakho"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Silindele abanye ababambiqhaza…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "Asikwazanga ukukutholela umlingani ngesikhathi. Sicela uqhubeke."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "Asikwazanga ukukwakhela iqembu ngesikhathi. Sicela uqhubeke."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2096,6 +2102,18 @@ msgstr "Iqembu lakho selilungile. Sizoqhubeka emasekhondini angu-{SECONDS}."
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "Sizoqhubeka emasekhondini angu-{SECONDS}."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "Umlingani wakho akasekho eqenjini lakho. Sicela uqhubeke."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "Kusele amalungu ambalwa kakhulu eqenjini lakho. Sicela uqhubeke."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4442,6 +4460,25 @@ msgstr "Sekusele imizuzwana engu-{SECONDS}"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr ""
+"Asikwazanga ukukufaka eqenjini ngesikhathi esifanele. Sicela uqhubeke."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "Uzakwenu akafikanga ngesikhathi. Sicela uqhubeke."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "Akubona bonke eqenjini lakho abafike ngesikhathi. Sicela uqhubeke."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "Uzakwenu uqhubekile ngaphandle kwakho. Sicela uqhubeke."
 
@@ -4468,12 +4505,6 @@ msgstr "{ARRIVED}/{TOTAL} eqenjini lakho sebakulungele."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} kwabangu-{TOTAL} abakalungeli"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "Silindele abanye ababambiqhaza…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

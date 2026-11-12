@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (अहाँ)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "अहाँक साथी"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "दोसर खिलाड़ी"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -630,6 +642,18 @@ msgstr "{NAME} उत्तर देलनि।"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "समय समाप्त भ गेल"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} केर समय समाप्त भ गेल।"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "अहाँक समूह"
 
@@ -642,50 +666,14 @@ msgstr "समूह"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "दोसर उपसमूह"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "अहाँक उपसमूह"
+msgid "You"
+msgstr "अहाँ"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (समूह छोड़ि गेल)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (समय समाप्त)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (बीचहि छोड़ि देलनि)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "अहाँ"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "अहाँक साथी"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "दोसर खिलाड़ी"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1675,7 +1663,7 @@ msgid "cat"
 msgstr "बिलाइ"
 
 #: psynet/pseudonym.py
-#, fuzzy, python-brace-format
+#, fuzzy, python-brace-format, psynet-kept-source
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
 msgstr "{COLOR} {ANIMAL}"
@@ -2067,6 +2055,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "अहाँक पैनल पर फिर्ता जाउ।"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "अन्य सहभागी सभक प्रतीक्षा कय रहल छी…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "अहाँ लेल समय पर कोनो साथी नहि भेटल। कृपया आगाँ बढ़ू।"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "अहाँ लेल समय पर समूह नहि बना सकलहुँ। कृपया आगाँ बढ़ू।"
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2078,6 +2084,18 @@ msgstr "अहाँक समूह तैयार अछि। {SECONDS} स�
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "{SECONDS} सेकेंड बाद आगाँ बढ़ब।"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "अहाँक साथी आब अहाँक समूहमे नहि छथि। कृपया आगाँ बढ़ू।"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "अहाँक समूहक बहुत कम सदस्य बचलाह। कृपया आगाँ बढ़ू।"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4386,6 +4404,24 @@ msgstr "{SECONDS} सेकण्ड शेष"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "हम अहाँकेँ समय पर समूहमे शामिल नहि कऽ सकलहुँ। कृपया आगू बढ़ू।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "अहाँक साथी समय पर नहि पहुँचल। कृपया आगू बढ़ू।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "अहाँक समूहक सभ सदस्य समय पर नहि पहुँचल। कृपया आगू बढ़ू।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "अहाँक साथी अहाँक बिना आगू बढ़ि गेल। कृपया आगू बढ़ू।"
 
@@ -4412,12 +4448,6 @@ msgstr "{ARRIVED}/{TOTAL} अहाँक समूह तैयार अछि
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} में सँ {TOTAL} तैयार नै अछि"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "अन्य सहभागी सभक प्रतीक्षा कय रहल छी…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

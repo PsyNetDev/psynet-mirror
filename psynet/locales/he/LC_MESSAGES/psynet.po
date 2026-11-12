@@ -51,6 +51,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (את/ה)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "בן/בת הזוג שלך"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "שחקן/ית אחר/ת"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -617,6 +629,18 @@ msgstr "{NAME} השיב/ה."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "הזמן אזל"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "הזמן של {NAME} אזל."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "הקבוצה שלך"
 
@@ -629,50 +653,14 @@ msgstr "קבוצה"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "תת-קבוצה אחרת"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "תת-הקבוצה שלך"
+msgid "You"
+msgstr "את/ה"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (עזב/ה)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (הזמן שהוקצב אזל)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (נשר/ה)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "את/ה"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "בן/בת הזוג שלך"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "שחקן/ית אחר/ת"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1653,7 +1641,7 @@ msgstr "חתול"
 #, fuzzy, python-brace-format
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
-msgstr "{COLOR} {ANIMAL}"
+msgstr "{ANIMAL} {COLOR}"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -2017,6 +2005,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "חזור לפאנל שלך"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "ממתינים למשתתפים אחרים…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "לא הצלחנו למצוא לך שותף בזמן. נא להמשיך."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "לא הצלחנו להרכיב עבורך קבוצה בזמן. נא להמשיך."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2028,6 +2034,18 @@ msgstr "הקבוצה שלך מוכנה. ממשיכים בעוד {SECONDS} שני
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "ממשיכים בעוד {SECONDS} שניות."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "השותף שלך כבר לא בקבוצה שלך. נא להמשיך."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "נותרו מעט מדי חברים בקבוצה שלך. נא להמשיך."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4238,6 +4256,24 @@ msgstr "נותרו {SECONDS} שניות"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "לא הצלחנו לצרף אותך לקבוצה בזמן. אנא המשך."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "השותף שלך לא הגיע בזמן. אנא המשך."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "לא כולם בקבוצה שלך הגיעו בזמן. אנא המשך."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "השותף שלך המשיך בלעדיך. אנא המשך."
 
@@ -4264,12 +4300,6 @@ msgstr "{ARRIVED}/{TOTAL} מהקבוצה שלך מוכנים."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} מתוך {TOTAL} עדיין לא מוכנים"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "ממתינים למשתתפים אחרים…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

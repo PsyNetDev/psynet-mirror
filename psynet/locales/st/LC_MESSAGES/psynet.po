@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (uena)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "Molekane wa hao"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "Sebapadi se seng"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -640,6 +652,18 @@ msgstr "{NAME} o arabile."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "Nako e felile"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} o feletsoe ke nako."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "Sehlopha sa hao"
 
@@ -652,50 +676,14 @@ msgstr "Sehlopha"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "Sehlotshwana se seng"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "Sehlotshwana sa hao"
+msgid "You"
+msgstr "Wena"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (o tlohile)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (nako e mo felletse)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (o ikgohotse)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "Wena"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "Molekane wa hao"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "Sebapadi se seng"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1701,7 +1689,7 @@ msgstr "Katse"
 #, fuzzy, python-brace-format
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
-msgstr "{COLOR} {ANIMAL}"
+msgstr "{ANIMAL} ka 'mala oa {COLOR}"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -2088,6 +2076,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "Khutlela ho phanele ea hau."
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Emetse bankakarolo ba bang…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "Re sitiloe ho u fumanela molekane ka nako. Ka kopo tsoela pele."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "Re sitiloe ho u etsetsa sehlopha ka nako. Ka kopo tsoela pele."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2100,6 +2106,19 @@ msgstr ""
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "Re tla fetela pele ka metsotsoana e {SECONDS}."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "Molekane oa hao ha a sa le sehlopheng sa hao. Ka kopo tsoela pele."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr ""
+"Ho setse litho tse fokolang haholo sehlopheng sa hao. Ka kopo tsoela pele."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4460,6 +4479,25 @@ msgstr "Ho setse metsotsoana e {SECONDS}"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "Ha rea khona ho u kenya sehlopheng ka nako. Ka kopo tsoela pele."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "Molekane oa hau ha aa fihla ka nako. Ka kopo tsoela pele."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr ""
+"Ha se bohle sehlopheng sa hau ba fihlileng ka nako. Ka kopo tsoela pele."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "Molekane oa hau o tsoetse pele ntle le uena. Ka kopo tsoela pele."
 
@@ -4486,12 +4524,6 @@ msgstr "{ARRIVED}/{TOTAL} ba sehlopha sa hau ba itokisitse."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} ho {TOTAL} ha ba itokisitse"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "Emetse bankakarolo ba bang…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

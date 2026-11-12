@@ -50,6 +50,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (እርስዎ)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "የእርስዎ አጋር"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "ሌላ ተጫዋች"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -615,6 +627,18 @@ msgstr "{NAME} መልስ ሰጥቷል።"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "ጊዜው አልቋል"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} ጊዜው አልቋል።"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "የእርስዎ ቡድን"
 
@@ -627,50 +651,14 @@ msgstr "ቡድን"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "ሌላ ንዑስ ቡድን"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "የእርስዎ ንዑስ ቡድን"
+msgid "You"
+msgstr "እርስዎ"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (ቡድኑን ለቋል)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (ጊዜው አልቆበታል)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (ተወ)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "እርስዎ"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "የእርስዎ አጋር"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "ሌላ ተጫዋች"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1643,7 +1631,7 @@ msgid "cat"
 msgstr "ድመት"
 
 #: psynet/pseudonym.py
-#, fuzzy, python-brace-format
+#, fuzzy, python-brace-format, psynet-kept-source
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
 msgstr "{COLOR} {ANIMAL}"
@@ -2001,6 +1989,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "ወደ እንቅስቃሴ አቅራቢዎ ይመለሱ።"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "ሌሎች ተሳታፊዎችን ማጠብ ነው…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "በቂ ጊዜ ውስጥ አጋር ልናገኝልዎ አልቻልንም። እባክዎ ይቀጥሉ።"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "በቂ ጊዜ ውስጥ ቡድን ልንመሠርትልዎ አልቻልንም። እባክዎ ይቀጥሉ።"
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2012,6 +2018,18 @@ msgstr "ቡድንዎ ዝግጁ ነው። በ{SECONDS} ሰከንድ ውስጥ ወ
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "በ{SECONDS} ሰከንድ ውስጥ ወደ ቀጣዩ እንቀጥላለን።"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "አጋርዎ ከእንግዲህ በቡድንዎ ውስጥ የለም። እባክዎ ይቀጥሉ።"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "ከቡድንዎ ውስጥ የቀሩት አባላት በጣም ጥቂት ነበሩ። እባክዎ ይቀጥሉ።"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4190,6 +4208,24 @@ msgstr "{SECONDS} ሰከንድ ቀርቷል"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "በጊዜው ወደ ቡድን ልናክልዎ አልቻልንም። እባኮትን ይቀጥሉ።"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "ባልደረባዎ በጊዜው አልደረሰም። እባኮትን ይቀጥሉ።"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "በቡድንዎ ውስጥ ሁሉም በጊዜው አልደረሱም። እባኮትን ይቀጥሉ።"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "ባልደረባዎ ያለእርስዎ ቀጥሏል። እባኮትን ይቀጥሉ።"
 
@@ -4216,12 +4252,6 @@ msgstr "ከቡድኑ {TOTAL} ውስጥ {ARRIVED} ዝግጁ ናቸው።"
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "ከ {TOTAL} ውስጥ {REMAINING} አልተዘጋጀም"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "ሌሎች ተሳታፊዎችን ማጠብ ነው…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

@@ -50,6 +50,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (나)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "내 파트너"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "다른 참가자"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -609,6 +621,18 @@ msgstr "{NAME}님이 응답했습니다."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "시간이 다 됐습니다"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME}님에게 주어진 시간이 다 됐습니다."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "내 그룹"
 
@@ -621,50 +645,14 @@ msgstr "그룹"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "다른 하위 그룹"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "내 하위 그룹"
+msgid "You"
+msgstr "나"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (나감)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (시간 초과)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (중도 이탈)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "나"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "내 파트너"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "다른 참가자"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1632,7 +1620,7 @@ msgid "cat"
 msgstr "고양이"
 
 #: psynet/pseudonym.py
-#, fuzzy, python-brace-format
+#, fuzzy, python-brace-format, psynet-kept-source
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
 msgstr "{COLOR} {ANIMAL}"
@@ -1982,6 +1970,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "패널로 돌아가기"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "다른 참가자들을 기다리고 있습니다…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "제시간에 파트너를 찾지 못했습니다. 계속 진행해 주세요."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "제시간에 그룹을 구성하지 못했습니다. 계속 진행해 주세요."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -1993,6 +1999,18 @@ msgstr "그룹이 준비되었습니다. {SECONDS}초 후 다음 단계로 이�
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "{SECONDS}초 후 다음 단계로 이동합니다."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "파트너가 더 이상 그룹에 없습니다. 계속 진행해 주세요."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "그룹에 남은 구성원이 너무 적습니다. 계속 진행해 주세요."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4087,6 +4105,24 @@ msgstr "{SECONDS}초 남음"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "제시간에 그룹에 배정해 드리지 못했습니다. 계속 진행해 주세요."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "파트너가 제시간에 도착하지 않았습니다. 계속 진행해 주세요."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "그룹원 모두가 제시간에 도착하지 않았습니다. 계속 진행해 주세요."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "파트너가 기다리지 않고 먼저 진행했습니다. 계속 진행해 주세요."
 
@@ -4113,12 +4149,6 @@ msgstr "{ARRIVED}/{TOTAL} 그룹이 준비되었습니다."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING}/{TOTAL} 아직 준비되지 않았습니다."
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "다른 참가자들을 기다리고 있습니다…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

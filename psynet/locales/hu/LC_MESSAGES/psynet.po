@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (te)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "A partnered"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "Egy másik játékos"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -632,6 +644,18 @@ msgstr "{NAME} válaszolt."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "Lejárt az ideje"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} ideje lejárt."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "A csoportod"
 
@@ -644,50 +668,14 @@ msgstr "Csoport"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "Egy másik alcsoport"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "Az alcsoportod"
+msgid "You"
+msgstr "Te"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (távozott)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (lejárt az ideje)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (lemorzsolódott)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "Te"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "A partnered"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "Egy másik játékos"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1638,7 +1626,7 @@ msgid "otter"
 msgstr "vidra"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "panda"
 msgstr "panda"
@@ -1656,7 +1644,7 @@ msgid "frog"
 msgstr "béka"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "koala"
 msgstr "koala"
@@ -1686,7 +1674,7 @@ msgid "cat"
 msgstr "macska"
 
 #: psynet/pseudonym.py
-#, fuzzy, python-brace-format
+#, fuzzy, python-brace-format, psynet-kept-source
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
 msgstr "{COLOR} {ANIMAL}"
@@ -2072,6 +2060,25 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "Visszatérés a panelhez"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Várakozás a többi résztvevőre…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "Nem találtunk időben partnert az Ön számára. Kérjük, folytassa."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr ""
+"Nem sikerült időben csoportot alakítanunk az Ön számára. Kérjük, folytassa."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2083,6 +2090,18 @@ msgstr "A csoportja készen áll. Továbblépés {SECONDS} mp múlva."
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "Továbblépés {SECONDS} mp múlva."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "Az Ön partnere már nem tagja a csoportjának. Kérjük, folytassa."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "Túl kevés tag maradt a csoportjában. Kérjük, folytassa."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4424,6 +4443,24 @@ msgstr "Még {SECONDS} s van hátra"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "Nem sikerült időben csoportba sorolnunk. Kérlek, folytasd."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "A partnered nem érkezett meg időben. Kérlek, folytasd."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "A csoportodból nem érkezett meg mindenki időben. Kérlek, folytasd."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "A partnered nélküled továbbment. Kérlek, folytasd."
 
@@ -4450,12 +4487,6 @@ msgstr "A csoportodból {ARRIVED}/{TOTAL} készen áll."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} a(z) {TOTAL} közül még nincs kész"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "Várakozás a többi résztvevőre…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

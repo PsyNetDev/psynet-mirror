@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (bạn)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "Bạn cùng nhóm"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "Người chơi khác"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -638,6 +650,18 @@ msgstr "{NAME} đã trả lời."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "đã hết thời gian"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} đã hết thời gian."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "Nhóm của bạn"
 
@@ -650,50 +674,14 @@ msgstr "Nhóm"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "Nhóm phụ khác"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "Nhóm phụ của bạn"
+msgid "You"
+msgstr "Bạn"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (đã rời đi)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (hết thời gian)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (đã bỏ cuộc)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "Bạn"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "Bạn cùng nhóm"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "Người chơi khác"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1695,7 +1683,7 @@ msgstr "mèo"
 #, fuzzy, python-brace-format
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
-msgstr "{COLOR} {ANIMAL}"
+msgstr "{ANIMAL} màu {COLOR}"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -2083,6 +2071,26 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "Trở về bảng điều khiển của bạn"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Đang chờ những người tham gia khác…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr ""
+"Chúng tôi không thể tìm được người ghép cặp với bạn kịp thời. Vui lòng tiếp "
+"tục."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "Chúng tôi không thể tập hợp nhóm cho bạn kịp thời. Vui lòng tiếp tục."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2094,6 +2102,20 @@ msgstr "Nhóm của bạn đã sẵn sàng. Sẽ chuyển tiếp sau {SECONDS} g
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "Sẽ chuyển tiếp sau {SECONDS} giây."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr ""
+"Người ghép cặp với bạn không còn ở trong nhóm của bạn nữa. Vui lòng tiếp "
+"tục."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "Nhóm của bạn còn lại quá ít thành viên. Vui lòng tiếp tục."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4438,6 +4460,27 @@ msgstr "Còn {SECONDS} giây"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr ""
+"Chúng tôi không thể thêm bạn vào một nhóm kịp thời. Vui lòng tiếp tục."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "Đối tác của bạn đã không đến kịp. Vui lòng tiếp tục."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr ""
+"Không phải tất cả mọi người trong nhóm của bạn đều đến kịp. Vui lòng tiếp "
+"tục."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "Đối tác của bạn đã tiếp tục mà không có bạn. Vui lòng tiếp tục."
 
@@ -4464,12 +4507,6 @@ msgstr "{ARRIVED}/{TOTAL} trong nhóm của bạn đã sẵn sàng."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} trong số {TOTAL} chưa sẵn sàng"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "Đang chờ những người tham gia khác…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

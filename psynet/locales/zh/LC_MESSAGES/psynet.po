@@ -48,6 +48,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME}（你）"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "你的搭档"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "另一位玩家"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -606,6 +618,18 @@ msgstr "{NAME} 已回答。"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "已超时"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} 已超时。"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "你的小组"
 
@@ -618,50 +642,14 @@ msgstr "小组"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "另一个子组"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "你所在的子组"
+msgid "You"
+msgstr "你"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME}（已离开）"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME}（时间耗尽）"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME}（中途退出）"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "你"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "你的搭档"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "另一位玩家"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1630,7 +1618,7 @@ msgstr "猫"
 #, fuzzy, python-brace-format
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
-msgstr "{COLOR} {ANIMAL}"
+msgstr "{COLOR}{ANIMAL}"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -1960,6 +1948,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "返回到您的面板"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "等待其他参与者…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "没能及时为你找到搭档。请继续。"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "没能及时为你组建小组。请继续。"
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -1971,6 +1977,18 @@ msgstr "你们组已准备就绪。将在 {SECONDS} 秒后继续。"
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "将在 {SECONDS} 秒后继续。"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "你的搭档已不在你的小组中。请继续。"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "你的小组剩余成员人数不足。请继续。"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -3992,6 +4010,24 @@ msgstr "剩余 {SECONDS} 秒"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "我们没能及时将您加入小组。请继续。"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "您的伙伴未能及时到达。请继续。"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "您的小组中并非所有人都及时到达。请继续。"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "您的伙伴没有等您就继续了。请继续。"
 
@@ -4018,12 +4054,6 @@ msgstr "您的小组中有 {ARRIVED}/{TOTAL} 人已准备好。"
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} 人中的 {TOTAL} 人尚未准备好"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "等待其他参与者…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

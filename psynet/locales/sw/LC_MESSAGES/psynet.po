@@ -52,6 +52,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (wewe)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "Mwenzi wako"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "Mchezaji mwingine"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -634,6 +646,18 @@ msgstr "{NAME} amejibu."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "muda umeisha"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} ameishiwa na muda."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "Kikundi chako"
 
@@ -646,50 +670,14 @@ msgstr "Kikundi"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "Kikundi kidogo kingine"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "Kikundi chako kidogo"
+msgid "You"
+msgstr "Wewe"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (ameondoka)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (muda wake umeisha)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (ameacha kushiriki)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "Wewe"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "Mwenzi wako"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "Mchezaji mwingine"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1681,7 +1669,7 @@ msgstr "Paka"
 #, fuzzy, python-brace-format
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
-msgstr "{COLOR} {ANIMAL}"
+msgstr "{ANIMAL} wa rangi ya {COLOR}"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -2062,6 +2050,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "Rudi kwenye paneli yako"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Inasubiri washiriki wengine…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "Hatukuweza kukupatia mshirika kwa wakati. Tafadhali endelea."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "Hatukuweza kukuundia kikundi kwa wakati. Tafadhali endelea."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2073,6 +2079,19 @@ msgstr "Kikundi chako kiko tayari. Tunaendelea baada ya sekunde {SECONDS}."
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "Tunaendelea baada ya sekunde {SECONDS}."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "Mshirika wako hayumo tena kwenye kikundi chako. Tafadhali endelea."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr ""
+"Ni washiriki wachache sana wa kikundi chako waliobaki. Tafadhali endelea."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4398,6 +4417,25 @@ msgstr "Zimebaki sekunde {SECONDS}"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "Hatukuweza kukuongeza kwenye kikundi kwa wakati. Tafadhali endelea."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "Mwenza wako hakufika kwa wakati. Tafadhali endelea."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr ""
+"Sio kila mtu katika kikundi chako aliyefika kwa wakati. Tafadhali endelea."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "Mwenza wako aliendelea bila wewe. Tafadhali endelea."
 
@@ -4424,12 +4462,6 @@ msgstr "{ARRIVED}/{TOTAL} ya kikundi chako wako tayari."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} kati ya {TOTAL} bado hawako tayari"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "Inasubiri washiriki wengine…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

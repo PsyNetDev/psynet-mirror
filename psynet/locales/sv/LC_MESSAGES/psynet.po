@@ -52,6 +52,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (du)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "Din partner"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "En annan spelare"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -633,6 +645,18 @@ msgstr "{NAME} har svarat."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "tiden tog slut"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "Tiden tog slut för {NAME}."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "Din grupp"
 
@@ -645,50 +669,14 @@ msgstr "Grupp"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "En annan undergrupp"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "Din undergrupp"
+msgid "You"
+msgstr "Du"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (har lämnat)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (fick slut på tiden)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (hoppade av)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "Du"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "Din partner"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "En annan spelare"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1064,13 +1052,13 @@ msgid "Orange otter"
 msgstr "Orange utter"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym"
 msgid "Orange panda"
 msgstr "Orange panda"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym"
 msgid "Orange tiger"
 msgstr "Orange tiger"
@@ -1082,7 +1070,7 @@ msgid "Orange frog"
 msgstr "Orange groda"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym"
 msgid "Orange koala"
 msgstr "Orange koala"
@@ -1574,7 +1562,7 @@ msgid "Black cat"
 msgstr "Svart katt"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym color"
 msgid "orange"
 msgstr "orange"
@@ -1640,13 +1628,13 @@ msgid "otter"
 msgstr "utter"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "panda"
 msgstr "panda"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "tiger"
 msgstr "tiger"
@@ -1658,7 +1646,7 @@ msgid "frog"
 msgstr "groda"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "koala"
 msgstr "koala"
@@ -1688,7 +1676,7 @@ msgid "cat"
 msgstr "katt"
 
 #: psynet/pseudonym.py
-#, fuzzy, python-brace-format
+#, fuzzy, python-brace-format, psynet-kept-source
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
 msgstr "{COLOR} {ANIMAL}"
@@ -2078,6 +2066,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "Återvänd till din panel"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Väntar på andra deltagare…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "Vi kunde inte hitta någon partner åt dig i tid. Fortsätt."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "Vi kunde inte bilda en grupp åt dig i tid. Fortsätt."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2089,6 +2095,18 @@ msgstr "Er grupp är redo. Vi går vidare om {SECONDS} sek."
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "Vi går vidare om {SECONDS} sek."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "Din partner ingår inte längre i din grupp. Fortsätt."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "För få medlemmar i din grupp blev kvar. Fortsätt."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4430,6 +4448,24 @@ msgstr "{SECONDS} s kvar"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "Vi kunde inte lägga till dig i en grupp i tid. Vänligen fortsätt."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "Din partner kom inte i tid. Vänligen fortsätt."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "Inte alla i din grupp kom i tid. Vänligen fortsätt."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "Din partner gick vidare utan dig. Vänligen fortsätt."
 
@@ -4456,12 +4492,6 @@ msgstr "{ARRIVED}/{TOTAL} i din grupp är redo."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} av {TOTAL} är inte redo än"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "Väntar på andra deltagare…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

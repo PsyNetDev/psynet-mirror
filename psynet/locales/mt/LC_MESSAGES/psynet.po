@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (int)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "Is-sieħeb/sieħba tiegħek"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "Plejer ieħor"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -637,6 +649,18 @@ msgstr "{NAME} wieġeb."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "spiċċalu l-ħin"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} spiċċalu l-ħin."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "Il-grupp tiegħek"
 
@@ -649,50 +673,14 @@ msgstr "Grupp"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "Sottogrupp ieħor"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "Is-sottogrupp tiegħek"
+msgid "You"
+msgstr "Int"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (telaq)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (spiċċalu l-ħin)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (irtira)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "Int"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "Is-sieħeb/sieħba tiegħek"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "Plejer ieħor"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -1651,7 +1639,7 @@ msgid "otter"
 msgstr "lontra"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "panda"
 msgstr "panda"
@@ -1669,7 +1657,7 @@ msgid "frog"
 msgstr "żrinġ"
 
 #: psynet/pseudonym.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "pseudonym animal"
 msgid "koala"
 msgstr "koala"
@@ -1699,7 +1687,7 @@ msgid "cat"
 msgstr "qattus"
 
 #: psynet/pseudonym.py
-#, fuzzy, python-brace-format
+#, fuzzy, python-brace-format, psynet-kept-source
 msgctxt "pseudonym"
 msgid "{COLOR} {ANIMAL}"
 msgstr "{COLOR} {ANIMAL}"
@@ -2092,6 +2080,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "Irritorna għand il-panel tiegħek"
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "Stennija għal parteċipanti oħra…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "Ma stajniex insibu sieħeb għalik fil-ħin. Jekk jogħġbok kompli."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "Ma stajniex niffurmaw grupp għalik fil-ħin. Jekk jogħġbok kompli."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2103,6 +2109,18 @@ msgstr "Il-grupp tiegħek lest. Se nkomplu fi {SECONDS} s."
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "Se nkomplu fi {SECONDS} s."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "Is-sieħeb tiegħek m’għadux fil-grupp tiegħek. Jekk jogħġbok kompli."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "Fadal ftit wisq membri fil-grupp tiegħek. Jekk jogħġbok kompli."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4470,6 +4488,24 @@ msgstr "Fadal {SECONDS} s"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "Ma stajniex indaħħluk fi grupp fil-ħin. Jekk jogħġbok kompli."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "Il-partner tiegħek ma wasalx fil-ħin. Jekk jogħġbok kompli."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "Mhux kulħadd fil-grupp tiegħek wasal fil-ħin. Jekk jogħġbok kompli."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "Il-partner tiegħek kompla mingħajrek. Jekk jogħġbok kompli."
 
@@ -4496,12 +4532,6 @@ msgstr "{ARRIVED}/{TOTAL} tal-grupp tiegħek huma lesti."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} minn {TOTAL} għadhom mhux lesti"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "Stennija għal parteċipanti oħra…"
 
 #: psynet/timeline_hold.py
 #, fuzzy

@@ -53,6 +53,18 @@ msgctxt "chat participant list"
 msgid "{NAME} (you)"
 msgstr "{NAME} (تۆ)"
 
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "هاوەڵەکەت"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "یاریزانێکی تر"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -631,6 +643,18 @@ msgstr "{NAME} وەڵامی داوەتەوە."
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "کاتی بەسەرچوو"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} کاتی بەسەرچوو."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
 msgid "Your group"
 msgstr "گرووپەکەت"
 
@@ -643,50 +667,14 @@ msgstr "گرووپ"
 #: psynet/group_prompt.py
 #, fuzzy
 msgctxt "group prompt"
-msgid "Another subgroup"
-msgstr "گرووپۆچکەیەکی تر"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your subgroup"
-msgstr "گرووپۆچکەکەت"
+msgid "You"
+msgstr "تۆ"
 
 #: psynet/group_prompt.py
 #, fuzzy, python-brace-format
 msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr "{NAME} (ڕۆیشتووە)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (out of time)"
-msgstr "{NAME} (کاتی بەسەرچووە)"
-
-#: psynet/group_prompt.py
-#, fuzzy, python-brace-format
-msgctxt "group prompt"
-msgid "{NAME} (dropped out)"
-msgstr "{NAME} (وازیهێناوە)"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "You"
-msgstr "تۆ"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Your partner"
-msgstr "هاوەڵەکەت"
-
-#: psynet/group_prompt.py
-#, fuzzy
-msgctxt "group prompt"
-msgid "Another player"
-msgstr "یاریزانێکی تر"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -2062,6 +2050,24 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr "بگەڕێەوە بۆ پانێڵەکەت."
 
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "چاوەڕێی بەشداربووانی تر بکە…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "لە کاتی پێویستدا هاوبەشێکت بۆ نەدۆزرایەوە. تکایە بەردەوام بە."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "لە کاتی پێویستدا نەمانتوانی گرووپێکت بۆ پێکبهێنین. تکایە بەردەوام بە."
+
 #: psynet/sync.py
 #, fuzzy, python-brace-format
 msgctxt "waiting"
@@ -2073,6 +2079,18 @@ msgstr "گرووپەکەت ئامادەیە. دوای {SECONDS} چرکە دەچ�
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr "دوای {SECONDS} چرکە دەچینە پێشەوە."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "هاوبەشەکەت چیتر لە گرووپەکەتدا نییە. تکایە بەردەوام بە."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "ئەندامانی گرووپەکەت زۆر کەم مابوونەوە. تکایە بەردەوام بە."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -4396,6 +4414,24 @@ msgstr "{SECONDS} چرکە ماوە"
 #: psynet/timeline_hold.py
 #, fuzzy
 msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "نەمانتوانی بە کاتی خۆی تۆ بخەینە ناو گروپێک. تکایە بەردەوام بە."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "هاوڕێکەت بە کاتی خۆی نەگەیشت. تکایە بەردەوام بە."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "هەموو کەسێک لە گروپەکەت بە کاتی خۆی نەگەیشت. تکایە بەردەوام بە."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
 msgid "Your partner went on without you. Please continue."
 msgstr "هاوڕێکەت بەبێ تۆ بەردەوام بوو. تکایە بەردەوام بە."
 
@@ -4422,12 +4458,6 @@ msgstr "{ARRIVED}/{TOTAL} لە گروپەکەتان ئامادەن."
 msgctxt "timeline_hold"
 msgid "{REMAINING} of {TOTAL} not ready yet"
 msgstr "{REMAINING} لە {TOTAL} هێشتا ئامادە نین"
-
-#: psynet/timeline_hold.py
-#, fuzzy
-msgctxt "timeline_hold"
-msgid "Waiting for other participants…"
-msgstr "چاوەڕێی بەشداربووانی تر بکە…"
 
 #: psynet/timeline_hold.py
 #, fuzzy
