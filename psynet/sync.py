@@ -168,6 +168,7 @@ from sqlalchemy import (
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import (
     Session,
     backref,
@@ -1188,10 +1189,11 @@ class Barrier(EltCollection):
         A wrong ``True`` only costs a check that changes nothing; a wrong
         ``False`` delays that change until something else checks the visit.
         The default is ``True`` whenever anyone is waiting, so a barrier
-        without an override is checked at every poller sweep. Custom
-        barriers that override :meth:`choose_who_to_release` or
-        :meth:`check_waiting_participants` of a built-in barrier keep that
-        default unless they override this too.
+        without an override is checked at every poller sweep. A subclass of
+        a built-in barrier that overrides :meth:`choose_who_to_release` or
+        :meth:`check_waiting_participants` inherits the built-in's
+        ``needs_check``; the poller checks it at every sweep unless it
+        overrides this too, but ``GET /timeline`` uses the inherited method.
         """
         return bool(waiting_participants)
 
@@ -2603,9 +2605,10 @@ class GroupBarrier(Barrier):
         """Return whether a check of this group visit would release or remove anyone, without mutating state.
 
         Mirrors :meth:`check_waiting_participants` followed by
-        :meth:`choose_who_to_release`: any member late between barriers
-        counts, because the check removes or fails them, and group size is
-        recounted rather than read from ``n_active_participants``.
+        :meth:`choose_who_to_release`: a stale stored count counts, because
+        the check recounts the group (which starts a ``top_up_wait``), and so
+        does any member late between barriers, because the check removes or
+        fails them.
         """
         waiting_ids = {participant.id for participant in waiting_participants}
         for group in self.get_waiting_groups(waiting_participants).values():
@@ -2614,7 +2617,12 @@ class GroupBarrier(Barrier):
             ):
                 # A peek takes no lock, but still counts newcomers who have
                 # joined since this session loaded the group.
-                db.session.expire(group, ["participant_links"])
+                stored = ["participant_links", "n_active_participants"]
+                if isinstance(group, SimpleSyncGroup):
+                    stored.append("below_quorum_since")
+                db.session.expire(group, stored)
+            if group._numbers_are_stale(len(group.active_participants)):
+                return True
             # Approximate: the check keeps a late member who is busy in their
             # own request. A wrong "yes" only costs a check that changes
             # nothing; the member is removed at a later sweep.
@@ -5154,6 +5162,10 @@ class SyncGroup(SQLBase, SQLMixin):
     def check_numbers(self):
         self.n_active_participants = len(self.active_participants)
 
+    def _numbers_are_stale(self, n_active):
+        """Return whether :meth:`check_numbers` would change this group, given ``n_active`` active members."""
+        return self.n_active_participants != n_active
+
     def remove_participant(self, participant: Participant, reason: RemovalReason):
         """Remove a participant from the group.
 
@@ -5364,6 +5376,12 @@ class SimpleSyncGroup(SyncGroup):
             self.below_quorum_since = None
         elif self.below_quorum_since is None:
             self.below_quorum_since = timenow()
+
+    def _numbers_are_stale(self, n_active):
+        below_quorum = n_active < (self.quorum or 0)
+        return super()._numbers_are_stale(n_active) or below_quorum != (
+            self.below_quorum_since is not None
+        )
 
     def stop_top_ups(self):
         """Stop newcomers joining this group, so that it no longer waits for them.
@@ -7054,24 +7072,29 @@ def _visits_that_need_checks(instance_ids):
     be trusted to peek (see :func:`_trusts_needs_check`), and one whose
     peek fails count as visits that need a check, so their full check
     runs: it moves leftover waiters onto the live visit and reports errors.
-    If the batched read itself fails, every visit counts.
+    If the batched read itself fails, or a database error interrupts it,
+    every visit counts. A transaction the read opened is rolled back, so an
+    idle poller doesn't sit in an open transaction.
     """
     if not instance_ids:
         return set()
+    was_in_transaction = db.session().in_transaction()
     db.session.expire_all()
-    nested = db.session.begin_nested()
     try:
-        return _peek_visits(instance_ids)
-    except Exception as err:
-        if is_transient_transaction_error(err):
-            raise
+        nested = db.session.begin_nested()
+        try:
+            return _peek_visits(instance_ids)
+        finally:
+            nested.rollback()
+    except Exception:
         logger.exception(
             "The batched barrier peek failed; checking all %i waiting visits.",
             len(instance_ids),
         )
         return set(instance_ids)
     finally:
-        nested.rollback()
+        if not was_in_transaction:
+            _rollback_preserving_barrier_queues()
         db.session.info.pop(_PEEKED_GROUPS_KEY, None)
         for instance_id in instance_ids:
             _forget_barrier_from_spec(instance_id)
@@ -7128,9 +7151,10 @@ def _peek_visits(instance_ids):
                 due.add(instance.id)
         except BarrierSpecError:
             due.add(instance.id)
-        except Exception as err:
-            if is_transient_transaction_error(err):
-                raise
+        except DBAPIError:
+            # The savepoint is aborted, so every later peek would fail too.
+            raise
+        except Exception:
             logger.exception(
                 "Barrier instance %s failed a batched release peek.", instance.id
             )

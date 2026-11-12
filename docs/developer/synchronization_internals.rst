@@ -52,18 +52,23 @@ groups' members, in a fixed number of queries
 :meth:`~psynet.sync.Barrier.needs_check` on that data, and runs the full,
 locked check only for visits where the answer is yes. For the built-in
 barriers the answer is yes whenever a check would change something: release
-or group anyone, remove or fail a late member, or send a new countdown. A
-visit whose waiters can't be released yet therefore usually costs the sweep
-no statements of its own (a ``Regrouper`` pool or a ``SimpleGrouper``
-with a countdown costs one), and a release comes at the first sweep after it
-becomes due. Inactive visits that still have waiters, and subclasses that
+or group anyone, remove or fail a late member, recount a group whose stored
+count is out of date (which starts its ``top_up_wait``), or send a new
+countdown. A visit whose waiters can't be released yet therefore usually
+costs the sweep no statements of its own. A ``Regrouper`` pool or a
+``SimpleGrouper`` with a countdown costs one, and a ``SimpleGrouper`` that
+joins existing groups or limits ``max_groups``, or an author's
+``join_criterion``, can cost more. A release comes at the first sweep
+after it becomes due. Inactive visits that still have waiters, and subclasses that
 override :meth:`~psynet.sync.Barrier.choose_who_to_release` or
 :meth:`~psynet.sync.Barrier.check_waiting_participants` without overriding
 ``needs_check``, are checked at every sweep. In ``test_sync.py`` and
 ``test_regrouper.py``, the autouse fixture ``_audit_needs_check`` checks
 every visit the peek passes over and fails the test if that check changes
-its waiters, their groups or its countdown; when a check learns to change
-something new, teach ``needs_check`` too. The visits to check go least
+the visit's row, its waiters, or their groups and members; when a check
+learns to change something new, teach ``needs_check`` too. Because the
+audit checks those visits itself, the tests of when the poller ends a wait
+turn it off (``_freeze_clocks``). The visits to check go least
 recently checked first, with a 5-second head start for visits that
 are new or whose waiters or sync group changed since this process last
 checked them. A visit whose check is deferred or fails is retried at most

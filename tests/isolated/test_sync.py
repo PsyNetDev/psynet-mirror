@@ -128,8 +128,8 @@ from timeline_hold_helpers import (  # noqa: E402
 )
 
 
-def _visit_people(instance_id):
-    """Return who waits at a visit, who belongs to the waiters' groups, and the countdown announced to the waiters, read in a fresh session."""
+def _visit_state(instance_id):
+    """Return a visit's row, who waits there, and the waiters' groups with their members, read in a fresh session."""
     with Session(bind=db.engine) as session:
         waiting = session.execute(
             text(
@@ -140,42 +140,57 @@ def _visit_people(instance_id):
             ),
             {"id": instance_id},
         ).all()
+        waiters_groups = (
+            "SELECT g.sync_group_id FROM participant_link_sync_group g"
+            " JOIN participant_link_barrier l ON l.participant_id = g.participant_id"
+            " WHERE l.barrier_instance_id = :id AND NOT l.released AND g.active"
+        )
         members = session.execute(
             text(
-                "SELECT participant_id, sync_group_id FROM participant_link_sync_group "
-                "WHERE active AND sync_group_id IN ("
-                " SELECT g.sync_group_id FROM participant_link_sync_group g"
-                " JOIN participant_link_barrier l ON l.participant_id = g.participant_id"
-                " WHERE l.barrier_instance_id = :id AND NOT l.released AND g.active"
-                ") ORDER BY 1, 2"
+                "SELECT m.participant_id, m.sync_group_id, p.failed, p.status "
+                "FROM participant_link_sync_group m "
+                "JOIN participant p ON p.id = m.participant_id "
+                f"WHERE m.active AND m.sync_group_id IN ({waiters_groups}) "
+                "ORDER BY 1, 2"
             ),
             {"id": instance_id},
         ).all()
-        countdown = session.execute(
-            text("SELECT announced_release_time FROM barrier_instance WHERE id = :id"),
+        groups = session.execute(
+            text(
+                f"SELECT * FROM sync_group WHERE id IN ({waiters_groups}) ORDER BY id"
+            ),
             {"id": instance_id},
-        ).scalar()
-    return waiting, members, countdown
+        ).all()
+        visit = session.execute(
+            text("SELECT * FROM barrier_instance WHERE id = :id"),
+            {"id": instance_id},
+        ).all()
+    return visit, waiting, members, groups
+
+
+_UNAUDITED_VISITS_THAT_NEED_CHECKS = psynet.sync._visits_that_need_checks
 
 
 @pytest.fixture(autouse=True)
 def _audit_needs_check(monkeypatch):
     """Fail the test if the poller passes over a visit whose check would change it.
 
-    Each visit the batched peek says can't release is checked at once, and
-    must come out with the same waiters, in the same groups, with the same
-    countdown.
+    Each visit the batched peek says needs no check is checked at once, and
+    its row, its waiters, and their groups and members must come out
+    unchanged. This also checks those visits at every sweep, as before the
+    peek, so tests of when the poller ends a wait turn it off (see
+    :func:`_freeze_clocks`).
     """
-    peek = psynet.sync._visits_that_need_checks
+    peek = _UNAUDITED_VISITS_THAT_NEED_CHECKS
     failures = []
 
     def audited(instance_ids):
         need_checks = peek(instance_ids)
         for instance_id in sorted(set(instance_ids) - need_checks):
-            before = _visit_people(instance_id)
+            before = _visit_state(instance_id)
             if psynet.sync._process_barrier_instance(instance_id):
                 continue
-            if _visit_people(instance_id) != before:
+            if _visit_state(instance_id) != before:
                 failures.append(
                     f"The poller passed over barrier visit {instance_id}, but its "
                     "check changed it: needs_check() misses something."
@@ -4196,10 +4211,15 @@ def test_check_barriers_spreads_idle_visits_over_sweeps(
 def _freeze_clocks(monkeypatch, start=None):
     """Stop the wall clocks barrier checks read at ``start`` (epoch seconds, default now), and return a function that sets how far past it they are.
 
-    Call it before setting up waits, so they count from ``start``.
+    Call it before setting up waits, so they count from ``start``. Sweeps
+    then skip :func:`_audit_needs_check`, whose checks of passed-over visits
+    would end waits the poller itself misses.
     """
     from psynet import timeline_hold
 
+    monkeypatch.setattr(
+        psynet.sync, "_visits_that_need_checks", _UNAUDITED_VISITS_THAT_NEED_CHECKS
+    )
     start = time.time() if start is None else start
     start_timenow = psynet.sync.timenow() + timedelta(seconds=start - time.time())
     shift = [0]
@@ -4238,7 +4258,7 @@ def _waiting_for_a_late_partner(exp, db_session):
     return barrier, [waiter]
 
 
-def _waiting_for_top_ups(exp, db_session):
+def _waiting_for_top_ups(exp, db_session, leave=lambda p: p.fail("quit")):
     grouper = SimpleGrouper(
         "team",
         initial_group_size=2,
@@ -4250,9 +4270,17 @@ def _waiting_for_top_ups(exp, db_session):
     quitter, waiter = _working_participants(exp, 2)
     grouper._make_group([quitter, waiter], initial_group_size=2)
     db_session.commit()
-    quitter.fail("quit")
+    leave(quitter)
     barrier = GroupBarrier(id_="game_starts", group_type="team", max_wait_time=120)
     return barrier, [waiter]
+
+
+def _waiting_for_top_ups_after_a_return(exp, db_session):
+    return _waiting_for_top_ups(exp, db_session, leave=_return)
+
+
+def _return(participant):
+    participant.status = "returned"
 
 
 def _waiting_to_start_short(exp, db_session):
@@ -4272,6 +4300,7 @@ def _waiting_to_start_short(exp, db_session):
     [
         (_waiting_for_a_late_partner, 30),
         (_waiting_for_top_ups, 40),
+        (_waiting_for_top_ups_after_a_return, 40),
         (_waiting_to_start_short, 40),
     ],
 )
@@ -4334,7 +4363,10 @@ class _CustomReleaseGroupBarrier(GroupBarrier):
 def test_poller_peek_falls_back_to_checking(
     in_experiment_directory, db_session, monkeypatch
 ):
-    """A custom release rule without needs_check, or a failed batched read, gets its visits checked."""
+    """A custom release rule without needs_check, or a failed batched read, gets its visits checked.
+
+    The peek leaves no transaction open, even after a database error.
+    """
     exp = get_experiment()
     visits = {}
     for barrier_class in (GroupBarrier, _CustomReleaseGroupBarrier):
@@ -4343,15 +4375,23 @@ def test_poller_peek_falls_back_to_checking(
         _arrive_at_group_barrier(exp, barrier, waiter)
         db.session.commit()
         visits[barrier_class] = waiter.active_barriers[barrier.id].barrier_instance_id
+    db.session.commit()
     peek = _visits_that_need_checks
     assert peek(list(visits.values())) == {visits[_CustomReleaseGroupBarrier]}
+    assert not db.session().in_transaction()
 
     def broken(participants):
         raise RuntimeError("broken load")
 
-    monkeypatch.setattr("psynet.sync._prime_sync_groups", broken)
-    assert peek(list(visits.values())) == set(visits.values())
-    assert Participant.query.count()
+    def database_error(participants):
+        db.session.execute(text("SELECT 1 / 0"))
+
+    for failure in (broken, database_error):
+        monkeypatch.setattr("psynet.sync._prime_sync_groups", failure)
+        assert peek(list(visits.values())) == set(visits.values())
+        assert not db.session().in_transaction()
+        assert Participant.query.count()
+        db.session.commit()
 
 
 def _arrival_hold_messages(publications, participant_id):
@@ -8826,6 +8866,13 @@ def test_group_barrier_counts_a_newcomer_joining_in_another_request(
                 arrival_time=timenow(),
                 admitted_at=timenow(),
             )
+        )
+        other.execute(
+            text(
+                "UPDATE sync_group SET n_active_participants = "
+                "n_active_participants + 1 WHERE id = :id"
+            ),
+            {"id": group.id},
         )
         other.commit()
     assert not game_starts.needs_check([*starters, newcomer])
