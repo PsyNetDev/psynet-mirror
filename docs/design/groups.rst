@@ -147,14 +147,6 @@ is allowed to see, what happens when a member's connection drops or they
 reload the page, and which parts of the interaction are recorded for
 analysis.
 
-In ``demos/features/websocket_chatroom``, each participant chooses a room and
-then chats with whoever else is in it; messages are sent live, without
-reloading the page.
-
-.. figure:: ../_static/images/design/groups/websocket_chatroom.svg
-   :alt: A page to choose a room, then a group page that sends messages live
-      to the room.
-
 Seeing who you're playing with
 ------------------------------
 
