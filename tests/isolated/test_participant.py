@@ -360,7 +360,7 @@ class TestParticipantFailure:
 
         assert participant.failed
         assert partner.failed
-        assert "sync group below minimum size" in partner.failure_tags
+        assert "sync group below quorum" in partner.failure_tags
         assert group.n_active_participants == 0
         assert partner not in group.active_participants
 

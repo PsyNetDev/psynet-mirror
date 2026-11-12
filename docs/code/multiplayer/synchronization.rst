@@ -40,7 +40,8 @@ the grouper has a ``waiting_screen`` (see below).
 ``join_existing_groups`` (default: ``False``)
     If ``True``, an arriving participant first joins an existing group that
     is below ``max_group_size``, preferring the smallest and then the oldest
-    group. Participants already waiting at the grouper join such a group on
+    group. Pending members (see :ref:`sync-admission-points`) count towards
+    a group's size here. Participants already waiting at the grouper join such a group on
     the next barrier check after one has room. Groups that have closed or
     stopped accepting top-ups, and groups with no active members, are not
     joined. Groups formed with this option accept *top-ups* until you stop

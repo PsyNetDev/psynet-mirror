@@ -3497,6 +3497,21 @@ class SimpleGrouper(Grouper):
         if not self.join_existing_groups:
             return
 
+        link = ParticipantLinkSyncGroup
+        n_pending = (
+            select(func.count(link.id))
+            .join(Participant, Participant.id == link.participant_id)
+            .where(
+                link.sync_group_id == SimpleSyncGroup.id,
+                link.active.is_(True),
+                link.admitted_at.is_(None),
+                ~Participant.failed,
+                Participant.status == "working",
+            )
+            .correlate(SimpleSyncGroup)
+            .scalar_subquery()
+        )
+        seats_taken = SimpleSyncGroup.n_active_participants + n_pending
         query = SimpleSyncGroup.query.filter(
             SimpleSyncGroup.group_type == self.group_type,
             SimpleSyncGroup.active.is_(True),
@@ -3505,14 +3520,11 @@ class SimpleGrouper(Grouper):
         )
 
         if self.max_group_size is not None:
-            query = query.filter(
-                SimpleSyncGroup.n_active_participants < self.max_group_size
-            )
+            query = query.filter(seats_taken < self.max_group_size)
 
-        # Preferentially join the smallest groups, and among those, the oldest
-        query = query.order_by(
-            SimpleSyncGroup.n_active_participants, SimpleSyncGroup.id
-        )
+        # Pending members hold seats: join the groups with the fewest seats
+        # taken, and among those, the oldest.
+        query = query.order_by(seats_taken, SimpleSyncGroup.id)
 
         for group in query.all():
             if self.join_criterion is None or self.join_criterion(
@@ -5039,7 +5051,7 @@ class SyncGroup(SQLBase, SQLMixin):
             _set_next_page_notice(participant, text)
 
     def _give_distinct_pseudonym(self, participant):
-        """Store a free pseudonym for ``participant`` if an active member has theirs.
+        """Store a free pseudonym for ``participant`` if an admitted or pending member has theirs.
 
         Only in the participant's first group; see :meth:`add_participant`.
         """
@@ -5049,7 +5061,11 @@ class SyncGroup(SQLBase, SQLMixin):
         if cached is not None and transaction is not None and cached[0] is transaction:
             taken = cached[1]
         else:
-            others = [p for p in self.active_participants if p.id != participant.id]
+            others = [
+                p
+                for p in self.active_participants + self.pending_participants
+                if p.id != participant.id
+            ]
             taken = {(p.pseudonym.color, p.pseudonym.animal) for p in others}
             self.__dict__["_pseudonym_keys"] = (transaction, taken)
         pseudonym = participant.pseudonym
@@ -5262,7 +5278,7 @@ class SyncGroup(SQLBase, SQLMixin):
             for participant in removed:
                 self._remove_without_quorum_check(participant, "group_dissolved")
                 if fail:
-                    participant.fail("sync group below minimum size")
+                    participant.fail("sync group below quorum")
                 else:
                     _tell_group_ended(participant, group_size)
             self.check_numbers()

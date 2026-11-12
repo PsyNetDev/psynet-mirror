@@ -418,7 +418,7 @@ def _builtin_failure_reason(failure_tags):
             "final_page_unsuccessful",
             "You took too long to reach the next step, so we ended your session.",
         )
-    if "sync group below minimum size" in failure_tags:
+    if "sync group below quorum" in failure_tags:
         return _p(
             "final_page_unsuccessful",
             "Too few members of your group remained to continue, "

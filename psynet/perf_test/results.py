@@ -351,7 +351,7 @@ def _is_wait_timeout(reason):
 
 # Simple sync groups fail the members left behind when one is failed, so in a
 # test with wait timeouts these failures count as wait timeouts too.
-_GROUP_TOO_SMALL_TAG = "sync group below minimum size"
+_GROUP_TOO_SMALL_TAG = "sync group below quorum"
 
 
 def wait_timeout_reasons(result):

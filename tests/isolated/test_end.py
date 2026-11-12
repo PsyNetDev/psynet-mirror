@@ -137,7 +137,7 @@ def test_unsuccessful_end_explains_why_the_participant_stopped():
         module_state=None,
     )
     too_few = SimpleNamespace(
-        failure_tags=["sync group below minimum size"], module_state=None
+        failure_tags=["sync group below quorum"], module_state=None
     )
     assert UnsuccessfulEndLogic().failure_reason(async_job) is None
     assert "waited too long" in UnsuccessfulEndLogic().failure_reason(barrier_wait)

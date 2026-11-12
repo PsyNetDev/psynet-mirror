@@ -3827,7 +3827,7 @@ def test_check_barriers_times_out_waiters_past_their_deadline(
     else:
         assert not overdue.failed and not overdue.active_sync_groups
     assert _barrier_link_released(overdue.id, barrier.id)
-    assert partner.failure_tags == ["sync group below minimum size"]
+    assert partner.failure_tags == ["sync group below quorum"]
     assert not patient.failed
     assert _barrier_link_released(patient.id, barrier.id) is False
 
@@ -4048,7 +4048,7 @@ def test_two_members_failing_at_once_do_not_deadlock(
     assert errors == []
     db.session.expire_all()
     tags = [Participant.query.get(i).failure_tags for i in ids]
-    assert tags[0] == ["sync group below minimum size"]
+    assert tags[0] == ["sync group below quorum"]
     assert all("timeout" in t for t in tags[1:])
     assert SyncGroup.query.get(group_id).active is False
 
@@ -7976,7 +7976,7 @@ def test_poller_failing_a_waiter_after_max_wait(
     assert set(waiter.failure_tags) == {f"{hold}:barrier:abandoned", "fail_on_timeout"}
     assert waiter.sync_group_removal_reason("main") == "waited_too_long"
     assert absent.sync_group_removal_reason("main") == "group_dissolved"
-    assert absent.failure_tags == ["sync group below minimum size"]
+    assert absent.failure_tags == ["sync group below quorum"]
 
 
 @pytest.mark.parametrize(
@@ -8377,6 +8377,19 @@ def test_a_pending_member_gets_no_notice_for_a_barrier_they_pass_through(
     db_session.commit()
     assert pending_arrival_notice_for(founders[1]) is not None
     assert pending_arrival_notice_for(newcomer) is None
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_newcomer_joins_the_group_with_the_most_free_seats(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    with_pending, _, _ = _society(exp, db_session)
+    without_pending, _, (newcomer,) = _society(exp, db_session)
+    assert newcomer.active_sync_groups["society"] == without_pending
+    assert with_pending.id < without_pending.id
 
 
 @pytest.mark.parametrize("how", ["newcomer_max_wait", "stop_top_ups", "closed"])

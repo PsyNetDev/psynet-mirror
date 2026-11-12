@@ -1041,15 +1041,15 @@ def test_failed_participants_are_classified_by_failed_not_status():
             "139 participants failed for waiting too long at while_loop:Waiting for trial",
         ),
         (
-            {_HOLD_TIMEOUT: 100, "sync group below minimum size": 39},
+            {_HOLD_TIMEOUT: 100, "sync group below quorum": 39},
             "139 participants failed for waiting too long at "
-            "sync group below minimum size, timeline_hold:wait_while",
+            "sync group below quorum, timeline_hold:wait_while",
         ),
         (
             {"timeout between barriers": 139},
             "139 participants failed for waiting too long at timeout between barriers",
         ),
-        ({"sync group below minimum size": 139}, None),
+        ({"sync group below quorum": 139}, None),
         ({"attention_test_1, performance_check": 139}, None),
     ],
 )

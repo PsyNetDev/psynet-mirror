@@ -1774,7 +1774,7 @@ def test_case_max_wait_time_runs_out(
         assert waiter.sync_group_removal_reason("cohort") == "left_experiment"
     if waiter_fails:
         assert "fail_on_timeout" in waiter.failure_tags
-        assert "sync group below minimum size" not in waiter.failure_tags
+        assert "sync group below quorum" not in waiter.failure_tags
         assert waiter.group_removal_notice is None
     else:
         assert waiter.group_removal_notice["text"] == (
