@@ -49,10 +49,10 @@ _JITTER = 2
 # refresh, trial lock, hold lookup and flushes (about 10 each). Lower is better.
 _DISSOLVE_PER_MEMBER = 14
 
-# Snapshot: each sweep fully re-checks every waiting visit and recounts every
-# active group, even when nothing changed. Lower is better.
+# Snapshot: each sweep fully re-checks every waiting visit, even when nothing
+# changed. Lower is better. check_sync_groups locks no idle group.
 _SWEEP_PER_VISIT = 15
-_SYNC_GROUPS_PER_GROUP = 6
+_SYNC_GROUPS_PER_GROUP = 0
 
 
 def _timeline(group_size, quorum=None):

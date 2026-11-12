@@ -6343,6 +6343,29 @@ def test_check_sync_groups_closes_group_once_members_finish(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_check_sync_groups_corrects_counts_when_only_a_status_changed(
+    in_experiment_directory, db_session
+):
+    """A member returning, with their group link unchanged, still updates the stored counts."""
+    exp = get_experiment()
+    (returner, _), shrunk = _sync_group_of(exp, db_session, 2)
+    _, full = _sync_group_of(exp, db_session, 2)
+    returner.status = "returned"
+    full.below_quorum_since = timenow()
+    db_session.commit()
+
+    check_sync_groups()
+
+    db_session.refresh(shrunk)
+    db_session.refresh(full)
+    assert (shrunk.n_active_participants, full.n_active_participants) == (1, 2)
+    assert shrunk.below_quorum_since is not None
+    assert full.below_quorum_since is None
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_check_sync_groups_skips_locked_group_and_continues(
     in_experiment_directory, db_session
 ):

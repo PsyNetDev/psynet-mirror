@@ -536,9 +536,10 @@ happens around the barrier check:
   ``fail()``, trial lock, hold lookup and flushes cost about 10–12
   statements per member. The test sets a ceiling of 14 per member.
 * An idle ``check_barriers`` sweep fully re-checks every waiting visit (15
-  statements each), and ``check_sync_groups`` recounts every active group
-  (6 statements each), even when nothing changed. Neither depends on group
-  size. A ``check_barriers`` sweep that found waiting visits then looks for
+  statements each), even when nothing changed. ``check_sync_groups`` counts
+  every active group's members in one statement, and locks and recounts only
+  the groups whose stored counts are stale or that may close, so idle groups
+  cost it nothing. Neither depends on group size. A ``check_barriers`` sweep that found waiting visits then looks for
   diverged groups in one more statement (``_divergence_candidates``), and
   runs the full check (``_divergence_message``) only for a group whose members all wait at two or more of its
   barriers and that has no divergence record for those barriers yet.
