@@ -450,6 +450,12 @@ Groups
     own moves, and draws the other players by interpolating between the
     game's ticks. Each coin pays a bonus. :doc:`/code/multiplayer/live_sessions`.
 
+`experiments/snake_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/snake_live>`__
+    In this live session, two to four players each steer a snake around a
+    shared board. The game moves every snake a square on each tick, and each
+    page sends only the player's turns and draws the views as they arrive. Each
+    piece of food eaten pays a bonus. :doc:`/code/multiplayer/live_sessions`.
+
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
     A multi-room chat written directly on WebSockets rather than
     ``psynet.chatroom``. Clients exchange messages on one shared channel and
