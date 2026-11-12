@@ -7124,25 +7124,27 @@ def _check_held_instance(instance_id):
     return ok
 
 
-def _check_and_skip_held_instance(instance_id, *, recheck=False):
+def _check_and_skip_held_instance(instance_id, *, recheck=None):
     """Evaluate one visit and skip waiters this poller just released.
 
-    A ``recheck`` is the poller's safety re-check of a visit it would
-    otherwise skip (see :func:`_is_safety_recheck`). If that releases anyone,
-    the release probably came late, so this logs a warning.
+    ``recheck`` is the ``(checked_at, next_due)`` pair from
+    :func:`_safety_recheck` if this is the poller's safety re-check of a visit
+    it would otherwise skip. If that releases anyone before ``next_due``, the
+    release probably came late, so this logs a warning.
     """
     ok, released_ids = _evaluate_held_instance(instance_id)
-    if recheck and released_ids:
+    now = time.monotonic()
+    if recheck and released_ids and recheck[1] > now:
         instance = BarrierInstance.query.get(instance_id)
         logger.warning(
             "Barrier '%s' released participant(s) %s at the poller's safety "
             "re-check, before the time its last check said a release could "
-            "be due, so the release may have come up to %g seconds late. If "
-            "this recurs, the barrier's _next_check_due() probably misses "
+            "be due, so the release may have come up to %.0f seconds late. "
+            "If this recurs, the barrier's _next_check_due() probably misses "
             "something the release depends on.",
             instance.barrier_id if instance is not None else None,
             ", ".join(str(released_id) for released_id in released_ids),
-            _POLLER_RECHECK_SECONDS,
+            now - recheck[0],
         )
     _advance_released_hold_waiters_after_commit(released_ids)
     return ok
@@ -7197,8 +7199,11 @@ def _run_pending_barrier_checks(instance_ids, *, wait=True):
     return all_claimed
 
 
-def _process_barrier_instance(instance_id, *, retry=False):
+def _process_barrier_instance(instance_id, *, retry=False, fingerprint=None):
     """Try one barrier visit and report whether contention deferred it.
+
+    ``fingerprint`` is the visit's in the poller's sweep snapshot (see
+    :func:`_safety_recheck`).
 
     Contention is another request holding the visit claim, or a locked
     waiter or top-up group. Author ``on_release`` and spec errors are reported the same way.
@@ -7213,7 +7218,7 @@ def _process_barrier_instance(instance_id, *, retry=False):
         with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
             if not claimed:
                 return True
-            recheck = _is_safety_recheck(instance_id)
+            recheck = _safety_recheck(instance_id, fingerprint)
             if not _check_and_skip_held_instance(instance_id, recheck=recheck):
                 return True
             return False
@@ -7275,22 +7280,25 @@ def _finish_dissolving_groups():
             logger.exception("Failed to finish dissolving sync group %s.", group_id)
 
 
-def _is_safety_recheck(instance_id):
-    """Return whether checking this visit now is only the poller's safety re-check.
+def _safety_recheck(instance_id, snapshot):
+    """Return ``(checked_at, next_due)`` if checking this visit now is only the poller's safety re-check, else ``None``.
 
     That is, its last check said when a release can next be due, that time
-    hasn't come, and nothing the poller fingerprints has changed since. This
-    reads a fresh fingerprint, not the sweep's snapshot, so a participant
-    arriving or a due time passing while the sweep checked other visits
-    doesn't count.
+    hasn't come, and nothing the poller fingerprints has changed since, in
+    the sweep's ``snapshot`` or in a fresh fingerprint of this visit. The
+    fresh one means a participant arriving, or a due time passing, while the
+    sweep checked other visits doesn't count. It costs one query, so it is
+    read only once the rest holds.
     """
     last = _poller_checked_visits.get(instance_id)
     if last is None:
-        return False
-    fingerprint, _checked_at, next_due = last
-    if next_due is None or next_due <= time.monotonic():
-        return False
-    return _waiting_barrier_instance_ids(instance_id).get(instance_id) == fingerprint
+        return None
+    fingerprint, checked_at, next_due = last
+    if fingerprint != snapshot or next_due is None or next_due <= time.monotonic():
+        return None
+    if _waiting_barrier_instance_ids(instance_id).get(instance_id) != fingerprint:
+        return None
+    return checked_at, next_due
 
 
 def _visits_due(waiting, sweep_ends):
@@ -7398,14 +7406,18 @@ def _check_barriers(seen):
             seen.update(waiting)
             deferred_ids = []
             for instance_id in _visits_due(waiting, sweep_ends):
-                if _process_barrier_instance(instance_id):
+                if _process_barrier_instance(
+                    instance_id, fingerprint=waiting[instance_id]
+                ):
                     deferred_ids.append(instance_id)
                 else:
                     _remember_poller_check(instance_id, waiting[instance_id])
             for instance_id in deferred_ids:
                 # Even if still deferred: a visit whose check keeps failing
                 # must not stay ahead of every other visit.
-                deferred = _process_barrier_instance(instance_id, retry=True)
+                deferred = _process_barrier_instance(
+                    instance_id, retry=True, fingerprint=waiting[instance_id]
+                )
                 _remember_poller_check(
                     instance_id, waiting[instance_id], deferred=deferred
                 )

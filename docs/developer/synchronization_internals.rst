@@ -67,7 +67,9 @@ warning naming the barrier, because that release probably came late: if it
 recurs, the barrier's ``_next_check_due``, or what the poller fingerprints,
 misses something. Whether a check is only the re-check is decided just
 before it, from a fresh fingerprint of that visit, so a participant
-arriving or a due time passing during the sweep doesn't trigger it.
+arriving or a due time passing during the sweep doesn't trigger it. An
+arrival that commits in the few milliseconds between that read and the
+check still can, because arrivals don't take the visit's claim.
 Other barriers, including subclasses that
 override how a barrier releases without saying when, are due at every sweep,
 and so are visits whose check was deferred or failed. A visit whose check is
