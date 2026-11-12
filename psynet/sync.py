@@ -2375,12 +2375,18 @@ class GroupBarrier(Barrier):
         members = group.active_participants
         waiting = [m for m in members if self._participant_is_waiting(m)]
         counts = {"waiting_count": len(waiting), "group_size": len(members)}
+        # Pending members waiting here see the admitted members' progress too.
+        pending_waiting = (
+            [p for p in group.pending_participants if self._participant_is_waiting(p)]
+            if self.admission_point
+            else []
+        )
         if self._uses_timeline_hold:
-            _prime_timeline_hold_records(waiting, self.id)
+            _prime_timeline_hold_records(waiting + pending_waiting, self.id)
         # Arrivals in concurrent requests don't see each other, so the browser
         # fetches the notice and ready seats after the commit instead of being
         # sent the counts this request sees.
-        for member in members:
+        for member in members + pending_waiting:
             if member.failed:
                 continue
             if self._participant_is_waiting(member):

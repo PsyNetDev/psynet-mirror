@@ -8246,6 +8246,30 @@ def test_a_release_does_not_admit_a_pending_member_past_newcomer_max_wait(
     assert newcomer.id not in [p.id for p in group.active_participants]
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_pending_member_at_an_admission_point_sees_arrivals(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    group, founders, (newcomer,) = _society(exp, db_session)
+    publications = _hold_wake_publications(monkeypatch)
+    start = GroupBarrier(
+        "generation_start",
+        group_type="society",
+        admission_point=True,
+        newcomer_max_wait=60,
+        waiting_message="Waiting for the rest of your group",
+    )
+    _arrive_at_group_barrier(exp, start, newcomer)
+    db_session.commit()
+    before = len(_arrival_hold_messages(publications, newcomer.id))
+    _arrive_at_group_barrier(exp, start, founders[0])
+    db_session.commit()
+    assert len(_arrival_hold_messages(publications, newcomer.id)) == before + 1
+
+
 @pytest.mark.parametrize("how", ["newcomer_max_wait", "stop_top_ups", "closed"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
