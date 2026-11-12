@@ -29,9 +29,8 @@ from psynet.utils import get_psynet_root
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
-from test_sync import (  # noqa: E402, F401
+from test_sync import (  # noqa: E402
     _arrive_at_group_barrier,
-    _audit_needs_check,
     _commit_barrier_arrivals,
     _freeze_clocks,
     _sweep_each_second_until_a_wait_ends,

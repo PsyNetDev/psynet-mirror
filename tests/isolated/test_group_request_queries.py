@@ -35,6 +35,7 @@ from psynet.sync import (
 from psynet.timeline import Timeline
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from needs_check_audit import unaudited  # noqa: E402
 from test_sync import (  # noqa: E402
     _arrive_at_group_barrier,
     _commit_barrier_arrivals,
@@ -154,6 +155,7 @@ def exp(db_session, deployment_info, monkeypatch):
     monkeypatch.setattr(
         experiment.pseudonym_scheme, "_deployment_seed", "budget", raising=False
     )
+    unaudited(monkeypatch)
     original = experiment.timeline
     yield experiment
     experiment.timeline = original

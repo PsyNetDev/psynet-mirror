@@ -62,13 +62,13 @@ joins existing groups or limits ``max_groups``, or an author's
 after it becomes due. Inactive visits that still have waiters, and subclasses that
 override :meth:`~psynet.sync.Barrier.choose_who_to_release` or
 :meth:`~psynet.sync.Barrier.check_waiting_participants` without overriding
-``needs_check``, are checked at every sweep. In ``test_sync.py`` and
-``test_regrouper.py``, the autouse fixture ``_audit_needs_check`` checks
+``needs_check``, are checked at every sweep. In every isolated test, the autouse fixture
+``_audit_needs_check`` (``tests/isolated/needs_check_audit.py``) checks
 every visit the peek passes over and fails the test if that check changes
 the visit's row, its waiters, or their groups and members; when a check
 learns to change something new, teach ``needs_check`` too. Because the
-audit checks those visits itself, the tests of when the poller ends a wait
-turn it off (``_freeze_clocks``). The visits to check go in the order
+audit checks those visits itself, the tests of when the poller ends a wait,
+and those that count a sweep's statements, turn it off (``unaudited``). The visits to check go in the order
 this process last checked them, never-checked ones first, so visits
 that need a check at every sweep cannot crowd out the rest. A visit whose
 check is deferred or fails is retried at most

@@ -106,6 +106,7 @@ from psynet.utils import call_function_with_context, get_config
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
+from needs_check_audit import unaudited  # noqa: E402
 from timeline_hold_helpers import (  # noqa: E402
     _assert_cursor_unchanged,
     _assert_left_hold_uuid,
@@ -126,80 +127,6 @@ from timeline_hold_helpers import (  # noqa: E402
     _working_participants,
     new_participant,
 )
-
-
-def _visit_state(instance_id):
-    """Return a visit's row, who waits there, and the waiters' groups with their members, read in a fresh session."""
-    with Session(bind=db.engine) as session:
-        waiting = session.execute(
-            text(
-                "SELECT l.participant_id FROM participant_link_barrier l "
-                "JOIN participant p ON p.id = l.participant_id "
-                "WHERE l.barrier_instance_id = :id AND NOT l.released "
-                "AND NOT p.failed AND p.status = 'working' ORDER BY 1"
-            ),
-            {"id": instance_id},
-        ).all()
-        waiters_groups = (
-            "SELECT g.sync_group_id FROM participant_link_sync_group g"
-            " JOIN participant_link_barrier l ON l.participant_id = g.participant_id"
-            " WHERE l.barrier_instance_id = :id AND NOT l.released AND g.active"
-        )
-        members = session.execute(
-            text(
-                "SELECT m.participant_id, m.sync_group_id, p.failed, p.status "
-                "FROM participant_link_sync_group m "
-                "JOIN participant p ON p.id = m.participant_id "
-                f"WHERE m.active AND m.sync_group_id IN ({waiters_groups}) "
-                "ORDER BY 1, 2"
-            ),
-            {"id": instance_id},
-        ).all()
-        groups = session.execute(
-            text(
-                f"SELECT * FROM sync_group WHERE id IN ({waiters_groups}) ORDER BY id"
-            ),
-            {"id": instance_id},
-        ).all()
-        visit = session.execute(
-            text("SELECT * FROM barrier_instance WHERE id = :id"),
-            {"id": instance_id},
-        ).all()
-    return visit, waiting, members, groups
-
-
-_UNAUDITED_VISITS_THAT_NEED_CHECKS = psynet.sync._visits_that_need_checks
-
-
-@pytest.fixture(autouse=True)
-def _audit_needs_check(monkeypatch):
-    """Fail the test if the poller passes over a visit whose check would change it.
-
-    Each visit the batched peek says needs no check is checked at once, and
-    its row, its waiters, and their groups and members must come out
-    unchanged. This also checks those visits at every sweep, as before the
-    peek, so tests of when the poller ends a wait turn it off (see
-    :func:`_freeze_clocks`).
-    """
-    peek = _UNAUDITED_VISITS_THAT_NEED_CHECKS
-    failures = []
-
-    def audited(instance_ids):
-        need_checks = peek(instance_ids)
-        for instance_id in sorted(set(instance_ids) - need_checks):
-            before = _visit_state(instance_id)
-            if psynet.sync._process_barrier_instance(instance_id):
-                continue
-            if _visit_state(instance_id) != before:
-                failures.append(
-                    f"The poller passed over barrier visit {instance_id}, but its "
-                    "check changed it: needs_check() misses something."
-                )
-        return need_checks
-
-    monkeypatch.setattr("psynet.sync._visits_that_need_checks", audited)
-    yield
-    assert not failures, failures
 
 
 def get_random_id():
@@ -4212,14 +4139,12 @@ def _freeze_clocks(monkeypatch, start=None):
     """Stop the wall clocks barrier checks read at ``start`` (epoch seconds, default now), and return a function that sets how far past it they are.
 
     Call it before setting up waits, so they count from ``start``. Sweeps
-    then skip :func:`_audit_needs_check`, whose checks of passed-over visits
+    then skip the ``needs_check`` audit, whose checks of passed-over visits
     would end waits the poller itself misses.
     """
     from psynet import timeline_hold
 
-    monkeypatch.setattr(
-        psynet.sync, "_visits_that_need_checks", _UNAUDITED_VISITS_THAT_NEED_CHECKS
-    )
+    unaudited(monkeypatch)
     start = time.time() if start is None else start
     start_timenow = psynet.sync.timenow() + timedelta(seconds=start - time.time())
     shift = [0]
