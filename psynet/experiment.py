@@ -6937,7 +6937,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             context,
             route,
             participant,
-            type(error).__name__,
+            type(getattr(error, "orig", None) or error).__name__,
         )
 
     @classmethod
