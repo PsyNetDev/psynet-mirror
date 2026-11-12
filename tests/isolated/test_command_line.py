@@ -1023,10 +1023,11 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     original_job = develop.launch_app_and_open_browser
     calls = []
 
-    class _Ctx:
-        def invoke(self, _command, **kwargs):
-            calls.append((kwargs, develop.launch_app_and_open_browser))
-
+    monkeypatch.setattr(
+        develop,
+        "run_debug",
+        lambda **kwargs: calls.append((kwargs, develop.launch_app_and_open_browser)),
+    )
     monkeypatch.setattr("psynet.command_line.run_pre_auto_reload_checks", lambda: None)
     monkeypatch.setattr("psynet.command_line.patch_dallinger_develop", lambda: None)
     monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
@@ -1036,16 +1037,29 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     monkeypatch.setenv("FLASK_RUN_PORT", "")
     monkeypatch.setenv("FLASK_RUN_EXCLUDE_PATTERNS", "")
     monkeypatch.setenv("base_port", "")
-    monkeypatch.setenv("_PSYNET_DEVELOPMENT_SERVER_WARNING", "")
+    if no_browsers:
+        monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/db_5100")
+        monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:6479")
+    else:
+        # This test session is itself isolated.
+        monkeypatch.delenv("_PSYNET_TEST_ENVIRONMENT_READY", raising=False)
     monkeypatch.setattr(
         "psynet.command_line._ticking_game_warning",
         lambda mode: f"Views are late in {mode} mode.",
     )
     monkeypatch.setattr("psynet.command_line.deployment_info.read", lambda key: "live")
-    _debug_auto_reload(_Ctx(), archive=None, no_browsers=no_browsers)
+    _debug_auto_reload(None, archive=None, no_browsers=no_browsers)
     assert capsys.readouterr().err == "Warning: Views are late in live mode.\n"
     job = launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
-    assert calls == [({"skip_flask": False, "port": 5010}, job)]
+    ready_rows = [("Warning", "Views are late in live mode.")]
+    if no_browsers:
+        export = (
+            "export DATABASE_URL=postgresql://localhost/db_5100 "
+            "REDIS_URL=redis://127.0.0.1:6479 base_port=5010"
+        )
+        ready_rows.append(("Other terminals", export))
+    assert calls == [({"port": 5010, "ready_rows": ready_rows}, job)]
     assert os.environ["FLASK_RUN_PORT"] == os.environ["base_port"] == "5010"
     assert os.environ["FLASK_RUN_EXCLUDE_PATTERNS"].split(os.pathsep) == (
         _reloader_exclude_patterns()
@@ -1061,19 +1075,17 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
             "Recruitment requests will open browser windows automatically."
         },
     )
-    if no_browsers:
-        monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
-        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/db_5100")
-        monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:6479")
-        monkeypatch.setenv("base_port", "5100")
-    else:
-        # This test session is itself isolated.
-        monkeypatch.delenv("_PSYNET_TEST_ENVIRONMENT_READY", raising=False)
+    # The job's rows come with it: the worker that runs it can belong to
+    # another experiment, with its own environment and its own games.
+    monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/another")
+    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1")
+    monkeypatch.setenv("base_port", "1")
     opened = []
     monkeypatch.setattr(develop, "open_browser", opened.append)
-    # The job gets the warning from the command, not from the experiment.
     monkeypatch.setattr("psynet.command_line._ticking_game_warning", None)
-    job(5001)
+    # RQ's JSON serializer would deliver the rows as lists.
+    job(5001, after=[list(row) for row in ready_rows])
     deadline = time.monotonic() + 5
     while len(opened) < (0 if no_browsers else 2) and time.monotonic() < deadline:
         time.sleep(0.01)
@@ -1092,7 +1104,7 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     if no_browsers:
         assert block["Other terminals"] == (
             "export DATABASE_URL=postgresql://localhost/db_5100 "
-            "REDIS_URL=redis://127.0.0.1:6479 base_port=5100"
+            "REDIS_URL=redis://127.0.0.1:6479 base_port=5010"
         )
     # The values line up.
     assert len({len(label + value) - len(value.lstrip()) for label, value in rows}) == 1

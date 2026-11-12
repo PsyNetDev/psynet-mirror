@@ -702,11 +702,6 @@ def sandbox(*args, **kwargs):
     )
 
 
-# Holds the development server warning for the launch job, which runs in a
-# worker that the command starts.
-_DEVELOPMENT_SERVER_WARNING_ENV_VAR = "_PSYNET_DEVELOPMENT_SERVER_WARNING"
-
-
 def _ticking_game_warning(mode):
     """The warning ``psynet debug local`` and ``psynet deploy local`` give when
     they run the development server for an experiment with a live session that
@@ -1529,7 +1524,7 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
-def launch_app_without_browsers(port, auth=None, **kwargs):
+def launch_app_without_browsers(port, auth=None, after=(), **kwargs):
     """Launch the development app without opening browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
@@ -1537,23 +1532,24 @@ def launch_app_without_browsers(port, auth=None, **kwargs):
     :func:`_launch_app_and_report`). The server log leaves the dashboard
     password out. It must stay importable by module path because RQ workers
     resolve it that way. ``auth`` is the ``(user, password)`` dashboard login
-    in the job; it defaults to the login in this worker's config.
+    in the job; it defaults to the login in this worker's config. ``after``
+    is the command's own rows for the block, as ``(label, value)`` pairs.
     """
-    _launch_app_and_report(port, auth=auth)
+    _launch_app_and_report(port, auth=auth, after=after)
 
 
-def launch_app_and_open_browsers(port, auth=None, **kwargs):
+def launch_app_and_open_browsers(port, auth=None, after=(), **kwargs):
     """Launch the development app, print the ``Ready.`` block, then open the browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
     auto-reload runs that open browsers, so that its ``Ready.`` block has
     PsyNet's rows too. It must stay importable by module path because RQ
-    workers resolve it that way. ``auth`` is as for
+    workers resolve it that way. ``auth`` and ``after`` are as for
     :func:`launch_app_without_browsers`.
     """
     develop = importlib.import_module("dallinger.command_line.develop")
 
-    user, password = _launch_app_and_report(port, auth=auth)
+    user, password = _launch_app_and_report(port, auth=auth, after=after)
     login = {"dashboard_user": user, "dashboard_password": password}
     _open_browser_async(develop.dashboard_url(login, port))
     time.sleep(0.1)  # Keeps the two tabs opening in the same order.
@@ -1567,7 +1563,7 @@ def _open_browser_async(url):
     threading.Thread(target=develop.open_browser, args=(url,)).start()
 
 
-def _launch_app_and_report(port, auth=None):
+def _launch_app_and_report(port, auth=None, after=()):
     """Launch the development app, print the ``Ready.`` block and return the login used.
 
     ``auth`` is the ``(user, password)`` login that Dallinger's ``develop
@@ -1576,12 +1572,11 @@ def _launch_app_and_report(port, auth=None):
 
     The block has the participant link (see Dallinger's
     ``launch_message_rows``), the dashboard login, the location of the full
-    log and, in an isolated session, the ``export`` line that lets other
-    terminals use the session's database and Redis.
+    log and the rows in ``after`` (see :func:`_ready_rows`). Those come with
+    the job, because the worker that runs it can belong to another
+    experiment.
     """
     from dallinger.deployment import handle_launch_data, launch_auth
-
-    from .isolated_environment import READY_ENV_VAR
 
     develop = importlib.import_module("dallinger.command_line.develop")
     auth = tuple(auth or launch_auth())
@@ -1601,17 +1596,26 @@ def _launch_app_and_report(port, auth=None):
             f"password {password})",
         )
     )
-    after = []
-    # The warning printed at the start has scrolled away by now. It comes
-    # from the command, because the worker that runs this job can belong to
-    # another experiment.
-    warning = os.environ.get(_DEVELOPMENT_SERVER_WARNING_ENV_VAR)
-    if warning:
-        after.append(("Warning", warning))
-    if os.environ.get(READY_ENV_VAR):
-        after.append(("Other terminals", _isolated_session_export_line(os.environ)))
-    develop.echo_ready(details, after=after)
+    develop.echo_ready(details, after=[tuple(row) for row in after])
     return auth
+
+
+def _ready_rows(warning):
+    """Return this command's rows for the launch job's ``Ready.`` block.
+
+    They are the development server ``warning``, if there is one, since the
+    copy printed at the start has scrolled away by then, and, in an isolated
+    session, the ``export`` line that lets other terminals use the session's
+    database and Redis.
+    """
+    from .isolated_environment import READY_ENV_VAR
+
+    rows = []
+    if warning:
+        rows.append(("Warning", warning))
+    if os.environ.get(READY_ENV_VAR):
+        rows.append(("Other terminals", _isolated_session_export_line(os.environ)))
+    return rows
 
 
 def _isolated_session_export_line(env):
@@ -1782,7 +1786,6 @@ def _exit_on_termination_signal():
 
 
 def _debug_auto_reload(ctx, archive, no_browsers):
-    from dallinger.command_line.develop import debug as dallinger_debug
     from dallinger.deployment import DevelopmentDeployment
 
     develop_module = importlib.import_module("dallinger.command_line.develop")
@@ -1800,8 +1803,6 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     warning = _ticking_game_warning(deployment_info.read("mode"))
     if warning:
         click.echo(f"Warning: {warning}", err=True)
-    os.environ[_DEVELOPMENT_SERVER_WARNING_ENV_VAR] = warning or ""
-    debug_kwargs = {"skip_flask": False, "port": port}
     develop_module.launch_app_and_open_browser = (
         launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
     )
@@ -1816,7 +1817,7 @@ def _debug_auto_reload(ctx, archive, no_browsers):
 
         try:
             with _stop_child_processes_on_signal():
-                ctx.invoke(dallinger_debug, **debug_kwargs)
+                develop_module.run_debug(port=port, ready_rows=_ready_rows(warning))
         finally:
             db.session.commit()
             reset_console()
