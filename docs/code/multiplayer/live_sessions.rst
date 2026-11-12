@@ -433,7 +433,9 @@ The answer and bonuses
 The game page's answer is the session's outcome: what the game's ``outcome``
 method returned when the session ended. PsyNet sets it on the server and
 ignores what the page sends, so every player in a session gets the same
-answer, and a participant without a session gets ``None``. If you need each
+answer, and a participant without a session gets ``None``. To save the
+outcome as a trial's answer, return the initializer and the game page from
+the trial's ``show_trial``, as the ``rock_paper_scissors_live`` demo does. If you need each
 player's score, or why the session ended, include them in the outcome.
 
 Because participants can't leave the game page until their session ends,

@@ -437,6 +437,12 @@ Groups
     cued trial per player that pays its bonus, with the group's pot on the
     round they share. :doc:`/code/multiplayer/synchronization`.
 
+`experiments/rock_paper_scissors_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/rock_paper_scissors_live>`__
+    Pairs play two games of rock, paper, scissors as live sessions, each of
+    five rounds on one page. Each game is a cued trial per player, whose
+    answer is the game's outcome, and its definition sets the bonus that a
+    round won pays. :doc:`/code/multiplayer/live_sessions`.
+
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
     A multi-room chat written directly on WebSockets rather than
     ``psynet.chatroom``. Clients exchange messages on one shared channel and

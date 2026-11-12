@@ -1,0 +1,1 @@
+Added ``demos/experiments/rock_paper_scissors_live``, in which pairs play two games of rock, paper, scissors as live sessions, each of five rounds on one page. Each game is a cued trial per player, whose answer is the game's outcome. Each round won pays a bonus, whose amount the game gets from the trial's definition.
