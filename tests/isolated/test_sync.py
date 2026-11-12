@@ -8221,6 +8221,31 @@ def test_a_pending_member_is_admitted_only_at_an_admission_point(
     ] == [1, 1, 1]
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_release_does_not_admit_a_pending_member_past_newcomer_max_wait(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    group, founders, (newcomer,) = _society(exp, db_session)
+    newcomer.sync_group_link("society").arrival_time -= timedelta(seconds=61)
+    _ADMITTED_AT_RELEASE.clear()
+    start = GroupBarrier(
+        "generation_start",
+        group_type="society",
+        admission_point=True,
+        newcomer_max_wait=60,
+        on_release=_record_admitted,
+    )
+    for participant in [*founders, newcomer]:
+        _arrive_at_group_barrier(exp, start, participant)
+    _commit_barrier_arrivals()
+    assert _ADMITTED_AT_RELEASE == [[]]
+    assert group.active_participants == founders
+    assert newcomer.id not in [p.id for p in group.active_participants]
+
+
 @pytest.mark.parametrize("how", ["newcomer_max_wait", "stop_top_ups", "closed"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True

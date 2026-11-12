@@ -70,7 +70,7 @@ def get_timeline():
             quorum=QUORUM,
             start_short_after=START_SHORT_AFTER,
             join_existing_groups=True,
-            # A latecomer plays from the next question; see sync_group_optional.
+            # Latecomers join until the game starts (stop_top_ups at game_starts).
             admit_newcomers="on_join",
             top_up_wait=TOP_UP_WAIT,
             below_quorum="continue_without_group",

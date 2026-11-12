@@ -2005,7 +2005,9 @@ class GroupBarrier(Barrier):
         ``None``; see :ref:`the barrier's round <sync-barrier-round>`), ``leader`` (the
         group's leader), ``participant`` (the same object as ``leader``, kept for
         compatibility), ``left`` (the members who left the group since its
-        previous barrier pass, or since it formed; see below) and ``barrier``,
+        previous barrier pass, or since it formed; see below), ``admitted``
+        (the pending members an admission point admits with this release; see
+        :ref:`sync-admission-points`) and ``barrier``,
         the reconstructed registry object for this
         visit (scalar presentation and notification settings, not wait pages).
         ``participant.sync_group_removal_reason(group_type)`` says why each
@@ -2517,10 +2519,18 @@ class GroupBarrier(Barrier):
         return [p for p in waiting_participants if p.id in member_ids]
 
     def _admissible(self, group, waiting_ids) -> list:
-        """Return the pending members of ``group`` that this barrier's release would admit, in join order."""
+        """Return the pending members of ``group`` that this barrier's release would admit, in join order.
+
+        Members whose ``newcomer_max_wait`` has run out are left for
+        :meth:`handle_max_wait_timeout` to turn away.
+        """
         if not self.admission_point or not group.accepts_top_ups:
             return []
-        return [p for p in group.pending_participants if p.id in waiting_ids]
+        return [
+            p
+            for p in group.pending_participants
+            if p.id in waiting_ids and self._max_wait_time_for(p) != 0
+        ]
 
     def _pass(self, group, released, group_round, admitted=()):
         """Do the group's bookkeeping for releasing ``released``.
