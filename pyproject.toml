@@ -60,7 +60,7 @@ experiment = [
     # released in 13.0.0, is a security requirement for directed timeline-hold
     # wakes: never lower this bound below it. Until Dallinger 13.1.0 is
     # released, track its master (13.1.0a1) at a fixed commit.
-    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@ffdc016fba4bb0f223e1c9b5142aec2b4ab6a417",
+    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@dccf28d868b2125ac86c28bd8387609edab211d7",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
