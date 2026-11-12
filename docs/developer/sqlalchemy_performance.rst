@@ -537,9 +537,7 @@ happens around the barrier check:
   statements per member. The test sets a ceiling of 14 per member.
 * A ``check_barriers`` check of a waiting visit costs 15 statements. An idle
   sweep skips the visits whose last check said no release can be due yet
-  and that nothing has changed since; it re-checks them every 10 seconds,
-  at 16 statements, because a re-check first reads a fresh fingerprint of
-  the visit.
+  and that nothing has changed since; it re-checks them every 10 seconds.
   ``check_sync_groups`` counts
   every active group's members in one statement, and locks and recounts only
   the groups whose stored counts are stale or that may close, so idle groups

@@ -49,9 +49,9 @@ _JITTER = 2
 # refresh, trial lock, hold lookup and flushes (about 10 each). Lower is better.
 _DISSOLVE_PER_MEMBER = 14
 
-# Snapshot: a sweep's safety re-check of a waiting visit, including its fresh
-# fingerprint. Lower is better. check_sync_groups locks no idle group.
-_SWEEP_PER_VISIT = 16
+# Snapshot: a sweep's full check of a waiting visit. Lower is better.
+# check_sync_groups locks no idle group.
+_SWEEP_PER_VISIT = 15
 _SYNC_GROUPS_PER_GROUP = 0
 
 

@@ -4139,9 +4139,9 @@ def _count_poller_checks(monkeypatch):
     checked = []
     process = psynet.sync._process_barrier_instance
 
-    def counting(instance_id, **kwargs):
+    def counting(instance_id, *, retry=False):
         checked.append(instance_id)
-        return process(instance_id, **kwargs)
+        return process(instance_id, retry=retry)
 
     monkeypatch.setattr("psynet.sync._process_barrier_instance", counting)
 
@@ -4295,59 +4295,6 @@ def test_poller_checks_some_unchanged_visits_at_every_sweep(
         (instance_id,) = sweep()
     assert _seconds_until_release_can_be_due() is None
     assert sweep() == [instance_id]
-
-
-class _MissedDueTimeBarrier(GroupBarrier):
-    """Releases on a flag that its ``_next_check_due`` doesn't report."""
-
-    ready = False
-
-    def choose_who_to_release(self, waiting_participants):
-        return list(waiting_participants) if self.ready else []
-
-    def _next_check_due(self, waiting_participants):
-        return time.time() + 30
-
-
-@pytest.mark.parametrize(
-    "during_sweep, warns",
-    [(None, True), ("partner_starts_timed_page", False), ("due_time_passes", False)],
-)
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
-)
-def test_poller_warns_when_only_the_safety_recheck_releases(
-    in_experiment_directory, db_session, monkeypatch, caplog, during_sweep, warns
-):
-    """A release the due time missed happens at the re-check with a warning; one that a change or due time during the sweep explains doesn't warn."""
-    exp = get_experiment()
-    (waiter, partner), _ = _pair_sync_group(exp, db_session)
-    _arrive_at_group_barrier(
-        exp, _MissedDueTimeBarrier(id_="missed_due", group_type="main"), waiter
-    )
-    db.session.commit()
-    sweep = _count_poller_checks(monkeypatch)
-    (instance_id,) = sweep()
-    monkeypatch.setattr(_MissedDueTimeBarrier, "ready", True)
-    monkeypatch.setattr("psynet.sync._POLLER_RECHECK_SECONDS", 0)
-
-    visits_due = psynet.sync._visits_due
-    monotonic = time.monotonic
-
-    def change_after_the_snapshot(waiting, sweep_ends):
-        for visit in visits_due(waiting, sweep_ends):
-            if during_sweep == "partner_starts_timed_page":
-                partner.sync_group_link("main").page_deadline = timenow()
-                db.session.commit()
-            elif during_sweep == "due_time_passes":
-                monkeypatch.setattr(time, "monotonic", lambda: monotonic() + 31)
-            yield visit
-
-    monkeypatch.setattr("psynet.sync._visits_due", change_after_the_snapshot)
-    with caplog.at_level("WARNING", logger="psynet"):
-        assert sweep() == [instance_id]
-    assert _barrier_link_released(waiter.id, "missed_due")
-    assert ("Barrier 'missed_due' released participant(s)" in caplog.text) == warns
 
 
 def _arrival_hold_messages(publications, participant_id):
