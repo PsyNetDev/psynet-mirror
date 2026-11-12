@@ -5472,14 +5472,22 @@ class SyncGroupRound(SQLBase, SQLMixin):
     __table_args__ = (
         # Concurrent first cues rely on the first to create each cued round
         # once (see _find_or_create). Cues outside a module have no
-        # module_id, which must still be unique.
+        # module_id, which must still be unique, so they get their own index;
+        # an expression index on the module_id would break schema reflection.
         Index(
             "ix_sync_group_round_cued",
             sync_group_id,
-            func.coalesce(module_id, ""),
+            module_id,
             number,
             unique=True,
-            postgresql_where=text("trial_maker_id IS NULL"),
+            postgresql_where=text("trial_maker_id IS NULL AND module_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_sync_group_round_cued_outside_module",
+            sync_group_id,
+            number,
+            unique=True,
+            postgresql_where=text("trial_maker_id IS NULL AND module_id IS NULL"),
         ),
         Index(
             "ix_sync_group_round_trial_maker",

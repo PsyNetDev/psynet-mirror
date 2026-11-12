@@ -9,6 +9,7 @@ layout is tested at its worst.
 
 import json
 import sys
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from psynet.group_prompt import GroupPrompt
@@ -46,7 +47,11 @@ def _render(case):
         active_participants=members,
         participant_links=[
             SimpleNamespace(
-                id=m.id, participant_id=m.id, participant=m, removal_reason=None
+                id=m.id,
+                participant_id=m.id,
+                participant=m,
+                removal_reason=None,
+                admitted_at=datetime(2026, 1, 1) + timedelta(seconds=m.id),
             )
             for m in members
         ],

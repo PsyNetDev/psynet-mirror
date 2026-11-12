@@ -244,7 +244,10 @@ def _noop_on_release(group, participants, participant, barrier):
 
 def test_group_barrier_keeps_the_released_positional_order():
     """v13.3.0: (id_, group_type, waiting_logic, repetitions, max_wait_time, on_release, fix_time_credit)."""
-    barrier = GroupBarrier("group_barrier", "main", None, 3, 30, _noop_on_release, True)
+    with pytest.warns(FutureWarning, match="waiting_logic_expected_repetitions"):
+        barrier = GroupBarrier(
+            "group_barrier", "main", None, 3, 30, _noop_on_release, True
+        )
 
     assert barrier.max_wait_time == 30
     assert barrier.on_release.function is _noop_on_release
@@ -674,7 +677,7 @@ def test_group_barrier_resolved_timeout_uses_overridden_handler():
 )
 def test_group_allocator(in_experiment_directory, db_session):
     exp = get_experiment()
-    grouper = SimpleGrouper(group_type="main", initial_group_size=3)
+    grouper = SimpleGrouper(group_type="main", initial_group_size=3, quorum=3)
     participants = [new_participant(exp) for _ in range(6)]
 
     _arrive_at_group_barrier(exp, grouper, participants[0])
@@ -1240,7 +1243,9 @@ def test_sync_group_dashboard_waiting_barrier_indexes():
 
 
 def test_sync_group_dashboard_grouper_progress_uses_timeline_all_elts(monkeypatch):
-    grouper = SimpleGrouper(group_type="main", initial_group_size=3, batch_size=2)
+    grouper = SimpleGrouper(
+        group_type="main", initial_group_size=3, quorum=3, batch_size=2
+    )
     timeline = SimpleNamespace(
         all_elts=[
             SimpleNamespace(links={"barrier": grouper}),
@@ -3226,7 +3231,7 @@ def test_participant_link_barrier_lists_waiting_participants(
     first.status = "working"
     second.status = "working"
     db.session.commit()
-    grouper = SimpleGrouper(group_type="waitlist", initial_group_size=3)
+    grouper = SimpleGrouper(group_type="waitlist", initial_group_size=3, quorum=3)
     _arrive_at_group_barrier(exp, grouper, first)
     db.session.commit()
 
@@ -3545,6 +3550,7 @@ def test_ungrouped_instance_clears_active_so_later_behavior_can_reuse_the_id(
     first_grouper = SimpleGrouper(
         group_type="regroup_sizes",
         initial_group_size=3,
+        quorum=3,
         id_="regroup_sizes_grouper",
     )
     for participant in first_wave:
@@ -3589,7 +3595,9 @@ def test_for_arrival_reactivates_inactive_ungrouped_instance_with_waiters(
     for participant in (first, last):
         participant.status = "working"
     db.session.commit()
-    grouper = SimpleGrouper(group_type="reuse_ungrouped", initial_group_size=3)
+    grouper = SimpleGrouper(
+        group_type="reuse_ungrouped", initial_group_size=3, quorum=3
+    )
     _arrive_at_group_barrier(exp, grouper, first)
     db.session.commit()
     instance = BarrierInstance.query.filter_by(
@@ -3619,7 +3627,9 @@ def test_check_instance_does_not_reactivate_ungrouped_when_another_pool_is_activ
     first = new_participant(exp)
     first.status = "working"
     db.session.commit()
-    grouper = SimpleGrouper(group_type="split_ungrouped", initial_group_size=3)
+    grouper = SimpleGrouper(
+        group_type="split_ungrouped", initial_group_size=3, quorum=3
+    )
     _arrive_at_group_barrier(exp, grouper, first)
     db.session.commit()
     leftover = BarrierInstance.query.filter_by(
@@ -3664,7 +3674,7 @@ def test_leftover_check_defers_to_an_arrival_creating_the_pool(
     first = new_participant(exp)
     first.status = "working"
     db.session.commit()
-    grouper = SimpleGrouper(group_type="race_ungrouped", initial_group_size=3)
+    grouper = SimpleGrouper(group_type="race_ungrouped", initial_group_size=3, quorum=3)
     _arrive_at_group_barrier(exp, grouper, first)
     db.session.commit()
     leftover = BarrierInstance.query.filter_by(barrier_id=grouper.id).one()
@@ -3720,7 +3730,7 @@ def test_leftover_ungrouped_waiter_joins_the_active_pool_and_can_proceed(
     for participant in (first, second, third):
         participant.status = "working"
     db.session.commit()
-    grouper = SimpleGrouper(group_type="migrate_join", initial_group_size=3)
+    grouper = SimpleGrouper(group_type="migrate_join", initial_group_size=3, quorum=3)
     _arrive_at_group_barrier(exp, grouper, first)
     db.session.commit()
     leftover = BarrierInstance.query.filter_by(barrier_id=grouper.id).one()
@@ -7510,7 +7520,9 @@ def test_groups_that_can_shrink_need_an_explicit_below_quorum():
 
     def make_timeline(pair, late_action="leave_group", cohort=None, also_leave=None):
         return Timeline(
-            SimpleGrouper("cohort", initial_group_size=4, below_quorum=cohort),
+            SimpleGrouper(
+                "cohort", initial_group_size=4, quorum=4, below_quorum=cohort
+            ),
             SimpleGrouper("pair", initial_group_size=2, below_quorum=pair),
             GroupBarrier(
                 id_="round",
@@ -7555,6 +7567,8 @@ def test_a_custom_grouper_s_group_without_a_quorum_passes_its_barrier():
 def test_late_after_barriers_need_a_top_up_wait_while_groups_take_newcomers(
     use_admission_points, admission_point, top_up_wait, stopped_before, raises
 ):
+    lobby_admits = use_admission_points and not admission_point
+
     def make_timeline():
         return Timeline(
             SimpleGrouper(
@@ -7566,7 +7580,13 @@ def test_late_after_barriers_need_a_top_up_wait_while_groups_take_newcomers(
                 top_up_wait=top_up_wait,
                 below_quorum="continue_without_group",
             ),
-            GroupBarrier("lobby", group_type="team", stop_top_ups=stopped_before),
+            GroupBarrier(
+                "lobby",
+                group_type="team",
+                stop_top_ups=stopped_before,
+                admission_point=lobby_admits,
+                newcomer_max_wait=60 if lobby_admits else None,
+            ),
             GroupBarrier(
                 "round",
                 group_type="team",
@@ -7817,7 +7837,9 @@ def test_group_barrier_below_quorum(
 ):
     exp = get_experiment()
     barrier = GroupBarrier(id_="below_quorum", group_type="main")
-    grouper = SimpleGrouper("main", initial_group_size=3, below_quorum=below_quorum)
+    grouper = SimpleGrouper(
+        "main", initial_group_size=3, quorum=3, below_quorum=below_quorum
+    )
 
     participants = [new_participant(exp) for _ in range(2)]
     for p in participants:

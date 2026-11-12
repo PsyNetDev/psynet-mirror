@@ -276,6 +276,7 @@ def _stacked_partner_timeline(group_type, group_size):
         SimpleGrouper(
             group_type=group_type,
             initial_group_size=group_size,
+            quorum=group_size,
             waiting_message="Waiting for your partner",
         ),
         GroupBarrier(id_=f"{group_type}_init", group_type=group_type),
@@ -549,7 +550,9 @@ def test_pending_arrival_notice_reconstructs_each_instance_once(db_session):
 
 def _grouped_then_barrier_timeline(group_type, group_size):
     return Timeline(
-        SimpleGrouper(group_type=group_type, initial_group_size=group_size),
+        SimpleGrouper(
+            group_type=group_type, initial_group_size=group_size, quorum=group_size
+        ),
         GroupBarrier(id_=f"{group_type}_gate", group_type=group_type),
         ModularPage("action", "Action", time_estimate=1),
     )

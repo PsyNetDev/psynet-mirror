@@ -238,7 +238,7 @@ test("default barriers hold the current page until websocket release", { tag: "@
     await sendButton.click();
     await Promise.all([
       expect(firstParticipant.locator("#chatroom-messages")).toContainText(
-        `You: ${chatMessage}`,
+        `${firstSenderLabel} (you): ${chatMessage}`,
         { timeout: STEP_TIMEOUT_MS }
       ),
       expect(secondParticipant.locator("#chatroom-messages")).toContainText(

@@ -42,7 +42,11 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     monkeypatch.setattr(timeline_hold, "_publish_wakes", published.extend)
     monkeypatch.setattr(exp, "pseudonym_scheme", _AllBlueFoxes())
     first, second, third = _working_participants(exp, 3)
-    _arrive(exp, SimpleGrouper("room", initial_group_size=3), [first, second, third])
+    _arrive(
+        exp,
+        SimpleGrouper("room", initial_group_size=3, quorum=3),
+        [first, second, third],
+    )
     group = third.active_sync_groups["room"]
     assert len({p.pseudonym.name for p in (first, second, third)}) == 3
 
@@ -96,7 +100,11 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     _arrive(exp, SimpleGrouper("pair", initial_group_size=2), alike)
     assert {p.pseudonym.name for p in alike} == {"Blue fox"}
     third.set_pseudonym(first.pseudonym.color, first.pseudonym.animal)
-    _arrive(exp, SimpleGrouper("again", initial_group_size=3), [first, second, third])
+    _arrive(
+        exp,
+        SimpleGrouper("again", initial_group_size=3, quorum=3),
+        [first, second, third],
+    )
     assert third.pseudonym.name == first.pseudonym.name
 
     # Members without an answer get no bubble.
@@ -149,7 +157,11 @@ def test_pending_members_joining_separately_get_distinct_pseudonyms(
 def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_session):
     exp = get_experiment()
     first, second, third = _working_participants(exp, 3)
-    _arrive(exp, SimpleGrouper("room", initial_group_size=3), [first, second, third])
+    _arrive(
+        exp,
+        SimpleGrouper("room", initial_group_size=3, quorum=3),
+        [first, second, third],
+    )
     group = third.active_sync_groups["room"]
 
     def time_out(participant, waiting_at=None):

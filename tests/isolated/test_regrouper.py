@@ -55,7 +55,7 @@ def test_regrouper_pairs_within_cohorts_and_does_not_wait_for_absent_members(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    cohort_grouper = SimpleGrouper("cohort", initial_group_size=4)
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=4, quorum=4)
     pairs = Regrouper(
         "pair",
         within="cohort",
@@ -279,7 +279,7 @@ def test_regrouper_cohorts_have_their_own_deadlines(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    cohort_grouper = SimpleGrouper("cohort", initial_group_size=3)
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=3, quorum=3)
     pairs = Regrouper("pair", within="cohort", group_size=2, deadline=30)
     cohorts = [_working_participants(exp, 3) for _ in range(2)]
     for cohort in cohorts:
@@ -427,7 +427,7 @@ def test_regrouper_left_over_waits_for_cohort_still_in_the_round(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    cohort_grouper = SimpleGrouper("cohort", initial_group_size=3)
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=3, quorum=3)
     pairs = Regrouper(
         "pair",
         within="cohort",
@@ -474,7 +474,7 @@ def test_every_regrouper_left_over_waits_one_more_tick(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    cohort_grouper = SimpleGrouper("cohort", initial_group_size=3)
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=3, quorum=3)
     pairs = Regrouper(
         "pair",
         within="cohort",

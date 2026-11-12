@@ -45,6 +45,7 @@ def _stacked_partner_timeline(
         SimpleGrouper(
             group_type=group_type,
             initial_group_size=group_size,
+            quorum=group_size,
             waiting_message=hold_content,
         ),
         GroupBarrier(

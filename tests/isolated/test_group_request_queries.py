@@ -202,7 +202,10 @@ def test_barrier_requests_do_not_grow_with_group_size(exp):
         # No hold timeouts, so slow profiled requests cannot dissolve the group.
         exp.timeline = Timeline(
             SimpleGrouper(
-                group_type, initial_group_size=group_size, max_wait_time=None
+                group_type,
+                initial_group_size=group_size,
+                quorum=group_size,
+                max_wait_time=None,
             ),
             ModularPage(
                 "choose", "Choose", PushButtonControl(["a", "b"]), time_estimate=1

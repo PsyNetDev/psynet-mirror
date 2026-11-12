@@ -18,6 +18,7 @@ class Exp(psynet.experiment.Experiment):
         SimpleGrouper(
             group_type="stack",
             initial_group_size=GROUP_SIZE,
+            quorum=GROUP_SIZE,
             waiting_message=WAIT,
         ),
         GroupBarrier(id_="stack_init", group_type="stack", waiting_message=WAIT),
