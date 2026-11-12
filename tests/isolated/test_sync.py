@@ -8327,6 +8327,19 @@ def test_a_pending_member_gets_no_notice_for_a_barrier_they_pass_through(
     assert pending_arrival_notice_for(newcomer) is None
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_newcomer_joins_the_group_with_the_most_free_seats(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    with_pending, _, _ = _society(exp, db_session)
+    without_pending, _, (newcomer,) = _society(exp, db_session)
+    assert newcomer.active_sync_groups["society"] == without_pending
+    assert with_pending.id < without_pending.id
+
+
 @pytest.mark.parametrize("how", ["newcomer_max_wait", "stop_top_ups", "closed"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True

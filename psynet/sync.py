@@ -3486,6 +3486,21 @@ class SimpleGrouper(Grouper):
         if not self.join_existing_groups:
             return
 
+        link = ParticipantLinkSyncGroup
+        n_pending = (
+            select(func.count(link.id))
+            .join(Participant, Participant.id == link.participant_id)
+            .where(
+                link.sync_group_id == SimpleSyncGroup.id,
+                link.active.is_(True),
+                link.admitted_at.is_(None),
+                ~Participant.failed,
+                Participant.status == "working",
+            )
+            .correlate(SimpleSyncGroup)
+            .scalar_subquery()
+        )
+        seats_taken = SimpleSyncGroup.n_active_participants + n_pending
         query = SimpleSyncGroup.query.filter(
             SimpleSyncGroup.group_type == self.group_type,
             SimpleSyncGroup.active.is_(True),
@@ -3494,14 +3509,11 @@ class SimpleGrouper(Grouper):
         )
 
         if self.max_group_size is not None:
-            query = query.filter(
-                SimpleSyncGroup.n_active_participants < self.max_group_size
-            )
+            query = query.filter(seats_taken < self.max_group_size)
 
-        # Preferentially join the smallest groups, and among those, the oldest
-        query = query.order_by(
-            SimpleSyncGroup.n_active_participants, SimpleSyncGroup.id
-        )
+        # Pending members hold seats: join the groups with the fewest seats
+        # taken, and among those, the oldest.
+        query = query.order_by(seats_taken, SimpleSyncGroup.id)
 
         for group in query.all():
             if self.join_criterion is None or self.join_criterion(
