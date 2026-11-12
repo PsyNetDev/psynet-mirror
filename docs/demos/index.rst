@@ -443,6 +443,13 @@ Groups
     answer is the game's outcome, and its definition sets the bonus that a
     round won pays. :doc:`/code/multiplayer/live_sessions`.
 
+`experiments/shared_canvas_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/shared_canvas_live>`__
+    In this live session, two to eight players move around a shared canvas
+    with the arrow keys and collect coins. The server works out every player's
+    position from the moves their page sends. The page predicts the player's
+    own moves, and draws the other players by interpolating between the
+    game's ticks. Each coin pays a bonus. :doc:`/code/multiplayer/live_sessions`.
+
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
     A multi-room chat written directly on WebSockets rather than
     ``psynet.chatroom``. Clients exchange messages on one shared channel and

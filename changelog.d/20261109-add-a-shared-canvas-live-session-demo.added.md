@@ -1,0 +1,1 @@
+Added ``demos/experiments/shared_canvas_live``, a live session in which two to eight players move around a shared canvas and collect coins for a bonus. The game works out each player's position, and the page uses prediction and interpolation to draw the movement smoothly.
