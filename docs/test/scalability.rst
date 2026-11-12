@@ -102,8 +102,9 @@ participants experience. *Bot outcomes* counts how each bot ended:
 participants that the experiment failed, for example at a prescreen or when
 a wait timed out, are under *Failed by the experiment*, and *Bot errors*
 lists errors such as ``HTTP 500 on /response``. In experiments with sync
-groups, *Removals from sync groups* counts bots that a group removed, by
-removal reason (such as ``late`` or ``group_dissolved``); these bots may
+groups, *Removals from sync groups* counts removals of bots from groups, by
+removal reason (such as ``late`` or ``group_dissolved``; a bot removed from
+two groups counts twice); these bots may
 still have completed the experiment. Other sections cover
 runtimes, busy chains, requests answered busy or stale (which bots retry),
 wait pages, async job queue waits and worker use, and how the database grew.

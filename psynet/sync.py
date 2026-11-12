@@ -2098,7 +2098,7 @@ class GroupBarrier(Barrier):
     on_arrival_message
         Callable that returns arrival copy for one participant, by default
         :func:`~psynet.timeline_hold.default_group_barrier_arrival_message`.
-        It receives ``kind`` (``"notice"``, ``"late"`` or ``"waited_too_long"``), ``waiting_count``,
+        It receives ``kind`` (``"notice"``, ``"late"``, ``"waited_too_long"`` or ``"not_admitted"``), ``waiting_count``,
         ``group_size``, and the usual context arguments (``participant``, the
         one who sees the copy, ``group``, ``barrier``, ``experiment``). Return ``None`` to hide that
         notice. Same serialization rules as ``on_release``. Pass
@@ -5191,7 +5191,7 @@ class SimpleSyncGroup(SyncGroup):
 
     # Queries for SyncGroup load these columns too, rather than in a second
     # query when one is first read.
-    load_with_base_class = True
+    _load_with_base_class = True
 
     initial_group_size = Column(Integer)
     max_group_size = Column(Integer)
@@ -6643,6 +6643,9 @@ def pending_arrival_notice_for(participant):
                 ):
                     continue
                 if barrier._participant_is_waiting(participant):
+                    continue
+                if group._is_pending(participant) and not barrier.admission_point:
+                    # Pending members pass straight through this barrier.
                     continue
                 waiting_count = sum(
                     1

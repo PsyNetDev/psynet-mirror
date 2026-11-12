@@ -524,7 +524,8 @@ class SQLMixinDallinger(SharedMixin):
         x = {"polymorphic_identity": polymorphic_identity}
         if not cls.inherits_table:
             x["polymorphic_on"] = cls.type
-        elif cls.__dict__.get("load_with_base_class"):
+        # Not inherited: only the class that sets it loads its columns inline.
+        elif cls.__dict__.get("_load_with_base_class"):
             x["polymorphic_load"] = "inline"
         return x
 

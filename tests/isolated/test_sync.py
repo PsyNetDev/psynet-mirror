@@ -6343,6 +6343,25 @@ def test_check_sync_groups_closes_group_once_members_finish(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_check_sync_groups_keeps_a_group_open_for_its_pending_member(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    group, founders, _ = _society(exp, db_session)
+    for founder in founders:
+        founder.status = "approved"
+    db_session.commit()
+
+    for _ in range(2):
+        check_sync_groups()
+
+    db_session.refresh(group)
+    assert group.active and group.n_active_participants == 0
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_check_sync_groups_corrects_counts_when_only_a_status_changed(
     in_experiment_directory, db_session
 ):
@@ -8291,6 +8310,21 @@ def test_a_pending_member_at_an_admission_point_sees_arrivals(
     _arrive_at_group_barrier(exp, start, founders[0])
     db_session.commit()
     assert len(_arrival_hold_messages(publications, newcomer.id)) == before + 1
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_a_pending_member_gets_no_notice_for_a_barrier_they_pass_through(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    group, founders, (newcomer,) = _society(exp, db_session)
+    answered = GroupBarrier("answered", group_type="society")
+    _arrive_at_group_barrier(exp, answered, founders[0])
+    db_session.commit()
+    assert pending_arrival_notice_for(founders[1]) is not None
+    assert pending_arrival_notice_for(newcomer) is None
 
 
 @pytest.mark.parametrize("how", ["newcomer_max_wait", "stop_top_ups", "closed"])
