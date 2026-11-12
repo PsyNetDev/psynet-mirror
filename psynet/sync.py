@@ -5184,7 +5184,7 @@ class SyncGroup(SQLBase, SQLMixin):
             for participant in removed:
                 self._remove_without_quorum_check(participant, "group_dissolved")
                 if fail:
-                    participant.fail("sync group below minimum size")
+                    participant.fail("sync group below quorum")
                 else:
                     _tell_group_ended(participant, group_size)
             self.check_numbers()

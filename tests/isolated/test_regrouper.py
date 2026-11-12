@@ -947,7 +947,7 @@ def test_closing_a_cohort_below_quorum_dissolves_it_without_a_split(
     assert set(pairs.choose_who_to_release(present)) == set(present)
     assert not cohort.active and _count_releases.calls == 0
     assert all(pairs.rounds_played(p) == 0 and _role(p) is None for p in present)
-    expected_tags = ["sync group below minimum size"] if below_quorum == "fail" else []
+    expected_tags = ["sync group below quorum"] if below_quorum == "fail" else []
     assert all(p.failure_tags == expected_tags for p in present)
 
 

@@ -3826,7 +3826,7 @@ def test_check_barriers_times_out_waiters_past_their_deadline(
     else:
         assert not overdue.failed and not overdue.active_sync_groups
     assert _barrier_link_released(overdue.id, barrier.id)
-    assert partner.failure_tags == ["sync group below minimum size"]
+    assert partner.failure_tags == ["sync group below quorum"]
     assert not patient.failed
     assert _barrier_link_released(patient.id, barrier.id) is False
 
@@ -4047,7 +4047,7 @@ def test_two_members_failing_at_once_do_not_deadlock(
     assert errors == []
     db.session.expire_all()
     tags = [Participant.query.get(i).failure_tags for i in ids]
-    assert tags[0] == ["sync group below minimum size"]
+    assert tags[0] == ["sync group below quorum"]
     assert all("timeout" in t for t in tags[1:])
     assert SyncGroup.query.get(group_id).active is False
 
@@ -7924,7 +7924,7 @@ def test_poller_failing_a_waiter_after_max_wait(
     assert set(waiter.failure_tags) == {f"{hold}:barrier:abandoned", "fail_on_timeout"}
     assert waiter.sync_group_removal_reason("main") == "waited_too_long"
     assert absent.sync_group_removal_reason("main") == "group_dissolved"
-    assert absent.failure_tags == ["sync group below minimum size"]
+    assert absent.failure_tags == ["sync group below quorum"]
 
 
 @pytest.mark.parametrize(
