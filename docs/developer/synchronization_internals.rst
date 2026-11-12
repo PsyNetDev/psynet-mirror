@@ -45,17 +45,35 @@ then applies ``max_wait_time`` to waiters whose deadline has
 passed, since nobody else would: their own request normally does it. This
 covers waiters at the default wait indicator and at explicit
 ``waiting_logic`` pages, whose link records its own deadline, even if they
-are still partway through a filler page. It then checks waiting visits,
-least recently checked first, with a 5-second head start for visits that
+are still partway through a filler page. It then reads every waiting
+visit at once, without locks: the waiters, their holds and groups, and the
+groups' members, in a fixed number of queries
+(``_visits_that_need_checks``). It asks each visit's barrier
+:meth:`~psynet.sync.Barrier.needs_check` on that data, and runs the full,
+locked check only for visits where the answer is yes. For the built-in
+barriers the answer is yes whenever a check would change something: release
+or group anyone, remove or fail a late member, or send a new countdown. A
+visit whose waiters can't be released yet therefore costs the sweep no
+statements of its own, and a release comes at the first sweep after it
+becomes due. Inactive visits that still have waiters, and subclasses that
+override :meth:`~psynet.sync.Barrier.choose_who_to_release` or
+:meth:`~psynet.sync.Barrier.check_waiting_participants` without overriding
+``needs_check``, are checked at every sweep. In ``test_sync.py`` and
+``test_regrouper.py``, the autouse fixture ``_audit_needs_check`` checks
+every visit the peek passes over and fails the test if that check changes
+its waiters, their groups or its countdown; when a check learns to change
+something new, teach ``needs_check`` too. The visits to check go least
+recently checked first, with a 5-second head start for visits that
 are new or whose waiters or sync group changed since this process last
 checked them. A visit whose check is deferred or fails is retried at most
 once in the same sweep and then queued like a checked one, and a waiter
 whose timeout fails goes behind the other overdue waiters, so a broken item
-cannot hold up the rest. Each of
-the two steps stops starting new work after 0.2 seconds, so with thousands
-of waiters a sweep normally stays within its interval and later sweeps reach
-the remaining visits. One timeout or check can still overrun while it waits
-for a row lock.
+cannot hold up the rest. The timeouts and the checks each stop starting
+new work after 0.2 seconds, and later sweeps reach the remaining visits.
+One timeout or check can still overrun while it waits for a row lock. The
+batched read is not limited: it costs about half a millisecond per waiting
+visit, mostly building ORM objects, so beyond about 400 waiting visits a
+sweep takes longer than its interval.
 
 .. _sync-group-lock-order:
 
@@ -160,7 +178,7 @@ Barrier evaluation and participant locking belong to the framework and are
 not extension points. Custom barriers override
 :meth:`~psynet.sync.Barrier.check_waiting_participants`,
 :meth:`~psynet.sync.Barrier.choose_who_to_release` and
-:meth:`~psynet.sync.Barrier.would_release` only.
+:meth:`~psynet.sync.Barrier.needs_check` only.
 
 .. _sync-reconstructed-barriers:
 

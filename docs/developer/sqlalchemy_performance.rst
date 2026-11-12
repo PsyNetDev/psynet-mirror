@@ -535,8 +535,9 @@ happens around the barrier check:
 * Dissolving a group fails each remaining member separately: their refresh,
   ``fail()``, trial lock, hold lookup and flushes cost about 10–12
   statements per member. The test sets a ceiling of 14 per member.
-* An idle ``check_barriers`` sweep fully re-checks every waiting visit (15
-  statements each), even when nothing changed. ``check_sync_groups`` counts
+* An idle ``check_barriers`` sweep reads every waiting visit in one batched
+  peek (about 20 statements in all) and checks none of them, so it costs
+  the same for one waiting group as for three. ``check_sync_groups`` counts
   every active group's members in one statement, and locks and recounts only
   the groups whose stored counts are stale or that may close, so idle groups
   cost it nothing. Neither depends on group size. A ``check_barriers`` sweep that found waiting visits then looks for
@@ -547,7 +548,7 @@ happens around the barrier check:
 The size comparisons allow two statements of tolerance for internal commits:
 one can drop a row such as the sync group from the weak identity map, and
 loading it again moves a count by a statement or two between runs. A
-statement per member adds at least four. The dissolve and poller numbers are
+statement per member adds at least four. The dissolve numbers are
 snapshots of work that could be batched or skipped; lower them when it is.
 
 An arrival rebuilds every waiting member's hold overlay.

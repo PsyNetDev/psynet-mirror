@@ -1004,10 +1004,13 @@ Custom barriers
 To release participants by another rule, subclass
 :class:`~psynet.sync.Barrier` and implement
 :meth:`~psynet.sync.Barrier.choose_who_to_release`, which returns the waiting
-participants to release. Override
-:meth:`~psynet.sync.Barrier.would_release` to match, and use
+participants to release. Use
 :meth:`~psynet.sync.Barrier.check_waiting_participants` for any preparation
-with side effects.
+with side effects. Optionally override
+:meth:`~psynet.sync.Barrier.needs_check` to say, without side effects,
+whether a check would release anyone or make any other change. The barrier
+poller then checks a visit only when it says yes; without the override, it
+checks every waiting visit about twice a second.
 
 Waiting and dropouts
 --------------------

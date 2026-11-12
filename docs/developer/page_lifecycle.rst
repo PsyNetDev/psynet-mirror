@@ -642,7 +642,7 @@ Key implementation and test locations
 * ``psynet/experiment.py`` — GET hold resolution (``_resolve_get_timeline_hold``,
   ``_skip_ready_hold_on_get``) and the shared skip
   (``_advance_past_ready_holds``).
-* ``psynet/sync.py`` — visit-claim waits gated by ``Barrier.would_release``.
+* ``psynet/sync.py`` — visit-claim waits gated by ``Barrier.needs_check``.
 * ``tests/isolated/test_timeline.py`` — render/fragment contracts.
 * ``tests/playwright/inplace_timeline_transitions.spec.js`` — browser lifecycle
   and failure boundaries.

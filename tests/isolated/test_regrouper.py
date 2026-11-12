@@ -31,7 +31,7 @@ if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
 from test_sync import (  # noqa: E402, F401
     _arrive_at_group_barrier,
-    _audit_release_peeks,
+    _audit_needs_check,
     _commit_barrier_arrivals,
     _freeze_clocks,
     _sweep_each_second_until_a_wait_ends,
@@ -131,12 +131,12 @@ def test_every_regrouper_splits_everyone_waiting_into_balanced_rooms(
     rooms = Regrouper("room", group_size=3, every=45)
     participants = _working_participants(exp, 6)
     _arrive(exp, rooms, participants)
-    assert not rooms.would_release(participants)
+    assert not rooms.needs_check(participants)
     assert rooms.expected_release_time(participants[0]) > time.time()
 
     # One player waited through a tick alone; a newcomer doesn't start a round early.
     _backdate_arrivals(rooms, participants[:1], 60)
-    assert not rooms.would_release(participants)
+    assert not rooms.needs_check(participants)
     assert rooms.expected_release_time(participants[0]) > time.time()
 
     # The last player arrived after the tick, so waits for the next one.
@@ -1047,7 +1047,7 @@ def test_a_cohort_waiting_to_dissolve_is_not_split(in_experiment_directory, db_s
             _set_transaction_lock_timeout(1)
             assert pairs.choose_who_to_release(present) == []
             db_session.commit()
-        assert cohort.dissolving and not pairs.would_release(present)
+        assert cohort.dissolving and not pairs.needs_check(present)
     assert all(pairs.rounds_played(p) == 0 for p in present)
 
 

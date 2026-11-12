@@ -297,7 +297,7 @@ class _BarrierFinalizeWalk:
     ``processed`` is every instance already evaluated. ``rechecked`` is the
     unfilled visits last-arrival may peek a second time. ``wait_this`` is
     whether this pass should wait for the extra-connection claim.
-    ``allow_unfilled_recheck`` is the first-pass ``would_release`` gate;
+    ``allow_unfilled_recheck`` is the first-pass ``needs_check`` gate;
     waiter recovery must not wait on a second pass.
     """
 
@@ -7448,7 +7448,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         still take waiters with ``NOWAIT``. Recovered waiter GETs try that
         visit claim but do not wait for it. Pending checks from this request
         and checks queued after a ready-hold skip wait only when
-        ``Barrier.would_release`` is true, so a waiter arrival does not occupy
+        ``Barrier.needs_check`` is true, so a waiter arrival does not occupy
         a worker behind last-arrival. Last-arrival self-skips released holds
         in this GET; partners catch up on overlay wake.
 
@@ -7659,7 +7659,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         ``serialize_page`` is for ``POST /response`` inplace JSON. ``GET
         /timeline`` renders HTML from ``result.page`` and skips that extra
         ``__json__``. ``wait_for_claim`` is the first-pass gate from
-        ``Barrier.would_release``. Nested checks after a skip peek again.
+        ``Barrier.needs_check``. Nested checks after a skip peek again.
         Unfilled waiter GET recovery passes ``False`` so those requests do
         not sit in ``lock_timeout`` behind the visit claim.
         """

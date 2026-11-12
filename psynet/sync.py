@@ -351,8 +351,8 @@ def _hold_instance_id_for_page(participant, page):
     return link.barrier_instance_id
 
 
-def _visit_check_would_release(instance_id):
-    """Return whether evaluating this visit would release waiters.
+def _visit_needs_check(instance_id):
+    """Return whether a check of this visit would do anything, by :meth:`Barrier.needs_check`.
 
     Read-only: used before deciding to wait for the visit claim. Spec errors
     match the check path (do not wait, do not fail the arriver). Other
@@ -376,7 +376,7 @@ def _visit_check_would_release(instance_id):
                         for_update=False,
                         nowait=False,
                     )
-                    result = bool(barrier.would_release(waiting))
+                    result = bool(barrier.needs_check(waiting))
         finally:
             nested.rollback()
             _forget_barrier_from_spec(instance_id)
@@ -405,7 +405,7 @@ def _pending_checks_should_wait_for_claim(instance_ids):
     last-arrival. A filled visit still waits so stacked holds skip in one
     request. ``GET /timeline`` and ``POST /response`` both use this peek.
     """
-    return any(_visit_check_would_release(instance_id) for instance_id in instance_ids)
+    return any(_visit_needs_check(instance_id) for instance_id in instance_ids)
 
 
 def _execute_advisory_xact_lock(bind, instance_id, *, wait):
@@ -1175,15 +1175,21 @@ class Barrier(EltCollection):
         """
         raise NotImplementedError
 
-    def would_release(self, waiting_participants: List[Participant]) -> bool:
-        """Return whether evaluating this visit would release anyone.
+    def needs_check(self, waiting_participants: List[Participant]) -> bool:
+        """Return whether a check of this visit would do anything, such as release someone.
 
-        ``GET /timeline`` uses this to decide whether to wait for the visit
-        claim. It must not mutate participants, groups, or the session.
-        Last-arrival skip-in-one-GET waits only when this is true. Custom
-        barriers that override :meth:`choose_who_to_release` should override
-        this too. The default is ``True`` whenever anyone is waiting, so a
-        missing override still waits rather than first-painting a hold.
+        It must not mutate participants, groups, or the session. The barrier
+        poller runs a visit's check only when this is true, and
+        ``GET /timeline`` waits for the visit claim only when it is true, so
+        that last-arrival skips in one request. Count every change the check
+        can make: releases, but also, for example, removing a late member.
+        A wrong ``True`` only costs a check that changes nothing; a wrong
+        ``False`` delays that change until something else checks the visit.
+        The default is ``True`` whenever anyone is waiting, so a barrier
+        without an override is checked at every poller sweep. Custom
+        barriers that override :meth:`choose_who_to_release` or
+        :meth:`check_waiting_participants` of a built-in barrier keep that
+        default unless they override this too.
         """
         return bool(waiting_participants)
 
@@ -1578,7 +1584,7 @@ def _group_barrier_outcome(
 ):
     """Return ``"dissolve"``, ``"release"`` or ``"wait"`` for one visit of ``group``.
 
-    Read-only: ``GroupBarrier.would_release`` passes the members it projects will
+    Read-only: ``GroupBarrier.needs_check`` passes the members it projects will
     remain, and ``choose_who_to_release`` the live ones, so the peek and the
     real release share one decision. ``members`` (admitted) and
     ``admissible`` (pending members this admission point would admit) count
@@ -2592,7 +2598,7 @@ class GroupBarrier(Barrier):
                     f"Barrier '{self.id}' on_release failed."
                 ) from err
 
-    def would_release(self, waiting_participants: List[Participant]) -> bool:
+    def needs_check(self, waiting_participants: List[Participant]) -> bool:
         """Return whether a check of this group visit would release or remove anyone, without mutating state.
 
         Mirrors :meth:`check_waiting_participants` followed by
@@ -3043,8 +3049,8 @@ class Grouper(Barrier):
 
         return participants_to_release
 
-    def would_release(self, waiting_participants: List[Participant]) -> bool:
-        """Return whether this grouper would form groups, without creating them."""
+    def needs_check(self, waiting_participants: List[Participant]) -> bool:
+        """Return whether a check would form groups, without creating them."""
         return bool(self.ready_to_group(waiting_participants))
 
     def _create_group(self, participants, **settings):
@@ -3649,9 +3655,9 @@ class SimpleGrouper(Grouper):
         self._refresh_countdowns(waiting_participants, released)
         return released
 
-    def would_release(self, waiting_participants: List[Participant]) -> bool:
+    def needs_check(self, waiting_participants: List[Participant]) -> bool:
         """Return whether a check would form a group, let a waiter join one, or send a new countdown."""
-        if super().would_release(waiting_participants):
+        if super().needs_check(waiting_participants):
             return True
         if self._stale_countdown(waiting_participants) is not None:
             return True
@@ -4337,7 +4343,8 @@ class Regrouper(Grouper):
             .scalar()
         )
 
-    def would_release(self, waiting_participants: List[Participant]) -> bool:
+    def needs_check(self, waiting_participants: List[Participant]) -> bool:
+        """Return whether a check would split a pool, or release waiters who left their ``within`` group."""
         return any(
             (self.within is not None and within_group is None)
             or (
@@ -6969,19 +6976,19 @@ def _run_pending_barrier_checks(instance_ids, *, wait=True):
     return all_claimed
 
 
-def _trusts_would_release(barrier):
-    """Return whether ``barrier.would_release`` answers for its own release rules.
+def _trusts_needs_check(barrier):
+    """Return whether ``barrier.needs_check`` answers for its own release rules.
 
     A subclass that overrides :meth:`Barrier.choose_who_to_release` or
     :meth:`Barrier.check_waiting_participants` below the class that defines
-    ``would_release`` may release when the inherited peek says no.
+    ``needs_check`` may change something when the inherited method says no.
     """
     mro = type(barrier).__mro__
 
     def definer(name):
         return next(i for i, cls in enumerate(mro) if name in cls.__dict__)
 
-    peek = definer("would_release")
+    peek = definer("needs_check")
     return all(
         definer(name) >= peek
         for name in ("choose_who_to_release", "check_waiting_participants")
@@ -7029,16 +7036,16 @@ def _prime_sync_groups(participants):
             set_committed_value(link, "participant", members.get(link.participant_id))
 
 
-def _visits_that_would_release(instance_ids):
-    """Return the visits among ``instance_ids`` whose check could release anyone.
+def _visits_that_need_checks(instance_ids):
+    """Return the visits among ``instance_ids`` whose check would do anything.
 
     One read, without locks, loads every visit's waiters, their groups and
     the groups' members in a fixed number of queries, then asks each
-    visit's barrier :meth:`Barrier.would_release`, which costs no further
+    visit's barrier :meth:`Barrier.needs_check`, which costs no further
     queries for the built-in barriers. Anything the peeks write is rolled
     back. An inactive visit that still has waiters, one whose barrier can't
-    be trusted to peek (see :func:`_trusts_would_release`), and one whose
-    peek fails count as visits that could release, so their full check
+    be trusted to peek (see :func:`_trusts_needs_check`), and one whose
+    peek fails count as visits that need a check, so their full check
     runs: it moves leftover waiters onto the live visit and reports errors.
     """
     if not instance_ids:
@@ -7089,8 +7096,8 @@ def _visits_that_would_release(instance_ids):
                 if (
                     not instance.active
                     or not isinstance(barrier, Barrier)
-                    or not _trusts_would_release(barrier)
-                    or barrier.would_release(waiting[instance.id])
+                    or not _trusts_needs_check(barrier)
+                    or barrier.needs_check(waiting[instance.id])
                 ):
                     due.add(instance.id)
             except BarrierSpecError:
@@ -7261,10 +7268,10 @@ def _check_barriers(seen):
                     f"{_MAX_BARRIER_WALK_PASSES} passes."
                 )
             seen.update(waiting)
-            could_release = _visits_that_would_release(list(waiting))
+            need_checks = _visits_that_need_checks(list(waiting))
             deferred_ids = []
             for instance_id in _visits_due(
-                {i: f for i, f in waiting.items() if i in could_release}, sweep_ends
+                {i: f for i, f in waiting.items() if i in need_checks}, sweep_ends
             ):
                 if _process_barrier_instance(instance_id):
                     deferred_ids.append(instance_id)

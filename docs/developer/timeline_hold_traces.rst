@@ -239,7 +239,7 @@ I6
     not authored wait copy. Partners stay on the authored overlay until
     they resume.
 I7
-    Last-arrival waits for the visit claim when ``would_release`` is
+    Last-arrival waits for the visit claim when ``needs_check`` is
     true. ``lock_timeout`` on that wait is HTTP 503.
 I8
     Unfilled waiter GETs try the visit claim without waiting. A held

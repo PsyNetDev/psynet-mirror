@@ -72,7 +72,7 @@ from psynet.sync import (
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
     _take_released_hold_waiter_ids,
-    _visit_check_would_release,
+    _visit_needs_check,
     arrival_notice_payload,
     check_barriers,
     check_sync_groups,
@@ -158,30 +158,30 @@ def _visit_people(instance_id):
 
 
 @pytest.fixture(autouse=True)
-def _audit_release_peeks(monkeypatch):
+def _audit_needs_check(monkeypatch):
     """Fail the test if the poller passes over a visit whose check would change it.
 
     Each visit the batched peek says can't release is checked at once, and
     must come out with the same waiters, in the same groups, with the same
     countdown.
     """
-    peek = psynet.sync._visits_that_would_release
+    peek = psynet.sync._visits_that_need_checks
     failures = []
 
     def audited(instance_ids):
-        could_release = peek(instance_ids)
-        for instance_id in sorted(set(instance_ids) - could_release):
+        need_checks = peek(instance_ids)
+        for instance_id in sorted(set(instance_ids) - need_checks):
             before = _visit_people(instance_id)
             if psynet.sync._process_barrier_instance(instance_id):
                 continue
             if _visit_people(instance_id) != before:
                 failures.append(
                     f"The poller passed over barrier visit {instance_id}, but its "
-                    "check changed it: would_release() misses something."
+                    "check changed it: needs_check() misses something."
                 )
-        return could_release
+        return need_checks
 
-    monkeypatch.setattr("psynet.sync._visits_that_would_release", audited)
+    monkeypatch.setattr("psynet.sync._visits_that_need_checks", audited)
     yield
     assert not failures, failures
 
@@ -1773,13 +1773,13 @@ def test_pending_checks_without_wait_tries_the_claim(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_grouper_would_release_only_when_the_batch_is_full(
+def test_grouper_needs_check_only_when_the_batch_is_full(
     in_experiment_directory, db_session
 ):
     """GET wait-for-claim must distinguish waiter arrival from last-arrival."""
     exp = get_experiment()
     original_timeline = exp.timeline
-    group_type = f"would_release_{uuid.uuid4().hex[:8]}"
+    group_type = f"needs_check_{uuid.uuid4().hex[:8]}"
     exp.timeline = _stacked_partner_timeline(group_type, group_size=2)
     try:
         first, last = _working_participants(exp, 2)
@@ -1803,7 +1803,7 @@ def test_grouper_would_release_only_when_the_batch_is_full(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_visit_check_would_release_spec_error_does_not_wait(
+def test_visit_needs_check_spec_error_does_not_wait(
     in_experiment_directory, db_session, monkeypatch
 ):
     """A spec error during the release peek must not fail the arriver."""
@@ -1821,7 +1821,7 @@ def test_visit_check_would_release_spec_error_does_not_wait(
             raise BarrierSpecError("missing callback")
 
         monkeypatch.setattr(BarrierInstance, "get_barrier", boom)
-        assert _visit_check_would_release(instance_id) is False
+        assert _visit_needs_check(instance_id) is False
         _set_transaction_lock_timeout(0.3)
         assert db.session.execute(text("SELECT 1")).scalar() == 1
     finally:
@@ -1831,10 +1831,10 @@ def test_visit_check_would_release_spec_error_does_not_wait(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_visit_check_would_release_rolls_back_peek_mutations(
+def test_visit_needs_check_rolls_back_peek_mutations(
     in_experiment_directory, db_session, monkeypatch
 ):
-    """A mutating ``would_release`` override must not leak into the request."""
+    """A mutating ``needs_check`` override must not leak into the request."""
     exp = get_experiment()
     original_timeline = exp.timeline
     group_type = f"peek_mutate_{uuid.uuid4().hex[:8]}"
@@ -1855,8 +1855,8 @@ def test_visit_check_would_release_rolls_back_peek_mutations(
             db.session.flush()
             return True
 
-        monkeypatch.setattr(type(reconstructed), "would_release", mutating)
-        assert _visit_check_would_release(instance_id) is True
+        monkeypatch.setattr(type(reconstructed), "needs_check", mutating)
+        assert _visit_needs_check(instance_id) is True
         instance = BarrierInstance.query.get(instance_id)
         first = Participant.query.get(first.id)
         later = instance.get_barrier()
@@ -1873,7 +1873,7 @@ def test_visit_check_would_release_rolls_back_peek_mutations(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_visit_check_would_release_db_error_keeps_the_session_usable(
+def test_visit_needs_check_db_error_keeps_the_session_usable(
     in_experiment_directory, db_session, monkeypatch
 ):
     """A failed peek must roll back its savepoint before the claim wait."""
@@ -1891,7 +1891,7 @@ def test_visit_check_would_release_db_error_keeps_the_session_usable(
             db.session.execute(text("SELECT 1 FROM psynet_peek_missing_table"))
 
         monkeypatch.setattr("psynet.sync._get_waiting_participants", boom)
-        assert _visit_check_would_release(instance_id) is True
+        assert _visit_needs_check(instance_id) is True
         _set_transaction_lock_timeout(0.3)
         assert db.session.execute(text("SELECT 1")).scalar() == 1
     finally:
@@ -1901,7 +1901,7 @@ def test_visit_check_would_release_db_error_keeps_the_session_usable(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_visit_check_would_release_transient_error_propagates(
+def test_visit_needs_check_transient_error_propagates(
     in_experiment_directory, db_session, monkeypatch
 ):
     """A lock timeout during the peek must still become HTTP 503."""
@@ -1923,7 +1923,7 @@ def test_visit_check_would_release_transient_error_propagates(
 
         monkeypatch.setattr("psynet.sync._get_waiting_participants", boom)
         with pytest.raises(OperationalError):
-            _visit_check_would_release(instance_id)
+            _visit_needs_check(instance_id)
     finally:
         exp.timeline = original_timeline
 
@@ -2083,7 +2083,7 @@ def test_check_and_skip_rereads_instance_after_a_release_peek(
         instance_id = next(iter(first.active_barriers.values())).barrier_instance_id
         instance = BarrierInstance.query.get(instance_id)
         assert instance.active is True
-        assert _visit_check_would_release(instance_id) is False
+        assert _visit_needs_check(instance_id) is False
         monkeypatch.setattr(
             Barrier, "_check_instance", lambda self, check_id: checks.append(check_id)
         )
@@ -7928,13 +7928,13 @@ def test_late_member_leaving_a_pair_fails_the_partner_with_a_warning(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_group_barrier_would_release_predicts_late_after(
+def test_group_barrier_needs_check_predicts_late_after(
     in_experiment_directory, db_session, action, quorum, accepts_top_ups
 ):
     """The release peek must see the late member the check will remove, even when nobody is released."""
     exp = get_experiment()
     barrier = GroupBarrier(
-        id_=f"would_release_between_{action}_{quorum}_{accepts_top_ups}",
+        id_=f"needs_check_between_{action}_{quorum}_{accepts_top_ups}",
         group_type="main",
         late_after=5,
         late_action=action,
@@ -7960,7 +7960,7 @@ def test_group_barrier_would_release_predicts_late_after(
     # A group that accepts top-ups waits below its minimum instead of dissolving.
     expected = set() if accepts_top_ups and quorum == 3 else set(waiting_participants)
 
-    assert barrier.would_release(waiting_participants) is True
+    assert barrier.needs_check(waiting_participants) is True
     assert len(group.active_participants) == 3
     assert not db_session.dirty
 
@@ -8796,7 +8796,7 @@ def test_group_barrier_counts_a_newcomer_joining_in_another_request(
             )
         )
         other.commit()
-    assert not game_starts.would_release([*starters, newcomer])
+    assert not game_starts.needs_check([*starters, newcomer])
     _arrive_at_group_barrier(exp, game_starts, peeked)
     _commit_barrier_arrivals()
     assert still_waiting() == []
