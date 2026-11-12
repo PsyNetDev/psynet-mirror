@@ -126,7 +126,7 @@ def test_pending_members_joining_separately_get_distinct_pseudonyms(
         quorum=2,
         target_group_size=2,
         join_existing_groups=True,
-        admit_newcomers="at_admission_point",
+        use_admission_points=True,
         top_up_wait=30,
         below_quorum="continue_without_group",
     )

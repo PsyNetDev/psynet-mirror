@@ -24,7 +24,7 @@ of four as soon as four players are waiting, or a smaller one after a
 minute (``start_short_after``), and lets latecomers join a cohort that has
 started (``join_existing_groups``; see :class:`~psynet.sync.SimpleGrouper`).
 A latecomer is a pending member of the cohort until the next split admits
-them (``admit_newcomers="at_admission_point"``; see
+them (``use_admission_points=True``; see
 :ref:`sync-admission-points`), so nothing waits for them before that:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py

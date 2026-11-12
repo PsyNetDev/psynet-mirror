@@ -1625,7 +1625,7 @@ def test_a_group_admitting_at_admission_points_needs_one():
             max_group_size=3,
             target_group_size=2,
             join_existing_groups=True,
-            admit_newcomers="at_admission_point",
+            use_admission_points=True,
             below_quorum="continue_without_group",
         )
 

@@ -616,8 +616,8 @@ subclasses, ``get_waiting_participants(``, ``SimpleGrouper(``,
   failure tag ``sync group below quorum`` instead of
   ``sync group below minimum size``; update analysis code that filters on it.
 * ``SimpleGrouper(join_existing_groups=True)`` now warns unless you say when
-  newcomers start taking part: pass ``admit_newcomers="on_join"`` to keep
-  the old behavior, or ``admit_newcomers="at_admission_point"`` to admit
+  newcomers start taking part: pass ``use_admission_points=False`` to keep
+  the old behavior, or ``use_admission_points=True`` to admit
   them only at admission points (see :ref:`sync-admission-points`).
 * A ``quorum`` (or ``min_group_size``) larger than ``max_group_size`` now
   raises a ``ValueError``, because such a group could never reach it. Lower
@@ -631,7 +631,7 @@ subclasses, ``get_waiting_participants(``, ``SimpleGrouper(``,
       # After
       SimpleGrouper("team", initial_group_size=2, max_group_size=3,
                     quorum=2, join_existing_groups=True,
-                    admit_newcomers="on_join")
+                    use_admission_points=False)
 * Pages shown from a barrier's ``waiting_logic``, such as filler trials,
   now end when the barrier releases the participant, ``release_grace``
   seconds (3 by default) after the browser notices, instead of running to

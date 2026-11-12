@@ -145,8 +145,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   latecomers join only before the game starts, follow "Letting latecomers
   join before the game starts" in `code/multiplayer/synchronization`, with
   `stop_top_ups=True` on a barrier before the first round, and pass the
-  grouper `admit_newcomers="on_join"`. If groups keep taking newcomers
-  during the game, pass `admit_newcomers="at_admission_point"` and a
+  grouper `use_admission_points=False`. If groups keep taking newcomers
+  during the game, pass `use_admission_points=True` and a
   `target_group_size`: a newcomer is then a pending member, whom nothing
   counts or waits for, until an admission point admits them, such as a
   `GroupBarrier(admission_point=True, newcomer_max_wait=...)` at the start
@@ -382,7 +382,7 @@ with a group. List the cases and your decisions in the experiment's README.
 | Is removed on the dashboard | reason `"removed_by_experimenter"` | `group.remove_participant(participant, reason="removed_by_experimenter")` |
 | Arrives when no group can form (grouper `max_wait_action="continue_without_group"`; the default fails them) | reason `"no_group_formed"` | Send fewer bots than a group needs, even a short one with `quorum` or `start_short_after`, and wait out the grouper's `max_wait_time` |
 | Sits a round out at a `Regrouper` | not in a group; `regrouper.sat_out(participant)` | An odd number of bots with `left_over="sit_out"` |
-| Joins but is never admitted (`admit_newcomers="at_admission_point"`) | reason `"not_admitted"`, from `newcomer_max_wait`, top-ups stopping or the group ending | Send a bot in while the group plays, then end the group or stop its top-ups |
+| Joins but is never admitted (`use_admission_points=True`) | reason `"not_admitted"`, from `newcomer_max_wait`, top-ups stopping or the group ending | Send a bot in while the group plays, then end the group or stop its top-ups |
 
 The reasons come from `participant.sync_group_removal_reason(group_type)`;
 the `sync_group_outcome` of their trial in the round holds the same value until a barrier

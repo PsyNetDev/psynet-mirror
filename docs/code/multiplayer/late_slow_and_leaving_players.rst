@@ -238,7 +238,7 @@ its start, so she waits at ``ready`` while Ann waits for her at
 
 To avoid this, stop top-ups before the game with ``stop_top_ups=True``
 (see :ref:`sync-lobby-top-ups`), or make ``ready`` an admission point with
-``admit_newcomers="at_admission_point"`` (see
+``use_admission_points=True`` (see
 :ref:`sync-admission-points`), so that Cat passes the game's other barriers
 until ``ready`` admits her. See also :ref:`members at different
 barriers <rounds-group-barriers-in-loops>`.

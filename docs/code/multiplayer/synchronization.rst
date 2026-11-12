@@ -48,16 +48,16 @@ the grouper has a ``waiting_screen`` (see below).
     them; see `Groups below quorum`_ for how they stop, and for what they
     change when a member drops out.
 
-``admit_newcomers``
+``use_admission_points``
     When a participant who joins an existing group starts taking part in it.
     Required with ``join_existing_groups=True``; leaving it out warns and
-    uses ``"on_join"``. ``"on_join"`` makes them a member at once, which
-    suits a lobby whose game hasn't started. ``"at_admission_point"`` makes
+    uses ``False``. ``False`` makes them a member at once, which
+    suits a lobby whose game hasn't started. ``True`` makes
     them a *pending member* until the group's next admission point; see
     :ref:`sync-admission-points`.
 
 ``target_group_size``
-    Required with ``admit_newcomers="at_admission_point"``, between
+    Required with ``use_admission_points=True``, between
     ``quorum`` and ``max_group_size``. An admission point that would leave
     the group with fewer members waits up to ``top_up_wait`` for newcomers
     (without a limit if ``top_up_wait`` is ``None``). Set it to the
@@ -920,8 +920,8 @@ The usual way into this is a member who joins during the game. For a
 fixed group that plays rounds, either stop top-ups before the game, with
 ``stop_top_ups=True`` on a barrier before the first round (see
 :ref:`sync-lobby-top-ups`), or admit newcomers only at the start of a round,
-with ``admit_newcomers="at_admission_point"`` (see
-:ref:`sync-admission-points`). With ``"on_join"`` a newcomer is a member
+with ``use_admission_points=True`` (see
+:ref:`sync-admission-points`). Without admission points a newcomer is a member
 like any other once they join, and every barrier waits for them, also one
 they reach after the group has gone, such as one before a separate module
 of rounds (see :ref:`sync-newcomers-at-passed-barriers`).
@@ -1230,7 +1230,7 @@ the maximum waiting time:
     At a group's first barrier the late limit counts from when each member
     was admitted to the group: when it formed for its original members, and
     when they joined for newcomers admitted with
-    ``admit_newcomers="on_join"``.
+    ``use_admission_points=False``.
     Size it to cover everything between the grouper and that barrier, such as
     instructions or a practice trial, or members who read slowly are late
     before they arrive. Removing a late member from the group can also take
@@ -1305,7 +1305,7 @@ Two separate settings decide what happens when someone leaves a group:
     until their ``max_wait_time``, or, if the barrier sets ``late_after``,
     until the grouper's ``top_up_wait``, which is then required (checked
     when the experiment loads, or when a trial shows a barrier built in
-    ``show_trial``). With ``admit_newcomers="at_admission_point"`` only its
+    ``show_trial``). With ``use_admission_points=True`` only its
     admission points wait, because only they can admit a newcomer; its
     other barriers dissolve it when they next check it, so a member left
     below the quorum mid-round is released from the round's barrier with
@@ -1497,7 +1497,7 @@ wait limit, which would otherwise time the members out first:
         start_short_after=60,
         max_wait_time=120,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
         top_up_wait=60,
         below_quorum="continue_without_group",
     )
@@ -1530,11 +1530,11 @@ Letting latecomers join during the game
 
 A newcomer goes through the pages the team went through before they joined,
 including the barriers the team has already passed, such as
-``game_starts``. With ``admit_newcomers="on_join"``, every barrier waits
+``game_starts``. With ``use_admission_points=False``, every barrier waits
 for every member, so the newcomer waits there for members who are further
 on, while the team waits for the newcomer at its next barrier. With
 ``late_after``, the newcomer's barrier then removes the members who were on
-time as late. So with ``"on_join"``, stop top-ups when the game starts,
+time as late. So without admission points, stop top-ups when the game starts,
 with ``stop_top_ups=True`` on the barrier before the first round, as above.
 If teams must keep accepting newcomers during the game, admit them at
 admission points instead.
@@ -1544,7 +1544,7 @@ admission points instead.
 Admission points
 ^^^^^^^^^^^^^^^^
 
-With ``admit_newcomers="at_admission_point"``, a newcomer who joins an
+With ``use_admission_points=True``, a newcomer who joins an
 existing group is a *pending member* until an *admission point* of the
 group admits them. A pending member holds a seat, so the group's
 ``max_group_size`` counts them, but nothing else counts them: not the

@@ -1589,7 +1589,7 @@ def _group_barrier_outcome(
     """
     candidates = [*members, *admissible]
     newcomers_can_help = group.accepts_top_ups and (
-        admission_point or group.admit_newcomers != "at_admission_point"
+        admission_point or not group.uses_admission_points
     )
     if len(candidates) < (group.quorum or 1):
         waits_for_top_ups = newcomers_can_help and not _top_up_wait_over(
@@ -1833,7 +1833,6 @@ RemovalReason = Literal[
 ]
 REMOVAL_REASONS = get_args(RemovalReason)
 
-AdmitNewcomers = Literal["on_join", "at_admission_point"]
 #: Values of :attr:`~psynet.trial.main.Trial.sync_group_outcome` other than
 #: ``None``: ``"stayed"`` once a barrier in the trial's pages releases the
 #: group with the player in it, after which it doesn't change; before that,
@@ -2046,13 +2045,13 @@ class GroupBarrier(Barrier):
         Only affects groups formed with ``join_existing_groups=True``. A group
         below its quorum doesn't pass, so it keeps waiting here for a newcomer,
         up to the grouper's ``top_up_wait``, if set (see :ref:`groups_below_quorum`).
-        A group with ``admit_newcomers="at_admission_point"`` waits only if
+        A group whose grouper has ``use_admission_points=True`` waits only if
         this barrier is an admission point; otherwise it is dissolved. Pending members are turned away as ``"not_admitted"``; at an admission
         point, those waiting here are admitted first.
 
     admission_point
         If ``True``, this barrier admits the group's pending members (see
-        ``SimpleGrouper(admit_newcomers="at_admission_point")``): they wait
+        ``SimpleGrouper(use_admission_points=True)``): they wait
         here, and its release admits them, in the order they joined, together
         with the group, which counts them towards its ``quorum`` and waits up
         to ``top_up_wait`` for newcomers while it has fewer members than the
@@ -3139,14 +3138,14 @@ class SimpleGrouper(Grouper):
         active members, are not joined. Groups keep accepting top-ups until you stop
         them (see :ref:`groups_below_quorum`).
         This behavior can be further customized via the ``join_criterion`` argument.
-        Pass ``admit_newcomers`` to say when such a newcomer starts taking part.
+        Pass ``use_admission_points`` to say when such a newcomer starts taking part.
 
-    admit_newcomers
+    use_admission_points
         When a newcomer who joins an existing group starts taking part in it.
-        ``"on_join"`` admits them at once, so the group's next barrier waits
+        ``False`` admits them at once, so the group's next barrier waits
         for them, which suits groups that only take newcomers before play
         starts (for example in a lobby closed by ``stop_top_ups=True``).
-        ``"at_admission_point"`` makes them a pending member: they hold a
+        ``True`` makes them a pending member: they hold a
         seat, but barriers, the quorum, the leader and
         :class:`~psynet.group_prompt.GroupPrompt` ignore them until the
         group's next admission point (a ``GroupBarrier(admission_point=True)``,
@@ -3154,10 +3153,10 @@ class SimpleGrouper(Grouper):
         :class:`Regrouper` with ``within``) admits them; they pass its other
         barriers straight through. See :ref:`sync-admission-points`.
         Required with ``join_existing_groups=True``; leaving it out warns and
-        uses ``"on_join"``.
+        uses ``False``.
 
     target_group_size
-        With ``admit_newcomers="at_admission_point"``, which requires it, how
+        With ``use_admission_points=True``, which requires it, how
         many members the group tries to have: an admission point that would
         leave it with fewer admitted members waits up to ``top_up_wait`` for
         newcomers (without a limit if ``top_up_wait`` is ``None``), then
@@ -3211,8 +3210,8 @@ class SimpleGrouper(Grouper):
         (checked when the experiment loads, or when a trial shows a barrier
         built in ``show_trial``) if the groups could wait for
         newcomers at a barrier with ``late_after``: any of the group type's
-        such barriers with ``admit_newcomers="on_join"``, or its admission
-        points with ``"at_admission_point"``, unless an earlier barrier has
+        such barriers with ``use_admission_points=False``, or its admission
+        points with ``use_admission_points=True``, unless an earlier barrier has
         ``stop_top_ups=True``.
 
     start_short_after
@@ -3255,7 +3254,7 @@ class SimpleGrouper(Grouper):
         start_short_with: Optional[int] = None,
         quorum: Optional[int] = None,
         top_up_wait: Optional[float] = None,
-        admit_newcomers: Optional[AdmitNewcomers] = None,
+        use_admission_points: Optional[bool] = None,
         target_group_size: Optional[int] = None,
         max_groups: Optional[int] = None,
         **kwargs,
@@ -3407,13 +3406,13 @@ class SimpleGrouper(Grouper):
             )
         self.start_short_after = start_short_after
         self.start_short_with = start_short_with
-        self.admit_newcomers = self._check_admit_newcomers(
-            admit_newcomers, join_existing_groups
+        self.use_admission_points = self._check_use_admission_points(
+            use_admission_points, join_existing_groups
         )
-        if self.admit_newcomers == "at_admission_point":
+        if self.use_admission_points:
             if target_group_size is None:
                 raise ValueError(
-                    "admit_newcomers='at_admission_point' needs target_group_size: "
+                    "use_admission_points=True needs target_group_size: "
                     "how many members an admission point waits for (up to "
                     "top_up_wait) before carrying on."
                 )
@@ -3424,8 +3423,7 @@ class SimpleGrouper(Grouper):
                 )
         elif target_group_size is not None:
             raise ValueError(
-                "target_group_size is only used with "
-                "admit_newcomers='at_admission_point'."
+                "target_group_size is only used with use_admission_points=True."
             )
         self.target_group_size = target_group_size
         if max_groups is not None and (
@@ -3437,29 +3435,29 @@ class SimpleGrouper(Grouper):
         self.max_groups = max_groups
 
     @staticmethod
-    def _check_admit_newcomers(admit_newcomers, join_existing_groups):
-        """Validate ``admit_newcomers``, warning and defaulting when it is left out."""
-        if admit_newcomers is None:
+    def _check_use_admission_points(use_admission_points, join_existing_groups):
+        """Validate ``use_admission_points``, warning and defaulting when it is left out."""
+        if use_admission_points is None:
             if join_existing_groups:
                 warn_from_caller(
                     "SimpleGrouper(join_existing_groups=True) should say when "
-                    "newcomers start taking part: pass admit_newcomers='on_join' "
-                    "(the current behavior) or admit_newcomers='at_admission_point'.",
+                    "newcomers start taking part: pass use_admission_points=False "
+                    "(the current behavior: at once) or use_admission_points=True "
+                    "(at the group's next admission point).",
                     FutureWarning,
                 )
-                return "on_join"
-            return None
-        if admit_newcomers not in get_args(AdmitNewcomers):
+            return False
+        if not isinstance(use_admission_points, bool):
             raise ValueError(
-                "admit_newcomers must be 'on_join' or 'at_admission_point', "
-                f"got {admit_newcomers!r}."
+                "use_admission_points must be True or False, "
+                f"got {use_admission_points!r}."
             )
         if not join_existing_groups:
             raise ValueError(
-                "admit_newcomers requires join_existing_groups=True: only groups "
-                "that take newcomers admit them."
+                "use_admission_points requires join_existing_groups=True: only "
+                "groups that take newcomers admit them."
             )
-        return admit_newcomers
+        return use_admission_points
 
     @property
     def min_group_size(self):
@@ -3630,9 +3628,7 @@ class SimpleGrouper(Grouper):
     def _join_existing_groups(self, participant: Participant, *, wait=False):
         group = self._claim_group_to_join(participant, wait=wait)
         if group is not None:
-            group._add_link(
-                participant, admitted=group.admit_newcomers != "at_admission_point"
-            )
+            group._add_link(participant, admitted=not group.uses_admission_points)
             assert participant.active_sync_groups[self.group_type] == group
             group.check_numbers()
             group.check_leader()
@@ -3775,7 +3771,7 @@ class SimpleGrouper(Grouper):
             accepts_top_ups=self.join_existing_groups,
             below_quorum=self.below_quorum or "fail",
             top_up_wait=self.top_up_wait,
-            admit_newcomers=self.admit_newcomers or "on_join",
+            uses_admission_points=self.use_admission_points,
             target_group_size=self.target_group_size,
         )
 
@@ -4638,7 +4634,7 @@ def check_group_dropout_policies(barriers):
                     barrier,
                     grouper.join_existing_groups,
                     grouper.top_up_wait,
-                    grouper.admit_newcomers,
+                    grouper.use_admission_points,
                     f"SimpleGrouper '{grouper.id}'",
                 )
         if barrier.stop_top_ups:
@@ -4695,7 +4691,7 @@ def check_late_removal_policies(barriers, participant):
                 barrier,
                 group.accepts_top_ups,
                 group.top_up_wait,
-                group.admit_newcomers,
+                group.uses_admission_points,
                 f"the '{barrier.group_type}'",
             )
         if barrier.late_action != "leave_group":
@@ -4709,18 +4705,18 @@ def check_late_removal_policies(barriers, participant):
 
 
 def _check_top_up_wait(
-    barrier, takes_newcomers, top_up_wait, admit_newcomers, groups_label
+    barrier, takes_newcomers, top_up_wait, uses_admission_points, groups_label
 ):
     """Reject a ``late_after`` barrier at which groups taking newcomers could wait for them without a limit."""
     if barrier.late_after is None or not takes_newcomers or top_up_wait is not None:
         return
-    if admit_newcomers == "at_admission_point" and not barrier.admission_point:
+    if uses_admission_points and not barrier.admission_point:
         return
     raise ValueError(
         f"GroupBarrier '{barrier.id}' has late_after, so it has no "
         f"max_wait_time, and {groups_label} groups wait there "
         "for newcomers while they are below their quorum"
-        + (" or target_group_size" if admit_newcomers == "at_admission_point" else "")
+        + (" or target_group_size" if uses_admission_points else "")
         + ". Pass top_up_wait to the grouper to limit that wait, or stop "
         "top-ups before this barrier with stop_top_ups=True on an earlier "
         "GroupBarrier."
@@ -4741,7 +4737,7 @@ def _check_late_action(barrier, below_quorum, grouper_label):
 def check_admission_points(barriers):
     """Check the admission points of groups that admit newcomers at them.
 
-    Each :class:`SimpleGrouper` with ``admit_newcomers="at_admission_point"``
+    Each :class:`SimpleGrouper` with ``use_admission_points=True``
     needs an admission point for its group type: a
     ``GroupBarrier(admission_point=True)``, a synchronized trial maker's
     trial preparation, or a :class:`Regrouper` with ``within`` that type.
@@ -4762,8 +4758,7 @@ def check_admission_points(barriers):
     group_types = {
         barrier.group_type
         for barrier in barriers
-        if isinstance(barrier, SimpleGrouper)
-        and barrier.admit_newcomers == "at_admission_point"
+        if isinstance(barrier, SimpleGrouper) and barrier.use_admission_points
     }
     found = set()
     for barrier in barriers:
@@ -4780,7 +4775,7 @@ def check_admission_points(barriers):
             raise ValueError(
                 f"{barrier._admission_point_owner} admits newcomers to "
                 f"'{barrier.group_type}' groups, whose grouper uses "
-                f"admit_newcomers='at_admission_point', so pass "
+                f"use_admission_points=True, so pass "
                 f"{barrier._newcomer_max_wait_option}: the longest a newcomer "
                 "may wait for it, in seconds from joining, before they are "
                 "turned away."
@@ -4788,7 +4783,7 @@ def check_admission_points(barriers):
     for group_type in sorted(group_types - found):
         warnings.warn(
             f"The grouper of '{group_type}' groups uses "
-            "admit_newcomers='at_admission_point', but the timeline has no "
+            "use_admission_points=True, but the timeline has no "
             "admission point for them, so newcomers would never be admitted. "
             "Add GroupBarrier(admission_point=True, ...), a synchronized trial "
             f"maker with sync_group_type='{group_type}', or a Regrouper within "
@@ -4901,7 +4896,7 @@ class SyncGroup(SQLBase, SQLMixin):
     below_quorum = None
     #: When newcomers are admitted and how many an admission point waits
     #: for; only :class:`SimpleSyncGroup` takes newcomers.
-    admit_newcomers = "on_join"
+    uses_admission_points = False
     target_group_size = None
 
     def stop_top_ups(self):
@@ -4990,7 +4985,7 @@ class SyncGroup(SQLBase, SQLMixin):
     def pending_participants(self) -> List[Participant]:
         """Members who have joined but not been admitted yet, in the order they joined.
 
-        Only a grouper with ``admit_newcomers="at_admission_point"`` makes
+        Only a grouper with ``use_admission_points=True`` makes
         pending members: each holds a seat until the group's next admission
         point admits them or turns them away (see
         :ref:`sync-admission-points`).
@@ -5340,9 +5335,9 @@ class SimpleSyncGroup(SyncGroup):
     #: What happens to members when the group dissolves below quorum: ``"fail"``
     #: or ``"continue_without_group"``.
     below_quorum = Column(String, default="fail")
-    #: When newcomers are admitted: ``"on_join"`` or ``"at_admission_point"``;
-    #: see ``SimpleGrouper(admit_newcomers=...)``.
-    admit_newcomers = Column(String, default="on_join")
+    #: Whether newcomers wait as pending members for an admission point
+    #: instead of joining at once; see ``SimpleGrouper(use_admission_points=...)``.
+    uses_admission_points = Column(Boolean, default=False)
     #: How many members an admission point waits for, up to ``top_up_wait``;
     #: see ``SimpleGrouper(target_group_size=...)``.
     target_group_size = Column(Integer)
@@ -6186,7 +6181,7 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     # ``GroupBarrier.late_after``.
     page_deadline = Column(DateTime)
     #: When the group took the member in: at formation, on joining with
-    #: ``admit_newcomers="on_join"``, or at an admission point. ``None``
+    #: ``use_admission_points=False``, or at an admission point. ``None``
     #: while they are pending (see :attr:`SyncGroup.pending_participants`).
     admitted_at = Column(DateTime)
     #: How many of the group's admission points released the member once

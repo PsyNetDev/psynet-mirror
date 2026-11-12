@@ -13,7 +13,7 @@ shows each member's colour and slider value from the step before.
 A member who drops out can be replaced: ``join_existing_groups`` with
 ``join_criterion=is_group_joinable`` lets a newcomer join while the group's
 leader has more than one trial left. With
-``admit_newcomers="at_admission_point"`` the newcomer is a pending member
+``use_admission_points=True`` the newcomer is a pending member
 until the trial maker prepares the group's next step, which admits them, so
 the group's current step doesn't wait for them. A newcomer still waiting
 after ``sync_group_newcomer_max_wait`` seconds is turned away.
@@ -194,7 +194,7 @@ class Exp(psynet.experiment.Experiment):
             initial_group_size=3,
             quorum=3,
             join_existing_groups=True,
-            admit_newcomers="at_admission_point",
+            use_admission_points=True,
             target_group_size=3,
             join_criterion=is_group_joinable,
             waiting_message="Waiting for more people to join your group",

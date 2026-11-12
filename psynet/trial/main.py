@@ -4735,5 +4735,5 @@ def _check_named_round(group_round, group, participant, trial_class):
             f"'{group_round.module_id}', which the group already finished without "
             "them. Newcomers should join at an admission point before the "
             "round, such as GroupBarrier(admission_point=True) with a "
-            "grouper using admit_newcomers='at_admission_point'."
+            "grouper using use_admission_points=True."
         )

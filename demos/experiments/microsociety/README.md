@@ -16,7 +16,7 @@ good spots survives the turnover of the people who found them.
 
 Good reference for a group that runs on with changing membership:
 `SimpleGrouper(..., join_existing_groups=True,
-admit_newcomers="at_admission_point")` with a `max_group_size` one above
+use_admission_points=True)` with a `max_group_size` one above
 the society's size, a `while_loop` whose rounds start at a
 `GroupBarrier(admission_point=True, newcomer_page=...)` that admits waiting
 newcomers and shows them the society's history, then cued trials without

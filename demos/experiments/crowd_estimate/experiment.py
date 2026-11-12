@@ -71,7 +71,7 @@ def get_timeline():
             start_short_after=START_SHORT_AFTER,
             join_existing_groups=True,
             # Latecomers join until the game starts (stop_top_ups at game_starts).
-            admit_newcomers="on_join",
+            use_admission_points=False,
             top_up_wait=TOP_UP_WAIT,
             below_quorum="continue_without_group",
             max_wait_time=LOBBY_WAIT,

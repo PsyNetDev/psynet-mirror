@@ -120,7 +120,7 @@ end, and an unfinished filler trial fails; pass ``release_grace=None`` to
 keep the old behavior (see :ref:`sync-waiting-pages`).
 
 **Newcomers and seeing the group.** With
-``admit_newcomers="at_admission_point"``, a group takes newcomers during a
+``use_admission_points=True``, a group takes newcomers during a
 game without anyone waiting for them: a newcomer holds a seat but takes
 part only from the group's next admission point, such as the start of a
 round (see :ref:`sync-admission-points`). Participants see each other by

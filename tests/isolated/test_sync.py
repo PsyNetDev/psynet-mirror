@@ -769,7 +769,7 @@ def test_grouper_leftover_waiter_joins_an_open_group(
         initial_group_size=2,
         max_group_size=None,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
     )
     participants = _working_participants(exp, 3)
     for participant in participants:
@@ -821,7 +821,7 @@ def test_grouper_does_not_join_a_group_without_active_members(
         initial_group_size=2,
         max_group_size=None,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
     )
 
     assert grouper.choose_who_to_release([newcomer]) == []
@@ -848,7 +848,7 @@ def test_simultaneous_joins_do_not_overfill_a_group(
         initial_group_size=2,
         max_group_size=3,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
     )
     first_joined, first_may_commit = threading.Event(), threading.Event()
     errors, second_pid = [], []
@@ -933,7 +933,7 @@ def test_join_skips_a_group_that_another_request_is_changing(
         initial_group_size=2,
         max_group_size=3,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
     )
 
     with db.engine.connect() as other, other.begin():
@@ -992,7 +992,7 @@ def test_newcomer_waits_briefly_for_a_busy_group_instead_of_the_poller(
         initial_group_size=2,
         max_group_size=4,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
     )
 
     def hold_group_row(other):
@@ -1050,7 +1050,7 @@ def test_newcomer_waiting_for_a_busy_group_holds_no_full_groups_row(
         initial_group_size=2,
         max_group_size=4,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
     )
     lock_sql = "SELECT id FROM sync_group WHERE id = :id FOR NO KEY UPDATE"
     full_id, busy_id = full.id, busy.id
@@ -1095,7 +1095,7 @@ def test_newcomer_releases_a_busy_group_found_full_after_waiting(
         initial_group_size=2,
         max_group_size=4,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
     )
     full_id = full.id
     db_session.commit()
@@ -7406,7 +7406,7 @@ def test_a_time_out_before_joining_an_open_group_gives_no_dash(
         initial_group_size=2,
         max_group_size=None,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
     )
     founders = _working_participants(exp, 2)
     for participant in founders:
@@ -7543,17 +7543,17 @@ def test_a_custom_grouper_s_group_without_a_quorum_passes_its_barrier():
 
 
 @pytest.mark.parametrize(
-    "admit_newcomers, admission_point, top_up_wait, stopped_before, raises",
+    "use_admission_points, admission_point, top_up_wait, stopped_before, raises",
     [
-        ("on_join", False, None, False, True),
-        ("on_join", False, 60, False, False),
-        ("on_join", False, None, True, False),
-        ("at_admission_point", False, None, False, False),
-        ("at_admission_point", True, None, False, True),
+        (False, False, None, False, True),
+        (False, False, 60, False, False),
+        (False, False, None, True, False),
+        (True, False, None, False, False),
+        (True, True, None, False, True),
     ],
 )
 def test_late_after_barriers_need_a_top_up_wait_while_groups_take_newcomers(
-    admit_newcomers, admission_point, top_up_wait, stopped_before, raises
+    use_admission_points, admission_point, top_up_wait, stopped_before, raises
 ):
     def make_timeline():
         return Timeline(
@@ -7561,10 +7561,8 @@ def test_late_after_barriers_need_a_top_up_wait_while_groups_take_newcomers(
                 "team",
                 initial_group_size=2,
                 join_existing_groups=True,
-                admit_newcomers=admit_newcomers,
-                target_group_size=(
-                    2 if admit_newcomers == "at_admission_point" else None
-                ),
+                use_admission_points=use_admission_points,
+                target_group_size=2 if use_admission_points else None,
                 top_up_wait=top_up_wait,
                 below_quorum="continue_without_group",
             ),
@@ -8029,7 +8027,7 @@ def test_top_up_wait_limits_how_long_a_group_waits_for_newcomers(
         "team",
         initial_group_size=2,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
         below_quorum="continue_without_group",
         top_up_wait=10,
     )
@@ -8064,7 +8062,7 @@ def test_top_up_wait_starts_when_the_last_remaining_member_arrives(
         initial_group_size=3,
         quorum=3,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
         below_quorum="continue_without_group",
         top_up_wait=10,
     )
@@ -8099,7 +8097,7 @@ def _lobby_recipe():
         start_short_after=60,
         max_wait_time=120,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
         top_up_wait=60,
         below_quorum="continue_without_group",
     )
@@ -8182,7 +8180,7 @@ def test_a_member_who_left_or_whose_group_ended_keeps_it_as_latest(
         max_group_size=3,
         quorum=2,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
     )
     founder, other, newcomer, outsider = _working_participants(exp, 4)
     group = grouper._make_group([founder, other], initial_group_size=2)
@@ -8216,7 +8214,7 @@ def _society(exp, db_session, *, target_group_size=2, n_newcomers=1):
         quorum=2,
         target_group_size=target_group_size,
         join_existing_groups=True,
-        admit_newcomers="at_admission_point",
+        use_admission_points=True,
         top_up_wait=30,
         below_quorum="continue_without_group",
     )
@@ -8234,15 +8232,15 @@ def _society(exp, db_session, *, target_group_size=2, n_newcomers=1):
     "kwargs, error",
     [
         (dict(join_existing_groups=True), FutureWarning),
-        (dict(admit_newcomers="on_join"), ValueError),
+        (dict(use_admission_points=False), ValueError),
         (
-            dict(join_existing_groups=True, admit_newcomers="at_admission_point"),
+            dict(join_existing_groups=True, use_admission_points=True),
             ValueError,
         ),
         (
             dict(
                 join_existing_groups=True,
-                admit_newcomers="at_admission_point",
+                use_admission_points=True,
                 target_group_size=5,
             ),
             ValueError,
@@ -8255,8 +8253,8 @@ def test_simple_grouper_checks_its_admission_options(kwargs, error):
     if not options.get("join_existing_groups"):
         options["max_group_size"] = "initial_group_size"
     if error is FutureWarning:
-        with pytest.warns(FutureWarning, match="admit_newcomers"):
-            assert SimpleGrouper("team", **options).admit_newcomers == "on_join"
+        with pytest.warns(FutureWarning, match="use_admission_points"):
+            assert not SimpleGrouper("team", **options).use_admission_points
     else:
         with pytest.raises(error):
             SimpleGrouper("team", **options)
@@ -8498,7 +8496,7 @@ def test_group_barrier_counts_a_newcomer_joining_in_another_request(
         initial_group_size=4,
         quorum=2,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
         below_quorum="fail",
     )
     game_starts = GroupBarrier(
@@ -8601,7 +8599,7 @@ def _top_up_team_waiting_at(exp, db_session, barrier, n_starters=2):
         initial_group_size=4,
         quorum=2,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
         below_quorum="fail",
     )
     starters = _working_participants(exp, n_starters)
@@ -8705,7 +8703,7 @@ def test_a_closed_join_criterion_doesnt_stop_top_ups(
         "team",
         initial_group_size=2,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
         join_criterion=lambda group, participant: False,
         below_quorum="continue_without_group",
     )

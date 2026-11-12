@@ -83,7 +83,7 @@ def get_timeline():
             join_existing_groups=True,
             # A latecomer joins at the next round's pairing, which admits
             # them, and isn't counted or waited for until then.
-            admit_newcomers="at_admission_point",
+            use_admission_points=True,
             target_group_size=MIN_COHORT_SIZE,
             waiting_message=lobby_message,
             waiting_screen=forming_cohort,

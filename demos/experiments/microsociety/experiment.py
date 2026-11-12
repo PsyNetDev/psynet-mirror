@@ -6,7 +6,7 @@ where the others fished and what they caught. Each fish pays ``FISH_VALUE``.
 
 The society takes newcomers for as long as it lasts
 (``join_existing_groups=True``). A newcomer is a pending member
-(``admit_newcomers="at_admission_point"``) until the start of the next
+(``use_admission_points=True``) until the start of the next
 round, a ``GroupBarrier`` with ``admission_point=True`` that admits them and shows
 them the society's recent catches and tips (``newcomer_page``). When a round
 had more than three members because a newcomer joined it, the
@@ -96,7 +96,7 @@ def get_timeline():
             max_group_size=SOCIETY_SIZE + 1,
             quorum=2,
             join_existing_groups=True,
-            admit_newcomers="at_admission_point",
+            use_admission_points=True,
             # Two members play a round without waiting for a third.
             target_group_size=2,
             below_quorum="continue_without_group",

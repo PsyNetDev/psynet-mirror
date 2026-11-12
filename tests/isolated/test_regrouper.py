@@ -395,7 +395,7 @@ def test_simple_grouper_quorum():
         lobby(
             quorum=6,
             join_existing_groups=True,
-            admit_newcomers="on_join",
+            use_admission_points=False,
             max_group_size=5,
         )
     with pytest.raises(TypeError, match="below_quorum='continue_without_group'"):
@@ -795,7 +795,7 @@ def _open_cohorts(
         quorum=initial_group_size,
         max_group_size=6,
         join_existing_groups=True,
-        admit_newcomers="on_join",
+        use_admission_points=False,
         below_quorum=below_quorum,
     )
     pairs = Regrouper(
@@ -1107,7 +1107,7 @@ def test_a_regrouper_split_admits_pending_members_of_its_within_group(
         max_group_size=3,
         target_group_size=2,
         join_existing_groups=True,
-        admit_newcomers="at_admission_point",
+        use_admission_points=True,
         below_quorum="continue_without_group",
     )
     trios = Regrouper("trio", within="cohort", group_size=3, deadline=30)
