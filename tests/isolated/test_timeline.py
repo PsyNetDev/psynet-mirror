@@ -697,6 +697,7 @@ def test_finalize_pending_hold_without_checks_relocks_the_participant(monkeypatc
         is_ready_to_resume=lambda *_args: True,
         prepare_resume_if_ready=lambda *_args: True,
         pre_render=lambda: None,
+        waiting_screen_page=lambda _participant: None,
         early_exit_available=lambda *_args: False,
     )
     query = MagicMock()
@@ -746,6 +747,7 @@ def test_finalize_pending_ready_hold_does_not_prepare_before_relock(monkeypatch)
             )
         ),
         pre_render=lambda: None,
+        waiting_screen_page=lambda _participant: None,
         early_exit_available=lambda *_args: False,
     )
     participant = SimpleNamespace(id=42)
@@ -819,6 +821,7 @@ def test_finalize_pending_unreleased_hold_rechecks_without_relock(monkeypatch):
         prepare_resume_if_ready=lambda *_args: False,
         barrier_id="main",
         pre_render=lambda: None,
+        waiting_screen_page=lambda _participant: None,
         early_exit_available=lambda *_args: False,
     )
     participant = SimpleNamespace(id=1)
@@ -869,6 +872,7 @@ def test_finalize_pending_hold_without_is_ready_does_not_prepare(monkeypatch):
         prepare_resume_if_ready=lambda *_args: prepared.append("prepare") or True,
         barrier_id="main",
         pre_render=lambda: None,
+        waiting_screen_page=lambda _participant: None,
         early_exit_available=lambda *_args: False,
     )
     participant = SimpleNamespace(id=1)

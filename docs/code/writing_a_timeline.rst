@@ -221,6 +221,70 @@ branch of end logic, which you can replace with keyword arguments to
 See :class:`~psynet.end.SuccessfulEndLogic` and
 :class:`~psynet.end.UnsuccessfulEndLogic`.
 
+When PsyNet ends a multiplayer session itself (a participant waited too long
+at a barrier, was too slow to reach the next one, or their group became too
+small), the unsuccessful end page says why, for example "We waited too long
+for other participants, so we ended your session." Other endings, such as
+failing a prescreen, get no such line. To explain your own reasons, pass a
+function of the participant that returns a line, or ``None`` to keep
+PsyNet's:
+
+.. code-block:: python
+
+    def failure_message(participant):
+        if "performance_check" in participant.failure_tags:
+            return "Your answers suggest that your headphones aren't working."
+        return None
+
+    Timeline(..., unsuccessful_end=UnsuccessfulEndLogic(failure_message=failure_message))
+
+You can also pass a plain string, but it replaces PsyNet's own lines for
+every participant, including the multiplayer ones. Returning ``""`` shows no
+line at all.
+
+To end without waiting for a click on Finish, for example in a multiplayer
+game, pass ``auto_continue_seconds``. The page then adds "This page continues
+by itself in 3 s." and counts down:
+
+.. code-block:: python
+
+    Timeline(
+        ...,
+        successful_end=SuccessfulEndLogic(auto_continue_seconds=3),
+        unsuccessful_end=UnsuccessfulEndLogic(auto_continue_seconds=3),
+    )
+
+Time limits
+-----------
+
+Pass ``time_limit`` to any :class:`~psynet.timeline.Page` to allow only that
+many seconds on it. The page shows "15 s left" at the top, where waiting
+messages also appear, counting down, and when time runs out it submits
+``time_limit_answer`` for the participant:
+
+.. code-block:: python
+
+    ModularPage(
+        "offer",
+        "How many coins do you offer?",
+        PushButtonControl(choices=list(range(11))),
+        time_limit=15,
+        time_limit_answer="timeout",
+        time_estimate=15,
+    )
+
+The server counts the time from when the participant reached the page, so
+reloading the page does not restart the countdown. The time includes any
+wait before the participant can answer, such as audio that must finish
+before the Next button is enabled, so allow for it in ``time_limit``. The
+server also records ``time_limit_answer`` for an answer that arrives more
+than 5 seconds after the limit, so a tampered or stalled page cannot take
+longer. A timed page cannot have a ``session_id``. Answers given because of
+the time limit skip validation and have ``time_limit_reached`` in their
+response metadata. To place the countdown yourself, put an element with
+the attribute ``data-psynet-seconds-left`` in the page's content, for example
+``<p>Answer within <span data-psynet-seconds-left></span> seconds.</p>``.
+
 Time estimates
 --------------
 

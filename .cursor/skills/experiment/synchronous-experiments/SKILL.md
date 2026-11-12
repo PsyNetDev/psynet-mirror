@@ -81,12 +81,13 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `Regrouper(group_type, group_size=..., deadline=..., within=...)` at the
   start of each round instead of a grouper and closer. Slow participants miss a
   round and join the next one rather than being failed. Pair it with
-  `GroupBarrier(timeout_between_barriers_action="kick",
-  skip_if_not_in_group=True)` so kicked participants pass the round's later
-  barriers, as in the `lowest_unique_number` and `ultimatum_pairing` demos.
-  With `release_left_over=True`, odd players out sit out the round; with
-  `within`, a player waiting alone first waits one more deadline for
-  teammates, so `max_wait_time` must exceed twice the deadline.
+  `GroupBarrier(timeout_between_barriers_time=...,
+  timeout_between_barriers_action="kick")` so late members are removed and
+  pass the barrier, as in the `lowest_unique_number` and `ultimatum_pairing`
+  demos; give the round's other barriers `skip_if_not_in_group=True`. Use
+  `pairs_avoiding_repeats` in `form_groups` to avoid repeat partners. With `release_left_over=True`, odd players out sit
+  out the round; with `within`, a player waiting alone first waits one more
+  deadline for teammates, so `max_wait_time` must exceed twice the deadline.
 - For a lobby that should not wait forever for a full group, use
   `SimpleGrouper(min_group_size=..., start_short_after=...)`, with
   `join_existing_groups=True` to let latecomers fill it up.
@@ -129,7 +130,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Run `psynet test local` with at least as many bots as the group size, plus
   extra bots for late-arrival or top-up paths.
 - Use serial bot tests with `advance_past_wait_pages(bots)` for deterministic
-  barrier progression; use concurrent bot runs when arrival races matter.
+  barrier progression. It polls for up to 10 s; pass a longer `timeout=` when
+  rounds start on a clock or a deadline. Use concurrent bot runs when arrival
+  races matter.
 - Assert group formation, active group size, role assignment, shared node/trial
   IDs, barrier IDs, `on_release` side effects, and failed/overflow exits.
 - Test dropout and top-up behavior, not only a complete group that finishes.

@@ -16,6 +16,7 @@ _PAGE_ATTRS = (
     "waiting_logic",
     "_uses_timeline_hold",
     "waiting_logic_expected_repetitions",
+    "_waiting_logic_repetitions",
 )
 
 

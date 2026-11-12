@@ -4359,6 +4359,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 return ResponseResult(
                     payload=self._approved_payload(participant, page), page=page
                 )
+            # Pages that only duck-type ``process_response`` have no time limit.
+            seconds_to_wait = (
+                event._time_limit_seconds_to_wait(metadata, participant)
+                if hasattr(event, "_time_limit_seconds_to_wait")
+                else None
+            )
+            if seconds_to_wait is not None:
+                # The browser's countdown ended before the server's; it
+                # resubmits once the server's deadline arrives.
+                return ResponseResult(
+                    payload={
+                        "submission": "rejected",
+                        "message": "",
+                        "time_limit_seconds_left": seconds_to_wait,
+                    }
+                )
             with forbid_commits(
                 f"Response processing for {_timeline_step_name(event)}"
             ):
@@ -4371,16 +4387,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     client_ip_address=client_ip_address,
                     answer=answer,
                 )
-                validation = event._reject_impossible_answer(response.answer)
-                if validation is None:
-                    validation = event.validate(
-                        response=response,
-                        answer=response.answer,
-                        raw_answer=raw_answer,
-                        participant=participant,
-                        experiment=self,
-                        page=event,
-                    )
+                # Time-outs skip ``validate``, but an answer from the browser
+                # must still be one of the page's choices.
+                timed_out = (response.metadata or {}).get("time_limit_reached") is True
+                if timed_out and getattr(response, "_server_time_limit_answer", False):
+                    validation = None
+                else:
+                    validation = event._reject_impossible_answer(response.answer)
+                    if validation is None and not timed_out:
+                        validation = event.validate(
+                            response=response,
+                            answer=response.answer,
+                            raw_answer=raw_answer,
+                            participant=participant,
+                            experiment=self,
+                            page=event,
+                        )
                 if isinstance(validation, str):
                     validation = FailedValidation(message=validation)
 
@@ -6701,10 +6723,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not isinstance(bot_response, BotResponse):
                 bot_response = BotResponse(answer=bot_response)
 
+            shown_page = current_page
+            if _is_timeline_hold(current_page):
+                shown_page = (
+                    current_page.waiting_screen_page(participant) or current_page
+                )
             status["page"] = {
                 "id": current_page.id,
                 "label": current_page.label,
-                "text": current_page.plain_text,
+                "text": shown_page.plain_text,
                 "time_estimate": current_page.time_estimate,
                 "min_duration": current_page.min_duration,
                 "is_timeline_hold": _is_timeline_hold(current_page),
@@ -7259,18 +7286,24 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             experiment.timeline.advance_page(experiment, participant)
 
         page = experiment.timeline.get_current_elt(experiment, participant)
-        with forbid_commits(f"{type(page).__name__}.pre_render"):
-            page.pre_render()
+        cls._pre_render(page, participant)
 
         return page
+
+    @staticmethod
+    def _pre_render(page, participant):
+        """Run ``pre_render`` for the page and, on a timeline hold, its waiting screen."""
+        with forbid_commits(f"{type(page).__name__}.pre_render"):
+            page.pre_render()
+        if _is_timeline_hold(page):
+            page.waiting_screen_page(participant)
 
     @classmethod
     def _prepare_resolved_timeline_page(cls, experiment, participant, page):
         """Run write-phase preparation for the page that will be rendered."""
         if page is None:
             return page
-        with forbid_commits(f"{type(page).__name__}.pre_render"):
-            page.pre_render()
+        cls._pre_render(page, participant)
         available = getattr(page, "early_exit_available", None)
         if callable(available) and available(experiment, participant):
             experiment.prepare_voluntary_exit_plan(participant)
@@ -7938,16 +7971,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     raise RuntimeError(
                         "Approved response did not retain its resolved page."
                     )
-                if not _is_timeline_hold(page):
+                if participant is None:
+                    participant = cls._participant_request_query().get(participant_id)
+                if _is_timeline_hold(page):
+                    render_fragment = page.waiting_screen_page(participant) is not None
+                else:
                     render_fragment = not page.requires_full_page_reload
-                    if render_fragment:
-                        if participant is None:
-                            participant = cls._participant_request_query().get(
-                                participant_id
-                            )
-                        page_uuid_after_response = cls._prepare_approved_inplace_page(
-                            exp, participant, page, payload
-                        )
+                if render_fragment:
+                    page_uuid_after_response = cls._prepare_approved_inplace_page(
+                        exp, participant, page, payload
+                    )
             if result.recording_response_id is not None:
                 from .media_upload import _refresh_recording_receipt
 

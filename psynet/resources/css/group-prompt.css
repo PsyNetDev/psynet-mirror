@@ -159,6 +159,11 @@
     visibility: visible;
 }
 
+.psynet-group-member--left .psynet-group-avatar {
+    opacity: 0.35;
+    filter: grayscale(1);
+}
+
 .psynet-group-bubble {
     position: relative;
     width: max-content;

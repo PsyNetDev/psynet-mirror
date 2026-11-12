@@ -17,7 +17,8 @@ Forming groups
 
 :class:`~psynet.sync.SimpleGrouper` waits until enough participants are
 waiting, then randomly splits them into groups. Participants stay on their
-current page, under a waiting indicator, until their group is formed.
+current page, under a waiting indicator, until their group is formed, unless
+the grouper has a ``waiting_screen`` (see below).
 
 ``group_type``
     A label for the groups. Barriers and trial makers refer to the groups by
@@ -176,8 +177,9 @@ on their own.
 
 ``form_groups``
     A function of ``members``, ``within_group`` and ``regrouper`` that returns
-    the groups as lists of participants, for example to avoid repeat partners.
-    Members not placed in a group are left over. You can also subclass
+    the groups as lists of participants, for example to avoid repeat partners
+    with :func:`~psynet.sync.pairs_avoiding_repeats`. Members not placed in a
+    group are left over. You can also subclass
     :class:`~psynet.sync.Regrouper` and override
     :meth:`~psynet.sync.Regrouper.form_groups`.
 
@@ -221,10 +223,12 @@ on, and they join the next round:
 
 The kicked player sees "Your group went on without you. Please continue." on the progress bar
 straight away (pass ``on_arrival_message`` to change it), and is no longer in
-a room when they reach the barrier. ``skip_if_not_in_group=True`` lets them
-pass straight through, and ``show_result`` then tells them they sat the round
-out. Without it, a
-participant who reaches a group barrier outside a group gets an error.
+a room when they reach the barrier. A barrier that kicks lets participants
+who are not in a group pass straight through (``skip_if_not_in_group``
+defaults to ``True``), and ``show_result`` then tells them they sat the round
+out. Pass ``skip_if_not_in_group=True`` to the round's other barriers too.
+Without it, a participant who reaches a group barrier outside a group gets an
+error.
 
 In the ``ultimatum_pairing`` demo, teams form in a lobby and are re-paired
 every round. The lobby starts a smaller team after a minute and lets
@@ -307,8 +311,20 @@ have no side effects. Notices must fit on one line:
 Pages with a :class:`~psynet.group_prompt.GroupPrompt` that ticks members
 live don't show the notice, since the ticks say the same.
 
-The waiting indicator's own text comes from ``content``. A ``content``
-function on a group barrier can also take ``waiting_count`` and
+``content`` can also be a module-level function of the participant, so that
+members waiting at the same barrier see different messages, for example by
+role (it can also take ``seconds_left``; see :ref:`countdown messages <sync-countdown-messages>`):
+
+.. code-block:: python
+
+    def waiting_text(participant):
+        if participant.var.role == "proposer":
+            return "Waiting for your partner to accept or reject your offer…"
+        return "Your partner is deciding how much to offer you…"
+
+    GroupBarrier(id_="decided", group_type="pair", content=waiting_text)
+
+A ``content`` function on a group barrier can also take ``waiting_count`` and
 ``group_size`` (both ``None`` if the participant has no group); return
 :func:`~psynet.sync.hold_message` from it to write the second line yourself,
 or to leave it out:
@@ -324,6 +340,41 @@ or to leave it out:
         )
 
     GroupBarrier(id_="chosen", group_type="room", content=waiting_text)
+
+By default the participant's last page stays on screen, greyed out, while
+they wait. To show something else instead, pass ``waiting_screen``; to give
+them something to do, such as filler trials, pass ``waiting_logic``
+instead. A waiting screen can be text,
+a prompt, or a :class:`~psynet.modular_page.ModularPage` without a Next
+button (``NullControl(show_next_button=False)``), or a module-level
+function of the participant that returns one of these, or ``None`` to keep
+the last page. The participant can't submit a waiting screen, so a page
+with a Next button, push buttons or ``auto_advance`` raises an error; use
+a control that doesn't submit, such as ``NullControl``. Groupers and :func:`~psynet.page.wait_while` take ``waiting_screen`` too,
+for example to replace the instructions while a team forms. A barrier
+without a waiting screen (or one whose function returns ``None``) that
+follows another barrier's waiting screen shows a plain waiting page, since
+the last page is no longer on screen. In the following example, the
+participant's own choice replaces the buttons they chose it with.
+``show_progress=False`` hides the answer ticks, which would otherwise
+also tick a partner who reached the barrier because their page timed out:
+
+.. code-block:: python
+
+    def your_choice(participant):
+        return GroupPrompt(
+            f"You offer {participant.var.decision} coins.",
+            participant=participant,
+            group_type="pair",
+            show_progress=False,
+        )
+
+    GroupBarrier(
+        id_="decided",
+        group_type="pair",
+        content="Waiting for your partner…",
+        waiting_screen=your_choice,
+    )
 
 Showing the group
 ~~~~~~~~~~~~~~~~~
@@ -349,49 +400,72 @@ the viewer's cluster comes first:
 
 .. code-block:: python
 
-    GroupPrompt("Pick a number.", group=room, participant=participant, subgroups="pair")
+    GroupPrompt("Pick a number.", participant=participant, group_type="room", subgroups="pair")
 
 On a decision page, members who have answered get a tick. A member has
 answered once they wait at a barrier of the group, typically the barrier
 after the decision page, and the ticks appear live as members arrive (this
 uses the barrier's arrival updates, so it needs ``notify_arrivals``). Pass
 ``show_progress=False`` to hide the ticks, or ``answered`` to decide who has
-answered when the page is drawn. Members who join or leave the group appear
-or disappear live too, on any page without ``answers``, ``answered`` or
-``highlight``, unless ``subgroups`` is a function. Live redraws need the same
-``FLASK_SECRET_KEY`` on every web process; without one, PsyNet logs a warning
-and the group stays as first drawn:
+answered when the page is drawn. Members who join the group appear live
+too, and members who leave are faded (see below), on any page without
+``answers``, ``answered`` or ``highlight``, unless ``subgroups`` is a function.
+Live redraws need the same ``FLASK_SECRET_KEY`` on every web process; without
+one, PsyNet logs a warning and the group stays as first drawn:
 
 .. code-block:: python
 
     from psynet.group_prompt import GroupPrompt
 
     def choose_number(participant):
-        room = participant.active_sync_groups["room"]
         return ModularPage(
             "choose",
-            GroupPrompt("Pick a number.", group=room, participant=participant),
+            GroupPrompt("Pick a number.", participant=participant, group_type="room"),
             PushButtonControl(choices=[1, 2, 3, 4, 5]),
             save_answer="choice",
         )
 
 After the barrier, pass ``answers`` to show each member's answer in a speech
-bubble. Speech bubbles may overlap a neighbour; hovering over or tapping a
-member brings their bubble to the front. Answers are shown as text; pass :class:`~markupsafe.Markup` for HTML
-such as an image. ``highlight`` marks members, with built-in styles for
+bubble, as a dictionary from participant ID to answer. Participant variables
+store dictionary keys as strings, so a dictionary read back from one can be
+passed as it is; ``highlight`` takes string IDs too. Speech bubbles may
+overlap a neighbour; hovering over or tapping a member brings their bubble to
+the front. Answers are shown as text; pass :class:`~markupsafe.Markup` for
+HTML such as an image. ``highlight`` marks members, with built-in styles for
 ``"winner"`` and ``"duplicate"``, and ``note`` adds a line of text:
 
 .. code-block:: python
 
+    result = participant.var.last_round
+    choices = result["choice_by_player"]
     GroupPrompt(
         "The winning number was 2.",
-        group=room,
         participant=participant,
-        answers={p.id: p.var.choice for p in room.participants},
-        highlight={winner.id: "winner"},
+        group_type="room",
+        answers=choices,
+        highlight={pid: "winner" for pid, n in choices.items() if n == 2},
     )
 
-The ``lowest_unique_number`` demo uses both.
+Store the answers when the barrier releases, as the ``lowest_unique_number``
+demo does in ``on_release``, rather than reading them from the group's
+current members: a member who has already moved on to the next round is no
+longer in the group, and would disappear if the page is reloaded.
+
+Without ``group``, the prompt shows the participant's group of type
+``group_type``, or their only group. A participant who is no longer in it,
+for example because a barrier removed them for being late, sees just the
+text, as they do with ``group=self.sync_group`` in trial code (it is ``None``
+after such a removal), so the prompt itself needs no special case on pages that a late
+player may still reach; the page's other content, such as a round's
+outcome, may still need one. The members who stay see the removed player
+faded in their seat, labelled "(out of time)" if a barrier removed them for
+being late, "(left)" if they failed or left the experiment, and "(dropped
+out)" otherwise. Players who moved on to their next group, such as next
+round's pair at a :class:`~psynet.sync.Regrouper`, are no longer shown,
+except with their answer on a results page (one with ``answers``), and
+neither are leavers of groups that accept top-ups, such as a lobby.
+Removing a member with :meth:`~psynet.sync.SyncGroup.remove_participant`
+accepts a ``reason`` (``"moved_on"`` or ``"out_of_time"``) for these labels.
 
 Trial makers
 ~~~~~~~~~~~~
@@ -522,8 +596,15 @@ participant is released. In ``sync_quorum``, waiting participants answer
 trials from another trial maker:
 
 .. literalinclude:: ../../../demos/experiments/sync_quorum/experiment.py
-   :start-at: waiting_logic = PageMaker(
+   :start-at: def waiting_logic(
    :end-before: class Exp
+
+``expected_wait`` says how long participants are expected to wait, in
+seconds. With ``waiting_logic``, progress estimates assume the waiting pages
+repeat often enough to fill that time, rounded up to whole passes; here,
+``expected_wait=10 * AnimalTrial.time_estimate`` expects ten trials. Without
+``expected_wait``, three passes are expected. The older
+``waiting_logic_expected_repetitions`` argument is deprecated.
 
 When the barrier releases a participant who is on a waiting page, the page
 ends ``release_grace`` seconds (default 3; see
@@ -565,8 +646,9 @@ Time credit
 By default, participants are credited for the time they actually wait, up to
 ``max_wait_time``. Set ``fix_time_credit=True`` to credit every participant
 ``expected_wait`` seconds instead (1.5 seconds by default). With
-``waiting_logic``, the waiting pages are credited by their own time
-estimates.
+``waiting_logic``, participants are credited for the waiting pages they
+complete, by those pages' own time estimates; with ``fix_time_credit=True``,
+they are credited for the expected passes instead.
 
 .. seealso::
 

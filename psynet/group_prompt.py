@@ -15,6 +15,13 @@ Design constraints:
   the group, typically the barrier after the decision page. Live ticks come
   from that barrier's arrival updates, so they need ``notify_arrivals``
   (the default).
+- Members who drop out of the group stay in their seat, faded and marked
+  "(left)" if they failed or left the experiment, "(out of time)" if a
+  barrier removed them for being late, and "(dropped out)" otherwise.
+  Members who moved on to their next group, as in a new round, are no
+  longer shown, except on pages with ``answers`` that include their answer,
+  where they keep their seat and bubble. The reason comes from
+  :meth:`psynet.sync.SyncGroup.remove_participant`.
 - The HTML is built on the server; ``static/scripts/group-prompt.js`` only
   updates ticks, so pages without JavaScript still show the group.
 """
@@ -38,6 +45,21 @@ _MAX_ZIGZAG_COLUMNS = 7
 _warned_no_secret = False
 
 
+class _ParticipantsGroup:
+    """Default for ``GroupPrompt(group=...)``: look up the participant's group."""
+
+    def __repr__(self):
+        return "<the participant's group>"
+
+
+_PARTICIPANTS_GROUP = _ParticipantsGroup()
+
+
+def _link_order(link):
+    """Sort key putting sync group links in creation order, unflushed ones last."""
+    return float("inf") if link.id is None else link.id
+
+
 class GroupPrompt(Prompt):
     """Shows the members of a group, who has answered, and their answers.
 
@@ -46,16 +68,27 @@ class GroupPrompt(Prompt):
     four people, and in a zigzag across the width of the page for more. Only the participant viewing the page is labelled
     ("You"); the others' names are read out by screen readers and shown on
     hover. Hovering over or tapping a member brings their speech bubble to
-    the front.
+    the front. A member who dropped out of the group is drawn faded and
+    marked "(left)", "(out of time)" or "(dropped out)"; one who moved on to
+    their next group, as in a new round, is no longer shown, unless the page
+    shows their answer.
 
     Parameters
     ----------
     text
         Text shown above the group, as for :class:`~psynet.modular_page.Prompt`.
-    group
-        The :class:`~psynet.sync.SyncGroup` to show.
     participant
         The participant viewing the page.
+    group
+        The :class:`~psynet.sync.SyncGroup` to show. By default, the
+        participant's group of type ``group_type``, or their only active group.
+        If the lookup finds no group, for example because a barrier removed
+        them for being late, the page shows just ``text``, as it does for
+        ``group=None`` (what ``trial.sync_group`` is after such a removal).
+        A group passed explicitly is drawn even if the viewer has left it.
+    group_type
+        The type of group to show when ``group`` is omitted, for example
+        ``"pair"``.
     answers
         Optional ``{participant_id: answer}`` to show in speech bubbles, for
         example after the group's barrier has released. Answers are shown
@@ -70,7 +103,7 @@ class GroupPrompt(Prompt):
         join or leave.
     note
         Optional short text shown below the group, for example
-        "1 was picked twice".
+        "1 was picked twice". It is hidden when there is no group to show.
     show_progress
         If ``True`` (default) and ``answers`` is not given, members who have
         answered get a tick, which appears live as they reach the next
@@ -87,7 +120,9 @@ class GroupPrompt(Prompt):
         ``"pair"`` for pairs formed within the group, or a function
         ``subgroups(participant)`` returning a key, members with equal keys
         forming a cluster. The viewer's cluster comes first. Members without a
-        subgroup (``None``) are shown together in one cluster.
+        subgroup (``None``) are shown together in one cluster. With a sync
+        group type, a former member who is still shown stays in the latest
+        such group that a current member is still in.
     show_names
         If ``True``, show each member's pseudonym below their animal.
     anonymous
@@ -105,10 +140,11 @@ class GroupPrompt(Prompt):
         self,
         text=None,
         *,
-        group,
         participant,
-        answers: Optional[Dict[int, Union[str, Markup]]] = None,
-        highlight: Optional[Dict[int, str]] = None,
+        group=_PARTICIPANTS_GROUP,
+        group_type: Optional[str] = None,
+        answers: Optional[Dict[Union[int, str], Union[str, Markup]]] = None,
+        highlight: Optional[Dict[Union[int, str], str]] = None,
         note: Optional[str] = None,
         show_progress: bool = True,
         answered: Optional[Callable] = None,
@@ -118,6 +154,16 @@ class GroupPrompt(Prompt):
         text_align: str = "left",
     ):
         super().__init__(text=text, text_align=text_align)
+        if group is not _PARTICIPANTS_GROUP and group_type is not None:
+            raise ValueError(
+                "Pass either group or group_type to GroupPrompt, not both."
+            )
+        if group is _PARTICIPANTS_GROUP:
+            group = (
+                participant.sync_group
+                if group_type is None
+                else participant.active_sync_groups.get(group_type)
+            )
         self.group = group
         self.participant = participant
         self.answers = (
@@ -146,7 +192,7 @@ class GroupPrompt(Prompt):
     @property
     def metadata(self):
         return {
-            "group_id": self.group.id,
+            "group_id": None if self.group is None else self.group.id,
             "answers": None
             if self.answers is None
             else {str(k): str(v) for k, v in self.answers.items()},
@@ -164,6 +210,8 @@ class GroupPrompt(Prompt):
 
     def get_js_vars(self):
         """Configuration for live ticks."""
+        if self.group is None:
+            return {}
         _p = get_translator(context=True)
         return {
             "group_prompt": {
@@ -198,11 +246,15 @@ class GroupPrompt(Prompt):
 
     def get_js_page_modules(self):
         """The module that adds ticks as members answer."""
+        if self.group is None:
+            return []
         return [package_static_url("psynet", "scripts/group-prompt.js")]
 
     @property
     def group_html(self) -> Markup:
-        """HTML for the group display."""
+        """HTML for the group display, or nothing without a group."""
+        if self.group is None:
+            return Markup("")
         _p = get_translator(context=True)
         seats = _group_seats(self.group)
         clusters = self._clusters()
@@ -268,13 +320,66 @@ class GroupPrompt(Prompt):
         ).format(layout, columns, label, items)
 
     def _members(self):
-        """Return the active members, starting with the viewer and then by seat."""
+        """Return the members and those who left, the viewer first and then by seat."""
         seats = _group_seats(self.group)
         members = sorted(
-            self.group.active_participants, key=lambda p: seats.get(p.id, len(seats))
+            [*self.group.active_participants, *self._left_members()],
+            key=lambda p: seats.get(p.id, len(seats)),
         )
         me = [m for m in members if m.id == self.participant.id]
         return me + [m for m in members if m.id != self.participant.id]
+
+    def _left_members(self):
+        """Return former members who dropped out, and those who moved on whose answer the page shows.
+
+        Groups that take top-ups are open-ended, like a lobby, so their
+        leavers are not shown.
+        """
+        if getattr(self.group, "accepts_top_ups", False):
+            return []
+        active_ids = {p.id for p in self.group.active_participants}
+        left = {}
+        reasons = self._removal_reasons()
+        moved_on = self._moved_on_with_answers()
+        for link in self.group.participant_links:
+            member = link.participant
+            if (
+                member.id in active_ids
+                or member.id == self.participant.id
+                or (reasons.get(member.id) == "moved_on" and member.id not in moved_on)
+            ):
+                continue
+            left[member.id] = member
+        return list(left.values())
+
+    def _moved_on_with_answers(self):
+        """Return the IDs of members who moved on but whose answers this page shows.
+
+        Results pages keep their seats, so the page reads the same for
+        players who reload it after others have gone on to the next round.
+        """
+        if self.answers is None:
+            return set()
+        reasons = self._removal_reasons()
+        return {
+            member_id
+            for member_id, reason in reasons.items()
+            if reason == "moved_on" and member_id in self.answers
+        }
+
+    def _removal_reasons(self):
+        """Return ``{participant_id: reason}`` from each member's latest link to the group."""
+        links = sorted(self.group.participant_links, key=_link_order)
+        return {link.participant_id: link.removal_reason for link in links}
+
+    def _left_label(self, member, label):
+        """Return ``label`` marked with why ``member`` is no longer in the group."""
+        _p = get_translator(context=True)
+        if member.failed or member.status != "working":
+            return _p("group prompt", "{NAME} (left)").format(NAME=label)
+        if self._removal_reasons().get(member.id) == "out_of_time":
+            return _p("group prompt", "{NAME} (out of time)").format(NAME=label)
+        return _p("group prompt", "{NAME} (dropped out)").format(NAME=label)
 
     def _clusters(self):
         """Return the members in subgroups, the viewer's first."""
@@ -288,10 +393,30 @@ class GroupPrompt(Prompt):
         return list(clusters.values())
 
     def _subgroup_key(self, member):
+        """Return the member's subgroup.
+
+        A former member is placed in their latest subgroup that someone still
+        in the group is in now, even after joining a new one, or else with
+        the members without a subgroup.
+        """
         if callable(self.subgroups):
             return self.subgroups(member)
-        subgroup = member.active_sync_groups.get(self.subgroups)
-        return None if subgroup is None else subgroup.id
+        if member in self.group.active_participants:
+            subgroup = member.active_sync_groups.get(self.subgroups)
+            return None if subgroup is None else subgroup.id
+        links = sorted(
+            (
+                link
+                for link in member.sync_group_links
+                if link.sync_group.group_type == self.subgroups
+            ),
+            key=_link_order,
+        )
+        current = {
+            self._subgroup_key(other) for other in self.group.active_participants
+        }
+        shared = [link for link in links if link.sync_group_id in current]
+        return shared[-1].sync_group_id if shared else None
 
     def _member_html(self, member, seat, index, partner_label):
         _p = get_translator(context=True)
@@ -309,13 +434,20 @@ class GroupPrompt(Prompt):
             if self.anonymous
             else member.pseudonym.sticker_html
         )
+        has_left = (
+            member not in self.group.active_participants
+            and member.id not in self._moved_on_with_answers()
+        )
         classes = ["psynet-group-member"]
         if is_me:
             classes.append("psynet-group-member--me")
+        if has_left:
+            classes.append("psynet-group-member--left")
+            label = self._left_label(member, label)
         style = self.highlight.get(member.id)
         if style:
             classes.append(f"psynet-group-member--{_css_identifier(style)}")
-        answered = self.show_progress and self.answered(member)
+        answered = self.show_progress and not has_left and self.answered(member)
         if answered:
             classes.append("psynet-group-member--answered")
         bubble = Markup("")
@@ -398,7 +530,8 @@ def redrawn_group_html(unique_id, token):
     if participant is None or participant.id != options["participant"]:
         return {"html": None}
     group = SyncGroup.query.get(options["group"])
-    if group is None:
+    if group is None or participant not in group.active_participants:
+        # A removed viewer keeps the drawing they have until their next page.
         return {"html": None}
     prompt = GroupPrompt(
         group=group,

@@ -198,9 +198,7 @@ def test_fail_trials_on_premature_exit_true_emits_deprecation_warning():
             fail_trials_on_premature_exit=True,
         )
 
-    warning = record[0]
-    if sys.version_info >= (3, 12):
-        assert Path(warning.filename).resolve() == Path(__file__).resolve()
+    assert Path(record[0].filename).resolve() == Path(__file__).resolve()
 
 
 def test_sync_group_max_wait_outlasts_the_timeout_between_barriers():
@@ -1123,7 +1121,7 @@ def test_sync_trial_maker_wait_content_is_used_by_internal_barriers():
     }
     assert all(hold.content == "Waiting for your partner" for hold in holds)
     assert all(
-        hold.translated_content() == "Waiting for your partner" for hold in holds
+        hold.translated_content(None) == "Waiting for your partner" for hold in holds
     )
 
 

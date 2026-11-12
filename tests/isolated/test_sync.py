@@ -11,6 +11,7 @@ import pytest
 from dallinger import db
 from dallinger.experiment_server import sockets
 from dallinger.models import timenow
+from dominate import tags
 from flask import Flask
 from sqlalchemy import Column, String, text
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -82,7 +83,7 @@ from psynet.timeline_hold import (
     default_group_barrier_arrival_message,
     default_hold_progress,
 )
-from psynet.utils import get_config
+from psynet.utils import call_function_with_context, get_config
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -217,18 +218,19 @@ def test_max_wait_action_kick_requires_group_barrier():
 
 
 def test_group_barrier_preserves_positional_timeout_arguments():
-    barrier = GroupBarrier(
-        "group_barrier",
-        "main",
-        None,
-        3,
-        20,
-        "fail",
-        None,
-        False,
-        5,
-        "kick",
-    )
+    with pytest.warns(FutureWarning, match="waiting_logic_expected_repetitions"):
+        barrier = GroupBarrier(
+            "group_barrier",
+            "main",
+            None,
+            3,
+            20,
+            "fail",
+            None,
+            False,
+            5,
+            "kick",
+        )
 
     assert barrier.timeout_between_barriers_time == 5
     assert barrier.timeout_between_barriers_action == "kick"
@@ -256,7 +258,33 @@ def test_barrier_accepts_custom_hold_content():
 
     assert hold.content == "Waiting for your partner"
     assert hold.message_kind is None
-    assert hold.translated_content() == "Waiting for your partner"
+    assert hold.translated_content(None) == "Waiting for your partner"
+    html = GroupBarrier(id_="tag", group_type="pair", content=tags.b("Wait"))
+    assert str(html.waiting_logic.translated_content(None)) == "<b>Wait</b>"
+
+
+def _content_by_role(participant):
+    return f"Waiting for the {participant.var.role}'s partner"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_barrier_content_can_depend_on_the_participant(
+    in_experiment_directory, db_session
+):
+    barrier = GroupBarrier(
+        id_="wait_by_role", group_type="pair", content=_content_by_role
+    )
+    restored = barrier_from_spec_json(barrier_spec_json(barrier))
+    proposer = new_participant(get_experiment())
+    proposer.var.role = "proposer"
+
+    expected = "Waiting for the proposer's partner"
+    assert barrier.waiting_logic.translated_content(proposer) == expected
+    assert (
+        call_function_with_context(restored.content, participant=proposer) == expected
+    )
 
 
 def test_explicit_barrier_waiting_logic_is_preserved():
@@ -264,15 +292,6 @@ def test_explicit_barrier_waiting_logic_is_preserved():
     barrier = ReleaseAllBarrier(id_="page_wait", waiting_logic=waiting_logic)
 
     assert barrier.waiting_logic is waiting_logic
-
-
-def test_expected_wait_rejects_explicit_waiting_logic():
-    with pytest.raises(ValueError, match="expected_wait"):
-        ReleaseAllBarrier(
-            id_="page_wait",
-            waiting_logic=WaitPage(wait_time=1),
-            expected_wait=2,
-        )
 
 
 def test_content_rejects_explicit_waiting_logic():
@@ -5762,13 +5781,20 @@ def test_group_barrier_notify_arrivals_defaults_on():
     assert quiet.notify_arrivals is False
 
 
-def test_on_arrival_message_enables_notify_arrivals():
+def test_on_arrival_message_customizes_notices_without_turning_them_on():
     barrier = GroupBarrier(
         id_="custom_notice",
         group_type="main",
         on_arrival_message=_custom_arrival_message,
     )
     assert barrier.notify_arrivals is True
+    quiet = GroupBarrier(
+        id_="quiet_custom_notice",
+        group_type="main",
+        notify_arrivals=False,
+        on_arrival_message=_custom_arrival_message,
+    )
+    assert quiet.notify_arrivals is False
     assert (
         barrier._call_arrival_message(
             kind="notice", waiting_count=1, group_size=2, recipient=None, group=None
@@ -6576,9 +6602,10 @@ def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+@pytest.mark.parametrize("notify_arrivals", [True, False])
 @pytest.mark.parametrize("min_group_size", [2, 3])
 def test_group_barrier_timeout_between_barriers_kick_missing_participants(
-    in_experiment_directory, db_session, monkeypatch, min_group_size
+    in_experiment_directory, db_session, notify_arrivals, monkeypatch, min_group_size
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
@@ -6586,6 +6613,7 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
         group_type="main",
         timeout_between_barriers_time=5,
         timeout_between_barriers_action="kick",
+        notify_arrivals=notify_arrivals,
     )
 
     # Create 4 participants in the same sync group, but only 2 "reach" this barrier.
@@ -6633,6 +6661,7 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
     ]
     for missing_participant in missing_participants:
         assert missing_participant not in group.active_participants
+        assert missing_participant.sync_group_links[0].removal_reason == "out_of_time"
         assert arrival_notice_payload(missing_participant.unique_id)["removed"]
     missing_participants[0].page_uuid = "next-page"
     assert pending_arrival_notice_for(missing_participants[0]) is None

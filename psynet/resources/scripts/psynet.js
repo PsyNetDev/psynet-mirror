@@ -204,6 +204,13 @@
   syncJsVars();
 
   let beforeunloadFunction = function () {};
+
+  function psynetNavigationResponseStart() {
+    let entry = performance.getEntriesByType?.("navigation")?.[0];
+    if (!performance.timeOrigin) return Date.now();
+    return performance.timeOrigin + (entry?.responseStart || 0);
+  }
+
   var psynet = (function () {
     /**
      * @namespace
@@ -221,6 +228,9 @@
       comments: [],
       var: psynetTemplateData.jsVars,
       submissionPageUuid: psynetTemplateData.jsVars.pageUuid,
+      // When the current page left the server, in Date.now() milliseconds; the
+      // first response byte on a full load, otherwise when /response answered.
+      pageReceivedAt: psynetNavigationResponseStart(),
     };
     psynet.SUBMISSION_HANDLED = Symbol("psynet.SUBMISSION_HANDLED");
 
@@ -1456,6 +1466,11 @@
         confirmListening: true,
         onOpen() {
           if (!controller.stopped) {
+            // Catches up on arrivals between rendering and subscribing, for
+            // waiting screens that show who is ready.
+            if (controller.hold.replaces_page) {
+              psynet.fetchArrivalNotice();
+            }
             psynet.resumeTimelineHold("websocket connection");
           }
         },
@@ -3666,6 +3681,7 @@
 
     psynet.handleApprovedResponse = async function (response) {
       psynet.log.debug("Response received successfully.");
+      psynet.pageReceivedAt = Date.now();
 
       if (response.page?.attributes?.requires_full_page_reload && !psynet.isSameSessionPageUpdate(response)) {
         psynet.stopTimelineHold();
@@ -3674,7 +3690,16 @@
       }
 
       let hold = response.page?.attributes?.timeline_hold;
-      if (hold) {
+      let shownHold = psynet.page?.attributes?.timeline_hold;
+      let holdPageShown = hold?.page_uuid === shownHold?.page_uuid;
+      if (hold && !holdPageShown && !hold.replaces_page && shownHold?.replaces_page) {
+        // An indicator over the previous hold's waiting screen would show
+        // that screen's out-of-date text, so the server renders this hold.
+        psynet.stopTimelineHold();
+        await psynet.loadNextTimelinePageWithReload();
+        return true;
+      }
+      if (hold && (!hold.replaces_page || holdPageShown)) {
         // Nothing records while the participant waits.
         await psynet.endPageRecording([]);
         psynet.updatePageForTimelineHold(response.page);
@@ -3758,6 +3783,9 @@
       } else if (options.interrupted) {
         // This page is stale, e.g. another tab already moved on.
         await psynet.loadNextTimelinePageWithReload();
+      } else if (response.time_limit_seconds_left !== undefined) {
+        // The time limit's countdown resubmits when the server's deadline arrives.
+        psynet.restoreSubmissionControlState();
       } else {
         psynet.alert(response.message);
         psynet.restoreSubmissionControlState();
