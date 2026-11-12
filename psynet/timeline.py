@@ -3485,8 +3485,10 @@ def join(*args, stop_if: Optional[Callable] = None):
         argument for steps that must not be separated. A list or tuple is
         one argument too: unpack it, as in ``join(*steps, stop_if=...)``,
         to check between its elements. For example,
-        ``join(chat_page, barrier, outcome_page, stop_if=left_pair)``
-        skips the rest of a round once the participant has left their pair.
+        ``join(rules_page, game_starts_barrier, stop_if=left_group)``
+        skips the barrier for a participant who left their group while
+        reading the rules. Rounds of a group game are cued trials, which
+        run whole anyway.
         Use :func:`for_loop` with ``stop_if`` to stop a loop, and a
         :func:`conditional` after the ``join`` to show something to those
         who stopped.

@@ -54,14 +54,14 @@ from the rounds.
 - Nobody is failed for what another player did, or for waiting: anyone
   without a group, because none formed within `LOBBY_WAIT` seconds, their
   group ended, or they were removed, answers the remaining questions alone.
+- A player the experimenter removes from their group on the dashboard
+  can't revise their estimate and is told they were removed.
 
 The timeouts are short so that the bot test runs quickly. A real deployment
 would start short after about a minute, wait about three minutes in the
 lobby, allow about 30 seconds for `ANSWER_SECONDS` and about a minute for
 each of `TOP_UP_WAIT` and `LATE_AFTER`, which also covers reading the
 introduction.
-- A player the experimenter removes from their group on the dashboard
-  can't revise their estimate and is told they were removed.
 
 ## Usage
 

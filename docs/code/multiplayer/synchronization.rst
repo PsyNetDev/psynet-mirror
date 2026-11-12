@@ -1301,8 +1301,8 @@ Two separate settings decide what happens when someone leaves a group:
 
   - While it accepts newcomers (``join_existing_groups=True``), a member
     leaving doesn't dissolve it: its barriers wait for new members to join,
-    until their ``max_wait_time``, or without a limit if the barrier sets
-    ``late_after``. With ``admit_newcomers="at_admission_point"`` only its
+    until their ``max_wait_time``, or, if the barrier sets ``late_after``,
+    until the grouper's ``top_up_wait``, which is then required. With ``admit_newcomers="at_admission_point"`` only its
     admission points wait, because only they can admit a newcomer; its
     other barriers dissolve it when they next check it, so a member left
     below the quorum mid-round is released from the round's barrier with
@@ -1491,6 +1491,7 @@ wait limit, which would otherwise time the members out first:
         start_short_after=60,
         max_wait_time=120,
         join_existing_groups=True,
+        admit_newcomers="on_join",
         top_up_wait=60,
         below_quorum="continue_without_group",
     )
@@ -1596,8 +1597,8 @@ A member removed from their group without being failed, through a
 barrier's ``"leave_group"`` or ``below_quorum="continue_without_group"``,
 stays in the experiment and continues the timeline without that group. They
 leave only the group of that type: a player removed from a ``"pair"`` stays
-in their ``"cohort"`` unless the experiment also removes them from it with
-``remove_participant`` (see :ref:`rounds-slow-players`). A participant whose grouper let them continue without
+in their ``"cohort"`` unless the barrier lists that group type in
+``also_leave`` (see :ref:`rounds-slow-players`). A participant whose grouper let them continue without
 a group (``max_wait_action="continue_without_group"``) is treated the same
 way for that group type, as if they had left a group. A notice on their
 progress bar tells them why. A member removed for being late sees "Your
@@ -1630,15 +1631,15 @@ that reads ``active_sync_groups`` fails for a member who left while on it.
 For the rest of the timeline:
 
 - :class:`~psynet.sync.GroupBarrier`\ s of that group type let them straight
-  through. Pages between the barriers are still shown, so give the steps of
-  a round to :func:`~psynet.timeline.join` with ``stop_if``, which checks
-  before each argument and skips the remaining arguments once the
-  participant has left. Each argument runs to its end once started, so a
-  page, barrier or cued trial is never cut short, and a trial is still
-  scored and paid. To end a game's rounds, give the loop the same
+  through. Pages between the barriers are still shown, so play each round
+  as one cued trial per player (see :ref:`rounds-cued-trials`): a started
+  trial runs to its end, its barrier passes a member who left without
+  waiting, the trial is still scored and paid, and its
+  ``sync_group_outcome`` says how the round ended for them. To end a
+  game's rounds once the participant has left, give the loop a
   ``stop_if``: :func:`~psynet.timeline.for_loop` checks it before each
-  iteration. Show something to the participants who left with a
-  ``conditional`` afterwards. A round played as a trial added with
+  iteration and never cuts one short. Show something to the participants
+  who left with a ``conditional`` afterwards. A round played as a trial added with
   :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` raises an error for a
   participant who is out of the group when the trial starts, unless the
   trial class sets ``sync_group_optional = True``: they then get an
@@ -1664,16 +1665,24 @@ For the rest of the timeline:
      :pyobject: EstimateTrial.revise_page
 
   Put the grouper or :class:`~psynet.sync.Regrouper` that forms the group
-  before the ``join``, not among its arguments: it would be skipped by
-  everyone not yet in a group, at the start everyone and later anyone who sat
-  out a round, who would then never be grouped again. When pairs change
-  every round, use ``for_loop(..., logic=join(Regrouper(...),
-  join(decision_page, round_barrier, outcome_page, stop_if=left_pair),
-  conditional("sat_out", left_pair, sitting_out)))``, where ``sitting_out``
-  is a page for anyone not in a pair by the end of the round: sat out by the
-  regrouper, or removed partway for being late. Pass the steps themselves
-  to the ``join``, not ``*`` the result of another ``join``, which is
-  already a flat list of elements.
+  before the cue, not inside the trial or behind a ``stop_if`` that checks
+  for the group: it would be skipped by everyone not yet in a group, at the
+  start everyone and later anyone who sat out a round, who would then never
+  be grouped again. When pairs change every round, regroup before each
+  cue and branch on whether the regrouper paired the player, as the
+  ``ultimatum_pairing`` demo does:
+
+  .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+     :start-at: join(
+     :end-before: expected_repetitions=N_ROUNDS,
+     :dedent: 16
+
+  .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+     :pyobject: round_status
+
+  A player removed partway for being late is out of the pair, so their
+  trial's ``show_feedback`` tells them, and ``"sat_out"`` is the page for a
+  player the regrouper left over.
 
   In the ``public_goods`` demo, the rounds' loop stops once a player has left,
   and a ``conditional`` tells them, and a participant who never had a group,
@@ -1735,6 +1744,8 @@ Your own code blocks, pages and callbacks must handle this: check for
 ``None`` before using the group, and expect results, such as a score from
 the group's last round, to be missing. If your experiment can't continue
 meaningfully without a group, keep the default ``"fail"``.
+
+.. _sync-waiting-pages:
 
 Waiting pages
 ~~~~~~~~~~~~~

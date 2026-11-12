@@ -169,29 +169,30 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   needs a group: stop a rounds loop with it in the `while_loop` condition,
   and give a synchronized trial maker a solo alternative, for example
   `conditional("paired", in_pair, paired_trials, solo_trials)`.
-- Give the steps of a round to `join(..., stop_if=left_pair)`, with
-  `left_pair` returning `not participant.in_sync_group("pair")`, so a
-  participant who loses their group partway skips the rest, instead of a
-  `conditional` per page. `join` checks `stop_if` before each argument and
-  never cuts a started argument short, so a barrier or cued trial runs whole.
-  To end the rounds, pass the same `stop_if` to the `for_loop`. Put the
-  grouper or `Regrouper` before the `join`, not among its arguments, or
-  everyone not yet grouped skips it. In a round that is one cued trial, the
-  trial replaces the inner `join(..., stop_if=...)` around the round's
-  steps, as it runs whole anyway; the regrouper still goes first, in
-  `join(Regrouper(...), <switch or conditional>)`. With a cohort (`within=`),
-  follow the three-way `switch` on
-  `round_status` (paired, sat out, no cohort) in "One trial per player per
-  round" of `code/multiplayer/writing_a_round_based_experiment`, as in
-  `ultimatum_pairing`; without one, a two-way `conditional` is enough (see "Variations" in
+- Write each round as one cued trial per player (`Trial.cue()` on a trial
+  class with `sync_group_type`): `show_trial` returns the round's pages and
+  the `GroupBarrier` that ends the round, and `show_feedback` its outcome.
+  A started trial runs whole, so a participant who loses their group
+  partway still reaches the barrier, which passes them alone, and their
+  trial's `sync_group_outcome` says what happened; no `conditional` per
+  page is needed. Put the grouper or `Regrouper` before the cue, never
+  inside the trial. With a `Regrouper` and a cohort (`within=`), follow the
+  three-way `switch` on `round_status` (paired, sat out, no cohort) in "One
+  trial per player per round" of
+  `code/multiplayer/writing_a_round_based_experiment`, as in
+  `ultimatum_pairing`:
+  `join(pairing, switch("round", round_status, {"paired": OfferTrial.cue(), "sat_out": sitting_out, "no_cohort": []}))`,
+  where `round_status` checks `pairing.sat_out(participant)` to tell a
+  sit-out from a player removed for being late. Without a cohort, a
+  two-way `conditional` is enough (see "Variations" in
   `code/multiplayer/writing_a_round_based_experiment`).
-- Follow with a `conditional` on the same function for what a member who
-  left, or anyone who never had a group, does instead, such as answering the
-  rest of the question alone. With a `Regrouper` in the loop, it is also the
-  page for a player it sat out that round:
-  `join(Regrouper(...), join(decision_page, barrier, outcome_page, stop_if=left_pair), conditional("sat_out", left_pair, sitting_out))`.
-  Check `regrouper.sat_out(participant)` there to tell a sit-out from a
-  player removed for being late.
+- To end the rounds once a participant has left their group, pass
+  `stop_if=left_pair` to the `for_loop`, with `left_pair` returning
+  `not participant.in_sync_group("pair")`; `stop_if` never cuts a started
+  iteration short. Follow the
+  loop with a `conditional` on the same function for what a member who
+  left, or anyone who never had a group, does instead, such as answering
+  the rest of the questions alone.
   `public_goods` stops its `round=i` loop with `stop_if` in a team game that
   plays on with fewer members, down to its quorum, and pays the last member
   for the round in which the group dissolves: a started cued trial runs to

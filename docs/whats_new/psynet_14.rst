@@ -83,6 +83,11 @@ from its condition, such as a list, instead of raising an error. Both
 affect code in almost any experiment, so check them first: see step 12 of
 :doc:`upgrading_to_psynet_14`.
 
+**Time limits.** Any page can take a ``time_limit``: it shows a countdown
+and submits ``time_limit_answer`` when time runs out, counted on the server
+so that a reload doesn't restart the clock. See "Time limits" in
+:doc:`/code/writing_a_timeline`.
+
 Trials and groups
 -----------------
 
@@ -109,6 +114,21 @@ partners are ready. Group membership changes through
 ``SyncGroup.add_participant()`` and ``remove_participant()``, and custom
 barriers implement ``check_waiting_participants()`` and
 ``choose_who_to_release()``. See :doc:`/code/multiplayer/synchronization`.
+Pages shown from a barrier's ``waiting_logic``, such as filler trials, now
+end when the barrier releases the participant instead of running to their
+end, and an unfinished filler trial fails; pass ``release_grace=None`` to
+keep the old behavior (see :ref:`sync-waiting-pages`).
+
+**Newcomers and seeing the group.** With
+``admit_newcomers="at_admission_point"``, a group takes newcomers during a
+game without anyone waiting for them: a newcomer holds a seat but takes
+part only from the group's next admission point, such as the start of a
+round (see :ref:`sync-admission-points`). Participants see each other by
+pseudonym, such as "Blue fox", instead of by ID (see
+:doc:`/code/multiplayer/pseudonyms`), and
+:class:`~psynet.group_prompt.GroupPrompt` shows a group's members, ticks
+them off as they answer and then shows everyone's answers (see
+:ref:`sync-showing-the-group`).
 
 **Round-based games.** A ``Regrouper`` forms new groups every round, for
 example new pairs within a cohort, and lets a slow player miss a round
