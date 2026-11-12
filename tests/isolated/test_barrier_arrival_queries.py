@@ -48,7 +48,7 @@ pytestmark = [
 ]
 
 # Precise snapshot of the current ORM path, profiled from a cold session.
-# Check = 20 (18 plus extra-connection lock_timeout, ORM lock_timeout).
+# Check = 17 (16 plus the ORM lock_timeout; the try-claim sets none).
 # Last-arrival no longer skip-after-commits partners.
 # Finalize = check + 4 overhead statements.
 # Statement-by-statement analysis:
@@ -56,7 +56,7 @@ pytestmark = [
 # Lower counts are an improvement: update these constants and that section.
 # Per-row writes still scale with group size; SQLAlchemy flushes them as one
 # executemany statement per table, so UPDATE *statement* count stays 1.
-_CHECK_BASE_QUERIES = 20
+_CHECK_BASE_QUERIES = 17
 _SKIP_QUERIES_PER_WAITER = 0
 _FINALIZE_OVERHEAD_QUERIES = 4
 
@@ -310,7 +310,7 @@ def _check_expected(n):
         "spec_select": 1,
         "savepoint": 1,
         "release_savepoint": 1,
-        "lock_timeout": 2,
+        "lock_timeout": 1,
         "waiter_join": 1,
         "update_link": 1,
         "update_hold_release": 1,

@@ -6718,10 +6718,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not cls._is_transient_transaction_error(error):
                 raise
             db.session.rollback()
-            logger.warning(
-                "Timeline request hit transient database contention for participant %s.",
-                unique_id,
-                exc_info=True,
+            cls._log_transient_contention(
+                "Timeline request",
+                participant_id if participant_id is not None else unique_id,
+                error,
             )
             response = cls.busy_response()
         return cls._apply_timeline_timing(
@@ -6918,13 +6918,27 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if not cls._is_transient_transaction_error(error):
             return None
         db.session.rollback()
-        logger.warning(
-            "%s hit transient database contention for participant %s.",
-            context,
-            participant_id,
-            exc_info=True,
-        )
+        cls._log_transient_contention(context, participant_id, error)
         return cls.busy_response()
+
+    @staticmethod
+    def _log_transient_contention(context, participant, error):
+        """Log retryable contention that is answered with HTTP 503 as one line.
+
+        The client retries these requests, so a traceback adds noise without
+        helping to diagnose anything.
+        """
+        route = (
+            f"{request.method} {request.path}" if has_request_context() else "no route"
+        )
+        logger.warning(
+            "%s (%s) hit transient database contention for participant %s "
+            "and was answered with HTTP 503 for the client to retry: %s.",
+            context,
+            route,
+            participant,
+            type(getattr(error, "orig", None) or error).__name__,
+        )
 
     @classmethod
     def _route_timeline(cls, experiment, participant, mode, *, close_phase=None):

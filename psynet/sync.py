@@ -176,6 +176,7 @@ from sqlalchemy.orm import (
     object_session,
     relationship,
     selectinload,
+    undefer,
 )
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -458,9 +459,11 @@ def _hold_barrier_instance_claim(instance_id, *, wait=False):
     """
     with db.engine.connect() as conn:
         with conn.begin():
-            _set_transaction_lock_timeout(
-                get_config().get("timeline_lock_timeout_seconds"), session=conn
-            )
+            if wait:
+                # A try-lock never waits, so it needs no lock timeout.
+                _set_transaction_lock_timeout(
+                    get_config().get("timeline_lock_timeout_seconds"), session=conn
+                )
             acquired = _execute_advisory_xact_lock(conn, instance_id, wait=wait)
             yield acquired
 
@@ -5186,6 +5189,10 @@ class SimpleSyncGroup(SyncGroup):
     A SyncGroup that is created by a SimpleGrouper.
     """
 
+    # Queries for SyncGroup load these columns too, rather than in a second
+    # query when one is first read.
+    load_with_base_class = True
+
     initial_group_size = Column(Integer)
     max_group_size = Column(Integer)
     #: How many active members the group needs to keep going.
@@ -6730,7 +6737,9 @@ def _evaluate_held_instance(instance_id):
     """
     db.session.expire_all()
     _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
-    instance = BarrierInstance.query.get(instance_id)
+    instance = BarrierInstance.query.options(undefer(BarrierInstance.spec)).get(
+        instance_id
+    )
     try:
         with db.session.begin_nested():
             ok = _check_claimed_barrier_instance(instance, already_claimed=True)
@@ -6827,15 +6836,13 @@ def _process_barrier_instance(instance_id, *, retry=False):
     Contention is another request holding the visit claim, or a locked
     waiter or top-up group. Author ``on_release`` and spec errors are reported the same way.
     The poller retries once in the same sweep, then queues the visit like a
-    checked one.
+    checked one. Errors during the check itself are logged with the barrier
+    ID by :func:`_evaluate_held_instance`.
     """
-    barrier_id = None
     try:
         with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
             if not claimed:
                 return True
-            instance = BarrierInstance.query.get(instance_id)
-            barrier_id = None if instance is None else instance.barrier_id
             if not _check_and_skip_held_instance(instance_id):
                 return True
             return False
@@ -6844,16 +6851,14 @@ def _process_barrier_instance(instance_id, *, retry=False):
         if is_transient_transaction_error(err):
             qualifier = " deferred again on retry" if retry else " deferred"
             logger.debug(
-                "Barrier '%s' instance %s%s " + _WAITER_LOCKED_DEFERRAL,
-                barrier_id,
+                "Barrier instance %s%s " + _WAITER_LOCKED_DEFERRAL,
                 instance_id,
                 qualifier,
             )
             return True
         qualifier = " on retry" if retry else ""
         logger.exception(
-            "Failed to process barrier '%s' instance %s%s.",
-            barrier_id,
+            "Failed to process barrier instance %s%s.",
             instance_id,
             qualifier,
         )
@@ -7004,21 +7009,15 @@ def check_sync_groups():
     emptied groups that accept top-ups, unless the group is still dissolving.
     Groups locked by another request are skipped until the next tick.
 
+    One query first counts every active group's members (see
+    :func:`_groups_to_recount`), so only groups whose stored counts are
+    stale, or that may close, are locked and recounted.
+
     Dedicated sessions keep these maintenance commits separate from any
     transaction owned by the caller. Each group's recount runs in its own
     transaction so a failure cannot roll back sibling groups already processed.
     """
-    with Session(bind=db.engine) as session:
-        group_ids = [
-            group_id
-            for (group_id,) in (
-                session.query(SyncGroup.id)
-                .filter(SyncGroup.active.is_(True))
-                .order_by(SyncGroup.id)
-            )
-        ]
-
-    for group_id in group_ids:
+    for group_id in _groups_to_recount():
         try:
             with Session(bind=db.engine) as session:
                 _set_transaction_lock_timeout(
@@ -7044,6 +7043,69 @@ def check_sync_groups():
                 )
             else:
                 logger.exception("Failed to process sync group %s.", group_id)
+
+
+def _groups_to_recount():
+    """Return the active groups that :func:`check_sync_groups` must lock and recount.
+
+    Counts each active group's admitted and pending working members as
+    :attr:`SyncGroup.active_participants` and
+    :attr:`SyncGroup.pending_participants` do, and returns the groups whose
+    stored ``n_active_participants``, or :class:`SimpleSyncGroup`'s
+    ``below_quorum_since``, disagrees with that count, the groups that may
+    close, and every group of a class that overrides ``check_numbers``.
+    """
+    link = ParticipantLinkSyncGroup
+    # Only SimpleSyncGroup maps these columns of the shared table.
+    columns = SyncGroup.__table__.c
+    working = and_(
+        link.active.is_(True),
+        ~Participant.failed,
+        Participant.status == "working",
+    )
+    known_types = [
+        mapper.polymorphic_identity
+        for mapper in SyncGroup.__mapper__.self_and_descendants
+        if mapper.class_.check_numbers
+        in (SyncGroup.check_numbers, SimpleSyncGroup.check_numbers)
+    ]
+    with Session(bind=db.engine) as session:
+        counts = (
+            session.query(
+                link.sync_group_id.label("group_id"),
+                func.count(link.id)
+                .filter(working & link.admitted_at.isnot(None))
+                .label("n_admitted"),
+                func.count(link.id)
+                .filter(working & link.admitted_at.is_(None))
+                .label("n_pending"),
+            )
+            .join(Participant, Participant.id == link.participant_id)
+            .group_by(link.sync_group_id)
+            .subquery()
+        )
+        n_admitted = func.coalesce(counts.c.n_admitted, 0)
+        below_quorum = n_admitted < func.coalesce(columns.quorum, 0)
+        return [
+            group_id
+            for (group_id,) in (
+                session.query(SyncGroup.id)
+                .outerjoin(counts, counts.c.group_id == SyncGroup.id)
+                .filter(
+                    SyncGroup.active.is_(True),
+                    or_(
+                        SyncGroup.type.notin_(known_types),
+                        SyncGroup.n_active_participants.is_distinct_from(n_admitted),
+                        below_quorum & columns.below_quorum_since.is_(None),
+                        ~below_quorum & columns.below_quorum_since.isnot(None),
+                        (n_admitted == 0)
+                        & ~SyncGroup.dissolving.is_(True)
+                        & (func.coalesce(counts.c.n_pending, 0) == 0),
+                    ),
+                )
+                .order_by(SyncGroup.id)
+            )
+        ]
 
 
 Participant.sync_group_links = relationship(
