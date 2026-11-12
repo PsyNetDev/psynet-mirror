@@ -71,6 +71,7 @@ experiment = [
     "pandas",
     "polib",
     "progress",
+    "pydantic>=2.12,<3",
     "pytest",
     "pytest-dependency",
     "pytest-mock",
