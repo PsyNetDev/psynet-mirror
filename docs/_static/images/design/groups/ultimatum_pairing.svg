@@ -6,15 +6,16 @@
 <rect width="606" height="120" rx="10" fill="#ffffff"/>
 <rect x="12" y="16" width="100" height="60" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
 <text x="62.0" y="31" font-size="10" font-weight="600" letter-spacing="0.6" fill="#1d4ed8" text-anchor="middle">GROUPER</text>
-<text x="62.0" y="56.0" font-size="13.5" fill="#111827" text-anchor="middle">Cohorts of 4</text>
+<text x="62.0" y="48.5" font-size="13.5" fill="#111827" text-anchor="middle">Cohorts of 4</text>
+<text x="62.0" y="63.5" font-size="13.5" fill="#111827" text-anchor="middle">+ newcomers</text>
 <line x1="115" y1="46.0" x2="125" y2="46.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
 <rect x="120" y="4" width="474" height="84" rx="12" fill="none" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="5 4"/>
 <path d="M 560 88 q 0 8 -10 8 h -414 q -10 0 -10 -8" fill="none" stroke="#9ca3af" stroke-width="1.2" marker-end="url(#arrow-loop)"/>
 <text x="357.0" y="110" font-size="12" font-style="italic" fill="#6b7280" text-anchor="middle">repeat for each round</text>
 <rect x="130" y="16" width="100" height="60" rx="8" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
 <text x="180.0" y="31" font-size="10" font-weight="600" letter-spacing="0.6" fill="#6d28d9" text-anchor="middle">REGROUPER</text>
-<text x="180.0" y="48.5" font-size="13.5" fill="#111827" text-anchor="middle">Pairs, from</text>
-<text x="180.0" y="63.5" font-size="13.5" fill="#111827" text-anchor="middle">the cohort</text>
+<text x="180.0" y="48.5" font-size="13.5" fill="#111827" text-anchor="middle">Admit, then</text>
+<text x="180.0" y="63.5" font-size="13.5" fill="#111827" text-anchor="middle">make pairs</text>
 <line x1="233" y1="46.0" x2="243" y2="46.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
 <rect x="248" y="16" width="100" height="60" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
 <text x="298.0" y="31" font-size="10" font-weight="600" letter-spacing="0.6" fill="#4b5563" text-anchor="middle">PAGE</text>

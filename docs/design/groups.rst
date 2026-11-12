@@ -232,10 +232,11 @@ goes on to the story so far.
 In `gibbs_within_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/gibbs_within_sync>`__, a group of three shares a chain of
 stimuli. The leader's next stimulus is chosen as if they were taking the
 experiment alone, and everyone rates that same stimulus. Newcomers can join a
-group that has lost members.
+group that has lost members; each is admitted when the group's next trial is
+prepared, which is an admission point.
 
 .. figure:: ../_static/images/design/groups/gibbs_within_sync.svg
-   :alt: A grouper forms groups of three, then for each trial every member rates the leader's stimulus.
+   :alt: A grouper forms groups of three that newcomers can join. Then, for each trial, a barrier prepares the trial and admits newcomers, and every member rates the leader's stimulus.
 
 In `sync_quorum <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/sync_quorum>`__, everyone joins one growing group, and
 part of the experiment only opens while at least three members are present.
@@ -318,10 +319,11 @@ In `ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/e
 or of two or three once the first player has waited a minute. Each round, the
 regrouper splits the cohort into pairs of a proposer and a responder. The
 proposer offers part of 10 coins, and the responder accepts or rejects the
-offer.
+offer. A latecomer can join a cohort that started short, and is admitted at
+the next split, which is an admission point.
 
 .. figure:: ../_static/images/design/groups/ultimatum_pairing.svg
-   :alt: A grouper forms cohorts of four. Then, for each round, a regrouper splits the cohort into pairs, players decide with a time limit, a barrier waits for the partner, and both see the outcome.
+   :alt: A grouper forms cohorts of four that latecomers can join. Then, for each round, a regrouper admits latecomers and splits the cohort into pairs, players decide with a time limit, a barrier waits for the partner, and both see the outcome.
 
 Groups that carry on when members leave
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
