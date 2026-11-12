@@ -1,4 +1,5 @@
 import json
+import math
 import sys
 import threading
 import time
@@ -4134,6 +4135,73 @@ def test_check_barriers_spreads_idle_visits_over_sweeps(
     assert released == [1, 2, 3]
 
 
+_check_barrier_visit = psynet.sync._process_barrier_instance
+
+
+@pytest.fixture(autouse=True)
+def _audit_poller_skips(monkeypatch):
+    """Fail if a visit the poller skipped as not yet due would have released anyone or changed.
+
+    After each sweep, this checks every visit the sweep skipped and that
+    hasn't changed since, and asserts that the check left it as it was.
+    Tests are deterministic, so a failure means the barrier's
+    ``_next_check_due`` misses something its release depends on.
+    """
+    visits_due = psynet.sync._visits_due
+
+    def audited(waiting, sweep_ends):
+        now = time.monotonic()
+        due = psynet.sync._visit_due_times(waiting, now)
+        yield from visits_due(waiting, sweep_ends)
+        for instance_id, (_, due_at) in due.items():
+            if due_at <= now:
+                continue
+            before = psynet.sync._waiting_barrier_instance_ids().get(instance_id)
+            if before != waiting[instance_id]:
+                # Another visit's check this sweep changed it, so it is due next sweep.
+                continue
+            _check_barrier_visit(instance_id)
+            after = psynet.sync._waiting_barrier_instance_ids().get(instance_id)
+            assert after == before, (
+                f"The poller skipped barrier visit {instance_id} as not yet due, "
+                "but checking it released someone or changed its state: the "
+                "barrier's _next_check_due() misses something."
+            )
+
+    monkeypatch.setattr("psynet.sync._visits_due", audited)
+
+
+def _sweep_each_second_until_a_wait_ends(monkeypatch, seconds):
+    """Run every clock a barrier check reads forward a second at a time, sweeping the poller each second, until a waiting visit changes.
+
+    Returns the seconds that took, or ``None``. The safety re-check is off,
+    so only the due times barriers report decide when skipped visits are
+    checked, and :func:`_audit_poller_skips` fails any skip that delayed a
+    release.
+    """
+    from psynet import timeline_hold
+
+    monkeypatch.setattr("psynet.sync._POLLER_RECHECK_SECONDS", math.inf)
+    shift = [0]
+    real_timenow, real_time, real_monotonic = timenow, time.time, time.monotonic
+
+    def shifted_timenow():
+        return real_timenow() + timedelta(seconds=shift[0])
+
+    monkeypatch.setattr(psynet.sync, "timenow", shifted_timenow)
+    monkeypatch.setattr(timeline_hold, "timenow", shifted_timenow)
+    monkeypatch.setattr(time, "time", lambda: real_time() + shift[0])
+    monkeypatch.setattr(time, "monotonic", lambda: real_monotonic() + shift[0])
+    check_barriers()
+    start = psynet.sync._waiting_barrier_instance_ids()
+    for second in range(1, seconds + 1):
+        shift[0] = second
+        check_barriers()
+        if psynet.sync._waiting_barrier_instance_ids() != start:
+            return second
+    return None
+
+
 def _count_poller_checks(monkeypatch):
     """Return the list of visits each later ``check_barriers`` call checks, cleared per call."""
     checked = []
@@ -4213,7 +4281,8 @@ def _waiting_for_top_ups(exp, db_session):
     grouper._make_group([quitter, waiter], initial_group_size=2)
     db_session.commit()
     quitter.fail("quit")
-    return GroupBarrier(id_="game_starts", group_type="team"), [waiter]
+    barrier = GroupBarrier(id_="game_starts", group_type="team", max_wait_time=120)
+    return barrier, [waiter]
 
 
 def _waiting_with_a_newcomer(exp, db_session):
@@ -4224,6 +4293,7 @@ def _waiting_with_a_newcomer(exp, db_session):
         group_type="society",
         admission_point=True,
         newcomer_max_wait=40,
+        max_wait_time=120,
     )
     return barrier, [*founders, newcomer]
 
@@ -4266,6 +4336,39 @@ def test_poller_skips_a_visit_until_its_wait_can_end(
             time, "monotonic", lambda later=seconds_later: monotonic() + later
         )
         assert sweep() == checked
+
+
+def _waiting_for_a_late_partner(exp, db_session):
+    (waiter, _), _ = _pair_sync_group(exp, db_session)
+    barrier = GroupBarrier(
+        id_="slow_partner", group_type="main", late_after=30, late_action="fail"
+    )
+    return barrier, [waiter]
+
+
+@pytest.mark.parametrize(
+    "setup, seconds",
+    [
+        (_waiting_for_a_late_partner, 30),
+        (_waiting_for_top_ups, 40),
+        (_waiting_with_a_newcomer, 40),
+        (_waiting_to_start_short, 40),
+    ],
+)
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_timed_waits_end_on_time_while_the_poller_skips(
+    in_experiment_directory, db_session, monkeypatch, setup, seconds
+):
+    """late_after, top_up_wait, newcomer_max_wait and start_short_after each end their wait on time, with no skip delaying it."""
+    exp = get_experiment()
+    barrier, waiters = setup(exp, db_session)
+    for waiter in waiters:
+        _arrive_at_group_barrier(exp, barrier, waiter)
+    db.session.commit()
+    ended = _sweep_each_second_until_a_wait_ends(monkeypatch, seconds + 5)
+    assert ended in (seconds, seconds + 1)
 
 
 @pytest.mark.parametrize("why", ["waiter_busy", "custom_release_rule"])

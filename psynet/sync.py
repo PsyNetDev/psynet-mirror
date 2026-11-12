@@ -7241,6 +7241,30 @@ def _finish_dissolving_groups():
             logger.exception("Failed to finish dissolving sync group %s.", group_id)
 
 
+def _visit_due_times(waiting, now):
+    """Map each waiting visit to ``(is_recheck, when it became or becomes due)``, by ``time.monotonic()``.
+
+    A time after ``now`` means the poller skips the visit: it hasn't changed
+    since its last check, which said no release can be due yet. See
+    :func:`_visits_due`.
+    """
+
+    def due_at(instance_id):
+        last = _poller_checked_visits.get(instance_id)
+        if last is None:
+            return False, now - _POLLER_CHANGE_HEAD_START_SECONDS
+        (waiters_and_group, members), checked_at, next_due = last
+        if waiters_and_group != waiting[instance_id][0]:
+            return False, checked_at - _POLLER_CHANGE_HEAD_START_SECONDS
+        if next_due is None or members != waiting[instance_id][1]:
+            return False, checked_at
+        if next_due <= now:
+            return False, max(checked_at, next_due)
+        return True, checked_at + _POLLER_RECHECK_SECONDS
+
+    return {instance_id: due_at(instance_id) for instance_id in waiting}
+
+
 def _visits_due(waiting, sweep_ends):
     """Yield the waiting visits that are due, in check order, until ``sweep_ends``.
 
@@ -7264,22 +7288,7 @@ def _visits_due(waiting, sweep_ends):
     poller is saturated, they can come later than that.
     """
     now = time.monotonic()
-
-    def due_at(instance_id):
-        """Return ``(is_recheck, when the visit became due)``."""
-        last = _poller_checked_visits.get(instance_id)
-        if last is None:
-            return False, now - _POLLER_CHANGE_HEAD_START_SECONDS
-        (waiters_and_group, members), checked_at, next_due = last
-        if waiters_and_group != waiting[instance_id][0]:
-            return False, checked_at - _POLLER_CHANGE_HEAD_START_SECONDS
-        if next_due is None or members != waiting[instance_id][1]:
-            return False, checked_at
-        if next_due <= now:
-            return False, max(checked_at, next_due)
-        return True, checked_at + _POLLER_RECHECK_SECONDS
-
-    due = {instance_id: due_at(instance_id) for instance_id in waiting}
+    due = _visit_due_times(waiting, now)
     order = sorted(
         (instance_id for instance_id in waiting if due[instance_id][1] <= now),
         key=lambda instance_id: (*due[instance_id], instance_id),

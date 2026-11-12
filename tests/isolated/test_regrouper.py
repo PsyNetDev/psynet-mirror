@@ -29,9 +29,11 @@ from psynet.utils import get_psynet_root
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
-from test_sync import (  # noqa: E402
+from test_sync import (  # noqa: E402, F401
     _arrive_at_group_barrier,
+    _audit_poller_skips,
     _commit_barrier_arrivals,
+    _sweep_each_second_until_a_wait_ends,
 )
 from timeline_hold_helpers import _json_timeline, _working_participants  # noqa: E402
 
@@ -212,6 +214,25 @@ def test_poller_skips_a_regrouper_pool_until_its_deadline_or_tick(
     sync.check_barriers()
     ((_, rechecked_at, _),) = sync._poller_checked_visits.values()
     assert rechecked_at > checked_at
+
+
+@pytest.mark.parametrize("timing", [dict(deadline=30), dict(every=45)])
+@in_consents_experiment
+def test_regrouper_pools_split_on_time_while_the_poller_skips(
+    in_experiment_directory, db_session, monkeypatch, timing
+):
+    """Two waiters are paired at the deadline or next tick while the third still plays, with no skip delaying it."""
+    exp = get_experiment()
+    cohort = _working_participants(exp, 3)
+    _arrive(exp, SimpleGrouper("cohort", initial_group_size=3, quorum=3), cohort)
+    pairs = Regrouper(
+        "pair", within="cohort", group_size=2, max_wait_time=120, **timing
+    )
+    _arrive(exp, pairs, cohort[:2])
+    db_session.commit()
+    seconds = timing.get("deadline") or 45 - time.time() % 45
+    ended = _sweep_each_second_until_a_wait_ends(monkeypatch, 50)
+    assert ended is not None and abs(ended - seconds) <= 1.5
 
 
 class _CustomRelease(Regrouper):
