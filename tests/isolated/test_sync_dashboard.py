@@ -5,14 +5,14 @@ import requests
 
 from psynet.experiment import get_experiment
 from psynet.participant import Participant
-from psynet.pytest_psynet import path_to_demo_experiment
+from psynet.pytest_psynet import path_to_demo_feature
 from psynet.sync import SimpleSyncGroup
 from psynet.utils import get_authenticated_session
 
 
 @pytest.mark.parametrize(
     "experiment_directory",
-    [path_to_demo_experiment("simple_sync_group")],
+    [path_to_demo_feature("group_closer")],
     indirect=True,
 )
 def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(

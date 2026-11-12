@@ -174,6 +174,8 @@ everyone who has been in the group by when they joined, and keeps the
 numbers when members leave (see the ``story_chain`` demo).
 ``sync_group.leader`` is the group's leader.
 
+.. _sync-regrouping:
+
 Regrouping
 ~~~~~~~~~~
 
@@ -182,15 +184,15 @@ but in only one group of each type. To regroup participants, close the group
 with a :class:`~psynet.sync.GroupCloser` and place another grouper with the
 same ``group_type``. A ``GroupCloser`` is a group barrier, so members wait
 there for each other; the end of the timeline needs none, because a group
-whose members have all finished closes by itself. The ``simple_sync_group`` demo forms groups of three,
+whose members have all finished closes by itself. The ``group_closer`` feature demo forms groups of three,
 then groups of two, and assigns roles at a barrier each time:
 
-.. literalinclude:: ../../../demos/experiments/simple_sync_group/experiment.py
+.. literalinclude:: ../../../demos/features/group_closer/experiment.py
    :start-at: timeline = Timeline(
    :end-before: test_n_bots
    :dedent: 4
 
-.. literalinclude:: ../../../demos/experiments/simple_sync_group/experiment.py
+.. literalinclude:: ../../../demos/features/group_closer/experiment.py
    :pyobject: assign_roles
 
 Two groupers of the same type and size share a default ID, and so a waiting

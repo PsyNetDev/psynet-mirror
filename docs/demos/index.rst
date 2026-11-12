@@ -379,7 +379,7 @@ Participants
 Groups
 ------
 
-`experiments/simple_sync_group <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/simple_sync_group>`__
+`features/group_closer <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/group_closer>`__
     ``SimpleGrouper``, ``GroupBarrier`` and ``GroupCloser``: groups of three
     with roles, later regrouped into pairs. :doc:`/design/groups`,
     :doc:`/code/multiplayer/synchronization`.
