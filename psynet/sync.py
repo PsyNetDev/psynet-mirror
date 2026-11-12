@@ -4961,7 +4961,7 @@ class SyncGroup(SQLBase, SQLMixin):
             _set_next_page_notice(participant, text)
 
     def _give_distinct_pseudonym(self, participant):
-        """Store a free pseudonym for ``participant`` if an active member has theirs.
+        """Store a free pseudonym for ``participant`` if an admitted or pending member has theirs.
 
         Only in the participant's first group; see :meth:`add_participant`.
         """
@@ -4971,7 +4971,11 @@ class SyncGroup(SQLBase, SQLMixin):
         if cached is not None and transaction is not None and cached[0] is transaction:
             taken = cached[1]
         else:
-            others = [p for p in self.active_participants if p.id != participant.id]
+            others = [
+                p
+                for p in self.active_participants + self.pending_participants
+                if p.id != participant.id
+            ]
             taken = {(p.pseudonym.color, p.pseudonym.animal) for p in others}
             self.__dict__["_pseudonym_keys"] = (transaction, taken)
         pseudonym = participant.pseudonym

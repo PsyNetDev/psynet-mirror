@@ -115,6 +115,37 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_pending_members_joining_separately_get_distinct_pseudonyms(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    grouper = SimpleGrouper(
+        "society",
+        initial_group_size=2,
+        max_group_size=4,
+        quorum=2,
+        target_group_size=2,
+        join_existing_groups=True,
+        admit_newcomers="at_admission_point",
+        top_up_wait=30,
+        below_quorum="continue_without_group",
+    )
+    founders = _working_participants(exp, 2)
+    founders[0].set_pseudonym("red", "cat")
+    founders[1].set_pseudonym("green", "owl")
+    grouper._make_group(founders, initial_group_size=2)
+    db_session.commit()
+    monkeypatch.setattr(exp, "pseudonym_scheme", _AllBlueFoxes())
+    newcomers = _working_participants(exp, 2)
+    for newcomer in newcomers:
+        grouper._join_existing_groups(newcomer)
+        db_session.commit()
+    assert len({p.pseudonym.name for p in [*founders, *newcomers]}) == 4
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_session):
     exp = get_experiment()
     first, second, third = _working_participants(exp, 3)
