@@ -1,1 +1,0 @@
-A trial's timed feedback page, such as a notice whose time limit only moves it on, no longer counts towards `GroupPrompt` showing the participant as having run out of time at the next barrier, or towards `reached_barrier_after_time_limit`: if it times out it no longer marks them, and if it is answered in time it no longer hides a time-out on the trial itself.
