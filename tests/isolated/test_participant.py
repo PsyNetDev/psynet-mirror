@@ -345,7 +345,7 @@ class TestParticipantFailure:
             group_type="main",
             initial_group_size=2,
             max_group_size=2,
-            min_group_size=2,
+            quorum=2,
             n_active_participants=2,
             accepts_top_ups=False,
         )
@@ -360,7 +360,7 @@ class TestParticipantFailure:
 
         assert participant.failed
         assert partner.failed
-        assert "sync group below minimum size" in partner.failure_tags
+        assert "sync group below quorum" in partner.failure_tags
         assert group.n_active_participants == 0
         assert partner not in group.active_participants
 

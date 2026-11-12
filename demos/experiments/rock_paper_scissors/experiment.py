@@ -1,3 +1,22 @@
+"""Rock paper scissors for a fixed pair, with a chat after each round.
+
+A ``SimpleGrouper`` pairs participants, and the pair plays ``N_ROUNDS``
+rounds. In each round both players choose an action within
+``CHOICE_SECONDS``, a barrier scores the round once both have chosen, and
+both see the two actions and the winner, then chat about the round.
+
+Each round is one cued ``RockPaperScissorsTrial`` per player, cued with the
+loop value as ``round=`` because the pair stays together. Each player's
+choice is their trial's answer. When the barrier releases the pair, it
+saves on each player's trial the action they played, their partner's
+action and the result, and the results page and the basic data read them
+from there. A player who runs out of time gets a random action; their
+answer stays ``None`` and ``trial.time_limit_reached`` is ``True``.
+
+The demo doesn't handle dropouts; see ``README.md`` for what happens when a
+player leaves.
+"""
+
 import random
 from typing import List
 
@@ -8,51 +27,66 @@ from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.chatroom import ChatRoom, EnableChatrooms
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
-from psynet.participant import Participant
 from psynet.sync import GroupBarrier, SimpleGrouper
-from psynet.timeline import Timeline, join
-from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
-from psynet.utils import get_logger
+from psynet.timeline import Module, Timeline, for_loop, join
+from psynet.trial.main import Trial
 
-logger = get_logger()
-
+GROUP = "rock_paper_scissors"
 PARTNER_WAIT_SECONDS = 300
 CHOICE_SECONDS = 20
+# The time a player is expected to spend on a round's results and chat.
+RESULTS_SECONDS = 30
+N_ROUNDS = 3
 ACTIONS = ["rock", "paper", "scissors"]
+BEATS = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
+POINTS = {"won": 1, "drew": 0, "lost": -1}
+RESULT_TEXTS = {"won": "You won!", "drew": "You drew.", "lost": "You lost."}
 
 
-def _assert_on_page(bots, expected_label):
-    """Every bot has left its hold overlay and is on ``expected_label``."""
-    for bot in bots:
-        bot.refresh_status()
-        page = bot.get_current_page()
-        assert not getattr(page, "is_timeline_hold", False)
-        assert bot.current_page_label == expected_label
+def get_timeline():
+    return Timeline(
+        EnableChatrooms(),
+        SimpleGrouper(
+            GROUP,
+            initial_group_size=2,
+            waiting_message="Waiting for your partner",
+            max_wait_time=PARTNER_WAIT_SECONDS,
+        ),
+        Module(
+            "game",
+            for_loop(
+                label="rounds",
+                iterate_over=range(N_ROUNDS),
+                logic=lambda i: RockPaperScissorsTrial.cue(round=i),
+                time_estimate_per_iteration=RockPaperScissorsTrial.time_estimate,
+            ),
+        ),
+    )
 
 
-def _last_arriver_self_skips_then_partners_catch_up(last_bot, bots, expected_label):
-    """Last-arrival self-skips on this request; partners overlay-catch-up."""
-    _assert_on_page([last_bot], expected_label)
-    advance_past_wait_pages(bots)
-    _assert_on_page(bots, expected_label)
+def _result(action, partner_action):
+    """Return ``"won"``, ``"drew"`` or ``"lost"`` for the player of ``action``."""
+    if action == partner_action:
+        return "drew"
+    if BEATS[action] == partner_action:
+        return "won"
+    return "lost"
 
 
-class RockPaperScissorsTrialMaker(StaticTrialMaker):
-    pass
-
-
-class RockPaperScissorsTrial(StaticTrial):
-    time_estimate = 35
-    accumulate_answers = True
+class RockPaperScissorsTrial(Trial):
+    sync_group_type = GROUP
+    # About 5 seconds to choose, then the results and chat.
+    time_estimate = 5 + RESULTS_SECONDS
 
     def show_trial(self, experiment, participant):
         return join(
             self.choose_action(participant),
             GroupBarrier(
-                id_="finished_trial",
-                group_type="rock_paper_scissors",
-                content="Waiting for your partner",
-                on_release=self.score_trial,
+                id_="round_finished",
+                group_type=GROUP,
+                waiting_message="Waiting for your partner",
+                # Releasing the pair closes the round and scores it.
+                on_release=self.score_round,
                 max_wait_time=PARTNER_WAIT_SECONDS,
             ),
         )
@@ -66,52 +100,57 @@ class RockPaperScissorsTrial(StaticTrial):
             ),
             PushButtonControl(choices=ACTIONS),
             time_estimate=5,
-            save_answer="last_action",
-            # Running out of time saves None; score_trial then plays a random move.
+            # Running out of time saves None; score_round then plays a random action.
             time_limit=CHOICE_SECONDS,
         )
 
+    @classmethod
+    def score_round(cls, trials: List["RockPaperScissorsTrial"]):
+        """Save each player's action, partner's action and result on their trial."""
+        for trial in trials:
+            trial.var.action = trial.answer or random.choice(ACTIONS)
+        # A pair needs both players to pass a barrier, so there are two trials.
+        first, second = trials
+        for trial, partner in [(first, second), (second, first)]:
+            trial.var.partner_id = partner.participant_id
+            trial.var.partner_action = partner.var.action
+            trial.var.partner_timed_out = partner.time_limit_reached
+            trial.var.result = _result(trial.var.action, partner.var.action)
+            trial.var.points = POINTS[trial.var.result]
+
     def show_feedback(self, experiment, participant):
-        last_trial = participant.var.last_trial
-        score = last_trial["score"]
-        if score == -1:
-            outcome = "You lost."
-        elif score == 0:
-            outcome = "You drew."
+        if self.sync_group_outcome != "stayed":
+            # The round was never scored, so there is nothing to show.
+            return None
+        if self.time_limit_reached:
+            you = f"You ran out of time, so we chose {self.var.action} for you"
         else:
-            assert score == 1
-            outcome = "You won!"
-        if last_trial["timed_out_self"]:
-            you = (
-                f"You ran out of time, so we chose {last_trial['action_self']} for you"
-            )
-        else:
-            you = f"You chose {last_trial['action_self']}"
-        if last_trial["timed_out_other"]:
-            other = (
+            you = f"You chose {self.var.action}"
+        if self.var.partner_timed_out:
+            partner = (
                 "your partner ran out of time, so we chose "
-                f"{last_trial['action_other']} for them"
+                f"{self.var.partner_action} for them"
             )
         else:
-            other = f"your partner chose {last_trial['action_other']}"
+            partner = f"your partner chose {self.var.partner_action}"
+        winner = {"won": participant.id, "lost": self.var.partner_id}.get(
+            self.var.result
+        )
         prompt = tags.div()
         with prompt:
             tags.h1("Round results")
-            tags.p(f"{you}, {other}. {outcome}")
-        actions = last_trial["action_by_player"]
-        winning_action = last_trial["action_self" if score == 1 else "action_other"]
+            tags.p(f"{you}, {partner}. {RESULT_TEXTS[self.var.result]}")
         return ModularPage(
             "results",
             GroupPrompt(
                 prompt,
                 group=self.sync_group,
                 participant=participant,
-                answers=actions,
-                highlight={}
-                if score == 0
-                else {
-                    pid: "winner" for pid, a in actions.items() if a == winning_action
+                answers={
+                    participant.id: self.var.action,
+                    self.var.partner_id: self.var.partner_action,
                 },
+                highlight={} if winner is None else {winner: "winner"},
                 note="Now chat with your partner about the round you just played!",
             ),
             chatroom=ChatRoom(
@@ -121,153 +160,121 @@ class RockPaperScissorsTrial(StaticTrial):
                 show_participants=True,
                 show_history=True,
             ),
-            time_estimate=30,
+            time_estimate=RESULTS_SECONDS,
         )
-
-    def score_trial(self, participants: List[Participant]):
-        assert len(participants) == 2
-        timed_out = [p.var.last_action is None for p in participants]
-        answers = [
-            random.choice(ACTIONS) if out else p.var.last_action
-            for p, out in zip(participants, timed_out)
-        ]
-        score_0 = self.scoring_matrix[answers[0]][answers[1]]
-        action_by_player = {p.id: a for p, a in zip(participants, answers)}
-        for i, (participant, score) in enumerate(
-            zip(participants, (score_0, -score_0))
-        ):
-            participant.var.last_trial = {
-                "action_self": answers[i],
-                "action_other": answers[1 - i],
-                "timed_out_self": timed_out[i],
-                "timed_out_other": timed_out[1 - i],
-                "action_by_player": action_by_player,
-                "score": score,
-            }
-
-    scoring_matrix = {
-        "rock": {
-            "rock": 0,
-            "paper": -1,
-            "scissors": 1,
-        },
-        "paper": {
-            "rock": 1,
-            "paper": 0,
-            "scissors": -1,
-        },
-        "scissors": {"rock": -1, "paper": 1, "scissors": 0},
-    }
 
 
 class Exp(psynet.experiment.Experiment):
     label = "Rock paper scissors demo"
 
-    timeline = Timeline(
-        EnableChatrooms(),
-        SimpleGrouper(
-            group_type="rock_paper_scissors",
-            initial_group_size=2,
-            content="Waiting for your partner",
-            max_wait_time=PARTNER_WAIT_SECONDS,
-        ),
-        RockPaperScissorsTrialMaker(
-            id_="rock_paper_scissors",
-            trial_class=RockPaperScissorsTrial,
-            # A single node: every round is the same game, so each pair
-            # revisits it for three rounds.
-            nodes=[StaticNode(definition={"game": "rock_paper_scissors"})],
-            allow_repeated_nodes=True,
-            expected_trials_per_participant=3,
-            max_trials_per_participant=3,
-            sync_group_type="rock_paper_scissors",
-            sync_group_wait_content="Waiting for your partner",
-            sync_group_max_wait_time=PARTNER_WAIT_SECONDS,
-        ),
-    )
+    timeline = get_timeline()
+
+    @classmethod
+    def get_basic_data(cls, context=None, **kwargs):
+        """Return one row per player per round, from the trials.
+
+        Every trial gets a row, including the trial of a player who left
+        during the round; the stored result columns (``action``, ``partner_*``,
+        ``result`` and ``points``) are ``None`` for a round that was never
+        scored.
+        """
+        trials = RockPaperScissorsTrial.query.order_by(
+            RockPaperScissorsTrial.sync_group_id,
+            RockPaperScissorsTrial.sync_group_round,
+            RockPaperScissorsTrial.id,
+        )
+        return {
+            "player_round": [
+                {
+                    "pair_id": t.sync_group_id,
+                    "round": t.sync_group_round,
+                    "participant_id": t.participant_id,
+                    "trial_id": t.id,
+                    # "stayed" if the round was scored; otherwise how the
+                    # player left the pair (see README.md).
+                    "outcome": t.sync_group_outcome,
+                    # None if the player ran out of time or never answered.
+                    "choice": t.answer,
+                    # The action played, random after a timeout.
+                    "action": t.var.get("action"),
+                    "timed_out": t.time_limit_reached,
+                    "partner_id": t.var.get("partner_id"),
+                    "partner_action": t.var.get("partner_action"),
+                    "partner_timed_out": t.var.get("partner_timed_out"),
+                    # "won", "drew" or "lost".
+                    "result": t.var.get("result"),
+                    "points": t.var.get("points"),
+                }
+                for t in trials
+            ],
+        }
 
     test_n_bots = 2
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        # Trial-maker init/prepare holds stay up as silent catch-up spinners
-        # until each bot resumes. Last-arrival does not skip partner cursors.
-        advance_past_wait_pages(bots)
-        _assert_on_page(bots, "choose_action")
+        # In round 1, the second bot runs out of time and plays a random action.
+        rounds = [
+            ("rock", "paper", "You lost.", "You won!"),
+            ("scissors", None, None, None),
+            ("scissors", "scissors", "You drew.", "You drew."),
+        ]
+        for first, second, first_result, second_result in rounds:
+            advance_past_wait_pages(bots)
+            _assert_on_page(bots, "choose_action")
 
-        bots[0].take_page(response="rock")
-        bots[0].refresh_status()
-        page = bots[0].get_current_page()
-        assert getattr(page, "is_timeline_hold", False)
-        assert bots[0].current_page_label == "wait"
+            # The first to choose waits for their partner.
+            bots[0].take_page(response=first)
+            bots[0].refresh_status()
+            assert bots[0].current_page_label == "wait", bots[0].current_page_label
+            if second is None:
+                bots[1].run_out_of_time()
+            else:
+                bots[1].take_page(response=second)
+            advance_past_wait_pages(bots)
+            _assert_on_page(bots, "results")
 
-        assert bots[1].current_page_label == "choose_action"
-        bots[1].take_page(response="paper")
-        _last_arriver_self_skips_then_partners_catch_up(bots[1], bots, "results")
+            text = bots[0].current_page_text
+            if second is None:
+                assert "your partner ran out of time, so we chose" in text, text
+            else:
+                assert f"You chose {first}, your partner chose {second}. " in text
+                assert first_result in text, text
+                text = bots[1].current_page_text
+                assert f"You chose {second}, your partner chose {first}. " in text
+                assert second_result in text, text
+            assert isinstance(bots[0].get_current_page().chatroom, ChatRoom)
 
-        assert (
-            "You chose rock, your partner chose paper. You lost."
-            in bots[0].current_page_text
-        )
-        assert (
-            "You chose paper, your partner chose rock. You won!"
-            in bots[1].current_page_text
-        )
+            for bot in bots:
+                bot.take_page()
 
-        assert bots[0].current_page_label == "results"
-        page = bots[0].get_current_page()
-        assert isinstance(page, ModularPage)
-        assert isinstance(page.chatroom, ChatRoom)
-        assert page.chatroom.show_participants is True
-        assert page.chatroom.show_history is True
-
-        bots[0].take_page()
-        bots[1].take_page()
-        advance_past_wait_pages(bots)
-        _assert_on_page(bots, "choose_action")
-
-        bots[0].take_page(response="scissors")
-        bots[1].take_page(response="paper")
-        _last_arriver_self_skips_then_partners_catch_up(bots[1], bots, "results")
-
-        assert (
-            "You chose scissors, your partner chose paper. You won!"
-            in bots[0].current_page_text
-        )
-        assert (
-            "You chose paper, your partner chose scissors. You lost."
-            in bots[1].current_page_text
-        )
-
-        bots[0].take_page()
-        bots[1].take_page()
-        advance_past_wait_pages(bots)
-        _assert_on_page(bots, "choose_action")
-
-        bots[0].take_page(response="scissors")
-        bots[1].take_page(response="scissors")
-        _last_arriver_self_skips_then_partners_catch_up(bots[1], bots, "results")
-
-        assert (
-            "You chose scissors, your partner chose scissors. You drew."
-            in bots[0].current_page_text
-        ), (
-            "A rare error sometimes occurs here. If you see it, please report it to Peter Harrison (pmcharrison) for "
-            "further debugging."
-        )
-        assert (
-            "You chose scissors, your partner chose scissors. You drew."
-            in bots[1].current_page_text
-        ), (
-            "A rare error sometimes occurs here. If you see it, please report it to Peter Harrison (pmcharrison) for "
-            "further debugging."
-        )
-
-        bots[0].take_page()
-        bots[1].take_page()
         advance_past_wait_pages(bots)
         for bot in bots:
             bot.refresh_status()
+            assert "That's the end!" in bot.current_page_text, bot.current_page_text
 
-        assert "That's the end!" in bots[0].current_page_text
-        assert "That's the end!" in bots[1].current_page_text
+        rows = self.get_basic_data()["player_round"]
+        assert len(rows) == 6, rows
+        assert all(r["outcome"] == "stayed" for r in rows), rows
+        assert len({r["pair_id"] for r in rows}) == 1, rows
+        by_player = {(r["round"], r["participant_id"]): r for r in rows}
+        first, second = (bot.id for bot in bots)
+        summary = {
+            key: (r["action"], r["partner_id"], r["partner_action"], r["points"])
+            for key, r in by_player.items()
+        }
+        assert summary[(0, first)] == ("rock", second, "paper", -1), summary
+        assert summary[(0, second)] == ("paper", first, "rock", 1), summary
+        assert summary[(2, first)] == ("scissors", second, "scissors", 0), summary
+        assert summary[(2, second)] == ("scissors", first, "scissors", 0), summary
+        timed_out = by_player[(1, second)]
+        assert timed_out["choice"] is None and timed_out["timed_out"], timed_out
+        assert timed_out["action"] in ACTIONS, timed_out
+        assert by_player[(1, first)]["partner_timed_out"], by_player[(1, first)]
+
+
+def _assert_on_page(bots, label):
+    """Assert that every bot has left the waiting overlay and is on ``label``."""
+    for bot in bots:
+        bot.refresh_status()
+        assert bot.current_page_label == label, bot.current_page_label

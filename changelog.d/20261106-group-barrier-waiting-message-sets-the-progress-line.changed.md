@@ -1,0 +1,1 @@
+A `GroupBarrier` `waiting_message` function can now take `waiting_count` and `group_size`, and can return `psynet.sync.hold_message(title, progress)` to write or hide the waiting indicator's progress line. `on_arrival_message` is no longer called with `kind="hold"`; if you customized hold copy there on a 14.0 release candidate, move it to a `waiting_message` function.

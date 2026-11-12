@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 from dallinger import db
 
-from psynet.sync import GroupBarrier
 from psynet.timeline import ModuleState
 from psynet.trial.chain import ChainNode, ChainTrial, ChainTrialMaker
 from psynet.trial.dense import DenseTrialMaker
@@ -201,37 +200,42 @@ def test_fail_trials_on_premature_exit_true_emits_deprecation_warning():
     assert Path(record[0].filename).resolve() == Path(__file__).resolve()
 
 
-def test_sync_group_max_wait_outlasts_the_timeout_between_barriers():
-    assert (
-        make_trial_maker(
-            sync_group_type="group", sync_group_timeout_between_barriers_time=60
-        ).sync_group_max_wait_time
-        == 80
+def test_sync_group_max_wait_time_with_late_after():
+    late = dict(
+        sync_group_type="group",
+        sync_group_late_after=60,
+        sync_group_late_action="leave_group",
     )
+    assert make_trial_maker(**late).sync_group_max_wait_time is None
     assert make_trial_maker(sync_group_type="group").sync_group_max_wait_time == 45
-    with pytest.raises(ValueError, match="sync_group_timeout_between_barriers_time"):
-        StaticTrialMaker(
-            id_="slow_barriers",
-            trial_class=CustomStaticTrial,
-            nodes=[StaticNode(definition={"x": 1})],
-            expected_trials_per_participant=1,
-            max_trials_per_participant=1,
-            recruit_mode="n_trials",
-            target_trials_per_node=1,
-            sync_group_type="group",
-            sync_group_timeout_between_barriers_time=60,
-            sync_group_max_wait_time=45,
-        )
-    make_trial_maker(
-        sync_group_type="group",
-        sync_group_timeout_between_barriers_time=60,
-        sync_group_max_wait_time=None,
-    )
-    make_trial_maker(
-        sync_group_type="group",
-        sync_group_timeout_between_barriers_time=60,
-        sync_group_max_wait_time=80,
-    )
+    with pytest.raises(ValueError, match="Leave sync_group_max_wait_time unset"):
+        make_trial_maker(**late, sync_group_max_wait_time=80)
+    make_trial_maker(**late, sync_group_max_wait_time=None)
+    with pytest.raises(
+        ValueError, match="Pass sync_group_late_action with sync_group_late_after"
+    ):
+        make_trial_maker(sync_group_type="group", sync_group_late_after=60)
+
+
+@pytest.mark.parametrize(
+    "option",
+    [
+        {"sync_group_max_wait_action": "leave_group"},
+        {"sync_group_late_after": 30},
+        {"sync_group_late_action": "leave_group"},
+        {"sync_group_also_leave": ["cohort"]},
+        {"sync_group_waiting_message": "Waiting for your partner"},
+    ],
+)
+def test_sync_group_options_need_sync_group_type(option):
+    (name,) = option
+    with pytest.raises(ValueError, match=f"sync_group_type=None.*{name}"):
+        make_trial_maker(**option)
+
+
+def test_sync_group_max_wait_time_without_sync_group_type_warns():
+    with pytest.warns(UserWarning, match="sync_group_max_wait_time has no effect"):
+        make_trial_maker(sync_group_max_wait_time=60)
 
 
 @pytest.mark.parametrize(
@@ -313,46 +317,11 @@ def test_static_trial_maker_error_mentions_nodes():
         )
 
 
-def test_sync_trial_maker_requires_active_group_for_synced_participant():
-    trial_maker = make_trial_maker(sync_group_type="sync")
-    participant = DummyParticipant()
-    start_switch = next(
-        elt
-        for elt in trial_maker._init_participant()
-        if getattr(elt, "label", None) == "init_participant"
-    )
-
-    with pytest.raises(RuntimeError, match="active sync group of type 'sync'"):
-        start_switch.get_target(experiment=None, participant=participant)
-
-    assert participant.branch_log == []
-
-
-def test_follower_copies_leader_state_after_leader_moved_on():
-    trial_maker = make_trial_maker(sync_group_type="main")
-    leader_state = SimpleNamespace(
-        participant_group="B", block_order=["X", "Y"], block_position=1
-    )
-    leader = SimpleNamespace(
-        module_state=None, module_states={trial_maker.id: [leader_state]}
-    )
-    state = SimpleNamespace(participant_group=None)
-    state.set_block_position = lambda position: setattr(
-        state, "block_position", position
-    )
-    follower = SimpleNamespace(
-        id=2,
-        module_state=state,
-        select_module=lambda module_id: None,
-        active_sync_groups={"main": SimpleNamespace(id=1, leader=leader)},
-    )
-
-    trial_maker.init_participant(experiment=None, participant=follower)
-
-    assert (state.participant_group, state.block_order, state.block_position) == (
-        "B",
-        ["X", "Y"],
-        1,
+def _prepare_barrier(trial_maker):
+    return next(
+        elt.links["barrier"]
+        for elt in trial_maker._wait_for_trial()
+        if "barrier" in elt.links
     )
 
 
@@ -364,19 +333,135 @@ WITHIN_CHAINS = dict(
 )
 
 
+class _WithinTrialMaker(ChainTrialMaker):
+    def create_networks_within(self, experiment, participant):
+        group = participant.module_state.participant_group
+        networks = [SimpleNamespace(block=b, participant_group=group) for b in "XY"]
+        participant.networks = networks
+        return networks
+
+
+def _group_member(trial_maker, group, id_):
+    return SimpleNamespace(
+        id=id_,
+        module_states={trial_maker.id: []},
+        active_sync_groups={"main": group},
+        select_module=lambda module_id: None,
+    )
+
+
+def _start_run(trial_maker, participant):
+    state = SimpleNamespace(
+        module_id=trial_maker.id,
+        trial_maker_initialized=False,
+        participant_group=None,
+        block="X",
+    )
+    state.set_block_position = lambda i: setattr(state, "block_position", i)
+    participant.module_states[trial_maker.id].append(state)
+    participant.module_state = state
+
+
+def _choices(participant):
+    state = participant.module_state
+    return state.participant_group, state.block_order, state.block_position
+
+
+def test_a_looped_sync_trial_maker_shares_each_run_s_choices_with_newcomers(
+    monkeypatch,
+):
+    # The group is a stub, so there is no row to lock and reread.
+    monkeypatch.setattr(db.session, "refresh", lambda *args, **kwargs: None)
+    groups = iter("AB")
+    trial_maker = make_trial_maker(
+        _WithinTrialMaker,
+        sync_group_type="main",
+        choose_participant_group=lambda participant: next(groups),
+        block_order="listed",
+        **WITHIN_CHAINS,
+    )
+    group = SimpleNamespace(id=1, trial_maker_runs={})
+
+    leader, follower, newcomer = (
+        _group_member(trial_maker, group, id_) for id_ in (1, 2, 3)
+    )
+    group.leader, group.active_participants = leader, [follower, leader]
+    for participant_group in "AB":
+        _start_run(trial_maker, leader)
+        _start_run(trial_maker, follower)
+        # Members released together who are all new to the run start a new one.
+        trial_maker._init_released_members(group, [follower, leader], experiment=None)
+        trial_maker._go_to_next_block(leader)
+        assert (
+            _choices(follower) == _choices(leader) == (participant_group, ["X", "Y"], 1)
+        )
+
+    # A newcomer admitted alongside the group joins its current run.
+    _start_run(trial_maker, newcomer)
+    trial_maker._init_released_members(
+        group, [leader, follower, newcomer], experiment=None
+    )
+    assert _choices(newcomer) == ("B", ["X", "Y"], 1)
+    assert group.trial_maker_runs[trial_maker.id][-1]["members"] == [1, 2, 3]
+
+
+def test_a_newcomer_admitted_as_leader_copies_the_run_but_creates_chains(
+    monkeypatch,
+):
+    monkeypatch.setattr(db.session, "refresh", lambda *args, **kwargs: None)
+    trial_maker = make_trial_maker(
+        _WithinTrialMaker,
+        sync_group_type="main",
+        choose_participant_group=lambda participant: "C",
+        block_order="listed",
+        **WITHIN_CHAINS,
+    )
+    run = dict(members=[1], participant_group="B", block_order=["Y", "X"])
+    run["block_position"] = 1
+    group = SimpleNamespace(id=1, trial_maker_runs={trial_maker.id: [run]})
+    member, newcomer = (_group_member(trial_maker, group, id_) for id_ in (1, 3))
+    _start_run(trial_maker, member)
+    member.module_state.trial_maker_initialized = True
+    _start_run(trial_maker, newcomer)
+    group.leader = newcomer
+
+    trial_maker._init_released_members(group, [member, newcomer], experiment=None)
+
+    assert _choices(newcomer) == ("B", ["Y", "X"], 1)
+    assert group.trial_maker_runs[trial_maker.id][-1]["members"] == [1, 3]
+    assert hasattr(newcomer, "networks")
+
+
+def test_a_preset_participant_group_is_shared_with_the_run(monkeypatch):
+    monkeypatch.setattr(db.session, "refresh", lambda *args, **kwargs: None)
+    trial_maker = make_trial_maker(
+        sync_group_type="main", choose_participant_group=lambda participant: "C"
+    )
+    group = SimpleNamespace(id=1, trial_maker_runs={trial_maker.id: [{"members": []}]})
+    first, second = (_group_member(trial_maker, group, id_) for id_ in (1, 2))
+    for participant in first, second:
+        _start_run(trial_maker, participant)
+    first.module_state.participant_group = "P"
+
+    for participant in first, second:
+        trial_maker.init_participant_group(None, participant)
+
+    assert second.module_state.participant_group == "P"
+
+
 @pytest.mark.parametrize("chain_kwargs", [WITHIN_CHAINS, {}])
 def test_participant_removed_from_their_group_initializes_alone(chain_kwargs):
     trial_maker = make_trial_maker(sync_group_type="main", **chain_kwargs)
     kicked = SimpleNamespace(
         active_sync_groups={},
         sync_group_links=[
-            SimpleNamespace(active=False, sync_group=SimpleNamespace(group_type="main"))
+            SimpleNamespace(
+                id=1, active=False, sync_group=SimpleNamespace(group_type="main")
+            )
         ],
         select_module=lambda module_id: None,
         module_state=SimpleNamespace(participant_group=None),
     )
-    assert not trial_maker._requires_sync_group_initialization_barrier(kicked)
-
     trial_maker.init_participant(experiment=None, participant=kicked)
 
     assert kicked.module_state.trial_maker_initialized
@@ -407,20 +492,13 @@ def test_participant_whose_group_was_closed_still_needs_a_new_group():
         id=3,
         active_sync_groups={},
         sync_group_links=[
-            SimpleNamespace(active=True, sync_group=SimpleNamespace(group_type="main"))
+            SimpleNamespace(
+                id=1, active=True, sync_group=SimpleNamespace(group_type="main")
+            )
         ],
     )
-    with pytest.raises(RuntimeError, match="expected participant 3"):
-        trial_maker._requires_sync_group_initialization_barrier(closed)
-
-
-def test_trial_sync_group_returns_none_after_kick():
-    trial = SimpleNamespace(
-        trial_maker=SimpleNamespace(sync_group_type="main"),
-        participant=DummyParticipant(),
-    )
-
-    assert Trial.sync_group.fget(trial) is None
+    with pytest.raises(RuntimeError, match="Participant 3 is not in a sync group"):
+        _prepare_barrier(trial_maker).waiting_pool_group(closed)
 
 
 def test_trial_position_is_stored_and_continues_through_repeats():
@@ -1101,55 +1179,79 @@ def test_create_trial_rejects_none_trial_class():
         )
 
 
-def test_sync_trial_maker_wait_content_is_used_by_internal_barriers():
+def test_sync_trial_maker_waiting_message_is_used_by_internal_barriers():
     trial_maker = make_trial_maker(
         sync_group_type="main",
-        sync_group_wait_content="Waiting for your partner",
+        sync_group_waiting_message="Waiting for your partner",
     )
     holds = [
-        elt
-        for elt in trial_maker.elts
-        if getattr(elt, "barrier_id", None)
-        in {
-            trial_maker.with_namespace("init_participant"),
-            trial_maker.with_namespace("prepare_trial"),
-        }
+        elt for elt in trial_maker.elts if getattr(elt, "barrier_id", None) is not None
     ]
     assert {hold.barrier_id for hold in holds} == {
-        trial_maker.with_namespace("init_participant"),
         trial_maker.with_namespace("prepare_trial"),
     }
-    assert all(hold.content == "Waiting for your partner" for hold in holds)
+    assert all(hold.waiting_message == "Waiting for your partner" for hold in holds)
     assert all(
-        hold.translated_content(None) == "Waiting for your partner" for hold in holds
+        hold.translated_waiting_message(None) == "Waiting for your partner"
+        for hold in holds
     )
 
 
-def test_sync_trial_maker_prepare_barrier_kick_exits_cleanly(monkeypatch):
+def test_sync_trial_maker_passes_also_leave_to_its_barrier():
     trial_maker = make_trial_maker(
         sync_group_type="main",
-        sync_group_max_wait_action="kick",
+        sync_group_late_after=60,
+        sync_group_late_action="leave_group",
+        sync_group_also_leave=["cohort"],
+    )
+    assert _prepare_barrier(trial_maker).also_leave == ["cohort"]
+
+
+def _run_step_after_barrier(elts, step, participant):
+    """Run ``step`` where the timeline reaches it after a GroupBarrier's hold page."""
+    hold_page = next(
+        i for i, elt in enumerate(elts) if type(elt).__name__ == "_BarrierHoldPage"
+    )
+    code_block = next(
+        elt for elt in elts[hold_page:] if getattr(elt, "function", None) == step
+    )
+    code_block.function(experiment=None, participant=participant)
+
+
+# Members released by a max-wait time-out skip on_release, so the trial maker
+# must catch up after its barriers.
+def test_sync_trial_maker_exits_after_leaving_group():
+    trial_maker = make_trial_maker(
+        sync_group_type="main", sync_group_max_wait_action="leave_group"
     )
     participant = DummyParticipant()
     participant.module_state = DummyModuleState()
-    participant.active_sync_groups["main"] = DummySyncGroup()
 
-    GroupBarrier._kick_participant_after_max_wait(participant, group_type="main")
-    assert "main" not in participant.active_sync_groups
-
-    prepare_trial_calls = []
-
-    def fail_if_prepare_trial_called(experiment, participant):
-        prepare_trial_calls.append(participant.id)
-        raise AssertionError("kicked participants should exit before preparing a trial")
-
-    monkeypatch.setattr(trial_maker, "prepare_trial", fail_if_prepare_trial_called)
-
-    trial_maker._try_to_prepare_trial_solo(experiment=None, participant=participant)
+    _run_step_after_barrier(
+        trial_maker._wait_for_trial(), trial_maker._exit_if_left_group, participant
+    )
 
     assert participant.current_trial is None
     assert participant.trial_status == "exit"
-    assert prepare_trial_calls == []
+
+
+def test_sync_trial_maker_is_skipped_by_members_who_left_before_any_trial():
+    trial_maker = make_trial_maker(sync_group_type="main")
+    conditions = [
+        elt.function
+        for elt in trial_maker.compile_elts()
+        if type(elt).__name__ == "StartSwitch"
+        and elt.label
+        in ("not_left_before_any_trial", "not_left_before_any_trial_wrapup")
+    ]
+    participant = DummyParticipant()
+    assert len(conditions) == 2
+    assert not any(c(participant=participant) for c in conditions)
+    participant.module_state.n_completed_trials = 1
+    assert all(c(participant=participant) for c in conditions)
+    participant.module_state.n_completed_trials = 0
+    participant.active_sync_groups["main"] = DummySyncGroup()
+    assert all(c(participant=participant) for c in conditions)
 
 
 def _check_consistency(repeat_answers, parent_answers):
@@ -1338,3 +1440,37 @@ def test_repeats_without_a_trial_limit_name_the_missing_argument():
         make_static_trial_maker(
             allow_repeated_nodes=True, max_trials_per_participant=None
         )
+
+
+@pytest.mark.parametrize(
+    "options, message",
+    [
+        (
+            {"sync_group_late_action": "kick"},
+            "sync_group_late_action='kick' was renamed",
+        ),
+        ({"sync_group_late_after": 0}, "sync_group_late_after must be positive"),
+        (
+            {
+                "sync_group_late_after": 10,
+                "sync_group_late_action": "fail",
+                "sync_group_max_wait_action": "leave_group",
+            },
+            "use sync_group_late_action",
+        ),
+        (
+            {
+                "sync_group_late_action": "leave_group",
+                "sync_group_also_leave": ["main"],
+            },
+            "sync_group_also_leave lists the barrier's own group type",
+        ),
+        (
+            {"sync_group_waiting_message": "{SECONDS} s"},
+            "its sync_group_waiting_message",
+        ),
+    ],
+)
+def test_sync_group_errors_name_the_trial_maker_options(options, message):
+    with pytest.raises(ValueError, match=message):
+        make_trial_maker(sync_group_type="main", **options)

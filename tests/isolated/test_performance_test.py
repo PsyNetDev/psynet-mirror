@@ -980,6 +980,33 @@ def test_database_rows_count_new_participants(db_session):
     assert database_rows()["participant"] == before["participant"] + 1
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+def test_report_counts_removals_from_sync_groups_by_reason(db_session):
+    from dallinger import db
+
+    from psynet.bot import Bot
+    from psynet.perf_test.measure import group_removal_stats
+    from psynet.redis import redis_vars
+    from psynet.sync import ParticipantLinkSyncGroup
+
+    redis_vars.set("launch_finished", True)
+    assert group_removal_stats(0) is None
+    for reason in ["late", "finished", None, "not_admitted", "late"]:
+        db.session.add(
+            ParticipantLinkSyncGroup(participant_id=Bot().id, removal_reason=reason)
+        )
+    db.session.flush()
+
+    removals = group_removal_stats(0)
+    text = _join(format_test_results(_base_result(group_removals=removals)))
+
+    assert removals == {"late": 2, "not_admitted": 1}
+    assert "REMOVALS FROM SYNC GROUPS" in text
+    assert "REMOVALS FROM SYNC GROUPS" not in _join(format_test_results(_base_result()))
+
+
 def test_failed_participants_are_classified_by_failed_not_status():
     from types import SimpleNamespace
 
@@ -1014,15 +1041,15 @@ def test_failed_participants_are_classified_by_failed_not_status():
             "139 participants failed for waiting too long at while_loop:Waiting for trial",
         ),
         (
-            {_HOLD_TIMEOUT: 100, "sync group below minimum size": 39},
+            {_HOLD_TIMEOUT: 100, "sync group below quorum": 39},
             "139 participants failed for waiting too long at "
-            "sync group below minimum size, timeline_hold:wait_while",
+            "sync group below quorum, timeline_hold:wait_while",
         ),
         (
             {"timeout between barriers": 139},
             "139 participants failed for waiting too long at timeout between barriers",
         ),
-        ({"sync group below minimum size": 139}, None),
+        ({"sync group below quorum": 139}, None),
         ({"attention_test_1, performance_check": 139}, None),
     ],
 )

@@ -422,24 +422,26 @@ statement kind repeats per member.
 Check window (one GroupBarrier, group already formed)
 -----------------------------------------------------
 
-18 statements for the filled visit, plus extra-connection and ORM
-``lock_timeout`` SETs, so ``20`` total (no per-waiter skip-after-commit):
+16 statements for the filled visit, plus the ORM ``lock_timeout`` SET, so
+``17`` total (no per-waiter skip-after-commit):
 
-* extra-connection ``lock_timeout`` and ``pg_try_advisory_xact_lock`` (the ORM
-  session does not take that same key; last-arrival only issues a blocking
-  ``pg_advisory_xact_lock`` when the try misses);
+* extra-connection ``pg_try_advisory_xact_lock`` (the ORM session does not
+  take that same key; a try-lock never waits, so this connection sets no
+  ``lock_timeout``; last-arrival only issues a ``lock_timeout`` and a
+  blocking ``pg_advisory_xact_lock`` when the try misses);
 * ORM ``lock_timeout`` for the check/commit on ``db.session``;
-* instance PK, SAVEPOINT, deferred ``spec``
-  load, one waiter ``FOR UPDATE NOWAIT`` join (this already inner-joins
+* instance PK with its ``spec`` undeferred, SAVEPOINT, one waiter
+  ``FOR UPDATE NOWAIT`` join (this already inner-joins
   ``participant``). The visit-claim peek drops its reconstructed barrier
-  after rolling back, so this check still loads ``spec`` once instead of
-  reusing in-memory peek state;
+  after rolling back, so this check still reconstructs it from ``spec``
+  instead of reusing in-memory peek state;
 * ``timeline_hold`` select-in and ``module_state`` select-in;
 * one explicit ``active_barriers`` ``IN`` query and one explicit
   ``sync_group_links`` ``IN`` query (both populated with
   ``set_committed_value``; loader options on those relationships either reset
   the waiter links or make later arrival-notice walks lazy-load per member);
-* ``sync_group`` PK, group-membership load, deferred group-size columns;
+* ``sync_group`` PK (it includes the :class:`~psynet.sync.SimpleSyncGroup`
+  columns, such as the group sizes), group-membership load;
 * three ``executemany`` UPDATEs (link release, hold ``released_at``,
   participant wait credit), group UPDATE, instance UPDATE, RELEASE SAVEPOINT.
 
@@ -456,7 +458,7 @@ The check, plus two ``lock_timeout`` SETs and the relock: a participant
 ``FOR UPDATE`` without ``NOWAIT`` on the bare row, then the participant load
 with its joined ``_current_trial`` (its lazy collections load only if the next
 page reads them). The lock comes first, in a statement of its own (see
-`Lock the participant row before loading it`_). Grand total: ``24``. Profiler commits: ``4`` (check +
+`Lock the participant row before loading it`_). Grand total: ``21``. Profiler commits: ``4`` (check +
 extra connection + queued + relock).
 The check commit is on ``_evaluate_held_instance``; the
 relock commit is on ``Experiment._relock_arriver_after_barrier_check``.
@@ -515,17 +517,38 @@ only when the instance is already inactive. See
 Grouped request budgets
 -----------------------
 
-``tests/isolated/test_group_request_queries.py`` pins whole requests around
-the check window, called through the real handlers with a cold session.
-``test_barrier_requests_do_not_grow_with_group_size`` covers an arrival
-``POST /response`` from a page, the hold poll while waiting, the last
-arrival and the poll after release, and requires each to issue the same
-number of statements for groups of three and seven, give or take two. The
-test disables hold timeouts and checks that the last arrival releases the
-whole group, so a slow run cannot measure failed participants instead of the
-hold. The tolerance covers internal commits: one can drop a row such as the
-sync group from the weak identity map, and loading it again moves a count by
-a statement or two between runs. A statement per member adds at least four.
+``tests/isolated/test_group_request_queries.py`` forms groups through real
+``/timeline`` and ``/response`` requests from a cold session and pins what
+happens around the barrier check:
+
+* ``test_barrier_requests_do_not_grow_with_group_size`` covers an arrival
+  ``POST /response`` from a page, the hold poll while waiting, the last
+  arrival and the poll after release, and requires each to issue the same
+  number of statements for groups of three and seven, give or take two. The
+  test disables hold timeouts and checks that the last arrival releases the
+  whole group, so a slow run cannot measure failed participants instead of
+  the hold.
+* A member leaving a group above quorum costs the same for groups of four
+  and eight (``16`` statements when the leader leaves, including choosing a
+  new leader). Removal compares link ids before identity, so it does not
+  load every member.
+* Dissolving a group fails each remaining member separately: their refresh,
+  ``fail()``, trial lock, hold lookup and flushes cost about 10–12
+  statements per member. The test sets a ceiling of 14 per member.
+* An idle ``check_barriers`` sweep fully re-checks every waiting visit (15
+  statements each), even when nothing changed. ``check_sync_groups`` counts
+  every active group's members in one statement, and locks and recounts only
+  the groups whose stored counts are stale or that may close, so idle groups
+  cost it nothing. Neither depends on group size. A ``check_barriers`` sweep that found waiting visits then looks for
+  diverged groups in one more statement (``_divergence_candidates``), and
+  runs the full check (``_divergence_message``) only for a group whose members all wait at two or more of its
+  barriers and that has no divergence record for those barriers yet.
+
+The size comparisons allow two statements of tolerance for internal commits:
+one can drop a row such as the sync group from the weak identity map, and
+loading it again moves a count by a statement or two between runs. A
+statement per member adds at least four. The dissolve and poller numbers are
+snapshots of work that could be batched or skipped; lower them when it is.
 
 An arrival rebuilds every waiting member's hold overlay.
 ``GroupBarrier._notify_arrivals`` counts the group once and passes the counts

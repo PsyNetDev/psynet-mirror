@@ -18,19 +18,30 @@ evaluates the barrier in a short coordination transaction, before rendering
 the response. A :class:`~psynet.sync.SimpleGrouper` can therefore form the
 group immediately, and a :class:`~psynet.sync.GroupBarrier` releases the
 partners without waiting for the poller. The last participant to arrive
-skips the wait indicator and continues to the next page. If a partner's wait row is locked,
-the regular 0.5-second barrier check completes the release instead.
+skips the wait indicator and continues to the next page. If a partner's wait row, or the row
+of a group that accepts top-ups, stays locked, the regular 0.5-second barrier check completes
+the release instead.
+
+.. _sync-barrier-poller:
 
 The barrier poller
 ------------------
 
 The clock process runs :func:`~psynet.sync.check_barriers` every
-0.5 seconds as a backstop: for a release whose request-side check was
-deferred or lost, for barriers with explicit ``waiting_logic`` (whose wait
-pages don't check the barrier), and for waiters who have left. A waiter whose
-browser is still open also checks their own visit on each hold poll.
+0.5 seconds. It splits the pools of a :class:`~psynet.sync.Regrouper` with
+``every``: an arrival there cannot make the pool ready, so the arrival doesn't
+queue a check of the pool. For arrivals submitted with Next, the poller makes a
+due split at its next check, normally within a second. An arrival or reload in
+``GET /timeline``, or a bot's poll, still checks the waiter's visit (see
+`issue #1159 <https://gitlab.com/PsyNetDev/PsyNet/-/issues/1159>`__). A browser's safety poll on the
+wait page (``timeline_hold_resume``) does not check the barrier for a hold
+that isn't released yet. The poller is also a backstop: for a release whose
+request-side check was deferred or lost, for barriers with explicit
+``waiting_logic`` (whose wait pages don't check the barrier), and for waiters
+who have left.
 
-Each sweep first applies ``max_wait_time`` to waiters whose deadline has
+Each sweep first tries again to dissolve groups marked ``dissolving``. It
+then applies ``max_wait_time`` to waiters whose deadline has
 passed, since nobody else would: their own request normally does it. This
 covers waiters at the default wait indicator and at explicit
 ``waiting_logic`` pages, whose link records its own deadline, even if they
@@ -46,33 +57,104 @@ of waiters a sweep normally stays within its interval and later sweeps reach
 the remaining visits. One timeout or check can still overrun while it waits
 for a row lock.
 
+.. _sync-group-lock-order:
+
 Sync group lock order
 ---------------------
 
-Every participant request locks its own participant row first, and may then
-change its sync group, for example when that participant fails or leaves. So
-code holding a sync group row must never wait for *another* participant's
-row:
+Barrier checks and participant requests take their locks in this order:
 
-- Group dissolution locks the other members' rows with ``SKIP LOCKED``. A
-  member whose own request holds their row is left out, the group is marked
-  ``dissolving``, and the barrier poller finishes the dissolution once that
-  request commits.
-- A between-barrier timeout with ``"fail"`` also skips busy late members;
-  they are still late at the barrier's next check. Kicking only changes the
-  group's links, so it does not lock the member's row.
-- Re-electing a leader picks only a member whose row is free, because the
-  foreign-key check on ``leader_id`` locks the new leader's row.
-- Barrier checks lock waiters with ``NOWAIT`` and defer if one is busy.
-- Joining an open group (``join_existing_groups=True``) locks the group row
-  with ``SKIP LOCKED`` and re-counts its members under that lock; a busy
-  group is skipped for the next candidate.
+1. The barrier visit's advisory claim, held on a separate database
+   connection for the length of the check.
+2. Participant rows. A barrier check locks the waiters' barrier links and
+   rows with ``NOWAIT``; a participant's own request locks their own row,
+   waiting for it.
+3. The sync group row, ``FOR NO KEY UPDATE``. Joins inside barrier checks,
+   :func:`~psynet.sync.check_sync_groups`, the poller's retry of a
+   dissolution and a :class:`~psynet.sync.Regrouper` closing a cohort
+   (``stop_top_ups_after_rounds``) use ``SKIP LOCKED``. A :class:`~psynet.sync.GroupBarrier`
+   check takes the row of each waiting group that accepts top-ups with
+   ``NOWAIT``, so that a busy group defers the check. A newcomer's own
+   request waits up to a second for an open group (see below). A member who leaves or fails changes the group
+   with an ``UPDATE``, which waits up to ``timeline_lock_timeout_seconds``.
+   A synchronized trial maker recording a run's choices in the group's
+   ``trial_maker_runs`` also waits for the row, after locking any
+   participant rows it needs.
+4. The unique index on a group's rounds (``sync_group_round``), on which
+   a cue that creates a round waits for another request creating the same
+   round, so that members cueing at once share one round; the later insert
+   does nothing and loads the earlier one's round. Neither the round nor
+   the trial has a foreign key to the group row, so cues take no lock on
+   it. Releases and dissolution don't need a round lock: a barrier waits
+   for every admitted member, so none of them can still be about to cue the
+   round it closes, and dissolution reads the rounds under the members' row
+   locks.
+5. Members' rows when dissolving the group, with ``SKIP LOCKED``, then the
+   rows of links, trials and nodes, and of other groups. A between-barrier
+   timeout locks late members' rows (also ``SKIP LOCKED``) earlier, in
+   :meth:`~psynet.sync.GroupBarrier.check_waiting_participants`. This can't
+   deadlock: late members' rows are skipped if busy.
+
+So, in framework code, a request holding a sync group row takes other
+participants' rows only with ``SKIP LOCKED`` or ``NOWAIT``:
+
+- Group dissolution locks the members' rows with ``SKIP LOCKED``, and is
+  all or nothing. If another member's request holds their row, nobody is
+  removed: the group is marked ``dissolving`` and the barrier poller tries the whole
+  dissolution again on each sweep, so every member leaves the group, and
+  learns why, at the same time. A group back at its quorum by then is no
+  longer dissolved. Its pending members are turned away as
+  ``"not_admitted"``.
+- A between-barrier timeout (``late_after``) also skips busy late members,
+  all or nothing as in dissolution, with either ``late_action``: removing
+  only the free ones could leave the group below quorum and dissolve it
+  around a busy late member, who would then leave with the group instead
+  of as late. The late members are reconsidered at the barrier's next
+  check, which the poller makes on each sweep, and the group waits for
+  them meanwhile. Lateness is decided before the rows are
+  locked, so it is decided again for the members locked: one whose request
+  brought them to the barrier, or started a timed page, in between is no
+  longer late. Removal writes
+  the member's links and trial outcome, so without the row lock a member's
+  own request could act on stale group state, for example storing an
+  answer after the rest of the group moved on without them.
+- ``sync_group.leader_id``, like ``participant_link_barrier.sync_group_id``
+  and ``trial.sync_group_id``, has no foreign key: PostgreSQL re-checks a
+  foreign key when a row written earlier in the transaction is updated
+  again, and that check would wait for a request holding the leader's row.
 
 Two members failing at the same moment therefore do not deadlock: each
-fails itself and whoever else is free, and the poller completes the rest.
-The rule does not order rows of *different* sync groups, so participants in
-several groups at once, failing together, can still deadlock, in which case
-PostgreSQL aborts one of the transactions.
+fails itself, and the second request to reach the group, or else the
+poller, dissolves it. Author callbacks that run under these locks, such as
+``on_release``, are not bound by the rule: if one locks other rows, it
+can deadlock, and PostgreSQL then aborts one of the transactions. The rule
+also does not order rows of *different* sync groups, so participants in
+several groups at once, failing together, can deadlock in the same way.
+
+Joining an open group (``join_existing_groups=True``) locks the group row
+and re-counts its members under that lock, so two newcomers can't both take
+its last place; a busy group is skipped for the next candidate. Each
+candidate is locked in a savepoint, rolled back unless the newcomer joins
+that group, so a joiner holds at most one group row. A
+:class:`~psynet.sync.GroupBarrier` check holds the same lock, and reloads
+the group's members under it, while it decides, so a newcomer joins either
+before the check counts them or after it commits. If no free group has
+room but one was busy, the newcomer's own request waits up to a second for
+the best busy one, instead of waiting at the grouper for the barrier
+poller. That lock is taken in a savepoint too, so a busy group found full
+after the wait is released. The wait can't deadlock only because it holds
+no other group's row: the newcomer has no link in the group yet, so whoever
+holds the group's row has no reason to lock the newcomer's. Joins inside barrier
+checks don't wait. The poller can still make a join that waits: after a
+check, it moves the waiters it released on through their timelines, and a
+waiter who reaches a grouper joins as their own request would. So it can
+wait up to a second per waiter, outside its 0.2-second budget.
+
+A barrier check that finds a waiter or a group busy is rolled back and
+deferred: the last arrival retries it once, and the poller retries it in
+the same sweep and again on later ones. PostgreSQL logs each such
+``NOWAIT`` miss as an error (see :ref:`deploy_troubleshooting_lock_errors`),
+and PsyNet logs at ``DEBUG`` that it deferred the check.
 
 Barrier evaluation and participant locking belong to the framework and are
 not extension points. Custom barriers override
@@ -94,7 +176,7 @@ read by the release hooks must therefore hold JSON-compatible values,
 supported callables, classes, or persisted PsyNet ORM records.
 
 The reconstructed barrier has ``id``, custom release state, scalar
-presentation fields (``content`` and the timeouts) and notification
+presentation fields (``waiting_message`` and the timeouts) and notification
 settings. Wait-page construction (``waiting_logic``, ``waiting_screen``,
 ``_uses_timeline_hold`` and the expected repetitions of ``waiting_logic``)
 stays on the live timeline object, as
@@ -122,9 +204,26 @@ again. That request starts after the update's commit, so the response to the
 last update counts every arrival. Responses can come back out of order, and
 the browser drops any response to an earlier request than one it has shown.
 The response also has the seats of the members waiting in each of the
-participant's groups, for the ticks of :class:`~psynet.group_prompt.GroupPrompt`.
+participant's groups, for the ticks of :class:`~psynet.group_prompt.GroupPrompt`,
+and of those among them whose latest timed page ran out of time
+(``ParticipantLinkBarrier.ran_out_of_time``), who get a dash. Pages record
+the time-out as it happens in ``Participant.timed_out_since_barrier``, which
+the next barrier copies onto the visit and clears; waiting pages and a trial's
+feedback pages leave it alone (``Page._time_limit_counts``; the feedback page
+maker marks the pages it makes with ``_trial_feedback``).
 Hold overlays for members who are already waiting are still sent with the
 update, so their counts can lag until the next arrival.
+
+Waiting pages
+-------------
+
+``Participant.waiting_barrier_id`` names the barrier whose
+``waiting_logic`` the participant is in. The barrier sets it on arrival,
+and a step after the waiting logic hands it back to the enclosing barrier,
+if any. A page tests it, not where the page came from, to decide whether a
+release may end it, and whether its time limit counts for the group's
+dashes and between-barrier timeout. Page makers can show waiting pages
+again outside the waiting logic, so the page itself can't tell.
 
 Time credit
 -----------

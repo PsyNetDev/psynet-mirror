@@ -28,7 +28,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `demos/experiments/create_rate_sync`,
   `demos/experiments/rock_paper_scissors`,
   `demos/experiments/sync_quorum`, and
-  `demos/experiments/gibbs_within_sync`.
+  `demos/experiments/gibbs_within_sync`; for games played in rounds, also
+  `demos/experiments/ultimatum_pairing`,
+  `demos/experiments/crowd_estimate` and, for a fixed team that plays on
+  when members leave, `demos/experiments/public_goods`; for taking turns,
+  `demos/experiments/story_chain`.
 
 ## Choose the synchronization model
 
@@ -49,60 +53,179 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 
 ## PsyNet implementation hints
 
-- Prefer `TrialMaker`s for organizing rounds. For choosing `StaticTrialMaker`
-  vs chain-based makers, read `develop-experiment-back-end/SKILL.md`.
+- Make every round a trial, so its data stay on trials and nodes. Use a
+  trial maker with `sync_group_type` when all group members should follow
+  the leader's node allocation and trial sequence, and one cued trial per
+  player per round (below) for games played in rounds, especially with
+  changing partners. For choosing
+  `StaticTrialMaker` vs chain-based makers, read
+  `develop-experiment-back-end/SKILL.md`.
 - Use `SimpleGrouper(group_type=..., initial_group_size=...)` to create cohorts
-  and `GroupBarrier(id_=..., group_type=..., content=...)` to release group
-  members together. Pass `content` to customize the hold overlay; omit
-  `waiting_logic` unless you need a full wait page or filler task. Arrival
-  notices are on by default. The partner-ready pill sits on the progress
-  bar. Pair holds keep the title only; groups of three or more show
-  remaining-not-ready copy (`2 of 3 not ready yet`). Keep
-  `on_arrival_message` notice copy to one short sentence. Groupers form
+  and `GroupBarrier(id_=..., group_type=..., waiting_message=...)` to release
+  group members together. Pass `waiting_message` to customize the hold
+  overlay; omit `waiting_logic` unless you need a full wait page or filler
+  task. Arrival notices are on by default. The partner-ready pill sits on
+  the progress bar. Pair holds keep the title only; groups of three or more
+  show remaining-not-ready copy (`2 of 3 not ready yet`). For notice length,
+  see "Arrival notices" in `code/multiplayer/synchronization`. Groupers form
   groups when the last needed member arrives, without waiting for the
   barrier poller.
 - Use `GroupBarrier(on_release=...)` for atomic shared updates such as role
   assignment, scoring, aggregation, or recording round outcomes. The
   callback's `barrier` argument is the reconstructed registry object; read
-  `content` and timeouts from it. Wait pages stay on the live timeline
+  `waiting_message` and timeouts from it. Wait pages stay on the live timeline
   barrier (see "Release callbacks" in `code/multiplayer/synchronization`).
-- Sort `sync_group.participants` by participant ID before deterministic role
-  assignment; PsyNet does not guarantee the stored order.
-- Use `sync_group_type` on trial makers when all group members should follow the
-  leader's node allocation and trial sequence.
+  To share one callback between barriers, give each its own keyword
+  arguments with `functools.partial` instead of parsing `barrier.id`
+  (see "Release callbacks"). `on_release` doesn't run
+  for members who left before the release or whose group dissolved, so read
+  what it stores with `trial.var.get("score")` (or `participant.var.get`),
+  which returns `None` when it isn't set. No experiment code runs when a
+  group dissolves; PsyNet only sets `dissolved_at` on the
+  round (`trial.group_round`) its group dissolved during, so exports should read that rather than store
+  their own marker from `score_answer`. With
+  `below_quorum="continue_without_group"`, when a
+  member's cued trial has `sync_group_outcome == "group_dissolved"`,
+  compute their result where it is needed (`show_feedback`, an export or
+  `on_finalized`) from every stored `trial.answer` in `group_round.trials`.
+  `trial.answer` is the trial's latest answer, so if `show_trial` has pages
+  after the barrier, set `accumulate_answers = True` and read the answer by
+  page label. A partner still on the question page may not have answered
+  yet when `show_feedback` runs. The outcome is
+  only written during the trial's pages and until a barrier there releases
+  the group, so for a barrier after `show_trial`, or after an earlier
+  release in it, check `participant.sync_group_removal_reason(...)` instead.
+- For deterministic roles or turn order, use `psynet.sync.group_seats(group)`
+  (seats in join order, stable while the group exists), as in
+  `story_chain`; PsyNet does not guarantee the order of
+  `sync_group.participants`.
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries
-  such as submit, rate, reveal, score, or bonus computation.
-- Read partner state through `participant.sync_group.participants`,
-  participant vars, trial vars, node vars, or `on_release` outputs. Do not let
-  the browser decide shared experiment state.
-- Use `GroupCloser(group_type=...)` before regrouping participants with the same
-  `group_type`.
+  such as submit, rate, reveal, score, or bonus computation. PsyNet refuses
+  `waiting_logic` on a barrier inside `show_trial`; use `waiting_screen` there.
+- Read partners' answers from what `on_release` stored on the trial or round
+  (trial vars, `group_round.var`); use `sync_group.participants` only for membership,
+  such as assigning roles. Do not let the browser decide shared experiment
+  state.
 - For games played in rounds with changing partners or rooms, put a
-  `Regrouper(group_type, group_size=..., deadline=..., within=...)` at the
-  start of each round instead of a grouper and closer. Slow participants miss a
-  round and join the next one rather than being failed. Pair it with
-  `GroupBarrier(timeout_between_barriers_time=...,
-  timeout_between_barriers_action="kick")` so late members are removed and
-  pass the barrier, as in the `lowest_unique_number` and `ultimatum_pairing`
-  demos; give the round's other barriers `skip_if_not_in_group=True`. Use
-  `pairs_avoiding_repeats` in `form_groups` to avoid repeat partners. With `release_left_over=True`, odd players out sit
-  out the round; with `within`, a player waiting alone first waits one more
-  deadline for teammates, so `max_wait_time` must exceed twice the deadline.
+  `Regrouper(group_type, group_size=..., within=...)` at the start of each
+  round instead of a grouper and closer. Pass `deadline=` to split once
+  everyone is back or the timeout passes (`ultimatum_pairing`), or `every=`
+  for rounds on fixed ticks ("Variations" in
+  `code/multiplayer/writing_a_round_based_experiment`). Participants who miss
+  a split join the next one rather than being failed. For players who stop
+  responding mid-round, follow "Moving slow players on" in
+  `code/multiplayer/writing_a_round_based_experiment`: use
+  `late_action="leave_group"` with `also_leave=[<within group type>]` so
+  that they also leave the `within` group; see the quorum caveat there.
+- A member on a timed page isn't treated as late until its limit plus 10 s,
+  so `late_after` need not cover the page (see "Timeouts" in
+  `code/multiplayer/synchronization`); the demos use 30 s so that a
+  background tab can notice the round has started.
+- The regrouper groups players at random, sits out whoever has played most,
+  and counts rounds (`rounds_played`, `rounds_sat_out`); pass `roles=[...]`
+  (given out at random by default) and read `self.sync_group_role` in the
+  cued trial instead of assigning roles yourself. To avoid last round's partner or to
+  alternate roles, copy `PairingRegrouper` from the `ultimatum_pairing`
+  demo's `pairing.py`, which overrides `form_groups` and `assign_roles`; override them
+  likewise for other rules. With `left_over="sit_out"`, odd
+  players out sit out the round; with `within`, a player waiting alone first
+  waits one more period for cohort members. The default `max_wait_time`
+  allows for this; an explicit one must then exceed twice the `deadline` or
+  `every` period. To let latecomers join a cohort (`join_existing_groups=True`)
+  only during its first rounds, pass the regrouper
+  `stop_top_ups_after_rounds=n` rather than a `join_criterion`.
 - For a lobby that should not wait forever for a full group, use
-  `SimpleGrouper(min_group_size=..., start_short_after=...)`, with
-  `join_existing_groups=True` to let latecomers fill it up.
-- Use `join_existing_groups=True` only with a task-specific `join_criterion`
-  that rejects stale, completed, or unsuitable groups.
+  `SimpleGrouper(start_short_after=..., quorum=...)`; a short start forms a
+  group of at least the quorum (`start_short_with` overrides that). A
+  grouper whose `quorum` is below `initial_group_size`, or whose group type
+  has a barrier with `late_after`, must be given `below_quorum`, and
+  `late_after` must be given `late_action`; pair
+  `late_action="leave_group"` with `below_quorum="continue_without_group"`.
+  To let
+  latecomers join only before the game starts, follow "Letting latecomers
+  join before the game starts" in `code/multiplayer/synchronization`, with
+  `stop_top_ups=True` on a barrier before the first round, and pass the
+  grouper `use_admission_points=False`. If groups keep taking newcomers
+  during the game, pass `use_admission_points=True` and a
+  `target_group_size`: a newcomer is then a pending member, whom nothing
+  counts or waits for, until an admission point admits them, such as a
+  `GroupBarrier(admission_point=True, newcomer_max_wait=...)` at the start
+  of each round, a synchronized trial maker's trial preparation (pass it
+  `sync_group_newcomer_max_wait`) or a `Regrouper` split `within` the group
+  type. `newcomer_page=` shows the newly admitted their group's history
+  (see "Admission points" in `code/multiplayer/synchronization`, and the
+  `microsociety` demo).
+  For a per-person condition (not a join window), such as a chain that is
+  too far along for them to catch up with, pass `join_criterion` (see
+  `join_criterion` under "Forming groups" in
+  `code/multiplayer/synchronization`).
+  To let participants who find no group carry on alone instead of being
+  failed, pass the grouper `max_wait_action="continue_without_group"`.
+  `demos/experiments/crowd_estimate` shows this whole open-lobby workflow,
+  with each question as a cued trial whose ungrouped version
+  (`sync_group_optional = True` on the trial class) lets a player without a
+  group answer alone; without it, a cue by a player without a group raises.
+- Branch on `participant.in_sync_group(group_type)` wherever the timeline
+  needs a group: stop a rounds loop with it in the `while_loop` condition,
+  and give a synchronized trial maker a solo alternative, for example
+  `conditional("paired", in_pair, paired_trials, solo_trials)`.
+- Write each round as one cued trial per player (`Trial.cue()` on a trial
+  class with `sync_group_type`): `show_trial` returns the round's pages and
+  the `GroupBarrier` that ends the round, and `show_feedback` its outcome.
+  A started trial runs whole, so a participant who loses their group
+  partway still reaches the barrier, which passes them alone, and their
+  trial's `sync_group_outcome` says what happened; no `conditional` per
+  page is needed. Put the grouper or `Regrouper` before the cue, never
+  inside the trial. With a `Regrouper` and a cohort (`within=`), follow the
+  three-way `switch` on `round_status` (paired, sat out, no cohort) in "One
+  trial per player per round" of
+  `code/multiplayer/writing_a_round_based_experiment`, as in
+  `ultimatum_pairing`:
+  `join(pairing, switch("round", round_status, {"paired": OfferTrial.cue(), "sat_out": sitting_out, "no_cohort": []}))`,
+  where `round_status` checks `pairing.sat_out(participant)` to tell a
+  sit-out from a player removed for being late. Without a cohort, a
+  two-way `conditional` is enough (see "Variations" in
+  `code/multiplayer/writing_a_round_based_experiment`).
+- To end the rounds once a participant has left their group, pass
+  `stop_if=left_pair` to the `for_loop`, with `left_pair` returning
+  `not participant.in_sync_group("pair")`; `stop_if` never cuts a started
+  iteration short. Follow the
+  loop with a `conditional` on the same function for what a member who
+  left, or anyone who never had a group, does instead, such as answering
+  the rest of the questions alone.
+  `public_goods` stops its `round=i` loop with `stop_if` in a team game that
+  plays on with fewer members, down to its quorum, and pays the last member
+  for the round in which the group dissolves: a started cued trial runs to
+  its end, where `score_answer` reads its `sync_group_outcome`.
+- In a `Regrouper` game the player whose partner left stays in the pair, so
+  they play the round out and see its outcome, as in `ultimatum_pairing`;
+  only the player removed for being late is out of the pair, and gets their
+  own page there. The barrier's `on_release` can take `left`, the members
+  who left since the previous barrier, and
+  `p.sync_group_removal_reason("pair")` tells the one who stayed whether
+  their partner returned the study or was too slow.
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with
-  filler work via `trial_maker.custom(...)`, as in `sync_quorum`.
+  filler work via `trial_maker.custom(...)`, as in `sync_quorum`. Keep
+  `waiting_logic` atomic, one short trial per pass
+  (`PageMaker(trial_maker.cue_trial, ...)`), and let the loop repeat it: a
+  release fails the trial on screen and creates and fails, unseen, every
+  later trial left in the pass. Each `while_loop` in a released pass ends
+  at its next check.
 - For chain or Gibbs designs, distinguish true co-presence from async
   across-participant chains. Use `wait_for_networks=True` when participants may
   otherwise exit while async network growth is still pending.
 - Use `ChatRoom` only for participant communication; keep phase advancement
   and scoring in barriers. Inside a trial, scope the room with
   `self.sync_group.id`. Elsewhere use
-  `participant.active_sync_groups[group_type].id`.
+  `participant.active_sync_groups.get(group_type)`, which is `None` after
+  the participant left the group, so show no `ChatRoom` then.
   `participant.sync_group` raises if more than one group is active.
+- A `PageMaker` builds its page again on submit, when the participant may
+  have left the group. Never index `active_sync_groups[group_type]` there:
+  it raises `KeyError`, which fails the participant.
+- For games with turns one after the other, such as investor then trustee,
+  follow "Turns one after the other" in
+  `code/multiplayer/writing_a_round_based_experiment`.
 - Prefer engaging waiting trials over passive wait screens when waits may be
   long. Participants may be distracted or running multiple experiments at once;
   useful filler tasks can improve retention and reduce idle no-shows.
@@ -113,6 +236,91 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Use visible timers, warning states, automatic staging/submission, and clear
   timeout behavior for timed phases. These patterns keep groups responsive and
   prevent one inactive participant from blocking everyone else indefinitely.
+
+### Rounds as cued trials
+
+Follow "Rounds of cued trials" in `code/multiplayer/synchronization` for
+how `cue` numbers rounds, the rules for `definition`, and `round=`. "One
+trial per player per round" in
+`code/multiplayer/writing_a_round_based_experiment` is the worked example:
+
+```python
+class PickTrial(Trial):
+    sync_group_type = "room"  # a room's trials in one round share a round record
+    time_estimate = 15
+
+    def show_trial(self, experiment, participant):
+        return join(
+            self.choose_number(participant),
+            GroupBarrier(id_="round_finished", group_type="room",
+                         on_release=self.score_room),
+        )
+
+    @classmethod
+    def score_room(cls, trials, group_round):
+        # trial.answer holds each player's answer so far (None: timed out).
+        # String keys, since var is stored as JSON.
+        group_round.var.choices = {str(t.participant_id): t.answer for t in trials}
+
+# The Module gives the rounds a module_id to find them by when exporting.
+Module("game", for_loop(
+    label="rounds", iterate_over=range(N_ROUNDS), time_estimate_per_iteration=20,
+    logic=join(
+        Regrouper("room", ...),
+        # Players the regrouper left out see a page instead of a trial.
+        conditional("in_room", lambda participant: participant.in_sync_group("room"),
+                    PickTrial.cue({"numbers": NUMBERS}),
+                    InfoPage("You skip this round.", time_estimate=5)),
+    ),
+))
+```
+
+- Keep a `GroupBarrier` in every round, inside `show_trial` after the
+  answer page, so members stay in step. A cued round closes only when its
+  barrier releases the group, so PsyNet raises an error when a grouped
+  trial's `show_trial` has no `GroupBarrier`.
+- Every `GroupBarrier` waits for every active member of its group, wherever
+  it is, so put the barriers where all members reach them in the same
+  order, and have a member who stops playing early leave the group
+  (`leave_group`) first. Members waiting at different barriers of one group
+  wait for each other; the background barrier check records one error for
+  the group and that set of barriers, logs it and lists it on the dashboard's
+  Errors tab. A bot test then fails with `GroupDivergenceError` and that
+  message when it ends, after its bots finish or fail, often on
+  `max_wait_time` first.
+- When a fixed group plays a loop of rounds, pass the loop value as
+  `round=` (`Trial.cue({"question": i}, round=i)`). Cueing a round the group
+  finished without the player raises, so admit late joiners at an admission
+  point before each round, or stop top-ups before the game. Don't pass
+  `round=` with a regrouper, and give each run of such a module its own
+  module id.
+- `on_release` reads each member's answer so far from `trial.answer`
+  (`accumulate_answers = True` for several answer pages, which makes it a
+  dict from the start), and `score_answer`, `show_feedback` and
+  `get_basic_data` read the trial and `self.group_round.var`. `group_round.trials`
+  keeps the trials of players who left during the round. Exports need no
+  round counter of their own: `sync_group_round` counts the group's rounds,
+  for what the group shares, and `position` counts the player's own
+  trials in the module, grouped or not.
+- Put `leave_group(group_type)` after a player's last round so that the
+  rest of the group, and any `Regrouper`, stops waiting for them.
+- Use `self.sync_group_role` for role-specific pages, and put the cue in a
+  `conditional` on `participant.in_sync_group(...)`, with a page as the
+  other branch, so a player the regrouper sat out gets a page instead of a
+  trial. With a cohort (`within=`), use the three-way `switch` on
+  `round_status` instead, as described above. Where players without a
+  group play on alone, as in an open lobby, leave the cue unwrapped and
+  branch in `show_trial` on `self.sync_group is None`, as `crowd_estimate`
+  does. A started trial runs to its
+  end even if the player leaves the group, so its `show_feedback` explains every outcome, including being
+  removed for lateness. Read how the round ended for each player from
+  `trial.sync_group_outcome` (`"stayed"` once a barrier in the trial's
+  pages releases the group with them in it, after which it doesn't change;
+  before that, why they left, such as `"late"`), a partner's from their
+  trial in `self.group_round.trials`, rather than from current group
+  membership. Put the scoring barrier in `show_trial`, because only
+  barriers there write the outcome. A barrier's `waiting_screen` can take
+  `trial` and `group_round` to show the round's state.
 
 ## Recruitment and platform design
 
@@ -131,11 +339,16 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   extra bots for late-arrival or top-up paths.
 - Use serial bot tests with `advance_past_wait_pages(bots)` for deterministic
   barrier progression. It polls for up to 10 s; pass a longer `timeout=` when
-  rounds start on a clock or a deadline. Use concurrent bot runs when arrival
-  races matter.
+  rounds start on a clock or a deadline, or call `regroup_now(bots, regrouper)`
+  to split the bots' pools at a `Regrouper` without waiting for its
+  `deadline` or tick; with `every`, pass every bot waiting in the pool, since
+  only the bots passed in count as having waited for the tick. Use concurrent
+  bot runs when arrival races matter.
 - Assert group formation, active group size, role assignment, shared node/trial
   IDs, barrier IDs, `on_release` side effects, and failed/overflow exits.
-- Test dropout and top-up behavior, not only a complete group that finishes.
+- Test each kind of dropout, as described in "Decide and test failure
+  cases" below, and
+  top-ups, not only a complete group that finishes.
 - Test waiting-phase retention aids: filler trials should save usable data or
   stay harmless, alerts should fire at the intended transition, timers should be
   visible, and automatic submissions should record a valid response or failure
@@ -146,13 +359,86 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Inspect exported data to confirm group IDs, platform IDs, roles, phase
   timestamps, responses, failures, and partial-completion reasons are analyzable.
 
+## Decide and test failure cases
+
+Real groups lose members in several ways; "Failure cases" in
+`code/multiplayer/synchronization` lists them with the setting behind each.
+For every case your design can meet, decide what the player and the others
+see, how the player is paid and what the export records, then write a
+serial bot test for it. Check that the experiment behaves sensibly for
+everyone involved: members who did nothing wrong are not failed unless the
+design says so, their next page tells them what happened, nobody waits for
+a partner who has gone, and nobody is shown a page that only makes sense
+with a group. List the cases and your decisions in the experiment's README.
+
+| Case | Recognise it by | Simulate it in the bot test |
+|---|---|---|
+| Runs out of time on a timed page (stays in the group) | `trial.time_limit_reached`; answer `None` or `time_limit_answer` | `bot.run_out_of_time()` |
+| Closes the tab or stops responding | reason `"late"`, from a barrier's `late_after` | Stop taking pages for that bot, then `make_late_now(bots, "<barrier id>")` once the others wait there |
+| Waits for others who never arrive (barrier `max_wait_action="leave_group"`; the default fails them) | reason `"waited_too_long"`, from a barrier's `max_wait_time` | Wait out the barrier's `max_wait_time` |
+| Is left in a group below quorum | reason `"group_dissolved"`, from the grouper's `below_quorum` | Make enough members drop out or late |
+| Returns the study | reason `"left_experiment"` | `bot.drop_out()` |
+| Is failed by the experiment | reason `"left_experiment"` | `bot.allow_failure()`, then `bot.fail("reason")` |
+| Is removed on the dashboard | reason `"removed_by_experimenter"` | `group.remove_participant(participant, reason="removed_by_experimenter")` |
+| Arrives when no group can form (grouper `max_wait_action="continue_without_group"`; the default fails them) | reason `"no_group_formed"` | Send fewer bots than a group needs, even a short one with `quorum` or `start_short_after`, and wait out the grouper's `max_wait_time` |
+| Sits a round out at a `Regrouper` | not in a group; `regrouper.sat_out(participant)` | An odd number of bots with `left_over="sit_out"` |
+| Joins but is never admitted (`use_admission_points=True`) | reason `"not_admitted"`, from `newcomer_max_wait`, top-ups stopping or the group ending | Send a bot in while the group plays, then end the group or stop its top-ups |
+
+The reasons come from `participant.sync_group_removal_reason(group_type)`;
+the `sync_group_outcome` of their trial in the round holds the same value until a barrier
+releases the group. A player who comes back after being removed keeps their
+reason; test it by taking pages for the silent bot again.
+
+PsyNet already tells a player removed by a barrier that their group went on
+without them. Pay by `self.sync_group_outcome` in `score_answer`, tell the
+others who left from `on_release`'s `left` argument, and map the reasons
+your game can meet to the text of the page after an early end, as in
+`public_goods`. Include `"removed_by_experimenter"`, which a dashboard removal can give in
+any game; a missing reason raises `KeyError`:
+
+```python
+ENDED_EARLY_TEXTS = {
+    "late": "You were away for too long, so the game ended early for you.",
+    "group_dissolved": "Too few players stayed, so the game ended early.",
+    "removed_by_experimenter": "You were removed from the game.",
+}
+
+def game_ended_early(participant):
+    text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason("team")]
+    return InfoPage(f"{text} Your bonus is ${participant.performance_reward:.2f}.")
+```
+
+Read `references/test-dropouts.md` for a worked pair test with a quitter and a
+silent member, and for how long to wait out timeouts in bot tests.
+
+- Check why a bot left with
+  `bot.with_participant(lambda p: p.sync_group_removal_reason("pair"))`, and
+  read Regrouper roles with
+  `bot.with_participant(lambda p: p.current_trial.sync_group_role)`.
+- Post chat messages with `bot.send_chat_message("...")`.
+- Find who plays with whom with `bots_by_sync_group(bots, "pair")`, and
+  finish bots that still wait for each other with
+  `run_bots_to_completion(bots)`. For several groups in one test, and for
+  `Regrouper` partners, follow "Bots that drop out" in `test/backend`.
+- A member removed for being late sees "went on without you" only on the page
+  they were on; assert `current_notice` before that bot takes the page. "After
+  leaving a group" in `code/multiplayer/synchronization` gives the wording,
+  which depends on how many members were left.
+- Pytest doesn't show the compared values of a failed `assert` in
+  `experiment.py`, so add a message: `assert text == "Round 2.", text`.
+
 ## Common failures
 
-- Make sure to close groups with `GroupCloser`.
+- Close a group with `GroupCloser` before a later grouper of the same
+  `group_type` forms new groups. It is a `GroupBarrier`, so members wait there
+  for each other; one isn't needed at the end of the timeline, because a group
+  whose members have all finished closes by itself.
 - Do not leave default wait limits in place for real recruitment sessions
   without checking whether they are appropriate.
 - Do not assume top-ups are safe; define exactly which groups may accept late
-  participants.
+  participants. Top-ups never stop by themselves, and a `join_criterion` only
+  turns newcomers away; see "Groups below quorum" in
+  `code/multiplayer/synchronization` for the ways to stop them.
 - Do not set recruitment targets that leave stranded participants unable to form
   a full group.
 - Do not auto-reject participants who waited or were stranded by no-shows; plan

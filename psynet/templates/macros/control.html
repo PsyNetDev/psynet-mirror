@@ -1842,6 +1842,11 @@
 
         let psynetSurveyCompletionStarted = false;
         psynet.setStageResponseHandler(() => {
+            if (psynet.timeLimitSubmitting) {
+                // Keeps a partly filled survey, unvalidated, as the timed-out answer.
+                psynet.response.staged.rawAnswer = JSON.stringify(survey.data);
+                return;
+            }
             // This will actually do more than stage the response,
             // it'll trigger the full submission.
             psynetSurveyCompletionStarted = false;
@@ -1856,6 +1861,13 @@
             }
         })
 
+        {% else %}
+        // Multi-page surveys submit themselves; this only keeps the answer on a time-out.
+        psynet.setStageResponseHandler(() => {
+            if (psynet.timeLimitSubmitting) {
+                psynet.response.staged.rawAnswer = JSON.stringify(survey.data);
+            }
+        });
         {% endif %}
 
         function handleSurveyCompletion(sender, options) {

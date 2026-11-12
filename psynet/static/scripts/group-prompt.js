@@ -1,8 +1,9 @@
 // Live ticks and members for GroupPrompt.
 //
 // After each arrival, departure or join in the group, psynet.js fetches the
-// seats of the members waiting in it and of all its members, and sends them
-// in a "psynetGroupReady" window event. The server draws the initial
+// seats of the members waiting in it (and of those of them who ran out of
+// time) and of all its members, and sends them in a "psynetGroupReady"
+// window event. The server draws the initial
 // display; this makes the ticks match each event, starting with any that
 // arrived before this module activated, and fetches the display again from
 // the server when members have joined or left.
@@ -12,6 +13,9 @@ export async function activate({root, vars}) {
     if (!config.live_ticks && !config.live_members) return undefined;
     var announcer = root.querySelector(".psynet-group-announcer");
     var latestSeats = [];
+    var latestRanOutOfTime = [];
+    var ANSWERED = "psynet-group-member--answered";
+    var RAN_OUT = "psynet-group-member--ran-out-of-time";
     var redrawing = false;
     var redrawAgain = false;
     var failedRedraws = 0;
@@ -25,48 +29,53 @@ export async function activate({root, vars}) {
         return root.querySelector('.psynet-group-member[data-seat="' + Number(seat) + '"]');
     }
 
-    function tick(seats) {
-        var names = [];
+    // Marks the waiting members: a tick, or a dash for those who ran out of time.
+    function tick(seats, ranOutOfTime) {
+        var timedOut = new Set((ranOutOfTime || []).map(Number));
+        var announcements = [];
         seats.forEach(function (seat) {
             var member = memberAt(seat);
-            if (!member || member.classList.contains("psynet-group-member--answered")) return;
-            member.classList.add("psynet-group-member--answered");
+            if (!member) return;
+            var ranOut = timedOut.has(Number(seat));
+            var mark = ranOut ? RAN_OUT : ANSWERED;
+            if (member.classList.contains(mark)) return;
+            member.classList.remove(ranOut ? ANSWERED : RAN_OUT);
+            member.classList.add(mark);
             var status = member.querySelector(".psynet-group-status");
-            if (status) status.textContent = config.answered_label || "";
+            if (status) {
+                status.textContent =
+                    (ranOut ? config.ran_out_of_time_label : config.answered_label) || "";
+            }
             if (!member.classList.contains("psynet-group-member--me")) {
-                names.push(member.getAttribute("title"));
+                var template = ranOut
+                    ? config.ran_out_of_time_announcement
+                    : config.answered_announcement;
+                announcements.push((template || "").replace("{NAME}", member.getAttribute("title")));
             }
         });
-        if (announcer && names.length) {
-            announcer.textContent = names
-                .map(function (name) {
-                    return (config.answered_announcement || "").replace("{NAME}", name);
-                })
-                .join(" ");
+        if (announcer && announcements.length) {
+            announcer.textContent = announcements.join(" ");
         }
     }
 
     function untickAllBut(seats) {
         var kept = new Set(seats.map(Number));
-        root.querySelectorAll(".psynet-group-member--answered").forEach(function (member) {
+        root.querySelectorAll("." + ANSWERED + ", ." + RAN_OUT).forEach(function (member) {
             if (kept.has(Number(member.dataset.seat))) return;
-            member.classList.remove("psynet-group-member--answered");
+            member.classList.remove(ANSWERED, RAN_OUT);
             var status = member.querySelector(".psynet-group-status");
             if (status) status.textContent = "";
         });
     }
 
-    function showTicks(seats) {
+    function showTicks(seats, ranOutOfTime) {
         if (!config.live_ticks) return;
         untickAllBut(seats);
-        tick(seats);
+        tick(seats, ranOutOfTime);
     }
 
     function drawnMembers() {
-        // Members who left stay drawn, faded, but are not in the event's members.
-        return Array.from(
-            root.querySelectorAll(".psynet-group-member[data-seat]:not(.psynet-group-member--left)")
-        )
+        return Array.from(root.querySelectorAll(".psynet-group-member[data-seat]"))
             .map(function (member) { return Number(member.dataset.seat); })
             .sort(function (a, b) { return a - b; });
     }
@@ -117,7 +126,7 @@ export async function activate({root, vars}) {
             request = null;
             if (closed) return;
             redrawing = false;
-            showTicks(latestSeats);
+            showTicks(latestSeats, latestRanOutOfTime);
             if (redrawAgain) {
                 redrawAgain = false;
                 redraw();
@@ -129,7 +138,8 @@ export async function activate({root, vars}) {
         var detail = event.detail || {};
         if (detail.groupId !== config.group_id) return;
         latestSeats = detail.seats || [];
-        showTicks(latestSeats);
+        latestRanOutOfTime = detail.ranOutOfTime || [];
+        showTicks(latestSeats, latestRanOutOfTime);
         if (detail.members && !sameMembers(detail.members)) redraw();
     }
 
@@ -139,7 +149,8 @@ export async function activate({root, vars}) {
             ? psynet.suppressArrivalNotice()
             : null;
     if (config.live_ticks && window.psynet && psynet.readySeatsFor) {
-        tick(psynet.readySeatsFor(config.group_id));
+        var ready = psynet.readySeatsFor(config.group_id);
+        tick(ready.seats, ready.ranOutOfTime);
     }
     window.addEventListener("psynetGroupReady", onReady);
     return function cleanup() {

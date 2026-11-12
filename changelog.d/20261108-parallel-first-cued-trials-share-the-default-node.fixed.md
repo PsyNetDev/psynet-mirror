@@ -1,0 +1,1 @@
+Fixed `Trial.cue` failing with `MultipleResultsFound` after several participants started their first cued trial of a module at the same time: they now share one node, and the module's cued trials share one network. The default node of a module's cued trials is now always a `GenericTrialNode`, never another node that happens to be in the module.

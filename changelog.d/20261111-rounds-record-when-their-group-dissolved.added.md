@@ -1,0 +1,1 @@
+Added `SyncGroupRound.dissolved_at`, which records when a sync group dissolved during a round, so exports can tell a cancelled round from one still in progress without storing a marker of their own. It stays `None` for a round that a group barrier released and for a group that dissolved between rounds.

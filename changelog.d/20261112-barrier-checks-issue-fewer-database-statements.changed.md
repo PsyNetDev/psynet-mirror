@@ -1,0 +1,1 @@
+Barrier checks issue fewer database statements: a check of a waiting group visit now takes 15 statements instead of 19, so the barrier poller gets round its waiting visits faster and time-based releases lag less under load. Queries for sync groups now load the `SimpleSyncGroup` columns in the same query.

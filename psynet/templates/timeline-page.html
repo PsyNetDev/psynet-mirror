@@ -65,14 +65,8 @@
             pointer-events: auto;
         }
 
-        /* A hold without a message (a brief catch-up wait) shows only the
-           spinner, so a waiting screen beneath doesn't get an empty bubble. */
-        #psynet-timeline-hold-indicator:not(:has(.psynet-timeline-hold-progress)):has(.psynet-timeline-hold-title:empty) {
-            background: transparent;
-            border-color: transparent;
-            box-shadow: none;
-        }
-
+        /* A hold without a message (a brief catch-up wait) shows the spinner
+           alone in its pill. */
         .psynet-timeline-hold-message:has(.psynet-timeline-hold-title:empty):not(:has(.psynet-timeline-hold-progress)) {
             display: none;
         }
@@ -103,25 +97,31 @@
             display: none;
         }
 
+        /* Long notices wrap onto a second line, then ellipsize, so they cover
+           little of the prompt. */
         #psynet-arrival-notice {
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
             background: var(--bs-body-bg);
             border: 1px solid var(--bs-border-color);
-            border-radius: 999px;
+            border-radius: 1.2rem;
             box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.14);
             color: var(--bs-body-color);
+            display: -webkit-box;
             font-size: 0.95rem;
             font-weight: 500;
             left: 50%;
+            line-clamp: 2;
             line-height: 1.25;
             max-width: calc(100% - 1.5rem);
             overflow: hidden;
             padding: 0.55rem 1.1rem;
             pointer-events: auto;
             position: absolute;
-            text-overflow: ellipsis;
+            text-align: center;
             top: 0.2rem;
             transform: translateX(-50%);
-            white-space: nowrap;
+            width: max-content;
             z-index: 1;
         }
 
