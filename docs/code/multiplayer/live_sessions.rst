@@ -63,9 +63,14 @@ A game of rock, paper, scissors:
 ``initial_state`` sets up the state for the session's players, ``view`` says
 what a player's page shows, ``is_over`` says when the game ends, and ``bot``
 plays for bots (see `Bots and testing`_). The state and the views are dicts.
-Each player's id is their participant id as a string, such as ``"12"``, so a
-later page finds a participant's entry in the outcome with
-``str(participant.id)``.
+Each player's id is their participant id as a string, such as ``"12"``.
+Ids are strings because the state is saved as JSON, whose dict keys are
+strings, so they work as keys in the state's dicts. To list the players in
+the order they joined, read ``state["live_session"]["players"]`` (see `The
+ready step`_) rather than sorting the ids, which sorts ``"10"`` before
+``"9"``. Code outside the game rarely needs the ids: the game's ``answer``
+gives each player their own part of the outcome (see `The answer and
+rewards`_).
 
 A game can also have a time limit, a clock that ticks, an outcome and more,
 which come from Dallinger's :class:`~dallinger.realtime.RealtimeGame`.
@@ -103,11 +108,12 @@ or the game's ``tick``, ``on_join``, ``on_leave`` or ``on_start`` runs:
 - a date, time, datetime or timedelta becomes a string such as
   ``"2026-11-02T09:30:00"`` or ``"PT1M30S"``, and so does a ``Decimal`` or
   ``bytes`` value
-- a dict key becomes a string, so ``{1: "a"}`` becomes ``{"1": "a"}``. Player
-  ids are already strings.
 
-A value PsyNet can't convert, such as an object of a class of your own, makes
-the session fail. So does ``math.inf`` or ``NaN``, which JSON can't hold, so
+A dict key has to be a string already: a state with a key such as ``3``
+makes the session fail, because after a save the key would read back as
+``"3"`` and ``state["scores"][3]`` would fail. Player ids are already
+strings. A value PsyNet can't convert, such as an object of a class of your
+own, also makes the session fail. So does ``math.inf`` or ``NaN``, which JSON can't hold, so
 store ``None`` instead. Because a field stored in the state is converted,
 compare like with like:
 
@@ -166,6 +172,18 @@ group moves on together. The game page comes after it, and its
         ),
         ...
     )
+
+A game needs at least ``min_players`` players, 2 unless the game sets it. A
+group that reaches the game barrier with fewer active members, for example
+because the others left it while it waited, starts no session, and its
+members' game pages show the no-session notice (see `Cases a game page should
+allow for`_). Set ``min_players = 1`` for a game a player can play alone.
+
+The game barrier takes the options of a :class:`~psynet.sync.GroupBarrier`,
+such as ``max_wait_time``. Its ``on_release`` runs once the session has
+started, with the arguments a group barrier's ``on_release`` takes and also
+``live_session_id``. Use it for group bookkeeping at the start of a round,
+such as choosing who leaves after it.
 
 To play one game under different conditions, such as with a different
 number of rounds, pass the game barrier ``settings``: a dict, or any other
@@ -414,8 +432,10 @@ never receives them, even if the game defines its own. To show who is ready,
 read ``ready`` from the view.
 
 The session time, and ``max_duration``, count from when the group left the
-game barrier, not from the start. A game whose rounds have a time limit sets
-its deadlines in ``on_start``, which runs at the start even if some players
+game barrier, not from the start. ``self.elapsed(state, now)`` gives the
+seconds since the start, or ``None`` before it, for example to record how
+long a group took to agree. A game whose rounds have a time limit sets its
+deadlines in ``on_start``, which runs at the start even if some players
 aren't ready, and its ``tick`` runs at each one:
 
 .. code-block:: python
@@ -444,11 +464,32 @@ aren't ready, and its ``tick`` runs at each one:
 The answer and rewards
 ----------------------
 
-The game page's answer is the session's outcome: what the game's ``outcome``
-method returned when the session ended. PsyNet sets it on the server and
-ignores what the page sends, so every player in a session gets the same
-answer, and a participant without a session gets ``None``. If you need each
-player's score, or why the session ended, include them in the outcome.
+The game page's answer comes from the session's outcome: what the game's
+``outcome`` method returned when the session ended. PsyNet sets it on the
+server and ignores what the page sends, and a participant without a session
+gets ``None``. By default, every player's answer is the whole outcome. Define
+``answer(outcome, reason, player_id)`` to give each player only their own
+part, so that a trial holds only its player's data and code reading
+``trial.answer`` needs no player ids:
+
+.. code-block:: python
+
+    class RockPaperScissors(LiveGame):
+        ...
+
+        def answer(self, outcome, reason, player_id):
+            mine = outcome[player_id]
+            (theirs,) = [c for p, c in outcome.items() if p != player_id]
+            return {"mine": mine, "theirs": theirs, "reason": reason}
+
+Results that belong to the whole group, such as a team's total, go in the
+round instead. When the game is played as a trial (see `Starting sessions and
+the game page`_), define ``record_round(group_round, outcome, reason)``.
+PsyNet calls it once, when the session's ending is saved, with the
+:class:`~psynet.sync.SyncGroupRound` the session was played in, so the game
+can store results in ``group_round.var``. There's no need for another barrier
+after the game page to score the round. Neither ``answer`` nor
+``record_round`` is called for a session that failed without an outcome.
 
 Because participants can't leave the game page until their session ends,
 every session needs a time limit. A session still running at the game's
@@ -463,13 +504,14 @@ game page stops waiting: the participant sees PsyNet's error page, and a bot
 fails with an error that names the session. Without a ``max_duration``, the
 page waits as long as the session runs.
 
-The limit also stops a later :class:`~psynet.sync.GroupBarrier` from
+The game page also stops a later :class:`~psynet.sync.GroupBarrier` from
 counting a player who is still in the game as late. ``late_after`` counts from
 the group's previous barrier, which is usually the game barrier, so it would
-otherwise include the whole game. The game page tells PsyNet that it ends by
-the game's ``max_duration`` plus a minute, and ``late_after`` doesn't count a
-player as late before then, just as it waits for a page's ``time_limit``. So
-``late_after`` needs to cover only the pages after the game.
+otherwise include the whole game. Instead, as for a page with a
+``time_limit``, it counts from when the game page ends: at first the game's
+``max_duration`` plus a minute, and once the session's ending is saved, when
+the game actually ended. So ``late_after`` needs to cover only the pages after
+the game.
 
 A game can add to each player's performance reward in two ways. Each amount
 must be a number of 0 or more. For a reward based on the outcome, define

@@ -293,6 +293,7 @@ def get_timeline():
         SimpleGrouper(
             COHORT,
             initial_group_size=COHORT_SIZE,
+            quorum=2,
             max_wait_time=300,
             below_quorum="continue_without_group",
         ),
