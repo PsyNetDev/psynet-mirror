@@ -268,7 +268,8 @@ _POLLER_SWEEP_BUDGET_SECONDS = 0.2
 # How much sooner a new or changed visit is re-checked than an unchanged one.
 _POLLER_CHANGE_HEAD_START_SECONDS = 5.0
 
-# Poller-process memory: instance id -> (fingerprint, monotonic check time).
+# Poller-process memory: instance id -> (due time acted on or None,
+# fingerprint, monotonic check time).
 _poller_checked_visits = {}
 
 # Poller-process memory: overdue waiters whose last timeout attempt raised.
@@ -1500,16 +1501,49 @@ class Barrier(EltCollection):
                 self.release(participant)
             _queue_released_hold_waiters(participants_to_release)
         if instance is not None:
-            instance.active = any(
-                not participant.active_barriers[self.id].released
+            still_waiting = [
+                participant
                 for participant in waiting_participants
                 if self.id in participant.active_barriers
-            )
+                and not participant.active_barriers[self.id].released
+            ]
+            instance.active = bool(still_waiting)
             if not waiting_participants and not instance.active:
                 # A locking SELECT can miss waiters that ``EXISTS`` still
                 # sees. Do not mark the visit finished from that snapshot.
                 instance.active = _barrier_instance_has_waiters(instance)
+            if waiting_participants or not instance.active:
+                instance.next_due_at = self._next_due_time(
+                    [p for p in still_waiting if not p.failed]
+                )
         return waiting_participants
+
+    def _next_due_time(self, waiting_participants) -> Optional[float]:
+        """Return :meth:`_compute_next_due_time`, or ``None`` with a logged error if it fails, so a hint cannot undo a release."""
+        try:
+            return self._compute_next_due_time(waiting_participants)
+        except Exception:
+            logger.exception(
+                "Barrier '%s': could not work out when to check this visit "
+                "again; the poller's rotation will check it.",
+                self.id,
+            )
+            return None
+
+    def _compute_next_due_time(self, waiting_participants) -> Optional[float]:
+        """Return the next time, in epoch seconds, that a time-based rule lets a check of this visit change something.
+
+        The poller checks visits whose time has come before the rest. Only
+        future times count; ``None`` leaves the visit to the poller's normal
+        rotation, which also covers a rule that this time misses.
+        """
+        now = time.time()
+        due = [t for t in self._due_times(waiting_participants) if t and t > now]
+        return min(due, default=None)
+
+    def _due_times(self, waiting_participants) -> List[Optional[float]]:
+        """Return the times, in epoch seconds, at which this barrier's time-based rules may act on these waiters."""
+        return []
 
 
 def _advance_released_hold_waiters_after_commit(participant_ids):
@@ -2675,6 +2709,25 @@ class GroupBarrier(Barrier):
         }
         return groups
 
+    def _due_times(self, waiting_participants):
+        """Return when members become late and when top-up waits end, for the groups waiting here."""
+        waiting_ids = {p.id for p in waiting_participants}
+        times = []
+        for group in self.get_waiting_groups(waiting_participants).values():
+            if self._waiting_members(group, waiting_participants):
+                times += [t for _, t in self._late_times(group, waiting_ids)]
+            candidates = [
+                *group.active_participants,
+                *self._admissible(group, waiting_ids),
+            ]
+            if len(candidates) < (group.quorum or 1):
+                times.append(_top_up_wait_ends(group, candidates, self.id))
+            elif len(candidates) < (group.target_group_size or 0):
+                times.append(
+                    _top_up_wait_ends(group, candidates, self.id, below_target=True)
+                )
+        return [t.timestamp() for t in times if t is not None]
+
     def _remove_late_participants(self, removals):
         """Remove late members from their groups, then dissolve the groups left below quorum.
 
@@ -2804,12 +2857,20 @@ class GroupBarrier(Barrier):
         sent at the deadline has had time to arrive, even if they have
         already left the page.
         """
+        now = timenow()
+        return [
+            link.participant
+            for link, late_at in self._late_times(group, waiting_ids)
+            if now > late_at
+        ]
+
+    def _late_times(self, group, waiting_ids):
+        """Return ``(link, late_at)`` for each active member who is not waiting, as :meth:`_late_between_barriers` times them."""
         if self.late_after is None:
             return []
-        now = timenow()
         answer_arrival = timedelta(seconds=2 * TIME_LIMIT_GRACE_SECONDS)
         active_ids = {p.id for p in group.active_participants}
-        late = []
+        times = []
         for link in group.participant_links:
             participant = link.participant
             if (
@@ -2824,9 +2885,8 @@ class GroupBarrier(Barrier):
             late_at = max(starts) + timedelta(seconds=self.late_after)
             if link.page_deadline is not None:
                 late_at = max(late_at, link.page_deadline + answer_arrival)
-            if now > late_at:
-                late.append(participant)
-        return late
+            times.append((link, late_at))
+        return times
 
     def _still_late(self, group, locked, waiting_ids) -> list:
         """Return the late members in ``locked`` who are still late now that their rows are locked.
@@ -3698,6 +3758,9 @@ class SimpleGrouper(Grouper):
         first_arrival = min(_arrival_time(self, p) for p in participants)
         return first_arrival.timestamp() + self.start_short_after
 
+    def _due_times(self, waiting_participants):
+        return [self._short_start_time(waiting_participants)]
+
     def _shows_countdown(self) -> bool:
         return self.start_short_after is not None
 
@@ -4335,6 +4398,24 @@ class Regrouper(Grouper):
             .filter(*self._pool_splits(within_group))
             .scalar()
         )
+
+    def _due_times(self, waiting_participants):
+        """Return the next ``every`` tick, or when each pool's deadline and extra deadline pass."""
+        if self.every is not None:
+            next_tick = _latest_tick(time.time(), self.every) + self.every
+            return [next_tick] if waiting_participants else []
+        if self.deadline is None:
+            return []
+        times = []
+        # The deadline reference queries the last split; a savepoint keeps a
+        # failed query from aborting the check's release.
+        with db.session.begin_nested():
+            for within_group, pool in self._pools(waiting_participants):
+                if self.within is not None and within_group is None:
+                    continue
+                reference = self._deadline_reference(within_group, pool)
+                times += [reference + self.deadline, reference + 2 * self.deadline]
+        return times
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         return any(
@@ -5865,7 +5946,13 @@ def fail_on_group_divergence():
 
 
 def _top_up_wait_over(group, members, barrier_id, *, below_target=False) -> bool:
-    """Return whether a group has waited its ``top_up_wait`` for newcomers at barrier ``barrier_id``.
+    """Return whether a group has waited its ``top_up_wait`` for newcomers at barrier ``barrier_id``."""
+    ends = _top_up_wait_ends(group, members, barrier_id, below_target=below_target)
+    return ends is not None and timenow() >= ends
+
+
+def _top_up_wait_ends(group, members, barrier_id, *, below_target=False):
+    """Return when a group's ``top_up_wait`` for newcomers at barrier ``barrier_id`` ends, or ``None`` if it isn't running.
 
     The wait starts once the group is below its quorum (or, with
     ``below_target``, at once) and all ``members`` it would pass with have
@@ -5875,17 +5962,16 @@ def _top_up_wait_over(group, members, barrier_id, *, below_target=False) -> bool
     top_up_wait = getattr(group, "top_up_wait", None)
     below_quorum_since = getattr(group, "below_quorum_since", None)
     if top_up_wait is None or (below_quorum_since is None and not below_target):
-        return False
+        return None
     visits = [member.active_barriers.get(barrier_id) for member in members]
     if any(visit is None or visit.released for visit in visits):
-        return False
+        return None
     starts = [visit.arrival_time for visit in visits]
     if not below_target:
         starts.append(below_quorum_since)
     if not starts:
-        return False
-    since = max(starts)
-    return (timenow() - since).total_seconds() >= top_up_wait
+        return None
+    return max(starts) + timedelta(seconds=top_up_wait)
 
 
 def _groups_left_on_failure(participant, group, reason):
@@ -6019,6 +6105,9 @@ class BarrierInstance(SQLBase, SQLMixin):
     # The release time last sent to this pool's waiters, in epoch seconds
     # (see ``SimpleGrouper(start_short_after=...)``).
     announced_release_time = Column(Float)
+    # When a time-based rule next lets a check of this visit change
+    # something, in epoch seconds; set by each check (see ``_next_due_time``).
+    next_due_at = Column(Float)
 
     definition = relationship("BarrierDefinition", back_populates="instances")
     group = relationship("SyncGroup")
@@ -6291,14 +6380,16 @@ def _waiting_barrier_instance_ids():
     Returns
     -------
     dict
-        Maps each visit's instance id to a fingerprint of its waiters and
-        sync group, so the poller can tell which visits changed since it
-        last checked them.
+        Maps each visit's instance id to ``(next_due_at, fingerprint)``:
+        when a time-based rule next acts on the visit, and a fingerprint of
+        its waiters and sync group, so the poller can tell which visits
+        changed since it last checked them.
     """
     with Session(bind=db.engine) as session:
         rows = (
             session.query(
                 BarrierInstance.id,
+                BarrierInstance.next_due_at,
                 BarrierInstance.active,
                 func.count(ParticipantLinkBarrier.id),
                 func.max(ParticipantLinkBarrier.id),
@@ -6320,7 +6411,10 @@ def _waiting_barrier_instance_ids():
             .group_by(BarrierInstance.id, SyncGroup.id)
             .order_by(BarrierInstance.id)
         )
-        return {instance_id: tuple(fingerprint) for instance_id, *fingerprint in rows}
+        return {
+            instance_id: (next_due_at, tuple(fingerprint))
+            for instance_id, next_due_at, *fingerprint in rows
+        }
 
 
 def _overdue_waiter_ids():
@@ -7044,21 +7138,34 @@ def _finish_dissolving_groups():
 def _visits_due(waiting, sweep_ends):
     """Yield waiting visits in check order until ``sweep_ends``, at least one.
 
-    Least recently checked visits come first. Visits that are new to this
-    process, or whose fingerprint changed since it last checked them, get a
-    head start of ``_POLLER_CHANGE_HEAD_START_SECONDS``, so they are checked
-    promptly without starving unchanged visits whose release depends on time.
+    Visits whose ``next_due_at`` has come go first, earliest first, so a
+    time-based release isn't delayed by the round of all waiting visits.
+    The rest follow least recently checked first. Visits that are new to
+    this process, or whose fingerprint changed since it last checked them,
+    get a head start of ``_POLLER_CHANGE_HEAD_START_SECONDS``, so they are
+    checked promptly without starving unchanged visits; this rotation also
+    covers time-based rules that ``next_due_at`` misses.
     """
     now = time.monotonic()
+    epoch_now = time.time()
 
     def priority(instance_id):
+        next_due_at, fingerprint = waiting[instance_id]
         last = _poller_checked_visits.get(instance_id)
+        # A check that was deferred or failed leaves its past time in place;
+        # the visit then waits its turn rather than going first every sweep.
+        if (
+            next_due_at is not None
+            and next_due_at <= epoch_now
+            and (last is None or last[0] != next_due_at)
+        ):
+            return (0, next_due_at, instance_id)
         if last is None:
-            return (now - _POLLER_CHANGE_HEAD_START_SECONDS, instance_id)
-        fingerprint, checked_at = last
-        if fingerprint != waiting[instance_id]:
+            return (1, now - _POLLER_CHANGE_HEAD_START_SECONDS, instance_id)
+        _, checked_fingerprint, checked_at = last
+        if checked_fingerprint != fingerprint:
             checked_at -= _POLLER_CHANGE_HEAD_START_SECONDS
-        return (checked_at, instance_id)
+        return (1, checked_at, instance_id)
 
     for index, instance_id in enumerate(sorted(waiting, key=priority)):
         if index and time.monotonic() >= sweep_ends:
@@ -7077,8 +7184,9 @@ def check_barriers():
     before the next check so a locked waiter cannot poison sibling checks.
 
     Each sweep first retries group dissolutions that waited for a busy member
-    and times out overdue waiters, then checks visits, least
-    recently checked first, with new or changed ones given a head start. Each
+    and times out overdue waiters, then checks visits: first those whose
+    ``next_due_at`` has come (each due time once), then the least recently
+    checked, with new or changed ones given a head start. Each
     of the two steps stops starting new work after
     ``_POLLER_SWEEP_BUDGET_SECONDS``, so thousands of idle waiters cannot
     keep the poller busy; the rest wait for later sweeps. One item can still
@@ -7133,9 +7241,11 @@ def _check_barriers(seen):
                 _remember_poller_check(instance_id, waiting[instance_id])
 
 
-def _remember_poller_check(instance_id, fingerprint):
-    """Record that this process checked a visit in the given state."""
-    _poller_checked_visits[instance_id] = (fingerprint, time.monotonic())
+def _remember_poller_check(instance_id, state):
+    """Record that this process checked a visit in the given ``(next_due_at, fingerprint)`` state, and any due time it acted on."""
+    next_due_at, fingerprint = state
+    acted_on = next_due_at if next_due_at and next_due_at <= time.time() else None
+    _poller_checked_visits[instance_id] = (acted_on, fingerprint, time.monotonic())
 
 
 def check_sync_groups():
