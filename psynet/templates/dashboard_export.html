@@ -67,6 +67,38 @@
             </li>
         </ul>
     </div>
+
+    <h2 class="h4 mt-4">Export history</h2>
+    <p>
+        Exports built from this deployment's database, most recent first (up to 100).
+        Automatic backups are not listed. Participant counts are those in the exported data.
+    </p>
+    {% if export_records %}
+    <table class="table table-sm" id="export-history">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Requested from</th>
+                <th>Assets</th>
+                <th>Participants</th>
+                <th>Completed</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for record in export_records %}
+            <tr>
+                <td>{{ record.creation_time.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+                <td>{{ record.source.replace("_", " ") | capitalize }}</td>
+                <td>{{ record.assets }}</td>
+                <td>{{ record.n_participants }}</td>
+                <td>{{ record.n_completed_participants }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p><em>No exports yet.</em></p>
+    {% endif %}
 </div>
 {% endblock %}
 {% block libs %}

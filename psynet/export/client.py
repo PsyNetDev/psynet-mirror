@@ -213,7 +213,10 @@ def download_archive(
     import requests
 
     url = endpoint.url(
-        "dashboard/export/download", assets=assets, asset_bytes=asset_bytes
+        "dashboard/export/download",
+        assets=assets,
+        asset_bytes=asset_bytes,
+        source="command_line",
     )
     with requests.get(url, auth=endpoint.auth, stream=True) as response:
         _check_login_accepted(response)

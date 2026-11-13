@@ -81,6 +81,7 @@ def build_export_tree(
     server: Optional[str] = None,
     local: bool = True,
     manifest_only_assets: bool = False,
+    source: Optional[str] = None,
 ) -> str:
     """Build the canonical export product in ``export_path`` from the live database.
 
@@ -98,6 +99,11 @@ def build_export_tree(
         Write ``assets/manifest.csv`` describing the selected assets without
         copying any bytes. Used by the incremental SSH transport, which fetches
         the bytes itself.
+    source :
+        Where the export was requested, one of
+        :data:`psynet.export.history.EXPORT_SOURCES`. The export is then added
+        to the deployment's export history. ``None``, used by scheduled
+        backups, records nothing.
 
     Returns
     -------
@@ -109,7 +115,7 @@ def build_export_tree(
     from .database import export_database_snapshot
 
     os.makedirs(export_path, exist_ok=True)
-    export_database_snapshot(export_path)
+    snapshot = export_database_snapshot(export_path)
     write_basic_data(export_path)
 
     if assets != "none":
@@ -118,6 +124,15 @@ def build_export_tree(
             server=server,
             local=local,
             manifest_only=manifest_only_assets,
+        )
+
+    if source is not None:
+        from .history import record_export
+
+        record_export(
+            source=source,
+            assets=assets,
+            participant_counts=snapshot["participant_counts"],
         )
 
     return export_path

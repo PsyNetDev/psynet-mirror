@@ -128,6 +128,9 @@ def test_database_tables_and_identifier_sidecars_share_one_snapshot(tmp_path):
             "psynet.export.database.write_export_manifest",
             return_value=str(tmp_path / "manifest.json"),
         ),
+        patch(
+            "psynet.export.database._count_participants", return_value={}
+        ) as count_participants,
     ):
         export_database_snapshot(str(tmp_path))
 
@@ -137,6 +140,7 @@ def test_database_tables_and_identifier_sidecars_share_one_snapshot(tmp_path):
     )
     assert copy_tables.call_args.kwargs["_connection"] is connection
     assert write_sidecars.call_args.kwargs["_connection"] is connection
+    count_participants.assert_called_once_with(connection)
     connection.close.assert_called_once()
 
 

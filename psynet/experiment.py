@@ -116,6 +116,7 @@ from .db import (
 )
 from .end import RejectedConsentLogic, SuccessfulEndLogic, UnsuccessfulEndLogic
 from .error import ErrorRecord
+from .export.history import ExportRecord
 from .field import ImmutableVarStore, PythonDict
 from .graphics import PsyNetLogo
 from .notifier import Notifier
@@ -5277,10 +5278,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @dashboard_tab("Export")
     @classmethod
     def dashboard_export(cls):
+        export_records = (
+            ExportRecord.query.order_by(ExportRecord.id.desc()).limit(100).all()
+        )
         return render_template(
             "dashboard_export.html",
             title="Export data",
             automatic_backups=cls.automatic_backups,
+            export_records=export_records,
         )
 
     @dashboard_tab("Basic data")
@@ -5963,12 +5968,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def build_export_archive(
-        cls, export_dir, *, assets="collected", asset_bytes="include"
+        cls, export_dir, *, assets="collected", asset_bytes="include", source=None
     ):
         """Build the canonical export in ``export_dir`` and zip it beside that tree.
 
         ``asset_bytes="manifest"`` describes the selected assets without copying
-        their bytes, for clients that fetch the bytes themselves.
+        their bytes, for clients that fetch the bytes themselves. ``source``
+        adds the export to the export history (see
+        :func:`psynet.export.service.build_export_tree`).
         """
         from .export.service import build_export_archive, build_export_tree
 
@@ -5977,6 +5984,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             assets=assets or "collected",
             local=True,
             manifest_only_assets=asset_bytes == "manifest",
+            source=source,
         )
         return build_export_archive(export_dir)
 
@@ -5992,7 +6000,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return zip_path
 
     @staticmethod
-    def _download_export(assets="collected", asset_bytes="include"):
+    def _download_export(assets="collected", asset_bytes="include", source="dashboard"):
         """Build an export, store it if complete, and send it to the caller."""
         from .export.service import store_latest_archive
 
@@ -6002,7 +6010,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             export_dir = os.path.join(tempdir, "export")
             os.makedirs(export_dir)
             zip_filepath = exp.build_export_archive(
-                export_dir, assets=assets, asset_bytes=asset_bytes
+                export_dir, assets=assets, asset_bytes=asset_bytes, source=source
             )
             # A manifest-only snapshot is not a usable export on its own, so it
             # must not replace the deployment's stored artifact.
@@ -6084,6 +6092,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return exp._download_export(
             assets=assets,
             asset_bytes=request.args.get("asset_bytes", "include"),
+            source=(
+                "command_line"
+                if request.args.get("source") == "command_line"
+                else "dashboard"
+            ),
         )
 
     @dashboard.route("/export/trigger", methods=["GET", "POST"])
@@ -6119,7 +6132,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         with tempfile.TemporaryDirectory() as tempdir:
             export_dir = os.path.join(tempdir, "export")
             os.makedirs(export_dir)
-            store_latest_archive(exp.build_export_archive(export_dir, assets=assets))
+            store_latest_archive(
+                exp.build_export_archive(export_dir, assets=assets, source="trigger")
+            )
 
         if request.form.get("html"):
             return render_template(

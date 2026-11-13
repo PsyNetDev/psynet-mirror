@@ -4434,7 +4434,7 @@ def _build_local_export(export_path, assets):
 
     pending_jobs = _get_local_pending_async_jobs()
     log(f"Building export in {export_path}")
-    build_export_tree(export_path, assets=assets, local=True)
+    build_export_tree(export_path, assets=assets, local=True, source="command_line")
     return pending_jobs
 
 

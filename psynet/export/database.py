@@ -371,7 +371,8 @@ def export_database_snapshot(export_path: str) -> dict:
     Returns
     -------
     dict
-        Paths to the written artifacts.
+        Paths to the written artifacts, plus ``participant_counts``: the
+        ``n_participants`` and ``n_completed_participants`` in the snapshot.
     """
     os.makedirs(export_path, exist_ok=True)
     database_dir = os.path.join(export_path, DATABASE_DIRNAME)
@@ -391,6 +392,7 @@ def export_database_snapshot(export_path: str) -> dict:
             table_names,
             _connection=conn,
         )
+        participant_counts = _count_participants(conn)
     finally:
         conn.close()
     row_counts = omit_empty_table_csvs(database_dir, table_names)
@@ -406,5 +408,14 @@ def export_database_snapshot(export_path: str) -> dict:
     return {
         "database_dir": database_dir,
         "manifest": manifest_path,
+        "participant_counts": participant_counts,
         **sidecar_paths,
     }
+
+
+def _count_participants(conn) -> dict[str, int]:
+    """Count all and completed participants in the snapshot that ``conn`` reads."""
+    cur = conn.cursor()
+    cur.execute("SELECT count(*), count(*) FILTER (WHERE complete) FROM participant")
+    total, completed = cur.fetchone()
+    return {"n_participants": total, "n_completed_participants": completed}

@@ -16,6 +16,7 @@ import pytest
 from dallinger import db
 from sqlalchemy import Boolean, Column, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import declarative_base
 
 from psynet.data import (
     SQLBase,
@@ -34,7 +35,13 @@ in_consents_experiment = pytest.mark.parametrize(
 )
 
 
-class ExportReloadModel(SQLBase):
+# Scratch models stay off SQLBase's metadata: otherwise every later db_session
+# in the run creates their tables, and their deliberately unexportable columns
+# break any test that exports the whole database.
+_ScratchBase = declarative_base()
+
+
+class ExportReloadModel(_ScratchBase):
     __tablename__ = SCRATCH_TABLE
 
     id = Column(Integer, primary_key=True)
@@ -265,42 +272,42 @@ def test_empty_lucid_table_omits_its_sidecar(db_session, tmp_path):
     assert (tmp_path / "participant_identifiers.csv").exists()
 
 
-class IntegerIdentifierModel(SQLBase):
+class IntegerIdentifierModel(_ScratchBase):
     __tablename__ = "export_int_ident"
 
     id = Column(Integer, primary_key=True)
     assignment_id = Column(Integer, nullable=False)
 
 
-class ShortIdentifierModel(SQLBase):
+class ShortIdentifierModel(_ScratchBase):
     __tablename__ = "export_short_ident"
 
     id = Column(Integer, primary_key=True)
     assignment_id = Column(String(8), nullable=False)
 
 
-class NullableShortIdentifierModel(SQLBase):
+class NullableShortIdentifierModel(_ScratchBase):
     __tablename__ = "export_nullable_short_ident"
 
     id = Column(Integer, primary_key=True)
     assignment_id = Column(String(8), nullable=True)
 
 
-class UUIDIdentifierModel(SQLBase):
+class UUIDIdentifierModel(_ScratchBase):
     __tablename__ = "export_uuid_ident"
 
     id = Column(Integer, primary_key=True)
     assignment_id = Column(UUID(as_uuid=True), nullable=True)
 
 
-class NullableShortRedactedModel(SQLBase):
+class NullableShortRedactedModel(_ScratchBase):
     __tablename__ = "export_nullable_short_redacted"
 
     id = Column(Integer, primary_key=True)
     client_ip_address = Column(String(1), nullable=True)
 
 
-class NoIdIdentifierModel(SQLBase):
+class NoIdIdentifierModel(_ScratchBase):
     __tablename__ = "export_noid_ident"
 
     code = Column(Integer, primary_key=True)
