@@ -85,24 +85,6 @@ contains ``database/export_record.csv`` describing the exports made before it.
 If an incremental command-line transfer falls back to a complete archive, the
 server builds the export twice and both builds are listed.
 
-.. _export_history:
-
-Export history
-^^^^^^^^^^^^^^
-
-The dashboard's **Export** tab lists the exports the deployment has built,
-most recent first. Each row shows when the export was built, whether it was
-requested from the dashboard, the command line (including
-``psynet export local``) or a trigger link, the asset selection, and how many
-participants, and how many completed participants, the exported data
-contains. Use it to check, for example, that your last export came after the
-last participant finished. Automatic backups aren't listed.
-
-The rows are stored in the ``export_record`` table, so each export also
-contains ``database/export_record.csv`` describing the exports made before it.
-If an incremental command-line transfer falls back to a complete archive, the
-server builds the export twice and both builds are listed.
-
 How the export reaches your computer
 ------------------------------------
 
