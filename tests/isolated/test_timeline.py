@@ -552,7 +552,7 @@ def test_check_barriers_stops_after_max_passes(monkeypatch):
 
     def _waiting():
         n["i"] += 1
-        return {f"inst-{n['i']}": None}
+        return {f"inst-{n['i']}": (None, None)}
 
     monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
     monkeypatch.setattr("psynet.sync._waiting_barrier_instance_ids", _waiting)
@@ -575,7 +575,7 @@ def test_check_barriers_settles_on_the_last_allowed_pass(monkeypatch):
     def _waiting():
         n["i"] += 1
         if n["i"] <= 3:
-            return {f"inst-{n['i']}": None}
+            return {f"inst-{n['i']}": (None, None)}
         return {}
 
     monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
