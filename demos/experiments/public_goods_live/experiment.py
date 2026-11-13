@@ -90,11 +90,10 @@ class PublicGoods(LiveGame):
             "ends_at": state["ends_at"],
             "mine": state["contributions"][player_id],
             "changed": state["changes"][player_id] > 0,
+            # The other players in the order they joined.
             "others": [
-                tokens
-                for player, tokens in sorted(
-                    state["contributions"].items(), key=lambda item: int(item[0])
-                )
+                state["contributions"][player]
+                for player in state["live_session"]["players"]
                 if player != player_id
             ],
         }
@@ -115,6 +114,19 @@ class PublicGoods(LiveGame):
                 for player, tokens in contributions.items()
             },
         }
+
+    def answer(self, outcome, reason, player_id):
+        return {
+            "contributed": outcome["contributions"][player_id],
+            "earned": outcome["payoffs"][player_id],
+            "pot": outcome["pot"],
+            "share": outcome["share"],
+            "team_size": len(outcome["contributions"]),
+        }
+
+    def record_round(self, group_round, outcome, reason):
+        group_round.var.pot = outcome["pot"]
+        group_round.var.contributions = outcome["contributions"]
 
     def performance_reward(self, outcome, reason, player_id):
         return outcome["payoffs"][player_id] * TOKEN_VALUE
@@ -197,16 +209,15 @@ class ContributionTrial(Trial):
         )
 
     def show_feedback(self, experiment, participant):
-        outcome = self.answer
-        if outcome is None:
+        answer = self.answer
+        if answer is None:
             return InfoPage("Your group couldn't start this round.", time_estimate=5)
-        me = str(participant.id)
-        mine = outcome["contributions"][me]
         return InfoPage(
-            f"The group put {outcome['pot']} tokens in the pot, which was "
-            f"multiplied and shared between {len(outcome['contributions'])} "
-            f"players: {outcome['share']:g} tokens each. You put in {mine}, so "
-            f"you earned {outcome['payoffs'][me]:g} tokens this round.",
+            f"The group put {answer['pot']} tokens in the pot, which was "
+            f"multiplied and shared between {answer['team_size']} "
+            f"players: {answer['share']:g} tokens each. You put in "
+            f"{answer['contributed']}, so you earned {answer['earned']:g} tokens "
+            "this round.",
             time_estimate=RESULTS_SECONDS,
         )
 
@@ -291,9 +302,11 @@ class Exp(psynet.experiment.Experiment):
             [t.answer for t in trials],
         )
         for trial in trials:
-            contributions = trial.answer["contributions"]
+            assert trial.answer["contributed"] == bot_contribution(str(bot.id))
+            contributions = trial.group_round.var.contributions
             assert contributions == {
                 player: bot_contribution(player) for player in contributions
             }
-        expected = sum(t.answer["payoffs"][str(bot.id)] * TOKEN_VALUE for t in trials)
+            assert trial.group_round.var.pot == sum(contributions.values())
+        expected = sum(t.answer["earned"] * TOKEN_VALUE for t in trials)
         assert abs(bot.performance_reward - expected) < 1e-9

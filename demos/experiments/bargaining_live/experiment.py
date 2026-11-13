@@ -47,9 +47,9 @@ BOT_GIVES = 4
 
 
 def partner_of(state, player_id):
-    """Return the other player's id, or ``None`` if the player plays alone."""
-    others = [p for p in state["offers"] if p != player_id]
-    return others[0] if others else None
+    """Return the other player's id."""
+    (partner,) = [p for p in state["offers"] if p != player_id]
+    return partner
 
 
 class Propose(LiveMessage):
@@ -75,10 +75,10 @@ class Accept(LiveMessage):
 
     def apply(self, game, state, player_id, now):
         partner = partner_of(state, player_id)
-        if partner is None or state["offers"][partner] != self.keep:
+        if state["offers"][partner] != self.keep:
             raise Reject("Your partner has just changed their proposal.")
         state["deal"] = {partner: self.keep, player_id: state["endowment"] - self.keep}
-        state["deal_at"] = now - state["live_session"]["started_at"]
+        state["deal_at"] = game.elapsed(state, now)
 
 
 class Bargain(LiveGame):
@@ -115,16 +115,12 @@ class Bargain(LiveGame):
             "seconds": state["seconds"],
             "ends_at": state["ends_at"],
             "mine": state["offers"][player_id],
-            "theirs": None if partner is None else state["offers"][partner],
+            "theirs": state["offers"][partner],
             "deal": None if state["deal"] is None else state["deal"][player_id],
         }
 
     def is_over(self, state):
-        return (
-            state["deal"] is not None
-            or state["timed_out"]
-            or partner_of(state, next(iter(state["offers"]))) is None
-        )
+        return state["deal"] is not None or state["timed_out"]
 
     def outcome(self, state, reason):
         return {
@@ -133,8 +129,16 @@ class Bargain(LiveGame):
             "n_proposals": state["n_proposals"],
         }
 
+    def answer(self, outcome, reason, player_id):
+        return {
+            "deal": outcome["deal"] is not None,
+            "coins": (outcome["deal"] or {}).get(player_id, 0),
+            "deal_at": outcome["deal_at"],
+            "n_proposals": outcome["n_proposals"],
+        }
+
     def performance_reward(self, outcome, reason, player_id):
-        return (outcome["deal"] or {}).get(player_id, 0) * COIN_VALUE
+        return self.answer(outcome, reason, player_id)["coins"] * COIN_VALUE
 
     def bot(self, view, player_id, now):
         if view["deal"] is not None:
@@ -240,14 +244,12 @@ class BargainTrial(Trial):
 
     def coins(self):
         """Return the coins the player got from this round's deal."""
-        deal = (self.answer or {}).get("deal") or {}
-        return deal.get(str(self.participant_id), 0)
+        return (self.answer or {}).get("coins", 0)
 
     def show_feedback(self, experiment, participant):
-        outcome = self.answer
-        if outcome is None:
+        if self.answer is None:
             text = "Your partner didn't arrive, so there was no game this round."
-        elif outcome["deal"] is None:
+        elif not self.answer["deal"]:
             text = "You didn't reach a deal in time, so nobody was paid."
         else:
             mine = self.coins()
@@ -343,7 +345,7 @@ class Exp(psynet.experiment.Experiment):
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
                     "round": t.position,
-                    "deal": (t.answer or {}).get("deal") is not None,
+                    "deal": (t.answer or {}).get("deal"),
                     "coins": t.coins(),
                     "deal_at": (t.answer or {}).get("deal_at"),
                     "n_proposals": (t.answer or {}).get("n_proposals"),
@@ -357,12 +359,12 @@ class Exp(psynet.experiment.Experiment):
         trials = BargainTrial.query.filter_by(participant_id=bot.id).all()
         assert len(trials) == N_ROUNDS
         for trial in trials:
-            assert trial.answer["deal"] is not None, trial.answer
-            assert sorted(trial.answer["deal"].values()) == [
+            assert trial.answer["deal"], trial.answer
+            assert trial.coins() in (BOT_GIVES, ENDOWMENT - BOT_GIVES)
+            outcome = live_session_result(trial.group_round.live_session_id).outcome
+            assert sorted(outcome["deal"].values()) == [
                 BOT_GIVES,
                 ENDOWMENT - BOT_GIVES,
             ]
-            session_id = trial.group_round.live_session_id
-            assert live_session_result(session_id).outcome == trial.answer
         expected = sum(t.coins() for t in trials) * COIN_VALUE
         assert abs(bot.performance_reward - expected) < 1e-9

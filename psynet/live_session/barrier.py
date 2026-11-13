@@ -58,13 +58,29 @@ class LiveGameBarrier(GroupBarrier):
         trial maker, the group's ``sync_group_type``, which gives them the
         same trial.
 
+    on_release
+        Optional function called once the session has started, with the
+        arguments that a :class:`~psynet.sync.GroupBarrier`'s ``on_release``
+        can take, such as ``trials`` and ``group_round``, and also
+        ``live_session_id``, the new session's id. Use it for group
+        bookkeeping at the start of a round, such as choosing who retires
+        after it. It isn't called when no session starts, because the group
+        has fewer members than the game's ``min_players``.
+
     **kwargs
         Any other parameter of :class:`~psynet.sync.GroupBarrier`, such as
-        ``max_wait_time``, except ``on_release``, which the game barrier uses
-        to start the session.
+        ``max_wait_time``.
     """
 
-    def __init__(self, id_: str, group_type: str, game_type, settings=None, **kwargs):
+    def __init__(
+        self,
+        id_: str,
+        group_type: str,
+        game_type,
+        settings=None,
+        on_release=None,
+        **kwargs,
+    ):
         if not (isinstance(game_type, type) and issubclass(game_type, LiveGame)):
             raise TypeError(
                 f"game_type must be a LiveGame subclass, not {game_type!r}."
@@ -89,6 +105,7 @@ class LiveGameBarrier(GroupBarrier):
         )
         self.game_type = game_type
         self.settings = settings
+        self.on_session_start = on_release
         try:
             barrier_spec_json(self)
         except BarrierSpecError as error:
@@ -120,10 +137,29 @@ class LiveGameBarrier(GroupBarrier):
     # on_release has to be importable by name, and gets the barrier rebuilt
     # from its saved settings.
     @staticmethod
-    def _release(participants, barrier, group_round):
-        barrier._start_session(participants, group_round)
+    def _release(
+        group, participants, trials, group_round, leader, left, admitted, barrier
+    ):
+        session_id = barrier._start_session(participants, group_round)
+        if session_id is not None and barrier.on_session_start is not None:
+            # Rebuilt from the barrier's saved settings, it passes each
+            # function only the arguments it takes, as on_release does.
+            barrier.on_session_start(
+                group=group,
+                participants=participants,
+                trials=trials,
+                group_round=group_round,
+                leader=leader,
+                participant=leader,
+                left=left,
+                admitted=admitted,
+                barrier=barrier,
+                live_session_id=session_id,
+            )
 
     def _start_session(self, participants, group_round=None):
+        if len(participants) < self.game_type.min_players:
+            return None
         token = _new_session_settings.set(self.settings)
         try:
             session_id = create_realtime_session(
@@ -137,6 +173,7 @@ class LiveGameBarrier(GroupBarrier):
             _set_live_session_id(member, self.id, session_id)
         if group_round is not None:
             group_round.live_session_id = session_id
+        return session_id
 
 
 # Checked when the timeline is built, since an error while a group is

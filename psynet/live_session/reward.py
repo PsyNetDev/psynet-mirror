@@ -1,8 +1,8 @@
-"""A live session's rewards: those from the outcome, paid to every player when
-the session's ending is saved, and those from add_performance_reward, paid by
-effects queued during the game. Both are paid in the job that writes the
-session's record, so each is paid once, whether or not the player is still on
-the game page."""
+"""What PsyNet does with a live session's record as Dallinger writes it: the
+rewards from add_performance_reward, paid by effects queued during the game,
+and, once the ending is saved, the rewards from the outcome and the game's
+record_round. All run in the job that writes the session's record, so each
+runs once, whether or not the players are still on the game page."""
 
 import functools
 
@@ -63,19 +63,54 @@ def _handles_reward(method):
     return handle_effect
 
 
-def _pays_outcome_rewards(method):
+def _handles_ending(method):
     @functools.wraps(method)
     def handle_ending(self, session_row):
         # A failed session has no outcome if Dallinger couldn't get one from
         # the game's outcome method.
+        players = _locked_players(session_row)
         if session_row.status != "failed" or session_row.outcome is not None:
-            what = f"{type(self).__name__}.performance_reward"
-            for participant in _locked_players(session_row):
-                amount = self.performance_reward(
-                    session_row.outcome, session_row.end_reason, str(participant.id)
-                )
-                _add_reward(participant, _check_reward(amount, what))
+            _pay_outcome_rewards(self, session_row, players)
+            _record_round(self, session_row)
+        _end_game_page_deadlines(session_row, players)
         return method(self, session_row)
 
     handle_ending._psynet_wrapper = True
     return handle_ending
+
+
+def _pay_outcome_rewards(game, session_row, players):
+    what = f"{type(game).__name__}.performance_reward"
+    for participant in players:
+        amount = game.performance_reward(
+            session_row.outcome, session_row.end_reason, str(participant.id)
+        )
+        _add_reward(participant, _check_reward(amount, what))
+
+
+def _end_game_page_deadlines(session_row, players):
+    """Move the players' game page deadline, which a group barrier's
+    ``late_after`` counts from, from the latest the session could end to when
+    it ended."""
+    from .control import _game_page_deadline
+
+    deadline = _game_page_deadline(session_row.id)
+    if deadline is None or session_row.end_time is None:
+        return
+    for participant in players:
+        for link in participant.sync_group_links:
+            if link.active and link.page_deadline == deadline:
+                link.page_deadline = min(deadline, session_row.end_time)
+
+
+def _record_round(game, session_row):
+    from ..sync import SyncGroupRound
+
+    group_round = (
+        SyncGroupRound.query.filter_by(live_session_id=session_row.id)
+        .with_for_update()
+        .populate_existing()
+        .one_or_none()
+    )
+    if group_round is not None:
+        game.record_round(group_round, session_row.outcome, session_row.end_reason)

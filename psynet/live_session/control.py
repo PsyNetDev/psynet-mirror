@@ -121,10 +121,7 @@ class LiveSessionControl(NullControl):
         session_id = live_session_id(participant, self.barrier_id)
         if session_id is None:
             return None
-        latest = _latest_end_seconds(session_id)
-        if latest is None:
-            return None
-        return _session_start_time(session_id) + timedelta(seconds=latest)
+        return _game_page_deadline(session_id)
 
     def validate(self, response, participant, **kwargs):
         # check_ready_for_response has already seen the session end, and an
@@ -133,7 +130,16 @@ class LiveSessionControl(NullControl):
         if session_id is None:
             response.answer = None
             return None
-        response.answer = live_session_result(session_id).outcome
+        result = live_session_result(session_id)
+        # A failed session has no outcome if its record couldn't be saved, or
+        # if Dallinger couldn't get one from the game's outcome method.
+        if result.status == "failed" and result.outcome is None:
+            response.answer = None
+        else:
+            game = _session_game_type(session_id)()
+            response.answer = game.answer(
+                result.outcome, result.end_reason, str(participant.id)
+            )
         return None
 
     def _check_page(self, page):
@@ -182,6 +188,15 @@ def _latest_end_seconds(session_id):
     # result, or None for a game without a max_duration.
     max_duration = _session_game_type(session_id).max_duration
     return None if max_duration is None else max_duration + _SAVING_MARGIN
+
+
+def _game_page_deadline(session_id):
+    """Return when a session's game page ends at the latest, or None for a
+    game without a max_duration."""
+    latest = _latest_end_seconds(session_id)
+    if latest is None:
+        return None
+    return _session_start_time(session_id) + timedelta(seconds=latest)
 
 
 def _session_start_time(session_id):

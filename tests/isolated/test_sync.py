@@ -7308,7 +7308,8 @@ def test_late_after_counts_from_joining_the_group(
 def test_late_after_follows_a_timed_page(
     in_experiment_directory, db_session, monkeypatch
 ):
-    """A between-barrier timeout waits for a timed page's answer, but no longer."""
+    """A between-barrier timeout counts from a timed page's deadline, once its
+    answer has had time to arrive."""
     exp = get_experiment()
     grouper = SimpleGrouper("main", initial_group_size=8, quorum=2, below_quorum="fail")
     participants = _working_participants(exp, 8)
@@ -7345,7 +7346,8 @@ def test_late_after_follows_a_timed_page(
     _arrive_at_group_barrier(
         exp, SimpleGrouper("other", initial_group_size=2), at_other_barrier
     )
-    later = timenow() + timedelta(seconds=20)
+    # 8 + 10 + 20 seconds after it started, the shortest timed page has ended.
+    later = timenow() + timedelta(seconds=40)
     monkeypatch.setattr("psynet.sync.timenow", lambda: later)
     barrier = GroupBarrier(
         id_="after_timed_page",

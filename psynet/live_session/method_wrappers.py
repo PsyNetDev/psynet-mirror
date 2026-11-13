@@ -150,6 +150,15 @@ def _sends_message(method):
 
 
 def _to_json(state, what):
+    key = _non_string_key(state)
+    if key is not None:
+        raise ValueError(
+            f"After {what}, the state has a dict with the key {key!r}, of type "
+            f"{type(key).__name__}. The state is saved as JSON, whose keys are "
+            f"strings, so after a save the key would read back as {str(key)!r} "
+            "and looking it up would fail. Use string keys: player ids are "
+            "already strings."
+        )
     try:
         return to_jsonable_python(state)
     except (ValueError, TypeError) as error:
@@ -157,3 +166,26 @@ def _to_json(state, what):
             f"After {what}, the state holds a value PsyNet can't convert to "
             f"JSON. {error}."
         ) from None
+
+
+def _non_string_key(value, seen=None):
+    """Return the first dict key in ``value`` that isn't a string, or None."""
+    if isinstance(value, (dict, list, tuple)):
+        seen = set() if seen is None else seen
+        # A value that contains itself is left for the conversion to report.
+        if id(value) in seen:
+            return None
+        seen.add(id(value))
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                return key
+            found = _non_string_key(item, seen)
+            if found is not None:
+                return found
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            found = _non_string_key(item, seen)
+            if found is not None:
+                return found
+    return None

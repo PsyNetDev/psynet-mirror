@@ -28,8 +28,8 @@ from .registry import _register_live_session
 from .reward import (
     _REWARD_EFFECT,
     _check_reward,
+    _handles_ending,
     _handles_reward,
-    _pays_outcome_rewards,
 )
 
 
@@ -73,6 +73,13 @@ class LiveGame(RealtimeGame):
     #: ``None``, for no limit, only if the game always ends by itself.
     max_duration = 600
 
+    #: The fewest players a session needs. A group that reaches the
+    #: :class:`LiveGameBarrier` with fewer active members, for example
+    #: because the others left it while it waited, starts no session, and its
+    #: members' game pages show the no-session notice. Set it to 1 for a game
+    #: that a player can play alone.
+    min_players = 2
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         # Resolved through the MRO, so methods from a mixin are wrapped too.
@@ -86,13 +93,17 @@ class LiveGame(RealtimeGame):
             ("view", _shows_ready_step),
             ("bot", _sends_message),
             ("handle_effect", _handles_reward),
-            ("handle_ending", _pays_outcome_rewards),
+            ("handle_ending", _handles_ending),
         ]:
             method = getattr(cls, name)
             if method is not getattr(RealtimeGame, name, None) and not getattr(
                 method, "_psynet_wrapper", False
             ):
                 setattr(cls, name, wrap(method))
+        if not (isinstance(cls.min_players, int) and cls.min_players >= 1):
+            raise ValueError(
+                f"{cls.__name__}'s min_players must be a whole number of 1 or more."
+            )
         if cls.ready_timeout is not None and (
             not is_number(cls.ready_timeout) or cls.ready_timeout <= 0
         ):
@@ -169,6 +180,67 @@ class LiveGame(RealtimeGame):
         """
         self.read_message(message).apply(self, state, player_id, now)
 
+    def elapsed(self, state, now):
+        """Return the seconds since the session started, once every player
+        was ready or at :attr:`ready_timeout`, or ``None`` before it starts.
+        The session clock, ``now``, counts from when the group left the game
+        barrier instead, so use this for the game's own timers.
+        """
+        started_at = _ready_step(state)["started_at"]
+        return None if started_at is None else now - started_at
+
+    def answer(self, outcome, reason, player_id):
+        """Return a player's answer on the game page, which is also their
+        trial's answer when the game is played as a trial. By default, it's
+        the whole outcome. Return only the player's part, such as
+        ``outcome["payoffs"][player_id]``, so the trial doesn't hold the
+        other players' data and code reading it doesn't need the player's id.
+        It isn't called for a session that failed without an outcome, whose
+        answer is ``None``.
+
+        Parameters
+        ----------
+
+        outcome
+            What the game's ``outcome`` returned.
+
+        reason
+            Why the session ended. It's the ``reason`` that the game's
+            ``outcome`` received.
+
+        player_id
+            The player's id.
+
+        Returns
+        -------
+
+        A value that can be saved as JSON.
+        """
+        return outcome
+
+    def record_round(self, group_round, outcome, reason):
+        """Record the group's results in the round the session was played
+        in, such as the team's total, in ``group_round.var``. PsyNet calls it
+        once, when the session's ending is saved, for a session started by a
+        :class:`LiveGameBarrier` in a round's trials, so there's no need for
+        another barrier after the game page to score the round. It isn't
+        called for a session that failed without an outcome. By default, it
+        does nothing.
+
+        Parameters
+        ----------
+
+        group_round
+            The :class:`~psynet.sync.SyncGroupRound` the session was played in.
+
+        outcome
+            What the game's ``outcome`` returned.
+
+        reason
+            Why the session ended.
+        """
+        return None
+
     def performance_reward(self, outcome, reason, player_id):
         """Return the reward a player earns from the session's outcome, such as
         their winnings. PsyNet adds it to each player's performance reward
@@ -231,11 +303,12 @@ class LiveGame(RealtimeGame):
         """
         return super().handle_effect(name, payload, session_row)
 
-    @_pays_outcome_rewards
+    @_handles_ending
     def handle_ending(self, session_row):
         """Do work that needs the session's ending, as in Dallinger's
         ``handle_ending``. PsyNet pays each player's
-        :meth:`performance_reward` before this method runs.
+        :meth:`performance_reward` and calls :meth:`record_round` before
+        this method runs.
         """
         return super().handle_ending(session_row)
 

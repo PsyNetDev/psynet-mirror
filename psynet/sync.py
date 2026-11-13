@@ -1969,11 +1969,12 @@ class GroupBarrier(Barrier):
         Acts on members who haven't reached this barrier yet: the longest each may take to reach it, in seconds,
         counted from the group's previous barrier pass or from when the group admitted them, whichever is later,
         before ``late_action`` is applied to them; pending members are never late, and nobody is late while
-        only pending members wait here. ``None`` (default) never treats anyone as late. A member on a
-        page with a ``time_limit`` is never late before that limit has run out plus 10 seconds, so that an
-        answer sent at the deadline can arrive; this timeout therefore need not cover the pages' time limits.
-        The same holds for a page whose :meth:`~psynet.timeline.Page.ends_by` says when it ends at the
-        latest, such as a live session's game page.
+        only pending members wait here. ``None`` (default) never treats anyone as late. For a member who
+        has started a page with a ``time_limit`` since then, the time counts from when that limit runs out
+        plus 10 seconds, so that an answer sent at the deadline can arrive, if that is later; this timeout
+        therefore needs to cover only the pages without a time limit. The same holds for a page whose
+        :meth:`~psynet.timeline.Page.ends_by` says when it ends at the latest, such as a live session's
+        game page.
         Requires ``late_action``, and the grouper of ``group_type`` (and of each type in ``also_leave``)
         must then be given ``below_quorum``, which is checked when the experiment loads.
 
@@ -2807,9 +2808,9 @@ class GroupBarrier(Barrier):
         from when they were admitted, whichever is later, so newcomers are
         not late as soon as they take part; pending members are never late. A
         member who has started a page with a time limit (or an ``ends_by``) since then, outside
-        waiting logic, is not late until that limit has run out and an answer
-        sent at the deadline has had time to arrive, even if they have
-        already left the page.
+        waiting logic, is timed from when that limit runs out and an answer
+        sent at the deadline has had time to arrive instead, if that is
+        later, even if they have already left the page.
         """
         if self.late_after is None:
             return []
@@ -2828,9 +2829,9 @@ class GroupBarrier(Barrier):
             starts = [t for t in (group.last_barrier_pass_time, link.admitted_at) if t]
             if not starts:
                 continue
-            late_at = max(starts) + timedelta(seconds=self.late_after)
             if link.page_deadline is not None:
-                late_at = max(late_at, link.page_deadline + answer_arrival)
+                starts.append(link.page_deadline + answer_arrival)
+            late_at = max(starts) + timedelta(seconds=self.late_after)
             if now > late_at:
                 late.append(participant)
         return late

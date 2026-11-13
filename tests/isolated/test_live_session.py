@@ -43,6 +43,7 @@ from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     SimpleSyncGroup,
+    SyncGroupRound,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
 )
@@ -234,6 +235,40 @@ def test_each_round_s_game_barriers_start_a_session_with_that_round_s_settings(p
         rewards.append(store.realtime_state(session_id)["pick_reward"])
 
     assert rewards == [0.1, 0.2]
+
+
+def test_a_group_with_fewer_than_min_players_starts_no_session(pair, monkeypatch):
+    members, game_barrier = pair
+    monkeypatch.setattr(type(_pick_numbers()), "min_players", 3)
+
+    for member in members:
+        _arrive(game_barrier, member)
+
+    assert live_session_id(members[0], game_barrier.id) is None
+
+
+_session_starts = []
+
+
+def _note_session_start(participants, live_session_id):
+    _session_starts.append((sorted(p.id for p in participants), live_session_id))
+
+
+def test_the_game_barrier_s_on_release_runs_once_the_session_has_started(pair):
+    members, _ = pair
+    game_barrier = LiveGameBarrier(
+        id_="trial_game",
+        group_type="pair",
+        game_type=type(_pick_numbers()),
+        on_release=_note_session_start,
+    )
+    _session_starts.clear()
+
+    for member in members:
+        _arrive(game_barrier, member)
+
+    session_id = live_session_id(members[0], "trial_game")
+    assert _session_starts == [(sorted(m.id for m in members), session_id)]
 
 
 def test_the_members_of_a_group_must_arrive_with_the_same_settings(pair):
@@ -1108,7 +1143,7 @@ class Thing:
         (datetime.datetime(2026, 11, 2, 9, 30), "2026-11-02T09:30:00"),
         (datetime.timedelta(seconds=90), "PT1M30S"),
         (Point(x=1, y=2), {"x": 1, "y": 2}),
-        ({1: (2, 3)}, {"1": [2, 3]}),
+        ({"1": (2, 3)}, {"1": [2, 3]}),
     ],
 )
 def test_the_state_is_converted_to_json_after_each_method_that_changes_it(
@@ -1146,22 +1181,17 @@ def test_the_state_is_converted_to_json_after_each_method_that_changes_it(
         assert _game_part(state) == {"value": converted}, name
 
 
-def test_the_state_s_own_keys_are_converted(registry):
+def test_a_state_with_a_key_that_isnt_a_string_is_refused(registry):
     class Numbered(LiveGame):
         def initial_state(self, players):
-            return {}
+            return {"scores": {int(player): 0 for player in players}}
 
         def view(self, state, player_id):
             return state
 
-        def tick(self, state, now):
-            state[1] = "a"
-
-    state = _started()
-
-    Numbered().tick(state, 0)
-
-    assert _game_part(state) == {"1": "a"}
+    # It would read back as "3" after a save, and state["scores"][3] would fail.
+    with pytest.raises(ValueError, match="the key 3, of type int.*read back as '3'"):
+        Numbered().initial_state(["3"])
 
 
 def test_an_overridden_apply_is_converted(registry):
@@ -1961,6 +1991,71 @@ def test_the_ending_pays_each_player_s_reward_if_there_is_an_outcome(
         [(outcome, "failed", player) for player in players] if paid else []
     )
     assert [_reward(member) for member in members] == [0.25 if paid else 0] * 2
+
+
+def test_the_game_page_answer_can_be_the_player_s_part_of_the_outcome(
+    pair, monkeypatch
+):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    db.session.query(RealtimeSession).filter_by(id=session_id).update(
+        {
+            "status": "ended",
+            "end_reason": "finished",
+            "outcome": {str(m.id): m.id for m in members},
+        }
+    )
+    game_type = game_registry._live_session_types["pick_numbers"]
+    monkeypatch.setattr(
+        game_type, "answer", lambda self, outcome, reason, player_id: outcome[player_id]
+    )
+
+    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
+    assert _accepted_answers(members[0]) == [members[0].id]
+
+
+def test_the_ending_records_the_round_and_ends_the_game_page_deadline(
+    pair, monkeypatch
+):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    group_round = SyncGroupRound(
+        sync_group_id=members[0].sync_group_links[0].sync_group_id,
+        module_id="game",
+        number=0,
+        live_session_id=session_id,
+    )
+    db.session.add(group_round)
+    for member in members:
+        member.waiting_barrier_id = None
+        _game_page().consume(get_experiment(), member)
+    row = db.session.get(RealtimeSession, session_id)
+    row.status, row.end_reason = "ended", "finished"
+    row.outcome = {str(m.id): 4 for m in members}
+    row.end_time = timenow()
+    game_type = game_registry._live_session_types["pick_numbers"]
+    monkeypatch.setattr(
+        game_type,
+        "record_round",
+        lambda self, group_round, outcome, reason: setattr(
+            group_round.var, "total", sum(outcome.values())
+        ),
+    )
+
+    game_type().handle_ending(row)
+
+    assert group_round.var.total == 8
+    # So a later barrier's late_after counts from when the game ended.
+    assert [m.sync_group_links[0].page_deadline for m in members] == [row.end_time] * 2
+
+
+def test_elapsed_counts_from_the_session_s_start():
+    game = _pick_numbers()
+    waiting = _started()
+    waiting["live_session"]["started_at"] = None
+
+    assert game.elapsed(_started(), 5) == 5
+    assert game.elapsed(waiting, 5) is None
 
 
 def test_a_game_page_without_a_session_moves_on_with_no_answer(pair):

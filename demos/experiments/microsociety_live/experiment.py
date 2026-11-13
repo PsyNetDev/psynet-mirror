@@ -8,16 +8,16 @@ everyone sees who caught what, where. So members can learn where to fish
 from each other while they play. Each fish pays ``FISH_VALUE``.
 
 As in the ``microsociety`` demo, the society takes newcomers for as long as
-it lasts. A newcomer is admitted at the start of the next round, where they
-see the society's recent catches and the tips of members who have left.
-When a round had more than ``SOCIETY_SIZE`` members, the longest-serving
+it lasts. A newcomer first sees the society's recent catches and the tips of
+members who have left, and is then admitted at the start of the next round.
+When a round has more than ``SOCIETY_SIZE`` members, the longest-serving
 member retires at its end, and a member also stops after ``MAX_ROUNDS``
 rounds. Before leaving, they leave a tip for future members.
 
 Each round is one cued ``FishingTrial`` per member, whose ``show_trial``
-starts a live session for the society, shows the lake, and waits at the
-``round_finished`` barrier, whose release records the round and retires a
-member if the round had too many.
+starts a live session for the society and shows the lake. The game barrier's
+``on_release`` chooses who leaves after the round, and the game's
+``record_round`` records where the round's fish were caught.
 """
 
 import random
@@ -37,7 +37,13 @@ from psynet.live_session import (
 from psynet.modular_page import ModularPage, Prompt, TextControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, SimpleGrouper, SyncGroupRound, group_seats
+from psynet.sync import (
+    GroupBarrier,
+    SimpleGrouper,
+    SyncGroupRound,
+    group_seats,
+    leave_group,
+)
 from psynet.timeline import (
     CodeBlock,
     Module,
@@ -62,12 +68,13 @@ ROUND_SECONDS = 20
 CATCH_SECONDS = 3
 TRAVEL_SECONDS = 2
 RESULTS_SECONDS = 10
-# Covers a newcomer reading the society's history before their first round.
-# The game page says when it ends, so this needn't cover the game.
-LATE_AFTER = 60
+# Counts from the end of the game, so it covers the results page.
+LATE_AFTER = 2 * RESULTS_SECONDS
 GROUPING_WAIT = 120
 TOP_UP_WAIT = 30
-NEWCOMER_MAX_WAIT = LATE_AFTER + ROUND_SECONDS + RESULTS_SECONDS
+# Covers a newcomer reading the society's history and waiting for the round
+# in progress to end.
+NEWCOMER_MAX_WAIT = 60 + ROUND_SECONDS + RESULTS_SECONDS
 HISTORY_ROUNDS = 3
 TIPS_SHOWN = 3
 LABELS = "BCDEFG"
@@ -136,7 +143,7 @@ class Fishing(LiveGame):
             state["time_up"] = True
 
     def view(self, state, player_id):
-        labels = player_labels(state["boats"], player_id)
+        labels = player_labels(state["live_session"]["players"], player_id)
         latest = state["catches"][-1] if state["catches"] else None
         return {
             "n_spots": len(state["spot_means"]),
@@ -168,6 +175,15 @@ class Fishing(LiveGame):
             "catches": state["catches"],
         }
 
+    def answer(self, outcome, reason, player_id):
+        return {
+            "fish": outcome["fish"][player_id],
+            "moves": outcome["moves"][player_id],
+        }
+
+    def record_round(self, group_round, outcome, reason):
+        group_round.var.spot_fish = _spot_fish(outcome)
+
     def performance_reward(self, outcome, reason, player_id):
         return outcome["fish"][player_id] * FISH_VALUE
 
@@ -190,9 +206,9 @@ class Fishing(LiveGame):
         return None
 
 
-def player_labels(boats, player_id):
-    """Label the player "you" and the others "B", "C", and so on, in a fixed order."""
-    others = sorted((p for p in boats if p != player_id), key=int)
+def player_labels(players, player_id):
+    """Label the player "you" and the others "B", "C", and so on, in the order they joined."""
+    others = [p for p in players if p != player_id]
     return {player_id: "you", **dict(zip(others, LABELS))}
 
 
@@ -259,6 +275,13 @@ def get_timeline():
                 "rounds",
                 lambda participant: life_stage(participant) == "playing",
                 join(
+                    # Read while the newcomer waits to be admitted, so the
+                    # society doesn't wait for them.
+                    conditional(
+                        "newcomer",
+                        is_newcomer,
+                        PageMaker(history_page, time_estimate=20),
+                    ),
                     GroupBarrier(
                         id_="round_starts",
                         group_type=GROUP,
@@ -267,13 +290,13 @@ def get_timeline():
                         late_action="leave_group",
                         admission_point=True,
                         newcomer_max_wait=NEWCOMER_MAX_WAIT,
-                        newcomer_page=PageMaker(history_page, time_estimate=20),
                     ),
                     conditional("in_society", in_society, FishingTrial.cue()),
                 ),
                 expected_repetitions=MAX_ROUNDS,
             ),
         ),
+        leave_group(GROUP),
         switch(
             "leaving",
             life_stage,
@@ -311,6 +334,12 @@ def get_timeline():
 
 def in_society(participant: Participant) -> bool:
     return participant.in_sync_group(GROUP)
+
+
+def is_newcomer(participant: Participant) -> bool:
+    """Return whether the participant has joined the society but not been admitted yet."""
+    society = participant.active_sync_groups.get(GROUP)
+    return society is not None and participant in society.pending_participants
 
 
 def own_trials(participant: Participant) -> List["FishingTrial"]:
@@ -380,6 +409,7 @@ class FishingTrial(Trial):
                 id_="fishing",
                 group_type=GROUP,
                 game_type=Fishing,
+                on_release=self.plan_leaving,
                 settings={
                     "spot_means": SPOT_MEANS,
                     "noise": CATCH_NOISE,
@@ -390,29 +420,17 @@ class FishingTrial(Trial):
                 waiting_message="Waiting for the others to reach the lake…",
             ),
             lake_page(self.sync_group_round),
-            GroupBarrier(
-                id_="round_finished",
-                group_type=GROUP,
-                waiting_message="Waiting for the other members…",
-                late_after=LATE_AFTER,
-                late_action="leave_group",
-                on_release=self.score_round,
-            ),
         ]
 
     def fish(self) -> int:
         """Return the fish the member caught this round."""
-        if self.answer is None:
-            return 0
-        return self.answer["fish"].get(str(self.participant_id), 0)
+        return (self.answer or {}).get("fish", 0)
 
     @classmethod
-    def score_round(
+    def plan_leaving(
         cls, trials: List["FishingTrial"], group_round: SyncGroupRound, group
     ):
-        """Record where the round's fish were caught, and retire the longest-serving member if the round had too many."""
-        outcome = next((t.answer for t in trials if t.answer is not None), None)
-        group_round.var.spot_fish = {} if outcome is None else _spot_fish(outcome)
+        """Choose who leaves after the round: the longest-serving member if the round has too many, and anyone who has played their last round."""
         retiring = None
         if len(trials) > SOCIETY_SIZE:
             seats = group_seats(group)
@@ -420,8 +438,6 @@ class FishingTrial(Trial):
         group_round.var.retired_id = retiring.participant_id if retiring else None
         for trial in trials:
             trial.var.leaves_as = _leaves_as(trial, retiring)
-            if trial.var.leaves_as:
-                group.remove_participant(trial.participant, reason="finished")
 
     def gives_feedback(self, experiment, participant):
         return self.sync_group_outcome == "stayed"
@@ -489,9 +505,7 @@ class Exp(psynet.experiment.Experiment):
                     "tenure": t.position,
                     "outcome": t.sync_group_outcome,
                     "fish": t.fish(),
-                    "moves": (t.answer or {})
-                    .get("moves", {})
-                    .get(str(t.participant_id)),
+                    "moves": (t.answer or {}).get("moves"),
                     "leaves_as": t.var.get("leaves_as"),
                 }
                 for t in trials
@@ -520,15 +534,14 @@ class Exp(psynet.experiment.Experiment):
         assert all("You caught" in bot.current_page_text for bot in founders)
 
         # A newcomer joins while the founders read their results, reads the
-        # society's history at the next round's start, and plays that round,
-        # so the longest-serving founder retires.
+        # society's history while waiting to be admitted, and plays the next
+        # round, so the longest-serving founder retires.
         newcomers[0].take_page()
-        assert newcomers[0].is_waiting
-        _start_round(founders, newcomers[0])
         assert "Welcome to the society" in newcomers[0].current_page_text
         assert "Round 1: spot" in newcomers[0].current_page_text
         newcomers[0].take_page()
-        advance_past_wait_pages([*founders, newcomers[0]])
+        assert newcomers[0].is_waiting
+        _start_round(founders, newcomers[0])
         _play([*founders, newcomers[0]])
         (retiree,) = [
             bot for bot in founders if "your last round" in bot.current_page_text
@@ -539,9 +552,7 @@ class Exp(psynet.experiment.Experiment):
         assert retiree.current_page_text.startswith("You caught ")
 
         # The next newcomer reads the tip.
-        others = [bot for bot in founders if bot is not retiree]
         newcomers[1].take_page()
-        _start_round([*others, newcomers[0]], newcomers[1])
         assert "Follow the others." in newcomers[1].current_page_text
         run_bots_to_completion(bots, timeout=MAX_ROUNDS * (ROUND_SECONDS + 30))
 
@@ -564,12 +575,8 @@ def _play(bots):
     advance_past_wait_pages(bots, timeout=ROUND_SECONDS + 60)
 
 
-def _start_round(bots, newcomer=None):
-    """Take the bots' results pages, then advance them and any ``newcomer`` to the round's start.
-
-    The members then wait at the session's start for the newcomer, who reads
-    the society's history first.
-    """
+def _start_round(bots, newcomer):
+    """Take the bots' results pages, then advance them and the waiting ``newcomer`` to the lake."""
     for bot in bots:
         bot.take_page()
-    advance_past_wait_pages([*bots, newcomer] if newcomer else bots, stop_at="fishing")
+    advance_past_wait_pages([*bots, newcomer])
