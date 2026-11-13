@@ -1,0 +1,175 @@
+.fish-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.fish-round {
+  font-weight: 600;
+}
+
+.fish-clock {
+  flex: 1;
+  height: 0.5rem;
+  border-radius: 0.25rem;
+  background: var(--psynet-surface-sunken);
+  overflow: hidden;
+}
+
+#fish-time-left {
+  height: 100%;
+  width: 100%;
+  background: var(--psynet-accent);
+  transition: width 0.5s linear;
+}
+
+.fish-lake {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 2rem;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(255, 255, 255, 0.25), transparent 60%),
+    repeating-linear-gradient(
+      170deg,
+      rgba(255, 255, 255, 0.08) 0 6px,
+      transparent 6px 18px
+    ),
+    #2f7fb5;
+  box-shadow: inset 0 0 1.5rem rgba(0, 0, 0, 0.25);
+}
+
+.fish-spot {
+  position: relative;
+  min-height: 6.5rem;
+  border: 2px dashed rgba(255, 255, 255, 0.45);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  overflow: visible;
+}
+
+.fish-spot:hover:not(:disabled),
+.fish-spot:focus-visible {
+  background: rgba(255, 255, 255, 0.2);
+  border-style: solid;
+}
+
+.fish-spot:disabled {
+  cursor: default;
+}
+
+.fish-spot-number {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-weight: 600;
+}
+
+.fish-buoy {
+  width: 1rem;
+  height: 1rem;
+}
+
+.fish-buoy circle {
+  fill: #f25c3b;
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.fish-buoy path {
+  stroke: #fff;
+  stroke-width: 3;
+}
+
+.fish-spot-boats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.2rem;
+  padding-top: 1.6rem;
+}
+
+.fish-boat {
+  width: 2.5rem;
+  height: 2rem;
+}
+
+.fish-score .fish-boat {
+  width: 1.5rem;
+  height: 1.2rem;
+  vertical-align: middle;
+  margin-right: 0.25rem;
+}
+
+.fish-mast {
+  stroke: #5b3a1e;
+  stroke-width: 2;
+}
+
+.fish-sail {
+  fill: #fff;
+}
+
+.fish-hull {
+  fill: var(--fish-colour);
+  stroke: rgba(0, 0, 0, 0.35);
+}
+
+.fish-sailing {
+  opacity: 0.5;
+  animation: fish-bob 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes fish-bob {
+  from { transform: translateY(-2px) rotate(-4deg); }
+  to { transform: translateY(2px) rotate(4deg); }
+}
+
+.fish-who-you { --fish-colour: #f2b632; }
+.fish-who-B { --fish-colour: #8e5bd8; }
+.fish-who-C { --fish-colour: #3bb273; }
+.fish-who-D { --fish-colour: #e0577c; }
+.fish-who-E { --fish-colour: #6c7a89; }
+
+.fish-catch {
+  position: absolute;
+  left: 50%;
+  bottom: 0.25rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.75rem;
+  background: var(--fish-colour);
+  color: #fff;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: fish-float 1.6s ease-out forwards;
+}
+
+@keyframes fish-float {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to { opacity: 0; transform: translate(-50%, -3rem); }
+}
+
+.fish-help {
+  margin-top: 0.75rem;
+  color: var(--psynet-text-muted);
+}
+
+.fish-scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-weight: 600;
+}
+
+.fish-rejection {
+  min-height: 1.5em;
+  color: var(--psynet-danger);
+}
