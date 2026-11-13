@@ -201,11 +201,17 @@ export function activate({root, psynet}) {
     status.textContent = "The round is over.";
     let catches = document.createElement("div");
     catches.className = "fish-results-boats";
-    for (let [who, n] of byWho(view ? view.fish : {})) {
+    let fish = byWho(view ? view.fish : {});
+    let most = Math.max(0, ...fish.map(([, n]) => n));
+    for (let [who, n] of fish) {
+      let crown = document.createElement("span");
+      crown.className = "fish-crown";
+      // Ties share the crown, and nobody gets it for catching nothing.
+      crown.textContent = n === most && most > 0 ? "👑" : "";
       let item = document.createElement("div");
       item.className = "fish-results-boat";
       item.title = whoText(who);
-      item.append(boatIcon(who), fishCount(who, n));
+      item.append(crown, boatIcon(who), fishCount(who, n));
       catches.append(item);
     }
     let next = document.createElement("p");

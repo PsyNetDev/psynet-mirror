@@ -79,6 +79,7 @@ test("a society of three fishes live on the lake, seeing each other's boats and 
         timeout: STEP_TIMEOUT_MS
       });
     }
+    await expect(third.locator("#fish-results .fish-crown:not(:empty)")).not.toHaveCount(0);
     await screenshot(third, "microsociety_live_results");
     for (const player of society) {
       await expect(player.locator(".fish-round")).toHaveText("Round 2", { timeout: STEP_TIMEOUT_MS });
