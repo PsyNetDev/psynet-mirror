@@ -6,80 +6,16 @@ import json
 import random
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
-
-ROOT = Path(__file__).resolve().parents[2]
-DEMO = ROOT / "demos" / "experiments" / "shared_canvas_live"
-
-
-def run_in_demo(script, stdin=""):
-    """Run ``script`` in the demo's directory and return what it prints, read
-    as JSON. It runs in a process of its own, so that importing the demo's
-    experiment.py doesn't touch this test process's experiment."""
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        cwd=DEMO,
-        input=stdin,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return json.loads(result.stdout)
-
-
-# The session starts at session time 10. A move sent at once is rejected,
-# since nobody could move before the start. Then a player who has stood still
-# for 10 seconds sends half-second moves, three at once and one 0.2 seconds
-# later.
-FAST_MOVES = """
-import json, sys
 from dallinger.realtime import Reject, Sent
+
+from psynet.experiment import import_local_experiment
 from psynet.live_session.testing import start_session
-import experiment
+from psynet.pytest_psynet import path_to_demo_experiment
 
-game = experiment.SharedCanvas()
-state = game.initial_state(["1", "2"])
-start_session(game, state, now=10)
-results = []
-for now in [10, 20, 20, 20, 20.2]:
-    move = {"type": "move", "message": {"dx": 1, "dy": 0, "seconds": 0.5}}
-    try:
-        game.apply(state, "1", move, now, Sent())
-        results.append(state["players"]["1"]["moved_until"])
-    except Reject as rejection:
-        results.append(rejection.reason)
-json.dump(results, sys.stdout)
-"""
-
-
-def test_a_page_cannot_move_its_player_faster_than_the_game_clock():
-    at_start, accepted, second, third, later = run_in_demo(FAST_MOVES)
-    used_up = "You've used up your movement time."
-    assert at_start == used_up
-    # The player can catch up on at most SAVED_MOVEMENT of the time they
-    # stood still, so the first move is spent up to the clock.
-    assert accepted == 20
-    assert second == third == used_up
-    # By then the clock has moved on 0.2 seconds, so that's all the move gets.
-    assert later == pytest.approx(20.2)
-
-
-GAME_MOVES = """
-import json, sys
-import experiment
-
-cases = json.load(sys.stdin)
-results = []
-for case in cases:
-    state = {"players": {"1": case["player"]}, "coins": case["coins"], "collected": []}
-    for dx, dy, seconds in case["moves"]:
-        experiment.advance(state, "1", dx, dy, seconds, now=0)
-    results.append({"player": state["players"]["1"], "coins": state["coins"]})
-json.dump({"rules": experiment.RULES, "results": results}, sys.stdout)
-"""
+DEMO = path_to_demo_experiment("shared_canvas_live")
 
 # Node 20 doesn't load a .js file written as a module, so the page's script
 # is imported from its source.
@@ -121,34 +57,79 @@ def random_case(rng):
     return {"player": player, "coins": coins, "moves": moves}
 
 
-def test_the_page_moves_players_exactly_as_the_game_does(tmp_path):
-    node = shutil.which("node")
-    assert node, "node is required to run the page's moves"
-    rng = random.Random(20261110)
-    cases = [random_case(rng) for _ in range(500)]
+@pytest.mark.parametrize("experiment_directory", [DEMO], indirect=True)
+@pytest.mark.usefixtures("in_experiment_directory")
+class TestSharedCanvasLive:
+    @pytest.fixture
+    def demo(self):
+        return import_local_experiment()["module"]
 
-    game = run_in_demo(GAME_MOVES, json.dumps(cases))
-    page_input = tmp_path / "cases.json"
-    page_input.write_text(json.dumps({"rules": game["rules"], "cases": cases}))
-    page = subprocess.run(
-        [
-            node,
-            "--input-type=module",
-            "-e",
-            PAGE_MOVES,
-            str(DEMO / "static" / "shared-canvas.js"),
-            str(page_input),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    page = json.loads(page.stdout)
+    def test_a_page_cannot_move_its_player_faster_than_the_game_clock(self, demo):
+        game = demo.SharedCanvas()
+        state = game.initial_state(["1", "2"])
+        start_session(game, state, now=10)
 
-    assert len(page) == len(cases)
-    for case, by_game, by_page in zip(cases, game["results"], page):
-        expected = {
-            key: by_game["player"][key] for key in ("x", "y", "vx", "vy", "coins")
-        }
-        assert by_page["player"] == expected, case
-        assert by_page["coins"] == by_game["coins"], case
+        def move(now):
+            message = {"type": "move", "message": {"dx": 1, "dy": 0, "seconds": 0.5}}
+            try:
+                game.apply(state, "1", message, now, Sent())
+            except Reject as rejection:
+                return rejection.reason
+            return state["players"]["1"]["moved_until"]
+
+        used_up = "You've used up your movement time."
+        # The session starts at session time 10, and nobody could move before
+        # the start.
+        assert move(10) == used_up
+        # After 10 seconds standing still, the player can catch up on at most
+        # SAVED_MOVEMENT of that time, so the first move is spent up to the
+        # clock, and others sent at once get nothing.
+        assert move(20) == 20
+        assert move(20) == move(20) == used_up
+        # By then the clock has moved on 0.2 seconds, so that's all the move
+        # gets.
+        assert move(20.2) == pytest.approx(20.2)
+
+    def test_the_page_moves_players_exactly_as_the_game_does(self, demo, tmp_path):
+        node = shutil.which("node")
+        assert node, "node is required to run the page's moves"
+        rng = random.Random(20261110)
+        cases = [random_case(rng) for _ in range(500)]
+
+        by_game = []
+        # The game changes its state in place, so it gets a copy of each case.
+        for case in json.loads(json.dumps(cases)):
+            state = {
+                "players": {"1": case["player"]},
+                "coins": case["coins"],
+                "collected": [],
+            }
+            for dx, dy, seconds in case["moves"]:
+                demo.advance(state, "1", dx, dy, seconds, now=0)
+            by_game.append({"player": state["players"]["1"], "coins": state["coins"]})
+
+        page_input = tmp_path / "cases.json"
+        page_input.write_text(json.dumps({"rules": demo.RULES, "cases": cases}))
+        page = subprocess.run(
+            [
+                node,
+                "--input-type=module",
+                "-e",
+                PAGE_MOVES,
+                str(Path(DEMO) / "static" / "shared-canvas.js"),
+                str(page_input),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        by_page = json.loads(page.stdout)
+
+        assert len(by_page) == len(cases)
+        for case, game_result, page_result in zip(cases, by_game, by_page):
+            expected = {
+                key: game_result["player"][key]
+                for key in ("x", "y", "vx", "vy", "coins")
+            }
+            assert page_result["player"] == expected, case
+            assert page_result["coins"] == game_result["coins"], case
