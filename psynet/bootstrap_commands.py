@@ -182,14 +182,19 @@ def services_check():
     "--yes",
     "assume_yes",
     is_flag=True,
-    help="Start missing services with Docker without prompting.",
+    help=(
+        "Start missing services, or replace an outdated PostgreSQL container, "
+        "with Docker without prompting."
+    ),
 )
 def services_ensure(assume_yes):
     """Ensure local PostgreSQL and Redis are reachable.
 
     If a service is missing, offers to start Docker containers that publish
     localhost ports 5432 and 6379 (what virtualenv ``psynet debug local``
-    expects). Exits with an error if services remain unavailable.
+    expects). Offers to replace a running PostgreSQL container from an
+    earlier PsyNet version. Exits with an error if services remain
+    unavailable.
     """
     from psynet.services import ensure_local_services
 

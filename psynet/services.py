@@ -365,8 +365,15 @@ def docker_available() -> bool:
     return shutil.which("docker") is not None
 
 
-def _docker_container_exists(name: str) -> bool:
-    """Return whether a Docker container with this name exists.
+@dataclass(frozen=True)
+class _ContainerState:
+    image: str
+    running: bool
+    volumes: tuple[str, ...]
+
+
+def _docker_container_state(name: str) -> _ContainerState | None:
+    """Return the image, running state and volumes of container ``name``, or None.
 
     Scoped to ``docker container inspect`` because bare ``docker inspect``
     also matches volumes, images, and networks. The service volumes reuse
@@ -374,23 +381,37 @@ def _docker_container_exists(name: str) -> bool:
     volume remains and the subsequent ``docker start`` then fails.
     """
     result = subprocess.run(
-        ["docker", "container", "inspect", name],
+        [
+            "docker",
+            "container",
+            "inspect",
+            "-f",
+            "{{.Config.Image}} {{.State.Running}}{{range .Mounts}} {{.Name}}{{end}}",
+            name,
+        ],
         capture_output=True,
         text=True,
         check=False,
     )
-    return result.returncode == 0
+    fields = result.stdout.split()
+    if result.returncode != 0 or len(fields) < 2:
+        return None
+    image, running, *volumes = fields
+    return _ContainerState(image, running.lower() == "true", tuple(volumes))
 
 
-def _docker_container_running(name: str) -> bool:
-    """Return whether a Docker container with this name is running."""
-    result = subprocess.run(
-        ["docker", "container", "inspect", "-f", "{{.State.Running}}", name],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.returncode == 0 and result.stdout.strip().lower() == "true"
+def _kept_volumes(state: _ContainerState) -> str:
+    return ", ".join(state.volumes) or "its old volume"
+
+
+def _outdated_postgres_container() -> _ContainerState | None:
+    """Return the state of a local Postgres container that runs another image."""
+    if not docker_available():
+        return None
+    state = _docker_container_state(_POSTGRES_CONTAINER)
+    if state is None or state.image == _POSTGRES_IMAGE:
+        return None
+    return state
 
 
 def _run_docker(args: list[str], *, description: str) -> None:
@@ -407,38 +428,30 @@ def _run_docker(args: list[str], *, description: str) -> None:
         raise click.ClickException(f"Failed to {description}.{suffix}") from exc
 
 
-def _remove_container_with_other_image(name: str, image: str) -> None:
-    """Remove container ``name`` if it runs another image, keeping its volumes."""
-    result = subprocess.run(
-        ["docker", "container", "inspect", "-f", "{{.Config.Image}}", name],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    current = result.stdout.strip()
-    if result.returncode != 0 or current in ("", image):
-        return
-    click.echo(
-        f"  Replacing container {name}, which runs {current}, with {image}. "
-        "Its data stays in its old volume; remove that volume with "
-        "'docker volume rm' once you no longer need it."
-    )
-    _run_docker(["rm", "--force", name], description=f"remove Docker container {name}")
-
-
 def _ensure_docker_container(
     name: str, run_args: list[str], *, image: str | None = None
 ) -> None:
     """Start an existing container or create it with ``run_args``.
 
-    With ``image``, an existing container that runs another image is replaced.
+    With ``image``, an existing container that runs another image is stopped
+    and replaced; its volumes are kept.
     """
-    if image:
-        _remove_container_with_other_image(name, image)
-    if _docker_container_running(name):
+    state = _docker_container_state(name)
+    if state and image and state.image != image:
+        kept = _kept_volumes(state)
+        click.echo(
+            f"  Replacing container {name}, which runs {state.image}, with {image}. "
+            f"Its data stays in {kept}; remove that with 'docker volume rm' "
+            "once you no longer need it."
+        )
+        if state.running:
+            _run_docker(["stop", name], description=f"stop Docker container {name}")
+        _run_docker(["rm", name], description=f"remove Docker container {name}")
+        state = None
+    if state and state.running:
         click.echo(f"  {name}: already running")
         return
-    if _docker_container_exists(name):
+    if state:
         click.echo(f"  Starting existing container {name}...")
         _run_docker(["start", name], description=f"start Docker container {name}")
         return
@@ -542,12 +555,14 @@ def ensure_local_services(
     """Check local services and optionally start them with Docker.
 
     Prints one line if both services are running, and each service's status
-    otherwise.
+    otherwise. Also offers to replace a running ``dallinger_postgres``
+    container that runs another image than PsyNet's PostgreSQL, such as the
+    PostgreSQL 12 that earlier versions started.
 
     Parameters
     ----------
     assume_yes :
-        If True, start Docker services without prompting when needed.
+        If True, start or replace Docker services without prompting when needed.
     strict :
         If True, raise when services remain unavailable after any start attempt.
     remote_launch :
@@ -565,13 +580,37 @@ def ensure_local_services(
         else "Local PostgreSQL and Redis"
     )
     checks = check_local_services()
-    if all(check.ok for check in checks):
+    services_ok = all(check.ok for check in checks)
+    outdated = _outdated_postgres_container()
+    # A stopped outdated container is replaced when the services are next
+    # started; while services are up without it, something else serves them.
+    if services_ok and not (outdated and outdated.running):
         click.echo(f"{label}: OK.")
         return True
-    click.echo(f"{label}:")
-    report_service_checks(checks)
+    if services_ok:
+        click.echo(f"{label}: OK.")
+    else:
+        click.echo(f"{label}:")
+        report_service_checks(checks)
+    if outdated:
+        click.echo(
+            f"{_POSTGRES_CONTAINER} runs {outdated.image}, but PsyNet now runs "
+            f"{_POSTGRES_IMAGE}, which can't open its data. Replacing the "
+            "container starts the local database empty; the old data stays in "
+            f"{_kept_volumes(outdated)}."
+        )
 
-    if not assume_yes:
+    if services_ok and not assume_yes:
+        if not _is_interactive():
+            click.echo(
+                "Warning: keeping it for now. Run 'psynet services ensure --yes' "
+                "to replace it.",
+                err=True,
+            )
+            return True
+        if not click.confirm(f"Replace {_POSTGRES_CONTAINER} now?", default=True):
+            return True
+    elif not assume_yes:
         if not _is_interactive():
             message = (
                 _missing_services_message(checks, remote_launch=remote_launch)

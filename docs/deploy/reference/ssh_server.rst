@@ -228,7 +228,8 @@ All classic apps share these services, defined in ``~/dallinger/docker-compose.y
 
 Cloudflare-ingress apps instead run their own Postgres in the Compose project
 and reach the internet through ``cloudflared``. They do not publish ports
-80/443. Every app also has an unprivileged front-door Caddy and a private
+80/443. One deployed with Dallinger 13.0 or earlier keeps PostgreSQL 12 when
+updated with ``--update`` (see :ref:`Moving to PostgreSQL 18 <upgrading_to_postgresql_18>`). Every app also has an unprivileged front-door Caddy and a private
 hibernation controller.
 
 Every service has the restart policy ``unless-stopped``, so Docker restarts

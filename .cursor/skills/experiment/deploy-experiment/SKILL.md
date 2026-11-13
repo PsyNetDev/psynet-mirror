@@ -175,7 +175,8 @@ records stay behind.
   server set up by Dallinger 13.0 or earlier, it also moves the shared
   database to PostgreSQL 18 and stops every classic app during the copy:
   offer to export the apps the user still needs first, and remind them that
-  no one may deploy to that server with PsyNet 13 or earlier afterwards.
+  no one may deploy to that server with PsyNet 13 or earlier, or with
+  PsyNet 14.0.0rc1 to rc3, afterwards.
 - `dallinger ec2 provision` fails after launching the instance: it keeps
   running and costs money. Fix the printed problem, then run either the
   printed `servers add` commands that finish the setup (and `servers upgrade`

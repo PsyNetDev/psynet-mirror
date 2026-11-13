@@ -49,6 +49,7 @@ current_image="$(docker container inspect -f '{{.Config.Image}}' dallinger_postg
 if [[ -n "$current_image" && "$current_image" != "$postgres_image" ]]
 then
   echo "...replacing it, because it runs $current_image."
+  docker stop dallinger_postgres >/dev/null || true
   docker rm --force dallinger_postgres
 fi
 docker start dallinger_postgres || true

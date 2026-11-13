@@ -464,9 +464,19 @@ stops every classic app on the server, so run it when no app has participants.
 The move normally runs without problems, but as a precaution, first export
 the data of the apps you still need with ``psynet export ssh --app <app>``
 (see :doc:`/data/exporting_data`). On a server that runs PostgreSQL 18, new
-or moved, no one may deploy with PsyNet 13 or earlier, which uses Dallinger 12
-or earlier: such a deploy can take every classic app on the server offline.
-Notify everyone who deploys to the server. `Moving to PostgreSQL 18
+or moved, no one may deploy with PsyNet 13 or earlier or with PsyNet
+14.0.0rc1 to rc3, which use Dallinger 12 or earlier. Nor may anyone run
+``servers upgrade`` on it with Dallinger 13.0. Any of these can take every
+classic app on the server offline. Notify everyone who deploys to the server.
+
+A Cloudflare-ingress app runs its own database, which ``servers upgrade``
+doesn't move. An app deployed with Dallinger 13.0 or earlier keeps PostgreSQL
+12 when you update it with ``--update``. To move it, export its data with
+``psynet export ssh --app <app>``, destroy it with ``psynet destroy ssh``, and
+deploy it again under the same name with ``--archive`` (see
+:doc:`/deploy/reference/deploy_from_archive`).
+
+`Moving to PostgreSQL 18
 <https://dallinger.readthedocs.io/latest/docker_support.html#moving-to-postgresql-18>`__
 in the Dallinger documentation gives the details, including how to remove the
 old database volume afterwards.
