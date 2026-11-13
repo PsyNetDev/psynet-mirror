@@ -108,6 +108,61 @@ results["feedback"] = {
     ),
 }
 
+results["feedback_given"] = [
+    trial.gives_feedback(types.SimpleNamespace(answer=answer), None, None)
+    for answer in (finished, None)
+]
+
+
+# The conditions of the timeline's loop of games and of the page after it,
+# asked of a participant who is about to start the game at ``index``.
+switches = {
+    elt.label: elt
+    for elt in experiment.Exp.timeline.all_elts
+    if type(elt).__name__ == "StartSwitch"
+}
+
+
+def timeline_goes(in_pair, index, reason=None):
+    participant = types.SimpleNamespace(
+        id=1,
+        in_sync_group=lambda group_type: in_pair and group_type == experiment.GROUP,
+        for_loops={"games": {"lst": [0, 1], "index": index}},
+        module_state=None,
+        append_branch_log=lambda entry: None,
+    )
+    return {
+        "plays_a_game": switches["for_loop"].function(
+            experiment=None, participant=participant
+        ),
+        "told_no_more_games": switches["no_more_games"].function(
+            experiment=None, participant=participant
+        ),
+    }
+
+
+results["timeline"] = {
+    "in_pair_first": timeline_goes(True, 0),
+    "in_pair_second": timeline_goes(True, 1),
+    "in_pair_after": timeline_goes(True, 2),
+    "alone_second": timeline_goes(False, 1),
+}
+
+
+def no_more_games(reason):
+    participant = types.SimpleNamespace(
+        sync_group_removal_reason=lambda group_type: (
+            reason if group_type == experiment.GROUP else None
+        ),
+        performance_reward=0.25,
+    )
+    return str(experiment.no_more_games(participant).content)
+
+
+results["no_more_games"] = {
+    reason: no_more_games(reason) for reason in experiment.NO_PARTNER_TEXTS
+}
+
 json.dump(results, sys.stdout)
 """
 
@@ -189,3 +244,36 @@ def test_the_feedback_page_says_when_no_round_was_played(results):
     assert results["feedback"]["no_rounds"] == (
         "The game ended before any rounds were played."
     )
+
+
+def test_a_trial_without_an_answer_shows_no_feedback(results):
+    # A trial whose game was played, and one whose game page had no session.
+    assert results["feedback_given"] == [True, False]
+
+
+def test_a_participant_without_a_partner_plays_no_more_games(results):
+    timeline = results["timeline"]
+    played = {"plays_a_game": True, "told_no_more_games": False}
+    assert timeline["in_pair_first"] == timeline["in_pair_second"] == played
+    assert timeline["in_pair_after"] == {
+        "plays_a_game": False,
+        "told_no_more_games": False,
+    }
+    assert timeline["alone_second"] == {
+        "plays_a_game": False,
+        "told_no_more_games": True,
+    }
+
+
+def test_the_page_after_the_games_says_why_there_are_no_more(results):
+    assert results["no_more_games"] == {
+        "waited_too_long": (
+            "Your partner didn't come back for the next game. Your bonus is $0.25."
+        ),
+        "group_dissolved": (
+            "Your partner has left, so there are no more games. Your bonus is $0.25."
+        ),
+        "removed_by_experimenter": (
+            "You were removed from the game. Your bonus is $0.25."
+        ),
+    }

@@ -15,10 +15,6 @@ const STEP_TIMEOUT_MS = 120000;
 
 // The demo's games: the first has five rounds and the second three.
 const ROUNDS = [5, 3];
-// How long a player waits at the start of a game for their partner, which is
-// the demo's PARTNER_WAIT_SECONDS.
-const PARTNER_WAIT_MS = 300000;
-
 // In the first game, the first player plays rock every round, so they win
 // rounds 1, 3 and 5, draw round 2 and lose round 4.
 const SECOND_PLAYER_ACTIONS = ["Scissors", "Rock", "Scissors", "Paper", "Scissors"];
@@ -268,57 +264,6 @@ test("two participants play rock_paper_scissors_live to the end, with rejected c
       });
       await assertNoBackendError(participant);
     }
-  } finally {
-    for (const context of contexts) {
-      await context.close();
-    }
-    await stopExperiment(experiment.proc);
-  }
-});
-
-test("a player whose partner doesn't come back for the second game plays no more games", { tag: "@both" }, async ({
-  browser
-}) => {
-  // The player waits PARTNER_WAIT_MS for their partner.
-  test.setTimeout(PARTNER_WAIT_MS + 10 * 60 * 1000);
-  const experiment = startExperiment(path.resolve("demos/experiments/rock_paper_scissors_live"));
-  let contexts = [];
-
-  try {
-    const pair = await startPair(browser, experiment, "rock_paper_scissors_live_alone");
-    contexts = pair.contexts;
-    const [first, second] = pair.participants;
-    await playGame(first, second, ROUNDS[0]);
-    await expect(first.locator("#main-body")).toContainText("You won the game!", {
-      timeout: STEP_TIMEOUT_MS
-    });
-    await expect(second.locator("#main-body")).toContainText("Your partner won the game.", {
-      timeout: STEP_TIMEOUT_MS
-    });
-
-    // The partner leaves. The first player waits for them at the start of
-    // the second game, then leaves the pair and reaches the game page
-    // without a session, where there is no game to see.
-    await second.close();
-    await first.locator("#next-button").click();
-    await expect(first.locator("#psynet-no-session-notice")).toHaveText(
-      "This game can't be played without your partner.",
-      { timeout: PARTNER_WAIT_MS + STEP_TIMEOUT_MS }
-    );
-    await expect(first.locator("#rps-game")).toBeHidden();
-
-    // The trial has no answer, so it shows no feedback, and the page after
-    // the games says why there are no more, with the first game's bonus.
-    await clickNextAndWait(first);
-    await expect(first.locator("#main-body")).toContainText(
-      "Your partner didn't come back for the next game. Your bonus is $0.25.",
-      { timeout: STEP_TIMEOUT_MS }
-    );
-    await clickNextAndWait(first);
-    await expect(first.locator("#main-body")).toContainText("That's the end", {
-      timeout: STEP_TIMEOUT_MS
-    });
-    await assertNoBackendError(first);
   } finally {
     for (const context of contexts) {
       await context.close();
