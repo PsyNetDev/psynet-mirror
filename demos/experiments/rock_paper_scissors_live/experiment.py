@@ -1,19 +1,21 @@
 """Rock, paper, scissors as a live session.
 
-Pairs of participants play two games of rock, paper, scissors, each of five
-rounds on one page. Each round's result appears for both players as soon as
-they have both chosen.
+Pairs of participants play two games of rock, paper, scissors, of five and
+then three rounds, each game on one page. Each round's result appears for both
+players as soon as they have both chosen.
 
-Each game is one cued ``RockPaperScissorsTrial`` per player. The trial starts
-the pair's session and shows the game page, the game's outcome is the trial's
-answer, and the trial's feedback page shows the final score from it. Each
-round won pays a bonus, which is larger in the second game: the amount comes
-from the trial's definition, which the trial passes to the game as the
-session's settings.
+Each game is one cued ``RockPaperScissorsTrial`` per player. The trial's
+definition says how many rounds the game has and what a round won pays. The
+trial starts the pair's session, with the number of rounds as its settings,
+and shows the game page. The game's outcome is the trial's answer, the trial
+scores it as the rounds the player won and pays the bonus for them, and its
+feedback page shows the final score.
+
+A player whose partner leaves plays no more games; see ``README.md``.
 """
 
 import random
-from typing import Literal
+from typing import Literal, get_args
 
 import pytest
 from dallinger.realtime import Reject
@@ -31,18 +33,25 @@ from psynet.live_session import (
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
-from psynet.timeline import Module, Timeline, for_loop, join
+from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop, join
 from psynet.trial.main import Trial
 
+# The group type of the pairs, which the grouper, the trial and the
+# initializer share.
 GROUP = "pair"
 
-N_ROUNDS = 5
-ACTIONS = ["rock", "paper", "scissors"]
+Action = Literal["rock", "paper", "scissors"]
+ACTIONS = list(get_args(Action))
 BEATS = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
-# What a round won pays, in dollars, in each of the pair's games.
-BONUSES_PER_WIN = [0.05, 0.10]
-# How long a player waits for their partner to start a game, in seconds.
-PARTNER_WAIT_SECONDS = 60
+# Each of the pair's games: how many rounds it has, and what a round won pays,
+# in dollars.
+GAMES = [
+    {"rounds": 5, "bonus_per_win": 0.05},
+    {"rounds": 3, "bonus_per_win": 0.10},
+]
+# How long a player waits for their partner to start a game, in seconds. The
+# partner may still be reading the last game's result, so it allows for that.
+PARTNER_WAIT_SECONDS = 300
 
 
 def round_result(mine, theirs):
@@ -61,13 +70,13 @@ class Choose(LiveMessage):
 
     type = "choose"
     round: int
-    action: Literal["rock", "paper", "scissors"]
+    action: Action
 
     def apply(self, game, state, player_id, now):
         # The round number stops a click on a page that hasn't caught up yet,
         # such as one in another tab, from counting for the next round.
         if self.round != len(state["rounds"]) + 1:
-            raise Reject("That round is over.")
+            raise Reject("That isn't the current round.")
         if state["choices"][player_id] is not None:
             raise Reject("You've already chosen this round.")
         choices = state["choices"]
@@ -84,29 +93,29 @@ class Choose(LiveMessage):
 
 
 class RockPaperScissors(LiveSession):
-    """Five rounds of rock, paper, scissors between two players.
+    """A game of rock, paper, scissors between two players.
 
-    The state holds each player's choice in the current round, ``None`` until
-    they choose, the choices of every round played so far, the number of
-    rounds each player has won, and what a round won pays, which comes from
-    the session's settings. A player's view says whether their partner has
-    chosen in the current round, and shows the partner's choice only once the
-    round is over.
+    The state holds the number of rounds in the game, which comes from the
+    session's settings, each player's choice in the current round, ``None``
+    until they choose, the choices of every round played so far, and the
+    number of rounds each player has won. A player's view says whether their
+    partner has chosen in the current round, and shows the partner's choice
+    only once the round is over.
     """
 
     channel = "rock_paper_scissors_live"
     messages = [Choose]
     # A limit on the whole game, counted from when the pair left the
-    # initializer. Five rounds take a minute or two, so a game ends within five
+    # initializer. A game takes a minute or two, so it ends within five
     # minutes even if a player leaves it.
     max_duration = 300
 
     def initial_state(self, players, settings):
         return {
+            "n_rounds": settings["rounds"],
             "choices": {player: None for player in players},
             "rounds": [],
             "wins": {player: 0 for player in players},
-            "bonus_per_win": settings["bonus_per_win"],
         }
 
     def view(self, state, player_id):
@@ -121,7 +130,7 @@ class RockPaperScissors(LiveSession):
         ]
         return {
             "round": len(state["rounds"]) + 1,
-            "n_rounds": N_ROUNDS,
+            "n_rounds": state["n_rounds"],
             "chosen": state["choices"][player_id] is not None,
             "partner_chosen": state["choices"][partner] is not None,
             "results": results,
@@ -130,18 +139,14 @@ class RockPaperScissors(LiveSession):
         }
 
     def is_over(self, state):
-        return len(state["rounds"]) == N_ROUNDS
+        return len(state["rounds"]) == state["n_rounds"]
 
     def outcome(self, state, reason):
         return {
             "reason": reason,
             "rounds": state["rounds"],
             "wins": state["wins"],
-            "bonus_per_win": state["bonus_per_win"],
         }
-
-    def bonus(self, outcome, reason, player_id):
-        return outcome["bonus_per_win"] * outcome["wins"][player_id]
 
     def bot(self, view, player_id, now):
         if view["chosen"]:
@@ -149,9 +154,9 @@ class RockPaperScissors(LiveSession):
         return Choose(round=view["round"], action=random.choice(ACTIONS))
 
 
-def show_result(participant, outcome):
-    if outcome is None:
-        return InfoPage("Your group couldn't play the game.", time_estimate=5)
+def show_result(participant, outcome, bonus):
+    """The feedback page for a game with this ``outcome``, for which the
+    participant was paid ``bonus``."""
     if not outcome["rounds"]:
         return InfoPage(
             "The game ended before any rounds were played.", time_estimate=5
@@ -175,9 +180,7 @@ def show_result(participant, outcome):
                 f"You won {wins} of the {len(outcome['rounds'])} rounds played, "
                 f"and your partner won {partner_wins}."
             ),
-            tags.p(
-                f"Your bonus for this game is ${outcome['bonus_per_win'] * wins:.2f}."
-            ),
+            tags.p(f"Your bonus for this game is ${bonus:.2f}."),
         ),
         time_estimate=5,
     )
@@ -185,15 +188,14 @@ def show_result(participant, outcome):
 
 class RockPaperScissorsTrial(Trial):
     """One game between the two participants of a pair. The trial's definition
-    says what a round won pays, and the trial's answer is the game's outcome."""
+    says which of the pair's games it is, how many rounds it has and what a
+    round won pays, and the trial's answer is the game's outcome."""
 
     sync_group_type = GROUP
-    # A participant whose pair has ended still gets a trial, whose game page
-    # has no session.
-    sync_group_optional = True
     time_estimate = 65
 
     def show_trial(self, experiment, participant):
+        game = self.definition
         return join(
             # Starting the session closes the pair's round, as releasing any
             # group barrier in a cued trial does.
@@ -201,7 +203,7 @@ class RockPaperScissorsTrial(Trial):
                 id_="rock_paper_scissors",
                 group_type=GROUP,
                 game_type=RockPaperScissors,
-                settings=self.definition,
+                settings={"rounds": game["rounds"]},
                 # A player whose partner doesn't arrive leaves the pair, and
                 # goes on to the game page without a session.
                 max_wait_time=PARTNER_WAIT_SECONDS,
@@ -212,9 +214,9 @@ class RockPaperScissorsTrial(Trial):
                 Prompt(
                     tags.div(
                         tags.p(
-                            f"Game {self.position + 1} of {len(BONUSES_PER_WIN)}. "
-                            "Each round you win pays a bonus of "
-                            f"${self.definition['bonus_per_win']:.2f}.",
+                            f"Game {game['number']} of {len(GAMES)}, of "
+                            f"{game['rounds']} rounds. Each round you win pays "
+                            f"a bonus of ${game['bonus_per_win']:.2f}.",
                             id="rps-stakes",
                         ),
                         tags.p(id="rps-last"),
@@ -242,8 +244,11 @@ class RockPaperScissorsTrial(Trial):
                 LiveSessionControl(
                     "rock_paper_scissors",
                     player_left_message=(
-                        "Your partner has left. The game will end in a few "
-                        "minutes unless they come back."
+                        "Your partner has left the game. If they don't come "
+                        "back, it will end in a few minutes."
+                    ),
+                    no_session_message=(
+                        "This game can't be played without your partner."
                     ),
                 ),
                 js_page_modules=["/static/rock-paper-scissors.js"],
@@ -252,8 +257,41 @@ class RockPaperScissorsTrial(Trial):
             ),
         )
 
+    def score_answer(self, answer, definition):
+        """Return the number of rounds the player won."""
+        if answer is None:
+            # The game page had no session, so no game was played.
+            return 0
+        return answer["wins"][str(self.participant_id)]
+
+    def compute_performance_reward(self, score):
+        return score * self.definition["bonus_per_win"]
+
+    def gives_feedback(self, experiment, participant):
+        return self.answer is not None
+
     def show_feedback(self, experiment, participant):
-        return show_result(participant, self.answer)
+        return show_result(participant, self.answer, self.performance_reward)
+
+
+def left_pair(participant):
+    return not participant.in_sync_group(GROUP)
+
+
+# Why a participant isn't in a pair, as sync_group_removal_reason returns it.
+NO_PARTNER_TEXTS = {
+    "waited_too_long": "Your partner didn't come back for the next game.",
+    "group_dissolved": "Your partner has left, so there are no more games.",
+    "removed_by_experimenter": "You were removed from the game.",
+}
+
+
+def no_more_games(participant):
+    text = NO_PARTNER_TEXTS[participant.sync_group_removal_reason(GROUP)]
+    return InfoPage(
+        f"{text} Your bonus is ${participant.performance_reward:.2f}.",
+        time_estimate=5,
+    )
 
 
 class Exp(psynet.experiment.Experiment):
@@ -263,17 +301,17 @@ class Exp(psynet.experiment.Experiment):
 
     timeline = Timeline(
         InfoPage(
-            f"You'll play {len(BONUSES_PER_WIN)} games of rock, paper, scissors "
-            f"against another participant. Each game has {N_ROUNDS} rounds, "
-            "and you earn a bonus for each round you win. First, we'll find "
-            "you a partner.",
+            f"You'll play {len(GAMES)} games of rock, paper, scissors against "
+            "another participant, and you earn a bonus for each round you "
+            "win. First, we'll find you a partner.",
             time_estimate=5,
         ),
         SimpleGrouper(
             group_type=GROUP,
             initial_group_size=2,
             waiting_message="Waiting for another participant to join you",
-            # A participant who waits longer than this leaves the experiment.
+            # A participant who waits longer than this without a partner
+            # fails, and goes to the end of the experiment.
             max_wait_time=300,
             # A participant whose partner leaves the pair goes on without it.
             below_quorum="continue_without_group",
@@ -282,23 +320,32 @@ class Exp(psynet.experiment.Experiment):
             "games",
             for_loop(
                 label="games",
-                iterate_over=range(len(BONUSES_PER_WIN)),
+                iterate_over=range(len(GAMES)),
                 # The pair stays together, so the loop value is the round,
                 # and both players' trials get the round's definition.
                 logic=lambda game: RockPaperScissorsTrial.cue(
-                    {"bonus_per_win": BONUSES_PER_WIN[game]}, round=game
+                    {"number": game + 1, **GAMES[game]}, round=game
                 ),
                 time_estimate_per_iteration=RockPaperScissorsTrial.time_estimate,
+                # Checked before each game: a participant who is no longer in
+                # a pair plays no more of them.
+                stop_if=left_pair,
             ),
+        ),
+        conditional(
+            "no_more_games",
+            left_pair,
+            PageMaker(no_more_games, time_estimate=5),
         ),
     )
 
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
         trials = sorted(bot.alive_trials, key=lambda trial: trial.id)
-        assert [trial.definition["bonus_per_win"] for trial in trials] == (
-            BONUSES_PER_WIN
-        )
+        assert [trial.definition for trial in trials] == [
+            {"number": 1, "rounds": 5, "bonus_per_win": 0.05},
+            {"number": 2, "rounds": 3, "bonus_per_win": 0.10},
+        ]
         # The bot's latest session is its second game.
         result = live_session_result(live_session_id(bot, "rock_paper_scissors"))
         assert result.status == "ended", result.error
@@ -307,16 +354,17 @@ class Exp(psynet.experiment.Experiment):
         me = str(bot.id)
         reward = 0
         for trial in trials:
-            outcome = trial.answer
-            rounds = outcome["rounds"]
-            assert len(rounds) == N_ROUNDS
+            rounds = trial.answer["rounds"]
+            # Each game has the number of rounds its trial's definition says.
+            assert len(rounds) == trial.definition["rounds"]
             partner = partner_of(me, rounds[0])
             wins = sum(
                 round_result(choices[me], choices[partner]) == "win"
                 for choices in rounds
             )
-            assert outcome["wins"][me] == wins
-            # Each game pays what its trial's definition says.
-            assert outcome["bonus_per_win"] == trial.definition["bonus_per_win"]
-            reward += outcome["bonus_per_win"] * wins
+            assert trial.score == trial.answer["wins"][me] == wins
+            # The trial pays what its definition says for each round won.
+            bonus = wins * trial.definition["bonus_per_win"]
+            assert trial.performance_reward == pytest.approx(bonus)
+            reward += bonus
         assert bot.performance_reward == pytest.approx(reward)

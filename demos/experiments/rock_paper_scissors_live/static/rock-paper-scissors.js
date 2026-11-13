@@ -5,10 +5,12 @@ const RESULTS = {
 };
 
 export function activate({root, psynet}) {
-  let status = root.querySelector("#rps-status");
   if (!psynet.liveSession.hasSession) {
+    // PsyNet's notice says why, and the Next button moves on.
+    root.querySelector("#rps-game").hidden = true;
     return;
   }
+  let status = root.querySelector("#rps-status");
   let buttons = Array.from(root.querySelectorAll(".rps-action"));
   let score = root.querySelector("#rps-score");
   let results = root.querySelector("#rps-results");
@@ -21,9 +23,9 @@ export function activate({root, psynet}) {
   let rejectedNow = false;
 
   function enableButtons(enabled) {
-    for (let button of buttons) {
+    buttons.forEach((button) => {
       button.disabled = !enabled;
-    }
+    });
   }
 
   // The page draws the player's choice at once, even if a view from before
@@ -84,6 +86,13 @@ export function activate({root, psynet}) {
     enableButtons(playing && !view.chosen);
   }
 
+  function choose(action) {
+    if (psynet.liveSession.send("choose", {round: round, action: action}) !== undefined) {
+      rejection.textContent = "";
+      render(psynet.liveSession.predictedView());
+    }
+  }
+
   psynet.liveSession.onView(() => render(psynet.liveSession.predictedView()));
   psynet.liveSession.onRejected((number, reason) => {
     rejection.textContent = reason;
@@ -91,12 +100,6 @@ export function activate({root, psynet}) {
   });
 
   for (let button of buttons) {
-    button.addEventListener("click", () => {
-      let action = button.dataset.action;
-      if (psynet.liveSession.send("choose", {round: round, action: action}) !== undefined) {
-        rejection.textContent = "";
-        render(psynet.liveSession.predictedView());
-      }
-    });
+    button.addEventListener("click", () => choose(button.dataset.action));
   }
 }

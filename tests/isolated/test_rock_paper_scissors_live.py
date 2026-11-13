@@ -19,15 +19,15 @@ DEMO = (
 # importing the demo's experiment.py doesn't touch this test process's
 # experiment.
 CASES = """
-import json, sys
+import json, sys, types
 from dallinger.realtime import Reject, Sent
 from psynet.live_session.testing import start_session
 import experiment
 
 
-def new_game():
+def new_game(rounds=5):
     game = experiment.RockPaperScissors()
-    state = game.initial_state(["1", "2"], {"bonus_per_win": 0.1})
+    state = game.initial_state(["1", "2"], {"rounds": rounds})
     start_session(game, state)
     return game, state
 
@@ -50,30 +50,62 @@ choose(game, state, "2", 1, "scissors")
 results["round"] = {"1": game.view(state, "1"), "2": game.view(state, "2")}
 
 game, state = new_game()
+choose(game, state, "1", 1, "rock")
+choose(game, state, "2", 1, "rock")
 results["rejections"] = [
-    choose(game, state, "1", 1, "rock"),
-    choose(game, state, "1", 1, "paper"),
-    choose(game, state, "2", 2, "paper"),
-    choose(game, state, "2", 1, "lizard"),
+    choose(game, state, "1", 2, "rock"),
+    choose(game, state, "1", 2, "paper"),
+    choose(game, state, "2", 1, "paper"),
+    choose(game, state, "2", 3, "paper"),
+    choose(game, state, "2", 2, "lizard"),
 ]
 
-game, state = new_game()
+game, state = new_game(rounds=3)
+results["n_rounds"] = game.view(state, "1")["n_rounds"]
 # Player 1 wins the first two rounds, choosing first in one and second in
-# the other, and the rest are draws.
-choose(game, state, "1", 1, "paper")
-choose(game, state, "2", 1, "rock")
-choose(game, state, "2", 2, "rock")
-choose(game, state, "1", 2, "paper")
-for round in range(3, experiment.N_ROUNDS + 1):
-    over_before_last_round = game.is_over(state)
-    choose(game, state, "1", round, "paper")
-    choose(game, state, "2", round, "paper")
-outcome = game.outcome(state, "finished")
+# the other, and the last is a draw.
+plays = [
+    ("1", "paper", "2", "rock"),
+    ("2", "rock", "1", "paper"),
+    ("1", "paper", "2", "paper"),
+]
+over_before_each_round = []
+for round, (first, first_action, second, second_action) in enumerate(plays, 1):
+    over_before_each_round.append(game.is_over(state))
+    choose(game, state, first, round, first_action)
+    choose(game, state, second, round, second_action)
+finished = game.outcome(state, "finished")
 results["game"] = {
-    "over_before_last_round": over_before_last_round,
+    "over_before_each_round": over_before_each_round,
     "over": game.is_over(state),
-    "wins": outcome["wins"],
-    "bonus": game.bonus(outcome, "finished", "1"),
+    "outcome": finished,
+}
+
+trial = experiment.RockPaperScissorsTrial
+player = types.SimpleNamespace(participant_id=1)
+paid = types.SimpleNamespace(definition={"bonus_per_win": 0.1})
+results["scores"] = [
+    trial.score_answer(player, finished, None),
+    trial.score_answer(types.SimpleNamespace(participant_id=2), finished, None),
+    trial.score_answer(player, None, None),
+]
+results["reward"] = trial.compute_performance_reward(paid, 2)
+
+
+def feedback(outcome, participant_id=1):
+    participant = types.SimpleNamespace(id=participant_id)
+    return str(experiment.show_result(participant, outcome, 0.2).content)
+
+
+draw = {"reason": "finished", "rounds": [{}], "wins": {"1": 1, "2": 1}}
+results["feedback"] = {
+    "won": feedback(finished),
+    "lost": feedback(finished, participant_id=2),
+    "draw": feedback(draw),
+    "early": feedback({**finished, "reason": "max_duration"}),
+    "no_rounds": feedback(
+        {"reason": "not_joined", "rounds": [], "wins": {"1": 0, "2": 0}}
+    ),
 }
 
 json.dump(results, sys.stdout)
@@ -110,17 +142,50 @@ def test_a_view_hides_the_partners_choice_until_the_round_is_over(results):
 def test_the_game_rejects_a_repeated_choice_another_round_and_an_unknown_action(
     results,
 ):
-    accepted, repeated, wrong_round, unknown = results["rejections"]
+    accepted, repeated, earlier_round, later_round, unknown = results["rejections"]
     assert accepted == "accepted"
     assert repeated == "You've already chosen this round."
-    assert wrong_round == "That round is over."
+    assert earlier_round == later_round == "That isn't the current round."
     assert "action" in unknown
 
 
-def test_the_game_ends_after_the_last_round_and_pays_for_each_round_won(results):
+def test_the_game_has_the_rounds_its_settings_say(results):
     game = results["game"]
-    assert not game["over_before_last_round"]
+    assert results["n_rounds"] == 3
+    assert game["over_before_each_round"] == [False, False, False]
     assert game["over"]
-    assert game["wins"] == {"1": 2, "2": 0}
-    # Two rounds won, at the 0.1 a round that the game's settings say.
-    assert game["bonus"] == pytest.approx(0.2)
+    assert game["outcome"]["reason"] == "finished"
+    assert len(game["outcome"]["rounds"]) == 3
+    assert game["outcome"]["wins"] == {"1": 2, "2": 0}
+
+
+def test_the_trial_scores_the_rounds_won_and_pays_its_definition_s_bonus(results):
+    # Player 1's rounds, player 2's, and those of a trial whose game page had
+    # no session.
+    assert results["scores"] == [2, 0, 0]
+    # Two rounds won, at the 0.1 a round that the trial's definition says.
+    assert results["reward"] == pytest.approx(0.2)
+
+
+@pytest.mark.parametrize(
+    "case, summary, score",
+    [
+        ("won", "You won the game!", "You won 2 of the 3 rounds played"),
+        ("lost", "Your partner won the game.", "You won 0 of the 3 rounds played"),
+        ("draw", "The game was a draw.", "You won 1 of the 1 rounds played"),
+        ("early", "The game ended early.", "You won 2 of the 3 rounds played"),
+    ],
+)
+def test_the_feedback_page_shows_how_the_game_ended_and_the_bonus_paid(
+    results, case, summary, score
+):
+    feedback = results["feedback"][case]
+    assert f"<h2>{summary}</h2>" in feedback
+    assert score in feedback
+    assert "Your bonus for this game is $0.20." in feedback
+
+
+def test_the_feedback_page_says_when_no_round_was_played(results):
+    assert results["feedback"]["no_rounds"] == (
+        "The game ended before any rounds were played."
+    )
