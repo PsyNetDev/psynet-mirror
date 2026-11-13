@@ -500,6 +500,15 @@ call ``game.queue_bonus(player_id, amount)`` in a message's ``apply`` or in
 another method that changes the state. PsyNet adds it to the player's reward
 a few seconds later, so the player keeps it even if they leave early.
 
+Both kinds of bonus are added to the participant's reward only. When a trial
+shows the game, they don't appear in the trial's ``performance_reward``,
+which stays 0. To have each trial record what its game paid, let the trial
+pay, as the ``rock_paper_scissors_live`` demo does: the trial's
+``score_answer`` reads the player's score from the answer, which is the
+game's outcome, and its ``compute_performance_reward`` turns the score into
+the bonus. The game then defines no ``bonus``, so that the player isn't paid
+twice.
+
 A session can fail without an outcome: its record couldn't be saved, or the
 game's ``outcome`` raised an error as well. The answer is then ``None`` and
 PsyNet doesn't call ``bonus``, but bonuses from ``queue_bonus`` saved before
