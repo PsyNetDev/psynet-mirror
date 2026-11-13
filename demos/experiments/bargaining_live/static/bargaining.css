@@ -1,0 +1,114 @@
+.bargain-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.bargain-clock {
+  flex: 1;
+  height: 0.5rem;
+  border-radius: 0.25rem;
+  background: var(--psynet-surface-sunken);
+  overflow: hidden;
+}
+
+#bargain-time-left {
+  height: 100%;
+  width: 100%;
+  background: var(--psynet-accent);
+  transition: width 0.25s linear;
+}
+
+.bargain-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.bargain-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: var(--psynet-surface);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.bargain-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.bargain-coins {
+  display: flex;
+  gap: 0.2rem;
+  min-height: 1.5rem;
+}
+
+.bargain-key {
+  display: flex;
+  gap: 1rem;
+  margin: -0.25rem 0 0.75rem;
+  color: var(--psynet-text-muted);
+}
+
+.bargain-key .bargain-coin {
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.3rem;
+  vertical-align: middle;
+}
+
+.bargain-coin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  border-radius: 50%;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2);
+  transition: background 0.2s;
+}
+
+.bargain-coin-you {
+  background: radial-gradient(circle at 35% 30%, #ffe39a, #f2b632);
+}
+
+.bargain-coin-partner {
+  background: radial-gradient(circle at 35% 30%, #d9c8f5, #8e5bd8);
+}
+
+.bargain-note {
+  margin: 0;
+  color: var(--psynet-text-muted);
+}
+
+.bargain-changed {
+  animation: bargain-flash 1.2s ease-out;
+}
+
+@keyframes bargain-flash {
+  from { box-shadow: 0 0 0 4px var(--psynet-accent); }
+  to { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); }
+}
+
+.bargain-deal {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: var(--psynet-surface-sunken);
+  font-size: 1.2rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.bargain-rejection {
+  min-height: 1.5em;
+  color: var(--psynet-danger);
+}

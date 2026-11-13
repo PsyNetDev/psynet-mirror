@@ -1,33 +1,56 @@
+const NAMES = ["Player B", "Player C", "Player D"];
+
+function tokenRow(name, tokens, endowment, you) {
+  let row = document.createElement("div");
+  row.className = `pg-row${you ? " pg-row-you" : ""}`;
+  let label = document.createElement("span");
+  label.className = "pg-name";
+  label.textContent = name;
+  let slots = document.createElement("span");
+  slots.className = "pg-slots";
+  for (let slot = 0; slot < endowment; slot++) {
+    let token = document.createElement("span");
+    token.className = `pg-token${slot < tokens ? " pg-token-in" : ""}`;
+    slots.append(token);
+  }
+  let count = document.createElement("span");
+  count.className = "pg-count";
+  count.textContent = `${tokens} in the pot`;
+  row.append(label, slots, count);
+  return row;
+}
+
 export function activate({root, psynet}) {
-  if (!psynet.liveSession.hasSession) {
+  let live = psynet.liveSession;
+  if (!live.hasSession) {
     root.querySelector("#pg-game").hidden = true;
     return;
   }
   let status = root.querySelector("#pg-status");
-  let clock = root.querySelector("#pg-clock");
+  let timeLeft = root.querySelector("#pg-time-left");
   let slider = root.querySelector("#pg-tokens");
-  let mine = root.querySelector("#pg-mine");
-  let others = root.querySelector("#pg-others");
+  let rows = root.querySelector("#pg-rows");
   let pot = root.querySelector("#pg-pot");
+  let earn = root.querySelector("#pg-earn");
   let rejection = root.querySelector("#pg-rejection");
   let view = null;
 
-  psynet.liveSession.disableUntilStarted(slider);
-  psynet.liveSession.predict((predicted, type, message) => {
+  live.disableUntilStarted(slider);
+  live.predict((predicted, type, message) => {
     if (type === "contribute") {
       predicted.mine = message.tokens;
     }
   });
 
   function render() {
-    view = psynet.liveSession.predictedView();
+    view = live.predictedView();
     if (view === null) {
       status.textContent = "The round is over.";
       return;
     }
-    if (psynet.liveSession.ended) {
+    if (live.ended) {
       status.textContent = "Time's up.";
-    } else if (!psynet.liveSession.started) {
+    } else if (!live.started) {
       status.textContent = "Waiting for the other players to open the game";
     } else {
       status.textContent = "";
@@ -35,33 +58,38 @@ export function activate({root, psynet}) {
     if (document.activeElement !== slider) {
       slider.value = view.mine;
     }
-    mine.textContent = ` You put in ${view.mine} tokens.`;
-    others.textContent = `The others put in: ${view.others.join(", ")} tokens.`;
+    rows.replaceChildren(
+      tokenRow("You", view.mine, view.endowment, true),
+      ...view.others.map((tokens, i) => tokenRow(NAMES[i], tokens, view.endowment, false))
+    );
     let total = view.mine + view.others.reduce((a, b) => a + b, 0);
-    pot.textContent = `The pot so far: ${total} tokens.`;
-    slider.disabled = !psynet.liveSession.started || psynet.liveSession.ended;
+    let players = view.others.length + 1;
+    let share = (view.multiplier * total) / players;
+    pot.textContent = `Pot: ${total} tokens × ${view.multiplier} = ${+(view.multiplier * total).toFixed(2)}`;
+    earn.textContent =
+      `If the round ended now, each player would get ${+share.toFixed(2)} tokens ` +
+      `from the pot, and you would earn ${+(view.endowment - view.mine + share).toFixed(2)} tokens.`;
+    slider.disabled = !live.started || live.ended;
   }
 
   function tick() {
-    if (view && view.ends_at !== null && !psynet.liveSession.ended) {
-      let left = view.ends_at - psynet.liveSession.socket.sessionTime();
-      clock.textContent = `${Math.max(0, Math.ceil(left))} s left`;
-    } else {
-      clock.textContent = "";
+    if (view && view.ends_at !== null && !live.ended) {
+      let left = view.ends_at - (live.socket.sessionTime() ?? 0);
+      timeLeft.style.width = `${Math.max(0, Math.min(1, left / view.seconds)) * 100}%`;
     }
   }
   let timer = setInterval(tick, 250);
 
-  psynet.liveSession.onView(() => {
+  live.onView(() => {
     render();
     tick();
   });
-  psynet.liveSession.onRejected((number, reason) => {
+  live.onRejected((number, reason) => {
     rejection.textContent = reason;
   });
   slider.addEventListener("input", () => {
     rejection.textContent = "";
-    psynet.liveSession.send("contribute", {tokens: Number(slider.value)});
+    live.send("contribute", {tokens: Number(slider.value)});
     render();
   });
   return () => clearInterval(timer);

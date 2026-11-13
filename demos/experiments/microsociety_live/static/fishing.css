@@ -97,8 +97,9 @@
 }
 
 .fish-boat {
-  width: 2.5rem;
-  height: 2rem;
+  width: 3.25rem;
+  height: 2.6rem;
+  filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.3));
 }
 
 .fish-score .fish-boat {
@@ -115,6 +116,7 @@
 
 .fish-sail {
   fill: #fff;
+  stroke: rgba(0, 0, 0, 0.35);
 }
 
 .fish-hull {
@@ -138,23 +140,31 @@
 .fish-who-D { --fish-colour: #e0577c; }
 .fish-who-E { --fish-colour: #6c7a89; }
 
-.fish-catch {
+.fish-catches {
   position: absolute;
-  left: 50%;
-  bottom: 0.25rem;
+  top: 0.3rem;
+  right: 0.4rem;
+  display: flex;
+  gap: 0.2rem;
+  pointer-events: none;
+}
+
+.fish-catch {
   padding: 0.1rem 0.4rem;
   border-radius: 0.75rem;
   background: var(--fish-colour);
   color: #fff;
   font-weight: 700;
   white-space: nowrap;
-  pointer-events: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   animation: fish-float 1.6s ease-out forwards;
 }
 
 @keyframes fish-float {
-  from { opacity: 1; transform: translate(-50%, 0); }
-  to { opacity: 0; transform: translate(-50%, -3rem); }
+  from { opacity: 0; transform: translateY(0.75rem); }
+  15% { opacity: 1; transform: translateY(0); }
+  70% { opacity: 1; }
+  to { opacity: 0; transform: translateY(-1.5rem); }
 }
 
 .fish-help {

@@ -111,6 +111,7 @@ class Bargain(LiveSession):
         partner = partner_of(state, player_id)
         return {
             "endowment": state["endowment"],
+            "seconds": state["seconds"],
             "ends_at": state["ends_at"],
             "mine": state["offers"][player_id],
             "theirs": None if partner is None else state["offers"][partner],
@@ -151,29 +152,70 @@ def bargaining_page():
         "bargain",
         Prompt(
             tags.div(
-                tags.p("Joining the game…", id="bargain-status"),
-                tags.p(id="bargain-clock"),
                 tags.div(
-                    tags.label("I keep ", fr="bargain-keep"),
-                    tags.input_(
-                        type="number",
-                        id="bargain-keep",
-                        min=0,
-                        max=ENDOWMENT,
-                        value=ENDOWMENT // 2,
-                    ),
-                    f" of {ENDOWMENT} coins ",
-                    tags.button("Propose", type="button", id="bargain-propose"),
+                    tags.span("Joining the game…", id="bargain-status"),
+                    tags.div(tags.div(id="bargain-time-left"), cls="bargain-clock"),
+                    cls="bargain-header",
                 ),
-                tags.p(id="bargain-mine"),
-                tags.p(id="bargain-theirs"),
-                tags.button("Accept", type="button", id="bargain-accept"),
-                tags.p(id="bargain-rejection"),
+                tags.div(
+                    tags.span(
+                        tags.span(cls="bargain-coin bargain-coin-you"), "Your coins"
+                    ),
+                    tags.span(
+                        tags.span(cls="bargain-coin bargain-coin-partner"),
+                        "Your partner's coins",
+                    ),
+                    cls="bargain-key",
+                ),
+                tags.div(
+                    tags.section(
+                        tags.h3("Your proposal"),
+                        tags.div(id="bargain-mine-coins", cls="bargain-coins"),
+                        tags.label(
+                            "You keep ",
+                            tags.strong(ENDOWMENT // 2, id="bargain-keep-value"),
+                            f" of {ENDOWMENT} coins",
+                            fr="bargain-keep",
+                        ),
+                        tags.input_(
+                            type="range",
+                            id="bargain-keep",
+                            min=0,
+                            max=ENDOWMENT,
+                            value=ENDOWMENT // 2,
+                        ),
+                        tags.button(
+                            "Propose",
+                            type="button",
+                            id="bargain-propose",
+                            cls="btn btn-primary",
+                        ),
+                        tags.p(id="bargain-mine", cls="bargain-note"),
+                        cls="bargain-card",
+                    ),
+                    tags.section(
+                        tags.h3("Your partner's proposal"),
+                        tags.div(id="bargain-theirs-coins", cls="bargain-coins"),
+                        tags.p(id="bargain-theirs", cls="bargain-note"),
+                        tags.button(
+                            "Accept",
+                            type="button",
+                            id="bargain-accept",
+                            cls="btn btn-success",
+                        ),
+                        id="bargain-theirs-card",
+                        cls="bargain-card",
+                    ),
+                    cls="bargain-cards",
+                ),
+                tags.div(id="bargain-deal", cls="bargain-deal", hidden=True),
+                tags.p(id="bargain-rejection", cls="bargain-rejection"),
                 id="bargain-game",
             )
         ),
         LiveSessionControl("bargain", player_left_message="Your partner has left."),
         js_page_modules=["/static/bargaining.js"],
+        css_links=["/static/bargaining.css"],
         time_estimate=BARGAIN_SECONDS,
     )
 

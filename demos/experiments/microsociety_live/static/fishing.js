@@ -68,10 +68,12 @@ export function activate({root, psynet}) {
       label.append(buoyIcon(), String(spot));
       let boats = document.createElement("div");
       boats.className = "fish-spot-boats";
-      tile.append(label, boats);
+      let catches = document.createElement("div");
+      catches.className = "fish-catches";
+      tile.append(label, boats, catches);
       tile.addEventListener("click", () => move(spot));
       lake.append(tile);
-      spots.push({tile, boats});
+      spots.push({tile, boats, catches});
     }
   }
 
@@ -87,7 +89,7 @@ export function activate({root, psynet}) {
       let bubble = document.createElement("span");
       bubble.className = `fish-catch fish-who-${caught.who}`;
       bubble.textContent = `+${caught.fish} 🐟`;
-      spots[caught.spot - 1].tile.append(bubble);
+      spots[caught.spot - 1].catches.append(bubble);
       bubble.addEventListener("animationend", () => bubble.remove());
     }
   }
@@ -130,8 +132,12 @@ export function activate({root, psynet}) {
       seenCatch = view.catch_number;
       showCatches(view.latest);
     }
+    // "you" first, then the others in order.
+    let byWho = Object.entries(view.fish).sort(([a], [b]) =>
+      a === "you" ? -1 : b === "you" ? 1 : a.localeCompare(b)
+    );
     scores.replaceChildren(
-      ...Object.entries(view.fish).map(([who, fish]) => {
+      ...byWho.map(([who, fish]) => {
         let item = document.createElement("span");
         item.className = `fish-score fish-who-${who}`;
         item.append(boatIcon(who), `${whoText(who)}: ${fish} 🐟`);

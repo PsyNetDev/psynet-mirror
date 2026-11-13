@@ -85,12 +85,14 @@ class PublicGoods(LiveSession):
     def view(self, state, player_id):
         return {
             "endowment": state["endowment"],
+            "multiplier": state["multiplier"],
+            "seconds": state["seconds"],
             "ends_at": state["ends_at"],
             "mine": state["contributions"][player_id],
             "changed": state["changes"][player_id] > 0,
             "others": [
                 tokens
-                for player, tokens in state["contributions"].items()
+                for player, tokens in sorted(state["contributions"].items())
                 if player != player_id
             ],
         }
@@ -130,20 +132,34 @@ def contribution_page(round_number):
         "contribution",
         Prompt(
             tags.div(
+                tags.div(
+                    tags.span(
+                        f"Round {round_number + 1} of {N_ROUNDS}", cls="pg-round"
+                    ),
+                    tags.span("Joining the game…", id="pg-status"),
+                    tags.div(tags.div(id="pg-time-left"), cls="pg-clock"),
+                    cls="pg-header",
+                ),
                 tags.p(
-                    f"Round {round_number + 1} of {N_ROUNDS}. Choose how many of "
-                    f"your {ENDOWMENT} tokens to put in the group pot. You can "
-                    "change your mind until the time is up."
+                    f"Drag the slider to choose how many of your {ENDOWMENT} "
+                    "tokens to put in the group pot. You can change your mind "
+                    "until the time is up."
                 ),
-                tags.p("Joining the game…", id="pg-status"),
-                tags.p(id="pg-clock"),
+                tags.div(id="pg-rows", cls="pg-rows"),
                 tags.input_(
-                    type="range", id="pg-tokens", min=0, max=ENDOWMENT, value=0
+                    type="range",
+                    id="pg-tokens",
+                    min=0,
+                    max=ENDOWMENT,
+                    value=0,
+                    aria_label="Your contribution",
                 ),
-                tags.span(id="pg-mine"),
-                tags.p(id="pg-others"),
-                tags.p(id="pg-pot"),
-                tags.p(id="pg-rejection"),
+                tags.div(
+                    tags.div(id="pg-pot", cls="pg-pot"),
+                    tags.p(id="pg-earn", cls="pg-earn"),
+                    cls="pg-summary",
+                ),
+                tags.p(id="pg-rejection", cls="pg-rejection"),
                 id="pg-game",
             )
         ),
@@ -151,6 +167,7 @@ def contribution_page(round_number):
             "public_goods", player_left_message="A player has left the game."
         ),
         js_page_modules=["/static/public-goods.js"],
+        css_links=["/static/public-goods.css"],
         time_estimate=ROUND_SECONDS,
     )
 
