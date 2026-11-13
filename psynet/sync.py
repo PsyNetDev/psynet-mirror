@@ -268,7 +268,8 @@ _POLLER_SWEEP_BUDGET_SECONDS = 0.2
 # How much sooner a new or changed visit is re-checked than an unchanged one.
 _POLLER_CHANGE_HEAD_START_SECONDS = 5.0
 
-# Poller-process memory: instance id -> (fingerprint, monotonic check time).
+# Poller-process memory: instance id -> (due time acted on or None,
+# fingerprint, monotonic check time).
 _poller_checked_visits = {}
 
 # Poller-process memory: overdue waiters whose last timeout attempt raised.
