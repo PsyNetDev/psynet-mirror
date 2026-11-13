@@ -67,11 +67,11 @@ export function activate({root, psynet}) {
   let seenCatch = 0;
   let countdown = null;
 
-  live.predict((predicted, type, message) => {
+  live.predict((predicted, type, message, sentAt) => {
     if (type === "move") {
       let mine = predicted.boats.find((boat) => boat.who === "you");
       mine.spot = message.spot;
-      mine.arrives_at = Infinity;
+      mine.arrives_at = (sentAt ?? live.socket.sessionTime() ?? 0) + predicted.travel_seconds;
     }
   });
 
@@ -131,7 +131,7 @@ export function activate({root, psynet}) {
       }
       boat.count.querySelector(".fish-count-number").textContent = view.fish[who];
       let sailing = arrives_at !== null && arrives_at > now;
-      let remaining = arrives_at === Infinity ? view.travel_seconds : arrives_at - now;
+      let remaining = arrives_at - now;
       if (instant) {
         place(boat, target, 0);
       } else if (boat.spot !== spot) {

@@ -280,11 +280,11 @@
         scope: [page.websocketScope(), dallinger.pageScope, ++connections].join("."),
         // Set at open, so it hands each message to the page's predict
         // callback, whenever the page sets one.
-        predict: (view, payload) => {
+        predict: (view, payload, sentAt) => {
           if (state.predict === null || payload.type === READY) {
             return view;
           }
-          return state.predict(view, payload.type, payload.message);
+          return state.predict(view, payload.type, payload.message, sentAt);
         },
         interpolate: (a, b, fraction) =>
           state.interpolate === null ? b : state.interpolate(a, b, fraction),
@@ -452,10 +452,14 @@
      * page's messages, so that ``predictedView`` can show the page's
      * messages as soon as they're sent, before the game's view arrives.
      *
-     * ``callback(view, type, message)`` gets a copy of a view, and a message
-     * as it was passed to ``send``, and returns the view as it will be once
-     * the game has applied the message. It can change the view it's given
-     * and return nothing. Set it before the page sends anything.
+     * ``callback(view, type, message, sentAt)`` gets a copy of a view, and a
+     * message as it was passed to ``send``, and returns the view as it will
+     * be once the game has applied the message. It can change the view it's
+     * given and return nothing. Set it before the page sends anything.
+     * ``sentAt`` is the session time when the page sent the message, or
+     * ``null`` if it wasn't known yet. The callback runs again for each new
+     * view until the game applies the message, and ``sentAt`` stays the same,
+     * so use it rather than the time now to predict when something happens.
      *
      * @example
      * psynet.liveSession.predict((view, type, message) => {
@@ -465,7 +469,7 @@
      * });
      *
      * @param {function} callback - Called with a view, the message's
-     *   ``type`` and its fields
+     *   ``type``, its fields and the session time it was sent
      * @returns {Object} ``psynet.liveSession``
      */
     function predict(callback) {

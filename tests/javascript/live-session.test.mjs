@@ -530,19 +530,19 @@ describe("psynet.liveSession", () => {
   it("predicts with the page's predict callback, leaving out PsyNet's own messages", () => {
     const seen = [];
     assert.equal(
-      liveSession.predict((v, type, message) => {
-        seen.push([type, message]);
+      liveSession.predict((v, type, message, sentAt) => {
+        seen.push([type, message, sentAt]);
         v.chosen = true;
       }),
       liveSession
     );
     const predict = sockets[0].options.predict;
     const shown = { chosen: false };
-    assert.equal(predict(shown, { type: "choose", message: { round: 1 } }), undefined);
+    assert.equal(predict(shown, { type: "choose", message: { round: 1 } }, 12.5), undefined);
     assert.equal(shown.chosen, true);
     const before = { chosen: false };
-    assert.equal(predict(before, READY[1]), before);
-    assert.deepEqual(plain(seen), [["choose", { round: 1 }]]);
+    assert.equal(predict(before, READY[1], 13), before);
+    assert.deepEqual(plain(seen), [["choose", { round: 1 }, 12.5]]);
 
     sockets[0].predictedView = () => ({ chosen: true });
     assert.deepEqual(plain(liveSession.predictedView()), { chosen: true });

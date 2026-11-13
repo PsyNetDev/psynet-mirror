@@ -282,10 +282,14 @@ function, which PsyNet runs each time the page opens
   who have left the game page and not come back (see "Joining and leaving"
   below).
 - ``predict(callback)`` and ``predictedView()`` show the player's own
-  messages at once. ``callback(view, type, message)`` changes a view as the
-  game will once it applies the message, and ``predictedView()`` returns the
-  newest view with the page's messages that the game hasn't applied yet
-  applied by ``callback``. Draw from it in ``onView`` and after ``send``.
+  messages at once. ``callback(view, type, message, sentAt)`` changes a view
+  as the game will once it applies the message, and ``predictedView()``
+  returns the newest view with the page's messages that the game hasn't
+  applied yet applied by ``callback``. Draw from it in ``onView`` and after
+  ``send``. ``sentAt`` is the session time when the page sent the message
+  (``null`` if it wasn't known yet), and stays the same each time the
+  callback runs again for a new view, so use it to predict when something
+  happens, such as when a boat that is moving arrives.
   Without it, a view that arrives just after the player's move, such as one
   the partner's move caused, doesn't show that move yet.
 - ``interpolate(callback)`` and ``interpolatedView()`` show other players
