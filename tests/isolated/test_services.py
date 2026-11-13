@@ -1,6 +1,7 @@
 """Tests for local PostgreSQL/Redis service checks and ensure helpers."""
 
 import importlib
+import subprocess
 from unittest.mock import Mock
 
 import click
@@ -107,8 +108,19 @@ def test_ensure_local_services_explains_remote_launch_use(monkeypatch, capsys):
     assert "needed to prepare the remote launch" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("running", [True, False])
-def test_services_ensure_replaces_running_outdated_postgres(monkeypatch, running):
+@pytest.mark.parametrize(
+    "running, interactive, args, answer, replaced",
+    [
+        (True, False, [], None, False),
+        (True, False, ["--yes"], None, True),
+        (True, True, [], "y\n", True),
+        (True, True, [], "n\n", False),
+        (False, False, ["--yes"], None, False),
+    ],
+)
+def test_services_ensure_replaces_running_outdated_postgres(
+    monkeypatch, running, interactive, args, answer, replaced
+):
     """A running PostgreSQL 12 container is replaced only with consent.
 
     A stopped one is left for the next start, because the healthy services
@@ -122,7 +134,7 @@ def test_services_ensure_replaces_running_outdated_postgres(monkeypatch, running
         "psynet.services._outdated_postgres_container",
         lambda: _ContainerState("postgres:12", running, ("dallinger_postgres",)),
     )
-    monkeypatch.setattr("psynet.services._is_interactive", lambda: False)
+    monkeypatch.setattr("psynet.services._is_interactive", lambda: interactive)
     monkeypatch.setattr(
         "psynet.services.start_local_services_via_docker", lambda: started.append(1)
     )
@@ -131,17 +143,16 @@ def test_services_ensure_replaces_running_outdated_postgres(monkeypatch, running
         lambda timeout_seconds=30: _ok_checks(),
     )
 
-    kept = CliRunner().invoke(psynet, ["services", "ensure"])
-    replaced = CliRunner().invoke(psynet, ["services", "ensure", "--yes"])
+    result = CliRunner().invoke(psynet, ["services", "ensure", *args], input=answer)
 
-    assert kept.exit_code == 0 and replaced.exit_code == 0, kept.output
-    if running:
-        assert "stays in dallinger_postgres" in kept.output
-        assert "ensure --yes" in kept.output
-        assert started == [1]
-    else:
-        assert kept.output == replaced.output == "Local PostgreSQL and Redis: OK.\n"
-        assert started == []
+    assert result.exit_code == 0, result.output
+    assert started == ([1] if replaced else [])
+    if not running:
+        assert result.output == "Local PostgreSQL and Redis: OK.\n"
+    elif not args:
+        assert "stays in dallinger_postgres" in result.output
+        assert ("Replace dallinger_postgres now?" in result.output) == interactive
+        assert ("ensure --yes" in result.output) != interactive
 
 
 def test_ensure_local_services_prints_one_line_when_healthy(monkeypatch, capsys):
@@ -521,7 +532,11 @@ def test_leftover_volume_does_not_look_like_a_container(monkeypatch):
 
 
 def test_postgres_service_matches_dallingers(monkeypatch):
-    """PsyNet starts Dallinger's Postgres service and replaces an older one."""
+    """PsyNet starts Dallinger's Postgres service and replaces an older one.
+
+    Dallinger starts the old container with ``--rm``, so ``docker stop``
+    already removes it and a plain ``docker rm`` then fails.
+    """
     from dallinger.docker import postgres
 
     from psynet import services
@@ -537,6 +552,10 @@ def test_postgres_service_matches_dallingers(monkeypatch):
 
     def fake_run(args, **kwargs):
         commands.append(args[:2])
+        if args[1] == "rm" and "--force" not in args:
+            raise subprocess.CalledProcessError(
+                1, args, stderr="No such container: dallinger_postgres"
+            )
         inspect = "inspect" in args
         stdout = "postgres:12 true dallinger_postgres\n" if inspect else ""
         return Mock(returncode=0, stdout=stdout, stderr="")

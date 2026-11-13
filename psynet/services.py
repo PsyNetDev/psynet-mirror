@@ -446,7 +446,10 @@ def _ensure_docker_container(
         )
         if state.running:
             _run_docker(["stop", name], description=f"stop Docker container {name}")
-        _run_docker(["rm", name], description=f"remove Docker container {name}")
+        # --force: containers started with --rm are already gone after the stop.
+        _run_docker(
+            ["rm", "--force", name], description=f"remove Docker container {name}"
+        )
         state = None
     if state and state.running:
         click.echo(f"  {name}: already running")
