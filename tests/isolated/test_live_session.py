@@ -1893,11 +1893,16 @@ def test_the_game_page_fails_once_its_session_can_no_longer_end(pair, monkeypatc
 
 
 @pytest.mark.parametrize(
-    "end_reason, outcome, record_complete",
-    [("failed", {"1": None}, True), (None, None, False)],
+    "end_reason, outcome, record_complete, bonus_paid",
+    [
+        ("failed", {"1": None}, True, True),
+        # The game's outcome raised an error too.
+        ("failed", None, True, False),
+        (None, None, False, False),
+    ],
 )
 def test_a_failed_session_s_page_moves_on_with_what_was_saved(
-    pair, monkeypatch, end_reason, outcome, record_complete
+    pair, monkeypatch, end_reason, outcome, record_complete, bonus_paid
 ):
     members, _ = pair
     session_id = _pair_session(pair)
@@ -1926,12 +1931,27 @@ def test_a_failed_session_s_page_moves_on_with_what_was_saved(
     assert result.record_complete is record_complete
     assert result.error == "Traceback (most recent call last): ..."
     assert _accepted_answers(members[0]) == [outcome]
-    if record_complete:
+    if bonus_paid:
         assert bonuses == [(outcome, "failed", str(members[0].id))]
         assert _reward(members[0]) == pytest.approx(0.25)
     else:
         assert bonuses == []
         assert _reward(members[0]) == 0
+
+
+def test_a_game_without_an_outcome_still_pays_its_bonus(pair, monkeypatch):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    # A game that doesn't define outcome ends with None.
+    db.session.query(RealtimeSession).filter_by(id=session_id).update(
+        {"status": "ended", "end_reason": "finished", "outcome": None}
+    )
+    game_type = game_registry._live_session_types["pick_numbers"]
+    monkeypatch.setattr(game_type, "bonus", lambda self, *args: 0.25)
+
+    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
+
+    assert _reward(members[0]) == pytest.approx(0.25)
 
 
 def test_a_game_page_without_a_session_moves_on_with_no_answer(pair):

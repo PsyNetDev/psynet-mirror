@@ -24,8 +24,9 @@ class LiveSessionResult:
         ``None`` if the session's record couldn't be saved.
 
     outcome
-        The value that the game's ``outcome`` returned, or ``None`` if the
-        session's record couldn't be saved.
+        The value that the game's ``outcome`` returned. It's ``None`` if the
+        session's record couldn't be saved, or if the session failed and its
+        ``outcome`` raised an error too.
 
     error
         If the session failed, the error that made it fail, as Python prints

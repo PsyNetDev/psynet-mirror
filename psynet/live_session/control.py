@@ -124,7 +124,10 @@ class LiveSessionControl(NullControl):
         result = live_session_result(session_id)
         response.answer = result.outcome
         paid = participant.live_session_bonuses_paid or []
-        if result.record_complete and session_id not in paid:
+        # A failed session has no outcome if its record couldn't be saved, or
+        # if Dallinger couldn't get one from the game's outcome method.
+        has_outcome = result.status != "failed" or result.outcome is not None
+        if has_outcome and session_id not in paid:
             game = _session_game_type(session_id)()
             what = f"{type(game).__name__}.bonus"
             amount = game.bonus(result.outcome, result.end_reason, str(participant.id))

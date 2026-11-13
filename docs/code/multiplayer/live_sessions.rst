@@ -494,9 +494,10 @@ call ``game.queue_bonus(player_id, amount)`` in a message's ``apply`` or in
 another method that changes the state. PsyNet adds it to the player's reward
 a few seconds later, so the player keeps it even if they leave early.
 
-If the session's record couldn't be saved, the answer is ``None`` and PsyNet
-doesn't call ``bonus``, but bonuses from ``queue_bonus`` saved before the
-problem are still paid. A game that must pay players whatever happens can pay
+A session can fail without an outcome: its record couldn't be saved, or the
+game's ``outcome`` raised an error as well. The answer is then ``None`` and
+PsyNet doesn't call ``bonus``, but bonuses from ``queue_bonus`` saved before
+the problem are still paid. A game that must pay players whatever happens can pay
 them as it goes. :func:`~psynet.live_session.live_session_result` says how a
 session ended, and whether its record is complete.
 

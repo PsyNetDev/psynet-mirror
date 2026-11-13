@@ -166,8 +166,9 @@ class LiveSession(RealtimeGame):
     def bonus(self, outcome, reason, player_id):
         """Return the bonus a player earns from the session's outcome, such as
         their winnings. PsyNet adds it to the player's performance reward when
-        they leave the game page, once per session. It isn't paid if the
-        session's record couldn't be saved. By default, there's no bonus.
+        they leave the game page, once per session. It isn't paid for a
+        session that failed without an outcome, because its record couldn't be
+        saved or its ``outcome`` raised an error. By default, there's no bonus.
 
         Parameters
         ----------
