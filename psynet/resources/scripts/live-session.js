@@ -80,17 +80,16 @@
    * The page joins the session when it first uses ``psynet.liveSession``,
    * and leaves it when the participant moves on. Once it has checked the
    * server's time, it tells the game the player is ready, and the game
-   * starts when every player is. Unless the control's
-   * ``auto_advance`` is ``False``, the page hides its Next button and moves
-   * on by itself once the session's result is saved, or if the server
-   * refuses its connection. If the connection drops,
-   * it reconnects by itself and rejoins. The same page open in another tab
-   * plays as the same player.
+   * starts when every player is. Unless the control's ``auto_advance`` is
+   * ``False``, the page hides its Next button and moves on by itself once
+   * the session's result is saved, or if the server refuses its connection.
+   * If the connection drops, it reconnects by itself and rejoins. The same
+   * page open in another tab plays as the same player.
    *
    * ``PsyNetLiveSession.activatePage``, the page code of a
    * ``LiveSessionControl``, creates ``psynet.liveSession`` with this
-   * function. The connection is
-   * Dallinger's ``/experiment-socket``, joined to the session. Its scope is
+   * function. The connection is Dallinger's ``/experiment-socket``, joined
+   * to the session. Its scope is
    * the participant's ``websocketScope``, which the experiment's
    * ``accept_websocket_connection`` checks, then a ``.`` and a name for this
    * page's connection: ``dallinger.pageScope``, which tells the
@@ -101,10 +100,9 @@
    *   variable: the control's ``initializerId``, ``autoAdvance``,
    *   ``playerLeftMessage`` and ``noSessionMessage``, and the session's
    *   ``sessionId`` and ``gameChannel``, which are ``null`` without a
-   *   session, or nothing on a page without a
-   *   ``LiveSessionControl``
-   * @param {Object} page - ``websocketScope()`` returns
-   *   the participant's websocket scope, ``ready()`` says whether the page
+   *   session, or nothing on a page without a ``LiveSessionControl``
+   * @param {Object} page - ``websocketScope()`` returns the participant's
+   *   websocket scope, ``ready()`` says whether the page
    *   is ready to submit, ``nextPage()`` submits it,
    *   ``setNextButtonHidden(hidden)`` hides or shows its Next button, and
    *   ``showNotice(id, text)`` shows ``text`` in a notice at the top of the

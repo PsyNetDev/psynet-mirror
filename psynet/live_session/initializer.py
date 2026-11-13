@@ -168,12 +168,25 @@ def _checked_settings(game_type, settings):
 
 
 def live_session_id(participant, initializer_id):
-    """Return the id of the session that ``participant``'s group started at
-    the :class:`LiveSessionInitializer` with the id ``initializer_id``.
+    """Return the id of the session that a participant's group started at
+    a :class:`LiveSessionInitializer`, to read the session's result or its
+    saved messages on a later page.
 
-    Returns ``None`` if the group hasn't started one there since the
-    participant last arrived, for example because the group broke up while
-    it waited.
+    Parameters
+    ----------
+
+    participant
+        The participant.
+
+    initializer_id
+        The initializer's ``id_``.
+
+    Returns
+    -------
+
+    The session's id, or ``None`` if the group hasn't started a session
+    there since the participant last arrived, for example because the group
+    broke up while it waited.
     """
     return _live_session_ids(participant).get(initializer_id)
 

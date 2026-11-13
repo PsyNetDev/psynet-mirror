@@ -108,11 +108,11 @@ class LiveSession(RealtimeGame):
 
     @_stores_json
     def on_join(self, state, player_id, now):
-        """Respond to a player arriving, as in Dallinger's ``on_join``: opening
-        a page while none of theirs is open, so again after a reload or a
-        dropped connection, or for a bot, the session starting. A player who
-        comes back after leaving is no longer in
-        ``state["live_session"]["away"]``.
+        """Respond to a player arriving, as in Dallinger's ``on_join``. A
+        player arrives when they open the game page while none of theirs is
+        open, so it runs again after a reload or a dropped connection. A bot
+        arrives when the session starts. A player who comes back after
+        leaving is no longer in ``state["live_session"]["away"]``.
         """
         return super().on_join(state, player_id, now)
 
@@ -247,11 +247,10 @@ class LiveSession(RealtimeGame):
     def read_message(self, message):
         """Check a page's message and return it as a :class:`LiveMessage`.
 
-        Avoid overriding this method, since :meth:`saved_messages` doesn't
-        call it. A game that reads messages its own way, such as to accept an
-        older shape of a message, plays by its own reading, but a message
-        only that reading accepts comes back from :meth:`saved_messages` with
-        ``message`` ``None``.
+        Avoid overriding this method. :meth:`saved_messages` doesn't call
+        it, so a message that only your own reading accepts, such as an older
+        shape of a message, comes back from :meth:`saved_messages` with its
+        ``message`` set to ``None``.
 
         Parameters
         ----------
