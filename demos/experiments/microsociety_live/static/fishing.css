@@ -103,10 +103,6 @@
   pointer-events: none;
 }
 
-.fish-ripple + .fish-ripple {
-  animation-delay: 1.8s;
-}
-
 @keyframes fish-ripple {
   from { transform: scale(0.3); opacity: 0.9; }
   to { transform: scale(1.25); opacity: 0; }
@@ -121,7 +117,7 @@
   margin: -0.22rem 0 0 -0.55rem;
   border-radius: 50% 40% 40% 50%;
   background: rgba(0, 20, 40, 0.45);
-  animation: fish-swim 7s linear infinite;
+  animation: fish-swim var(--swim-duration, 8s) linear var(--swim-delay, 0s) infinite;
   pointer-events: none;
 }
 
@@ -134,35 +130,38 @@
   border-left: 0.35rem solid rgba(0, 20, 40, 0.45);
 }
 
-.fish-shadow + .fish-shadow {
-  animation-duration: 9s;
-  animation-direction: reverse;
-}
-
 @keyframes fish-swim {
-  from { transform: rotate(0deg) translateX(2.2rem) rotate(90deg); }
-  to { transform: rotate(360deg) translateX(2.2rem) rotate(90deg); }
+  from { transform: rotate(0deg) translateX(var(--swim-radius, 2rem)) rotate(90deg); }
+  to { transform: rotate(360deg) translateX(var(--swim-radius, 2rem)) rotate(90deg); }
 }
 
+/* The spot's number, large and faint, as if painted on the lake bed. */
 .fish-spot-number {
   position: absolute;
-  top: 0.4rem;
-  left: 50%;
-  transform: translateX(-50%);
+  inset: 0;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  font-weight: 700;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  justify-content: center;
+  font-size: 3.5rem;
+  font-weight: 800;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.2);
+  filter: blur(0.6px);
+  animation: fish-underwater 5s ease-in-out infinite alternate;
+  pointer-events: none;
 }
 
-.fish-buoy {
-  width: 0.75rem;
-  height: 0.75rem;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  background: linear-gradient(#f25c3b 50%, #fff 50% 62%, #f25c3b 62%);
-  animation: fish-bob 1.6s ease-in-out infinite alternate;
+.fish-playing .fish-spot:hover .fish-spot-number {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+@keyframes fish-underwater {
+  from { transform: skewX(-2deg) scaleY(0.97); }
+  to { transform: skewX(2deg) scaleY(1.03); }
+}
+
+.fish-tip-intro {
+  margin-top: 1.25rem;
 }
 
 /* The dock where boats wait before their first move. */
@@ -228,11 +227,6 @@
   to { rotate: 5deg; }
 }
 
-@keyframes fish-bob {
-  from { transform: translateY(-1px); }
-  to { transform: translateY(2px); }
-}
-
 @keyframes fish-wake {
   from { transform: scaleX(0.8); }
   to { transform: scaleX(1.2); }
@@ -269,8 +263,8 @@
 
 .fish-catches {
   position: absolute;
-  bottom: 15%;
-  right: 10%;
+  top: 4%;
+  right: 4%;
   display: flex;
   gap: 0.2rem;
   pointer-events: none;

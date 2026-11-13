@@ -214,23 +214,56 @@ def player_labels(players, player_id):
     return {player_id: "you", **dict(zip(others, LABELS))}
 
 
+def _spot(spot):
+    # Each spot's fish and ripples get their own timing, the same on every page, so they don't move in step.
+    timing = random.Random(spot)
+
+    def fish():
+        duration = timing.uniform(6, 12)
+        return tags.span(
+            cls="fish-shadow",
+            style=(
+                f"--swim-duration: {duration:.1f}s; "
+                f"--swim-delay: -{timing.uniform(0, duration):.1f}s; "
+                f"--swim-radius: {timing.uniform(1.4, 2.6):.1f}rem; "
+                f"animation-direction: {timing.choice(['normal', 'reverse'])}"
+            ),
+        )
+
+    def ripple():
+        return tags.span(
+            cls="fish-ripple",
+            style=f"animation-delay: -{timing.uniform(0, 3.6):.1f}s",
+        )
+
+    return tags.button(
+        ripple(),
+        ripple(),
+        fish(),
+        fish(),
+        tags.span(str(spot), cls="fish-spot-number"),
+        tags.div(cls="fish-catches"),
+        type="button",
+        cls="fish-spot",
+        disabled=True,
+        aria_label=f"Spot {spot}",
+    )
+
+
+def water():
+    """Return the lake's water, with its spots, dock and room for boats."""
+    return tags.div(
+        tags.div(*[_spot(spot) for spot in range(1, N_SPOTS + 1)], cls="fish-spots"),
+        tags.div(cls="fish-dock"),
+        tags.div(id="fish-boats", cls="fish-boats"),
+        tags.div(id="fish-results", cls="fish-results", hidden=True),
+        id="fish-lake",
+        cls="fish-lake",
+    )
+
+
 def lake(title, status, scores="", **attributes):
     """Return the lake, which the lake page and the waiting screens share so that a round's pages look like one."""
-    spots = [
-        tags.button(
-            tags.span(cls="fish-ripple"),
-            tags.span(cls="fish-ripple"),
-            tags.span(cls="fish-shadow"),
-            tags.span(cls="fish-shadow"),
-            tags.span(tags.span(cls="fish-buoy"), str(spot), cls="fish-spot-number"),
-            tags.div(cls="fish-catches"),
-            type="button",
-            cls="fish-spot",
-            disabled=True,
-            aria_label=f"Spot {spot}",
-        )
-        for spot in range(1, N_SPOTS + 1)
-    ]
     return tags.div(
         tags.div(
             tags.span(title, cls="fish-round"),
@@ -239,14 +272,7 @@ def lake(title, status, scores="", **attributes):
             tags.span(id="fish-seconds", cls="fish-seconds"),
             cls="fish-header",
         ),
-        tags.div(
-            tags.div(*spots, cls="fish-spots"),
-            tags.div(cls="fish-dock"),
-            tags.div(id="fish-boats", cls="fish-boats"),
-            tags.div(id="fish-results", cls="fish-results", hidden=True),
-            id="fish-lake",
-            cls="fish-lake",
-        ),
+        water(),
         tags.p(
             "Boats start at the dock. Click a spot to sail your boat there, "
             f"which takes {TRAVEL_SECONDS} s. Boats at a spot catch fish "
@@ -510,8 +536,17 @@ def leave_a_tip(intro: str):
     return join(
         ModularPage(
             "tip",
-            f"{intro} Leave one tip for the members who come after you.",
+            Prompt(
+                tags.div(
+                    water(),
+                    tags.p(
+                        f"{intro} Leave one tip for the members who come after you.",
+                        cls="fish-tip-intro",
+                    ),
+                )
+            ),
             TextControl(one_line=True),
+            css_links=["/static/fishing.css"],
             time_estimate=30,
         ),
         CodeBlock(save_tip),
