@@ -26,7 +26,7 @@ class Pick(LiveMessage):
 
     def apply(self, game, state, player_id, now):
         state["picks"][player_id] = self.number
-        game.add_performance_reward(player_id, state["pick_bonus"])
+        game.add_performance_reward(player_id, state["pick_reward"])
 
 
 class PickNumbers(LiveGame):
@@ -41,7 +41,7 @@ class PickNumbers(LiveGame):
         return {
             "picks": {player: None for player in players},
             # The game barrier's settings say what a pick pays.
-            "pick_bonus": settings["pick_bonus"] if settings else 0,
+            "pick_reward": settings["pick_reward"] if settings else 0,
         }
 
     def view(self, state, player_id):
@@ -82,7 +82,7 @@ class Exp(psynet.experiment.Experiment):
             id_="pick_numbers",
             group_type="pair",
             game_type=PickNumbers,
-            settings={"pick_bonus": 0.5},
+            settings={"pick_reward": 0.5},
             # A participant whose partner doesn't arrive goes on without a
             # session.
             max_wait_time=15,

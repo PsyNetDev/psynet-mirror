@@ -397,10 +397,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         each one. Read it with :func:`~psynet.live_session.live_session_id`.
         Should not be modified directly.
 
-    live_session_rewards_paid : list or None
-        The ids of the live sessions whose outcome bonus the participant has
-        been paid. Should not be modified directly.
-
     complete : bool
         Whether the participant has successfully completed the experiment.
         A participant is considered to have successfully completed the experiment
@@ -503,7 +499,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     timed_out_since_barrier = Column(Boolean, default=False)
     page_count = Column(Integer)
     live_sessions = Column(PythonDict)
-    live_session_rewards_paid = Column(PythonList)
     early_exited = Column(Boolean)
     exit_plan = Column(PythonDict)
     complete = Column(Boolean)

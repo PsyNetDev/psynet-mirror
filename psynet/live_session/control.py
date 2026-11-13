@@ -5,7 +5,8 @@ The control has the page load ``live-session.js``. Its page code creates
 the page. ``get_participant_js_vars`` gives the script the session's id and
 channel each time the page renders. ``check_ready_for_response`` refuses the
 page's response until the session's result is saved, and ``validate`` then
-sets the answer to the outcome and pays the outcome reward once per session.
+sets the answer to the outcome. The game pays its rewards itself, when the
+session's ending is saved.
 """
 
 from datetime import timedelta
@@ -19,7 +20,6 @@ from ..utils import get_translator
 from .barrier import _check_reached_barrier, live_session_id
 from .messages import _game_channel, _session_game_type
 from .result import live_session_result
-from .reward import _add_reward, _check_reward
 
 # Seconds a page waits before resending a response refused because the
 # session's result isn't saved yet.
@@ -50,9 +50,10 @@ class LiveSessionControl(NullControl):
             time_estimate=30,
         )
 
-    PsyNet sets the page's answer to the session's outcome, and pays the
-    game's :meth:`~LiveGame.performance_reward` when the participant leaves the page.
-    The page can't have a ``validate`` of its own.
+    PsyNet sets the page's answer to the session's outcome, once the
+    session's ending is saved, which is also when it pays the game's
+    :meth:`~LiveGame.performance_reward`. The page can't have a ``validate``
+    of its own.
     :doc:`/code/multiplayer/live_sessions` explains how to write the page's
     JavaScript.
 
@@ -132,20 +133,7 @@ class LiveSessionControl(NullControl):
         if session_id is None:
             response.answer = None
             return None
-        result = live_session_result(session_id)
-        response.answer = result.outcome
-        paid = participant.live_session_rewards_paid or []
-        # A failed session has no outcome if its record couldn't be saved, or
-        # if Dallinger couldn't get one from the game's outcome method.
-        has_outcome = result.status != "failed" or result.outcome is not None
-        if has_outcome and session_id not in paid:
-            game = _session_game_type(session_id)()
-            what = f"{type(game).__name__}.performance_reward"
-            amount = game.performance_reward(
-                result.outcome, result.end_reason, str(participant.id)
-            )
-            _add_reward(participant, _check_reward(amount, what))
-            participant.live_session_rewards_paid = [*paid, session_id]
+        response.answer = live_session_result(session_id).outcome
         return None
 
     def _check_page(self, page):

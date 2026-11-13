@@ -472,8 +472,9 @@ player as late before then, just as it waits for a page's ``time_limit``. So
 A game can add to each player's performance reward in two ways. Each amount
 must be a number of 0 or more. For a reward based on the outcome, define
 ``performance_reward(outcome, reason, player_id)`` to return the player's
-reward. PsyNet pays it when the player leaves the game page, once per
-session. This game pays 0.10 for a win:
+reward. PsyNet pays it to each player once, when the session's ending is
+saved, however the session ended, so a player who left the game page early
+is paid too. This game pays 0.10 for a win:
 
 .. code-block:: python
 

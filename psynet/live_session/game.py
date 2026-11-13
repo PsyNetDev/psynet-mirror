@@ -25,7 +25,12 @@ from .method_wrappers import (
 )
 from .ready_step import PlayerReady, _ready_step
 from .registry import _register_live_session
-from .reward import _REWARD_EFFECT, _check_reward, _handles_reward
+from .reward import (
+    _REWARD_EFFECT,
+    _check_reward,
+    _handles_reward,
+    _pays_outcome_rewards,
+)
 
 
 class LiveGame(RealtimeGame):
@@ -81,6 +86,7 @@ class LiveGame(RealtimeGame):
             ("view", _shows_ready_step),
             ("bot", _sends_message),
             ("handle_effect", _handles_reward),
+            ("handle_ending", _pays_outcome_rewards),
         ]:
             method = getattr(cls, name)
             if method is not getattr(RealtimeGame, name, None) and not getattr(
@@ -165,8 +171,9 @@ class LiveGame(RealtimeGame):
 
     def performance_reward(self, outcome, reason, player_id):
         """Return the reward a player earns from the session's outcome, such as
-        their winnings. PsyNet adds it to the player's performance reward when
-        they leave the game page, once per session. It isn't paid for a
+        their winnings. PsyNet adds it to each player's performance reward
+        once, when the session's ending is saved, however the session ended,
+        and also for a player who has left the game page. It isn't paid for a
         session that failed without an outcome, because its record couldn't be
         saved or its ``outcome`` raised an error. By default, there's no reward.
 
@@ -223,6 +230,14 @@ class LiveGame(RealtimeGame):
         :meth:`add_performance_reward` itself, so they never reach this method.
         """
         return super().handle_effect(name, payload, session_row)
+
+    @_pays_outcome_rewards
+    def handle_ending(self, session_row):
+        """Do work that needs the session's ending, as in Dallinger's
+        ``handle_ending``. PsyNet pays each player's
+        :meth:`performance_reward` before this method runs.
+        """
+        return super().handle_ending(session_row)
 
     def queue_effect(self, name, payload):
         """Queue an effect, as

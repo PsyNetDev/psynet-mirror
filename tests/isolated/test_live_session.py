@@ -161,9 +161,9 @@ def test_the_page_script_sends_the_ready_message_s_type():
 def test_a_session_starts_from_its_game_barrier_s_settings(pair):
     session_id = _pair_session(pair)
 
-    assert store.realtime_state(session_id)["pick_bonus"] == 0.5
+    assert store.realtime_state(session_id)["pick_reward"] == 0.5
     # Only a session the game barrier starts gets them.
-    assert _pick_numbers().initial_state(["1"])["pick_bonus"] == 0
+    assert _pick_numbers().initial_state(["1"])["pick_reward"] == 0
 
 
 def test_an_game_barrier_s_settings_must_be_json_the_game_takes(registry, monkeypatch):
@@ -226,19 +226,19 @@ def _trial_game_barrier(settings):
 def test_each_round_s_game_barriers_start_a_session_with_that_round_s_settings(pair):
     members, _ = pair
     rewards = []
-    for pick_bonus in (0.1, 0.2):
+    for pick_reward in (0.1, 0.2):
         for member in members:
-            _arrive(_trial_game_barrier({"pick_bonus": pick_bonus}), member)
+            _arrive(_trial_game_barrier({"pick_reward": pick_reward}), member)
         session_id = live_session_id(members[0], "trial_game")
         assert live_session_id(members[1], "trial_game") == session_id
-        rewards.append(store.realtime_state(session_id)["pick_bonus"])
+        rewards.append(store.realtime_state(session_id)["pick_reward"])
 
     assert rewards == [0.1, 0.2]
 
 
 def test_the_members_of_a_group_must_arrive_with_the_same_settings(pair):
     members, _ = pair
-    _arrive(_trial_game_barrier({"pick_bonus": 0.1}), members[0])
+    _arrive(_trial_game_barrier({"pick_reward": 0.1}), members[0])
 
     with pytest.raises(
         ValueError,
@@ -246,7 +246,7 @@ def test_the_members_of_a_group_must_arrive_with_the_same_settings(pair):
         "'trial_game' with settings that differ from those of the members of "
         "their group who are waiting there.",
     ):
-        _arrive(_trial_game_barrier({"pick_bonus": 0.2}), members[1])
+        _arrive(_trial_game_barrier({"pick_reward": 0.2}), members[1])
 
 
 def test_an_game_barrier_s_settings_can_t_use_a_key_its_saved_form_reserves():
@@ -1852,22 +1852,19 @@ def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
     )
     # The worker that wrote the record closed the database session.
     members = [db.session.get(Participant, int(member)) for member in (first, second)]
-    # Each Pick's reward effect is handled as the record is written.
-    assert _reward(members[0]) == pytest.approx(0.5)
+    # Each Pick's reward effect is handled as the record is written, and the
+    # game's reward, the player's pick in hundredths, as its ending is saved,
+    # so a player who never submits the page is paid too.
+    assert _reward(members[0]) == pytest.approx(0.53)
+    assert _reward(members[1]) == pytest.approx(0.55)
 
+    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
     assert _submit_on_the_game_page(members[0])["submission"] == "approved"
 
     outcome = {first: 3, second: 5}
     assert live_session_result(session_id) == LiveSessionResult(
         "ended", "finished", outcome
     )
-    assert _accepted_answers(members[0]) == [outcome]
-    # The game's reward is the player's pick, in hundredths.
-    assert _reward(members[0]) == pytest.approx(0.53)
-    assert _reward(members[1]) == pytest.approx(0.5)
-
-    # Another visit to the page answers again, without paying the reward again.
-    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
     assert _accepted_answers(members[0]) == [outcome, outcome]
     assert _reward(members[0]) == pytest.approx(0.53)
 
@@ -1899,16 +1896,16 @@ def test_the_game_page_fails_once_its_session_can_no_longer_end(pair, monkeypatc
 
 
 @pytest.mark.parametrize(
-    "end_reason, outcome, record_complete, bonus_paid",
+    "end_reason, outcome, record_complete",
     [
-        ("failed", {"1": None}, True, True),
+        ("failed", {"1": None}, True),
         # The game's outcome raised an error too.
-        ("failed", None, True, False),
-        (None, None, False, False),
+        ("failed", None, True),
+        (None, None, False),
     ],
 )
 def test_a_failed_session_s_page_moves_on_with_what_was_saved(
-    pair, monkeypatch, end_reason, outcome, record_complete, bonus_paid
+    pair, end_reason, outcome, record_complete
 ):
     members, _ = pair
     session_id = _pair_session(pair)
@@ -1922,6 +1919,32 @@ def test_a_failed_session_s_page_moves_on_with_what_was_saved(
             "error": "Traceback (most recent call last): ...",
         }
     )
+
+    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
+
+    result = live_session_result(session_id)
+    assert result.record_complete is record_complete
+    assert result.error == "Traceback (most recent call last): ..."
+    assert _accepted_answers(members[0]) == [outcome]
+
+
+@pytest.mark.parametrize(
+    "status, outcome, paid",
+    [
+        ("failed", {"1": None}, True),
+        # The game's outcome raised an error too.
+        ("failed", None, False),
+        # A game that doesn't define outcome ends with None.
+        ("ended", None, True),
+    ],
+)
+def test_the_ending_pays_each_player_s_reward_if_there_is_an_outcome(
+    pair, monkeypatch, status, outcome, paid
+):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    row = db.session.get(RealtimeSession, session_id)
+    row.status, row.end_reason, row.outcome = status, "failed", outcome
     rewards = []
     game_type = game_registry._live_session_types["pick_numbers"]
     # A game that computes rewards with NumPy returns a NumPy number.
@@ -1931,33 +1954,13 @@ def test_a_failed_session_s_page_moves_on_with_what_was_saved(
         lambda self, *args: rewards.append(args) or numpy.float64(0.25),
     )
 
-    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
+    game_type().handle_ending(row)
 
-    result = live_session_result(session_id)
-    assert result.record_complete is record_complete
-    assert result.error == "Traceback (most recent call last): ..."
-    assert _accepted_answers(members[0]) == [outcome]
-    if bonus_paid:
-        assert rewards == [(outcome, "failed", str(members[0].id))]
-        assert _reward(members[0]) == pytest.approx(0.25)
-    else:
-        assert rewards == []
-        assert _reward(members[0]) == 0
-
-
-def test_a_game_without_an_outcome_still_pays_its_bonus(pair, monkeypatch):
-    members, _ = pair
-    session_id = _pair_session(pair)
-    # A game that doesn't define outcome ends with None.
-    db.session.query(RealtimeSession).filter_by(id=session_id).update(
-        {"status": "ended", "end_reason": "finished", "outcome": None}
+    players = sorted(str(member.id) for member in members)
+    assert rewards == (
+        [(outcome, "failed", player) for player in players] if paid else []
     )
-    game_type = game_registry._live_session_types["pick_numbers"]
-    monkeypatch.setattr(game_type, "performance_reward", lambda self, *args: 0.25)
-
-    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
-
-    assert _reward(members[0]) == pytest.approx(0.25)
+    assert [_reward(member) for member in members] == [0.25 if paid else 0] * 2
 
 
 def test_a_game_page_without_a_session_moves_on_with_no_answer(pair):
@@ -1973,7 +1976,7 @@ def test_live_session_result_needs_a_session(db_session):
 
 
 @pytest.mark.parametrize("amount", [-1, "1"])
-def test_a_bonus_is_a_number_0_or_more(pair, monkeypatch, amount):
+def test_a_reward_is_a_number_0_or_more(pair, monkeypatch, amount):
     members, _ = pair
     session_id = _pair_session(pair)
     db.session.query(RealtimeSession).filter_by(id=session_id).update(
@@ -1981,20 +1984,18 @@ def test_a_bonus_is_a_number_0_or_more(pair, monkeypatch, amount):
     )
     game_type = game_registry._live_session_types["pick_numbers"]
     monkeypatch.setattr(game_type, "performance_reward", lambda self, *args: amount)
-    # So the response route raises the error rather than showing an error page.
-    monkeypatch.setenv("PASSTHROUGH_ERRORS", "1")
 
     with pytest.raises(
         ValueError, match=f"PickNumbers.performance_reward gave the reward {amount!r}"
     ):
-        _submit_on_the_game_page(members[0])
+        game_type().handle_ending(db.session.get(RealtimeSession, session_id))
     with pytest.raises(
         ValueError, match="PickNumbers.add_performance_reward gave the reward"
     ):
         game_type().add_performance_reward("1", amount)
 
 
-def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_bonuses(
+def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_rewards(
     pair, registry
 ):
     members, _ = pair
