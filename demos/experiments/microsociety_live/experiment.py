@@ -78,7 +78,9 @@ TOP_UP_WAIT = 30
 NEWCOMER_MAX_WAIT = 60 + ROUND_SECONDS + RESULTS_SECONDS
 HISTORY_ROUNDS = 3
 TIPS_SHOWN = 3
-LABELS = "BCDEFG"
+# Other members are named by the colour of their boat, and spots by letter.
+COLOURS = ["purple", "green", "pink", "grey", "orange"]
+SPOT_LETTERS = "ABCDEFGH"
 
 
 class Move(LiveMessage):
@@ -209,9 +211,9 @@ class Fishing(LiveGame):
 
 
 def player_labels(players, player_id):
-    """Label the player "you" and the others "B", "C", and so on, in the order they joined."""
+    """Label the player "you" and the others by boat colour, in the order they joined."""
     others = [p for p in players if p != player_id]
-    return {player_id: "you", **dict(zip(others, LABELS))}
+    return {player_id: "you", **dict(zip(others, COLOURS))}
 
 
 def _spot(spot):
@@ -241,12 +243,12 @@ def _spot(spot):
         ripple(),
         fish(),
         fish(),
-        tags.span(str(spot), cls="fish-spot-number"),
+        tags.span(SPOT_LETTERS[spot - 1], cls="fish-spot-number"),
         tags.div(cls="fish-catches"),
         type="button",
         cls="fish-spot",
         disabled=True,
-        aria_label=f"Spot {spot}",
+        aria_label=f"Spot {SPOT_LETTERS[spot - 1]}",
     )
 
 
@@ -314,11 +316,7 @@ def lake_waiting_screen(participant: Participant):
     fish = sum(t.fish() for t in own_trials(participant))
     return ModularPage(
         "lake_waiting",
-        Prompt(
-            lake(
-                "The lake", "Waiting for the others…", f"Your catch so far: {fish} fish"
-            )
-        ),
+        Prompt(lake("", "Waiting for the others…", f"Your catch so far: {fish} fish")),
         NullControl(show_next_button=False),
         css_links=["/static/fishing.css"],
         time_estimate=5,
@@ -467,7 +465,7 @@ def history_page(participant: Participant):
 
 def _spot_text(spot_fish: dict) -> str:
     return ", ".join(
-        f"spot {spot}: {fish} fish"
+        f"spot {SPOT_LETTERS[int(spot) - 1]}: {fish} fish"
         for spot, fish in sorted(spot_fish.items(), key=lambda kv: int(kv[0]))
     )
 

@@ -22,14 +22,24 @@ function boatIcon(who) {
 }
 
 function whoText(who) {
-  return who === "you" ? "You" : `Member ${who}`;
+  return who[0].toUpperCase() + who.slice(1);
+}
+
+// A boat's catch, as "🐟 12", with "You" on the player's own.
+function fishCount(who, n) {
+  let count = document.createElement("span");
+  count.className = `fish-count fish-who-${who}`;
+  let number = document.createElement("span");
+  number.className = "fish-count-number";
+  number.textContent = n;
+  count.append(who === "you" ? "You 🐟 " : "🐟 ", number);
+  return count;
 }
 
 function byWho(fish) {
-  // "you" first, then the others in order.
-  return Object.entries(fish).sort(([a], [b]) =>
-    a === "you" ? -1 : b === "you" ? 1 : a.localeCompare(b)
-  );
+  // "you" first, then the others in the order they joined.
+  let entries = Object.entries(fish);
+  return [...entries.filter(([who]) => who === "you"), ...entries.filter(([who]) => who !== "you")];
 }
 
 export function activate({root, psynet}) {
@@ -52,7 +62,6 @@ export function activate({root, psynet}) {
   let layer = root.querySelector("#fish-boats");
   let timeLeft = root.querySelector("#fish-time-left");
   let secondsLeft = root.querySelector("#fish-seconds");
-  let scores = root.querySelector("#fish-scores");
   let rejection = root.querySelector("#fish-rejection");
   let results = root.querySelector("#fish-results");
   let resultsSeconds = Number(game.dataset.resultsSeconds);
@@ -91,7 +100,7 @@ export function activate({root, psynet}) {
     let box = spot === null ? dock : spots[spot - 1].tile;
     let x = box.offsetLeft + box.offsetWidth / 2;
     let y = box.offsetTop + box.offsetHeight / 2 + (spot === null ? 0 : 10);
-    return {x: x + (index - (count - 1) / 2) * (spot === null ? 56 : 34), y};
+    return {x: x + (index - (count - 1) / 2) * (spot === null ? 64 : 46), y};
   }
 
   function place(boat, target, seconds, easing) {
@@ -118,15 +127,17 @@ export function activate({root, psynet}) {
       let target = berth(spot, group.indexOf(who), group.length);
       if (boat === undefined) {
         let icon = boatIcon(who);
+        let count = fishCount(who, 0);
         let element = document.createElement("span");
         element.className = "fish-boat-wrapper";
         element.title = whoText(who);
-        element.append(icon);
+        element.append(icon, count);
         layer.append(element);
-        boat = {element, icon, spot, x: null, y: null};
+        boat = {element, icon, count, spot, x: null, y: null};
         boats.set(who, boat);
         place(boat, target, 0);
       }
+      boat.count.querySelector(".fish-count-number").textContent = view.fish[who];
       let sailing = arrives_at !== null && arrives_at > now;
       let remaining = arrives_at === Infinity ? view.travel_seconds : arrives_at - now;
       if (instant) {
@@ -151,17 +162,6 @@ export function activate({root, psynet}) {
     }
   }
 
-  function drawScores(fish) {
-    scores.replaceChildren(
-      ...byWho(fish).map(([who, n]) => {
-        let item = document.createElement("span");
-        item.className = `fish-score fish-who-${who}`;
-        item.append(boatIcon(who), `${whoText(who)}: ${n} fish`);
-        return item;
-      })
-    );
-  }
-
   function render({instant = false} = {}) {
     view = live.predictedView();
     if (view === null) {
@@ -174,7 +174,7 @@ export function activate({root, psynet}) {
     } else if (!live.started) {
       status.textContent = "Waiting for the others to reach the lake…";
     } else {
-      status.textContent = "Fishing";
+      status.textContent = "";
     }
     lake.classList.toggle("fish-playing", playing);
     for (let {tile} of spots) {
@@ -185,7 +185,6 @@ export function activate({root, psynet}) {
       seenCatch = view.catch_number;
       showCatches(view.latest);
     }
-    drawScores(view.fish);
   }
 
   function drawClock() {
@@ -200,20 +199,18 @@ export function activate({root, psynet}) {
 
   function showResults(seconds) {
     status.textContent = "The round is over.";
-    let mine = view ? view.fish.you ?? 0 : 0;
-    let heading = document.createElement("h3");
-    heading.textContent = `You caught ${mine} fish this round`;
-    let list = document.createElement("ol");
-    list.className = "fish-results-list";
-    for (let [who, n] of byWho(view ? view.fish : {}).sort((a, b) => b[1] - a[1])) {
-      let item = document.createElement("li");
-      item.className = `fish-who-${who}`;
-      item.append(boatIcon(who), `${whoText(who)}: ${n} fish`);
-      list.append(item);
+    let catches = document.createElement("div");
+    catches.className = "fish-results-boats";
+    for (let [who, n] of byWho(view ? view.fish : {})) {
+      let item = document.createElement("div");
+      item.className = "fish-results-boat";
+      item.title = whoText(who);
+      item.append(boatIcon(who), fishCount(who, n));
+      catches.append(item);
     }
     let next = document.createElement("p");
     next.className = "fish-results-next";
-    results.replaceChildren(heading, list, next);
+    results.replaceChildren(catches, next);
     results.hidden = false;
     let until = Date.now() + seconds * 1000;
     countdown = setInterval(() => {

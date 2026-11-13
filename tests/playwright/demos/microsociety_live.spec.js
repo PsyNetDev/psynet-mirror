@@ -18,7 +18,7 @@ async function screenshot(page, name) {
 }
 
 function spot(player, number) {
-  return player.getByRole("button", { name: `Spot ${number}`, exact: true });
+  return player.getByRole("button", { name: `Spot ${"ABCDEFGH"[number - 1]}`, exact: true });
 }
 
 // The boats (all, or only the player's own) whose centres are over a spot; boats glide over the lake, outside the spots.
@@ -60,11 +60,9 @@ test("a society of three fishes live on the lake, seeing each other's boats and 
     await expect.poll(() => boatsAt(third, 6)).toBe(2);
     await expect.poll(() => boatsAt(third, 3)).toBe(1);
     await expect.poll(() => boatsAt(first, 6, ".fish-boat-wrapper:has(.fish-who-you)")).toBe(1);
-    await expect(third.locator(".fish-score")).toHaveText([
-      /^You: \d+ fish$/,
-      /^Member B: \d+ fish$/,
-      /^Member C: \d+ fish$/
-    ]);
+    // Each boat shows its catch just below it.
+    await expect(third.locator(".fish-boat-wrapper .fish-count")).toHaveCount(3);
+    await expect(third.locator(".fish-boat-wrapper .fish-count.fish-who-you")).toHaveText(/^You 🐟 \d+$/);
 
     // Moving to the spot the boat is already at is rejected.
     await first.evaluate(() => psynet.liveSession.send("move", { spot: 6 }));
@@ -77,7 +75,7 @@ test("a society of three fishes live on the lake, seeing each other's boats and 
     // When the round's time is up, every member sees their results on the lake,
     // and then the lake again for the next round.
     for (const player of society) {
-      await expect(player.locator("#fish-results")).toContainText(/You caught \d+ fish this round/, {
+      await expect(player.locator("#fish-results .fish-results-boat")).toHaveCount(3, {
         timeout: STEP_TIMEOUT_MS
       });
     }

@@ -232,12 +232,25 @@
   to { transform: scaleX(1.2); }
 }
 
-.fish-score .fish-boat,
-.fish-results-list .fish-boat {
-  width: 1.5rem;
-  height: 1.2rem;
-  vertical-align: middle;
-  margin-right: 0.35rem;
+/* A boat's catch, in a pill of the boat's colour just below it. */
+.fish-count {
+  padding: 0 0.4rem;
+  border-radius: 0.6rem;
+  background: var(--fish-colour);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.3rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.fish-boat-wrapper .fish-count {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .fish-mast {
@@ -256,14 +269,15 @@
 }
 
 .fish-who-you { --fish-colour: #f2b632; }
-.fish-who-B { --fish-colour: #8e5bd8; }
-.fish-who-C { --fish-colour: #3bb273; }
-.fish-who-D { --fish-colour: #e0577c; }
-.fish-who-E { --fish-colour: #6c7a89; }
+.fish-who-purple { --fish-colour: #8e5bd8; }
+.fish-who-green { --fish-colour: #3bb273; }
+.fish-who-pink { --fish-colour: #e0577c; }
+.fish-who-grey { --fish-colour: #6c7a89; }
+.fish-who-orange { --fish-colour: #e8743a; }
 
 .fish-catches {
   position: absolute;
-  top: 4%;
+  top: 22%;
   right: 4%;
   display: flex;
   gap: 0.2rem;
@@ -306,16 +320,30 @@
   animation: fish-results-in 0.4s ease-out;
 }
 
-.fish-results h3 {
-  margin-top: 0;
-  font-size: 1.25rem;
+.fish-results-boats {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
 }
 
-.fish-results-list {
-  margin: 0.75rem 0;
-  padding-left: 1.5rem;
-  text-align: left;
-  font-weight: 600;
+.fish-results-boat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.fish-results-boat .fish-boat {
+  width: 5rem;
+  height: 4rem;
+}
+
+.fish-results-boat .fish-count {
+  font-size: 1.1rem;
+  line-height: 1.8rem;
+  padding: 0 0.7rem;
+  border-radius: 0.9rem;
 }
 
 .fish-results-next {
