@@ -8,12 +8,12 @@ group that reaches it, and its page, which has a :class:`LiveSessionControl`,
 plays it. :doc:`/code/multiplayer/live_sessions` walks through a whole game.
 """
 
-from .barrier import PlayLiveGame, live_session_id
 from .control import LiveSessionControl
 from .game import LiveGame
 from .messages import LiveMessage, SavedMessage
+from .play import PlayLiveGame, live_session_id
 from .ready_step import NOT_STARTED, PlayerReady
-from .registry import live_game_types
+from .registry import live_game_classes
 from .result import LiveSessionResult, live_session_result
 
 __all__ = [
@@ -25,7 +25,7 @@ __all__ = [
     "NOT_STARTED",
     "PlayerReady",
     "SavedMessage",
-    "live_game_types",
+    "live_game_classes",
     "live_session_id",
     "live_session_result",
 ]

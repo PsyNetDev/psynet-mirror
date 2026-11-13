@@ -29,16 +29,15 @@ class PlayLiveGame(EltCollection):
 
     Like a :class:`~psynet.sync.GroupBarrier`, it first waits for every
     member of the participant's group to arrive. It then starts a session of
-    ``game_type`` with the members as its players, and the group moves on
+    ``game_class`` with the members as its players, and the group moves on
     together to ``page``, where they play it. A group that arrives again,
     for example in a loop, plays a new session.
 
     ::
 
         PlayLiveGame(
-            id_="rock_paper_scissors",
             group_type="pair",
-            game_type=RockPaperScissors,
+            game_class=RockPaperScissors,
             page=ModularPage(
                 "rock_paper_scissors",
                 Prompt(tags.div(tags.p(id="status"), ...)),
@@ -55,15 +54,11 @@ class PlayLiveGame(EltCollection):
     Parameters
     ----------
 
-    id_
-        A name for this step, which :func:`live_session_id` takes to find
-        the group's session, for example on a later page.
-
     group_type
         The ``group_type`` of the :class:`~psynet.sync.Grouper` whose groups
         play the game.
 
-    game_type
+    game_class
         The game the group plays, a :class:`LiveGame` subclass with a
         ``bot`` method. Define it at the top level of a file, such as
         ``experiment.py``, not inside a function or another class.
@@ -83,7 +78,7 @@ class PlayLiveGame(EltCollection):
         maker, the group's ``sync_group_type``, which gives them the same
         trial.
 
-    on_release
+    on_session_start
         Optional function called once the session has started, with the
         arguments that a :class:`~psynet.sync.GroupBarrier`'s ``on_release``
         can take, such as ``trials`` and ``group_round``, and also
@@ -91,6 +86,14 @@ class PlayLiveGame(EltCollection):
         bookkeeping at the start of a round, such as choosing who retires
         after it. It isn't called when no session starts, because the group
         has fewer members than the game's ``min_players``.
+
+    id_
+        A name for this step, the game's ``channel`` unless given, which
+        :func:`live_session_id` takes to find the group's session, for
+        example on a later page. Steps with the same id share their wait,
+        like barriers with the same id, so give a game that the timeline
+        plays in two places, such as a practice game and the main game, a
+        different id in each.
 
     **kwargs
         Any other parameter of :class:`~psynet.sync.GroupBarrier`, for the
@@ -101,15 +104,19 @@ class PlayLiveGame(EltCollection):
 
     def __init__(
         self,
-        id_: str,
         group_type: str,
-        game_type,
+        game_class,
         page,
         settings=None,
-        on_release=None,
+        on_session_start=None,
+        id_: str = None,
         **kwargs,
     ):
         from .control import LiveSessionControl
+
+        _check_game_class(game_class)
+        if id_ is None:
+            id_ = game_class.channel
 
         if not (
             isinstance(page, ModularPage)
@@ -119,15 +126,15 @@ class PlayLiveGame(EltCollection):
                 f"The page of the PlayLiveGame {id_!r} must be a ModularPage "
                 f"with a LiveSessionControl, not {page!r}."
             )
-        if page.control.barrier_id not in (None, id_):
+        if page.control.game_id not in (None, id_):
             raise ValueError(
                 f"The page given to the PlayLiveGame {id_!r} is already the page "
-                f"of the PlayLiveGame {page.control.barrier_id!r}. Give each "
+                f"of the PlayLiveGame {page.control.game_id!r}. Give each "
                 "PlayLiveGame a page of its own."
             )
-        page.control.barrier_id = id_
+        page.control.game_id = id_
         self.barrier = _LiveGameBarrier(
-            id_, group_type, game_type, settings, on_release, **kwargs
+            id_, group_type, game_class, settings, on_session_start, **kwargs
         )
         self.page = page
 
@@ -144,36 +151,21 @@ class _LiveGameBarrier(GroupBarrier):
         self,
         id_: str,
         group_type: str,
-        game_type,
+        game_class,
         settings=None,
-        on_release=None,
+        on_session_start=None,
         **kwargs,
     ):
-        if not (isinstance(game_type, type) and issubclass(game_type, LiveGame)):
-            raise TypeError(
-                f"game_type must be a LiveGame subclass, not {game_type!r}."
-            )
-        if game_type.channel is None:
-            raise TypeError(
-                f"{game_type.__name__} has no channel, so it can't be played. "
-                "Set its channel to a name for the game."
-            )
-        if game_type.bot is RealtimeGame.bot:
-            raise TypeError(
-                f"{game_type.__name__} has no bot method, so its bots, such as "
-                "those of psynet test, would never move. Define bot to return "
-                "a bot's next message."
-            )
-        settings = _checked_settings(game_type, settings)
+        settings = _checked_settings(game_class, settings)
         super().__init__(
             id_=id_,
             group_type=group_type,
             on_release=_LiveGameBarrier._release,
             **kwargs,
         )
-        self.game_type = game_type
+        self.game_class = game_class
         self.settings = settings
-        self.on_session_start = on_release
+        self.on_session_start = on_session_start
         try:
             barrier_spec_json(self)
         except BarrierSpecError as error:
@@ -202,8 +194,8 @@ class _LiveGameBarrier(GroupBarrier):
     def _forget_session(self, participant):
         _set_live_session_id(participant, self.id, None)
 
-    # on_release has to be importable by name, and gets the barrier rebuilt
-    # from its saved settings.
+    # The barrier's on_release has to be importable by name, and gets the
+    # barrier rebuilt from its saved settings.
     @staticmethod
     def _release(
         group, participants, trials, group_round, leader, left, admitted, barrier
@@ -226,12 +218,12 @@ class _LiveGameBarrier(GroupBarrier):
             )
 
     def _start_session(self, participants, group_round=None):
-        if len(participants) < self.game_type.min_players:
+        if len(participants) < self.game_class.min_players:
             return None
         token = _new_session_settings.set(self.settings)
         try:
             session_id = create_realtime_session(
-                self.game_type,
+                self.game_class,
                 [member.id for member in participants],
                 bots=[member.id for member in participants if isinstance(member, Bot)],
             )
@@ -244,16 +236,32 @@ class _LiveGameBarrier(GroupBarrier):
         return session_id
 
 
+def _check_game_class(game_class):
+    if not (isinstance(game_class, type) and issubclass(game_class, LiveGame)):
+        raise TypeError(f"game_class must be a LiveGame subclass, not {game_class!r}.")
+    if game_class.channel is None:
+        raise TypeError(
+            f"{game_class.__name__} has no channel, so it can't be played. "
+            "Set its channel to a name for the game."
+        )
+    if game_class.bot is RealtimeGame.bot:
+        raise TypeError(
+            f"{game_class.__name__} has no bot method, so its bots, such as "
+            "those of psynet test, would never move. Define bot to return "
+            "a bot's next message."
+        )
+
+
 # Checked when the timeline is built, since an error while a group is
 # released is only logged, and leaves the group waiting.
-def _checked_settings(game_type, settings):
-    initial_state = inspect.signature(game_type.initial_state)
+def _checked_settings(game_class, settings):
+    initial_state = inspect.signature(game_class.initial_state)
     if settings is None:
         try:
             initial_state.bind(None, [])
         except TypeError:
             raise TypeError(
-                f"{game_type.__name__}.initial_state needs settings. Give the "
+                f"{game_class.__name__}.initial_state needs settings. Give the "
                 "PlayLiveGame its settings."
             ) from None
         return None
@@ -262,13 +270,13 @@ def _checked_settings(game_type, settings):
         settings = json.loads(json.dumps(settings, allow_nan=False))
     except (TypeError, ValueError) as error:
         raise TypeError(
-            f"The settings for {game_type.__name__} can't be saved as JSON: {error}"
+            f"The settings for {game_class.__name__} can't be saved as JSON: {error}"
         ) from None
     try:
         initial_state.bind(None, [], settings)
     except TypeError:
         raise TypeError(
-            f"{game_type.__name__}.initial_state takes no settings. Define it "
+            f"{game_class.__name__}.initial_state takes no settings. Define it "
             "as initial_state(self, players, settings)."
         ) from None
     return settings
@@ -286,7 +294,8 @@ def live_session_id(participant, id_):
         The participant.
 
     id_
-        The PlayLiveGame's ``id_``.
+        The PlayLiveGame's ``id_``, which is its game's ``channel`` unless it
+        was given one.
 
     Returns
     -------
@@ -298,11 +307,11 @@ def live_session_id(participant, id_):
     return _live_session_ids(participant).get(id_)
 
 
-def _check_reached_barrier(participant, barrier_id):
-    if barrier_id not in _live_session_ids(participant):
+def _check_reached_game(participant, game_id):
+    if game_id not in _live_session_ids(participant):
         raise ValueError(
             f"Participant {participant.id} hasn't reached the PlayLiveGame "
-            f"{barrier_id!r}, whose game page they were shown. Only its "
+            f"{game_id!r}, whose game page they were shown. Only its "
             "barrier leads to the page, so check for anything that skips it."
         )
 
@@ -311,9 +320,9 @@ def _live_session_ids(participant):
     return participant.live_sessions or {}
 
 
-def _set_live_session_id(participant, barrier_id, session_id):
+def _set_live_session_id(participant, game_id, session_id):
     # A new dict, which is what marks the column as changed.
     participant.live_sessions = {
         **_live_session_ids(participant),
-        barrier_id: session_id,
+        game_id: session_id,
     }

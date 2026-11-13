@@ -8,7 +8,7 @@ either can accept their partner's current proposal. Accepting ends the round
 with a deal; if the time runs out first, nobody is paid.
 
 Each player's round is one cued ``BargainTrial``. The trial class has
-``sync_group_type = PAIR``, so the two trials of a pair share the trial's
+``sync_group_type = "pair"``, so the two trials of a pair share the trial's
 definition, which the trial passes to the game as its settings. The game
 page's answer is the session's outcome, which the results page reads.
 
@@ -34,8 +34,6 @@ from psynet.sync import Regrouper, SimpleGrouper, leave_group
 from psynet.timeline import Module, Timeline, join, switch, while_loop
 from psynet.trial.main import Trial
 
-COHORT = "cohort"
-PAIR = "pair"
 COHORT_SIZE = 4
 N_ROUNDS = 2
 ENDOWMENT = 10
@@ -211,14 +209,13 @@ def bargaining_page():
 
 
 class BargainTrial(Trial):
-    sync_group_type = PAIR
+    sync_group_type = "pair"
     time_estimate = BARGAIN_SECONDS + 10
 
     def show_trial(self, experiment, participant):
         return PlayLiveGame(
-            id_="bargain",
-            group_type=PAIR,
-            game_type=Bargain,
+            group_type="pair",
+            game_class=Bargain,
             page=bargaining_page(),
             settings=self.definition,
             max_wait_time=30,
@@ -243,11 +240,13 @@ class BargainTrial(Trial):
         return InfoPage(text, time_estimate=5)
 
 
-pairing = Regrouper(PAIR, within=COHORT, group_size=2, left_over="sit_out", deadline=30)
+pairing = Regrouper(
+    group_type="pair", within="cohort", group_size=2, left_over="sit_out", deadline=30
+)
 
 
 def cohort_of(participant):
-    return participant.active_sync_groups.get(COHORT)
+    return participant.active_sync_groups.get("cohort")
 
 
 def keep_playing(participant):
@@ -260,7 +259,7 @@ def keep_playing(participant):
 
 
 def round_status(participant):
-    if participant.in_sync_group(PAIR):
+    if participant.in_sync_group("pair"):
         return "paired"
     if pairing.sat_out(participant):
         return "sat_out"
@@ -274,7 +273,7 @@ def get_timeline():
             time_estimate=5,
         ),
         SimpleGrouper(
-            COHORT,
+            group_type="cohort",
             initial_group_size=COHORT_SIZE,
             quorum=2,
             max_wait_time=300,
@@ -303,7 +302,7 @@ def get_timeline():
                 expected_repetitions=N_ROUNDS,
             ),
         ),
-        leave_group(COHORT),
+        leave_group("cohort"),
         InfoPage("That's the end of the game.", time_estimate=5),
     )
 

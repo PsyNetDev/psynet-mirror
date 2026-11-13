@@ -17,8 +17,8 @@ from dallinger.models import RealtimeSession, timenow
 from ..modular_page import ModularPage, NullControl
 from ..timeline import ResponseNotReady
 from ..utils import get_translator
-from .barrier import _check_reached_barrier, live_session_id
-from .messages import _game_channel, _session_game_type
+from .messages import _game_channel, _session_game_class
+from .play import _check_reached_game, live_session_id
 from .result import live_session_result
 
 # Seconds a page waits before resending a response refused because the
@@ -104,14 +104,14 @@ class LiveSessionControl(NullControl):
                 "its own JavaScript decides itself how long to show the result."
             )
         # Set by the PlayLiveGame that the page is given to.
-        self.barrier_id = None
+        self.game_id = None
         self.auto_advance = auto_advance
         self.show_result_for = show_result_for
         self.player_left_message = player_left_message
         self.no_session_message = no_session_message
 
     def check_ready_for_response(self, experiment, participant):
-        session_id = live_session_id(participant, self._barrier_id())
+        session_id = live_session_id(participant, self._game_id())
         if session_id is None or live_session_result(session_id) is not None:
             return None
         _check_session_can_still_end(session_id)
@@ -125,7 +125,7 @@ class LiveSessionControl(NullControl):
         )
 
     def ends_by(self, experiment, participant):
-        session_id = live_session_id(participant, self._barrier_id())
+        session_id = live_session_id(participant, self._game_id())
         if session_id is None:
             return None
         ends = _game_page_deadline(session_id)
@@ -139,7 +139,7 @@ class LiveSessionControl(NullControl):
     def validate(self, response, participant, **kwargs):
         # check_ready_for_response has already seen the session end, and an
         # ended session's row doesn't change, so this result is final.
-        session_id = live_session_id(participant, self._barrier_id())
+        session_id = live_session_id(participant, self._game_id())
         if session_id is None:
             response.answer = None
             return None
@@ -149,19 +149,19 @@ class LiveSessionControl(NullControl):
         if result.status == "failed" and result.outcome is None:
             response.answer = None
         else:
-            game = _session_game_type(session_id)()
+            game = _session_game_class(session_id)()
             response.answer = game.answer(
                 result.outcome, result.end_reason, str(participant.id)
             )
         return None
 
-    def _barrier_id(self):
-        if self.barrier_id is None:
+    def _game_id(self):
+        if self.game_id is None:
             raise TypeError(
                 "A page with a LiveSessionControl has to be the page of a "
                 "PlayLiveGame, which starts the session the page plays."
             )
-        return self.barrier_id
+        return self.game_id
 
     def _check_page(self, page):
         if (
@@ -181,8 +181,8 @@ class LiveSessionControl(NullControl):
         return ["return PsyNetLiveSession.activatePage(psynet);"]
 
     def get_participant_js_vars(self, experiment, participant):
-        _check_reached_barrier(participant, self._barrier_id())
-        session_id = live_session_id(participant, self._barrier_id())
+        _check_reached_game(participant, self._game_id())
+        session_id = live_session_id(participant, self._game_id())
         _p = get_translator(context=True)
         player_left = self.player_left_message
         if player_left is _DEFAULT:
@@ -192,7 +192,7 @@ class LiveSessionControl(NullControl):
             no_session = _p("live_session", "Your group couldn't start the game.")
         return {
             "liveSession": {
-                "barrierId": self.barrier_id,
+                "gameId": self.game_id,
                 "sessionId": session_id,
                 "gameChannel": (
                     None if session_id is None else _game_channel(session_id)
@@ -208,7 +208,7 @@ class LiveSessionControl(NullControl):
 def _latest_end_seconds(session_id):
     # Seconds after its start by which a session has ended and saved its
     # result, or None for a game without a max_duration.
-    max_duration = _session_game_type(session_id).max_duration
+    max_duration = _session_game_class(session_id).max_duration
     return None if max_duration is None else max_duration + _SAVING_MARGIN
 
 
@@ -235,7 +235,7 @@ def _check_session_can_still_end(session_id):
     latest = _latest_end_seconds(session_id)
     if latest is None:
         return
-    max_duration = _session_game_type(session_id).max_duration
+    max_duration = _session_game_class(session_id).max_duration
     running_for = (timenow() - _session_start_time(session_id)).total_seconds()
     if running_for > latest:
         raise RuntimeError(

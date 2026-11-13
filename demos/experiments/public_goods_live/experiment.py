@@ -29,7 +29,6 @@ from psynet.sync import SimpleGrouper
 from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop
 from psynet.trial.main import Trial
 
-GROUP = "team"
 N_ROUNDS = 3
 ENDOWMENT = 10
 MULTIPLIER = 1.5
@@ -167,14 +166,13 @@ def contribution_page(round_number):
 
 
 class ContributionTrial(Trial):
-    sync_group_type = GROUP
+    sync_group_type = "team"
     time_estimate = ROUND_SECONDS + RESULTS_SECONDS
 
     def show_trial(self, experiment, participant):
         return PlayLiveGame(
-            id_="public_goods",
-            group_type=GROUP,
-            game_type=PublicGoods,
+            group_type="team",
+            game_class=PublicGoods,
             page=contribution_page(self.sync_group_round),
             settings={"endowment": ENDOWMENT, "multiplier": MULTIPLIER},
             waiting_message="Waiting for the other players…",
@@ -197,7 +195,7 @@ class ContributionTrial(Trial):
 
 
 def left_team(participant):
-    return not participant.in_sync_group(GROUP)
+    return not participant.in_sync_group("team")
 
 
 def bonus_text(participant):
@@ -217,7 +215,7 @@ ENDED_EARLY_TEXTS = {
 
 
 def game_ended_early(participant):
-    text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason(GROUP)]
+    text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason("team")]
     return InfoPage(f"{text} {bonus_text(participant)}", time_estimate=5)
 
 
@@ -232,7 +230,7 @@ def get_timeline():
             time_estimate=15,
         ),
         SimpleGrouper(
-            GROUP,
+            group_type="team",
             initial_group_size=3,
             quorum=2,
             below_quorum="continue_without_group",
@@ -272,7 +270,7 @@ class Exp(psynet.experiment.Experiment):
         trials = ContributionTrial.query.filter_by(participant_id=bot.id).all()
         assert len(trials) == N_ROUNDS, (
             bot.id,
-            bot.sync_group_removal_reason(GROUP),
+            bot.sync_group_removal_reason("team"),
             [t.answer for t in trials],
         )
         for trial in trials:

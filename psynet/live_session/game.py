@@ -420,39 +420,39 @@ class LiveGame(RealtimeGame):
 _MAX_DURATION_MARGIN = 30
 
 
-def _check_duration(game_type):
+def _check_duration(game_class):
     """Check a game's duration, and set its max_duration from it unless the
     game sets one itself."""
-    duration = game_type.duration
+    duration = game_class.duration
     if duration is None:
         return
-    name = game_type.__name__
+    name = game_class.__name__
     if not is_number(duration) or duration <= 0:
         raise ValueError(f"{name}'s duration must be None or a positive number.")
-    if game_type.ready_timeout is None:
+    if game_class.ready_timeout is None:
         return
-    latest_end = game_type.ready_timeout + duration
-    owner = next(base for base in game_type.__mro__ if "max_duration" in vars(base))
+    latest_end = game_class.ready_timeout + duration
+    owner = next(base for base in game_class.__mro__ if "max_duration" in vars(base))
     if owner is LiveGame or vars(owner).get("_derived_max_duration"):
-        game_type.max_duration = latest_end + _MAX_DURATION_MARGIN
-        game_type._derived_max_duration = True
-    elif game_type.max_duration is not None and game_type.max_duration <= latest_end:
+        game_class.max_duration = latest_end + _MAX_DURATION_MARGIN
+        game_class._derived_max_duration = True
+    elif game_class.max_duration is not None and game_class.max_duration <= latest_end:
         raise ValueError(
-            f"{name}'s max_duration, {game_type.max_duration}, must be later than "
+            f"{name}'s max_duration, {game_class.max_duration}, must be later than "
             f"its ready_timeout plus its duration, {latest_end}, or a session "
             "that starts at the ready timeout ends before its time is up. Leave "
             "max_duration unset, and PsyNet sets it from the duration."
         )
 
 
-def _index_message_types(game_type):
+def _index_message_types(game_class):
     by_type = {PlayerReady.type: PlayerReady}
-    for message_type in game_type.messages:
+    for message_type in game_class.messages:
         if not (
             isinstance(message_type, type) and issubclass(message_type, LiveMessage)
         ):
             raise TypeError(
-                f"{game_type.__name__}.messages lists {message_type!r}, "
+                f"{game_class.__name__}.messages lists {message_type!r}, "
                 "which isn't a LiveMessage subclass."
             )
         if "type" in message_type.model_fields:
@@ -474,7 +474,7 @@ def _index_message_types(game_type):
             ) from None
         if name == PlayerReady.type:
             raise ValueError(
-                f"{game_type.__name__}.messages lists {message_type.__name__}, "
+                f"{game_class.__name__}.messages lists {message_type.__name__}, "
                 f"with the type {name!r}, which is PsyNet's PlayerReady message. "
                 "Every game reads PlayerReady, so don't list it, and give other "
                 "messages another type."

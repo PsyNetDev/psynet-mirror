@@ -16,7 +16,7 @@ rounds. Before leaving, they leave a tip for future members.
 
 Each round is one cued ``FishingTrial`` per member, whose ``show_trial``
 returns a ``PlayLiveGame``: a live session for the society, played on the
-lake. Its ``on_release`` chooses who leaves after the round, and the game's
+lake. Its ``on_session_start`` chooses who leaves after the round, and the game's
 ``record_round`` records where the round's fish were caught.
 """
 
@@ -56,7 +56,6 @@ from psynet.timeline import (
 )
 from psynet.trial.main import Trial
 
-GROUP = "society"
 SOCIETY_SIZE = 3
 MAX_ROUNDS = 4
 # Average catches of the spots, which members don't see.
@@ -315,7 +314,7 @@ def get_timeline():
             time_estimate=15,
         ),
         SimpleGrouper(
-            GROUP,
+            group_type="society",
             initial_group_size=SOCIETY_SIZE,
             max_group_size=SOCIETY_SIZE + 1,
             quorum=2,
@@ -343,7 +342,7 @@ def get_timeline():
                     ),
                     GroupBarrier(
                         id_="round_starts",
-                        group_type=GROUP,
+                        group_type="society",
                         waiting_message="Waiting for the next round to start…",
                         late_after=LATE_AFTER,
                         late_action="leave_group",
@@ -356,7 +355,7 @@ def get_timeline():
                 expected_repetitions=MAX_ROUNDS,
             ),
         ),
-        leave_group(GROUP),
+        leave_group("society"),
         switch(
             "leaving",
             life_stage,
@@ -393,12 +392,12 @@ def get_timeline():
 
 
 def in_society(participant: Participant) -> bool:
-    return participant.in_sync_group(GROUP)
+    return participant.in_sync_group("society")
 
 
 def is_newcomer(participant: Participant) -> bool:
     """Return whether the participant has joined the society but not been admitted yet."""
-    society = participant.active_sync_groups.get(GROUP)
+    society = participant.active_sync_groups.get("society")
     return society is not None and participant in society.pending_participants
 
 
@@ -416,14 +415,14 @@ def life_stage(participant: Participant) -> Optional[str]:
     last = trials[-1] if trials else None
     if last is not None and last.var.get("leaves_as"):
         return last.var.leaves_as
-    if GROUP not in participant.active_sync_groups:
-        return participant.sync_group_removal_reason(GROUP)
+    if "society" not in participant.active_sync_groups:
+        return participant.sync_group_removal_reason("society")
     return "playing"
 
 
 def history_page(participant: Participant):
     """Show a newcomer where the society fished lately and the tips of members who have left."""
-    society = participant.latest_sync_group(GROUP)
+    society = participant.latest_sync_group("society")
     rounds = society.rounds("fishing")
     scored = [r for r in rounds if r.var.has("spot_fish")]
     tips = [t.var.tip for r in rounds for t in r.trials if t.var.has("tip")]
@@ -460,22 +459,21 @@ def _spot_fish(outcome) -> dict:
 
 
 class FishingTrial(Trial):
-    sync_group_type = GROUP
+    sync_group_type = "society"
     time_estimate = ROUND_SECONDS + RESULTS_SECONDS
 
     def show_trial(self, experiment, participant):
         return PlayLiveGame(
-            id_="fishing",
-            group_type=GROUP,
-            game_type=Fishing,
+            group_type="society",
+            game_class=Fishing,
             page=lake_page(self.sync_group_round),
-            on_release=self.plan_leaving,
             settings={
                 "spot_means": SPOT_MEANS,
                 "noise": CATCH_NOISE,
                 "catch_seconds": CATCH_SECONDS,
                 "travel_seconds": TRAVEL_SECONDS,
             },
+            on_session_start=self.plan_leaving,
             waiting_message="Waiting for the others to reach the lake…",
             waiting_screen=lake_waiting_screen,
         )

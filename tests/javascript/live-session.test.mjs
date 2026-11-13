@@ -76,7 +76,7 @@ beforeEach(() => {
   sockets = [];
   errors = [];
   session = {
-    barrierId: "pick_numbers",
+    gameId: "pick_numbers",
     sessionId: 7,
     gameChannel: "pick_numbers",
     autoAdvance: true,
@@ -369,7 +369,7 @@ describe("psynet.liveSession", () => {
 
   it("says whether the group has a session, without joining it", () => {
     assert.equal(liveSession.hasSession, true);
-    session = { barrierId: "pick_numbers", sessionId: null, gameChannel: null };
+    session = { gameId: "pick_numbers", sessionId: null, gameChannel: null };
     assert.equal(liveSession.hasSession, false);
     session = undefined;
     assert.equal(liveSession.hasSession, false);
@@ -379,7 +379,7 @@ describe("psynet.liveSession", () => {
   it("shows the control's notice on a page with no session, until the page ends", () => {
     assert.deepEqual(notices, []);
     session = {
-      barrierId: "pick_numbers",
+      gameId: "pick_numbers",
       sessionId: null,
       gameChannel: null,
       noSessionMessage: null,
@@ -403,7 +403,7 @@ describe("psynet.liveSession", () => {
   it("explains a page with no session", () => {
     session = undefined;
     assert.throws(() => liveSession.send("pick"), /control isn't a LiveSessionControl/);
-    session = { barrierId: "pick_numbers", sessionId: null, gameChannel: null };
+    session = { gameId: "pick_numbers", sessionId: null, gameChannel: null };
     assert.throws(
       () => liveSession.onView(() => {}),
       /hasn't started a live session at the PlayLiveGame "pick_numbers"/

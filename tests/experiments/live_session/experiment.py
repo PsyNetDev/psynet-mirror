@@ -79,9 +79,8 @@ class Exp(psynet.experiment.Experiment):
         # the game.
         InfoPage("You have a partner.", time_estimate=5),
         PlayLiveGame(
-            id_="pick_numbers",
             group_type="pair",
-            game_type=PickNumbers,
+            game_class=PickNumbers,
             page=ModularPage(
                 "pick_numbers",
                 Prompt(

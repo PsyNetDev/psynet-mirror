@@ -97,7 +97,7 @@
    * opened, since the game pages it shows one after another each open one.
    *
    * @param {function} liveSession - Returns the page's ``liveSession``
-   *   variable: the control's ``barrierId``, ``autoAdvance``,
+   *   variable: the control's ``gameId``, ``autoAdvance``,
    *   ``showResultFor``, ``playerLeftMessage`` and ``noSessionMessage``, and the session's
    *   ``sessionId`` and ``gameChannel``, which are ``null`` without a
    *   session, or nothing on a page without a ``LiveSessionControl``
@@ -124,7 +124,7 @@
         throw new Error(
           "The participant's group hasn't started a live session at the " +
             "PlayLiveGame " +
-            JSON.stringify(current.barrierId) +
+            JSON.stringify(current.gameId) +
             ", because the participant was removed from their group " +
             "there. Check psynet.liveSession.hasSession before the page " +
             "plays.",

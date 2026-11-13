@@ -153,9 +153,8 @@ session, and then shows the group the game page:
     timeline = Timeline(
         SimpleGrouper(group_type="pair", initial_group_size=2),
         PlayLiveGame(
-            id_="rock_paper_scissors",
             group_type="pair",
-            game_type=RockPaperScissors,
+            game_class=RockPaperScissors,
             page=ModularPage(
                 "rock_paper_scissors",
                 Prompt(
@@ -175,8 +174,12 @@ session, and then shows the group the game page:
         ...
     )
 
-The ``id_`` names the barrier, and the game page plays the session that this
-``PlayLiveGame`` started. Give each ``PlayLiveGame`` a page of its own.
+The game page plays the session that this ``PlayLiveGame`` started, so give
+each ``PlayLiveGame`` a page of its own. Its ``id_`` is the game's
+``channel`` unless you give one. Steps with the same id share their wait,
+like barriers with the same id, so a game that the timeline plays in two
+places, such as a practice game and the main game, needs a different
+``id_`` in each.
 
 A game needs at least ``min_players`` players, 2 unless the game sets it. A
 group that reaches the ``PlayLiveGame`` with fewer active members, for example
@@ -185,9 +188,9 @@ members' game pages show the no-session notice (see `Cases a game page should
 allow for`_). Set ``min_players = 1`` for a game a player can play alone.
 
 ``PlayLiveGame`` takes the options of a :class:`~psynet.sync.GroupBarrier`,
-such as ``max_wait_time``, for its barrier. Its ``on_release`` runs once the
-session has started, with the arguments a group barrier's ``on_release``
-takes and also ``live_session_id``. Use it for group bookkeeping at the start
+such as ``max_wait_time``, for its barrier. Its ``on_session_start`` runs
+once the session has started, with the arguments a group barrier's
+``on_release`` takes and also ``live_session_id``. Use it for group bookkeeping at the start
 of a round, such as choosing who leaves after it.
 
 To play one game under different conditions, such as with a different
@@ -199,9 +202,8 @@ game page like the one above:
 .. code-block:: python
 
     PlayLiveGame(
-        id_="rock_paper_scissors",
         group_type="pair",
-        game_type=RockPaperScissors,
+        game_class=RockPaperScissors,
         page=rock_paper_scissors_page(),
         settings={"rounds": 3},
     )
@@ -223,9 +225,8 @@ they need in it. To vary the settings from trial to trial, return a
 
         def show_trial(self, experiment, participant):
             return PlayLiveGame(
-                id_="rock_paper_scissors",
                 group_type="pair",
-                game_type=RockPaperScissors,
+                game_class=RockPaperScissors,
                 page=rock_paper_scissors_page(),
                 settings=self.definition,
             )

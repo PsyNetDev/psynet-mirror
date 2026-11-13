@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import String, cast
 
 from ..utils import get_logger
-from .registry import _live_session_type, _same_definition
+from .registry import _live_game_class, _same_definition
 
 logger = get_logger()
 
@@ -92,11 +92,11 @@ class LiveMessage(BaseModel):
             :attr:`~LiveGame.messages`, or the game isn't defined because
             the module that defines it hasn't been imported.
         """
-        game_type = _session_game_type(session_id)
-        listed = game_type._message_types.get(cls.type)
+        game_class = _session_game_class(session_id)
+        listed = game_class._message_types.get(cls.type)
         if not listed or not _same_definition(listed, cls):
             raise ValueError(
-                f"Session {session_id} is a session of {game_type.channel!r}, "
+                f"Session {session_id} is a session of {game_class.channel!r}, "
                 f"which doesn't list {cls.__name__} in its messages."
             )
         return _saved_messages(session_id, {cls.type: cls}, only_type=cls.type)
@@ -179,7 +179,7 @@ class SavedMessage:
 
 
 def _game_channel(session_id):
-    # game_type isn't nullable, so None means there's no such row.
+    # The game_type column isn't nullable, so None means there's no such row.
     return db.session.query(RealtimeSession.game_type).filter_by(id=session_id).scalar()
 
 
@@ -190,16 +190,16 @@ def _session_channel(session_id):
     return channel
 
 
-def _session_game_type(session_id):
+def _session_game_class(session_id):
     channel = _session_channel(session_id)
-    game_type = _live_session_type(channel)
-    if game_type is None:
+    game_class = _live_game_class(channel)
+    if game_class is None:
         raise ValueError(
             f"Session {session_id} is a session of {channel!r}, and no "
             "LiveGame with that channel is defined. Import the module "
             "that defines the game first."
         )
-    return game_type
+    return game_class
 
 
 # Labelled as SavedMessage's fields.
