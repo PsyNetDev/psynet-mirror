@@ -3,12 +3,9 @@ const { test, expect } = require("../fixtures");
 
 const {
   assertNoBackendError,
-  beginExperiment,
-  clickNextAndWait,
-  completeInitialGateway,
   startExperiment,
-  stopExperiment,
-  withFreshParticipantIds
+  startParticipantsTogether,
+  stopExperiment
 } = require("../psynetHarness");
 
 const STEP_TIMEOUT_MS = 120000;
@@ -93,21 +90,13 @@ test("players steer snakes in snake_live, eat food, crash and come back, and fin
   const contexts = [await browser.newContext(), await browser.newContext()];
 
   try {
-    const recruitmentUrl = await experiment.urlPromise;
-    const participants = [];
-    for (const [index, context] of contexts.entries()) {
-      participants.push(
-        await beginExperiment(
-          await context.newPage(),
-          context,
-          withFreshParticipantIds(recruitmentUrl, `snake_live_${index}`)
-        )
-      );
-    }
+    const participants = await startParticipantsTogether(
+      contexts,
+      await experiment.urlPromise,
+      "snake_live"
+    );
     await Promise.all(
       participants.map(async (participant) => {
-        await completeInitialGateway(participant);
-        await clickNextAndWait(participant);
         await expect(participant.locator("#snake-status")).toHaveText("Eat the food!", {
           timeout: STEP_TIMEOUT_MS
         });
@@ -149,7 +138,7 @@ test("players steer snakes in snake_live, eat food, crash and come back, and fin
     await watchViews(first);
 
     // Left to go straight on, the snake hits a wall, or a snake, and comes
-    // back two seconds later, on both pages.
+    // back, as the other player's page shows.
     await expect
       .poll(async () => {
         const { crashes, body } = await snakeOf(second, id);

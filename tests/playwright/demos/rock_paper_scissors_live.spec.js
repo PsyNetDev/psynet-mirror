@@ -3,12 +3,10 @@ const { test, expect } = require("../fixtures");
 
 const {
   assertNoBackendError,
-  beginExperiment,
   clickNextAndWait,
-  completeInitialGateway,
   startExperiment,
-  stopExperiment,
-  withFreshParticipantIds
+  startParticipantsTogether,
+  stopExperiment
 } = require("../psynetHarness");
 
 const STEP_TIMEOUT_MS = 120000;
@@ -36,64 +34,35 @@ async function playGame(first, second, rounds) {
   }
 }
 
-// Starts two participants and takes them to the first game. ``prepare`` is
-// called with their browser contexts before either opens a page.
-async function startPair(browser, experiment, name, prepare = async () => {}) {
-  const contexts = [await browser.newContext(), await browser.newContext()];
-  await prepare(contexts);
-  const recruitmentUrl = await experiment.urlPromise;
-  const participants = [];
-  for (const [index, context] of contexts.entries()) {
-    participants.push(
-      await beginExperiment(
-        await context.newPage(),
-        context,
-        withFreshParticipantIds(recruitmentUrl, `${name}_${index}`)
-      )
-    );
-  }
-  await Promise.all(
-    participants.map(async (participant) => {
-      await completeInitialGateway(participant);
-      await clickNextAndWait(participant);
-      await waitForRound(participant, 1);
-    })
-  );
-  return { contexts, participants };
-}
-
 test("two participants play rock_paper_scissors_live to the end, with rejected choices, a reload and a partner who leaves and comes back", { tag: "@both" }, async ({
   browser
 }) => {
   const experiment = startExperiment(path.resolve("demos/experiments/rock_paper_scissors_live"));
-  let contexts = [];
+  const contexts = [await browser.newContext(), await browser.newContext()];
   // While this is set, the first player's choices are held back from the
   // server, to be sent later.
   let holdChoices = false;
   const heldChoices = [];
 
   try {
-    const pair = await startPair(
-      browser,
-      experiment,
-      "rock_paper_scissors_live",
-      async (created) => {
-        contexts = created;
-        await created[0].routeWebSocket(/\/experiment-socket/, (route) => {
-          const server = route.connectToServer();
-          route.onMessage((message) => {
-            if (holdChoices && String(message).includes('"choose"')) {
-              heldChoices.push(() => server.send(message));
-            } else {
-              server.send(message);
-            }
-          });
-        });
-      }
+    await contexts[0].routeWebSocket(/\/experiment-socket/, (route) => {
+      const server = route.connectToServer();
+      route.onMessage((message) => {
+        if (holdChoices && String(message).includes('"choose"')) {
+          heldChoices.push(() => server.send(message));
+        } else {
+          server.send(message);
+        }
+      });
+    });
+    const pair = await startParticipantsTogether(
+      contexts,
+      await experiment.urlPromise,
+      "rock_paper_scissors_live"
     );
-    contexts = pair.contexts;
-    const [first] = pair.participants;
-    let [, second] = pair.participants;
+    await Promise.all(pair.map((participant) => waitForRound(participant, 1)));
+    const [first] = pair;
+    let [, second] = pair;
 
     // The first game's rounds and stakes come from its trials' definition.
     for (const participant of [first, second]) {

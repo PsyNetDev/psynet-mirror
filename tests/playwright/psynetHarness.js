@@ -1578,6 +1578,30 @@ async function waitForTrialEvents(
     .toBe(true);
 }
 
+// Starts a participant in each browser context and takes them all past the
+// initial gateway and the experiment's first page at the same time, as
+// participants who are grouped on arrival need. ``label`` goes into each
+// participant's ids. Returns the participants' pages, in the contexts' order.
+async function startParticipantsTogether(contexts, recruitmentUrl, label) {
+  const participants = [];
+  for (const [index, context] of contexts.entries()) {
+    participants.push(
+      await beginExperiment(
+        await context.newPage(),
+        context,
+        withFreshParticipantIds(recruitmentUrl, `${label}_${index}`)
+      )
+    );
+  }
+  await Promise.all(
+    participants.map(async (participant) => {
+      await completeInitialGateway(participant);
+      await clickNextAndWait(participant);
+    })
+  );
+  return participants;
+}
+
 function withFreshParticipantIds(rawUrl, label = null) {
   const url = new URL(rawUrl);
   const randomSuffix = Math.random().toString(36).slice(2, 10);
@@ -1738,6 +1762,7 @@ module.exports = {
   getPageUuid,
   isInplaceTimelineModeEnabled,
   startExperiment,
+  startParticipantsTogether,
   startResponseSubmitTracker,
   stopExperiment,
   waitForResponseSubmitIncrement,
