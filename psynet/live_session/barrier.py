@@ -120,10 +120,10 @@ class LiveGameBarrier(GroupBarrier):
     # on_release has to be importable by name, and gets the barrier rebuilt
     # from its saved settings.
     @staticmethod
-    def _release(participants, barrier):
-        barrier._start_session(participants)
+    def _release(participants, barrier, group_round):
+        barrier._start_session(participants, group_round)
 
-    def _start_session(self, participants):
+    def _start_session(self, participants, group_round=None):
         token = _new_session_settings.set(self.settings)
         try:
             session_id = create_realtime_session(
@@ -135,6 +135,8 @@ class LiveGameBarrier(GroupBarrier):
             _new_session_settings.reset(token)
         for member in participants:
             _set_live_session_id(member, self.id, session_id)
+        if group_round is not None:
+            group_round.live_session_id = session_id
 
 
 # Checked when the timeline is built, since an error while a group is

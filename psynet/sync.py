@@ -5447,6 +5447,13 @@ class SyncGroupRound(SQLBase, SQLMixin):
         a page after the barrier, and so does a round whose remaining
         members' trials had all ended before the group dissolved. Written
         under the members' row locks, so it is never set on a closed round.
+    live_session_id : int or None
+        The id of the live session that a
+        :class:`~psynet.live_session.LiveGameBarrier` in the round's trials
+        started, or ``None``. Pass it to
+        :func:`~psynet.live_session.live_session_result` or
+        :func:`~psynet.live_session.saved_messages`, for example to export
+        each round's game.
     trials : list of Trial
         The members' trials in the round, including failed ones.
     """
@@ -5469,6 +5476,7 @@ class SyncGroupRound(SQLBase, SQLMixin):
     definition = Column(PythonObject)
     closed_at = Column(DateTime)
     dissolved_at = Column(DateTime)
+    live_session_id = Column(Integer)
 
     trials = relationship(
         "psynet.trial.main.Trial",

@@ -196,7 +196,9 @@ plays in one round share a definition, so set ``sync_group_type`` on the
 trial class and cue one trial per player (see :ref:`rounds-cued-trials`).
 Such a trial needs a
 :class:`~psynet.sync.GroupBarrier` in its ``show_trial``, and the game barrier
-is one.
+is one. The round's :attr:`~psynet.sync.SyncGroupRound.live_session_id` then
+names the session the group played in it, so ``trial.group_round`` leads
+from each trial to its round's game, for example in an export.
 
 The page's JavaScript goes in a file in the experiment's ``static`` folder,
 listed in the page's ``js_page_modules``. It exports an ``activate``

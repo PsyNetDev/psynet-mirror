@@ -26,6 +26,7 @@ from psynet.live_session import (
     LiveGameBarrier,
     LiveMessage,
     LiveSessionControl,
+    live_session_result,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
@@ -361,5 +362,7 @@ class Exp(psynet.experiment.Experiment):
                 BOT_GIVES,
                 ENDOWMENT - BOT_GIVES,
             ]
+            session_id = trial.group_round.live_session_id
+            assert live_session_result(session_id).outcome == trial.answer
         expected = sum(t.coins() for t in trials) * COIN_VALUE
         assert abs(bot.performance_reward - expected) < 1e-9
