@@ -3,20 +3,17 @@ const { test, expect } = require("./fixtures");
 
 const {
   assertNoBackendError,
-  beginExperiment,
   clickNextAndWait,
-  completeInitialGateway,
   isInplaceTimelineModeEnabled,
   startExperiment,
-  stopExperiment,
-  withFreshParticipantIds
+  startParticipantsTogether,
+  stopExperiment
 } = require("./psynetHarness");
 
 const STEP_TIMEOUT_MS = 120000;
 
+// Takes a participant who has a partner on to the game page.
 async function reachTheGame(participant) {
-  await completeInitialGateway(participant);
-  await clickNextAndWait(participant);
   await clickNextAndWait(participant);
   await expect(participant.locator("#game-status")).toHaveText("Pick a number", {
     timeout: STEP_TIMEOUT_MS
@@ -30,17 +27,11 @@ test("a live session page joins its session, shows a rejected message and moves 
   const contexts = [await browser.newContext(), await browser.newContext()];
 
   try {
-    const recruitmentUrl = await experiment.urlPromise;
-    const participants = [];
-    for (const [index, context] of contexts.entries()) {
-      participants.push(
-        await beginExperiment(
-          await context.newPage(),
-          context,
-          withFreshParticipantIds(recruitmentUrl, `live_session_${index}`)
-        )
-      );
-    }
+    const participants = await startParticipantsTogether(
+      contexts,
+      await experiment.urlPromise,
+      "live_session"
+    );
     await Promise.all(participants.map(reachTheGame));
     const [first, second] = participants;
 
@@ -118,17 +109,11 @@ test("a game page open in two tabs moves the participant on once", { tag: "@both
   const contexts = [await browser.newContext(), await browser.newContext()];
 
   try {
-    const recruitmentUrl = await experiment.urlPromise;
-    const participants = [];
-    for (const [index, context] of contexts.entries()) {
-      participants.push(
-        await beginExperiment(
-          await context.newPage(),
-          context,
-          withFreshParticipantIds(recruitmentUrl, `live_session_tabs_${index}`)
-        )
-      );
-    }
+    const participants = await startParticipantsTogether(
+      contexts,
+      await experiment.urlPromise,
+      "live_session_tabs"
+    );
     await Promise.all(participants.map(reachTheGame));
     const [first, second] = participants;
     await first.locator("#pick").click();
@@ -179,22 +164,14 @@ test("participants whose pair breaks up at the initializer see the no-session no
   const contexts = [await browser.newContext(), await browser.newContext()];
 
   try {
-    const recruitmentUrl = await experiment.urlPromise;
-    const participants = [];
-    for (const [index, context] of contexts.entries()) {
-      participants.push(
-        await beginExperiment(
-          await context.newPage(),
-          context,
-          withFreshParticipantIds(recruitmentUrl, `live_session_alone_${index}`)
-        )
-      );
-    }
+    const participants = await startParticipantsTogether(
+      contexts,
+      await experiment.urlPromise,
+      "live_session_alone"
+    );
     const [first, second] = participants;
     await Promise.all(
       participants.map(async (participant) => {
-        await completeInitialGateway(participant);
-        await clickNextAndWait(participant);
         await expect(participant.locator("#main-body")).toContainText("You have a partner.", {
           timeout: STEP_TIMEOUT_MS
         });
