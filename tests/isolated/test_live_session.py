@@ -468,6 +468,8 @@ def _started(**state):
             "players": ["1"],
             "ready": ["1"],
             "started_at": 0,
+            "ends_at": None,
+            "time_up": False,
             "away": [],
         },
     }
@@ -1513,6 +1515,8 @@ def test_messages_are_rejected_until_every_player_is_ready(relay):
             "players": ["1", "2"],
             "ready": ["1", "2"],
             "started_at": 4,
+            "ends_at": None,
+            "time_up": False,
             "away": [],
         },
     }
@@ -1550,6 +1554,8 @@ def test_the_session_starts_at_the_ready_timeout_without_everyone(relay):
         "players": ["1", "2"],
         "ready": ["1"],
         "started_at": 10,
+        "ends_at": None,
+        "time_up": False,
         "away": [],
     }
     assert (state["ticks"], state["deadline"]) == ([10], 15)
@@ -1632,6 +1638,8 @@ def test_a_game_can_build_on_another_game_s_state(relay):
             "players": ["1"],
             "ready": [],
             "started_at": None,
+            "ends_at": None,
+            "time_up": False,
             "away": [],
         },
     }
@@ -1647,6 +1655,8 @@ def test_each_view_shows_who_is_ready_and_when_the_session_started(relay):
             "players": ["1", "2"],
             "ready": ["2"],
             "started_at": None,
+            "ends_at": None,
+            "time_up": False,
             "away": [],
         },
     }
@@ -1678,6 +1688,8 @@ def test_a_player_who_leaves_before_the_start_is_not_ready(relay):
         "players": ["1", "2"],
         "ready": ["2", "1"],
         "started_at": 4,
+        "ends_at": None,
+        "time_up": False,
         "away": ["1"],
     }
 
@@ -1770,6 +1782,50 @@ def test_an_on_start_that_ends_the_game_skips_its_tick(relay):
 
     assert ended.ended["reason"] == "finished"
     assert json.loads(ended.saved)["state"]["ticks"] == []
+
+
+def test_a_game_with_a_duration_ends_when_its_time_is_up(relay):
+    class Timed(type(relay)):
+        channel = "timed"
+        duration = 20
+
+    game = Timed()
+    entries = [_entry("join", 0, "1"), _entry("message", 1, "1", READY)]
+
+    playing = run_pass(game, new_session(game, ["1"]), entries, 2, CLOCK)
+    ended = run_pass(game, playing.saved, [], 21, CLOCK)
+
+    assert playing.next_due == 21
+    assert ended.ended["reason"] == "finished"
+    assert json.loads(ended.saved)["state"]["ticks"] == [21]
+
+
+def test_a_game_with_a_duration_rejects_late_messages(relay):
+    class Timed(type(relay)):
+        channel = "timed"
+        duration = 20
+
+    game = Timed()
+    state = game.initial_state(["1"])
+    game.apply(state, "1", READY, 1, Sent())
+    game.apply(state, "1", TAP, 20.9, Sent())
+
+    with pytest.raises(Reject, match="time is up"):
+        game.apply(state, "1", TAP, 21, Sent())
+    assert state["live_session"]["ends_at"] == 21
+    assert Timed.max_duration == Timed.ready_timeout + 20 + 30
+
+
+@pytest.mark.parametrize(
+    "attributes, error",
+    [
+        ({"duration": 0}, "duration must be None or a positive number"),
+        ({"duration": 60, "max_duration": 120}, "max_duration, 120, must be later"),
+    ],
+)
+def test_a_duration_is_positive_and_fits_in_max_duration(registry, attributes, error):
+    with pytest.raises(ValueError, match=f"Game's {error}"):
+        type("Game", (LiveGame,), attributes)
 
 
 def test_a_bot_is_ready_at_once_and_plays_once_the_session_starts(relay):

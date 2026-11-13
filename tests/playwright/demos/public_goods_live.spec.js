@@ -35,13 +35,11 @@ test("a team of three plays a round of public_goods_live, seeing each other's co
 
     await first.locator("#pg-tokens").fill("6");
     await second.locator("#pg-tokens").fill("2");
-    // Each player sees the others' contributions as they change, the others
-    // in the order they joined.
-    await expect(third.locator(".pg-row .pg-count")).toHaveText([
-      "0 in the pot",
-      "6 in the pot",
-      "2 in the pot"
-    ]);
+    // Each player sees the others' contributions as they change. The players
+    // join concurrently, so the rows can be in any order.
+    await expect
+      .poll(async () => (await third.locator(".pg-row .pg-count").allTextContents()).sort())
+      .toEqual(["0 in the pot", "2 in the pot", "6 in the pot"]);
     await expect(third.locator("#pg-pot")).toHaveText("Pot: 8 tokens × 1.5 = 12");
     await expect(third.locator("#pg-earn")).toHaveText(
       "If the round ended now, each player would get 4 tokens from the pot, " +

@@ -44,6 +44,8 @@ class PlayerReady(LiveMessage):
 # read a comment on a re-exported constant.
 NOT_STARTED = "The game hasn't started yet."
 
+_TIME_UP = "The game's time is up."
+
 
 def _ready_step(state, what="state"):
     try:
@@ -59,8 +61,11 @@ def _apply_once_started(self, method, state, player_id, message, now, sent):
     if isinstance(message, dict) and message.get("type") == PlayerReady.type:
         _parse_message(self._message_types, message).apply(self, state, player_id, now)
         return None
-    if _ready_step(state)["started_at"] is None:
+    ready_step = _ready_step(state)
+    if ready_step["started_at"] is None:
         raise Reject(NOT_STARTED)
+    if ready_step["ends_at"] is not None and now >= ready_step["ends_at"]:
+        raise Reject(_TIME_UP)
     return method(self, state, player_id, message, now, sent)
 
 
@@ -73,7 +78,11 @@ def _tick_once_started(self, method, state, now):
         # no other.
         if self.is_over(state):
             return None
-    return method(self, state, now)
+    result = method(self, state, now)
+    ready_step = _ready_step(state)
+    if ready_step["ends_at"] is not None and now >= ready_step["ends_at"]:
+        ready_step["time_up"] = True
+    return result
 
 
 def _record_leave(self, method, state, player_id, now):
@@ -113,6 +122,8 @@ def _add_ready_step(self, method, players, *settings):
         "players": list(players),
         "ready": [],
         "started_at": None,
+        "ends_at": None,
+        "time_up": False,
         "away": [],
     }
     return state

@@ -84,43 +84,28 @@ class Accept(LiveMessage):
 class Bargain(LiveGame):
     channel = "bargain"
     messages = [Propose, Accept]
-    max_duration = BARGAIN_SECONDS + 120
+    duration = BARGAIN_SECONDS
 
     def initial_state(self, players, settings):
         return {
             "endowment": settings["endowment"],
-            "seconds": settings["seconds"],
             "offers": {player: None for player in players},
             "n_proposals": 0,
             "deal": None,
             "deal_at": None,
-            "ends_at": None,
-            "timed_out": False,
         }
-
-    def on_start(self, state, now):
-        state["ends_at"] = now + state["seconds"]
-
-    def next_deadline(self, state):
-        return state["ends_at"]
-
-    def tick(self, state, now):
-        if state["ends_at"] is not None and now >= state["ends_at"]:
-            state["timed_out"] = True
 
     def view(self, state, player_id):
         partner = partner_of(state, player_id)
         return {
             "endowment": state["endowment"],
-            "seconds": state["seconds"],
-            "ends_at": state["ends_at"],
             "mine": state["offers"][player_id],
             "theirs": state["offers"][partner],
             "deal": None if state["deal"] is None else state["deal"][player_id],
         }
 
     def is_over(self, state):
-        return state["deal"] is not None or state["timed_out"]
+        return state["deal"] is not None
 
     def outcome(self, state, reason):
         return {
@@ -308,9 +293,7 @@ def get_timeline():
                         "round",
                         round_status,
                         {
-                            "paired": BargainTrial.cue(
-                                {"endowment": ENDOWMENT, "seconds": BARGAIN_SECONDS}
-                            ),
+                            "paired": BargainTrial.cue({"endowment": ENDOWMENT}),
                             "sat_out": InfoPage(
                                 "You sit out this round without a partner.",
                                 time_estimate=5,

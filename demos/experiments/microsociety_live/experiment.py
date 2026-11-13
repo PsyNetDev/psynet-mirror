@@ -103,7 +103,7 @@ class Move(LiveMessage):
 class Fishing(LiveGame):
     channel = "fishing"
     messages = [Move]
-    max_duration = ROUND_SECONDS + 120
+    duration = ROUND_SECONDS
 
     def initial_state(self, players, settings):
         return {
@@ -113,24 +113,19 @@ class Fishing(LiveGame):
             "moves": {p: 0 for p in players},
             # Each catch: the session time and what each boat caught where.
             "catches": [],
-            "ends_at": None,
             "next_catch_at": None,
-            "time_up": False,
         }
 
     def on_start(self, state, now):
-        state["ends_at"] = now + state["seconds"]
         state["next_catch_at"] = now + state["catch_seconds"]
 
     def next_deadline(self, state):
-        if state["ends_at"] is None:
-            return None
-        return min(state["ends_at"], state["next_catch_at"])
+        return state["next_catch_at"]
 
     def tick(self, state, now):
-        if state["next_catch_at"] is None:
-            return
-        while state["next_catch_at"] <= min(now, state["ends_at"]):
+        # A late final tick still counts only the catches before the end.
+        until = min(now, state["live_session"]["ends_at"])
+        while state["next_catch_at"] <= until:
             at = state["next_catch_at"]
             caught = []
             for player, boat in state["boats"].items():
@@ -142,17 +137,13 @@ class Fishing(LiveGame):
                 caught.append({"player": player, "spot": boat["spot"], "fish": fish})
             state["catches"].append({"at": at, "caught": caught})
             state["next_catch_at"] = at + state["catch_seconds"]
-        if now >= state["ends_at"]:
-            state["time_up"] = True
 
     def view(self, state, player_id):
         labels = player_labels(state["live_session"]["players"], player_id)
         latest = state["catches"][-1] if state["catches"] else None
         return {
             "n_spots": len(state["spot_means"]),
-            "seconds": state["seconds"],
             "travel_seconds": state["travel_seconds"],
-            "ends_at": state["ends_at"],
             "boats": [
                 {
                     "who": labels[player],
@@ -168,9 +159,6 @@ class Fishing(LiveGame):
                 for c in (latest["caught"] if latest else [])
             ],
         }
-
-    def is_over(self, state):
-        return state["time_up"]
 
     def outcome(self, state, reason):
         return {
@@ -486,7 +474,6 @@ class FishingTrial(Trial):
                 settings={
                     "spot_means": SPOT_MEANS,
                     "noise": CATCH_NOISE,
-                    "seconds": ROUND_SECONDS,
                     "catch_seconds": CATCH_SECONDS,
                     "travel_seconds": TRAVEL_SECONDS,
                 },

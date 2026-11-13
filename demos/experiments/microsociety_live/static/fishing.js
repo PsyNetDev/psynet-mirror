@@ -180,13 +180,12 @@ export function activate({root, psynet}) {
   }
 
   function drawClock() {
-    if (!view || view.ends_at === null) {
+    let left = live.secondsLeft();
+    if (left === null) {
       return;
     }
-    let left = live.ended ? 0 : view.ends_at - (live.socket.sessionTime() ?? 0);
-    let fraction = Math.max(0, Math.min(1, left / view.seconds));
-    timeLeft.style.width = `${fraction * 100}%`;
-    secondsLeft.textContent = `${Math.ceil(Math.max(0, left))} s`;
+    timeLeft.style.width = `${(left / live.duration) * 100}%`;
+    secondsLeft.textContent = `${Math.ceil(left)} s`;
   }
 
   function showResults(seconds) {

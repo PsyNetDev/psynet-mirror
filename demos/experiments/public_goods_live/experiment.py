@@ -59,35 +59,20 @@ class Contribute(LiveMessage):
 class PublicGoods(LiveGame):
     channel = "public_goods"
     messages = [Contribute]
-    max_duration = ROUND_SECONDS + 120
+    duration = ROUND_SECONDS
 
     def initial_state(self, players, settings):
         return {
             "endowment": settings["endowment"],
             "multiplier": settings["multiplier"],
-            "seconds": settings["seconds"],
             "contributions": {player: 0 for player in players},
             "changes": {player: 0 for player in players},
-            "ends_at": None,
-            "time_up": False,
         }
-
-    def on_start(self, state, now):
-        state["ends_at"] = now + state["seconds"]
-
-    def next_deadline(self, state):
-        return state["ends_at"]
-
-    def tick(self, state, now):
-        if state["ends_at"] is not None and now >= state["ends_at"]:
-            state["time_up"] = True
 
     def view(self, state, player_id):
         return {
             "endowment": state["endowment"],
             "multiplier": state["multiplier"],
-            "seconds": state["seconds"],
-            "ends_at": state["ends_at"],
             "mine": state["contributions"][player_id],
             "changed": state["changes"][player_id] > 0,
             # The other players in the order they joined.
@@ -97,9 +82,6 @@ class PublicGoods(LiveGame):
                 if player != player_id
             ],
         }
-
-    def is_over(self, state):
-        return state["time_up"]
 
     def outcome(self, state, reason):
         contributions = state["contributions"]
@@ -196,11 +178,7 @@ class ContributionTrial(Trial):
                 id_="public_goods",
                 group_type=GROUP,
                 game_type=PublicGoods,
-                settings={
-                    "endowment": ENDOWMENT,
-                    "multiplier": MULTIPLIER,
-                    "seconds": ROUND_SECONDS,
-                },
+                settings={"endowment": ENDOWMENT, "multiplier": MULTIPLIER},
                 waiting_message="Waiting for the other players…",
                 late_after=LATE_AFTER,
                 late_action="leave_group",

@@ -86,9 +86,9 @@ export function activate({root, psynet}) {
   }
 
   function tick() {
-    if (view && view.ends_at !== null && !live.ended) {
-      let left = view.ends_at - (live.socket.sessionTime() ?? 0);
-      timeLeft.style.width = `${Math.max(0, Math.min(1, left / view.seconds)) * 100}%`;
+    let left = live.secondsLeft();
+    if (left !== null) {
+      timeLeft.style.width = `${(left / live.duration) * 100}%`;
     }
   }
   let timer = setInterval(tick, 250);

@@ -539,6 +539,28 @@
       return socket.interpolatedView();
     }
 
+    // The started view's ready step, if the game has a duration.
+    function startedTimes() {
+      let view = pageState().startedView;
+      return view === null || view.live_session.ends_at == null ? null : view.live_session;
+    }
+
+    /**
+     * Return the seconds left until the game's time is up, for a countdown:
+     * 0 once the session has ended, and ``null`` while ``duration`` is
+     * ``null`` or before the page knows the session clock.
+     *
+     * @returns {number|null} The seconds left
+     */
+    function secondsLeft() {
+      let times = startedTimes();
+      if (times === null || pageState().ended) {
+        return times === null ? null : 0;
+      }
+      let now = pageSocket().sessionTime();
+      return now === null ? null : Math.max(0, times.ends_at - now);
+    }
+
     function passOn(name) {
       return function (callback) {
         pageSocket()[name](callback);
@@ -591,6 +613,19 @@
         let current = liveSession();
         return (current && current.showResultFor) || 0;
       },
+      /**
+       * The game's ``duration`` in seconds, once the page has had a view
+       * from after the start, or ``null``, as for a game without one. Use it
+       * with ``secondsLeft()`` for a time bar. Reading it doesn't join the
+       * session.
+       *
+       * @member {number|null} duration
+       */
+      get duration() {
+        let times = startedTimes();
+        return times === null ? null : times.ends_at - times.started_at;
+      },
+      secondsLeft: secondsLeft,
       send: send,
       onStarted: onStarted,
       disableUntilStarted: disableUntilStarted,

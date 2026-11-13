@@ -17,6 +17,7 @@ from pydantic_core import to_jsonable_python
 from .messages import LiveMessage, _parse_message, _saved_messages, _session_channel
 from .method_wrappers import (
     _STATE_METHODS,
+    _ends_when_time_is_up,
     _returns_json,
     _sends_message,
     _shows_ready_step,
@@ -73,6 +74,17 @@ class LiveGame(RealtimeGame):
     #: ``None``, for no limit, only if the game always ends by itself.
     max_duration = 600
 
+    #: Seconds the game lasts once the session starts, or ``None``, the
+    #: default, for a game that ends by itself. PsyNet then runs ``tick`` at
+    #: the end, ends the session with the reason ``"finished"``, unless
+    #: ``is_over`` ended it earlier, and rejects messages that arrive later.
+    #: ``state["live_session"]["ends_at"]`` holds the session time it ends at,
+    #: and a page reads the time left from ``psynet.liveSession.secondsLeft()``
+    #: and the duration from ``psynet.liveSession.duration``.
+    #: Unless the game sets :attr:`max_duration`, PsyNet sets it to
+    #: ``ready_timeout + duration + 30``.
+    duration = None
+
     #: The fewest players a session needs. A group that reaches the
     #: :class:`LiveGameBarrier` with fewer active members, for example
     #: because the others left it while it waited, starts no session, and its
@@ -90,6 +102,7 @@ class LiveGame(RealtimeGame):
             ),
             ("initial_state", functools.partial(_returns_json, name="initial_state")),
             ("next_deadline", _waits_for_start),
+            ("is_over", _ends_when_time_is_up),
             ("view", _shows_ready_step),
             ("bot", _sends_message),
             ("handle_effect", _handles_reward),
@@ -110,6 +123,7 @@ class LiveGame(RealtimeGame):
             raise ValueError(
                 f"{cls.__name__}'s ready_timeout must be None or a positive number."
             )
+        _check_duration(cls)
         cls._message_types = _index_message_types(cls)
         if cls.channel is not None:
             _register_live_session(cls)
@@ -150,6 +164,13 @@ class LiveGame(RealtimeGame):
         """
         return super().next_deadline(state)
 
+    @_ends_when_time_is_up
+    def is_over(self, state):
+        """Return whether the game is over, as in Dallinger's ``is_over``.
+        A game with a :attr:`duration` is also over once its time is up.
+        """
+        return super().is_over(state)
+
     @_stores_json
     def on_start(self, state, now):
         """Respond to the session starting, such as by setting the game's
@@ -163,6 +184,8 @@ class LiveGame(RealtimeGame):
         ready_step = _ready_step(state)
         if ready_step["started_at"] is None:
             ready_step["started_at"] = now
+            if self.duration is not None:
+                ready_step["ends_at"] = now + self.duration
             self.on_start(state, now)
 
     # Wrapped here, so __init_subclass__ doesn't copy a wrapper onto each
@@ -390,6 +413,36 @@ class LiveGame(RealtimeGame):
                 f"not {cls.channel!r}."
             )
         return _saved_messages(session_id, cls._message_types)
+
+
+# Seconds that a derived max_duration leaves after a game's time is up, so
+# the game ends on its own tick rather than at max_duration.
+_MAX_DURATION_MARGIN = 30
+
+
+def _check_duration(game_type):
+    """Check a game's duration, and set its max_duration from it unless the
+    game sets one itself."""
+    duration = game_type.duration
+    if duration is None:
+        return
+    name = game_type.__name__
+    if not is_number(duration) or duration <= 0:
+        raise ValueError(f"{name}'s duration must be None or a positive number.")
+    if game_type.ready_timeout is None:
+        return
+    latest_end = game_type.ready_timeout + duration
+    owner = next(base for base in game_type.__mro__ if "max_duration" in vars(base))
+    if owner is LiveGame or vars(owner).get("_derived_max_duration"):
+        game_type.max_duration = latest_end + _MAX_DURATION_MARGIN
+        game_type._derived_max_duration = True
+    elif game_type.max_duration is not None and game_type.max_duration <= latest_end:
+        raise ValueError(
+            f"{name}'s max_duration, {game_type.max_duration}, must be later than "
+            f"its ready_timeout plus its duration, {latest_end}, or a session "
+            "that starts at the ready timeout ends before its time is up. Leave "
+            "max_duration unset, and PsyNet sets it from the duration."
+        )
 
 
 def _index_message_types(game_type):

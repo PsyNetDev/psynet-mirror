@@ -435,6 +435,9 @@ else in the state or a view. It holds:
 - ``ready``, the ids of the players who are ready
 - ``started_at``, the session time at which the session started, or ``None``
   before the start
+- ``ends_at``, the session time at which a game with a ``duration`` ends, or
+  ``None`` before the start or without a ``duration``
+- ``time_up``, whether a game with a ``duration`` has reached ``ends_at``
 - ``away``, the ids of the players who have left the game page and not come
   back. A player who hasn't opened it yet isn't in it.
 
@@ -445,32 +448,37 @@ read ``ready`` from the view.
 The session time, and ``max_duration``, count from when the group left the
 game barrier, not from the start. ``self.elapsed(state, now)`` gives the
 seconds since the start, or ``None`` before it, for example to record how
-long a group took to agree. A game whose rounds have a time limit sets its
-deadlines in ``on_start``, which runs at the start even if some players
-aren't ready, and its ``tick`` runs at each one:
+long a group took to agree.
+
+A game that lasts a fixed time sets ``duration``, in seconds from the start.
+PsyNet runs the game's ``tick`` at the end, if it has one, and then ends the
+session with the reason ``"finished"``, unless the game's ``is_over`` ended
+it earlier. This version of the game gives the pair 10 seconds to choose:
 
 .. code-block:: python
 
     class TimedRockPaperScissors(RockPaperScissors):
         channel = "timed_rock_paper_scissors"
+        duration = 10
 
-        def initial_state(self, players):
-            # None until on_start, since view and is_over can run before it.
-            state = super().initial_state(players)
-            return {**state, "deadline": None, "late": False}
+Messages that arrive from then on are rejected with the reason ``"The
+game's time is up."``. The page shows the time left with
+``psynet.liveSession.secondsLeft()``, which is 0 once the session has ended,
+and ``psynet.liveSession.duration``:
 
-        def on_start(self, state, now):
-            state["deadline"] = now + 10
+.. code-block:: javascript
 
-        def next_deadline(self, state):
-            return state["deadline"]
+    setInterval(() => {
+      let left = psynet.liveSession.secondsLeft();
+      if (left !== null) {
+        bar.style.width = `${(left / psynet.liveSession.duration) * 100}%`;
+      }
+    }, 250);
 
-        def tick(self, state, now):
-            if state["deadline"] is not None and now >= state["deadline"]:
-                state["late"] = True
-
-        def is_over(self, state):
-            return state["late"] or super().is_over(state)
+For other deadlines, such as one for each move, a game sets them in
+``on_start``, which runs at the start even if some players aren't ready, and
+returns the next one from ``next_deadline``. Its ``tick`` runs at each one,
+and at the end of its ``duration``.
 
 The answer and rewards
 ----------------------
@@ -506,7 +514,10 @@ Because participants can't leave the game page until their session ends,
 every session needs a time limit. A session still running at the game's
 ``max_duration``, 10 minutes unless the game sets it, ends with the reason
 ``"max_duration"``. ``max_duration = None`` removes the limit, so set it only
-if the game always ends by itself, even when players leave.
+if the game always ends by itself, even when players leave. A game with a
+``duration`` doesn't need to set it: PsyNet sets it to the ``ready_timeout``
+plus the ``duration`` plus 30 seconds, so that a session that starts at the
+ready timeout still ends on its own.
 
 The limit also tells PsyNet when a session can no longer end, for example
 because the worker that runs the experiment's sessions has stopped. If a

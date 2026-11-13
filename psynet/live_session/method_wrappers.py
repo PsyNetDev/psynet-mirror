@@ -1,5 +1,5 @@
 """The wrappers LiveGame puts around a game's methods: the state's
-conversion to JSON, and the ready step."""
+conversion to JSON, the ready step and the game's duration."""
 
 import contextvars
 import functools
@@ -78,12 +78,26 @@ def _returns_json(method, name):
 def _waits_for_start(method):
     @functools.wraps(method)
     def next_deadline(self, state):
-        if _ready_step(state)["started_at"] is None:
+        ready_step = _ready_step(state)
+        if ready_step["started_at"] is None:
             return self.ready_timeout
-        return method(self, state)
+        deadline = method(self, state)
+        ends_at = ready_step["ends_at"]
+        if ends_at is None or ready_step["time_up"]:
+            return deadline
+        return ends_at if deadline is None else min(deadline, ends_at)
 
     next_deadline._psynet_wrapper = True
     return next_deadline
+
+
+def _ends_when_time_is_up(method):
+    @functools.wraps(method)
+    def is_over(self, state):
+        return _ready_step(state)["time_up"] or method(self, state)
+
+    is_over._psynet_wrapper = True
+    return is_over
 
 
 def _shows_ready_step(method):

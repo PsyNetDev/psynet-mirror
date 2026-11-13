@@ -40,6 +40,9 @@ class FakeSocket {
   close() {
     this.closed = true;
   }
+  sessionTime() {
+    return this.time ?? null;
+  }
   fire(name, ...args) {
     this.callbacks[name].slice().forEach((callback) => callback(...args));
   }
@@ -50,8 +53,8 @@ class FakeSocket {
   }
 }
 
-const view = (startedAt, away = []) => ({
-  live_session: { ready: [], started_at: startedAt, away: away },
+const view = (startedAt, away = [], endsAt = null) => ({
+  live_session: { ready: [], started_at: startedAt, ends_at: endsAt, away: away },
 });
 
 // The script builds its objects in another realm, so compare JSON copies.
@@ -282,6 +285,17 @@ describe("psynet.liveSession", () => {
     changePage();
     mock.timers.tick(8000);
     assert.equal(nextPages, 1);
+  });
+
+  it("counts down to the end of a game with a duration", () => {
+    liveSession.onView(() => {});
+    assert.equal(liveSession.secondsLeft(), null);
+    sockets[0].view(view(5, [], 45));
+    assert.equal(liveSession.duration, 40);
+    sockets[0].time = 30;
+    assert.equal(liveSession.secondsLeft(), 15);
+    sockets[0].time = 50;
+    assert.equal(liveSession.secondsLeft(), 0);
   });
 
   it("shows the Next button again once the connection has been down for ten seconds", () => {
