@@ -69,8 +69,14 @@ class LiveSessionControl(NullControl):
         saved, with its Next button hidden until then. A participant
         without a session still sees the button, and so does one whose page
         has been disconnected for ten seconds. Set it to ``False`` to
-        move on from the page's JavaScript instead, for example after
-        showing the result for a few seconds.
+        move on from the page's JavaScript instead.
+
+    show_result_for
+        Seconds the page stays once the session's result is saved, before
+        it moves on by itself, so that its JavaScript can show the result,
+        for example in ``onResultSaved``. A :class:`~psynet.sync.GroupBarrier`'s
+        ``late_after`` counts from the end of these seconds, so it needn't
+        cover them. Default: 0. Needs ``auto_advance``.
 
     player_left_message
         What a notice at the top of the page says while another player has
@@ -93,13 +99,29 @@ class LiveSessionControl(NullControl):
         self,
         barrier_id,
         auto_advance=True,
+        show_result_for=0,
         player_left_message=_DEFAULT,
         no_session_message=_DEFAULT,
         **kwargs,
     ):
         super().__init__(**kwargs)
+        if (
+            isinstance(show_result_for, bool)
+            or not isinstance(show_result_for, (int, float))
+            or show_result_for < 0
+        ):
+            raise ValueError(
+                f"show_result_for must be a number of seconds of at least 0, "
+                f"not {show_result_for!r}."
+            )
+        if show_result_for and not auto_advance:
+            raise ValueError(
+                "show_result_for needs auto_advance: a page that moves on from "
+                "its own JavaScript decides itself how long to show the result."
+            )
         self.barrier_id = barrier_id
         self.auto_advance = auto_advance
+        self.show_result_for = show_result_for
         self.player_left_message = player_left_message
         self.no_session_message = no_session_message
 
@@ -121,7 +143,13 @@ class LiveSessionControl(NullControl):
         session_id = live_session_id(participant, self.barrier_id)
         if session_id is None:
             return None
-        return _game_page_deadline(session_id)
+        ends = _game_page_deadline(session_id)
+        ended = _session_end_time(session_id)
+        if ended is not None and (ends is None or ended < ends):
+            ends = ended
+        if ends is None:
+            return None
+        return ends + timedelta(seconds=self.show_result_for)
 
     def validate(self, response, participant, **kwargs):
         # check_ready_for_response has already seen the session end, and an
@@ -177,6 +205,7 @@ class LiveSessionControl(NullControl):
                     None if session_id is None else _game_channel(session_id)
                 ),
                 "autoAdvance": self.auto_advance,
+                "showResultFor": self.show_result_for,
                 "playerLeftMessage": player_left,
                 "noSessionMessage": no_session,
             }
@@ -203,6 +232,10 @@ def _session_start_time(session_id):
     return (
         db.session.query(RealtimeSession.start_time).filter_by(id=session_id).scalar()
     )
+
+
+def _session_end_time(session_id):
+    return db.session.query(RealtimeSession.end_time).filter_by(id=session_id).scalar()
 
 
 def _check_session_can_still_end(session_id):

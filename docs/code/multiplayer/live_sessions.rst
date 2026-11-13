@@ -358,10 +358,17 @@ The end
     page also moves on if the server refuses its connection, as it does when
     the participant reloads the page long after the session ended.
 
-    To move on from the page's JavaScript instead, for example after showing
-    the result for a few seconds, pass ``auto_advance=False`` to the control,
-    and call ``psynet.nextPage()`` in both ``onResultSaved`` and
-    ``onRefused``. The Next button then stays, and if the participant clicks
+    To show the result on the game page first, pass the seconds to show it
+    for as the control's ``show_result_for``, such as
+    ``LiveSessionControl("fishing", show_result_for=8)``, and draw the result
+    in ``onResultSaved``. The page moves on once the seconds are up, and
+    ``psynet.liveSession.showResultFor`` gives them to the page for a
+    countdown. A later :class:`~psynet.sync.GroupBarrier`'s ``late_after``
+    counts from the end of these seconds, so it needn't cover them.
+
+    To move on from the page's JavaScript instead, pass
+    ``auto_advance=False`` to the control, and call ``psynet.nextPage()`` in
+    both ``onResultSaved`` and ``onRefused``. The Next button then stays, and if the participant clicks
     it before the result is saved, the page says the game isn't over yet and
     sends the response again every second until it's accepted. If you hide
     the Next button with ``show_next_button=False``, give a page without a
@@ -510,8 +517,8 @@ the group's previous barrier, which is usually the game barrier, so it would
 otherwise include the whole game. Instead, as for a page with a
 ``time_limit``, it counts from when the game page ends: at first the game's
 ``max_duration`` plus a minute, and once the session's ending is saved, when
-the game actually ended. So ``late_after`` needs to cover only the pages after
-the game.
+the game actually ended, plus the control's ``show_result_for``. So
+``late_after`` needs to cover only the pages after the game.
 
 A game can add to each player's performance reward in two ways. Each amount
 must be a number of 0 or more. For a reward based on the outcome, define

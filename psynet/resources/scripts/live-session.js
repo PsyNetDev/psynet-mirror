@@ -98,7 +98,7 @@
    *
    * @param {function} liveSession - Returns the page's ``liveSession``
    *   variable: the control's ``barrierId``, ``autoAdvance``,
-   *   ``playerLeftMessage`` and ``noSessionMessage``, and the session's
+   *   ``showResultFor``, ``playerLeftMessage`` and ``noSessionMessage``, and the session's
    *   ``sessionId`` and ``gameChannel``, which are ``null`` without a
    *   session, or nothing on a page without a ``LiveSessionControl``
    * @param {Object} page - ``websocketScope()`` returns the participant's
@@ -169,6 +169,7 @@
           state.socket?.close();
           state.away.stop();
           clearTimeout(state.connectionTimer);
+          clearTimeout(state.moveOnTimer);
           page.showNotice(AWAY_NOTICE, null);
         }
       };
@@ -187,6 +188,7 @@
         viewCallbacks: [],
         awayCallbacks: [],
         connectionTimer: null,
+        moveOnTimer: null,
       };
       state.away = awayTracker((players) => {
         let message = state.session.playerLeftMessage;
@@ -301,7 +303,18 @@
       });
       if (state.session.autoAdvance) {
         hideNextButtonWhileConnected(state, socket);
-        socket.onResultSaved(() => moveOn(state));
+        socket.onResultSaved(() => {
+          let seconds = state.session.showResultFor || 0;
+          if (seconds > 0) {
+            state.moveOnTimer = setTimeout(() => {
+              if (!state.left) {
+                moveOn(state);
+              }
+            }, seconds * 1000);
+          } else {
+            moveOn(state);
+          }
+        });
         socket.onRefused(() => moveOn(state));
       }
       socket.onView((view, details) => {
@@ -563,6 +576,17 @@
       get ended() {
         return pageState().ended;
       },
+      /**
+       * Seconds the page shows the session's result for once it's saved,
+       * before moving on by itself: the control's ``show_result_for``, or 0.
+       * Use it for a countdown. Reading it doesn't join the session.
+       *
+       * @member {number} showResultFor
+       */
+      get showResultFor() {
+        let current = liveSession();
+        return (current && current.showResultFor) || 0;
+      },
       send: send,
       onStarted: onStarted,
       disableUntilStarted: disableUntilStarted,
@@ -593,8 +617,9 @@
       onEnded: passOn("onEnded"),
       /**
        * Call ``callback`` once the session's result has been saved, after
-       * it ends. The page then moves on by itself, unless the control's
-       * ``auto_advance`` is ``False``.
+       * it ends. The page then moves on by itself, after the control's
+       * ``show_result_for`` seconds, unless its ``auto_advance`` is
+       * ``False``.
        *
        * @function onResultSaved
        * @param {function} callback - Called once the result is saved

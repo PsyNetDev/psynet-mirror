@@ -69,8 +69,8 @@ CATCH_SECONDS = 3
 TRAVEL_SECONDS = 2
 # How long the lake page shows a round's results before moving on.
 RESULTS_SECONDS = 8
-# Counts from the end of the game, so it covers the results.
-LATE_AFTER = 2 * RESULTS_SECONDS
+# Counts from when the lake page stops showing the results.
+LATE_AFTER = 15
 GROUPING_WAIT = 120
 TOP_UP_WAIT = 30
 # Covers a newcomer reading the society's history and waiting for the round
@@ -291,18 +291,11 @@ def lake(title, status, scores="", **attributes):
 def lake_page(round_number):
     return ModularPage(
         "fish",
-        Prompt(
-            lake(
-                f"Round {round_number + 1}",
-                "Joining the lake…",
-                data_results_seconds=str(RESULTS_SECONDS),
-            )
-        ),
-        # The page shows the round's results on the lake, then moves on itself.
+        Prompt(lake(f"Round {round_number + 1}", "Joining the lake…")),
+        # The page shows the round's results on the lake before moving on.
         LiveSessionControl(
             "fishing",
-            auto_advance=False,
-            show_next_button=False,
+            show_result_for=RESULTS_SECONDS,
             player_left_message="A member has left the lake.",
         ),
         js_page_modules=["/static/fishing.js"],
@@ -613,7 +606,9 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(founders)
         # The last founder stays on the lake, so the next round can't start yet.
         _play(founders[:2])
-        assert all(bot.is_waiting for bot in founders[:2])
+        for bot in founders[:2]:
+            assert bot.is_waiting
+            assert "Your catch so far" in bot.current_page_text
 
         # A newcomer joins between rounds, reads the society's history while
         # waiting to be admitted, and plays the next round, so the

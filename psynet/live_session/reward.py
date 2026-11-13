@@ -91,16 +91,23 @@ def _pay_outcome_rewards(game, session_row, players):
 def _end_game_page_deadlines(session_row, players):
     """Move the players' game page deadline, which a group barrier's
     ``late_after`` counts from, from the latest the session could end to when
-    it ended."""
+    it ended, keeping the control's ``show_result_for`` on top."""
     from .control import _game_page_deadline
 
     deadline = _game_page_deadline(session_row.id)
     if deadline is None or session_row.end_time is None:
         return
+    ended = min(deadline, session_row.end_time)
     for participant in players:
         for link in participant.sync_group_links:
-            if link.active and link.page_deadline == deadline:
-                link.page_deadline = min(deadline, session_row.end_time)
+            # The game barrier cleared the deadline, so one at or after the
+            # latest end was set by the game page.
+            if (
+                link.active
+                and link.page_deadline is not None
+                and link.page_deadline >= deadline
+            ):
+                link.page_deadline = ended + (link.page_deadline - deadline)
 
 
 def _record_round(game, session_row):

@@ -44,17 +44,10 @@ function byWho(fish) {
 
 export function activate({root, psynet}) {
   let live = psynet.liveSession;
-  let game = root.querySelector("#fish-game");
   let status = root.querySelector("#fish-status");
   if (!live.hasSession) {
-    status.textContent = "The round couldn't start.";
-    let button = document.createElement("button");
-    button.type = "button";
-    button.className = "btn btn-primary";
-    button.textContent = "Continue";
-    button.addEventListener("click", () => psynet.nextPage());
-    root.querySelector("#fish-results").replaceChildren(button);
-    root.querySelector("#fish-results").hidden = false;
+    // PsyNet says why in a notice, and shows the Next button.
+    status.textContent = "";
     return;
   }
   let lake = root.querySelector("#fish-lake");
@@ -64,7 +57,6 @@ export function activate({root, psynet}) {
   let secondsLeft = root.querySelector("#fish-seconds");
   let rejection = root.querySelector("#fish-rejection");
   let results = root.querySelector("#fish-results");
-  let resultsSeconds = Number(game.dataset.resultsSeconds);
   let spots = [...root.querySelectorAll(".fish-spot")].map((tile) => ({
     tile,
     catches: tile.querySelector(".fish-catches"),
@@ -218,17 +210,14 @@ export function activate({root, psynet}) {
     next.className = "fish-results-next";
     results.replaceChildren(catches, next);
     results.hidden = false;
+    // PsyNet moves the page on once the seconds are up.
     let until = Date.now() + seconds * 1000;
-    countdown = setInterval(() => {
-      let left = Math.ceil((until - Date.now()) / 1000);
-      if (left <= 0) {
-        clearInterval(countdown);
-        psynet.nextPage();
-      } else {
-        next.textContent = `Continuing in ${left} s`;
-      }
-    }, 250);
-    next.textContent = `Continuing in ${seconds} s`;
+    let tell = () => {
+      let left = Math.max(1, Math.ceil((until - Date.now()) / 1000));
+      next.textContent = `Continuing in ${left} s`;
+    };
+    tell();
+    countdown = setInterval(tell, 250);
   }
 
   let timer = setInterval(() => {
@@ -248,8 +237,7 @@ export function activate({root, psynet}) {
   live.onRejected((number, reason) => {
     rejection.textContent = reason;
   });
-  live.onResultSaved(() => showResults(resultsSeconds));
-  live.onRefused(() => psynet.nextPage());
+  live.onResultSaved(() => showResults(live.showResultFor));
   return () => {
     clearInterval(timer);
     clearInterval(countdown);

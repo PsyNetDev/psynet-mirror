@@ -323,6 +323,7 @@ def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch)
         "sessionId": None,
         "gameChannel": None,
         "autoAdvance": True,
+        "showResultFor": 0,
         "playerLeftMessage": "Another player has left the game.",
         "noSessionMessage": "Your group couldn't start the game.",
     }
@@ -335,6 +336,7 @@ def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch)
         "sessionId": session_id,
         "gameChannel": "pick_numbers",
         "autoAdvance": True,
+        "showResultFor": 0,
         "playerLeftMessage": "Another player has left the game.",
         "noSessionMessage": "Your group couldn't start the game.",
     }
@@ -353,6 +355,14 @@ def test_a_live_session_page_can_leave_moving_on_to_its_javascript(pair, monkeyp
     js_vars = _rendered_js_vars(page, members[0], monkeypatch)
 
     assert js_vars["liveSession"]["autoAdvance"] is False
+
+
+@pytest.mark.parametrize(
+    "kwargs", [{"show_result_for": -1}, {"show_result_for": 5, "auto_advance": False}]
+)
+def test_a_live_session_page_refuses_a_show_result_for_it_can_t_honour(kwargs):
+    with pytest.raises(ValueError, match="show_result_for"):
+        LiveSessionControl("game", **kwargs)
 
 
 @pytest.mark.parametrize("message", ["Your partner has left.", None])
@@ -2014,10 +2024,12 @@ def test_the_game_page_answer_can_be_the_player_s_part_of_the_outcome(
     assert _accepted_answers(members[0]) == [members[0].id]
 
 
+@pytest.mark.parametrize("show_result_for", [0, 8])
 def test_the_ending_records_the_round_and_ends_the_game_page_deadline(
-    pair, monkeypatch
+    pair, monkeypatch, show_result_for
 ):
     members, _ = pair
+    monkeypatch.setattr(_game_page().control, "show_result_for", show_result_for)
     session_id = _pair_session(pair)
     group_round = SyncGroupRound(
         sync_group_id=members[0].sync_group_links[0].sync_group_id,
@@ -2045,8 +2057,10 @@ def test_the_ending_records_the_round_and_ends_the_game_page_deadline(
     game_type().handle_ending(row)
 
     assert group_round.var.total == 8
-    # So a later barrier's late_after counts from when the game ended.
-    assert [m.sync_group_links[0].page_deadline for m in members] == [row.end_time] * 2
+    # So a later barrier's late_after counts from when the page stops showing
+    # the result.
+    shown_until = row.end_time + datetime.timedelta(seconds=show_result_for)
+    assert [m.sync_group_links[0].page_deadline for m in members] == [shown_until] * 2
 
 
 def test_elapsed_counts_from_the_session_s_start():

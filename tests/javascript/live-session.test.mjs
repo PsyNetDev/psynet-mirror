@@ -264,6 +264,26 @@ describe("psynet.liveSession", () => {
     assert.deepEqual(nextButtonHidden, [true]);
   });
 
+  it("shows the result for the control's show_result_for seconds before moving on", () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    session = { ...session, showResultFor: 8 };
+    assert.equal(liveSession.showResultFor, 8);
+    liveSession.onView(() => {});
+    sockets[0].fire("onResultSaved");
+    mock.timers.tick(7999);
+    assert.equal(nextPages, 0);
+    mock.timers.tick(1);
+    assert.equal(nextPages, 1);
+
+    // A page that has gone doesn't move the next one on.
+    changePage();
+    liveSession.onView(() => {});
+    sockets[1].fire("onResultSaved");
+    changePage();
+    mock.timers.tick(8000);
+    assert.equal(nextPages, 1);
+  });
+
   it("shows the Next button again once the connection has been down for ten seconds", () => {
     mock.timers.enable({ apis: ["setTimeout", "Date"] });
     liveSession.onView(() => {});
