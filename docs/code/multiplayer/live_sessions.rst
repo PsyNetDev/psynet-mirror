@@ -66,6 +66,7 @@ plays for bots (see `Bots and testing`_). The state and the views are dicts.
 Each player's id is their participant id as a string, such as ``"12"``, so a
 later page finds a participant's entry in the outcome with
 ``str(participant.id)``.
+
 A game can also have a time limit, a clock that ticks, an outcome and more,
 which come from Dallinger's :class:`~dallinger.realtime.RealtimeGame`.
 Dallinger's guide to `real-time games <dallinger-realtime-games_>`_ explains
@@ -73,12 +74,13 @@ them, and its `API reference <dallinger-realtime-api_>`_ describes each
 method and setting that comes from ``RealtimeGame``.
 
 Define each game, or import it, before the experiment class. PsyNet then adds
-it to the experiment's ``realtime_games``, so you don't list it there. It adds
-every game with a ``channel`` that Python has loaded by then, including one
-that a module you import defines for another experiment, so each needs a
-channel of its own, whether or not this experiment's timeline plays it. A
-game defined after the experiment class stops the experiment at launch, with
-an error that names it.
+it to the experiment's ``realtime_games``, so you don't list it there. A game
+defined after the experiment class stops the experiment at launch, with an
+error that names it.
+
+PsyNet adds every game with a ``channel`` that Python has loaded by then,
+whether or not the timeline plays it. That includes a game in a module you
+import from another experiment, so give every game a channel of its own.
 
 Messages and the state
 ----------------------
@@ -295,11 +297,11 @@ No session
     A participant can reach the page without one, for example when the
     initializer's ``max_wait_action="leave_group"`` took them out of a group
     whose other members were too slow to arrive, or when their group ended
-    before they reached the initializer. PsyNet tells the participant with a notice at
-    the top of the page, "Your group couldn't start the game.", which the
-    control's ``no_session_message`` changes or turns off. The page's
-    JavaScript should check ``psynet.liveSession.hasSession`` first, as above,
-    and do nothing more without a session.
+    before they reached the initializer. PsyNet tells the participant with a
+    notice at the top of the page, "Your group couldn't start the game.",
+    which the control's ``no_session_message`` changes or turns off. The
+    page's JavaScript should check ``psynet.liveSession.hasSession`` first, as
+    above, and do nothing more without a session.
 
     That is different from a page whose control names an initializer the
     participant never reached, because its ``initializer_id`` is misspelt or
@@ -332,9 +334,9 @@ The end
     itself. Until then its Next button is hidden. A participant without a
     session still sees it, so they can move on. So does a participant whose
     page has been disconnected for ten seconds: if they click it, the page
-    says the game isn't over yet and moves on once the result is saved. The page also moves on if
-    the server refuses its connection, as it does when the participant
-    reloads the page long after the session ended.
+    says the game isn't over yet and moves on once the result is saved. The
+    page also moves on if the server refuses its connection, as it does when
+    the participant reloads the page long after the session ended.
 
     To move on from the page's JavaScript instead, for example after showing
     the result for a few seconds, pass ``auto_advance=False`` to the control,
@@ -350,8 +352,7 @@ Joining and leaving
     The game's ``on_join`` runs when a player opens a page in the session
     while none of theirs is open, and ``on_leave`` runs when their last one
     closes, so a participant who closes the page during the game leaves the
-    session. The
-    game carries on without them unless ``on_leave`` ends it.
+    session. The game carries on without them unless ``on_leave`` ends it.
 
     While a player is away for more than a few seconds, the other players'
     pages show a notice at the top that says "Another player has left the
@@ -497,9 +498,9 @@ a few seconds later, so the player keeps it even if they leave early.
 A session can fail without an outcome: its record couldn't be saved, or the
 game's ``outcome`` raised an error as well. The answer is then ``None`` and
 PsyNet doesn't call ``bonus``, but bonuses from ``queue_bonus`` saved before
-the problem are still paid. A game that must pay players whatever happens can pay
-them as it goes. :func:`~psynet.live_session.live_session_result` says how a
-session ended, and whether its record is complete.
+the problem are still paid. A game that must pay players whatever happens can
+pay them as it goes. :func:`~psynet.live_session.live_session_result` says
+how a session ended, and whether its record is complete.
 
 Saved messages
 --------------

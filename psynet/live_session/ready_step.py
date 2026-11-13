@@ -16,8 +16,8 @@ _new_session_settings = contextvars.ContextVar("_new_session_settings", default=
 class Ready(LiveMessage):
     """The message that says a player is ready to play. A game page sends it
     by itself a moment after it opens, once it has checked the server's time,
-    and a bot sends it at once. The session starts when every player is ready, or
-    at the game's :attr:`~LiveSession.ready_timeout`.
+    and a bot sends it at once. The session starts when every player is
+    ready, or at the game's :attr:`~LiveSession.ready_timeout`.
 
     Every game reads it, so don't list it in a game's
     :attr:`~LiveSession.messages`. PsyNet handles it before the game's

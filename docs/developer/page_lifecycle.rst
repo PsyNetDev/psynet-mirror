@@ -132,9 +132,9 @@ Before ``process_response``, and inside the same ``forbid_commits`` block,
 :meth:`~psynet.timeline.Page.check_ready_for_response`. ``ModularPage`` passes
 the call to its control. A :class:`~psynet.timeline.ResponseNotReady` ends the
 request with a rejection before anything is written: no ``Response`` row, and
-no ``time_taken`` on the trial. Its ``retry_after`` goes in the rejection payload, and the route
-answers without calling the experiment's ``response_rejected``, since the
-participant has nothing to correct. ``psynet.waitIfRetryLater`` then shows
+no ``time_taken`` on the trial. Its ``retry_after`` goes in the rejection
+payload, and the route answers without calling the experiment's
+``response_rejected``, since the participant has nothing to correct. ``psynet.waitIfRetryLater`` then shows
 the message in a status notice and resends the same submission after that
 many seconds, and the bot driver sleeps and resends. Neither limits its
 attempts, so the page has to stop refusing by itself.
