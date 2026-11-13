@@ -12,9 +12,8 @@ can run each demo, change it and see what happens.
 
 ``rock_paper_scissors_live``
     Two players play two games of rock, paper, scissors, of five and then
-    three rounds.
-    This demo has every part that a live game needs, so the tutorial covers it
-    in the most detail.
+    three rounds. This demo has every part that a live game needs, so the
+    tutorial covers it in the most detail.
 
 ``snake_live``
     Each player steers a snake around a shared board. The game moves the
@@ -26,10 +25,10 @@ can run each demo, change it and see what happens.
 
 Before you start, you should know how a PsyNet timeline is put together
 (:doc:`/code/writing_a_timeline`), how trials work, and how participants
-are put into groups (:doc:`synchronization`). The game pages are written in JavaScript, so it
-helps if you have written a little of it. :doc:`live_sessions` is the
-reference for everything shown here, and it covers cases that this tutorial
-leaves out.
+are put into groups (:doc:`synchronization`). The game pages are written in
+JavaScript, so it helps if you have written a little of it.
+:doc:`live_sessions` is the reference for everything shown here, and it
+covers cases that this tutorial leaves out.
 
 How a live game works
 ---------------------
@@ -101,9 +100,8 @@ is the type of a player's choice, which the message below uses for its
 ``action`` field, and ``ACTIONS`` lists the three choices, for the page's
 buttons and the bots. ``GROUP``, ``GAMES`` and ``PARTNER_WAIT_SECONDS`` are
 used by the timeline, which "Adding the game to the timeline" below
-describes. The excerpts on this page
-leave out the file's imports, which are at the top of the demo's
-``experiment.py``.
+describes. The excerpts on this page leave out the file's imports, which are
+at the top of the demo's ``experiment.py``.
 
 The game and its state
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -134,10 +132,10 @@ Here, each player's choice is ``None`` until they choose.
 
 The settings are what differs from one session of the game to another. Here,
 they say how many rounds the game has, and they come from the trial, as
-"Adding the game to the timeline" below shows. The game's other methods receive the state
-but not the settings, so ``initial_state`` puts what they need into the state.
-A game that is always played the same way can leave ``settings`` out of
-``initial_state``.
+"Adding the game to the timeline" below shows. The game's other methods
+receive the state but not the settings, so ``initial_state`` puts what they
+need into the state. A game that is always played the same way can leave
+``settings`` out of ``initial_state``.
 
 The message
 ~~~~~~~~~~~
@@ -695,10 +693,10 @@ the bot won:
 
 :func:`~psynet.live_session.live_session_id` finds the session that a
 participant last played at an initializer, here their second game, and
-:func:`~psynet.live_session.live_session_result` says
-how it ended and what its outcome was. To test a game's rules without
-starting the experiment, call its methods directly, as the "Bots and testing"
-section of :doc:`live_sessions` shows.
+:func:`~psynet.live_session.live_session_result` says how it ended and what
+its outcome was. To test a game's rules without starting the experiment, call
+its methods directly, as the "Bots and testing" section of
+:doc:`live_sessions` shows.
 
 Bots don't run the page's JavaScript, so also play the game yourself, in a
 browser window for each player. Try reloading the page during the game,

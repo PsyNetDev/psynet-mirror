@@ -22,10 +22,10 @@ plays the game with bots.
 In the shared canvas demo, each page sends the keys its player is holding
 many times a second, and it predicts the player's moves and interpolates
 between ticks to look smooth. Here, the page sends only the player's turns,
-and each tick's view shows the whole board. So the page just draws each view
-as it arrives, with no prediction or interpolation. Snakes move a whole square at a
-time, so drawing each view as it comes is enough, and it's the simplest way to
-write a game page. Many games are like this.
+and each tick's view shows the whole board. Snakes move a whole square at a
+time, so the page just draws each view as it arrives, with no prediction or
+interpolation. That is the simplest way to write a game page, and it's enough
+for many games.
 
 A turn takes effect on the next tick, so players see their snake turn within
 about an eighth of a second of pressing a key.

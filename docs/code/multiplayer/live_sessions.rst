@@ -451,8 +451,9 @@ method returned when the session ended. PsyNet sets it on the server and
 ignores what the page sends, so every player in a session gets the same
 answer, and a participant without a session gets ``None``. To save the
 outcome as a trial's answer, return the initializer and the game page from
-the trial's ``show_trial``, as the ``rock_paper_scissors_live`` demo does. If you need each
-player's score, or why the session ended, include them in the outcome.
+the trial's ``show_trial``, as the ``rock_paper_scissors_live`` demo does. If
+you need each player's score, or why the session ended, include them in the
+outcome.
 
 Because participants can't leave the game page until their session ends,
 every session needs a time limit. A session still running at the game's
