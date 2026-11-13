@@ -1,0 +1,1 @@
+Added `Page.ends_by`, with which a page without a `time_limit` says when it ends at the latest. A `GroupBarrier`'s `late_after` doesn't count a member as late before then, as for a timed page. A live session's game page uses it, so a game longer than `late_after` no longer gets a player who is still playing removed as late at the next barrier.

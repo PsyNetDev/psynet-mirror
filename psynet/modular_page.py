@@ -904,6 +904,13 @@ class Control(JavaScriptContributor):
         """
         return None
 
+    def ends_by(self, experiment, participant):
+        """
+        Return the time by which the page will have ended at the latest, as
+        :meth:`psynet.timeline.Page.ends_by` describes.
+        """
+        return None
+
     def call__get_bot_response(self, experiment, bot, page, prompt):
         if self._bot_response == NoArgumentProvided:
             res = self.get_bot_response(experiment, bot, page, prompt)
@@ -2506,6 +2513,9 @@ class ModularPage(Page):
 
     def check_ready_for_response(self, experiment, participant):
         return self.control.check_ready_for_response(experiment, participant)
+
+    def ends_by(self, experiment, participant):
+        return self.control.ends_by(experiment, participant)
 
     def format_answer(self, raw_answer, **kwargs):
         """

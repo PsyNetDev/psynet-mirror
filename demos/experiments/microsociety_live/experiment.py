@@ -62,9 +62,9 @@ ROUND_SECONDS = 20
 CATCH_SECONDS = 3
 TRAVEL_SECONDS = 2
 RESULTS_SECONDS = 10
-# The late rule doesn't know how long the game page lasts, so this covers
-# the game, the results page and a newcomer reading the history.
-LATE_AFTER = ROUND_SECONDS + RESULTS_SECONDS + 60
+# Covers a newcomer reading the society's history before their first round.
+# The game page says when it ends, so this needn't cover the game.
+LATE_AFTER = 60
 GROUPING_WAIT = 120
 TOP_UP_WAIT = 30
 NEWCOMER_MAX_WAIT = LATE_AFTER + ROUND_SECONDS + RESULTS_SECONDS

@@ -1972,6 +1972,8 @@ class GroupBarrier(Barrier):
         only pending members wait here. ``None`` (default) never treats anyone as late. A member on a
         page with a ``time_limit`` is never late before that limit has run out plus 10 seconds, so that an
         answer sent at the deadline can arrive; this timeout therefore need not cover the pages' time limits.
+        The same holds for a page whose :meth:`~psynet.timeline.Page.ends_by` says when it ends at the
+        latest, such as a live session's game page.
         Requires ``late_action``, and the grouper of ``group_type`` (and of each type in ``also_leave``)
         must then be given ``below_quorum``, which is checked when the experiment loads.
 
@@ -2804,7 +2806,7 @@ class GroupBarrier(Barrier):
         Each admitted member is timed from the group's last barrier pass or
         from when they were admitted, whichever is later, so newcomers are
         not late as soon as they take part; pending members are never late. A
-        member who has started a page with a time limit since then, outside
+        member who has started a page with a time limit (or an ``ends_by``) since then, outside
         waiting logic, is not late until that limit has run out and an answer
         sent at the deadline has had time to arrive, even if they have
         already left the page.

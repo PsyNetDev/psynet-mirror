@@ -37,9 +37,9 @@ TOKEN_VALUE = 0.02
 ROUND_SECONDS = 20
 RESULTS_SECONDS = 10
 # A member who hasn't reached the next round this long after the previous
-# one started is taken out of the team. It has to cover the whole game and
-# the results page, which the late rule doesn't know about.
-LATE_AFTER = ROUND_SECONDS + RESULTS_SECONDS + 15
+# round's game ended is taken out of the team. The game page says when it
+# ends, so this only has to cover reading the results.
+LATE_AFTER = 15
 GROUPING_WAIT = 20
 
 

@@ -1947,10 +1947,24 @@ class Page(Elt):
             }
         if self.time_limit is not None:
             participant.page_deadline = timenow() + timedelta(seconds=self.time_limit)
-            if participant.waiting_barrier_id is None:
-                for link in participant.sync_group_links:
-                    if link.active:
-                        link.page_deadline = participant.page_deadline
+            deadline = participant.page_deadline
+        else:
+            deadline = self.ends_by(experiment, participant)
+        if deadline is not None and participant.waiting_barrier_id is None:
+            for link in participant.sync_group_links:
+                if link.active:
+                    link.page_deadline = deadline
+
+    def ends_by(self, experiment, participant):
+        """
+        Return the time by which this page will have ended at the latest, or
+        ``None`` if it can last as long as the participant likes. A
+        :class:`~psynet.sync.GroupBarrier`'s ``late_after`` doesn't count a
+        member as late before then. A page with a ``time_limit`` ends by its
+        deadline anyway, so this is for pages that end by other means, such
+        as a live session's game page.
+        """
+        return None
 
     def _time_limit_seconds_left(self, participant) -> Optional[float]:
         """Return the seconds left before this page's ``time_limit``, or ``None`` without one."""

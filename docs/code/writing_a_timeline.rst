@@ -325,7 +325,10 @@ In a group experiment, a time limit covers only its page. A following
 who has started a timed page since the group's previous barrier until the
 page's time limit has run out plus 10 seconds, which is enough for an answer
 sent at the deadline to arrive. This also holds once they have answered and
-moved on to untimed pages, so finishing early never makes a member late. So
+moved on to untimed pages, so finishing early never makes a member late. A
+page that ends by other means can say when it ends at the latest with
+:meth:`~psynet.timeline.Page.ends_by`, and the barrier waits for that in the
+same way; a live session's game page does this. So
 give decision pages a ``time_limit``, and the barrier after them
 ``late_after`` rather than a long ``max_wait_time``; see
 :ref:`rounds-slow-players` for a worked example.

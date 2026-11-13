@@ -36,7 +36,7 @@ from psynet.dashboard.sync_groups import (
 from psynet.data import SQLBase
 from psynet.db import _set_transaction_lock_timeout, transaction
 from psynet.experiment import Experiment, get_experiment
-from psynet.modular_page import ModularPage
+from psynet.modular_page import ModularPage, NullControl
 from psynet.page import InfoPage, WaitPage, wait_while
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
@@ -7310,8 +7310,8 @@ def test_late_after_follows_a_timed_page(
 ):
     """A between-barrier timeout waits for a timed page's answer, but no longer."""
     exp = get_experiment()
-    grouper = SimpleGrouper("main", initial_group_size=7, quorum=2, below_quorum="fail")
-    participants = _working_participants(exp, 7)
+    grouper = SimpleGrouper("main", initial_group_size=8, quorum=2, below_quorum="fail")
+    participants = _working_participants(exp, 8)
     (
         waiting,
         deciding,
@@ -7320,6 +7320,7 @@ def test_late_after_follows_a_timed_page(
         no_time_limit,
         before_joining,
         at_other_barrier,
+        in_game,
     ) = participants
 
     _start_timed_page(exp, before_joining, 60)
@@ -7337,6 +7338,9 @@ def test_late_after_follows_a_timed_page(
         (at_other_barrier, 25),
     ]:
         _start_timed_page(exp, participant, time_limit)
+    # A page without a time limit that says when it ends counts the same.
+    in_game.waiting_barrier_id = None
+    ModularPage("game", "Play", _EndsIn(25), time_estimate=5).consume(exp, in_game)
     # Another barrier on the way doesn't end this group's round.
     _arrive_at_group_barrier(
         exp, SimpleGrouper("other", initial_group_size=2), at_other_barrier
@@ -7357,9 +7361,19 @@ def test_late_after_follows_a_timed_page(
         deciding,
         moved_on,
         at_other_barrier,
+        in_game,
     }
     for participant in (left_timed_page, no_time_limit, before_joining):
         assert participant.sync_group_links[0].removal_reason == "late"
+
+
+class _EndsIn(NullControl):
+    def __init__(self, seconds):
+        super().__init__()
+        self.seconds = seconds
+
+    def ends_by(self, experiment, participant):
+        return timenow() + timedelta(seconds=self.seconds)
 
 
 def _start_timed_page(exp, participant, time_limit):

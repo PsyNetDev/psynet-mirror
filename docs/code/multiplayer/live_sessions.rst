@@ -461,6 +461,14 @@ game page stops waiting: the participant sees PsyNet's error page, and a bot
 fails with an error that names the session. Without a ``max_duration``, the
 page waits as long as the session runs.
 
+The limit also stops a later :class:`~psynet.sync.GroupBarrier` from
+counting a player who is still in the game as late. ``late_after`` counts from
+the group's previous barrier, which is usually the initializer, so it would
+otherwise include the whole game. The game page tells PsyNet that it ends by
+the game's ``max_duration`` plus a minute, and ``late_after`` doesn't count a
+player as late before then, just as it waits for a page's ``time_limit``. So
+``late_after`` needs to cover only the pages after the game.
+
 A game can pay bonuses, which are added to each player's performance reward,
 in two ways. Each bonus must be a number of 0 or more. For a bonus based on
 the outcome, define ``bonus(outcome, reason, player_id)`` to return the

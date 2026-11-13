@@ -8,6 +8,8 @@ page's response until the session's result is saved, and ``validate`` then
 sets the answer to the outcome and pays the outcome bonus once per session.
 """
 
+from datetime import timedelta
+
 from dallinger import db
 from dallinger.models import RealtimeSession, timenow
 
@@ -114,6 +116,15 @@ class LiveSessionControl(NullControl):
             retry_after=_RETRY_AFTER,
         )
 
+    def ends_by(self, experiment, participant):
+        session_id = live_session_id(participant, self.initializer_id)
+        if session_id is None:
+            return None
+        latest = _latest_end_seconds(session_id)
+        if latest is None:
+            return None
+        return _session_start_time(session_id) + timedelta(seconds=latest)
+
     def validate(self, response, participant, **kwargs):
         # check_ready_for_response has already seen the session end, and an
         # ended session's row doesn't change, so this result is final.
@@ -176,15 +187,26 @@ class LiveSessionControl(NullControl):
         }
 
 
-def _check_session_can_still_end(session_id):
+def _latest_end_seconds(session_id):
+    # Seconds after its start by which a session has ended and saved its
+    # result, or None for a game without a max_duration.
     max_duration = _session_game_type(session_id).max_duration
-    if max_duration is None:
-        return
-    start_time = (
+    return None if max_duration is None else max_duration + _SAVING_MARGIN
+
+
+def _session_start_time(session_id):
+    return (
         db.session.query(RealtimeSession.start_time).filter_by(id=session_id).scalar()
     )
-    running_for = (timenow() - start_time).total_seconds()
-    if running_for > max_duration + _SAVING_MARGIN:
+
+
+def _check_session_can_still_end(session_id):
+    latest = _latest_end_seconds(session_id)
+    if latest is None:
+        return
+    max_duration = _session_game_type(session_id).max_duration
+    running_for = (timenow() - _session_start_time(session_id)).total_seconds()
+    if running_for > latest:
         raise RuntimeError(
             f"Live session {session_id} is still running after "
             f"{running_for:.0f} seconds, though its game's max_duration is "
