@@ -1,11 +1,11 @@
-"""LiveSessionInitializer, the group barrier that starts a session, and
+"""LiveGameBarrier, the group barrier that starts a session, and
 live_session_id, which finds it.
 
 When the barrier releases a group, it starts a Dallinger real-time session
 and stores its id in each member's ``live_sessions``, keyed by the
-initializer's id. Reaching the initializer sets that entry to ``None`` first,
+game barrier's id. Reaching the game barrier sets that entry to ``None`` first,
 so a page finds only the session from the participant's latest visit, and an
-id without an entry is one whose initializer the participant never reached.
+id without an entry is one whose game barrier the participant never reached.
 """
 
 import inspect
@@ -17,11 +17,11 @@ from ..barrier_spec import BarrierSpecError, barrier_spec_json
 from ..bot import Bot
 from ..sync import BarrierBehaviorMismatch, GroupBarrier
 from ..timeline import CodeBlock, join
-from .game import LiveSession
+from .game import LiveGame
 from .ready_step import _new_session_settings
 
 
-class LiveSessionInitializer(GroupBarrier):
+class LiveGameBarrier(GroupBarrier):
     """Starts a live session for each group that reaches this point in the
     timeline.
 
@@ -35,7 +35,7 @@ class LiveSessionInitializer(GroupBarrier):
     ----------
 
     id_
-        A name for this initializer, which pages pass to
+        A name for this game barrier, which pages pass to
         :func:`live_session_id` to find the group's session.
 
     group_type
@@ -43,12 +43,12 @@ class LiveSessionInitializer(GroupBarrier):
         play the game.
 
     game_type
-        The game the group plays, a :class:`LiveSession` subclass with a
+        The game the group plays, a :class:`LiveGame` subclass with a
         ``bot`` method. Define it at the top level of a file, such as
         ``experiment.py``, not inside a function or another class.
 
     settings
-        Settings for the sessions this initializer starts, such as the
+        Settings for the sessions this game barrier starts, such as the
         number of rounds: a dict, or any other value that can be saved as
         JSON. The game's ``initial_state`` gets it as a second argument, so
         define that as ``initial_state(self, players, settings)``. In a
@@ -60,14 +60,14 @@ class LiveSessionInitializer(GroupBarrier):
 
     **kwargs
         Any other parameter of :class:`~psynet.sync.GroupBarrier`, such as
-        ``max_wait_time``, except ``on_release``, which the initializer uses
+        ``max_wait_time``, except ``on_release``, which the game barrier uses
         to start the session.
     """
 
     def __init__(self, id_: str, group_type: str, game_type, settings=None, **kwargs):
-        if not (isinstance(game_type, type) and issubclass(game_type, LiveSession)):
+        if not (isinstance(game_type, type) and issubclass(game_type, LiveGame)):
             raise TypeError(
-                f"game_type must be a LiveSession subclass, not {game_type!r}."
+                f"game_type must be a LiveGame subclass, not {game_type!r}."
             )
         if game_type.channel is None:
             raise TypeError(
@@ -84,7 +84,7 @@ class LiveSessionInitializer(GroupBarrier):
         super().__init__(
             id_=id_,
             group_type=group_type,
-            on_release=LiveSessionInitializer._release,
+            on_release=LiveGameBarrier._release,
             **kwargs,
         )
         self.game_type = game_type
@@ -93,7 +93,7 @@ class LiveSessionInitializer(GroupBarrier):
             barrier_spec_json(self)
         except BarrierSpecError as error:
             raise TypeError(
-                f"The LiveSessionInitializer {id_!r} can't be saved: {error}"
+                f"The LiveGameBarrier {id_!r} can't be saved: {error}"
             ) from None
 
     def receive_participant(self, participant):
@@ -102,7 +102,7 @@ class LiveSessionInitializer(GroupBarrier):
         except BarrierBehaviorMismatch:
             raise ValueError(
                 f"Participant {participant.id} arrived at the "
-                f"LiveSessionInitializer {self.id!r} with settings that differ "
+                f"LiveGameBarrier {self.id!r} with settings that differ "
                 "from those of the members of their group who are waiting "
                 "there. The members of a group must all arrive with the same "
                 "settings, so if they come from a trial's definition, give "
@@ -147,7 +147,7 @@ def _checked_settings(game_type, settings):
         except TypeError:
             raise TypeError(
                 f"{game_type.__name__}.initial_state needs settings. Give the "
-                "LiveSessionInitializer its settings."
+                "LiveGameBarrier its settings."
             ) from None
         return None
     try:
@@ -167,9 +167,9 @@ def _checked_settings(game_type, settings):
     return settings
 
 
-def live_session_id(participant, initializer_id):
+def live_session_id(participant, barrier_id):
     """Return the id of the session that a participant's group started at
-    a :class:`LiveSessionInitializer`, to read the session's result or its
+    a :class:`LiveGameBarrier`, to read the session's result or its
     saved messages on a later page.
 
     Parameters
@@ -178,8 +178,8 @@ def live_session_id(participant, initializer_id):
     participant
         The participant.
 
-    initializer_id
-        The initializer's ``id_``.
+    barrier_id
+        The game barrier's ``id_``.
 
     Returns
     -------
@@ -188,15 +188,15 @@ def live_session_id(participant, initializer_id):
     there since the participant last arrived, for example because the group
     broke up while it waited.
     """
-    return _live_session_ids(participant).get(initializer_id)
+    return _live_session_ids(participant).get(barrier_id)
 
 
-def _check_reached_initializer(participant, initializer_id):
-    if initializer_id not in _live_session_ids(participant):
+def _check_reached_barrier(participant, barrier_id):
+    if barrier_id not in _live_session_ids(participant):
         raise ValueError(
             f"Participant {participant.id} hasn't reached a "
-            f"LiveSessionInitializer with the id {initializer_id!r}. Check the "
-            "id, and that the page comes after that initializer."
+            f"LiveGameBarrier with the id {barrier_id!r}. Check the "
+            "id, and that the page comes after that game barrier."
         )
 
 
@@ -204,9 +204,9 @@ def _live_session_ids(participant):
     return participant.live_sessions or {}
 
 
-def _set_live_session_id(participant, initializer_id, session_id):
+def _set_live_session_id(participant, barrier_id, session_id):
     # A new dict, which is what marks the column as changed.
     participant.live_sessions = {
         **_live_session_ids(participant),
-        initializer_id: session_id,
+        barrier_id: session_id,
     }

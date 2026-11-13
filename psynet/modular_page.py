@@ -2279,7 +2279,7 @@ class ModularPage(Page):
             *(
                 (
                     f"{role} {type(component).__name__}",
-                    component.get_render_js_vars(experiment, participant),
+                    component.get_participant_js_vars(experiment, participant),
                 )
                 for role, component in self._iter_layout_components()
             ),

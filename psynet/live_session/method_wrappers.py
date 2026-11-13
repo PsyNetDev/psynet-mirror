@@ -1,4 +1,4 @@
-"""The wrappers LiveSession puts around a game's methods: the state's
+"""The wrappers LiveGame puts around a game's methods: the state's
 conversion to JSON, and the ready step."""
 
 import contextvars
@@ -8,7 +8,7 @@ from dallinger.realtime import Reject
 from pydantic_core import to_jsonable_python
 
 from .messages import LiveMessage
-from .ready_step import _READY_STEP, _UNCHANGED, Ready, _ready_step
+from .ready_step import _READY_STEP, _UNCHANGED, PlayerReady, _ready_step
 
 # The game methods that can change the state, which is converted after each.
 _STATE_METHODS = ("apply", "tick", "on_join", "on_leave", "on_start")
@@ -117,7 +117,7 @@ def _sends_message(method):
         if outermost:
             ready_step = _ready_step(view, "view")
             if player_id not in ready_step["ready"]:
-                return {"type": Ready.type, "message": {}}
+                return {"type": PlayerReady.type, "message": {}}
             if ready_step["started_at"] is None:
                 return None
         message = method(self, view, player_id, now)

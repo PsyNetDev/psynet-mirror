@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  // The type of PsyNet's Ready message.
+  // The type of PsyNet's PlayerReady message.
   const READY = "psynet_ready";
 
   // How long a player must have been away before onPlayersAway reports them,
@@ -97,7 +97,7 @@
    * opened, since the game pages it shows one after another each open one.
    *
    * @param {function} liveSession - Returns the page's ``liveSession``
-   *   variable: the control's ``initializerId``, ``autoAdvance``,
+   *   variable: the control's ``barrierId``, ``autoAdvance``,
    *   ``playerLeftMessage`` and ``noSessionMessage``, and the session's
    *   ``sessionId`` and ``gameChannel``, which are ``null`` without a
    *   session, or nothing on a page without a ``LiveSessionControl``
@@ -123,8 +123,8 @@
       if (current.sessionId == null) {
         throw new Error(
           "The participant's group hasn't started a live session at the " +
-            "initializer " +
-            JSON.stringify(current.initializerId) +
+            "game barrier " +
+            JSON.stringify(current.barrierId) +
             ", because the participant was removed from their group " +
             "there. Check psynet.liveSession.hasSession before the page " +
             "plays.",
@@ -532,7 +532,7 @@
     api = {
       /**
        * Whether the participant's group started a session at the page's
-       * initializer. A participant removed from their group there has none.
+       * game barrier. A participant removed from their group there has none.
        * PsyNet then shows the control's ``no_session_message`` in a notice,
        * and the other methods throw. Reading it doesn't join the session.
        *

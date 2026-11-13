@@ -22,7 +22,7 @@ def start_session(game, state, now=0):
     ----------
 
     game
-        The game, an instance of a :class:`~psynet.live_session.LiveSession`
+        The game, an instance of a :class:`~psynet.live_session.LiveGame`
         subclass.
 
     state

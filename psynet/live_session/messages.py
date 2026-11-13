@@ -52,7 +52,7 @@ class LiveMessage(BaseModel):
 
         game
             The game, for its settings or to call
-            :meth:`~LiveSession.queue_effect`.
+            :meth:`~LiveGame.queue_effect`.
 
         state
             The session's state.
@@ -62,7 +62,7 @@ class LiveMessage(BaseModel):
 
         now
             When the message arrived, in seconds on the session's clock,
-            which starts when the group leaves the initializer.
+            which starts when the group leaves the game barrier.
         """
         raise NotImplementedError
 
@@ -89,7 +89,7 @@ class LiveMessage(BaseModel):
 
         ValueError
             If the session's game doesn't list this message type in its
-            :attr:`~LiveSession.messages`, or the game isn't defined because
+            :attr:`~LiveGame.messages`, or the game isn't defined because
             the module that defines it hasn't been imported.
         """
         game_type = _session_game_type(session_id)
@@ -127,7 +127,7 @@ def _parse_message(message_types, message):
 @dataclasses.dataclass(frozen=True)
 class SavedMessage:
     """A message that a player's page, or a bot, sent in a live session, as
-    the session's record saved it. :meth:`LiveSession.saved_messages` and
+    the session's record saved it. :meth:`LiveGame.saved_messages` and
     :meth:`LiveMessage.saved_messages` return them.
     """
 
@@ -157,7 +157,7 @@ class SavedMessage:
     reason: object
 
     #: When the message arrived, in seconds on the session's clock, which
-    #: starts when the group leaves the initializer. It's the ``now`` that
+    #: starts when the group leaves the game barrier. It's the ``now`` that
     #: :meth:`LiveMessage.apply` received.
     session_time: float
 
@@ -196,7 +196,7 @@ def _session_game_type(session_id):
     if game_type is None:
         raise ValueError(
             f"Session {session_id} is a session of {channel!r}, and no "
-            "LiveSession with that channel is defined. Import the module "
+            "LiveGame with that channel is defined. Import the module "
             "that defines the game first."
         )
     return game_type

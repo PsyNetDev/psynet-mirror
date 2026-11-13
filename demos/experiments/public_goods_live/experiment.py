@@ -18,10 +18,10 @@ from dominate import tags
 import psynet.experiment
 from psynet.bot import Bot
 from psynet.live_session import (
+    LiveGame,
+    LiveGameBarrier,
     LiveMessage,
-    LiveSession,
     LiveSessionControl,
-    LiveSessionInitializer,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
@@ -56,7 +56,7 @@ class Contribute(LiveMessage):
         state["changes"][player_id] += 1
 
 
-class PublicGoods(LiveSession):
+class PublicGoods(LiveGame):
     channel = "public_goods"
     messages = [Contribute]
     max_duration = ROUND_SECONDS + 120
@@ -92,7 +92,9 @@ class PublicGoods(LiveSession):
             "changed": state["changes"][player_id] > 0,
             "others": [
                 tokens
-                for player, tokens in sorted(state["contributions"].items())
+                for player, tokens in sorted(
+                    state["contributions"].items(), key=lambda item: int(item[0])
+                )
                 if player != player_id
             ],
         }
@@ -114,7 +116,7 @@ class PublicGoods(LiveSession):
             },
         }
 
-    def bonus(self, outcome, reason, player_id):
+    def performance_reward(self, outcome, reason, player_id):
         return outcome["payoffs"][player_id] * TOKEN_VALUE
 
     def bot(self, view, player_id, now):
@@ -178,7 +180,7 @@ class ContributionTrial(Trial):
 
     def show_trial(self, experiment, participant):
         return join(
-            LiveSessionInitializer(
+            LiveGameBarrier(
                 id_="public_goods",
                 group_type=GROUP,
                 game_type=PublicGoods,

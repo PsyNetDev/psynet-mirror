@@ -623,9 +623,9 @@ contributes everything the page needs through the component hooks:
   ``psynet.liveSession`` for the first game page a document shows, shows the
   no-session notice, and returns the cleanup that closes the page's game
   socket;
-* ``get_render_js_vars`` adds the session's id and game channel to the page's
+* ``get_participant_js_vars`` adds the session's id and game channel to the page's
   ``js_vars`` each time the page renders. It raises an error for a participant
-  who hasn't reached an initializer with the control's ``initializer_id``.
+  who hasn't reached a game barrier with the control's ``barrier_id``.
 
 The socket's scope is the participant's ``websocketScope``, a ``.``,
 ``dallinger.pageScope``, another ``.`` and a count of the game sockets the
@@ -656,7 +656,7 @@ For new Prompt and Control components:
 
 * keep templates focused on markup;
 * use ``get_js_vars()`` for serialized page configuration;
-* use ``get_render_js_vars(experiment, participant)`` for configuration that
+* use ``get_participant_js_vars(experiment, participant)`` for configuration that
   depends on the participant, read each time the page renders;
 * use ``get_js_dependencies()`` for classic load-once libraries;
 * use ``get_js_page_code()`` for short inline activation snippets;
@@ -697,7 +697,7 @@ Key implementation and test locations
 * ``psynet/resources/scripts/live-session.js`` — ``psynet.liveSession``, a game
   page's connection to its live session.
 * ``psynet/live_session/`` — live sessions on the server: the game class, its
-  method wrappers, the initializer, the control and the ready step.
+  method wrappers, the game barrier, the control and the ready step.
 * ``tests/isolated/test_live_session.py``, ``tests/javascript/live-session.test.mjs``
   and ``tests/playwright/live_session.spec.js`` — live sessions.
 * ``psynet/timeline_hold.py`` — durable hold state, accounting, and wake

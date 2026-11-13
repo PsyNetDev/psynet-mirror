@@ -7,24 +7,24 @@ from dallinger.realtime import Reject
 
 from .messages import LiveMessage, _parse_message
 
-# The settings of the session a LiveSessionInitializer is starting, set
+# The settings of the session a LiveGameBarrier is starting, set
 # while it calls create_realtime_session, which calls the game's
 # initial_state before it returns.
 _new_session_settings = contextvars.ContextVar("_new_session_settings", default=None)
 
 
-class Ready(LiveMessage):
+class PlayerReady(LiveMessage):
     """The message that says a player is ready to play. A game page sends it
     by itself a moment after it opens, once it has checked the server's time,
     and a bot sends it at once. The session starts when every player is
-    ready, or at the game's :attr:`~LiveSession.ready_timeout`.
+    ready, or at the game's :attr:`~LiveGame.ready_timeout`.
 
     Every game reads it, so don't list it in a game's
-    :attr:`~LiveSession.messages`. PsyNet handles it before the game's
+    :attr:`~LiveGame.messages`. PsyNet handles it before the game's
     ``apply``, so the game never receives it, even in an ``apply`` of its
     own. A game reads who is ready from ``state["live_session"]["ready"]``,
-    and reacts to the start in :meth:`~LiveSession.on_start`.
-    ``Ready.saved_messages(session_id)`` returns when each player became
+    and reacts to the start in :meth:`~LiveGame.on_start`.
+    ``PlayerReady.saved_messages(session_id)`` returns when each player became
     ready.
     """
 
@@ -56,7 +56,7 @@ def _ready_step(state, what="state"):
 
 
 def _apply_once_started(self, method, state, player_id, message, now, sent):
-    if isinstance(message, dict) and message.get("type") == Ready.type:
+    if isinstance(message, dict) and message.get("type") == PlayerReady.type:
         _parse_message(self._message_types, message).apply(self, state, player_id, now)
         return None
     if _ready_step(state)["started_at"] is None:
@@ -95,7 +95,7 @@ def _record_join(self, method, state, player_id, now):
 
 def _add_ready_step(self, method, players, *settings):
     # Dallinger calls initial_state with the players alone, so an
-    # initializer's settings come from _new_session_settings.
+    # game barrier's settings come from _new_session_settings.
     if not settings and _new_session_settings.get() is not None:
         settings = (_new_session_settings.get(),)
     state = method(self, players, *settings)

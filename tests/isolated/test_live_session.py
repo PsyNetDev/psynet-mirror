@@ -26,12 +26,12 @@ from psynet.bot import Bot
 from psynet.experiment import Experiment, get_experiment
 from psynet.live_session import (
     NOT_STARTED,
+    LiveGame,
+    LiveGameBarrier,
     LiveMessage,
-    LiveSession,
     LiveSessionControl,
-    LiveSessionInitializer,
     LiveSessionResult,
-    Ready,
+    PlayerReady,
     live_session_id,
     live_session_result,
 )
@@ -65,14 +65,14 @@ pytestmark = [
 
 @pytest.fixture
 def pair(db_session):
-    """A pair group, its leader first, and the experiment's initializer."""
+    """A pair group, its leader first, and the experiment's game barrier."""
     experiment = get_experiment()
     return _pair(db_session, [new_participant(experiment) for _ in range(2)])
 
 
 @pytest.fixture
 def bot_and_person(db_session, monkeypatch):
-    """A pair group of a bot and a person, and the experiment's initializer."""
+    """A pair group of a bot and a person, and the experiment's game barrier."""
     # Bot() otherwise waits for a launched server and opens its first page.
     monkeypatch.setattr(
         Bot, "wait_until_experiment_launch_is_complete", lambda self: None
@@ -98,76 +98,76 @@ def _pair(db_session, members):
         group.add_participant(member)
     group.leader = members[0]
     db_session.commit()
-    (initializer,) = {
+    (game_barrier,) = {
         elt.links["barrier"]
         for elt in experiment.timeline.all_elts
-        if isinstance(elt.links.get("barrier"), LiveSessionInitializer)
+        if isinstance(elt.links.get("barrier"), LiveGameBarrier)
     }
-    return members, initializer
+    return members, game_barrier
 
 
-def _reach(initializer, member):
-    """Run the initializer's first step, which every participant who reaches
+def _reach(game_barrier, member):
+    """Run the game barrier's first step, which every participant who reaches
     it takes, one who has left the group included."""
-    first, *barrier = initializer.resolve()
+    first, *barrier = game_barrier.resolve()
     assert barrier
     first.consume(get_experiment(), member)
 
 
-def _arrive(initializer, member):
+def _arrive(game_barrier, member):
     """Arrive as the response route does: commit, then check the barrier."""
-    _reach(initializer, member)
-    initializer.receive_participant(member)
-    initializer.waiting_logic.consume(get_experiment(), member)
+    _reach(game_barrier, member)
+    game_barrier.receive_participant(member)
+    game_barrier.waiting_logic.consume(get_experiment(), member)
     db.session.commit()
     _run_pending_barrier_checks(_take_pending_barrier_checks())
     db.session.commit()
 
 
-def test_each_pass_through_the_initializer_starts_a_new_session(pair):
-    members, initializer = pair
+def test_each_pass_through_the_game_barrier_starts_a_new_session(pair):
+    members, game_barrier = pair
     members[0].live_sessions = {"earlier": 7}
     session_ids = []
     for _ in range(2):
-        _arrive(initializer, members[0])
-        assert live_session_id(members[0], initializer.id) is None
-        _arrive(initializer, members[1])
-        session_ids.append(live_session_id(members[0], initializer.id))
+        _arrive(game_barrier, members[0])
+        assert live_session_id(members[0], game_barrier.id) is None
+        _arrive(game_barrier, members[1])
+        session_ids.append(live_session_id(members[0], game_barrier.id))
 
     assert None not in session_ids
     assert session_ids[0] != session_ids[1]
     assert live_session_id(members[0], "earlier") == 7
 
 
-def test_a_participant_who_reaches_the_initializer_again_has_no_session_yet(pair):
-    members, initializer = pair
+def test_a_participant_who_reaches_the_game_barrier_again_has_no_session_yet(pair):
+    members, game_barrier = pair
     session_id = _pair_session(pair)
-    assert live_session_id(members[1], initializer.id) == session_id
+    assert live_session_id(members[1], game_barrier.id) == session_id
 
     # A participant who has left the group passes the barrier without
     # arriving at it.
-    _reach(initializer, members[1])
+    _reach(game_barrier, members[1])
 
-    assert live_session_id(members[1], initializer.id) is None
-    assert live_session_id(members[0], initializer.id) == session_id
+    assert live_session_id(members[1], game_barrier.id) is None
+    assert live_session_id(members[0], game_barrier.id) == session_id
 
 
 def test_the_page_script_sends_the_ready_message_s_type():
     script = Path(psynet.__file__).parent / "resources/scripts/live-session.js"
 
-    assert f'const READY = "{Ready.type}";' in script.read_text()
+    assert f'const READY = "{PlayerReady.type}";' in script.read_text()
 
 
-def test_a_session_starts_from_its_initializer_s_settings(pair):
+def test_a_session_starts_from_its_game_barrier_s_settings(pair):
     session_id = _pair_session(pair)
 
     assert store.realtime_state(session_id)["pick_bonus"] == 0.5
-    # Only a session the initializer starts gets them.
+    # Only a session the game barrier starts gets them.
     assert _pick_numbers().initial_state(["1"])["pick_bonus"] == 0
 
 
-def test_an_initializer_s_settings_must_be_json_the_game_takes(registry, monkeypatch):
-    class Fixed(LiveSession):
+def test_an_game_barrier_s_settings_must_be_json_the_game_takes(registry, monkeypatch):
+    class Fixed(LiveGame):
         channel = "fixed"
 
         def initial_state(self, players):
@@ -185,37 +185,37 @@ def test_an_initializer_s_settings_must_be_json_the_game_takes(registry, monkeyp
         def initial_state(self, players, settings):
             return {"settings": settings}
 
-    def initializer(game_type, settings):
-        return LiveSessionInitializer(
+    def game_barrier(game_type, settings):
+        return LiveGameBarrier(
             id_="game", group_type="pair", game_type=game_type, settings=settings
         )
 
-    # A group's release rebuilds the initializer, so it has to find the game.
+    # A group's release rebuilds the game barrier, so it has to find the game.
     with pytest.raises(TypeError, match="'game' can't be saved: .* is a local class"):
-        initializer(Fixed, None)
+        game_barrier(Fixed, None)
     for game_type in (Fixed, Varied):
         game_type.__qualname__ = game_type.__name__
         monkeypatch.setitem(globals(), game_type.__name__, game_type)
 
     with pytest.raises(TypeError, match="Fixed.initial_state takes no settings"):
-        initializer(Fixed, {"rounds": 3})
+        game_barrier(Fixed, {"rounds": 3})
     with pytest.raises(TypeError, match="settings for Varied can't be saved as JSON"):
-        initializer(Varied, {"rounds": {3}})
+        game_barrier(Varied, {"rounds": {3}})
     with pytest.raises(TypeError, match="Varied.initial_state needs settings"):
-        initializer(Varied, None)
-    assert initializer(Fixed, None).settings is None
+        game_barrier(Varied, None)
+    assert game_barrier(Fixed, None).settings is None
     given = {"rounds": (3, 5)}
-    assert initializer(Varied, given).settings == {"rounds": [3, 5]}
+    assert game_barrier(Varied, given).settings == {"rounds": [3, 5]}
     # A test calls the game with settings directly.
     assert _game_part(Varied().initial_state(["1"], {"rounds": 3})) == {
         "settings": {"rounds": 3}
     }
 
 
-def _trial_initializer(settings):
-    """An initializer as a trial's show_trial builds one for each participant,
+def _trial_game_barrier(settings):
+    """A game barrier as a trial's show_trial builds one for each participant,
     from the trial's definition."""
-    return LiveSessionInitializer(
+    return LiveGameBarrier(
         id_="trial_game",
         group_type="pair",
         game_type=type(_pick_numbers()),
@@ -223,38 +223,38 @@ def _trial_initializer(settings):
     )
 
 
-def test_each_round_s_initializers_start_a_session_with_that_round_s_settings(pair):
+def test_each_round_s_game_barriers_start_a_session_with_that_round_s_settings(pair):
     members, _ = pair
-    bonuses = []
+    rewards = []
     for pick_bonus in (0.1, 0.2):
         for member in members:
-            _arrive(_trial_initializer({"pick_bonus": pick_bonus}), member)
+            _arrive(_trial_game_barrier({"pick_bonus": pick_bonus}), member)
         session_id = live_session_id(members[0], "trial_game")
         assert live_session_id(members[1], "trial_game") == session_id
-        bonuses.append(store.realtime_state(session_id)["pick_bonus"])
+        rewards.append(store.realtime_state(session_id)["pick_bonus"])
 
-    assert bonuses == [0.1, 0.2]
+    assert rewards == [0.1, 0.2]
 
 
 def test_the_members_of_a_group_must_arrive_with_the_same_settings(pair):
     members, _ = pair
-    _arrive(_trial_initializer({"pick_bonus": 0.1}), members[0])
+    _arrive(_trial_game_barrier({"pick_bonus": 0.1}), members[0])
 
     with pytest.raises(
         ValueError,
-        match=f"Participant {members[1].id} arrived at the LiveSessionInitializer "
+        match=f"Participant {members[1].id} arrived at the LiveGameBarrier "
         "'trial_game' with settings that differ from those of the members of "
         "their group who are waiting there.",
     ):
-        _arrive(_trial_initializer({"pick_bonus": 0.2}), members[1])
+        _arrive(_trial_game_barrier({"pick_bonus": 0.2}), members[1])
 
 
-def test_an_initializer_s_settings_can_t_use_a_key_its_saved_form_reserves():
+def test_an_game_barrier_s_settings_can_t_use_a_key_its_saved_form_reserves():
     with pytest.raises(
         TypeError,
-        match="LiveSessionInitializer 'trial_game' can't be saved: .*'__type__'",
+        match="LiveGameBarrier 'trial_game' can't be saved: .*'__type__'",
     ):
-        _trial_initializer({"__type__": "fast"})
+        _trial_game_barrier({"__type__": "fast"})
 
 
 def _rendered_js_vars(page, participant, monkeypatch):
@@ -271,20 +271,20 @@ def _rendered_js_vars(page, participant, monkeypatch):
 
 
 def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch):
-    members, initializer = pair
+    members, game_barrier = pair
     page = ModularPage(
-        "game", "Play.", LiveSessionControl(initializer.id), time_estimate=5
+        "game", "Play.", LiveSessionControl(game_barrier.id), time_estimate=5
     )
 
     with pytest.raises(
         ValueError,
         match=f"Participant {members[0].id} hasn't reached a "
-        f"LiveSessionInitializer with the id '{initializer.id}'. Check the id",
+        f"LiveGameBarrier with the id '{game_barrier.id}'. Check the id",
     ):
         _rendered_js_vars(page, members[0], monkeypatch)
-    _reach(initializer, members[0])
+    _reach(game_barrier, members[0])
     assert _rendered_js_vars(page, members[0], monkeypatch)["liveSession"] == {
-        "initializerId": initializer.id,
+        "barrierId": game_barrier.id,
         "sessionId": None,
         "gameChannel": None,
         "autoAdvance": True,
@@ -292,11 +292,11 @@ def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch)
         "noSessionMessage": "Your group couldn't start the game.",
     }
     for member in members:
-        _arrive(initializer, member)
+        _arrive(game_barrier, member)
 
-    session_id = live_session_id(members[1], initializer.id)
+    session_id = live_session_id(members[1], game_barrier.id)
     assert _rendered_js_vars(page, members[1], monkeypatch)["liveSession"] == {
-        "initializerId": initializer.id,
+        "barrierId": game_barrier.id,
         "sessionId": session_id,
         "gameChannel": "pick_numbers",
         "autoAdvance": True,
@@ -306,15 +306,15 @@ def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch)
 
 
 def test_a_live_session_page_can_leave_moving_on_to_its_javascript(pair, monkeypatch):
-    members, initializer = pair
+    members, game_barrier = pair
     page = ModularPage(
         "game",
         "Play.",
-        LiveSessionControl(initializer.id, auto_advance=False),
+        LiveSessionControl(game_barrier.id, auto_advance=False),
         time_estimate=5,
     )
 
-    _reach(initializer, members[0])
+    _reach(game_barrier, members[0])
     js_vars = _rendered_js_vars(page, members[0], monkeypatch)
 
     assert js_vars["liveSession"]["autoAdvance"] is False
@@ -324,15 +324,15 @@ def test_a_live_session_page_can_leave_moving_on_to_its_javascript(pair, monkeyp
 def test_a_live_session_page_can_change_or_hide_its_player_left_notice(
     pair, monkeypatch, message
 ):
-    members, initializer = pair
+    members, game_barrier = pair
     page = ModularPage(
         "game",
         "Play.",
-        LiveSessionControl(initializer.id, player_left_message=message),
+        LiveSessionControl(game_barrier.id, player_left_message=message),
         time_estimate=5,
     )
 
-    _reach(initializer, members[0])
+    _reach(game_barrier, members[0])
     js_vars = _rendered_js_vars(page, members[0], monkeypatch)
 
     assert js_vars["liveSession"]["playerLeftMessage"] == message
@@ -342,15 +342,15 @@ def test_a_live_session_page_can_change_or_hide_its_player_left_notice(
 def test_a_live_session_page_can_change_or_hide_its_no_session_notice(
     pair, monkeypatch, message
 ):
-    members, initializer = pair
+    members, game_barrier = pair
     page = ModularPage(
         "game",
         "Play.",
-        LiveSessionControl(initializer.id, no_session_message=message),
+        LiveSessionControl(game_barrier.id, no_session_message=message),
         time_estimate=5,
     )
 
-    _reach(initializer, members[0])
+    _reach(game_barrier, members[0])
     js_vars = _rendered_js_vars(page, members[0], monkeypatch)
 
     assert js_vars["liveSession"]["noSessionMessage"] == message
@@ -364,15 +364,15 @@ def test_a_live_session_control_takes_any_control_parameter():
 
 
 def test_a_page_variable_can_t_share_the_control_s_name(pair, monkeypatch):
-    members, initializer = pair
+    members, game_barrier = pair
     page = ModularPage(
         "game",
         "Play.",
-        LiveSessionControl(initializer.id),
+        LiveSessionControl(game_barrier.id),
         time_estimate=5,
         js_vars={"liveSession": "mine"},
     )
-    _reach(initializer, members[0])
+    _reach(game_barrier, members[0])
 
     with pytest.raises(
         ValueError,
@@ -384,17 +384,17 @@ def test_a_page_variable_can_t_share_the_control_s_name(pair, monkeypatch):
 
 
 def test_a_follower_who_reloads_finds_the_group_s_session(pair):
-    members, initializer = pair
+    members, game_barrier = pair
     for member in members:
-        _arrive(initializer, member)
-    leader_session = live_session_id(members[0], initializer.id)
+        _arrive(game_barrier, member)
+    leader_session = live_session_id(members[0], game_barrier.id)
     follower_id = members[1].id
     member_ids = sorted(member.id for member in members)
     db.session.expunge_all()
 
     follower = Participant.query.get(follower_id)
 
-    session_id = live_session_id(follower, initializer.id)
+    session_id = live_session_id(follower, game_barrier.id)
     assert session_id == leader_session
     row = db.session.get(RealtimeSession, session_id)
     assert row.game_type == "pick_numbers"
@@ -472,10 +472,10 @@ def test_a_message_that_doesn_t_match_its_type_is_rejected(message, reason):
 
 
 def _pair_session(pair):
-    members, initializer = pair
+    members, game_barrier = pair
     for member in members:
-        _arrive(initializer, member)
-    return live_session_id(members[0], initializer.id)
+        _arrive(game_barrier, member)
+    return live_session_id(members[0], game_barrier.id)
 
 
 def _play_to_the_end(session_id, messages):
@@ -561,8 +561,8 @@ def test_the_game_plays_for_a_group_s_bots_once_they_are_ready(bot_and_person):
     assert [
         (message.player_id, message.status, message.message) for message in saved
     ] == [
-        (bot, "accepted", Ready()),
-        (person, "accepted", Ready()),
+        (bot, "accepted", PlayerReady()),
+        (person, "accepted", PlayerReady()),
         (bot, "accepted", _pick(int(bot))),
         (person, "accepted", _pick(5)),
     ]
@@ -583,9 +583,9 @@ def test_a_played_session_s_messages_read_back_in_order_with_their_status(played
         )
         for message in saved
     ] == [
-        (first, 1, "accepted", None, Ready()),
+        (first, 1, "accepted", None, PlayerReady()),
         (first, 2, "rejected", NOT_STARTED, _pick(7)),
-        (second, 1, "accepted", None, Ready()),
+        (second, 1, "accepted", None, PlayerReady()),
         (
             first,
             3,
@@ -686,7 +686,7 @@ def test_a_message_type_can_t_read_a_game_that_isn_t_defined(pair, monkeypatch):
     pick = game_registry._live_session_types["pick_numbers"]._message_types["pick"]
     monkeypatch.setattr(game_registry, "_live_session_types", {})
 
-    with pytest.raises(ValueError, match="no LiveSession with that channel"):
+    with pytest.raises(ValueError, match="no LiveGame with that channel"):
         pick.saved_messages(session_id)
 
 
@@ -694,7 +694,7 @@ def test_a_game_reads_back_only_its_own_sessions(pair, monkeypatch):
     session_id = _pair_session(pair)
     monkeypatch.setattr(game_registry, "_live_session_types", {})
 
-    class Elsewhere(LiveSession):
+    class Elsewhere(LiveGame):
         channel = "elsewhere"
 
     with pytest.raises(ValueError, match="of 'pick_numbers', not 'elsewhere'"):
@@ -755,7 +755,7 @@ class Place(LiveMessage):
 
 @pytest.fixture
 def walk(registry):
-    class Walk(LiveSession):
+    class Walk(LiveGame):
         channel = "walk"
         messages = [Move, Place]
 
@@ -797,7 +797,7 @@ class Jump(LiveMessage):
 
 @pytest.fixture
 def hop(registry):
-    class Hop(LiveSession):
+    class Hop(LiveGame):
         channel = "hop"
         messages = [Jump]
 
@@ -869,7 +869,7 @@ class Stray(Aim):
 def test_a_bot_message_the_game_can_t_read_as_it_is_fails_loudly(
     registry, listed, returned, problem
 ):
-    class Archery(LiveSession):
+    class Archery(LiveGame):
         channel = "archery"
         messages = [listed]
 
@@ -899,7 +899,7 @@ def test_a_rejection_lists_at_most_five_problems(registry):
         def apply(self, game, state, player_id, now):
             pass
 
-    class Counting(LiveSession):
+    class Counting(LiveGame):
         messages = [Many]
 
         def initial_state(self, players):
@@ -945,18 +945,18 @@ def test_realtime_games_lists_every_live_session_and_the_listed_games(registry):
     class Listed(RealtimeGame):
         channel = "listed"
 
-    class Played(LiveSession):
+    class Played(LiveGame):
         channel = "played"
 
-    class AlsoListed(LiveSession):
+    class AlsoListed(LiveGame):
         channel = "also_listed"
 
-    class Unplayed(LiveSession):
+    class Unplayed(LiveGame):
         """A base class for games, with no channel."""
 
     class Games(Experiment):
         realtime_games = [Listed, AlsoListed]
-        timeline = Timeline(InfoPage("No initializer.", time_estimate=5))
+        timeline = Timeline(InfoPage("No game barrier.", time_estimate=5))
 
     class SameGames(Games):
         pass
@@ -969,8 +969,8 @@ def _import_games(tmp_path, name, directory):
     games = tmp_path / directory / "games.py"
     games.parent.mkdir(exist_ok=True)
     games.write_text(
-        "from psynet.live_session import LiveSession\n"
-        "class Imported(LiveSession):\n"
+        "from psynet.live_session import LiveGame\n"
+        "class Imported(LiveGame):\n"
         "    channel = 'imported'\n"
     )
     spec = importlib.util.spec_from_file_location(name, games)
@@ -999,9 +999,9 @@ def test_a_file_imported_under_two_names_is_refused(registry, tmp_path):
 
 def test_a_game_defined_after_the_experiment_class_is_refused(registry):
     class Early(Experiment):
-        timeline = Timeline(InfoPage("No initializer.", time_estimate=5))
+        timeline = Timeline(InfoPage("No game barrier.", time_estimate=5))
 
-    class Late(LiveSession):
+    class Late(LiveGame):
         channel = "late"
 
     with pytest.raises(RuntimeError, match="Late must be defined or imported before"):
@@ -1009,7 +1009,7 @@ def test_a_game_defined_after_the_experiment_class_is_refused(registry):
 
 
 def test_a_subclass_with_its_parent_s_channel_is_refused(registry):
-    class Parent(LiveSession):
+    class Parent(LiveGame):
         channel = "shared"
 
     with pytest.raises(ValueError, match="Parent and Child both use the channel"):
@@ -1042,29 +1042,29 @@ def test_an_annotated_type_is_refused():
 
     with pytest.raises(TypeError, match="Annotated.type has an annotation"):
 
-        class Game(LiveSession):
+        class Game(LiveGame):
             messages = [Annotated]
 
 
-def test_an_initializer_s_game_type_must_be_a_live_session_with_a_channel_and_a_bot(
+def test_an_game_barrier_s_game_type_must_be_a_live_session_with_a_channel_and_a_bot(
     registry,
 ):
     class Plain(RealtimeGame):
         channel = "plain"
 
-    class Unnamed(LiveSession):
+    class Unnamed(LiveGame):
         def bot(self, view, player_id, now):
             return None
 
-    class Botless(LiveSession):
+    class Botless(LiveGame):
         channel = "botless"
 
-    with pytest.raises(TypeError, match="game_type must be a LiveSession subclass"):
-        LiveSessionInitializer(id_="plain", group_type="pair", game_type=Plain)
+    with pytest.raises(TypeError, match="game_type must be a LiveGame subclass"):
+        LiveGameBarrier(id_="plain", group_type="pair", game_type=Plain)
     with pytest.raises(TypeError, match="Unnamed has no channel"):
-        LiveSessionInitializer(id_="unnamed", group_type="pair", game_type=Unnamed)
+        LiveGameBarrier(id_="unnamed", group_type="pair", game_type=Unnamed)
     with pytest.raises(TypeError, match="Botless has no bot method"):
-        LiveSessionInitializer(id_="botless", group_type="pair", game_type=Botless)
+        LiveGameBarrier(id_="botless", group_type="pair", game_type=Botless)
 
 
 @pytest.mark.parametrize(
@@ -1074,14 +1074,20 @@ def test_an_initializer_s_game_type_must_be_a_live_session_with_a_channel_and_a_
         ([NoType], "NoType.type must be a non-empty string"),
         ([NoApply], "NoApply must define apply"),
         ([Move, AlsoMove], "Move and AlsoMove both have the type 'move'"),
-        ([Ready], "lists Ready, with the type 'psynet_ready', which is PsyNet's"),
-        ([Ready, Move], "lists Ready, with the type 'psynet_ready', which is PsyNet's"),
+        (
+            [PlayerReady],
+            "lists PlayerReady, with the type 'psynet_ready', which is PsyNet's",
+        ),
+        (
+            [PlayerReady, Move],
+            "lists PlayerReady, with the type 'psynet_ready', which is PsyNet's",
+        ),
     ],
 )
 def test_a_game_s_message_types_are_checked_when_it_is_defined(registry, listed, error):
     with pytest.raises((TypeError, ValueError), match=error):
 
-        class Game(LiveSession):
+        class Game(LiveGame):
             messages = listed
 
 
@@ -1108,7 +1114,7 @@ class Thing:
 def test_the_state_is_converted_to_json_after_each_method_that_changes_it(
     registry, value, converted
 ):
-    class Store(LiveSession):
+    class Store(LiveGame):
         def initial_state(self, players):
             return {"value": value}
 
@@ -1141,7 +1147,7 @@ def test_the_state_is_converted_to_json_after_each_method_that_changes_it(
 
 
 def test_the_state_s_own_keys_are_converted(registry):
-    class Numbered(LiveSession):
+    class Numbered(LiveGame):
         def initial_state(self, players):
             return {}
 
@@ -1159,7 +1165,7 @@ def test_the_state_s_own_keys_are_converted(registry):
 
 
 def test_an_overridden_apply_is_converted(registry):
-    class Overridden(LiveSession):
+    class Overridden(LiveGame):
         messages = [Move]
 
         def initial_state(self, players):
@@ -1189,7 +1195,7 @@ def test_a_method_from_a_mixin_is_converted(registry):
         def tick(self, state, now):
             state["at"] = (now,)
 
-    class Timed(Timer, LiveSession):
+    class Timed(Timer, LiveGame):
         def initial_state(self, players):
             return {}
 
@@ -1206,7 +1212,7 @@ def test_a_method_from_a_mixin_is_converted(registry):
 def test_a_method_that_calls_another_keeps_its_references_until_it_returns(
     registry,
 ):
-    class Nested(LiveSession):
+    class Nested(LiveGame):
         def initial_state(self, players):
             return {"players": {}}
 
@@ -1231,7 +1237,7 @@ def test_a_method_that_calls_another_keeps_its_references_until_it_returns(
 def test_initial_state_keeps_its_references_while_it_calls_a_state_method(
     registry,
 ):
-    class Joining(LiveSession):
+    class Joining(LiveGame):
         def initial_state(self, players):
             state = {"scores": {}}
             scores = state["scores"]
@@ -1253,7 +1259,7 @@ def test_initial_state_keeps_its_references_while_it_calls_a_state_method(
 
 
 def test_a_game_that_inherits_apply_keeps_the_order_of_its_bases(registry):
-    class Plain(LiveSession):
+    class Plain(LiveGame):
         messages = [Move]
 
         def initial_state(self, players):
@@ -1262,7 +1268,7 @@ def test_a_game_that_inherits_apply_keeps_the_order_of_its_bases(registry):
         def view(self, state, player_id):
             return state
 
-    class Logged(LiveSession):
+    class Logged(LiveGame):
         messages = [Move]
 
         def apply(self, state, player_id, message, now, sent):
@@ -1280,7 +1286,7 @@ def test_a_game_that_inherits_apply_keeps_the_order_of_its_bases(registry):
 
 
 def test_the_state_is_converted_after_a_rejected_message(registry):
-    class Ticking(LiveSession):
+    class Ticking(LiveGame):
         messages = [Move]
 
         def initial_state(self, players):
@@ -1312,7 +1318,7 @@ class Paint(LiveMessage):
 
 
 def test_an_effect_s_payload_is_converted_to_json(registry):
-    class Painting(LiveSession):
+    class Painting(LiveGame):
         messages = [Paint]
 
         def initial_state(self, players):
@@ -1338,7 +1344,7 @@ def test_an_effect_s_payload_is_converted_to_json(registry):
 
 
 def test_a_game_can_turn_the_conversion_off(registry):
-    class Converted(LiveSession):
+    class Converted(LiveGame):
         messages = [Move]
 
         def initial_state(self, players):
@@ -1368,7 +1374,7 @@ def test_a_game_can_turn_the_conversion_off(registry):
 
 
 def test_a_state_that_can_t_be_converted_fails_loudly(registry):
-    class Keep(LiveSession):
+    class Keep(LiveGame):
         def initial_state(self, players):
             return {"thing": Thing()}
 
@@ -1407,7 +1413,7 @@ class Holds(LiveMessage):
 def test_a_field_pydantic_can_t_read_from_json_is_refused(registry):
     with pytest.raises(TypeError, match="Holds has a field of a type Pydantic can't"):
 
-        class Game(LiveSession):
+        class Game(LiveGame):
             messages = [Holds]
 
 
@@ -1423,7 +1429,7 @@ TAP = {"type": "tap", "message": {}}
 
 @pytest.fixture
 def relay(registry):
-    class Relay(LiveSession):
+    class Relay(LiveGame):
         channel = "relay"
         messages = [Tap]
         ready_timeout = 10
@@ -1548,7 +1554,7 @@ def test_the_ready_step_covers_renamed_methods_and_later_bases(relay):
         channel = "renamed"
         tick = advance
 
-    class Later(LiveSession, Clock):
+    class Later(LiveGame, Clock):
         channel = "later"
 
         def initial_state(self, players):
@@ -1753,7 +1759,7 @@ def test_a_bot_is_ready_at_once_and_plays_once_the_session_starts(relay):
 def test_the_state_and_views_are_dicts_without_psynet_s_entry(
     registry, state, view, error
 ):
-    class Game(LiveSession):
+    class Game(LiveGame):
         def initial_state(self, players):
             return state
 
@@ -1768,7 +1774,7 @@ def test_the_state_and_views_are_dicts_without_psynet_s_entry(
 @pytest.mark.parametrize("ready_timeout", [0, -1, "30", float("inf")])
 def test_a_ready_timeout_is_none_or_a_positive_number(registry, ready_timeout):
     with pytest.raises(ValueError, match="Game's ready_timeout must be None"):
-        type("Game", (LiveSession,), {"ready_timeout": ready_timeout})
+        type("Game", (LiveGame,), {"ready_timeout": ready_timeout})
 
 
 def _game_page():
@@ -1846,7 +1852,7 @@ def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
     )
     # The worker that wrote the record closed the database session.
     members = [db.session.get(Participant, int(member)) for member in (first, second)]
-    # Each Pick's bonus effect is handled as the record is written.
+    # Each Pick's reward effect is handled as the record is written.
     assert _reward(members[0]) == pytest.approx(0.5)
 
     assert _submit_on_the_game_page(members[0])["submission"] == "approved"
@@ -1856,11 +1862,11 @@ def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
         "ended", "finished", outcome
     )
     assert _accepted_answers(members[0]) == [outcome]
-    # The game's bonus is the player's pick, in hundredths.
+    # The game's reward is the player's pick, in hundredths.
     assert _reward(members[0]) == pytest.approx(0.53)
     assert _reward(members[1]) == pytest.approx(0.5)
 
-    # Another visit to the page answers again, without paying the bonus again.
+    # Another visit to the page answers again, without paying the reward again.
     assert _submit_on_the_game_page(members[0])["submission"] == "approved"
     assert _accepted_answers(members[0]) == [outcome, outcome]
     assert _reward(members[0]) == pytest.approx(0.53)
@@ -1916,13 +1922,13 @@ def test_a_failed_session_s_page_moves_on_with_what_was_saved(
             "error": "Traceback (most recent call last): ...",
         }
     )
-    bonuses = []
+    rewards = []
     game_type = game_registry._live_session_types["pick_numbers"]
-    # A game that computes bonuses with NumPy returns a NumPy number.
+    # A game that computes rewards with NumPy returns a NumPy number.
     monkeypatch.setattr(
         game_type,
-        "bonus",
-        lambda self, *args: bonuses.append(args) or numpy.float64(0.25),
+        "performance_reward",
+        lambda self, *args: rewards.append(args) or numpy.float64(0.25),
     )
 
     assert _submit_on_the_game_page(members[0])["submission"] == "approved"
@@ -1932,10 +1938,10 @@ def test_a_failed_session_s_page_moves_on_with_what_was_saved(
     assert result.error == "Traceback (most recent call last): ..."
     assert _accepted_answers(members[0]) == [outcome]
     if bonus_paid:
-        assert bonuses == [(outcome, "failed", str(members[0].id))]
+        assert rewards == [(outcome, "failed", str(members[0].id))]
         assert _reward(members[0]) == pytest.approx(0.25)
     else:
-        assert bonuses == []
+        assert rewards == []
         assert _reward(members[0]) == 0
 
 
@@ -1947,7 +1953,7 @@ def test_a_game_without_an_outcome_still_pays_its_bonus(pair, monkeypatch):
         {"status": "ended", "end_reason": "finished", "outcome": None}
     )
     game_type = game_registry._live_session_types["pick_numbers"]
-    monkeypatch.setattr(game_type, "bonus", lambda self, *args: 0.25)
+    monkeypatch.setattr(game_type, "performance_reward", lambda self, *args: 0.25)
 
     assert _submit_on_the_game_page(members[0])["submission"] == "approved"
 
@@ -1974,16 +1980,18 @@ def test_a_bonus_is_a_number_0_or_more(pair, monkeypatch, amount):
         {"status": "ended", "end_reason": "finished", "outcome": {}}
     )
     game_type = game_registry._live_session_types["pick_numbers"]
-    monkeypatch.setattr(game_type, "bonus", lambda self, *args: amount)
+    monkeypatch.setattr(game_type, "performance_reward", lambda self, *args: amount)
     # So the response route raises the error rather than showing an error page.
     monkeypatch.setenv("PASSTHROUGH_ERRORS", "1")
 
     with pytest.raises(
-        ValueError, match=f"PickNumbers.bonus gave the bonus {amount!r}"
+        ValueError, match=f"PickNumbers.performance_reward gave the reward {amount!r}"
     ):
         _submit_on_the_game_page(members[0])
-    with pytest.raises(ValueError, match="PickNumbers.queue_bonus gave the bonus"):
-        game_type().queue_bonus("1", amount)
+    with pytest.raises(
+        ValueError, match="PickNumbers.add_performance_reward gave the reward"
+    ):
+        game_type().add_performance_reward("1", amount)
 
 
 def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_bonuses(
@@ -1993,7 +2001,7 @@ def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_bonuses(
     session_id = _pair_session(pair)
     handled = []
 
-    class Scored(LiveSession):
+    class Scored(LiveGame):
         def initial_state(self, players):
             return {}
 
@@ -2008,13 +2016,17 @@ def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_bonuses(
     try:
         # The player id as a string, as the game receives it, or as the
         # participant's integer id.
-        Scored().queue_bonus(str(members[0].id), 0.5)
-        Scored().queue_bonus(members[0].id, numpy.int64(1))
-        Scored().queue_bonus(members[0].id, 0)
+        Scored().add_performance_reward(str(members[0].id), 0.5)
+        Scored().add_performance_reward(members[0].id, numpy.int64(1))
+        Scored().add_performance_reward(members[0].id, 0)
         Scored().queue_effect("scored", {})
     finally:
         queued_effects.reset(token)
-    assert [name for name, _ in effects] == ["psynet_bonus", "psynet_bonus", "scored"]
+    assert [name for name, _ in effects] == [
+        "psynet_performance_reward",
+        "psynet_performance_reward",
+        "scored",
+    ]
     row = db.session.get(RealtimeSession, session_id)
     for name, payload in effects:
         Scored().handle_effect(name, payload, row)
@@ -2022,9 +2034,13 @@ def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_bonuses(
     assert handled == ["scored"]
     assert _reward(members[0]) == pytest.approx(1.5)
     with pytest.raises(ValueError, match="'99', who isn't a player in session"):
-        Scored().handle_effect("psynet_bonus", {"player_id": "99", "amount": 1}, row)
-    with pytest.raises(ValueError, match="'psynet_bonus' is reserved for PsyNet's"):
-        Scored().queue_effect("psynet_bonus", {})
+        Scored().handle_effect(
+            "psynet_performance_reward", {"player_id": "99", "amount": 1}, row
+        )
+    with pytest.raises(
+        ValueError, match="'psynet_performance_reward' is reserved for PsyNet's"
+    ):
+        Scored().queue_effect("psynet_performance_reward", {})
 
 
 class ValidatingPage(ModularPage):

@@ -393,11 +393,11 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
     live_sessions : dict or None
         The ids of the participant's live sessions, keyed by the id of the
-        :class:`~psynet.live_session.LiveSessionInitializer` that started
+        :class:`~psynet.live_session.LiveGameBarrier` that started
         each one. Read it with :func:`~psynet.live_session.live_session_id`.
         Should not be modified directly.
 
-    live_session_bonuses_paid : list or None
+    live_session_rewards_paid : list or None
         The ids of the live sessions whose outcome bonus the participant has
         been paid. Should not be modified directly.
 
@@ -503,7 +503,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     timed_out_since_barrier = Column(Boolean, default=False)
     page_count = Column(Integer)
     live_sessions = Column(PythonDict)
-    live_session_bonuses_paid = Column(PythonList)
+    live_session_rewards_paid = Column(PythonList)
     early_exited = Column(Boolean)
     exit_plan = Column(PythonDict)
     complete = Column(Boolean)

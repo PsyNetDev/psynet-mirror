@@ -8,10 +8,10 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.live_session import (
+    LiveGame,
+    LiveGameBarrier,
     LiveMessage,
-    LiveSession,
     LiveSessionControl,
-    LiveSessionInitializer,
     live_session_id,
 )
 from psynet.modular_page import ModularPage, Prompt
@@ -26,10 +26,10 @@ class Pick(LiveMessage):
 
     def apply(self, game, state, player_id, now):
         state["picks"][player_id] = self.number
-        game.queue_bonus(player_id, state["pick_bonus"])
+        game.add_performance_reward(player_id, state["pick_bonus"])
 
 
-class PickNumbers(LiveSession):
+class PickNumbers(LiveGame):
     """Each player picks a whole number, and the game ends once both have."""
 
     channel = "pick_numbers"
@@ -40,7 +40,7 @@ class PickNumbers(LiveSession):
     def initial_state(self, players, settings=None):
         return {
             "picks": {player: None for player in players},
-            # The initializer's settings say what a pick pays.
+            # The game barrier's settings say what a pick pays.
             "pick_bonus": settings["pick_bonus"] if settings else 0,
         }
 
@@ -53,7 +53,7 @@ class PickNumbers(LiveSession):
     def outcome(self, state, reason):
         return state["picks"]
 
-    def bonus(self, outcome, reason, player_id):
+    def performance_reward(self, outcome, reason, player_id):
         pick = outcome[player_id]
         return 0 if pick is None else pick / 100
 
@@ -76,9 +76,9 @@ class Exp(psynet.experiment.Experiment):
             below_quorum="continue_without_group",
         ),
         # A participant who stays on this page keeps their partner waiting at
-        # the initializer.
+        # the game barrier.
         InfoPage("You have a partner.", time_estimate=5),
-        LiveSessionInitializer(
+        LiveGameBarrier(
             id_="pick_numbers",
             group_type="pair",
             game_type=PickNumbers,
@@ -134,6 +134,6 @@ class Exp(psynet.experiment.Experiment):
             .one()
         )
         assert answer == session.outcome
-        # 0.5 from Pick's queue_bonus, as the initializer's settings say, plus the bot's pick (its id) / 100
-        # from bonus.
+        # 0.5 from Pick's add_performance_reward, as the game barrier's settings say, plus the bot's pick (its id) / 100
+        # from reward.
         assert bot.performance_reward == pytest.approx(0.5 + bot.id / 100)

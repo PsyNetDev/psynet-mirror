@@ -2,10 +2,10 @@
 
 The control has the page load ``live-session.js``. Its page code creates
 ``psynet.liveSession`` and leaves the session when the participant leaves
-the page. ``get_render_js_vars`` gives the script the session's id and
+the page. ``get_participant_js_vars`` gives the script the session's id and
 channel each time the page renders. ``check_ready_for_response`` refuses the
 page's response until the session's result is saved, and ``validate`` then
-sets the answer to the outcome and pays the outcome bonus once per session.
+sets the answer to the outcome and pays the outcome reward once per session.
 """
 
 from datetime import timedelta
@@ -16,10 +16,10 @@ from dallinger.models import RealtimeSession, timenow
 from ..modular_page import ModularPage, NullControl
 from ..timeline import ResponseNotReady
 from ..utils import get_translator
-from .bonus import _add_bonus, _check_bonus
-from .initializer import _check_reached_initializer, live_session_id
+from .barrier import _check_reached_barrier, live_session_id
 from .messages import _game_channel, _session_game_type
 from .result import live_session_result
+from .reward import _add_reward, _check_reward
 
 # Seconds a page waits before resending a response refused because the
 # session's result isn't saved yet.
@@ -35,9 +35,9 @@ _DEFAULT = object()
 
 class LiveSessionControl(NullControl):
     """The part of a game page where the participant plays the live session
-    their group started at a :class:`LiveSessionInitializer`.
+    their group started at a :class:`LiveGameBarrier`.
 
-    Give it the initializer's id, and list the JavaScript file that plays the
+    Give it the game barrier's id, and list the JavaScript file that plays the
     game in the page's ``js_page_modules``:
 
     ::
@@ -51,7 +51,7 @@ class LiveSessionControl(NullControl):
         )
 
     PsyNet sets the page's answer to the session's outcome, and pays the
-    game's :meth:`~LiveSession.bonus` when the participant leaves the page.
+    game's :meth:`~LiveGame.performance_reward` when the participant leaves the page.
     The page can't have a ``validate`` of its own.
     :doc:`/code/multiplayer/live_sessions` explains how to write the page's
     JavaScript.
@@ -59,8 +59,8 @@ class LiveSessionControl(NullControl):
     Parameters
     ----------
 
-    initializer_id
-        The ``id_`` of the :class:`LiveSessionInitializer` that started the
+    barrier_id
+        The ``id_`` of the :class:`LiveGameBarrier` that started the
         session.
 
     auto_advance
@@ -90,20 +90,20 @@ class LiveSessionControl(NullControl):
 
     def __init__(
         self,
-        initializer_id,
+        barrier_id,
         auto_advance=True,
         player_left_message=_DEFAULT,
         no_session_message=_DEFAULT,
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.initializer_id = initializer_id
+        self.barrier_id = barrier_id
         self.auto_advance = auto_advance
         self.player_left_message = player_left_message
         self.no_session_message = no_session_message
 
     def check_ready_for_response(self, experiment, participant):
-        session_id = live_session_id(participant, self.initializer_id)
+        session_id = live_session_id(participant, self.barrier_id)
         if session_id is None or live_session_result(session_id) is not None:
             return None
         _check_session_can_still_end(session_id)
@@ -117,7 +117,7 @@ class LiveSessionControl(NullControl):
         )
 
     def ends_by(self, experiment, participant):
-        session_id = live_session_id(participant, self.initializer_id)
+        session_id = live_session_id(participant, self.barrier_id)
         if session_id is None:
             return None
         latest = _latest_end_seconds(session_id)
@@ -128,22 +128,24 @@ class LiveSessionControl(NullControl):
     def validate(self, response, participant, **kwargs):
         # check_ready_for_response has already seen the session end, and an
         # ended session's row doesn't change, so this result is final.
-        session_id = live_session_id(participant, self.initializer_id)
+        session_id = live_session_id(participant, self.barrier_id)
         if session_id is None:
             response.answer = None
             return None
         result = live_session_result(session_id)
         response.answer = result.outcome
-        paid = participant.live_session_bonuses_paid or []
+        paid = participant.live_session_rewards_paid or []
         # A failed session has no outcome if its record couldn't be saved, or
         # if Dallinger couldn't get one from the game's outcome method.
         has_outcome = result.status != "failed" or result.outcome is not None
         if has_outcome and session_id not in paid:
             game = _session_game_type(session_id)()
-            what = f"{type(game).__name__}.bonus"
-            amount = game.bonus(result.outcome, result.end_reason, str(participant.id))
-            _add_bonus(participant, _check_bonus(amount, what))
-            participant.live_session_bonuses_paid = [*paid, session_id]
+            what = f"{type(game).__name__}.performance_reward"
+            amount = game.performance_reward(
+                result.outcome, result.end_reason, str(participant.id)
+            )
+            _add_reward(participant, _check_reward(amount, what))
+            participant.live_session_rewards_paid = [*paid, session_id]
         return None
 
     def _check_page(self, page):
@@ -163,9 +165,9 @@ class LiveSessionControl(NullControl):
     def get_js_page_code(self):
         return ["return PsyNetLiveSession.activatePage(psynet);"]
 
-    def get_render_js_vars(self, experiment, participant):
-        _check_reached_initializer(participant, self.initializer_id)
-        session_id = live_session_id(participant, self.initializer_id)
+    def get_participant_js_vars(self, experiment, participant):
+        _check_reached_barrier(participant, self.barrier_id)
+        session_id = live_session_id(participant, self.barrier_id)
         _p = get_translator(context=True)
         player_left = self.player_left_message
         if player_left is _DEFAULT:
@@ -175,7 +177,7 @@ class LiveSessionControl(NullControl):
             no_session = _p("live_session", "Your group couldn't start the game.")
         return {
             "liveSession": {
-                "initializerId": self.initializer_id,
+                "barrierId": self.barrier_id,
                 "sessionId": session_id,
                 "gameChannel": (
                     None if session_id is None else _game_channel(session_id)

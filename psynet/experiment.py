@@ -405,11 +405,11 @@ class ExperimentMeta(type):
         cls.css = cls.css.copy()
         cls.css_links = cls.css_links.copy()
 
-        from .live_session import live_session_game_types
+        from .live_session import live_game_types
 
         listed = dct.get("realtime_games", getattr(cls, "_listed_realtime_games", []))
         cls._listed_realtime_games = list(listed)
-        cls.realtime_games = list(dict.fromkeys([*listed, *live_session_game_types()]))
+        cls.realtime_games = list(dict.fromkeys([*listed, *live_game_types()]))
 
         if hasattr(cls, "test_create_bots"):
             raise RuntimeError(
@@ -964,10 +964,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     realtime_games : ``list``
         The game types of the experiment's live sessions (see
         :mod:`psynet.live_session`). PsyNet adds every
-        :class:`~psynet.live_session.LiveSession` with a ``channel`` that is
+        :class:`~psynet.live_session.LiveGame` with a ``channel`` that is
         defined or imported before the experiment class, whichever module
         defines it, so list only other game types the experiment plays. A
-        ``LiveSession`` defined after the experiment class stops the
+        ``LiveGame`` defined after the experiment class stops the
         experiment at launch.
         Default: ``[]``.
 
@@ -3404,12 +3404,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Check that each live session game is defined or imported before
         the experiment class, since PsyNet adds only those to
         ``realtime_games``."""
-        from .live_session import live_session_game_types
+        from .live_session import live_game_types
 
         listed = {game_type.channel for game_type in cls.realtime_games}
         missing = [
             game_type.__name__
-            for game_type in live_session_game_types()
+            for game_type in live_game_types()
             if game_type.channel not in listed
         ]
         if missing:

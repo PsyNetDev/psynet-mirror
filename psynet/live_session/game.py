@@ -1,5 +1,5 @@
-"""LiveSession, the class a game extends: Dallinger's RealtimeGame with
-PsyNet's typed messages, ready step, plain-data state and bonuses.
+"""LiveGame, the class a game extends: Dallinger's RealtimeGame with
+PsyNet's typed messages, ready step, plain-data state and rewards.
 
 ``__init_subclass__`` wraps each game's own methods with the wrappers in
 ``method_wrappers.py``, so game code stays plain, and registers each game
@@ -14,7 +14,6 @@ from dallinger.realtime.utils import is_number
 from pydantic import PydanticInvalidForJsonSchema
 from pydantic_core import to_jsonable_python
 
-from .bonus import _BONUS_EFFECT, _check_bonus, _handles_bonus
 from .messages import LiveMessage, _parse_message, _saved_messages, _session_channel
 from .method_wrappers import (
     _STATE_METHODS,
@@ -24,11 +23,12 @@ from .method_wrappers import (
     _stores_json,
     _waits_for_start,
 )
-from .ready_step import Ready, _ready_step
+from .ready_step import PlayerReady, _ready_step
 from .registry import _register_live_session
+from .reward import _REWARD_EFFECT, _check_reward, _handles_reward
 
 
-class LiveSession(RealtimeGame):
+class LiveGame(RealtimeGame):
     """A game that a group plays in a live session.
 
     Set ``channel`` to a name for the game, list its message types in
@@ -80,7 +80,7 @@ class LiveSession(RealtimeGame):
             ("next_deadline", _waits_for_start),
             ("view", _shows_ready_step),
             ("bot", _sends_message),
-            ("handle_effect", _handles_bonus),
+            ("handle_effect", _handles_reward),
         ]:
             method = getattr(cls, name)
             if method is not getattr(RealtimeGame, name, None) and not getattr(
@@ -159,16 +159,16 @@ class LiveSession(RealtimeGame):
         page reported about the message, such as when it sent it, can
         override it, read the message with :meth:`read_message`, and apply it
         itself. An override runs only once the session has started, and never
-        receives a :class:`Ready` message, which PsyNet handles itself.
+        receives a :class:`PlayerReady` message, which PsyNet handles itself.
         """
         self.read_message(message).apply(self, state, player_id, now)
 
-    def bonus(self, outcome, reason, player_id):
-        """Return the bonus a player earns from the session's outcome, such as
+    def performance_reward(self, outcome, reason, player_id):
+        """Return the reward a player earns from the session's outcome, such as
         their winnings. PsyNet adds it to the player's performance reward when
         they leave the game page, once per session. It isn't paid for a
         session that failed without an outcome, because its record couldn't be
-        saved or its ``outcome`` raised an error. By default, there's no bonus.
+        saved or its ``outcome`` raised an error. By default, there's no reward.
 
         Parameters
         ----------
@@ -190,12 +190,12 @@ class LiveSession(RealtimeGame):
         """
         return 0
 
-    def queue_bonus(self, player_id, amount):
-        """Add a bonus earned during the game to a player's performance
+    def add_performance_reward(self, player_id, amount):
+        """Add a reward earned during the game to a player's performance
         reward. Call it in a method that changes the state, such as a
-        message's :meth:`~LiveMessage.apply`. PsyNet adds the bonus a few
+        message's :meth:`~LiveMessage.apply`. PsyNet adds the reward a few
         seconds later, and the player keeps it even if they leave before the
-        game ends. For a bonus based on the outcome, define :meth:`bonus`
+        game ends. For a reward based on the outcome, define :meth:`performance_reward`
         instead.
 
         Parameters
@@ -205,22 +205,22 @@ class LiveSession(RealtimeGame):
             The player's id.
 
         amount
-            The bonus, a number of 0 or more.
+            The reward, a number of 0 or more.
         """
-        amount = _check_bonus(amount, f"{type(self).__name__}.queue_bonus")
+        amount = _check_reward(amount, f"{type(self).__name__}.add_performance_reward")
         if not amount:
             return
         super().queue_effect(
-            _BONUS_EFFECT, {"player_id": str(player_id), "amount": amount}
+            _REWARD_EFFECT, {"player_id": str(player_id), "amount": amount}
         )
 
     # Wrapped here, so a game that queues no effects of its own doesn't need
     # to define it.
-    @_handles_bonus
+    @_handles_reward
     def handle_effect(self, name, payload, session_row):
         """Do the work of an effect the game queued with :meth:`queue_effect`,
-        as in Dallinger's ``handle_effect``. PsyNet handles the bonuses from
-        :meth:`queue_bonus` itself, so they never reach this method.
+        as in Dallinger's ``handle_effect``. PsyNet handles the rewards from
+        :meth:`add_performance_reward` itself, so they never reach this method.
         """
         return super().handle_effect(name, payload, session_row)
 
@@ -230,10 +230,10 @@ class LiveSession(RealtimeGame):
         payload converted to plain data in the same way as the state. A
         message's fields can go in the payload as they are.
         """
-        if name == _BONUS_EFFECT:
+        if name == _REWARD_EFFECT:
             raise ValueError(
                 f"The effect name {name!r} is reserved for PsyNet's "
-                "queue_bonus. Give the effect another name."
+                "add_performance_reward. Give the effect another name."
             )
         try:
             payload = to_jsonable_python(payload)
@@ -273,7 +273,7 @@ class LiveSession(RealtimeGame):
         """Return the messages saved for a session of this game, in the order
         the game applied them, as :class:`SavedMessage` objects.
 
-        They include each player's :class:`Ready` messages, and the messages
+        They include each player's :class:`PlayerReady` messages, and the messages
         the game rejected, such as those sent before the start. The record is
         written a few seconds behind the game, so for a session that's still
         being played, this returns the messages written so far.
@@ -305,7 +305,7 @@ class LiveSession(RealtimeGame):
 
 
 def _index_message_types(game_type):
-    by_type = {Ready.type: Ready}
+    by_type = {PlayerReady.type: PlayerReady}
     for message_type in game_type.messages:
         if not (
             isinstance(message_type, type) and issubclass(message_type, LiveMessage)
@@ -331,11 +331,11 @@ def _index_message_types(game_type):
                 f"{message_type.__name__} has a field of a type Pydantic can't "
                 f"read from JSON. {str(error).splitlines()[0]}"
             ) from None
-        if name == Ready.type:
+        if name == PlayerReady.type:
             raise ValueError(
                 f"{game_type.__name__}.messages lists {message_type.__name__}, "
-                f"with the type {name!r}, which is PsyNet's Ready message. "
-                "Every game reads Ready, so don't list it, and give other "
+                f"with the type {name!r}, which is PsyNet's PlayerReady message. "
+                "Every game reads PlayerReady, so don't list it, and give other "
                 "messages another type."
             )
         if name in by_type:

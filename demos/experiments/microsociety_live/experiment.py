@@ -29,10 +29,10 @@ from dominate import tags
 import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages, run_bots_to_completion
 from psynet.live_session import (
+    LiveGame,
+    LiveGameBarrier,
     LiveMessage,
-    LiveSession,
     LiveSessionControl,
-    LiveSessionInitializer,
 )
 from psynet.modular_page import ModularPage, Prompt, TextControl
 from psynet.page import InfoPage
@@ -90,7 +90,7 @@ class Move(LiveMessage):
         state["moves"][player_id] += 1
 
 
-class Fishing(LiveSession):
+class Fishing(LiveGame):
     channel = "fishing"
     messages = [Move]
     max_duration = ROUND_SECONDS + 120
@@ -168,7 +168,7 @@ class Fishing(LiveSession):
             "catches": state["catches"],
         }
 
-    def bonus(self, outcome, reason, player_id):
+    def performance_reward(self, outcome, reason, player_id):
         return outcome["fish"][player_id] * FISH_VALUE
 
     def bot(self, view, player_id, now):
@@ -376,7 +376,7 @@ class FishingTrial(Trial):
 
     def show_trial(self, experiment, participant):
         return [
-            LiveSessionInitializer(
+            LiveGameBarrier(
                 id_="fishing",
                 group_type=GROUP,
                 game_type=Fishing,

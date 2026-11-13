@@ -1,13 +1,13 @@
 """The live session games defined so far, by channel."""
 
-# Every LiveSession subclass that sets a channel, by channel. It is one
-# registry for the whole process, because an initializer built in a trial's
+# Every LiveGame subclass that sets a channel, by channel. It is one
+# registry for the whole process, because a game barrier built in a trial's
 # show_trial isn't known when the experiment class is created.
 _live_session_types = {}
 
 
-def live_session_game_types():
-    """Return every :class:`LiveSession` subclass that has a ``channel``,
+def live_game_types():
+    """Return every :class:`LiveGame` subclass that has a ``channel``,
     which PsyNet adds to the experiment's ``realtime_games``."""
     return list(_live_session_types.values())
 

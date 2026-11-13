@@ -157,7 +157,7 @@ test("a game page open in two tabs moves the participant on once", { tag: "@both
   }
 });
 
-test("participants whose pair breaks up at the initializer see the no-session notice and can move on", { tag: "@both" }, async ({
+test("participants whose pair breaks up at the game barrier see the no-session notice and can move on", { tag: "@both" }, async ({
   browser
 }) => {
   const experiment = startExperiment(path.resolve("tests/experiments/live_session"));
@@ -177,8 +177,8 @@ test("participants whose pair breaks up at the initializer see the no-session no
         });
       })
     );
-    // The partner stays on the page before the initializer, so the first
-    // participant waits there alone until the initializer removes them from
+    // The partner stays on the page before the game barrier, so the first
+    // participant waits there alone until the game barrier removes them from
     // the pair.
     await clickNextAndWait(first);
 
@@ -196,7 +196,7 @@ test("participants whose pair breaks up at the initializer see the no-session no
     });
     await expect(first.locator("#psynet-no-session-notice")).toHaveCount(0);
 
-    // The partner, whose pair has ended, passes the initializer without
+    // The partner, whose pair has ended, passes the game barrier without
     // waiting and has no session either.
     await clickNextAndWait(second);
     await expect(second.locator("#psynet-no-session-notice")).toHaveText(

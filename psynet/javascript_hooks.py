@@ -24,7 +24,7 @@ class JavaScriptContributor:
         """Stylesheet URLs contributed to the hosting page."""
         return []
 
-    def get_render_js_vars(self, experiment, participant):
+    def get_participant_js_vars(self, experiment, participant):
         """Page-local JavaScript variables for ``participant``, contributed
         each time the page renders for them, such as something stored for
         the participant. Keys must be unique across the page's ``js_vars``.

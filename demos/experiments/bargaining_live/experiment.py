@@ -22,10 +22,10 @@ from dominate import tags
 import psynet.experiment
 from psynet.bot import Bot
 from psynet.live_session import (
+    LiveGame,
+    LiveGameBarrier,
     LiveMessage,
-    LiveSession,
     LiveSessionControl,
-    LiveSessionInitializer,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
@@ -80,7 +80,7 @@ class Accept(LiveMessage):
         state["deal_at"] = now - state["live_session"]["started_at"]
 
 
-class Bargain(LiveSession):
+class Bargain(LiveGame):
     channel = "bargain"
     messages = [Propose, Accept]
     max_duration = BARGAIN_SECONDS + 120
@@ -132,7 +132,7 @@ class Bargain(LiveSession):
             "n_proposals": state["n_proposals"],
         }
 
-    def bonus(self, outcome, reason, player_id):
+    def performance_reward(self, outcome, reason, player_id):
         return (outcome["deal"] or {}).get(player_id, 0) * COIN_VALUE
 
     def bot(self, view, player_id, now):
@@ -226,7 +226,7 @@ class BargainTrial(Trial):
 
     def show_trial(self, experiment, participant):
         return join(
-            LiveSessionInitializer(
+            LiveGameBarrier(
                 id_="bargain",
                 group_type=PAIR,
                 game_type=Bargain,

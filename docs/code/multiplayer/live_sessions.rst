@@ -12,10 +12,10 @@ game. Each session, with its messages, is saved with the experiment's data.
 
 A live session has three pieces:
 
-1. The game, a subclass of :class:`~psynet.live_session.LiveSession`, with a
+1. The game, a subclass of :class:`~psynet.live_session.LiveGame`, with a
    :class:`~psynet.live_session.LiveMessage` subclass for each kind of
    message a page can send.
-2. A :class:`~psynet.live_session.LiveSessionInitializer` in the timeline,
+2. A :class:`~psynet.live_session.LiveGameBarrier` in the timeline,
    which starts a session for each group that reaches it.
 3. The game page, a :class:`~psynet.modular_page.ModularPage` with a
    :class:`~psynet.live_session.LiveSessionControl`, and a JavaScript file
@@ -31,7 +31,7 @@ A game of rock, paper, scissors:
     import random
     from typing import Literal
 
-    from psynet.live_session import LiveMessage, LiveSession
+    from psynet.live_session import LiveMessage, LiveGame
 
 
     class Choose(LiveMessage):
@@ -42,7 +42,7 @@ A game of rock, paper, scissors:
             state["choices"][player_id] = self.action
 
 
-    class RockPaperScissors(LiveSession):
+    class RockPaperScissors(LiveGame):
         channel = "rock_paper_scissors"
         messages = [Choose]
 
@@ -130,21 +130,21 @@ In the same way, compare an enum field's ``.value`` with the state, and turn
 a stored date back into a datetime with
 ``datetime.fromisoformat(state["deadline"])``. A game with a very large
 state, such as a big grid, can save the time the conversion takes with
-:attr:`~psynet.live_session.LiveSession.convert_state_to_json`.
+:attr:`~psynet.live_session.LiveGame.convert_state_to_json`.
 
 Starting sessions and the game page
 -----------------------------------
 
-Put the initializer after the :class:`~psynet.sync.Grouper` that forms the
+Put the game barrier after the :class:`~psynet.sync.Grouper` that forms the
 groups. When all of a group's members reach it, it starts a session, and the
 group moves on together. The game page comes after it, and its
-:class:`~psynet.live_session.LiveSessionControl` names the initializer:
+:class:`~psynet.live_session.LiveSessionControl` names the game barrier:
 
 .. code-block:: python
 
     timeline = Timeline(
         SimpleGrouper(group_type="pair", initial_group_size=2),
-        LiveSessionInitializer(
+        LiveGameBarrier(
             id_="rock_paper_scissors",
             group_type="pair",
             game_type=RockPaperScissors,
@@ -168,13 +168,13 @@ group moves on together. The game page comes after it, and its
     )
 
 To play one game under different conditions, such as with a different
-number of rounds, pass the initializer ``settings``: a dict, or any other
+number of rounds, pass the game barrier ``settings``: a dict, or any other
 value that can be saved as JSON. The game's ``initial_state`` gets it as a
 second argument:
 
 .. code-block:: python
 
-    LiveSessionInitializer(
+    LiveGameBarrier(
         id_="rock_paper_scissors",
         group_type="pair",
         game_type=RockPaperScissors,
@@ -182,20 +182,20 @@ second argument:
     )
 
 
-    class RockPaperScissors(LiveSession):
+    class RockPaperScissors(LiveGame):
         def initial_state(self, players, settings):
             return {"rounds": settings["rounds"], "choices": {}, ...}
 
 The game's other methods get only the state, so ``initial_state`` keeps what
 they need in it. To vary the settings from trial to trial, return the
-initializer and the game page from a trial's ``show_trial``, and pass the
+game barrier and the game page from a trial's ``show_trial``, and pass the
 trial's ``definition`` as the settings. Every member of a group has to
 arrive with the same settings: a member whose settings differ from those of
 the members already waiting gets an error that says so. Trials that a group
 plays in one round share a definition, so set ``sync_group_type`` on the
 trial class and cue one trial per player (see :ref:`rounds-cued-trials`).
 Such a trial needs a
-:class:`~psynet.sync.GroupBarrier` in its ``show_trial``, and the initializer
+:class:`~psynet.sync.GroupBarrier` in its ``show_trial``, and the game barrier
 is one.
 
 The page's JavaScript goes in a file in the experiment's ``static`` folder,
@@ -281,7 +281,7 @@ function, which PsyNet runs each time the page opens
   once the session's result is saved, or with the close code and reason if
   the server refuses the page's connection. Either way, the page then moves
   on by itself (see "The end" below).
-- ``hasSession`` says whether the group started a session at the initializer.
+- ``hasSession`` says whether the group started a session at the game barrier.
   Without one, PsyNet shows the participant a notice, and the other methods
   throw an error.
 - ``socket`` is the page's Dallinger socket, for anything else, such as
@@ -295,25 +295,25 @@ Cases a game page should allow for
 
 No session
     A participant can reach the page without one, for example when the
-    initializer's ``max_wait_action="leave_group"`` took them out of a group
+    game barrier's ``max_wait_action="leave_group"`` took them out of a group
     whose other members were too slow to arrive, or when their group ended
-    before they reached the initializer. PsyNet tells the participant with a
+    before they reached the game barrier. PsyNet tells the participant with a
     notice at the top of the page, "Your group couldn't start the game.",
     which the control's ``no_session_message`` changes or turns off. The
     page's JavaScript should check ``psynet.liveSession.hasSession`` first, as
     above, and do nothing more without a session.
 
-    That is different from a page whose control names an initializer the
-    participant never reached, because its ``initializer_id`` is misspelt or
-    the page comes before the initializer. PsyNet raises an error when it
+    That is different from a page whose control names a game barrier the
+    participant never reached, because its ``barrier_id`` is misspelt or
+    the page comes before the game barrier. PsyNet raises an error when it
     shows such a page.
 
 Joining in time
     The page joins the session when its JavaScript first uses
     ``psynet.liveSession``, so call ``onView`` in ``activate``. The session's
-    clock starts when the group leaves the initializer, and if none of the
+    clock starts when the group leaves the game barrier, and if none of the
     group has opened the page by the game's ``join_timeout``, 60 seconds
-    unless the game sets it, the session ends. Pages between the initializer
+    unless the game sets it, the session ends. Pages between the game barrier
     and the game page count against it, and against the game's
     ``ready_timeout``, so raise both to allow for them.
 
@@ -412,7 +412,7 @@ never receives them, even if the game defines its own. To show who is ready,
 read ``ready`` from the view.
 
 The session time, and ``max_duration``, count from when the group left the
-initializer, not from the start. A game whose rounds have a time limit sets
+game barrier, not from the start. A game whose rounds have a time limit sets
 its deadlines in ``on_start``, which runs at the start even if some players
 aren't ready, and its ``tick`` runs at each one:
 
@@ -439,7 +439,7 @@ aren't ready, and its ``tick`` runs at each one:
         def is_over(self, state):
             return state["late"] or super().is_over(state)
 
-The answer and bonuses
+The answer and rewards
 ----------------------
 
 The game page's answer is the session's outcome: what the game's ``outcome``
@@ -463,16 +463,16 @@ page waits as long as the session runs.
 
 The limit also stops a later :class:`~psynet.sync.GroupBarrier` from
 counting a player who is still in the game as late. ``late_after`` counts from
-the group's previous barrier, which is usually the initializer, so it would
+the group's previous barrier, which is usually the game barrier, so it would
 otherwise include the whole game. The game page tells PsyNet that it ends by
 the game's ``max_duration`` plus a minute, and ``late_after`` doesn't count a
 player as late before then, just as it waits for a page's ``time_limit``. So
 ``late_after`` needs to cover only the pages after the game.
 
-A game can pay bonuses, which are added to each player's performance reward,
-in two ways. Each bonus must be a number of 0 or more. For a bonus based on
-the outcome, define ``bonus(outcome, reason, player_id)`` to return the
-player's bonus. PsyNet pays it when the player leaves the game page, once per
+A game can add to each player's performance reward in two ways. Each amount
+must be a number of 0 or more. For a reward based on the outcome, define
+``performance_reward(outcome, reason, player_id)`` to return the player's
+reward. PsyNet pays it when the player leaves the game page, once per
 session. This game pays 0.10 for a win:
 
 .. code-block:: python
@@ -480,13 +480,13 @@ session. This game pays 0.10 for a win:
     BEATS = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
 
 
-    class RockPaperScissors(LiveSession):
+    class RockPaperScissors(LiveGame):
         ...
 
         def outcome(self, state, reason):
             return state["choices"]
 
-        def bonus(self, outcome, reason, player_id):
+        def performance_reward(self, outcome, reason, player_id):
             mine = outcome[player_id]
             (theirs,) = [
                 choice for player, choice in outcome.items() if player != player_id
@@ -498,15 +498,16 @@ session. This game pays 0.10 for a win:
 raised an error, ``reason`` is ``"failed"``, and ``outcome`` is the outcome of
 the state just before the error.
 
-For a bonus earned during the game, such as for each coin a player collects,
-call ``game.queue_bonus(player_id, amount)`` in a message's ``apply`` or in
-another method that changes the state. PsyNet adds it to the player's reward
-a few seconds later, so the player keeps it even if they leave early.
+For a reward earned during the game, such as for each coin a player collects,
+call ``game.add_performance_reward(player_id, amount)`` in a message's
+``apply`` or in another method that changes the state. PsyNet adds it to the
+player's reward a few seconds later, so the player keeps it even if they
+leave early.
 
 A session can fail without an outcome: its record couldn't be saved, or the
 game's ``outcome`` raised an error as well. The answer is then ``None`` and
-PsyNet doesn't call ``bonus``, but bonuses from ``queue_bonus`` saved before
-the problem are still paid. A game that must pay players whatever happens can
+PsyNet doesn't call ``performance_reward``, but amounts from
+``add_performance_reward`` saved before the problem are still paid. A game that must pay players whatever happens can
 pay them as it goes. :func:`~psynet.live_session.live_session_result` says
 how a session ended, and whether its record is complete.
 
@@ -528,7 +529,7 @@ for all of them, or on a message type, for that type's. On a later page:
                 print(saved.player_id, saved.message.action, saved.session_time)
 
 ``live_session_id`` finds the session from the participant's latest visit to
-the initializer, or returns ``None`` if their group didn't start one. In an
+the game barrier, or returns ``None`` if their group didn't start one. In an
 analysis, ``realtime_sessions_for(participant, game_type)`` from
 ``dallinger.realtime`` returns all of a participant's sessions of a game, and
 each one's ``id`` is its session id.
@@ -536,7 +537,7 @@ each one's ``id`` is its session id.
 Each message is a :class:`~psynet.live_session.SavedMessage`, in the order the
 game applied them. Its ``message`` is ``None`` if what the page sent can't be
 read as one of the game's message types, and its ``payload`` holds what the
-page sent. ``Ready.saved_messages(session_id)`` says when each player became
+page sent. ``PlayerReady.saved_messages(session_id)`` says when each player became
 ready.
 
 The record is written a few seconds behind the game, so while a session is
@@ -553,7 +554,7 @@ accepted or rejected the message, and ``rejection`` is the
 
 .. code-block:: python
 
-    class Maze(LiveSession):
+    class Maze(LiveGame):
         ...
 
         def save_message(self, state, player_id, message, rejection):
@@ -572,7 +573,7 @@ JavaScript. When a group's members include bots, the game plays for them
 through its ``bot`` method, as in ``RockPaperScissors`` above. It gets the
 bot's view, the bot's player id and the session time, and returns the bot's
 next message, or ``None`` to send nothing. A message the game can't read
-makes the session fail. A :class:`~psynet.live_session.LiveSessionInitializer`
+makes the session fail. A :class:`~psynet.live_session.LiveGameBarrier`
 refuses a game without ``bot``, since its bots would never move.
 
 In a game without ticks, ``bot`` runs once the session has started, and again
@@ -581,7 +582,7 @@ message the game accepts. So it must return ``None`` once the bot has nothing
 to do. In a game with ticks, it runs once per tick. Dallinger's
 `bot <dallinger-bot_>`_ has the details.
 
-A group's bots have to reach the initializer together, so set the experiment's
+A group's bots have to reach the game barrier together, so set the experiment's
 ``test_mode = "parallel"``, and ``test_n_bots`` to a multiple of the group
 size. A bot's answer on the game page is the outcome too, so the page doesn't
 need a ``bot_response``.
