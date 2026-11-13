@@ -456,6 +456,21 @@ the shared services:
 
     dallinger docker-ssh servers upgrade --host my-server.example.org
 
+.. _upgrading_to_postgresql_18:
+
+On a server set up by Dallinger 13.0 or earlier, the upgrade also moves the
+shared database from PostgreSQL 12 to 18. While it copies the databases, it
+stops every classic app on the server, so run it when no app has participants.
+The move normally runs without problems, but as a precaution, first export
+the data of the apps you still need with ``psynet export ssh --app <app>``
+(see :doc:`/data/exporting_data`). On a server that runs PostgreSQL 18, new
+or moved, no one may deploy with PsyNet 13 or earlier, which uses Dallinger 12
+or earlier: such a deploy can take every classic app on the server offline.
+Notify everyone who deploys to the server. `Moving to PostgreSQL 18
+<https://dallinger.readthedocs.io/latest/docker_support.html#moving-to-postgresql-18>`__
+in the Dallinger documentation gives the details, including how to remove the
+old database volume afterwards.
+
 The upgrade writes the Let's Encrypt contact email into the server's
 ``Caddyfile``: the one you pass with ``--contact-email``, else the one saved
 with the server, else ``contact_email_on_error`` from ``~/.dallingerconfig``

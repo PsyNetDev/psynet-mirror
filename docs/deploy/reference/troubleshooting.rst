@@ -35,7 +35,8 @@ whose last deployment there was at the server's own DNS name, for example an
 older PsyNet deployment without ``--app`` (see :ref:`ssh_server_addresses`).
 Run the command that the message names, then deploy again. This is usually
 ``servers upgrade``, which briefly restarts the shared services, so run it
-when no classic experiment on the server is live:
+when no classic experiment on the server is live. On a server set up by
+Dallinger 13.0 or earlier, read :ref:`Moving to PostgreSQL 18 <upgrading_to_postgresql_18>` first:
 
 .. code:: bash
 

@@ -344,7 +344,9 @@ commands do:
   app first, because its directory is where the new routes go. Shared
   services whose configuration changed are recreated, which briefly
   interrupts every classic app on the server, so upgrade when no classic
-  experiment is live.
+  experiment is live. On a server set up by Dallinger 13.0 or earlier, it
+  also moves the shared database to PostgreSQL 18 and stops every classic app
+  while it copies the databases (see :ref:`Moving to PostgreSQL 18 <upgrading_to_postgresql_18>`).
 
 When these commands write the server's ``Caddyfile``, they write it for the
 server's own DNS name (see :ref:`ssh_server_addresses`). Caddy gives Let's Encrypt the contact email
