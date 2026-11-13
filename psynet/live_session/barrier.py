@@ -1,11 +1,13 @@
-"""LiveGameBarrier, the group barrier that starts a session, and
-live_session_id, which finds it.
+"""PlayLiveGame, the timeline step where a group plays a live session, and
+live_session_id, which finds the session.
 
-When the barrier releases a group, it starts a Dallinger real-time session
-and stores its id in each member's ``live_sessions``, keyed by the
-game barrier's id. Reaching the game barrier sets that entry to ``None`` first,
-so a page finds only the session from the participant's latest visit, and an
-id without an entry is one whose game barrier the participant never reached.
+PlayLiveGame resolves into a group barrier, which starts the session when
+it releases the group, followed by the game page. The barrier stores the
+session's id in each member's ``live_sessions``, keyed by the step's id, and
+the page's LiveSessionControl reads it from there. Reaching the barrier sets
+that entry to ``None`` first, so the page finds only the session from the
+participant's latest visit, and an id without an entry is one whose step the
+participant never reached.
 """
 
 import inspect
@@ -15,28 +17,47 @@ from dallinger.realtime import RealtimeGame, create_realtime_session
 
 from ..barrier_spec import BarrierSpecError, barrier_spec_json
 from ..bot import Bot
+from ..modular_page import ModularPage
 from ..sync import BarrierBehaviorMismatch, GroupBarrier
-from ..timeline import CodeBlock, join
+from ..timeline import CodeBlock, EltCollection, join
 from .game import LiveGame
 from .ready_step import _new_session_settings
 
 
-class LiveGameBarrier(GroupBarrier):
-    """Starts a live session for each group that reaches this point in the
-    timeline.
+class PlayLiveGame(EltCollection):
+    """The step of the timeline where a group plays a live session.
 
-    Like a :class:`~psynet.sync.GroupBarrier`, it waits for every member of
-    the participant's group to arrive. It then starts a session of
+    Like a :class:`~psynet.sync.GroupBarrier`, it first waits for every
+    member of the participant's group to arrive. It then starts a session of
     ``game_type`` with the members as its players, and the group moves on
-    together. A later page finds the session with :func:`live_session_id`. A
-    group that arrives again, for example in a loop, plays a new session.
+    together to ``page``, where they play it. A group that arrives again,
+    for example in a loop, plays a new session.
+
+    ::
+
+        PlayLiveGame(
+            id_="rock_paper_scissors",
+            group_type="pair",
+            game_type=RockPaperScissors,
+            page=ModularPage(
+                "rock_paper_scissors",
+                Prompt(tags.div(tags.p(id="status"), ...)),
+                LiveSessionControl(),
+                js_page_modules=["/static/rock_paper_scissors.js"],
+                time_estimate=30,
+            ),
+        )
+
+    In a trial played in groups, return it from ``show_trial``: it is the
+    group barrier that such a trial needs, and the game page's answer is the
+    trial's answer.
 
     Parameters
     ----------
 
     id_
-        A name for this game barrier, which pages pass to
-        :func:`live_session_id` to find the group's session.
+        A name for this step, which :func:`live_session_id` takes to find
+        the group's session, for example on a later page.
 
     group_type
         The ``group_type`` of the :class:`~psynet.sync.Grouper` whose groups
@@ -47,16 +68,20 @@ class LiveGameBarrier(GroupBarrier):
         ``bot`` method. Define it at the top level of a file, such as
         ``experiment.py``, not inside a function or another class.
 
+    page
+        The game page: a :class:`~psynet.modular_page.ModularPage` with a
+        :class:`LiveSessionControl`.
+
     settings
-        Settings for the sessions this game barrier starts, such as the
-        number of rounds: a dict, or any other value that can be saved as
-        JSON. The game's ``initial_state`` gets it as a second argument, so
-        define that as ``initial_state(self, players, settings)``. In a
-        trial's ``show_trial``, pass the trial's ``definition`` to play each
-        trial's game with that trial's settings. The members of a group must
-        all arrive with the same settings, so give the trial class, or its
-        trial maker, the group's ``sync_group_type``, which gives them the
-        same trial.
+        Settings for the sessions this step starts, such as the number of
+        rounds: a dict, or any other value that can be saved as JSON. The
+        game's ``initial_state`` gets it as a second argument, so define
+        that as ``initial_state(self, players, settings)``. In a trial's
+        ``show_trial``, pass the trial's ``definition`` to play each trial's
+        game with that trial's settings. The members of a group must all
+        arrive with the same settings, so give the trial class, or its trial
+        maker, the group's ``sync_group_type``, which gives them the same
+        trial.
 
     on_release
         Optional function called once the session has started, with the
@@ -68,9 +93,52 @@ class LiveGameBarrier(GroupBarrier):
         has fewer members than the game's ``min_players``.
 
     **kwargs
-        Any other parameter of :class:`~psynet.sync.GroupBarrier`, such as
-        ``max_wait_time``.
+        Any other parameter of :class:`~psynet.sync.GroupBarrier`, for the
+        wait before the game, such as ``max_wait_time``, ``late_after`` or
+        ``waiting_message``. A participant who has left the group passes
+        the wait and reaches the game page without a session.
     """
+
+    def __init__(
+        self,
+        id_: str,
+        group_type: str,
+        game_type,
+        page,
+        settings=None,
+        on_release=None,
+        **kwargs,
+    ):
+        from .control import LiveSessionControl
+
+        if not (
+            isinstance(page, ModularPage)
+            and isinstance(page.control, LiveSessionControl)
+        ):
+            raise TypeError(
+                f"The page of the PlayLiveGame {id_!r} must be a ModularPage "
+                f"with a LiveSessionControl, not {page!r}."
+            )
+        if page.control.barrier_id not in (None, id_):
+            raise ValueError(
+                f"The page given to the PlayLiveGame {id_!r} is already the page "
+                f"of the PlayLiveGame {page.control.barrier_id!r}. Give each "
+                "PlayLiveGame a page of its own."
+            )
+        page.control.barrier_id = id_
+        self.barrier = _LiveGameBarrier(
+            id_, group_type, game_type, settings, on_release, **kwargs
+        )
+        self.page = page
+
+    def resolve(self):
+        return join(self.barrier, self.page)
+
+
+class _LiveGameBarrier(GroupBarrier):
+    """The group barrier of a :class:`PlayLiveGame`, which starts the
+    group's session when it releases the group. Its parameters are
+    PlayLiveGame's, without ``page``."""
 
     def __init__(
         self,
@@ -100,7 +168,7 @@ class LiveGameBarrier(GroupBarrier):
         super().__init__(
             id_=id_,
             group_type=group_type,
-            on_release=LiveGameBarrier._release,
+            on_release=_LiveGameBarrier._release,
             **kwargs,
         )
         self.game_type = game_type
@@ -110,7 +178,7 @@ class LiveGameBarrier(GroupBarrier):
             barrier_spec_json(self)
         except BarrierSpecError as error:
             raise TypeError(
-                f"The LiveGameBarrier {id_!r} can't be saved: {error}"
+                f"The PlayLiveGame {id_!r} can't be saved: {error}"
             ) from None
 
     def receive_participant(self, participant):
@@ -119,7 +187,7 @@ class LiveGameBarrier(GroupBarrier):
         except BarrierBehaviorMismatch:
             raise ValueError(
                 f"Participant {participant.id} arrived at the "
-                f"LiveGameBarrier {self.id!r} with settings that differ "
+                f"PlayLiveGame {self.id!r} with settings that differ "
                 "from those of the members of their group who are waiting "
                 "there. The members of a group must all arrive with the same "
                 "settings, so if they come from a trial's definition, give "
@@ -186,7 +254,7 @@ def _checked_settings(game_type, settings):
         except TypeError:
             raise TypeError(
                 f"{game_type.__name__}.initial_state needs settings. Give the "
-                "LiveGameBarrier its settings."
+                "PlayLiveGame its settings."
             ) from None
         return None
     try:
@@ -206,10 +274,10 @@ def _checked_settings(game_type, settings):
     return settings
 
 
-def live_session_id(participant, barrier_id):
-    """Return the id of the session that a participant's group started at
-    a :class:`LiveGameBarrier`, to read the session's result or its
-    saved messages on a later page.
+def live_session_id(participant, id_):
+    """Return the id of the session that a participant's group played at a
+    :class:`PlayLiveGame`, to read the session's result or its saved
+    messages on a later page.
 
     Parameters
     ----------
@@ -217,8 +285,8 @@ def live_session_id(participant, barrier_id):
     participant
         The participant.
 
-    barrier_id
-        The game barrier's ``id_``.
+    id_
+        The PlayLiveGame's ``id_``.
 
     Returns
     -------
@@ -227,15 +295,15 @@ def live_session_id(participant, barrier_id):
     there since the participant last arrived, for example because the group
     broke up while it waited.
     """
-    return _live_session_ids(participant).get(barrier_id)
+    return _live_session_ids(participant).get(id_)
 
 
 def _check_reached_barrier(participant, barrier_id):
     if barrier_id not in _live_session_ids(participant):
         raise ValueError(
-            f"Participant {participant.id} hasn't reached a "
-            f"LiveGameBarrier with the id {barrier_id!r}. Check the "
-            "id, and that the page comes after that game barrier."
+            f"Participant {participant.id} hasn't reached the PlayLiveGame "
+            f"{barrier_id!r}, whose game page they were shown. Only its "
+            "barrier leads to the page, so check for anything that skips it."
         )
 
 

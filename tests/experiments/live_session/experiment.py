@@ -9,9 +9,9 @@ from dominate import tags
 import psynet.experiment
 from psynet.live_session import (
     LiveGame,
-    LiveGameBarrier,
     LiveMessage,
     LiveSessionControl,
+    PlayLiveGame,
     live_session_id,
 )
 from psynet.modular_page import ModularPage, Prompt
@@ -40,7 +40,7 @@ class PickNumbers(LiveGame):
     def initial_state(self, players, settings=None):
         return {
             "picks": {player: None for player in players},
-            # The game barrier's settings say what a pick pays.
+            # The PlayLiveGame's settings say what a pick pays.
             "pick_reward": settings["pick_reward"] if settings else 0,
         }
 
@@ -76,31 +76,31 @@ class Exp(psynet.experiment.Experiment):
             below_quorum="continue_without_group",
         ),
         # A participant who stays on this page keeps their partner waiting at
-        # the game barrier.
+        # the game.
         InfoPage("You have a partner.", time_estimate=5),
-        LiveGameBarrier(
+        PlayLiveGame(
             id_="pick_numbers",
             group_type="pair",
             game_type=PickNumbers,
+            page=ModularPage(
+                "pick_numbers",
+                Prompt(
+                    tags.div(
+                        tags.p("Joining...", id="game-status"),
+                        tags.input_(type="number", id="pick-number", value="7"),
+                        tags.button("Pick", type="button", id="pick"),
+                        tags.p(id="game-error"),
+                    )
+                ),
+                LiveSessionControl(),
+                js_page_modules=["/static/pick-numbers.js"],
+                time_estimate=5,
+            ),
             settings={"pick_reward": 0.5},
             # A participant whose partner doesn't arrive goes on without a
             # session.
             max_wait_time=15,
             max_wait_action="leave_group",
-        ),
-        ModularPage(
-            "pick_numbers",
-            Prompt(
-                tags.div(
-                    tags.p("Joining...", id="game-status"),
-                    tags.input_(type="number", id="pick-number", value="7"),
-                    tags.button("Pick", type="button", id="pick"),
-                    tags.p(id="game-error"),
-                )
-            ),
-            LiveSessionControl("pick_numbers"),
-            js_page_modules=["/static/pick-numbers.js"],
-            time_estimate=5,
         ),
         InfoPage("The page after the game.", time_estimate=5),
     )
@@ -134,6 +134,6 @@ class Exp(psynet.experiment.Experiment):
             .one()
         )
         assert answer == session.outcome
-        # 0.5 from Pick's add_performance_reward, as the game barrier's settings say, plus the bot's pick (its id) / 100
+        # 0.5 from Pick's add_performance_reward, as the game's settings say, plus the bot's pick (its id) / 100
         # from reward.
         assert bot.performance_reward == pytest.approx(0.5 + bot.id / 100)

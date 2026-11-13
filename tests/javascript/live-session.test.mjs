@@ -406,7 +406,7 @@ describe("psynet.liveSession", () => {
     session = { barrierId: "pick_numbers", sessionId: null, gameChannel: null };
     assert.throws(
       () => liveSession.onView(() => {}),
-      /hasn't started a live session at the game barrier "pick_numbers"/
+      /hasn't started a live session at the PlayLiveGame "pick_numbers"/
     );
     assert.equal(sockets.length, 0);
   });

@@ -5450,7 +5450,7 @@ class SyncGroupRound(SQLBase, SQLMixin):
         under the members' row locks, so it is never set on a closed round.
     live_session_id : int or None
         The id of the live session that a
-        :class:`~psynet.live_session.LiveGameBarrier` in the round's trials
+        :class:`~psynet.live_session.PlayLiveGame` in the round's trials
         started, or ``None``. Pass it to
         :func:`~psynet.live_session.live_session_result` or
         :func:`~psynet.live_session.saved_messages`, for example to export

@@ -15,11 +15,12 @@ A live session has three pieces:
 1. The game, a subclass of :class:`~psynet.live_session.LiveGame`, with a
    :class:`~psynet.live_session.LiveMessage` subclass for each kind of
    message a page can send.
-2. A :class:`~psynet.live_session.LiveGameBarrier` in the timeline,
-   which starts a session for each group that reaches it.
-3. The game page, a :class:`~psynet.modular_page.ModularPage` with a
+2. The game page, a :class:`~psynet.modular_page.ModularPage` with a
    :class:`~psynet.live_session.LiveSessionControl`, and a JavaScript file
    that plays the game through ``psynet.liveSession``.
+3. A :class:`~psynet.live_session.PlayLiveGame` in the timeline, which
+   makes each group that reaches it wait for its members, starts a session
+   for the group, and then shows them the game page.
 
 The game
 --------
@@ -141,61 +142,67 @@ state, such as a big grid, can save the time the conversion takes with
 Starting sessions and the game page
 -----------------------------------
 
-Put the game barrier after the :class:`~psynet.sync.Grouper` that forms the
-groups. When all of a group's members reach it, it starts a session, and the
-group moves on together. The game page comes after it, and its
-:class:`~psynet.live_session.LiveSessionControl` names the game barrier:
+Put a :class:`~psynet.live_session.PlayLiveGame` after the
+:class:`~psynet.sync.Grouper` that forms the groups, and give it the game
+page. It waits at a barrier, a :class:`~psynet.sync.GroupBarrier` for the
+group's ``group_type``, until all of a group's members reach it, starts a
+session, and then shows the group the game page:
 
 .. code-block:: python
 
     timeline = Timeline(
         SimpleGrouper(group_type="pair", initial_group_size=2),
-        LiveGameBarrier(
+        PlayLiveGame(
             id_="rock_paper_scissors",
             group_type="pair",
             game_type=RockPaperScissors,
-        ),
-        ModularPage(
-            "rock_paper_scissors",
-            Prompt(
-                tags.div(
-                    tags.p(id="status"),
-                    tags.p(id="rejection"),
-                    tags.button("Rock", type="button", id="rock"),
-                    tags.button("Paper", type="button", id="paper"),
-                    tags.button("Scissors", type="button", id="scissors"),
-                )
+            page=ModularPage(
+                "rock_paper_scissors",
+                Prompt(
+                    tags.div(
+                        tags.p(id="status"),
+                        tags.p(id="rejection"),
+                        tags.button("Rock", type="button", id="rock"),
+                        tags.button("Paper", type="button", id="paper"),
+                        tags.button("Scissors", type="button", id="scissors"),
+                    )
+                ),
+                LiveSessionControl(),
+                js_page_modules=["/static/rock_paper_scissors.js"],
+                time_estimate=30,
             ),
-            LiveSessionControl("rock_paper_scissors"),
-            js_page_modules=["/static/rock_paper_scissors.js"],
-            time_estimate=30,
         ),
         ...
     )
 
+The ``id_`` names the barrier, and the game page plays the session that this
+``PlayLiveGame`` started. Give each ``PlayLiveGame`` a page of its own.
+
 A game needs at least ``min_players`` players, 2 unless the game sets it. A
-group that reaches the game barrier with fewer active members, for example
+group that reaches the ``PlayLiveGame`` with fewer active members, for example
 because the others left it while it waited, starts no session, and its
 members' game pages show the no-session notice (see `Cases a game page should
 allow for`_). Set ``min_players = 1`` for a game a player can play alone.
 
-The game barrier takes the options of a :class:`~psynet.sync.GroupBarrier`,
-such as ``max_wait_time``. Its ``on_release`` runs once the session has
-started, with the arguments a group barrier's ``on_release`` takes and also
-``live_session_id``. Use it for group bookkeeping at the start of a round,
-such as choosing who leaves after it.
+``PlayLiveGame`` takes the options of a :class:`~psynet.sync.GroupBarrier`,
+such as ``max_wait_time``, for its barrier. Its ``on_release`` runs once the
+session has started, with the arguments a group barrier's ``on_release``
+takes and also ``live_session_id``. Use it for group bookkeeping at the start
+of a round, such as choosing who leaves after it.
 
 To play one game under different conditions, such as with a different
-number of rounds, pass the game barrier ``settings``: a dict, or any other
+number of rounds, pass ``PlayLiveGame`` ``settings``: a dict, or any other
 value that can be saved as JSON. The game's ``initial_state`` gets it as a
-second argument:
+second argument. Here and below, ``rock_paper_scissors_page()`` returns a new
+game page like the one above:
 
 .. code-block:: python
 
-    LiveGameBarrier(
+    PlayLiveGame(
         id_="rock_paper_scissors",
         group_type="pair",
         game_type=RockPaperScissors,
+        page=rock_paper_scissors_page(),
         settings={"rounds": 3},
     )
 
@@ -205,18 +212,34 @@ second argument:
             return {"rounds": settings["rounds"], "choices": {}, ...}
 
 The game's other methods get only the state, so ``initial_state`` keeps what
-they need in it. To vary the settings from trial to trial, return the
-game barrier and the game page from a trial's ``show_trial``, and pass the
-trial's ``definition`` as the settings. Every member of a group has to
-arrive with the same settings: a member whose settings differ from those of
-the members already waiting gets an error that says so. Trials that a group
-plays in one round share a definition, so set ``sync_group_type`` on the
-trial class and cue one trial per player (see :ref:`rounds-cued-trials`).
-Such a trial needs a
-:class:`~psynet.sync.GroupBarrier` in its ``show_trial``, and the game barrier
-is one. The round's :attr:`~psynet.sync.SyncGroupRound.live_session_id` then
-names the session the group played in it, so ``trial.group_round`` leads
-from each trial to its round's game, for example in an export.
+they need in it. To vary the settings from trial to trial, return a
+``PlayLiveGame`` from a trial's ``show_trial``, and pass the trial's
+``definition`` as the settings:
+
+.. code-block:: python
+
+    class RockPaperScissorsTrial(StaticTrial):
+        sync_group_type = "pair"
+
+        def show_trial(self, experiment, participant):
+            return PlayLiveGame(
+                id_="rock_paper_scissors",
+                group_type="pair",
+                game_type=RockPaperScissors,
+                page=rock_paper_scissors_page(),
+                settings=self.definition,
+            )
+
+Every member of a group has to arrive with the same settings: a member
+whose settings differ from those of the members already waiting gets an
+error that says so. Trials that a group plays in one round share a
+definition, so set ``sync_group_type`` on the trial class and cue one trial
+per player (see :ref:`rounds-cued-trials`). Such a trial needs a
+:class:`~psynet.sync.GroupBarrier` in its ``show_trial``, and the barrier of
+the ``PlayLiveGame`` is one. The round's
+:attr:`~psynet.sync.SyncGroupRound.live_session_id` then names the session
+the group played in it, so ``trial.group_round`` leads from each trial to its
+round's game, for example in an export.
 
 The page's JavaScript goes in a file in the experiment's ``static`` folder,
 listed in the page's ``js_page_modules``. It exports an ``activate``
@@ -305,7 +328,7 @@ function, which PsyNet runs each time the page opens
   once the session's result is saved, or with the close code and reason if
   the server refuses the page's connection. Either way, the page then moves
   on by itself (see "The end" below).
-- ``hasSession`` says whether the group started a session at the game barrier.
+- ``hasSession`` says whether the group started a session at the ``PlayLiveGame``.
   Without one, PsyNet shows the participant a notice, and the other methods
   throw an error.
 - ``socket`` is the page's Dallinger socket, for anything else, such as
@@ -319,27 +342,21 @@ Cases a game page should allow for
 
 No session
     A participant can reach the page without one, for example when the
-    game barrier's ``max_wait_action="leave_group"`` took them out of a group
-    whose other members were too slow to arrive, or when their group ended
-    before they reached the game barrier. PsyNet tells the participant with a
-    notice at the top of the page, "Your group couldn't start the game.",
-    which the control's ``no_session_message`` changes or turns off. The
-    page's JavaScript should check ``psynet.liveSession.hasSession`` first, as
-    above, and do nothing more without a session.
-
-    That is different from a page whose control names a game barrier the
-    participant never reached, because its ``barrier_id`` is misspelt or
-    the page comes before the game barrier. PsyNet raises an error when it
-    shows such a page.
+    ``max_wait_action="leave_group"`` of the ``PlayLiveGame`` took them out
+    of a group whose other members were too slow to arrive, or when their
+    group ended before they reached the ``PlayLiveGame``. PsyNet tells the
+    participant with a notice at the top of the page, "Your group couldn't
+    start the game.", which the control's ``no_session_message`` changes or
+    turns off. The page's JavaScript should check
+    ``psynet.liveSession.hasSession`` first, as above, and do nothing more
+    without a session.
 
 Joining in time
     The page joins the session when its JavaScript first uses
     ``psynet.liveSession``, so call ``onView`` in ``activate``. The session's
-    clock starts when the group leaves the game barrier, and if none of the
-    group has opened the page by the game's ``join_timeout``, 60 seconds
-    unless the game sets it, the session ends. Pages between the game barrier
-    and the game page count against it, and against the game's
-    ``ready_timeout``, so raise both to allow for them.
+    clock starts when the group's wait at the ``PlayLiveGame`` ends, and if
+    none of the group has opened the page by the game's ``join_timeout``, 60
+    seconds unless the game sets it, the session ends.
 
 Rejected messages
     A message is rejected when one of its fields is missing or of the wrong
@@ -364,7 +381,7 @@ The end
 
     To show the result on the game page first, pass the seconds to show it
     for as the control's ``show_result_for``, such as
-    ``LiveSessionControl("fishing", show_result_for=8)``, and draw the result
+    ``LiveSessionControl(show_result_for=8)``, and draw the result
     in ``onResultSaved``. The page moves on once the seconds are up, and
     ``psynet.liveSession.showResultFor`` gives them to the page for a
     countdown. A later :class:`~psynet.sync.GroupBarrier`'s ``late_after``
@@ -388,8 +405,8 @@ Joining and leaving
     While a player is away for more than a few seconds, the other players'
     pages show a notice at the top that says "Another player has left the
     game." Change it with the control's ``player_left_message``, such as
-    ``LiveSessionControl("rock_paper_scissors", player_left_message="Your
-    partner has left.")``. To show it your own way, set
+    ``LiveSessionControl(player_left_message="Your partner has
+    left.")``. To show it your own way, set
     ``player_left_message=None`` and use ``onPlayersAway``, which gets the ids
     of the players who are away, and an empty list once they're all back.
     The notice only says what happened: a game that should end when a player
@@ -445,8 +462,8 @@ The messages that say a player is ready are PsyNet's, so the game's ``apply``
 never receives them, even if the game defines its own. To show who is ready,
 read ``ready`` from the view.
 
-The session time, and ``max_duration``, count from when the group left the
-game barrier, not from the start. ``self.elapsed(state, now)`` gives the
+The session time, and ``max_duration``, count from when the group's wait at
+the ``PlayLiveGame`` ended, not from the start. ``self.elapsed(state, now)`` gives the
 seconds since the start, or ``None`` before it, for example to record how
 long a group took to agree.
 
@@ -528,7 +545,7 @@ page waits as long as the session runs.
 
 The game page also stops a later :class:`~psynet.sync.GroupBarrier` from
 counting a player who is still in the game as late. ``late_after`` counts from
-the group's previous barrier, which is usually the game barrier, so it would
+the group's previous barrier, which is usually the barrier of a ``PlayLiveGame``, so it would
 otherwise include the whole game. Instead, as for a page with a
 ``time_limit``, it counts from when the game page ends: at first the game's
 ``max_duration`` plus a minute, and once the session's ending is saved, when
@@ -596,7 +613,7 @@ for all of them, or on a message type, for that type's. On a later page:
                 print(saved.player_id, saved.message.action, saved.session_time)
 
 ``live_session_id`` finds the session from the participant's latest visit to
-the game barrier, or returns ``None`` if their group didn't start one. In an
+the ``PlayLiveGame`` with that ``id_``, or returns ``None`` if their group didn't start one. In an
 analysis, ``realtime_sessions_for(participant, game_type)`` from
 ``dallinger.realtime`` returns all of a participant's sessions of a game, and
 each one's ``id`` is its session id.
@@ -640,7 +657,7 @@ JavaScript. When a group's members include bots, the game plays for them
 through its ``bot`` method, as in ``RockPaperScissors`` above. It gets the
 bot's view, the bot's player id and the session time, and returns the bot's
 next message, or ``None`` to send nothing. A message the game can't read
-makes the session fail. A :class:`~psynet.live_session.LiveGameBarrier`
+makes the session fail. A :class:`~psynet.live_session.PlayLiveGame`
 refuses a game without ``bot``, since its bots would never move.
 
 In a game without ticks, ``bot`` runs once the session has started, and again
@@ -649,7 +666,7 @@ message the game accepts. So it must return ``None`` once the bot has nothing
 to do. In a game with ticks, it runs once per tick. Dallinger's
 `bot <dallinger-bot_>`_ has the details.
 
-A group's bots have to reach the game barrier together, so set the experiment's
+A group's bots have to reach the ``PlayLiveGame`` together, so set the experiment's
 ``test_mode = "parallel"``, and ``test_n_bots`` to a multiple of the group
 size. A bot's answer on the game page is the outcome too, so the page doesn't
 need a ``bot_response``.

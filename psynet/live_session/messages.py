@@ -62,7 +62,7 @@ class LiveMessage(BaseModel):
 
         now
             When the message arrived, in seconds on the session's clock,
-            which starts when the group leaves the game barrier.
+            which starts when the group's wait at the PlayLiveGame ends.
         """
         raise NotImplementedError
 
@@ -157,7 +157,7 @@ class SavedMessage:
     reason: object
 
     #: When the message arrived, in seconds on the session's clock, which
-    #: starts when the group leaves the game barrier. It's the ``now`` that
+    #: starts when the group's wait at the PlayLiveGame ends. It's the ``now`` that
     #: :meth:`LiveMessage.apply` received.
     session_time: float
 

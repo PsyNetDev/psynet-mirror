@@ -100,7 +100,7 @@ def _end_game_page_deadlines(session_row, players):
     ended = min(deadline, session_row.end_time)
     for participant in players:
         for link in participant.sync_group_links:
-            # The game barrier cleared the deadline, so one at or after the
+            # The PlayLiveGame's barrier cleared the deadline, so one at or after the
             # latest end was set by the game page.
             if (
                 link.active

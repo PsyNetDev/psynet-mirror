@@ -1680,6 +1680,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             participant=participant,
             trial_maker=self.trial_maker,
         )
+        # Resolves collections such as a PlayLiveGame, so their barriers count.
+        logic = join(logic)
         barriers = list(_group_barriers(logic))
         if (
             self.group_round is not None

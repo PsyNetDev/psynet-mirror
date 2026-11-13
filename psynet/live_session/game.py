@@ -86,7 +86,7 @@ class LiveGame(RealtimeGame):
     duration = None
 
     #: The fewest players a session needs. A group that reaches the
-    #: :class:`LiveGameBarrier` with fewer active members, for example
+    #: :class:`PlayLiveGame` with fewer active members, for example
     #: because the others left it while it waited, starts no session, and its
     #: members' game pages show the no-session notice. Set it to 1 for a game
     #: that a player can play alone.
@@ -245,7 +245,7 @@ class LiveGame(RealtimeGame):
         """Record the group's results in the round the session was played
         in, such as the team's total, in ``group_round.var``. PsyNet calls it
         once, when the session's ending is saved, for a session started by a
-        :class:`LiveGameBarrier` in a round's trials, so there's no need for
+        :class:`PlayLiveGame` in a round's trials, so there's no need for
         another barrier after the game page to score the round. It isn't
         called for a session that failed without an outcome. By default, it
         does nothing.

@@ -393,7 +393,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
     live_sessions : dict or None
         The ids of the participant's live sessions, keyed by the id of the
-        :class:`~psynet.live_session.LiveGameBarrier` that started
+        :class:`~psynet.live_session.PlayLiveGame` that started
         each one. Read it with :func:`~psynet.live_session.live_session_id`.
         Should not be modified directly.
 

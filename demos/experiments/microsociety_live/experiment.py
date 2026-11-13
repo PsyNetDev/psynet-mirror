@@ -15,8 +15,8 @@ member retires at its end, and a member also stops after ``MAX_ROUNDS``
 rounds. Before leaving, they leave a tip for future members.
 
 Each round is one cued ``FishingTrial`` per member, whose ``show_trial``
-starts a live session for the society and shows the lake. The game barrier's
-``on_release`` chooses who leaves after the round, and the game's
+returns a ``PlayLiveGame``: a live session for the society, played on the
+lake. Its ``on_release`` chooses who leaves after the round, and the game's
 ``record_round`` records where the round's fish were caught.
 """
 
@@ -30,9 +30,9 @@ import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages, run_bots_to_completion
 from psynet.live_session import (
     LiveGame,
-    LiveGameBarrier,
     LiveMessage,
     LiveSessionControl,
+    PlayLiveGame,
 )
 from psynet.modular_page import ModularPage, NullControl, Prompt, TextControl
 from psynet.page import InfoPage
@@ -282,7 +282,6 @@ def lake_page(round_number):
         Prompt(lake(f"Round {round_number + 1}", "Joining the lake…")),
         # The page shows the round's results on the lake before moving on.
         LiveSessionControl(
-            "fishing",
             show_result_for=RESULTS_SECONDS,
             player_left_message="A member has left the lake.",
         ),
@@ -465,23 +464,21 @@ class FishingTrial(Trial):
     time_estimate = ROUND_SECONDS + RESULTS_SECONDS
 
     def show_trial(self, experiment, participant):
-        return [
-            LiveGameBarrier(
-                id_="fishing",
-                group_type=GROUP,
-                game_type=Fishing,
-                on_release=self.plan_leaving,
-                settings={
-                    "spot_means": SPOT_MEANS,
-                    "noise": CATCH_NOISE,
-                    "catch_seconds": CATCH_SECONDS,
-                    "travel_seconds": TRAVEL_SECONDS,
-                },
-                waiting_message="Waiting for the others to reach the lake…",
-                waiting_screen=lake_waiting_screen,
-            ),
-            lake_page(self.sync_group_round),
-        ]
+        return PlayLiveGame(
+            id_="fishing",
+            group_type=GROUP,
+            game_type=Fishing,
+            page=lake_page(self.sync_group_round),
+            on_release=self.plan_leaving,
+            settings={
+                "spot_means": SPOT_MEANS,
+                "noise": CATCH_NOISE,
+                "catch_seconds": CATCH_SECONDS,
+                "travel_seconds": TRAVEL_SECONDS,
+            },
+            waiting_message="Waiting for the others to reach the lake…",
+            waiting_screen=lake_waiting_screen,
+        )
 
     def fish(self) -> int:
         """Return the fish the member caught this round."""

@@ -123,7 +123,7 @@
       if (current.sessionId == null) {
         throw new Error(
           "The participant's group hasn't started a live session at the " +
-            "game barrier " +
+            "PlayLiveGame " +
             JSON.stringify(current.barrierId) +
             ", because the participant was removed from their group " +
             "there. Check psynet.liveSession.hasSession before the page " +
@@ -571,7 +571,7 @@
     api = {
       /**
        * Whether the participant's group started a session at the page's
-       * game barrier. A participant removed from their group there has none.
+       * PlayLiveGame. A participant removed from their group there has none.
        * PsyNet then shows the control's ``no_session_message`` in a notice,
        * and the other methods throw. Reading it doesn't join the session.
        *

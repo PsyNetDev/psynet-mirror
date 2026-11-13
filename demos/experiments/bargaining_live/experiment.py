@@ -23,9 +23,9 @@ import psynet.experiment
 from psynet.bot import Bot
 from psynet.live_session import (
     LiveGame,
-    LiveGameBarrier,
     LiveMessage,
     LiveSessionControl,
+    PlayLiveGame,
     live_session_result,
 )
 from psynet.modular_page import ModularPage, Prompt
@@ -203,7 +203,7 @@ def bargaining_page():
                 id="bargain-game",
             )
         ),
-        LiveSessionControl("bargain", player_left_message="Your partner has left."),
+        LiveSessionControl(player_left_message="Your partner has left."),
         js_page_modules=["/static/bargaining.js"],
         css_links=["/static/bargaining.css"],
         time_estimate=BARGAIN_SECONDS,
@@ -215,16 +215,14 @@ class BargainTrial(Trial):
     time_estimate = BARGAIN_SECONDS + 10
 
     def show_trial(self, experiment, participant):
-        return join(
-            LiveGameBarrier(
-                id_="bargain",
-                group_type=PAIR,
-                game_type=Bargain,
-                settings=self.definition,
-                max_wait_time=30,
-                max_wait_action="leave_group",
-            ),
-            bargaining_page(),
+        return PlayLiveGame(
+            id_="bargain",
+            group_type=PAIR,
+            game_type=Bargain,
+            page=bargaining_page(),
+            settings=self.definition,
+            max_wait_time=30,
+            max_wait_action="leave_group",
         )
 
     def coins(self):

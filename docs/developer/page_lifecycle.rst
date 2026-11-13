@@ -625,7 +625,7 @@ contributes everything the page needs through the component hooks:
   socket;
 * ``get_participant_js_vars`` adds the session's id and game channel to the page's
   ``js_vars`` each time the page renders. It raises an error for a participant
-  who hasn't reached a game barrier with the control's ``barrier_id``.
+  who hasn't reached the barrier of the ``PlayLiveGame`` the page belongs to.
 
 The socket's scope is the participant's ``websocketScope``, a ``.``,
 ``dallinger.pageScope``, another ``.`` and a count of the game sockets the
@@ -697,7 +697,7 @@ Key implementation and test locations
 * ``psynet/resources/scripts/live-session.js`` — ``psynet.liveSession``, a game
   page's connection to its live session.
 * ``psynet/live_session/`` — live sessions on the server: the game class, its
-  method wrappers, the game barrier, the control and the ready step.
+  method wrappers, ``PlayLiveGame``, the control and the ready step.
 * ``tests/isolated/test_live_session.py``, ``tests/javascript/live-session.test.mjs``
   and ``tests/playwright/live_session.spec.js`` — live sessions.
 * ``psynet/timeline_hold.py`` — durable hold state, accounting, and wake

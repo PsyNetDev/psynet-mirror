@@ -7,7 +7,7 @@ from dallinger.realtime import Reject
 
 from .messages import LiveMessage, _parse_message
 
-# The settings of the session a LiveGameBarrier is starting, set
+# The settings of the session a PlayLiveGame is starting, set
 # while it calls create_realtime_session, which calls the game's
 # initial_state before it returns.
 _new_session_settings = contextvars.ContextVar("_new_session_settings", default=None)
@@ -104,7 +104,7 @@ def _record_join(self, method, state, player_id, now):
 
 def _add_ready_step(self, method, players, *settings):
     # Dallinger calls initial_state with the players alone, so an
-    # game barrier's settings come from _new_session_settings.
+    # PlayLiveGame's settings come from _new_session_settings.
     if not settings and _new_session_settings.get() is not None:
         settings = (_new_session_settings.get(),)
     state = method(self, players, *settings)

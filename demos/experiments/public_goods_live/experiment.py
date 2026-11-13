@@ -19,14 +19,14 @@ import psynet.experiment
 from psynet.bot import Bot
 from psynet.live_session import (
     LiveGame,
-    LiveGameBarrier,
     LiveMessage,
     LiveSessionControl,
+    PlayLiveGame,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
-from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop, join
+from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop
 from psynet.trial.main import Trial
 
 GROUP = "team"
@@ -159,9 +159,7 @@ def contribution_page(round_number):
                 id="pg-game",
             )
         ),
-        LiveSessionControl(
-            "public_goods", player_left_message="A player has left the game."
-        ),
+        LiveSessionControl(player_left_message="A player has left the game."),
         js_page_modules=["/static/public-goods.js"],
         css_links=["/static/public-goods.css"],
         time_estimate=ROUND_SECONDS,
@@ -173,17 +171,15 @@ class ContributionTrial(Trial):
     time_estimate = ROUND_SECONDS + RESULTS_SECONDS
 
     def show_trial(self, experiment, participant):
-        return join(
-            LiveGameBarrier(
-                id_="public_goods",
-                group_type=GROUP,
-                game_type=PublicGoods,
-                settings={"endowment": ENDOWMENT, "multiplier": MULTIPLIER},
-                waiting_message="Waiting for the other players…",
-                late_after=LATE_AFTER,
-                late_action="leave_group",
-            ),
-            contribution_page(self.sync_group_round),
+        return PlayLiveGame(
+            id_="public_goods",
+            group_type=GROUP,
+            game_type=PublicGoods,
+            page=contribution_page(self.sync_group_round),
+            settings={"endowment": ENDOWMENT, "multiplier": MULTIPLIER},
+            waiting_message="Waiting for the other players…",
+            late_after=LATE_AFTER,
+            late_action="leave_group",
         )
 
     def show_feedback(self, experiment, participant):

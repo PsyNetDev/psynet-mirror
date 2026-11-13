@@ -3,12 +3,12 @@ time, such as a negotiation, a coordination game or a game on a shared board.
 
 A game is a :class:`LiveGame` subclass, with a :class:`LiveMessage`
 subclass for each kind of message its pages send. A
-:class:`LiveGameBarrier` in the timeline starts a session for each
-group that reaches it, and a page with a :class:`LiveSessionControl` plays
-it. :doc:`/code/multiplayer/live_sessions` walks through a whole game.
+:class:`PlayLiveGame` in the timeline starts a session for each
+group that reaches it, and its page, which has a :class:`LiveSessionControl`,
+plays it. :doc:`/code/multiplayer/live_sessions` walks through a whole game.
 """
 
-from .barrier import LiveGameBarrier, live_session_id
+from .barrier import PlayLiveGame, live_session_id
 from .control import LiveSessionControl
 from .game import LiveGame
 from .messages import LiveMessage, SavedMessage
@@ -20,7 +20,7 @@ __all__ = [
     "LiveMessage",
     "LiveGame",
     "LiveSessionControl",
-    "LiveGameBarrier",
+    "PlayLiveGame",
     "LiveSessionResult",
     "NOT_STARTED",
     "PlayerReady",

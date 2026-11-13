@@ -1,7 +1,7 @@
 """The live session games defined so far, by channel."""
 
 # Every LiveGame subclass that sets a channel, by channel. It is one
-# registry for the whole process, because a game barrier built in a trial's
+# registry for the whole process, because a PlayLiveGame built in a trial's
 # show_trial isn't known when the experiment class is created.
 _live_session_types = {}
 

@@ -27,11 +27,11 @@ from psynet.experiment import Experiment, get_experiment
 from psynet.live_session import (
     NOT_STARTED,
     LiveGame,
-    LiveGameBarrier,
     LiveMessage,
     LiveSessionControl,
     LiveSessionResult,
     PlayerReady,
+    PlayLiveGame,
     live_session_id,
     live_session_result,
 )
@@ -102,9 +102,31 @@ def _pair(db_session, members):
     (game_barrier,) = {
         elt.links["barrier"]
         for elt in experiment.timeline.all_elts
-        if isinstance(elt.links.get("barrier"), LiveGameBarrier)
+        if getattr(elt.links.get("barrier"), "id", None) == "pick_numbers"
     }
     return members, game_barrier
+
+
+def _play(id_="trial_game", page=None, **kwargs):
+    """A PlayLiveGame of the pick-numbers game, as a trial's show_trial
+    builds one for each participant."""
+    if page is None:
+        page = ModularPage(id_, "Play.", LiveSessionControl(), time_estimate=5)
+    kwargs.setdefault("game_type", type(_pick_numbers()))
+    return PlayLiveGame(id_=id_, group_type="pair", page=page, **kwargs)
+
+
+def _page_of(game_barrier, page_kwargs=None, **control_kwargs):
+    """A game page that plays the session ``game_barrier`` starts."""
+    page = ModularPage(
+        "game",
+        "Play.",
+        LiveSessionControl(**control_kwargs),
+        time_estimate=5,
+        **(page_kwargs or {}),
+    )
+    _play(game_barrier.id, page)
+    return page
 
 
 def _reach(game_barrier, member):
@@ -187,9 +209,7 @@ def test_an_game_barrier_s_settings_must_be_json_the_game_takes(registry, monkey
             return {"settings": settings}
 
     def game_barrier(game_type, settings):
-        return LiveGameBarrier(
-            id_="game", group_type="pair", game_type=game_type, settings=settings
-        )
+        return _play("game", game_type=game_type, settings=settings).barrier
 
     # A group's release rebuilds the game barrier, so it has to find the game.
     with pytest.raises(TypeError, match="'game' can't be saved: .* is a local class"):
@@ -214,14 +234,8 @@ def test_an_game_barrier_s_settings_must_be_json_the_game_takes(registry, monkey
 
 
 def _trial_game_barrier(settings):
-    """A game barrier as a trial's show_trial builds one for each participant,
-    from the trial's definition."""
-    return LiveGameBarrier(
-        id_="trial_game",
-        group_type="pair",
-        game_type=type(_pick_numbers()),
-        settings=settings,
-    )
+    """The barrier of a PlayLiveGame with settings from a trial's definition."""
+    return _play(settings=settings).barrier
 
 
 def test_each_round_s_game_barriers_start_a_session_with_that_round_s_settings(pair):
@@ -256,12 +270,7 @@ def _note_session_start(participants, live_session_id):
 
 def test_the_game_barrier_s_on_release_runs_once_the_session_has_started(pair):
     members, _ = pair
-    game_barrier = LiveGameBarrier(
-        id_="trial_game",
-        group_type="pair",
-        game_type=type(_pick_numbers()),
-        on_release=_note_session_start,
-    )
+    game_barrier = _play(on_release=_note_session_start).barrier
     _session_starts.clear()
 
     for member in members:
@@ -277,7 +286,7 @@ def test_the_members_of_a_group_must_arrive_with_the_same_settings(pair):
 
     with pytest.raises(
         ValueError,
-        match=f"Participant {members[1].id} arrived at the LiveGameBarrier "
+        match=f"Participant {members[1].id} arrived at the PlayLiveGame "
         "'trial_game' with settings that differ from those of the members of "
         "their group who are waiting there.",
     ):
@@ -287,7 +296,7 @@ def test_the_members_of_a_group_must_arrive_with_the_same_settings(pair):
 def test_an_game_barrier_s_settings_can_t_use_a_key_its_saved_form_reserves():
     with pytest.raises(
         TypeError,
-        match="LiveGameBarrier 'trial_game' can't be saved: .*'__type__'",
+        match="PlayLiveGame 'trial_game' can't be saved: .*'__type__'",
     ):
         _trial_game_barrier({"__type__": "fast"})
 
@@ -307,14 +316,12 @@ def _rendered_js_vars(page, participant, monkeypatch):
 
 def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch):
     members, game_barrier = pair
-    page = ModularPage(
-        "game", "Play.", LiveSessionControl(game_barrier.id), time_estimate=5
-    )
+    page = _page_of(game_barrier)
 
     with pytest.raises(
         ValueError,
-        match=f"Participant {members[0].id} hasn't reached a "
-        f"LiveGameBarrier with the id '{game_barrier.id}'. Check the id",
+        match=f"Participant {members[0].id} hasn't reached the PlayLiveGame "
+        f"'{game_barrier.id}', whose game page",
     ):
         _rendered_js_vars(page, members[0], monkeypatch)
     _reach(game_barrier, members[0])
@@ -344,12 +351,7 @@ def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch)
 
 def test_a_live_session_page_can_leave_moving_on_to_its_javascript(pair, monkeypatch):
     members, game_barrier = pair
-    page = ModularPage(
-        "game",
-        "Play.",
-        LiveSessionControl(game_barrier.id, auto_advance=False),
-        time_estimate=5,
-    )
+    page = _page_of(game_barrier, auto_advance=False)
 
     _reach(game_barrier, members[0])
     js_vars = _rendered_js_vars(page, members[0], monkeypatch)
@@ -362,7 +364,7 @@ def test_a_live_session_page_can_leave_moving_on_to_its_javascript(pair, monkeyp
 )
 def test_a_live_session_page_refuses_a_show_result_for_it_can_t_honour(kwargs):
     with pytest.raises(ValueError, match="show_result_for"):
-        LiveSessionControl("game", **kwargs)
+        LiveSessionControl(**kwargs)
 
 
 @pytest.mark.parametrize("message", ["Your partner has left.", None])
@@ -370,12 +372,7 @@ def test_a_live_session_page_can_change_or_hide_its_player_left_notice(
     pair, monkeypatch, message
 ):
     members, game_barrier = pair
-    page = ModularPage(
-        "game",
-        "Play.",
-        LiveSessionControl(game_barrier.id, player_left_message=message),
-        time_estimate=5,
-    )
+    page = _page_of(game_barrier, player_left_message=message)
 
     _reach(game_barrier, members[0])
     js_vars = _rendered_js_vars(page, members[0], monkeypatch)
@@ -388,12 +385,7 @@ def test_a_live_session_page_can_change_or_hide_its_no_session_notice(
     pair, monkeypatch, message
 ):
     members, game_barrier = pair
-    page = ModularPage(
-        "game",
-        "Play.",
-        LiveSessionControl(game_barrier.id, no_session_message=message),
-        time_estimate=5,
-    )
+    page = _page_of(game_barrier, no_session_message=message)
 
     _reach(game_barrier, members[0])
     js_vars = _rendered_js_vars(page, members[0], monkeypatch)
@@ -401,8 +393,30 @@ def test_a_live_session_page_can_change_or_hide_its_no_session_notice(
     assert js_vars["liveSession"]["noSessionMessage"] == message
 
 
+def test_a_play_live_game_needs_a_game_page_of_its_own(pair):
+    page = ModularPage("game", "Play.", LiveSessionControl(), time_estimate=5)
+    # The page follows the barrier.
+    assert _play("first", page).resolve()[-1] is page
+    with pytest.raises(
+        ValueError, match="already the page of the PlayLiveGame 'first'"
+    ):
+        _play("second", page)
+    with pytest.raises(
+        TypeError, match="must be a ModularPage with a LiveSessionControl"
+    ):
+        _play("third", InfoPage("Play.", time_estimate=5))
+
+
+def test_a_live_session_page_has_to_belong_to_a_play_live_game(pair, monkeypatch):
+    members, _ = pair
+    page = ModularPage("game", "Play.", LiveSessionControl(), time_estimate=5)
+
+    with pytest.raises(TypeError, match="has to be the page of a PlayLiveGame"):
+        _rendered_js_vars(page, members[0], monkeypatch)
+
+
 def test_a_live_session_control_takes_any_control_parameter():
-    control = LiveSessionControl("game", show_next_button=False, bot_response=3)
+    control = LiveSessionControl(show_next_button=False, bot_response=3)
 
     assert control.show_next_button is False
     assert control._bot_response == 3
@@ -410,13 +424,7 @@ def test_a_live_session_control_takes_any_control_parameter():
 
 def test_a_page_variable_can_t_share_the_control_s_name(pair, monkeypatch):
     members, game_barrier = pair
-    page = ModularPage(
-        "game",
-        "Play.",
-        LiveSessionControl(game_barrier.id),
-        time_estimate=5,
-        js_vars={"liveSession": "mine"},
-    )
+    page = _page_of(game_barrier, page_kwargs=dict(js_vars={"liveSession": "mine"}))
     _reach(game_barrier, members[0])
 
     with pytest.raises(
@@ -1107,11 +1115,11 @@ def test_an_game_barrier_s_game_type_must_be_a_live_session_with_a_channel_and_a
         channel = "botless"
 
     with pytest.raises(TypeError, match="game_type must be a LiveGame subclass"):
-        LiveGameBarrier(id_="plain", group_type="pair", game_type=Plain)
+        _play("plain", game_type=Plain)
     with pytest.raises(TypeError, match="Unnamed has no channel"):
-        LiveGameBarrier(id_="unnamed", group_type="pair", game_type=Unnamed)
+        _play("unnamed", game_type=Unnamed)
     with pytest.raises(TypeError, match="Botless has no bot method"):
-        LiveGameBarrier(id_="botless", group_type="pair", game_type=Botless)
+        _play("botless", game_type=Botless)
 
 
 @pytest.mark.parametrize(
@@ -2220,4 +2228,4 @@ class ValidatingPage(ModularPage):
 )
 def test_a_live_session_page_can_t_have_a_validate_of_its_own(page_type, kwargs):
     with pytest.raises(TypeError, match="LiveSessionControl and a validate function"):
-        page_type("game", "Play", LiveSessionControl("pick_numbers"), **kwargs)
+        page_type("game", "Play", LiveSessionControl(), **kwargs)

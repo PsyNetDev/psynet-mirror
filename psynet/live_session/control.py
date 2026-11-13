@@ -34,21 +34,10 @@ _DEFAULT = object()
 
 
 class LiveSessionControl(NullControl):
-    """The part of a game page where the participant plays the live session
-    their group started at a :class:`LiveGameBarrier`.
-
-    Give it the game barrier's id, and list the JavaScript file that plays the
-    game in the page's ``js_page_modules``:
-
-    ::
-
-        ModularPage(
-            "rock_paper_scissors",
-            Prompt(tags.div(tags.p(id="status"), ...)),
-            LiveSessionControl("rock_paper_scissors"),
-            js_page_modules=["/static/rock_paper_scissors.js"],
-            time_estimate=30,
-        )
+    """The part of a game page where the participant plays their group's
+    live session. Give the page to a :class:`PlayLiveGame` as its ``page``,
+    and list the JavaScript file that plays the game in the page's
+    ``js_page_modules``, as :class:`PlayLiveGame` shows.
 
     PsyNet sets the page's answer to the session's outcome, once the
     session's ending is saved, which is also when it pays the game's
@@ -59,10 +48,6 @@ class LiveSessionControl(NullControl):
 
     Parameters
     ----------
-
-    barrier_id
-        The ``id_`` of the :class:`LiveGameBarrier` that started the
-        session.
 
     auto_advance
         Whether the page moves on by itself once the session's result is
@@ -97,7 +82,6 @@ class LiveSessionControl(NullControl):
 
     def __init__(
         self,
-        barrier_id,
         auto_advance=True,
         show_result_for=0,
         player_left_message=_DEFAULT,
@@ -119,14 +103,15 @@ class LiveSessionControl(NullControl):
                 "show_result_for needs auto_advance: a page that moves on from "
                 "its own JavaScript decides itself how long to show the result."
             )
-        self.barrier_id = barrier_id
+        # Set by the PlayLiveGame that the page is given to.
+        self.barrier_id = None
         self.auto_advance = auto_advance
         self.show_result_for = show_result_for
         self.player_left_message = player_left_message
         self.no_session_message = no_session_message
 
     def check_ready_for_response(self, experiment, participant):
-        session_id = live_session_id(participant, self.barrier_id)
+        session_id = live_session_id(participant, self._barrier_id())
         if session_id is None or live_session_result(session_id) is not None:
             return None
         _check_session_can_still_end(session_id)
@@ -140,7 +125,7 @@ class LiveSessionControl(NullControl):
         )
 
     def ends_by(self, experiment, participant):
-        session_id = live_session_id(participant, self.barrier_id)
+        session_id = live_session_id(participant, self._barrier_id())
         if session_id is None:
             return None
         ends = _game_page_deadline(session_id)
@@ -154,7 +139,7 @@ class LiveSessionControl(NullControl):
     def validate(self, response, participant, **kwargs):
         # check_ready_for_response has already seen the session end, and an
         # ended session's row doesn't change, so this result is final.
-        session_id = live_session_id(participant, self.barrier_id)
+        session_id = live_session_id(participant, self._barrier_id())
         if session_id is None:
             response.answer = None
             return None
@@ -169,6 +154,14 @@ class LiveSessionControl(NullControl):
                 result.outcome, result.end_reason, str(participant.id)
             )
         return None
+
+    def _barrier_id(self):
+        if self.barrier_id is None:
+            raise TypeError(
+                "A page with a LiveSessionControl has to be the page of a "
+                "PlayLiveGame, which starts the session the page plays."
+            )
+        return self.barrier_id
 
     def _check_page(self, page):
         if (
@@ -188,8 +181,8 @@ class LiveSessionControl(NullControl):
         return ["return PsyNetLiveSession.activatePage(psynet);"]
 
     def get_participant_js_vars(self, experiment, participant):
-        _check_reached_barrier(participant, self.barrier_id)
-        session_id = live_session_id(participant, self.barrier_id)
+        _check_reached_barrier(participant, self._barrier_id())
+        session_id = live_session_id(participant, self._barrier_id())
         _p = get_translator(context=True)
         player_left = self.player_left_message
         if player_left is _DEFAULT:
