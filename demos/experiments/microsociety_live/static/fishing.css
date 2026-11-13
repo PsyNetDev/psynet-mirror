@@ -9,6 +9,10 @@
   font-weight: 600;
 }
 
+#fish-status {
+  min-width: 14rem;
+}
+
 .fish-clock {
   flex: 1;
   height: 0.5rem;
@@ -24,89 +28,222 @@
   transition: width 0.5s linear;
 }
 
+.fish-seconds {
+  min-width: 2.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The lake: a shore of sand and grass around animated water. */
 .fish-lake {
+  position: relative;
+  padding: 1.25rem 1.25rem 0;
+  border: 0.6rem solid #d8c59a;
+  border-radius: 2.5rem;
+  outline: 0.5rem solid #7fb069;
+  background:
+    radial-gradient(ellipse at 25% 15%, rgba(255, 255, 255, 0.28), transparent 55%),
+    radial-gradient(ellipse at 80% 90%, rgba(0, 30, 60, 0.35), transparent 60%),
+    linear-gradient(160deg, #3d93c9, #22618f);
+  box-shadow: inset 0 0 2rem rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.fish-lake::before {
+  content: "";
+  position: absolute;
+  inset: -50%;
+  z-index: -1;
+  background: repeating-linear-gradient(
+    170deg,
+    rgba(255, 255, 255, 0.07) 0 4px,
+    transparent 4px 22px
+  );
+  animation: fish-water 12s linear infinite;
+}
+
+@keyframes fish-water {
+  to { transform: translate(-22px, 44px); }
+}
+
+.fish-spots {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 0.75rem;
-  padding: 1rem;
-  border-radius: 2rem;
-  background:
-    radial-gradient(ellipse at 30% 20%, rgba(255, 255, 255, 0.25), transparent 60%),
-    repeating-linear-gradient(
-      170deg,
-      rgba(255, 255, 255, 0.08) 0 6px,
-      transparent 6px 18px
-    ),
-    #2f7fb5;
-  box-shadow: inset 0 0 1.5rem rgba(0, 0, 0, 0.25);
+  gap: 1rem;
 }
 
+/* A fishing ground: a patch of darker water with ripples and fish below. */
 .fish-spot {
   position: relative;
-  min-height: 6.5rem;
-  border: 2px dashed rgba(255, 255, 255, 0.45);
-  border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.08);
+  aspect-ratio: 4 / 3;
+  border: none;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(10, 40, 80, 0.45), rgba(10, 40, 80, 0.15) 70%, transparent);
   color: #fff;
   cursor: pointer;
-  overflow: visible;
-}
-
-.fish-spot:hover:not(:disabled),
-.fish-spot:focus-visible {
-  background: rgba(255, 255, 255, 0.2);
-  border-style: solid;
 }
 
 .fish-spot:disabled {
   cursor: default;
 }
 
+.fish-playing .fish-spot:hover,
+.fish-spot:focus-visible {
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1) 70%, transparent);
+  outline: none;
+}
+
+.fish-ripple {
+  position: absolute;
+  inset: 25% 20%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  animation: fish-ripple 3.6s ease-out infinite;
+  pointer-events: none;
+}
+
+.fish-ripple + .fish-ripple {
+  animation-delay: 1.8s;
+}
+
+@keyframes fish-ripple {
+  from { transform: scale(0.3); opacity: 0.9; }
+  to { transform: scale(1.25); opacity: 0; }
+}
+
+.fish-shadow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1.1rem;
+  height: 0.45rem;
+  margin: -0.22rem 0 0 -0.55rem;
+  border-radius: 50% 40% 40% 50%;
+  background: rgba(0, 20, 40, 0.45);
+  animation: fish-swim 7s linear infinite;
+  pointer-events: none;
+}
+
+.fish-shadow::after {
+  content: "";
+  position: absolute;
+  right: -0.35rem;
+  top: 0.05rem;
+  border: 0.18rem solid transparent;
+  border-left: 0.35rem solid rgba(0, 20, 40, 0.45);
+}
+
+.fish-shadow + .fish-shadow {
+  animation-duration: 9s;
+  animation-direction: reverse;
+}
+
+@keyframes fish-swim {
+  from { transform: rotate(0deg) translateX(2.2rem) rotate(90deg); }
+  to { transform: rotate(360deg) translateX(2.2rem) rotate(90deg); }
+}
+
 .fish-spot-number {
   position: absolute;
-  top: 0.35rem;
-  left: 0.5rem;
+  top: 0.4rem;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 0.2rem;
-  font-weight: 600;
+  gap: 0.25rem;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .fish-buoy {
-  width: 1rem;
-  height: 1rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: linear-gradient(#f25c3b 50%, #fff 50% 62%, #f25c3b 62%);
+  animation: fish-bob 1.6s ease-in-out infinite alternate;
 }
 
-.fish-buoy circle {
-  fill: #f25c3b;
-  stroke: #fff;
-  stroke-width: 2;
+/* The dock where boats wait before their first move. */
+.fish-dock {
+  height: 3.5rem;
+  margin: 1rem -1.25rem 0;
+  background:
+    repeating-linear-gradient(90deg, #a47148 0 1.6rem, #8a5a35 1.6rem 1.7rem);
+  box-shadow: inset 0 0.25rem 0.4rem rgba(0, 0, 0, 0.3);
 }
 
-.fish-buoy path {
-  stroke: #fff;
-  stroke-width: 3;
+.fish-boats {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
-.fish-spot-boats {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.2rem;
-  padding-top: 1.6rem;
+.fish-boat-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3rem;
+  height: 2.4rem;
+  margin: -1.2rem 0 0 -1.5rem;
+  will-change: transform;
 }
 
 .fish-boat {
-  width: 3.25rem;
-  height: 2.6rem;
-  filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.3));
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.35));
+  transition: transform 0.3s;
 }
 
-.fish-score .fish-boat {
+.fish-facing-left {
+  transform: scaleX(-1);
+}
+
+.fish-boat-wrapper::after {
+  content: "";
+  position: absolute;
+  left: 15%;
+  right: 15%;
+  bottom: -0.15rem;
+  height: 0.3rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.fish-sailing::after {
+  opacity: 1;
+  animation: fish-wake 0.6s ease-in-out infinite alternate;
+}
+
+.fish-sailing .fish-boat {
+  animation: fish-rock 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes fish-rock {
+  from { rotate: -5deg; }
+  to { rotate: 5deg; }
+}
+
+@keyframes fish-bob {
+  from { transform: translateY(-1px); }
+  to { transform: translateY(2px); }
+}
+
+@keyframes fish-wake {
+  from { transform: scaleX(0.8); }
+  to { transform: scaleX(1.2); }
+}
+
+.fish-score .fish-boat,
+.fish-results-list .fish-boat {
   width: 1.5rem;
   height: 1.2rem;
   vertical-align: middle;
-  margin-right: 0.25rem;
+  margin-right: 0.35rem;
 }
 
 .fish-mast {
@@ -124,16 +261,6 @@
   stroke: rgba(0, 0, 0, 0.35);
 }
 
-.fish-sailing {
-  opacity: 0.5;
-  animation: fish-bob 0.8s ease-in-out infinite alternate;
-}
-
-@keyframes fish-bob {
-  from { transform: translateY(-2px) rotate(-4deg); }
-  to { transform: translateY(2px) rotate(4deg); }
-}
-
 .fish-who-you { --fish-colour: #f2b632; }
 .fish-who-B { --fish-colour: #8e5bd8; }
 .fish-who-C { --fish-colour: #3bb273; }
@@ -142,33 +269,72 @@
 
 .fish-catches {
   position: absolute;
-  top: 0.3rem;
-  right: 0.4rem;
+  bottom: 15%;
+  right: 10%;
   display: flex;
   gap: 0.2rem;
   pointer-events: none;
 }
 
 .fish-catch {
-  padding: 0.1rem 0.4rem;
+  padding: 0.1rem 0.45rem;
   border-radius: 0.75rem;
   background: var(--fish-colour);
   color: #fff;
   font-weight: 700;
   white-space: nowrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  animation: fish-float 1.6s ease-out forwards;
+  animation: fish-float 1.8s ease-out forwards;
 }
 
 @keyframes fish-float {
-  from { opacity: 0; transform: translateY(0.75rem); }
-  15% { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(0.75rem) scale(0.6); }
+  15% { opacity: 1; transform: translateY(0) scale(1.1); }
+  25% { transform: scale(1); }
   70% { opacity: 1; }
-  to { opacity: 0; transform: translateY(-1.5rem); }
+  to { opacity: 0; transform: translateY(-2.5rem); }
+}
+
+/* The round's results, over the lake. */
+.fish-results {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  min-width: 18rem;
+  padding: 1.25rem 1.75rem;
+  border-radius: 1rem;
+  background: var(--psynet-surface, #fff);
+  color: var(--psynet-text, #222);
+  box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%);
+  text-align: center;
+  animation: fish-results-in 0.4s ease-out;
+}
+
+.fish-results h3 {
+  margin-top: 0;
+  font-size: 1.25rem;
+}
+
+.fish-results-list {
+  margin: 0.75rem 0;
+  padding-left: 1.5rem;
+  text-align: left;
+  font-weight: 600;
+}
+
+.fish-results-next {
+  margin: 0;
+  color: var(--psynet-text-muted);
+}
+
+@keyframes fish-results-in {
+  from { opacity: 0; transform: translate(-50%, -40%); }
 }
 
 .fish-help {
-  margin-top: 0.75rem;
+  margin-top: 1.25rem;
   color: var(--psynet-text-muted);
 }
 
@@ -177,6 +343,7 @@
   flex-wrap: wrap;
   gap: 1rem;
   font-weight: 600;
+  min-height: 1.5em;
 }
 
 .fish-rejection {

@@ -34,7 +34,7 @@ from psynet.live_session import (
     LiveMessage,
     LiveSessionControl,
 )
-from psynet.modular_page import ModularPage, Prompt, TextControl
+from psynet.modular_page import ModularPage, NullControl, Prompt, TextControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.sync import (
@@ -64,11 +64,12 @@ SPOT_MEANS = [1, 2, 4, 2, 1, 5, 3, 2]
 N_SPOTS = len(SPOT_MEANS)
 CATCH_NOISE = 1.5
 FISH_VALUE = 0.01
-ROUND_SECONDS = 20
+ROUND_SECONDS = 40
 CATCH_SECONDS = 3
 TRAVEL_SECONDS = 2
-RESULTS_SECONDS = 10
-# Counts from the end of the game, so it covers the results page.
+# How long the lake page shows a round's results before moving on.
+RESULTS_SECONDS = 8
+# Counts from the end of the game, so it covers the results.
 LATE_AFTER = 2 * RESULTS_SECONDS
 GROUPING_WAIT = 120
 TOP_UP_WAIT = 30
@@ -148,6 +149,7 @@ class Fishing(LiveGame):
         return {
             "n_spots": len(state["spot_means"]),
             "seconds": state["seconds"],
+            "travel_seconds": state["travel_seconds"],
             "ends_at": state["ends_at"],
             "boats": [
                 {
@@ -212,35 +214,88 @@ def player_labels(players, player_id):
     return {player_id: "you", **dict(zip(others, LABELS))}
 
 
+def lake(title, status, scores="", **attributes):
+    """Return the lake, which the lake page and the waiting screens share so that a round's pages look like one."""
+    spots = [
+        tags.button(
+            tags.span(cls="fish-ripple"),
+            tags.span(cls="fish-ripple"),
+            tags.span(cls="fish-shadow"),
+            tags.span(cls="fish-shadow"),
+            tags.span(tags.span(cls="fish-buoy"), str(spot), cls="fish-spot-number"),
+            tags.div(cls="fish-catches"),
+            type="button",
+            cls="fish-spot",
+            disabled=True,
+            aria_label=f"Spot {spot}",
+        )
+        for spot in range(1, N_SPOTS + 1)
+    ]
+    return tags.div(
+        tags.div(
+            tags.span(title, cls="fish-round"),
+            tags.span(status, id="fish-status"),
+            tags.div(tags.div(id="fish-time-left"), cls="fish-clock"),
+            tags.span(id="fish-seconds", cls="fish-seconds"),
+            cls="fish-header",
+        ),
+        tags.div(
+            tags.div(*spots, cls="fish-spots"),
+            tags.div(cls="fish-dock"),
+            tags.div(id="fish-boats", cls="fish-boats"),
+            tags.div(id="fish-results", cls="fish-results", hidden=True),
+            id="fish-lake",
+            cls="fish-lake",
+        ),
+        tags.p(
+            "Boats start at the dock. Click a spot to sail your boat there, "
+            f"which takes {TRAVEL_SECONDS} s. Boats at a spot catch fish "
+            f"every {CATCH_SECONDS} s.",
+            cls="fish-help",
+        ),
+        tags.div(scores, id="fish-scores", cls="fish-scores"),
+        tags.p(id="fish-rejection", cls="fish-rejection"),
+        id="fish-game",
+        **attributes,
+    )
+
+
 def lake_page(round_number):
     return ModularPage(
         "fish",
         Prompt(
-            tags.div(
-                tags.div(
-                    tags.span(f"Round {round_number + 1}", cls="fish-round"),
-                    tags.span("Joining the lake…", id="fish-status"),
-                    tags.div(tags.div(id="fish-time-left"), cls="fish-clock"),
-                    cls="fish-header",
-                ),
-                tags.div(id="fish-lake", cls="fish-lake"),
-                tags.p(
-                    "Click a spot to move your boat there. Moving takes "
-                    f"{TRAVEL_SECONDS} s, and boats catch fish every "
-                    f"{CATCH_SECONDS} s.",
-                    cls="fish-help",
-                ),
-                tags.div(id="fish-scores", cls="fish-scores"),
-                tags.p(id="fish-rejection", cls="fish-rejection"),
-                id="fish-game",
+            lake(
+                f"Round {round_number + 1}",
+                "Joining the lake…",
+                data_results_seconds=str(RESULTS_SECONDS),
             )
         ),
+        # The page shows the round's results on the lake, then moves on itself.
         LiveSessionControl(
-            "fishing", player_left_message="A member has left the lake."
+            "fishing",
+            auto_advance=False,
+            show_next_button=False,
+            player_left_message="A member has left the lake.",
         ),
         js_page_modules=["/static/fishing.js"],
         css_links=["/static/fishing.css"],
-        time_estimate=ROUND_SECONDS,
+        time_estimate=ROUND_SECONDS + RESULTS_SECONDS,
+    )
+
+
+def lake_waiting_screen(participant: Participant):
+    """Show the lake while a member waits for a round, so that they stay at the lake between rounds."""
+    fish = sum(t.fish() for t in own_trials(participant))
+    return ModularPage(
+        "lake_waiting",
+        Prompt(
+            lake(
+                "The lake", "Waiting for the others…", f"Your catch so far: {fish} fish"
+            )
+        ),
+        NullControl(show_next_button=False),
+        css_links=["/static/fishing.css"],
+        time_estimate=5,
     )
 
 
@@ -288,6 +343,7 @@ def get_timeline():
                         waiting_message="Waiting for the next round to start…",
                         late_after=LATE_AFTER,
                         late_action="leave_group",
+                        waiting_screen=lake_waiting_screen,
                         admission_point=True,
                         newcomer_max_wait=NEWCOMER_MAX_WAIT,
                     ),
@@ -418,6 +474,7 @@ class FishingTrial(Trial):
                     "travel_seconds": TRAVEL_SECONDS,
                 },
                 waiting_message="Waiting for the others to reach the lake…",
+                waiting_screen=lake_waiting_screen,
             ),
             lake_page(self.sync_group_round),
         ]
@@ -438,15 +495,6 @@ class FishingTrial(Trial):
         group_round.var.retired_id = retiring.participant_id if retiring else None
         for trial in trials:
             trial.var.leaves_as = _leaves_as(trial, retiring)
-
-    def gives_feedback(self, experiment, participant):
-        return self.sync_group_outcome == "stayed"
-
-    def show_feedback(self, experiment, participant):
-        text = f"You caught {self.fish()} fish this round."
-        if self.var.leaves_as == "retired":
-            text += " A new member has joined, so this was your last round."
-        return InfoPage(text, time_estimate=RESULTS_SECONDS)
 
 
 def _leaves_as(trial, retiring) -> Optional[str]:
@@ -530,24 +578,22 @@ class Exp(psynet.experiment.Experiment):
         for bot in founders:
             bot.take_page()
         advance_past_wait_pages(founders)
-        _play(founders)
-        assert all("You caught" in bot.current_page_text for bot in founders)
+        # The last founder stays on the lake, so the next round can't start yet.
+        _play(founders[:2])
+        assert all(bot.is_waiting for bot in founders[:2])
 
-        # A newcomer joins while the founders read their results, reads the
-        # society's history while waiting to be admitted, and plays the next
-        # round, so the longest-serving founder retires.
+        # A newcomer joins between rounds, reads the society's history while
+        # waiting to be admitted, and plays the next round, so the
+        # longest-serving founder retires.
         newcomers[0].take_page()
         assert "Welcome to the society" in newcomers[0].current_page_text
         assert "Round 1: spot" in newcomers[0].current_page_text
         newcomers[0].take_page()
         assert newcomers[0].is_waiting
-        _start_round(founders, newcomers[0])
+        founders[2].take_page()
+        advance_past_wait_pages([*founders, newcomers[0]])
         _play([*founders, newcomers[0]])
-        (retiree,) = [
-            bot for bot in founders if "your last round" in bot.current_page_text
-        ]
-        retiree.take_page()
-        assert retiree.current_page_label == "tip", retiree.current_page_label
+        (retiree,) = [bot for bot in founders if bot.current_page_label == "tip"]
         retiree.take_page(response="Follow the others.")
         assert retiree.current_page_text.startswith("You caught ")
 
@@ -569,14 +615,7 @@ class Exp(psynet.experiment.Experiment):
 
 
 def _play(bots):
-    """Play a round on the lake, which the game plays for bots, and wait for the round's end."""
+    """Play a round on the lake, which the game plays for bots, and leave the bots waiting for the next round."""
     for bot in bots:
         bot.take_page()
-    advance_past_wait_pages(bots, timeout=ROUND_SECONDS + 60)
-
-
-def _start_round(bots, newcomer):
-    """Take the bots' results pages, then advance them and the waiting ``newcomer`` to the lake."""
-    for bot in bots:
-        bot.take_page()
-    advance_past_wait_pages([*bots, newcomer])
+    advance_past_wait_pages(bots, timeout=ROUND_SECONDS + 60, stop_at="round_starts")
