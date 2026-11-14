@@ -61,7 +61,7 @@ experiment = [
     # wakes: never lower this bound below it.
     "dallinger[docker]>=13.0.0,<14",
     "debugpy",
-    "dominate>=3.1",
+    "dominate",
     "html2text",
     "joblib",
     "jsonpickle",
