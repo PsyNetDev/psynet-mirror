@@ -71,7 +71,7 @@ export function activate({root, psynet}) {
     if (type === "move") {
       let mine = predicted.boats.find((boat) => boat.who === "you");
       mine.spot = message.spot;
-      mine.arrives_at = (sentAt ?? live.socket.sessionTime() ?? 0) + predicted.travel_seconds;
+      mine.arrives_at = sentAt + predicted.travel_seconds;
     }
   });
 

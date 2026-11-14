@@ -49,10 +49,9 @@ class Contribute(LiveMessage):
     tokens: int
 
     def apply(self, game, state, player_id, now):
-        if not 0 <= self.tokens <= state["endowment"]:
-            raise Reject(f"Put in between 0 and {state['endowment']} tokens.")
+        if not 0 <= self.tokens <= ENDOWMENT:
+            raise Reject(f"Put in between 0 and {ENDOWMENT} tokens.")
         state["contributions"][player_id] = self.tokens
-        state["changes"][player_id] += 1
 
 
 class PublicGoods(LiveGame):
@@ -60,20 +59,14 @@ class PublicGoods(LiveGame):
     messages = [Contribute]
     duration = ROUND_SECONDS
 
-    def initial_state(self, players, settings):
-        return {
-            "endowment": settings["endowment"],
-            "multiplier": settings["multiplier"],
-            "contributions": {player: 0 for player in players},
-            "changes": {player: 0 for player in players},
-        }
+    def initial_state(self, players):
+        return {"contributions": {player: 0 for player in players}}
 
     def view(self, state, player_id):
         return {
-            "endowment": state["endowment"],
-            "multiplier": state["multiplier"],
+            "endowment": ENDOWMENT,
+            "multiplier": MULTIPLIER,
             "mine": state["contributions"][player_id],
-            "changed": state["changes"][player_id] > 0,
             # The other players in the order they joined.
             "others": [
                 state["contributions"][player]
@@ -85,13 +78,13 @@ class PublicGoods(LiveGame):
     def outcome(self, state, reason):
         contributions = state["contributions"]
         pot = sum(contributions.values())
-        share = state["multiplier"] * pot / len(contributions)
+        share = MULTIPLIER * pot / len(contributions)
         return {
             "contributions": contributions,
             "pot": pot,
             "share": share,
             "payoffs": {
-                player: state["endowment"] - tokens + share
+                player: ENDOWMENT - tokens + share
                 for player, tokens in contributions.items()
             },
         }
@@ -105,17 +98,14 @@ class PublicGoods(LiveGame):
             "team_size": len(outcome["contributions"]),
         }
 
-    def record_round(self, group_round, outcome, reason):
-        group_round.var.pot = outcome["pot"]
-        group_round.var.contributions = outcome["contributions"]
-
     def performance_reward(self, outcome, reason, player_id):
         return outcome["payoffs"][player_id] * TOKEN_VALUE
 
     def bot(self, view, player_id, now):
-        if view["changed"]:
+        tokens = bot_contribution(player_id)
+        if view["mine"] == tokens:
             return None
-        return Contribute(tokens=bot_contribution(player_id))
+        return Contribute(tokens=tokens)
 
 
 def bot_contribution(player_id):
@@ -174,7 +164,6 @@ class ContributionTrial(Trial):
             group_type="team",
             game_class=PublicGoods,
             page=contribution_page(self.sync_group_round),
-            settings={"endowment": ENDOWMENT, "multiplier": MULTIPLIER},
             waiting_message="Waiting for the other players…",
             late_after=LATE_AFTER,
             late_action="leave_group",
@@ -275,10 +264,11 @@ class Exp(psynet.experiment.Experiment):
         )
         for trial in trials:
             assert trial.answer["contributed"] == bot_contribution(str(bot.id))
-            contributions = trial.group_round.var.contributions
+            outcome = trial.group_round.live_session_outcome
+            contributions = outcome["contributions"]
             assert contributions == {
                 player: bot_contribution(player) for player in contributions
             }
-            assert trial.group_round.var.pot == sum(contributions.values())
+            assert outcome["pot"] == sum(contributions.values())
         expected = sum(t.answer["earned"] * TOKEN_VALUE for t in trials)
         assert abs(bot.performance_reward - expected) < 1e-9

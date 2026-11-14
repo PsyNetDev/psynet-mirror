@@ -2,19 +2,22 @@
 
 Players wait in a lobby until a cohort of ``COHORT_SIZE`` forms. Each round,
 a :class:`~psynet.sync.Regrouper` pairs up the cohort's players, and each
-pair bargains live over ``ENDOWMENT`` coins for up to ``BARGAIN_SECONDS``
-seconds. Either player can propose a split at any time, and change it, and
+pair bargains live over a stake of coins, chosen at random from ``STAKES``,
+for up to ``BARGAIN_SECONDS`` seconds. Either player can propose a split at any time, and change it, and
 either can accept their partner's current proposal. Accepting ends the round
 with a deal; if the time runs out first, nobody is paid.
 
 Each player's round is one cued ``BargainTrial``. The trial class has
 ``sync_group_type = "pair"``, so the two trials of a pair share the trial's
-definition, which the trial passes to the game as its settings. The game
+definition, with the pair's stake, which the trial passes to the game as its
+settings. The game
 page's answer is the session's outcome, which the results page reads.
 
 This is the live counterpart of the ``ultimatum_pairing`` demo, which uses
 the same cohort and pairing set-up for a one-shot offer.
 """
+
+import random
 
 from dallinger.realtime import Reject
 from dominate import tags
@@ -26,7 +29,6 @@ from psynet.live_session import (
     LiveMessage,
     LiveSessionControl,
     PlayLiveGame,
-    live_session_result,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
@@ -36,7 +38,8 @@ from psynet.trial.main import Trial
 
 COHORT_SIZE = 4
 N_ROUNDS = 2
-ENDOWMENT = 10
+# The coins a pair bargains over, chosen at random for each pair.
+STAKES = [10, 20]
 BARGAIN_SECONDS = 60
 COIN_VALUE = 0.05
 # Bots open with a proposal that gives their partner this many coins, and
@@ -129,13 +132,18 @@ class Bargain(LiveGame):
         theirs = view["theirs"]
         if theirs is not None and view["endowment"] - theirs >= BOT_GIVES:
             return Accept(keep=theirs)
-        players = view["live_session"]["players"]
-        if view["mine"] is None and player_id == min(players, key=int):
+        # The player who joined first opens.
+        if view["mine"] is None and player_id == view["live_session"]["players"][0]:
             return Propose(keep=view["endowment"] - BOT_GIVES)
         return None
 
 
-def bargaining_page():
+def choose_stake():
+    """Return the definition of a pair's round, with the coins they bargain over."""
+    return {"endowment": random.choice(STAKES)}
+
+
+def bargaining_page(endowment):
     return ModularPage(
         "bargain",
         Prompt(
@@ -161,16 +169,16 @@ def bargaining_page():
                         tags.div(id="bargain-mine-coins", cls="bargain-coins"),
                         tags.label(
                             "You keep ",
-                            tags.strong(ENDOWMENT // 2, id="bargain-keep-value"),
-                            f" of {ENDOWMENT} coins",
+                            tags.strong(endowment // 2, id="bargain-keep-value"),
+                            f" of {endowment} coins",
                             fr="bargain-keep",
                         ),
                         tags.input_(
                             type="range",
                             id="bargain-keep",
                             min=0,
-                            max=ENDOWMENT,
-                            value=ENDOWMENT // 2,
+                            max=endowment,
+                            value=endowment // 2,
                         ),
                         tags.button(
                             "Propose",
@@ -216,7 +224,7 @@ class BargainTrial(Trial):
         return PlayLiveGame(
             group_type="pair",
             game_class=Bargain,
-            page=bargaining_page(),
+            page=bargaining_page(self.definition["endowment"]),
             settings=self.definition,
             max_wait_time=30,
             max_wait_action="leave_group",
@@ -235,7 +243,7 @@ class BargainTrial(Trial):
             mine = self.coins()
             text = (
                 f"You made a deal: you get {mine} coins and your partner "
-                f"gets {ENDOWMENT - mine}."
+                f"gets {self.definition['endowment'] - mine}."
             )
         return InfoPage(text, time_estimate=5)
 
@@ -290,7 +298,7 @@ def get_timeline():
                         "round",
                         round_status,
                         {
-                            "paired": BargainTrial.cue({"endowment": ENDOWMENT}),
+                            "paired": BargainTrial.cue(choose_stake),
                             "sat_out": InfoPage(
                                 "You sit out this round without a partner.",
                                 time_estimate=5,
@@ -326,6 +334,7 @@ class Exp(psynet.experiment.Experiment):
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
                     "round": t.position,
+                    "stake": t.definition["endowment"],
                     "deal": (t.answer or {}).get("deal"),
                     "coins": t.coins(),
                     "deal_at": (t.answer or {}).get("deal_at"),
@@ -341,11 +350,10 @@ class Exp(psynet.experiment.Experiment):
         assert len(trials) == N_ROUNDS
         for trial in trials:
             assert trial.answer["deal"], trial.answer
-            assert trial.coins() in (BOT_GIVES, ENDOWMENT - BOT_GIVES)
-            outcome = live_session_result(trial.group_round.live_session_id).outcome
-            assert sorted(outcome["deal"].values()) == [
-                BOT_GIVES,
-                ENDOWMENT - BOT_GIVES,
-            ]
+            stake = trial.definition["endowment"]
+            assert stake in STAKES
+            assert trial.coins() in (BOT_GIVES, stake - BOT_GIVES)
+            outcome = trial.group_round.live_session_outcome
+            assert sorted(outcome["deal"].values()) == [BOT_GIVES, stake - BOT_GIVES]
         expected = sum(t.coins() for t in trials) * COIN_VALUE
         assert abs(bot.performance_reward - expected) < 1e-9

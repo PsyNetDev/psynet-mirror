@@ -43,6 +43,7 @@
 
 .bargain-coins {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.2rem;
   min-height: 1.5rem;
 }

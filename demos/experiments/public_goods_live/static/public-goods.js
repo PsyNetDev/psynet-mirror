@@ -35,7 +35,7 @@ export function activate({root, psynet}) {
   let rejection = root.querySelector("#pg-rejection");
   let view = null;
 
-  live.disableUntilStarted(slider);
+  live.enableWhilePlaying(slider);
   live.predict((predicted, type, message) => {
     if (type === "contribute") {
       predicted.mine = message.tokens;
@@ -69,7 +69,6 @@ export function activate({root, psynet}) {
     earn.textContent =
       `If the round ended now, each player would get ${+share.toFixed(2)} tokens ` +
       `from the pot, and you would earn ${+(view.endowment - view.mine + share).toFixed(2)} tokens.`;
-    slider.disabled = !live.started || live.ended;
   }
 
   function tick() {

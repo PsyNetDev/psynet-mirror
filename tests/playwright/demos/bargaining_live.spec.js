@@ -54,11 +54,17 @@ test("a cohort of four bargains live in pairs, and a proposal that changed can't
     await expect(first.locator("#bargain-mine-coins .bargain-coin-you")).toHaveCount(5);
     await screenshot(first, "bargaining_live_proposals");
 
-    // The partner changes their proposal just before the first player
-    // accepts the old one, so the game rejects the acceptance.
+    // The partner changes their proposal, to one that no player opened
+    // with, just before the first player accepts the old one, so the game
+    // rejects the acceptance. Each pair's stake is 10 or 20 coins, chosen at
+    // random.
+    const stake = Number(await first.locator("#bargain-keep").getAttribute("max"));
+    expect([10, 20]).toContain(stake);
     const old = 5 + partnerOf[0];
-    await propose(partner, 6);
-    await expect(first.locator("#bargain-theirs")).toHaveText("They keep 6, you get 4.");
+    await propose(partner, 9);
+    await expect(first.locator("#bargain-theirs")).toHaveText(
+      `They keep 9, you get ${stake - 9}.`
+    );
     await first.evaluate((keep) => psynet.liveSession.send("accept", { keep }), old);
     await expect(first.locator("#bargain-rejection")).toHaveText(
       "Your partner has just changed their proposal."
@@ -69,7 +75,7 @@ test("a cohort of four bargains live in pairs, and a proposal that changed can't
       await expect(player.locator("#bargain-deal")).toBeVisible();
     }
     await expect(first.locator("#bargain-deal")).toHaveText(
-      "Deal! You get 4 coins and your partner gets 6."
+      `Deal! You get ${stake - 9} coins and your partner gets 9.`
     );
     await screenshot(first, "bargaining_live_deal");
 
@@ -77,7 +83,7 @@ test("a cohort of four bargains live in pairs, and a proposal that changed can't
     const others = cohort.filter((player) => player !== first && player !== partner);
     await others[0].getByRole("button", { name: "Accept" }).click();
     await expect(first.locator("#main-body")).toContainText(
-      "You made a deal: you get 4 coins and your partner gets 6.",
+      `You made a deal: you get ${stake - 9} coins and your partner gets 9.`,
       { timeout: STEP_TIMEOUT_MS }
     );
     for (const player of cohort) {

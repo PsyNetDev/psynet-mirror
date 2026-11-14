@@ -33,7 +33,7 @@ export function activate({root, psynet}) {
   let view = null;
   let lastTheirs = null;
 
-  live.disableUntilStarted(keep, propose, accept);
+  live.enableWhilePlaying(keep, propose, accept);
   live.predict((predicted, type, message) => {
     if (type === "propose") {
       predicted.mine = message.keep;
@@ -80,8 +80,6 @@ export function activate({root, psynet}) {
       deal.hidden = false;
       deal.textContent = `Deal! You get ${view.deal} coins and your partner gets ${view.endowment - view.deal}.`;
     }
-    propose.disabled = !playing;
-    keep.disabled = !playing;
     accept.disabled = !playing || view.theirs === null;
   }
 

@@ -16,8 +16,9 @@ rounds. Before leaving, they leave a tip for future members.
 
 Each round is one cued ``FishingTrial`` per member, whose ``show_trial``
 returns a ``PlayLiveGame``: a live session for the society, played on the
-lake. Its ``on_session_start`` chooses who leaves after the round, and the game's
-``record_round`` records where the round's fish were caught.
+lake. Its ``on_session_start`` chooses who leaves after the round, and the
+history page reads where earlier rounds' fish were caught from each round's
+``live_session_outcome``.
 """
 
 import random
@@ -89,13 +90,13 @@ class Move(LiveMessage):
     spot: int
 
     def apply(self, game, state, player_id, now):
-        if not 1 <= self.spot <= len(state["spot_means"]):
+        if not 1 <= self.spot <= N_SPOTS:
             raise Reject("There's no such spot.")
         boat = state["boats"][player_id]
         if boat["spot"] == self.spot:
             raise Reject("Your boat is already there.")
         boat["spot"] = self.spot
-        boat["arrives_at"] = now + state["travel_seconds"]
+        boat["arrives_at"] = now + TRAVEL_SECONDS
         state["moves"][player_id] += 1
 
 
@@ -104,9 +105,8 @@ class Fishing(LiveGame):
     messages = [Move]
     duration = ROUND_SECONDS
 
-    def initial_state(self, players, settings):
+    def initial_state(self, players):
         return {
-            **settings,
             "boats": {p: {"spot": None, "arrives_at": None} for p in players},
             "fish": {p: 0 for p in players},
             "moves": {p: 0 for p in players},
@@ -116,33 +116,31 @@ class Fishing(LiveGame):
         }
 
     def on_start(self, state, now):
-        state["next_catch_at"] = now + state["catch_seconds"]
+        state["next_catch_at"] = now + CATCH_SECONDS
 
     def next_deadline(self, state):
         return state["next_catch_at"]
 
     def tick(self, state, now):
-        # A late final tick still counts only the catches before the end.
-        until = min(now, state["live_session"]["ends_at"])
-        while state["next_catch_at"] <= until:
+        while state["next_catch_at"] <= now:
             at = state["next_catch_at"]
             caught = []
             for player, boat in state["boats"].items():
                 if boat["spot"] is None or boat["arrives_at"] > at:
                     continue
-                mean = state["spot_means"][boat["spot"] - 1]
-                fish = max(0, round(random.gauss(mean, state["noise"])))
+                mean = SPOT_MEANS[boat["spot"] - 1]
+                fish = max(0, round(random.gauss(mean, CATCH_NOISE)))
                 state["fish"][player] += fish
                 caught.append({"player": player, "spot": boat["spot"], "fish": fish})
             state["catches"].append({"at": at, "caught": caught})
-            state["next_catch_at"] = at + state["catch_seconds"]
+            state["next_catch_at"] = at + CATCH_SECONDS
 
     def view(self, state, player_id):
         labels = player_labels(state["live_session"]["players"], player_id)
         latest = state["catches"][-1] if state["catches"] else None
         return {
-            "n_spots": len(state["spot_means"]),
-            "travel_seconds": state["travel_seconds"],
+            "n_spots": N_SPOTS,
+            "travel_seconds": TRAVEL_SECONDS,
             "boats": [
                 {
                     "who": labels[player],
@@ -171,9 +169,6 @@ class Fishing(LiveGame):
             "fish": outcome["fish"][player_id],
             "moves": outcome["moves"][player_id],
         }
-
-    def record_round(self, group_round, outcome, reason):
-        group_round.var.spot_fish = _spot_fish(outcome)
 
     def performance_reward(self, outcome, reason, player_id):
         return outcome["fish"][player_id] * FISH_VALUE
@@ -424,7 +419,7 @@ def history_page(participant: Participant):
     """Show a newcomer where the society fished lately and the tips of members who have left."""
     society = participant.latest_sync_group("society")
     rounds = society.rounds("fishing")
-    scored = [r for r in rounds if r.var.has("spot_fish")]
+    scored = [r for r in rounds if r.live_session_outcome is not None]
     tips = [t.var.tip for r in rounds for t in r.trials if t.var.has("tip")]
     content = tags.div()
     with content:
@@ -433,7 +428,10 @@ def history_page(participant: Participant):
             tags.p("Here is how many fish were caught at each spot lately:")
             with tags.ul():
                 for r in scored[-HISTORY_ROUNDS:]:
-                    tags.li(f"Round {r.number + 1}: " + _spot_text(r.var.spot_fish))
+                    tags.li(
+                        f"Round {r.number + 1}: "
+                        + _spot_text(_spot_fish(r.live_session_outcome))
+                    )
         if tips:
             tags.p("Tips from members who have left:")
             with tags.ul():
@@ -444,8 +442,8 @@ def history_page(participant: Participant):
 
 def _spot_text(spot_fish: dict) -> str:
     return ", ".join(
-        f"spot {SPOT_LETTERS[int(spot) - 1]}: {fish} fish"
-        for spot, fish in sorted(spot_fish.items(), key=lambda kv: int(kv[0]))
+        f"spot {SPOT_LETTERS[spot - 1]}: {fish} fish"
+        for spot, fish in sorted(spot_fish.items())
     )
 
 
@@ -454,7 +452,7 @@ def _spot_fish(outcome) -> dict:
     totals = {}
     for catch in outcome["catches"]:
         for c in catch["caught"]:
-            totals[str(c["spot"])] = totals.get(str(c["spot"]), 0) + c["fish"]
+            totals[c["spot"]] = totals.get(c["spot"], 0) + c["fish"]
     return totals
 
 
@@ -467,12 +465,6 @@ class FishingTrial(Trial):
             group_type="society",
             game_class=Fishing,
             page=lake_page(self.sync_group_round),
-            settings={
-                "spot_means": SPOT_MEANS,
-                "noise": CATCH_NOISE,
-                "catch_seconds": CATCH_SECONDS,
-                "travel_seconds": TRAVEL_SECONDS,
-            },
             on_session_start=self.plan_leaving,
             waiting_message="Waiting for the others to reach the lake…",
             waiting_screen=lake_waiting_screen,
@@ -571,7 +563,11 @@ class Exp(psynet.experiment.Experiment):
                     "society_id": r.sync_group_id,
                     "round": r.number,
                     "round_id": r.id,
-                    "spot_fish": r.var.get("spot_fish"),
+                    "spot_fish": (
+                        _spot_fish(r.live_session_outcome)
+                        if r.live_session_outcome is not None
+                        else None
+                    ),
                     "retired_id": r.var.get("retired_id"),
                 }
                 for r in rounds
