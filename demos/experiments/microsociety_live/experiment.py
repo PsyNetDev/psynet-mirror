@@ -548,7 +548,7 @@ class Exp(psynet.experiment.Experiment):
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
                     "tenure": t.position,
-                    "outcome": t.sync_group_outcome,
+                    "group_status": t.sync_group_outcome,
                     "fish": t.fish(),
                     "moves": (t.answer or {}).get("moves"),
                     "leaves_as": t.var.get("leaves_as"),
@@ -605,7 +605,7 @@ class Exp(psynet.experiment.Experiment):
         rounds = data["society_round"]
         assert rounds[1]["retired_id"] == retiree.id, rounds
         for row in data["member_round"]:
-            assert row["outcome"] == "stayed", row
+            assert row["group_status"] == "stayed", row
         for bot in bots:
             trials = FishingTrial.query.filter_by(participant_id=bot.id).all()
             reward = bot.with_participant(lambda p: p.performance_reward)
