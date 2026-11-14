@@ -78,10 +78,12 @@ def _tick_once_started(self, method, state, now):
         # no other.
         if self.is_over(state):
             return None
-    result = method(self, state, now)
-    ready_step = _ready_step(state)
-    if ready_step["ends_at"] is not None and now >= ready_step["ends_at"]:
-        ready_step["time_up"] = True
+    ends_at = _ready_step(state)["ends_at"]
+    if ends_at is None or now < ends_at:
+        return method(self, state, now)
+    # A tick that runs late sees the end, so the game counts nothing after it.
+    result = method(self, state, ends_at)
+    _ready_step(state)["time_up"] = True
     return result
 
 

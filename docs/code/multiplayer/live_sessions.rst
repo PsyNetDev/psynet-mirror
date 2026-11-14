@@ -235,7 +235,9 @@ Every member of a group has to arrive with the same settings: a member
 whose settings differ from those of the members already waiting gets an
 error that says so. Trials that a group plays in one round share a
 definition, so set ``sync_group_type`` on the trial class and cue one trial
-per player (see :ref:`rounds-cued-trials`). Such a trial needs a
+per player (see :ref:`rounds-cued-trials`). The ``bargaining_live`` demo
+draws each pair's stake this way, with a function as the definition that
+``cue`` calls once for the pair. Such a trial needs a
 :class:`~psynet.sync.GroupBarrier` in its ``show_trial``, and the barrier of
 the ``PlayLiveGame`` is one. The round's
 :attr:`~psynet.sync.SyncGroupRound.live_session_id` then names the session
@@ -258,7 +260,7 @@ function, which PsyNet runs each time the page opens
         let buttons = ["rock", "paper", "scissors"].map(
             (action) => root.querySelector("#" + action)
         );
-        psynet.liveSession.disableUntilStarted(...buttons);
+        psynet.liveSession.enableWhilePlaying(...buttons);
         psynet.liveSession.onView((view) => {
             if (psynet.liveSession.ended) {
                 status.textContent = "The game is over.";
@@ -294,8 +296,9 @@ function, which PsyNet runs each time the page opens
 - ``onStarted(callback)`` calls ``callback`` with the first view once the
   session has started, or at once if it already has. A page that opens after
   the session has ended gets ``onEnded`` instead.
-- ``disableUntilStarted(...elements)`` disables the elements, such as
-  buttons, until the session starts.
+- ``enableWhilePlaying(...elements)`` enables the elements, such as
+  buttons, only while the session is played: they are disabled until it
+  starts, and again once it ends.
 - ``started`` says whether the session has started, and ``ended`` whether it
   has ended. In ``onView``, both are already up to date for the view. On a
   page that opens after the end, ``started`` stays ``false``, so check
@@ -441,7 +444,7 @@ page, it waits until the game's ``max_duration``.
 
 Until the start, the game rejects messages with the reason ``"The game hasn't
 started yet."``, and its ``tick`` and ``bot`` don't run, so disable the page's
-controls with ``disableUntilStarted``, as above, or wait for ``onStarted``.
+controls with ``enableWhilePlaying``, as above, or wait for ``onStarted``.
 The game's other methods run before the start: ``on_join``, ``on_leave``,
 ``view``, ``is_over``, and ``outcome`` if the session ends before it starts.
 
@@ -496,7 +499,9 @@ and ``psynet.liveSession.duration``:
 For other deadlines, such as one for each move, a game sets them in
 ``on_start``, which runs at the start even if some players aren't ready, and
 returns the next one from ``next_deadline``. Its ``tick`` runs at each one,
-and at the end of its ``duration``.
+and at the end of its ``duration``. A tick that runs late gets the end as
+``now``, so a game that counts things on a schedule, such as catches every
+few seconds, counts none after the end.
 
 The answer and rewards
 ----------------------
@@ -519,14 +524,19 @@ part, so that a trial holds only its player's data and code reading
             (theirs,) = [c for p, c in outcome.items() if p != player_id]
             return {"mine": mine, "theirs": theirs, "reason": reason}
 
-Results that belong to the whole group, such as a team's total, go in the
-round instead. When the game is played as a trial (see `Starting sessions and
-the game page`_), define ``record_round(group_round, outcome, reason)``.
-PsyNet calls it once, when the session's ending is saved, with the
-:class:`~psynet.sync.SyncGroupRound` the session was played in, so the game
-can store results in ``group_round.var``. There's no need for another barrier
-after the game page to score the round. Neither ``answer`` nor
-``record_round`` is called for a session that failed without an outcome.
+Results that belong to the whole group, such as a team's total, stay in the
+outcome. When the game is played as a trial (see `Starting sessions and the
+game page`_), PsyNet copies the outcome to the round the session was played
+in once the session's ending is saved, so later pages and the export read it
+as ``trial.group_round.live_session_outcome``, with no need for another
+barrier after the game page to score the round:
+
+.. code-block:: python
+
+    pot = trial.group_round.live_session_outcome["pot"]
+
+It is ``None`` until then, and ``answer`` isn't called, for a session that
+failed without an outcome.
 
 Because participants can't leave the game page until their session ends,
 every session needs a time limit. A session still running at the game's

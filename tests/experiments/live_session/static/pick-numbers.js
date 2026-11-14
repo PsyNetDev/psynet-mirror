@@ -4,7 +4,7 @@ export function activate({root, psynet}) {
     return;
   }
   let pick = root.querySelector("#pick");
-  psynet.liveSession.disableUntilStarted(pick);
+  psynet.liveSession.enableWhilePlaying(pick);
   psynet.liveSession.onView((view) => {
     if (view === null) {
       return;

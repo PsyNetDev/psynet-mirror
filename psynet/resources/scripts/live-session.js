@@ -182,6 +182,7 @@
         left: false,
         startedView: null,
         startedCallbacks: [],
+        playingElements: [],
         ended: false,
         predict: null,
         interpolate: null,
@@ -225,6 +226,7 @@
       }
       callEach(state.viewCallbacks, view, details);
       if (state.ended) {
+        state.playingElements.forEach((element) => (element.disabled = true));
         state.away.update([]);
       } else if (view !== null) {
         state.away.update(view.live_session.away);
@@ -359,18 +361,22 @@
     }
 
     /**
-     * Disable each of ``elements`` until the session starts, so the
-     * participant can't play before then.
+     * Enable each of ``elements`` only while the session is being played:
+     * disable it until the session starts, and again once it ends, when the
+     * game would ignore anything the participant sends.
      *
      * @example
-     * psynet.liveSession.disableUntilStarted(...root.querySelectorAll("button"));
+     * psynet.liveSession.enableWhilePlaying(...root.querySelectorAll("button"));
      *
      * @param {...HTMLElement} elements - Elements with a ``disabled``
      *   property, such as buttons and inputs
      * @returns {Object} ``psynet.liveSession``
      */
-    function disableUntilStarted(...elements) {
+    function enableWhilePlaying(...elements) {
+      pageSocket();
+      let state = pageState();
       elements.forEach((element) => (element.disabled = true));
+      state.playingElements.push(...elements);
       return onStarted(() => {
         elements.forEach((element) => (element.disabled = false));
       });
@@ -628,7 +634,7 @@
       secondsLeft: secondsLeft,
       send: send,
       onStarted: onStarted,
-      disableUntilStarted: disableUntilStarted,
+      enableWhilePlaying: enableWhilePlaying,
       onView: onView,
       onPlayersAway: onPlayersAway,
       predict: predict,

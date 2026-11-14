@@ -164,7 +164,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy.dialects.postgresql import aggregate_order_by
+from sqlalchemy.dialects.postgresql import JSONB, aggregate_order_by
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import (
     Session,
@@ -5455,6 +5455,11 @@ class SyncGroupRound(SQLBase, SQLMixin):
         :func:`~psynet.live_session.live_session_result` or
         :func:`~psynet.live_session.saved_messages`, for example to export
         each round's game.
+    live_session_outcome : object or None
+        What the ``outcome`` method of that session's game returned, copied
+        here when the session's ending is saved, a few seconds after the game
+        ends. ``None`` before then, without a live session, or for a session
+        that failed without an outcome.
     trials : list of Trial
         The members' trials in the round, including failed ones.
     """
@@ -5478,6 +5483,7 @@ class SyncGroupRound(SQLBase, SQLMixin):
     closed_at = Column(DateTime)
     dissolved_at = Column(DateTime)
     live_session_id = Column(Integer)
+    live_session_outcome = Column(JSONB)
 
     trials = relationship(
         "psynet.trial.main.Trial",

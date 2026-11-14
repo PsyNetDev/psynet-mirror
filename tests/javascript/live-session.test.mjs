@@ -221,10 +221,10 @@ describe("psynet.liveSession", () => {
     assert.deepEqual(errors, ["a page's mistake"]);
   });
 
-  it("disables elements until the start", () => {
+  it("enables elements only while the session is played", () => {
     const pick = { disabled: false };
     const pass = { disabled: false };
-    assert.equal(liveSession.disableUntilStarted(pick, pass), liveSession);
+    assert.equal(liveSession.enableWhilePlaying(pick, pass), liveSession);
     assert.deepEqual([pick.disabled, pass.disabled], [true, true]);
     sockets[0].view(view(null));
     assert.deepEqual([pick.disabled, pass.disabled], [true, true]);
@@ -232,8 +232,11 @@ describe("psynet.liveSession", () => {
     assert.deepEqual([pick.disabled, pass.disabled], [false, false]);
 
     const late = { disabled: false };
-    liveSession.disableUntilStarted(late);
+    liveSession.enableWhilePlaying(late);
     assert.equal(late.disabled, false);
+
+    sockets[0].view(view(4), "finished");
+    assert.deepEqual([pick.disabled, pass.disabled, late.disabled], [true, true, true]);
   });
 
   it("says whether the session has started, up to date in onView, without joining", () => {
@@ -448,10 +451,10 @@ describe("psynet.liveSession", () => {
 
   it("keeps controls disabled on a page that opens after the session has ended", () => {
     const pick = { disabled: false };
-    liveSession.disableUntilStarted(pick);
+    liveSession.enableWhilePlaying(pick);
     sockets[0].fire("onEnded", "finished", view(4));
     const late = { disabled: false };
-    liveSession.disableUntilStarted(late);
+    liveSession.enableWhilePlaying(late);
     assert.deepEqual([pick.disabled, late.disabled], [true, true]);
     assert.equal(liveSession.started, false);
 
@@ -461,7 +464,7 @@ describe("psynet.liveSession", () => {
     sockets[1].view(view(4));
     sockets[1].view(view(4), "finished");
     const afterTheEnd = { disabled: false };
-    liveSession.disableUntilStarted(afterTheEnd);
+    liveSession.enableWhilePlaying(afterTheEnd);
     assert.equal(afterTheEnd.disabled, true);
   });
 

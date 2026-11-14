@@ -1808,7 +1808,8 @@ def test_a_game_with_a_duration_ends_when_its_time_is_up(relay):
     entries = [_entry("join", 0, "1"), _entry("message", 1, "1", READY)]
 
     playing = run_pass(game, new_session(game, ["1"]), entries, 2, CLOCK)
-    ended = run_pass(game, playing.saved, [], 21, CLOCK)
+    # A tick that runs late sees the end.
+    ended = run_pass(game, playing.saved, [], 25, CLOCK)
 
     assert playing.next_due == 21
     assert ended.ended["reason"] == "finished"
@@ -2098,7 +2099,7 @@ def test_the_game_page_answer_can_be_the_player_s_part_of_the_outcome(
 
 
 @pytest.mark.parametrize("show_result_for", [0, 8])
-def test_the_ending_records_the_round_and_ends_the_game_page_deadline(
+def test_the_ending_copies_the_outcome_to_the_round_and_ends_the_game_page_deadline(
     pair, monkeypatch, show_result_for
 ):
     members, _ = pair
@@ -2119,17 +2120,11 @@ def test_the_ending_records_the_round_and_ends_the_game_page_deadline(
     row.outcome = {str(m.id): 4 for m in members}
     row.end_time = timenow()
     game_class = game_registry._live_game_classes["pick_numbers"]
-    monkeypatch.setattr(
-        game_class,
-        "record_round",
-        lambda self, group_round, outcome, reason: setattr(
-            group_round.var, "total", sum(outcome.values())
-        ),
-    )
 
     game_class().handle_ending(row)
 
-    assert group_round.var.total == 8
+    db.session.refresh(group_round)
+    assert group_round.live_session_outcome == row.outcome
     # So a later barrier's late_after counts from when the page stops showing
     # the result.
     shown_until = row.end_time + datetime.timedelta(seconds=show_result_for)

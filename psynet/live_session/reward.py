@@ -1,7 +1,7 @@
 """What PsyNet does with a live session's record as Dallinger writes it: the
 rewards from add_performance_reward, paid by effects queued during the game,
-and, once the ending is saved, the rewards from the outcome and the game's
-record_round. All run in the job that writes the session's record, so each
+and, once the ending is saved, the rewards from the outcome and the copy of
+the outcome on the session's round. All run in the job that writes the session's record, so each
 runs once, whether or not the players are still on the game page."""
 
 import functools
@@ -71,7 +71,7 @@ def _handles_ending(method):
         players = _locked_players(session_row)
         if session_row.status != "failed" or session_row.outcome is not None:
             _pay_outcome_rewards(self, session_row, players)
-            _record_round(self, session_row)
+            _record_outcome_on_round(session_row)
         _end_game_page_deadlines(session_row, players)
         return method(self, session_row)
 
@@ -110,14 +110,9 @@ def _end_game_page_deadlines(session_row, players):
                 link.page_deadline = ended + (link.page_deadline - deadline)
 
 
-def _record_round(game, session_row):
+def _record_outcome_on_round(session_row):
     from ..sync import SyncGroupRound
 
-    group_round = (
-        SyncGroupRound.query.filter_by(live_session_id=session_row.id)
-        .with_for_update()
-        .populate_existing()
-        .one_or_none()
+    SyncGroupRound.query.filter_by(live_session_id=session_row.id).update(
+        {"live_session_outcome": session_row.outcome}, synchronize_session="fetch"
     )
-    if group_round is not None:
-        game.record_round(group_round, session_row.outcome, session_row.end_reason)

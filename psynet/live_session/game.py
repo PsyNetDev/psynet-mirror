@@ -76,7 +76,7 @@ class LiveGame(RealtimeGame):
 
     #: Seconds the game lasts once the session starts, or ``None``, the
     #: default, for a game that ends by itself. PsyNet then runs ``tick`` at
-    #: the end, ends the session with the reason ``"finished"``, unless
+    #: the end, with the end as ``now`` even if the tick runs late, ends the session with the reason ``"finished"``, unless
     #: ``is_over`` ended it earlier, and rejects messages that arrive later.
     #: ``state["live_session"]["ends_at"]`` holds the session time it ends at,
     #: and a page reads the time left from ``psynet.liveSession.secondsLeft()``
@@ -241,29 +241,6 @@ class LiveGame(RealtimeGame):
         """
         return outcome
 
-    def record_round(self, group_round, outcome, reason):
-        """Record the group's results in the round the session was played
-        in, such as the team's total, in ``group_round.var``. PsyNet calls it
-        once, when the session's ending is saved, for a session started by a
-        :class:`PlayLiveGame` in a round's trials, so there's no need for
-        another barrier after the game page to score the round. It isn't
-        called for a session that failed without an outcome. By default, it
-        does nothing.
-
-        Parameters
-        ----------
-
-        group_round
-            The :class:`~psynet.sync.SyncGroupRound` the session was played in.
-
-        outcome
-            What the game's ``outcome`` returned.
-
-        reason
-            Why the session ended.
-        """
-        return None
-
     def performance_reward(self, outcome, reason, player_id):
         """Return the reward a player earns from the session's outcome, such as
         their winnings. PsyNet adds it to each player's performance reward
@@ -330,8 +307,10 @@ class LiveGame(RealtimeGame):
     def handle_ending(self, session_row):
         """Do work that needs the session's ending, as in Dallinger's
         ``handle_ending``. PsyNet pays each player's
-        :meth:`performance_reward` and calls :meth:`record_round` before
-        this method runs.
+        :meth:`performance_reward`, and copies the outcome to the round the
+        session was played in, if any, as
+        :attr:`~psynet.sync.SyncGroupRound.live_session_outcome`, before this
+        method runs.
         """
         return super().handle_ending(session_row)
 
