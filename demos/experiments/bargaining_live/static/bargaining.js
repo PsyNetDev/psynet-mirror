@@ -1,7 +1,7 @@
-function drawCoins(container, endowment, keep, keeperIsYou) {
+function drawCoins(container, stake, keep, keeperIsYou) {
   // One coin per unit: the keeper's share first, then the other player's.
   container.replaceChildren();
-  for (let coin = 0; coin < endowment; coin++) {
+  for (let coin = 0; coin < stake; coin++) {
     let element = document.createElement("span");
     let keepers = coin < keep;
     let yours = keepers === keeperIsYou;
@@ -56,18 +56,18 @@ export function activate({root, psynet}) {
     } else {
       status.textContent = "Propose a split, or accept your partner's.";
     }
-    drawCoins(mineCoins, view.endowment, Number(keep.value), true);
+    drawCoins(mineCoins, view.stake, Number(keep.value), true);
     keepValue.textContent = keep.value;
     mine.textContent =
       view.mine === null
         ? "You haven't proposed anything yet."
-        : `Your partner sees: you keep ${view.mine}, they get ${view.endowment - view.mine}.`;
+        : `Your partner sees: you keep ${view.mine}, they get ${view.stake - view.mine}.`;
     if (view.theirs === null) {
       theirsCoins.replaceChildren();
       theirs.textContent = "Your partner hasn't proposed anything yet.";
     } else {
-      drawCoins(theirsCoins, view.endowment, view.theirs, false);
-      theirs.textContent = `They keep ${view.theirs}, you get ${view.endowment - view.theirs}.`;
+      drawCoins(theirsCoins, view.stake, view.theirs, false);
+      theirs.textContent = `They keep ${view.theirs}, you get ${view.stake - view.theirs}.`;
       if (lastTheirs !== null && lastTheirs !== view.theirs) {
         // Restarts the highlight, so a player sees the proposal has changed.
         theirsCard.classList.remove("bargain-changed");
@@ -78,7 +78,7 @@ export function activate({root, psynet}) {
     lastTheirs = view.theirs;
     if (view.deal !== null) {
       deal.hidden = false;
-      deal.textContent = `Deal! You get ${view.deal} coins and your partner gets ${view.endowment - view.deal}.`;
+      deal.textContent = `Deal! You get ${view.deal} coins and your partner gets ${view.stake - view.deal}.`;
     }
     accept.disabled = !playing || view.theirs === null;
   }

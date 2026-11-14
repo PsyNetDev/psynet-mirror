@@ -139,7 +139,6 @@ class Fishing(LiveGame):
         labels = player_labels(state["live_session"]["players"], player_id)
         latest = state["catches"][-1] if state["catches"] else None
         return {
-            "n_spots": N_SPOTS,
             "travel_seconds": TRAVEL_SECONDS,
             "boats": [
                 {
@@ -158,10 +157,16 @@ class Fishing(LiveGame):
         }
 
     def outcome(self, state, reason):
+        spot_fish = [0] * N_SPOTS
+        for catch in state["catches"]:
+            for c in catch["caught"]:
+                spot_fish[c["spot"] - 1] += c["fish"]
         return {
             "fish": state["fish"],
             "moves": state["moves"],
             "catches": state["catches"],
+            # The fish caught at each spot, for the history page.
+            "spot_fish": spot_fish,
         }
 
     def answer(self, outcome, reason, player_id):
@@ -176,7 +181,7 @@ class Fishing(LiveGame):
     def bot(self, view, player_id, now):
         mine = next(b for b in view["boats"] if b["who"] == "you")
         if mine["spot"] is None:
-            return Move(spot=1 + int(player_id) % view["n_spots"])
+            return Move(spot=1 + int(player_id) % N_SPOTS)
         if mine["arrives_at"] > now:
             return None
         caught = {c["who"]: c for c in view["latest"]}
@@ -430,7 +435,7 @@ def history_page(participant: Participant):
                 for r in scored[-HISTORY_ROUNDS:]:
                     tags.li(
                         f"Round {r.number + 1}: "
-                        + _spot_text(_spot_fish(r.live_session_outcome))
+                        + _spot_text(r.live_session_outcome["spot_fish"])
                     )
         if tips:
             tags.p("Tips from members who have left:")
@@ -440,20 +445,12 @@ def history_page(participant: Participant):
     return InfoPage(content, time_estimate=20)
 
 
-def _spot_text(spot_fish: dict) -> str:
+def _spot_text(spot_fish: List[int]) -> str:
     return ", ".join(
-        f"spot {SPOT_LETTERS[spot - 1]}: {fish} fish"
-        for spot, fish in sorted(spot_fish.items())
+        f"spot {letter}: {fish} fish"
+        for letter, fish in zip(SPOT_LETTERS, spot_fish)
+        if fish
     )
-
-
-def _spot_fish(outcome) -> dict:
-    """Return the fish caught at each spot in a session's outcome."""
-    totals = {}
-    for catch in outcome["catches"]:
-        for c in catch["caught"]:
-            totals[c["spot"]] = totals.get(c["spot"], 0) + c["fish"]
-    return totals
 
 
 class FishingTrial(Trial):
@@ -563,11 +560,7 @@ class Exp(psynet.experiment.Experiment):
                     "society_id": r.sync_group_id,
                     "round": r.number,
                     "round_id": r.id,
-                    "spot_fish": (
-                        _spot_fish(r.live_session_outcome)
-                        if r.live_session_outcome is not None
-                        else None
-                    ),
+                    "spot_fish": (r.live_session_outcome or {}).get("spot_fish"),
                     "retired_id": r.var.get("retired_id"),
                 }
                 for r in rounds

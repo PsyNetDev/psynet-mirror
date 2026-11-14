@@ -32,7 +32,7 @@ from psynet.live_session import (
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
-from psynet.sync import Regrouper, SimpleGrouper, leave_group
+from psynet.sync import Regrouper, SimpleGrouper, SyncGroupRound, leave_group
 from psynet.timeline import Module, Timeline, join, switch, while_loop
 from psynet.trial.main import Trial
 
@@ -60,8 +60,8 @@ class Propose(LiveMessage):
     keep: int
 
     def apply(self, game, state, player_id, now):
-        if not 0 <= self.keep <= state["endowment"]:
-            raise Reject(f"Keep between 0 and {state['endowment']} coins.")
+        if not 0 <= self.keep <= state["stake"]:
+            raise Reject(f"Keep between 0 and {state['stake']} coins.")
         state["offers"][player_id] = self.keep
         state["n_proposals"] += 1
 
@@ -78,7 +78,7 @@ class Accept(LiveMessage):
         partner = partner_of(state, player_id)
         if state["offers"][partner] != self.keep:
             raise Reject("Your partner has just changed their proposal.")
-        state["deal"] = {partner: self.keep, player_id: state["endowment"] - self.keep}
+        state["deal"] = {partner: self.keep, player_id: state["stake"] - self.keep}
         state["deal_at"] = game.elapsed(state, now)
 
 
@@ -89,7 +89,7 @@ class Bargain(LiveGame):
 
     def initial_state(self, players, settings):
         return {
-            "endowment": settings["endowment"],
+            "stake": settings["stake"],
             "offers": {player: None for player in players},
             "n_proposals": 0,
             "deal": None,
@@ -99,7 +99,7 @@ class Bargain(LiveGame):
     def view(self, state, player_id):
         partner = partner_of(state, player_id)
         return {
-            "endowment": state["endowment"],
+            "stake": state["stake"],
             "mine": state["offers"][player_id],
             "theirs": state["offers"][partner],
             "deal": None if state["deal"] is None else state["deal"][player_id],
@@ -119,8 +119,6 @@ class Bargain(LiveGame):
         return {
             "deal": outcome["deal"] is not None,
             "coins": (outcome["deal"] or {}).get(player_id, 0),
-            "deal_at": outcome["deal_at"],
-            "n_proposals": outcome["n_proposals"],
         }
 
     def performance_reward(self, outcome, reason, player_id):
@@ -130,20 +128,20 @@ class Bargain(LiveGame):
         if view["deal"] is not None:
             return None
         theirs = view["theirs"]
-        if theirs is not None and view["endowment"] - theirs >= BOT_GIVES:
+        if theirs is not None and view["stake"] - theirs >= BOT_GIVES:
             return Accept(keep=theirs)
         # The player who joined first opens.
         if view["mine"] is None and player_id == view["live_session"]["players"][0]:
-            return Propose(keep=view["endowment"] - BOT_GIVES)
+            return Propose(keep=view["stake"] - BOT_GIVES)
         return None
 
 
 def choose_stake():
     """Return the definition of a pair's round, with the coins they bargain over."""
-    return {"endowment": random.choice(STAKES)}
+    return {"stake": random.choice(STAKES)}
 
 
-def bargaining_page(endowment):
+def bargaining_page(stake):
     return ModularPage(
         "bargain",
         Prompt(
@@ -169,16 +167,16 @@ def bargaining_page(endowment):
                         tags.div(id="bargain-mine-coins", cls="bargain-coins"),
                         tags.label(
                             "You keep ",
-                            tags.strong(endowment // 2, id="bargain-keep-value"),
-                            f" of {endowment} coins",
+                            tags.strong(stake // 2, id="bargain-keep-value"),
+                            f" of {stake} coins",
                             fr="bargain-keep",
                         ),
                         tags.input_(
                             type="range",
                             id="bargain-keep",
                             min=0,
-                            max=endowment,
-                            value=endowment // 2,
+                            max=stake,
+                            value=stake // 2,
                         ),
                         tags.button(
                             "Propose",
@@ -224,7 +222,7 @@ class BargainTrial(Trial):
         return PlayLiveGame(
             group_type="pair",
             game_class=Bargain,
-            page=bargaining_page(self.definition["endowment"]),
+            page=bargaining_page(self.definition["stake"]),
             settings=self.definition,
             max_wait_time=30,
             max_wait_action="leave_group",
@@ -243,7 +241,7 @@ class BargainTrial(Trial):
             mine = self.coins()
             text = (
                 f"You made a deal: you get {mine} coins and your partner "
-                f"gets {self.definition['endowment'] - mine}."
+                f"gets {self.definition['stake'] - mine}."
             )
         return InfoPage(text, time_estimate=5)
 
@@ -325,8 +323,11 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per player per round."""
+        """Return one row per player per round and one per pair."""
         trials = BargainTrial.query.order_by(BargainTrial.id).all()
+        pairs = SyncGroupRound.query.filter_by(module_id="game").order_by(
+            SyncGroupRound.id
+        )
         return {
             "player_round": [
                 {
@@ -334,14 +335,20 @@ class Exp(psynet.experiment.Experiment):
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
                     "round": t.position,
-                    "stake": t.definition["endowment"],
                     "deal": (t.answer or {}).get("deal"),
                     "coins": t.coins(),
-                    "deal_at": (t.answer or {}).get("deal_at"),
-                    "n_proposals": (t.answer or {}).get("n_proposals"),
                 }
                 for t in trials
-            ]
+            ],
+            "pair": [
+                {
+                    "pair_id": r.sync_group_id,
+                    "stake": r.definition["stake"],
+                    "deal_at": (r.live_session_outcome or {}).get("deal_at"),
+                    "n_proposals": (r.live_session_outcome or {}).get("n_proposals"),
+                }
+                for r in pairs
+            ],
         }
 
     def test_check_bot(self, bot: Bot, **kwargs):
@@ -350,10 +357,12 @@ class Exp(psynet.experiment.Experiment):
         assert len(trials) == N_ROUNDS
         for trial in trials:
             assert trial.answer["deal"], trial.answer
-            stake = trial.definition["endowment"]
+            stake = trial.definition["stake"]
             assert stake in STAKES
             assert trial.coins() in (BOT_GIVES, stake - BOT_GIVES)
             outcome = trial.group_round.live_session_outcome
             assert sorted(outcome["deal"].values()) == [BOT_GIVES, stake - BOT_GIVES]
         expected = sum(t.coins() for t in trials) * COIN_VALUE
         assert abs(bot.performance_reward - expected) < 1e-9
+        for pair in self.get_basic_data()["pair"]:
+            assert pair["stake"] in STAKES and pair["deal_at"] is not None, pair

@@ -93,9 +93,6 @@ class PublicGoods(LiveGame):
         return {
             "contributed": outcome["contributions"][player_id],
             "earned": outcome["payoffs"][player_id],
-            "pot": outcome["pot"],
-            "share": outcome["share"],
-            "team_size": len(outcome["contributions"]),
         }
 
     def performance_reward(self, outcome, reason, player_id):
@@ -173,10 +170,11 @@ class ContributionTrial(Trial):
         answer = self.answer
         if answer is None:
             return InfoPage("Your group couldn't start this round.", time_estimate=5)
+        team = self.group_round.live_session_outcome
         return InfoPage(
-            f"The group put {answer['pot']} tokens in the pot, which was "
-            f"multiplied and shared between {answer['team_size']} "
-            f"players: {answer['share']:g} tokens each. You put in "
+            f"The group put {team['pot']} tokens in the pot, which was "
+            f"multiplied and shared between {len(team['contributions'])} "
+            f"players: {team['share']:g} tokens each. You put in "
             f"{answer['contributed']}, so you earned {answer['earned']:g} tokens "
             "this round.",
             time_estimate=RESULTS_SECONDS,
