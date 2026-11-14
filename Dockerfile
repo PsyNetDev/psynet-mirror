@@ -6,11 +6,13 @@ ARG PYTHON_VERSION=3.14
 # Playwright needs Node 20 or later, and Node 20 reached end of life in April
 # 2026. Copy the pinned Node release from the official image, built on the
 # same Debian release as the Python image, instead of Debian's nodejs package.
+# renovate: datasource=docker depName=node
 ARG NODE_VERSION=22
 FROM --platform=${DOCKER_PLATFORM} node:${NODE_VERSION}-trixie-slim AS node
 
 FROM --platform=${DOCKER_PLATFORM} python:${PYTHON_VERSION}-trixie
 ARG PYTHON_VERSION
+# renovate: datasource=custom.chrome-for-testing depName=chrome-for-testing versioning=loose
 ARG CHROME_VERSION=149.0.7827.54
 
 # Every CI job builds this image, so a brief PyPI outage fails them all at

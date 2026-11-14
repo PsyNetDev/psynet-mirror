@@ -1,0 +1,30 @@
+# Renovate opens merge requests that update the CI images, the Playwright
+# package and the pre-commit hooks (see renovate.json). A pipeline schedule on
+# the protected orphan branch `renovate-bot` runs this job; that branch's
+# .gitlab-ci.yml only includes this file from the default branch, so scheduled
+# Renovate runs never start PsyNet's own CI jobs. See the merge request that
+# added this file for the one-time project setup.
+renovate:
+  image: renovate/renovate:44.239.1
+  variables:
+    GIT_STRATEGY: none
+    RENOVATE_PLATFORM: gitlab
+    RENOVATE_ENDPOINT: $CI_API_V4_URL
+    RENOVATE_REPOSITORIES: '["$CI_PROJECT_PATH"]'
+    RENOVATE_IGNORE_PR_AUTHOR: "true"
+    RENOVATE_CACHE_DIR: $CI_PROJECT_DIR/.cache/
+  script:
+    - renovate
+  cache:
+    key: renovate
+    paths:
+      - .cache/
+  interruptible: false
+  # RENOVATE_TOKEN (and the optional read-only GITHUB_COM_TOKEN) are scoped
+  # to this environment, so no other job can read them.
+  environment:
+    name: renovate
+    action: access
+  resource_group: renovate
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "web"

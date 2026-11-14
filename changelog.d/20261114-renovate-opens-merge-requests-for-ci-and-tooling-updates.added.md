@@ -1,0 +1,1 @@
+Added a Renovate configuration that opens weekly merge requests updating the Docker, Node, Chrome and Playwright versions in the CI test images and the pre-commit hooks; Python and Postgres versions are still updated by hand, and Renovate's merge requests skip the changelog fragment check.

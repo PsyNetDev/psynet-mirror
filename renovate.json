@@ -1,0 +1,49 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "customManagers:dockerfileVersions"],
+  "schedule": ["before 6am on monday"],
+  "enabledManagers": ["gitlabci", "dockerfile", "npm", "pre-commit", "custom.regex"],
+  "pre-commit": {
+    "enabled": true
+  },
+  "gitlabci": {
+    "managerFilePatterns": ["/(^|/)\\.gitlab/ci/.+\\.ya?ml$/"]
+  },
+  "ignorePaths": ["**/node_modules/**", "demos/**", "tests/**", "psynet/resources/**", "docs/_build/**"],
+  "customDatasources": {
+    "chrome-for-testing": {
+      "defaultRegistryUrlTemplate": "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions.json",
+      "transformTemplates": ["{\"releases\": [{\"version\": channels.Stable.version}]}"]
+    }
+  },
+  "packageRules": [
+    {
+      "description": "The docker CLI image and its dind service must stay on the same release.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["docker"],
+      "groupName": "docker"
+    },
+    {
+      "description": "The Playwright image tag must match @playwright/test.",
+      "matchPackageNames": ["@playwright/test", "mcr.microsoft.com/playwright"],
+      "groupName": "Playwright"
+    },
+    {
+      "description": "Python versions are part of the supported-version matrix and Postgres follows Dallinger, so both move by hand.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["python", "postgres"],
+      "enabled": false
+    },
+    {
+      "description": "The Dockerfile pins Node through ARG NODE_VERSION, which the renovate comment above it updates.",
+      "matchManagers": ["dockerfile"],
+      "matchPackageNames": ["node"],
+      "enabled": false
+    },
+    {
+      "description": "Renovate releases several times a day.",
+      "matchPackageNames": ["renovate/renovate"],
+      "extends": ["schedule:monthly"]
+    }
+  ]
+}
