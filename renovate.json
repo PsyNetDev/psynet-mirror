@@ -43,7 +43,7 @@
     {
       "description": "Renovate releases several times a day.",
       "matchPackageNames": ["renovate/renovate"],
-      "extends": ["schedule:monthly"]
+      "schedule": ["before 6am on the first day of the month"]
     }
   ]
 }

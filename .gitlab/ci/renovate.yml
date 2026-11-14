@@ -20,8 +20,8 @@ renovate:
     paths:
       - .cache/
   interruptible: false
-  # RENOVATE_TOKEN (and the optional read-only GITHUB_COM_TOKEN) are scoped
-  # to this environment, so no other job can read them.
+  # RENOVATE_TOKEN and the read-only GITHUB_COM_TOKEN are scoped to this
+  # environment, so no other job can read them.
   environment:
     name: renovate
     action: access
