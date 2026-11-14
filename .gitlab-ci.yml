@@ -25,7 +25,7 @@ default:
 services:
   - docker:26.1.1-dind
   - postgres:16.2-bookworm
-  - redis:latest
+  - redis:8.10
 
 # Test jobs run Postgres without durability: their databases are thrown away,
 # and database-heavy tests run about twice as fast. Benchmark jobs keep the
@@ -36,7 +36,7 @@ services:
     - name: postgres:16.2-bookworm
       alias: postgres
       command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"]
-    - redis:latest
+    - redis:8.10
 
 variables:
   AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID

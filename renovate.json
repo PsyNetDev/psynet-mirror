@@ -2,14 +2,21 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", "customManagers:dockerfileVersions"],
   "schedule": ["before 6am on monday"],
-  "enabledManagers": ["gitlabci", "dockerfile", "npm", "pre-commit", "custom.regex"],
+  "enabledManagers": ["gitlabci", "dockerfile", "npm", "pre-commit", "github-actions", "custom.regex"],
   "pre-commit": {
     "enabled": true
   },
   "gitlabci": {
     "managerFilePatterns": ["/(^|/)\\.gitlab/ci/.+\\.ya?ml$/"]
   },
-  "ignorePaths": ["**/node_modules/**", "demos/**", "tests/**", "psynet/resources/**", "docs/_build/**"],
+  "ignorePaths": [
+    "**/node_modules/**",
+    "demos/**",
+    "tests/**",
+    "psynet/resources/libraries/**",
+    "psynet/resources/experiment_scripts/Dockerfile",
+    "docs/_build/**"
+  ],
   "customDatasources": {
     "chrome-for-testing": {
       "defaultRegistryUrlTemplate": "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions.json",
@@ -29,9 +36,13 @@
       "groupName": "Playwright"
     },
     {
+      "description": "psynet scripts update copies this workflow from psynet/resources/experiment_scripts into experiments.",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions in the experiment template"
+    },
+    {
       "description": "Python versions are part of the supported-version matrix and Postgres follows Dallinger, so both move by hand.",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["python", "postgres"],
+      "matchDepNames": ["python", "postgres"],
       "enabled": false
     },
     {
