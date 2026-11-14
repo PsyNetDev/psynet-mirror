@@ -3,13 +3,13 @@
 # cache from the official Playwright Docker image instead of running
 # `npx playwright install` at test time.
 #
-# The Playwright image tag must match @playwright/test in package.json. Use the
-# jammy variant: its browsers are built for an older glibc, so they run on
-# Debian 13.
+# The Playwright image tag must match @playwright/test in package.json. The
+# noble variant's browsers run on Debian 13 because noble's glibc (2.39) is
+# older than Debian 13's (2.41).
 ARG DOCKER_PLATFORM=linux/amd64
 ARG BASE_IMAGE=psynet-build
 
-FROM --platform=${DOCKER_PLATFORM} mcr.microsoft.com/playwright:v1.64.1-jammy AS playwright-browsers
+FROM --platform=${DOCKER_PLATFORM} mcr.microsoft.com/playwright:v1.64.1-noble AS playwright-browsers
 
 FROM ${BASE_IMAGE}
 # The participant recording helper (record-participant-video skill) muxes
