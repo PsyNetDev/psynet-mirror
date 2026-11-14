@@ -3,15 +3,16 @@
 Players wait in a lobby until a cohort of ``COHORT_SIZE`` forms. Each round,
 a :class:`~psynet.sync.Regrouper` pairs up the cohort's players, and each
 pair bargains live over a stake of coins, chosen at random from ``STAKES``,
-for up to ``BARGAIN_SECONDS`` seconds. Either player can propose a split at any time, and change it, and
-either can accept their partner's current proposal. Accepting ends the round
-with a deal; if the time runs out first, nobody is paid.
+for up to ``BARGAIN_SECONDS`` seconds. Either player can propose a split at
+any time, and change it, and either can accept their partner's current
+proposal. Accepting ends the round with a deal; if the time runs out first,
+nobody is paid.
 
 Each player's round is one cued ``BargainTrial``. The trial class has
 ``sync_group_type = "pair"``, so the two trials of a pair share the trial's
 definition, with the pair's stake, which the trial passes to the game as its
-settings. The game
-page's answer is the session's outcome, which the results page reads.
+settings. The trial's answer holds the player's coins; how the pair bargained
+is kept in the round's ``live_session_outcome``.
 
 This is the live counterpart of the ``ultimatum_pairing`` demo, which uses
 the same cohort and pairing set-up for a one-shot offer.

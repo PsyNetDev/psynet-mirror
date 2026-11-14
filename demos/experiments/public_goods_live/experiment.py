@@ -8,8 +8,9 @@ Then the pot is multiplied by ``MULTIPLIER`` and shared between the members,
 and each token a member earns pays ``TOKEN_VALUE``.
 
 Each round is one cued ``ContributionTrial`` per player, whose ``show_trial``
-starts a live session for the team and shows the game page. The game page's
-answer is the session's outcome, which the results page reads.
+starts a live session for the team and shows the game page. The trial's answer
+holds what the player put in and earned; the results page reads the team's
+pot from the round's ``live_session_outcome``.
 """
 
 from dallinger.realtime import Reject
