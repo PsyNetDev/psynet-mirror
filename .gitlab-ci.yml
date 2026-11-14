@@ -211,8 +211,9 @@ changelog_check:
     # Post-release version bumps are release bookkeeping, not user-facing changes.
     - if: $CI_COMMIT_BRANCH == "bump-master-post-release" || $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "bump-master-post-release"
       when: never
-    # Renovate's dependency updates (see .gitlab/ci/renovate.yml) only touch CI and tooling.
-    - if: $CI_COMMIT_BRANCH =~ /^renovate\// || $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^renovate\//
+    # Renovate's updates (see .gitlab/ci/renovate.yml) touch only CI and tooling,
+    # except the experiment template's actions, which reach experiment authors.
+    - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^renovate\// && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME !~ /experiment-template-actions$/
       when: never
     - if: $CI_MERGE_REQUEST_ID
       when: always

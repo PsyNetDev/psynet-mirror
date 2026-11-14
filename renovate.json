@@ -38,7 +38,8 @@
     {
       "description": "psynet scripts update copies this workflow from psynet/resources/experiment_scripts into experiments.",
       "matchManagers": ["github-actions"],
-      "groupName": "GitHub Actions in the experiment template"
+      "groupName": "GitHub Actions in the experiment template",
+      "groupSlug": "experiment-template-actions"
     },
     {
       "description": "Python versions are part of the supported-version matrix and Postgres follows Dallinger, so both move by hand.",
