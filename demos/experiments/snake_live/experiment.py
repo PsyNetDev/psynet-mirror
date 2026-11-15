@@ -177,8 +177,8 @@ class Snake(LiveGame):
     the snake is crashed, the direction it's heading, the turns the player
     has pressed that it hasn't made yet, and the player's food and crashes.
     It also holds the food on the board. Pages send turns, and on each tick
-    the game moves every snake a square. The game ends ``ROUND_SECONDS``
-    after it starts.
+    the game moves every snake a square. The game lasts ``ROUND_SECONDS``
+    from its start.
     """
 
     channel = "snake_live"
@@ -189,15 +189,11 @@ class Snake(LiveGame):
     # next tick, so the sender gets its view with that tick, like everyone
     # else.
     send_views_on_messages = False
-    # A limit on the whole game, counted from when the group finished
-    # waiting for each other: the longest the ready step can take, the round, and 30
-    # seconds to spare. Without the spare time, a round that starts at the
-    # ready timeout would end before its last tick.
-    max_duration = LiveGame.ready_timeout + ROUND_SECONDS + 30
+    duration = ROUND_SECONDS
 
     def initial_state(self, players):
         ordered = sorted(players, key=int)
-        state = {"players": {}, "food": [], "ends_at": None, "time_up": False}
+        state = {"players": {}, "food": []}
         for number, player_id in enumerate(ordered, start=1):
             # The snakes start in evenly spaced rows, heading right.
             row = number * SIZE // (len(ordered) + 1)
@@ -215,13 +211,7 @@ class Snake(LiveGame):
             add_food(state)
         return state
 
-    def on_start(self, state, now):
-        state["ends_at"] = now + ROUND_SECONDS
-
     def tick(self, state, now):
-        if now >= state["ends_at"]:
-            state["time_up"] = True
-            return
         move_snakes(state, now)
         # Crashed snakes come back after the others have moved, so every page
         # shows them before they can move or be hit.
@@ -247,11 +237,7 @@ class Snake(LiveGame):
                 for other_id, player in state["players"].items()
             },
             "food": state["food"],
-            "ends_at": state["ends_at"],
         }
-
-    def is_over(self, state):
-        return state["time_up"]
 
     def outcome(self, state, reason):
         return {
@@ -264,6 +250,17 @@ class Snake(LiveGame):
                 player_id: player["crashes"]
                 for player_id, player in state["players"].items()
             },
+        }
+
+    def answer(self, outcome, reason, player_id):
+        """The player's own part of the outcome, for their result page."""
+        food = outcome["food"][player_id]
+        others = [n for other, n in outcome["food"].items() if other != player_id]
+        return {
+            "reason": reason,
+            "food": food,
+            "crashes": outcome["crashes"][player_id],
+            "ate_most": food > max(others),
         }
 
     def performance_reward(self, outcome, reason, player_id):
@@ -312,16 +309,14 @@ def food_text(n):
 
 
 def show_result(participant):
-    outcome = participant.var.snake_live
-    if outcome is None:
+    answer = participant.var.snake_live
+    if answer is None:
         return InfoPage("Your group couldn't play the game.", time_estimate=5)
-    me = str(participant.id)
-    food = outcome["food"][me]
-    crashes = outcome["crashes"][me]
-    best_other = max(n for player_id, n in outcome["food"].items() if player_id != me)
-    if outcome["reason"] != "finished":
+    food = answer["food"]
+    crashes = answer["crashes"]
+    if answer["reason"] != "finished":
         summary = "The game ended early."
-    elif food > best_other:
+    elif answer["ate_most"]:
         summary = "Your snake ate the most!"
     else:
         summary = "Time's up!"
@@ -412,6 +407,6 @@ class Exp(psynet.experiment.Experiment):
         result = live_session_result(live_session_id(bot, "snake_live"))
         assert result.status == "ended", result.error
         assert result.end_reason == "finished"
-        assert result.outcome == bot.var.snake_live
         food = result.outcome["food"][str(bot.id)]
+        assert bot.var.snake_live["food"] == food
         assert bot.performance_reward == pytest.approx(BONUS_PER_FOOD * food)

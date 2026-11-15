@@ -32,8 +32,10 @@ about an eighth of a second of pressing a key.
 
 ## What's saved
 
-The game page's answer is the game's outcome: how many pieces of food each
-player's snake ate and how many times it crashed, keyed by participant id.
+The session's outcome records how many pieces of food each player's snake
+ate and how many times it crashed, keyed by participant id. Each player's
+answer on the game page is their own part of it: their food and crashes,
+whether they ate the most, and why the game ended.
 Players send only a few turns a second, so the session's record keeps every
 turn, with when the participant's page sent it.
 

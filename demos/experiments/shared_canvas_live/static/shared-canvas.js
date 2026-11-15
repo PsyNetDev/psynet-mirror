@@ -251,7 +251,7 @@ export function activate({ root, vars, psynet }) {
     }
   }
 
-  function showStatus(view) {
+  function showStatus() {
     if (live.ended) {
       setText(status, "The game is over.");
     } else if (!live.started) {
@@ -259,9 +259,9 @@ export function activate({ root, vars, psynet }) {
     } else {
       setText(status, "Collect the coins!");
     }
-    let time = live.socket.sessionTime();
-    if (view !== null && view.ends_at !== null && time !== null) {
-      setText(timer, String(Math.ceil(Math.max(0, view.ends_at - time))));
+    let left = live.secondsLeft();
+    if (left !== null) {
+      setText(timer, String(Math.ceil(left)));
     }
   }
 
@@ -279,7 +279,7 @@ export function activate({ root, vars, psynet }) {
       draw(context, rules, shown, live.interpolatedView() || shown);
       showScores(shown);
     }
-    showStatus(shown);
+    showStatus();
     if (live.ended) {
       running = false;
     } else {

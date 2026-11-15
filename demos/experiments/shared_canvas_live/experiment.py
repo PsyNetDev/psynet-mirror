@@ -225,7 +225,7 @@ class SharedCanvas(LiveGame):
     still on the canvas, and every coin collected, with who collected it and
     when the game counted it. A player's page sends moves, each saying which
     keys were held and for how long, and the game works out where that takes
-    the player. The game ends ``ROUND_SECONDS`` after it starts, and more
+    the player. The game lasts ``ROUND_SECONDS`` from its start, and more
     coins appear while it runs.
     """
 
@@ -237,11 +237,7 @@ class SharedCanvas(LiveGame):
     # Pages send many moves a second and show their own at once, so the
     # sender gets its view with the next tick, like everyone else.
     send_views_on_messages = False
-    # A limit on the whole game, counted from when the group finished
-    # waiting for each other: the longest the ready step can take, the round, and 30
-    # seconds to spare. Without the spare time, a round that starts at the
-    # ready timeout would end before its last tick.
-    max_duration = LiveGame.ready_timeout + ROUND_SECONDS + 30
+    duration = ROUND_SECONDS
 
     def initial_state(self, players):
         ordered = sorted(players, key=int)
@@ -269,9 +265,7 @@ class SharedCanvas(LiveGame):
             "coins": [],
             "next_coin_id": 0,
             "collected": [],
-            "ends_at": None,
             "next_coin": None,
-            "time_up": False,
         }
         for _ in range(self.most_coins(state)):
             add_coin(state)
@@ -284,7 +278,6 @@ class SharedCanvas(LiveGame):
         return COIN_SECONDS / len(state["players"])
 
     def on_start(self, state, now):
-        state["ends_at"] = now + ROUND_SECONDS
         # Nobody can move before the start, so there's no movement time to
         # save up from then.
         for player in state["players"].values():
@@ -292,9 +285,6 @@ class SharedCanvas(LiveGame):
         state["next_coin"] = now + self.coin_seconds(state)
 
     def tick(self, state, now):
-        if now >= state["ends_at"]:
-            state["time_up"] = True
-            return
         while now >= state["next_coin"]:
             if len(state["coins"]) < self.most_coins(state):
                 add_coin(state)
@@ -321,11 +311,7 @@ class SharedCanvas(LiveGame):
                 for other_id, player in state["players"].items()
             },
             "coins": state["coins"],
-            "ends_at": state["ends_at"],
         }
-
-    def is_over(self, state):
-        return state["time_up"]
 
     def outcome(self, state, reason):
         return {
@@ -335,6 +321,17 @@ class SharedCanvas(LiveGame):
                 for player_id, player in state["players"].items()
             },
             "collected": state["collected"],
+        }
+
+    def answer(self, outcome, reason, player_id):
+        """The player's own part of the outcome, for their result page."""
+        coins = outcome["coins"][player_id]
+        others = [n for other, n in outcome["coins"].items() if other != player_id]
+        return {
+            "reason": reason,
+            "coins": coins,
+            "collected_most": coins > max(others),
+            "group_coins": len(outcome["collected"]),
         }
 
     def performance_reward(self, outcome, reason, player_id):
@@ -457,15 +454,13 @@ def coins_text(n):
 
 
 def show_result(participant):
-    outcome = participant.var.shared_canvas_live
-    if outcome is None:
+    answer = participant.var.shared_canvas_live
+    if answer is None:
         return InfoPage("Your group couldn't play the game.", time_estimate=5)
-    me = str(participant.id)
-    coins = outcome["coins"][me]
-    best_other = max(n for player_id, n in outcome["coins"].items() if player_id != me)
-    if outcome["reason"] != "finished":
+    coins = answer["coins"]
+    if answer["reason"] != "finished":
         summary = "The game ended early."
-    elif coins > best_other:
+    elif answer["collected_most"]:
         summary = "You collected the most coins!"
     else:
         summary = "Time's up!"
@@ -475,7 +470,7 @@ def show_result(participant):
             tags.p(
                 f"You collected {coins_text(coins)}, earning a bonus of "
                 f"${BONUS_PER_COIN * coins:.2f}. Your group collected "
-                f"{coins_text(len(outcome['collected']))} in all."
+                f"{coins_text(answer['group_coins'])} in all."
             ),
         ),
         time_estimate=5,
@@ -551,8 +546,8 @@ class Exp(psynet.experiment.Experiment):
         result = live_session_result(live_session_id(bot, "shared_canvas_live"))
         assert result.status == "ended", result.error
         assert result.end_reason == "finished"
-        assert result.outcome == bot.var.shared_canvas_live
         me = str(bot.id)
+        assert bot.var.shared_canvas_live["coins"] == result.outcome["coins"][me]
         collected = result.outcome["collected"]
         coins = result.outcome["coins"][me]
         assert coins == sum(entry["by"] == me for entry in collected)

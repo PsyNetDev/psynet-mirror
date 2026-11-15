@@ -7,9 +7,11 @@ players as soon as they have both chosen.
 Each game is one cued ``RockPaperScissorsTrial`` per player. The trial's
 definition says how many rounds the game has and what a round won pays. The
 trial starts the pair's session, with the number of rounds as its settings,
-and shows the game page. The game's outcome is the trial's answer, the trial
-scores it as the rounds the player won and pays the bonus for them, and its
-feedback page shows the final score.
+and shows the game page. The game's ``answer`` gives each player their own
+part of the outcome, which is the trial's answer: the trial scores it as the
+rounds the player won and pays the bonus for them, and its feedback page
+shows the final score. The whole pair's outcome is on the trial's
+``group_round``.
 
 A player whose partner leaves plays no more games; see ``README.md``.
 """
@@ -63,6 +65,22 @@ def round_result(mine, theirs):
 def partner_of(player_id, players):
     (partner,) = [player for player in players if player != player_id]
     return partner
+
+
+def rounds_played_by(player_id, rounds):
+    """The rounds played so far as the player saw them: their choice, their
+    partner's, and the result for them."""
+    if not rounds:
+        return []
+    partner = partner_of(player_id, rounds[0])
+    return [
+        {
+            "mine": choices[player_id],
+            "theirs": choices[partner],
+            "result": round_result(choices[player_id], choices[partner]),
+        }
+        for choices in rounds
+    ]
 
 
 class Choose(LiveMessage):
@@ -120,20 +138,12 @@ class RockPaperScissors(LiveGame):
 
     def view(self, state, player_id):
         partner = partner_of(player_id, state["choices"])
-        results = [
-            {
-                "mine": choices[player_id],
-                "theirs": choices[partner],
-                "result": round_result(choices[player_id], choices[partner]),
-            }
-            for choices in state["rounds"]
-        ]
         return {
             "round": len(state["rounds"]) + 1,
             "n_rounds": state["n_rounds"],
             "chosen": state["choices"][player_id] is not None,
             "partner_chosen": state["choices"][partner] is not None,
-            "results": results,
+            "results": rounds_played_by(player_id, state["rounds"]),
             "wins": state["wins"][player_id],
             "partner_wins": state["wins"][partner],
         }
@@ -148,24 +158,33 @@ class RockPaperScissors(LiveGame):
             "wins": state["wins"],
         }
 
+    def answer(self, outcome, reason, player_id):
+        """The player's own part of the outcome: their rounds, each with both
+        choices and the result for them, and the rounds each player won."""
+        partner = partner_of(player_id, outcome["wins"])
+        return {
+            "reason": reason,
+            "rounds": rounds_played_by(player_id, outcome["rounds"]),
+            "wins": outcome["wins"][player_id],
+            "partner_wins": outcome["wins"][partner],
+        }
+
     def bot(self, view, player_id, now):
         if view["chosen"]:
             return None
         return Choose(round=view["round"], action=random.choice(ACTIONS))
 
 
-def show_result(participant, outcome, bonus):
-    """The feedback page for a game with this ``outcome``, for which the
-    participant was paid ``bonus``."""
-    if not outcome["rounds"]:
+def show_result(answer, bonus):
+    """The feedback page for a game whose answer for the player is
+    ``answer``, for which they were paid ``bonus``."""
+    if not answer["rounds"]:
         return InfoPage(
             "The game ended before any rounds were played.", time_estimate=5
         )
-    player_id = str(participant.id)
-    partner = partner_of(player_id, outcome["wins"])
-    wins = outcome["wins"][player_id]
-    partner_wins = outcome["wins"][partner]
-    if outcome["reason"] != "finished":
+    wins = answer["wins"]
+    partner_wins = answer["partner_wins"]
+    if answer["reason"] != "finished":
         summary = "The game ended early."
     elif wins > partner_wins:
         summary = "You won the game!"
@@ -177,7 +196,7 @@ def show_result(participant, outcome, bonus):
         tags.div(
             tags.h2(summary),
             tags.p(
-                f"You won {wins} of the {len(outcome['rounds'])} rounds played, "
+                f"You won {wins} of the {len(answer['rounds'])} rounds played, "
                 f"and your partner won {partner_wins}."
             ),
             tags.p(f"Your bonus for this game is ${bonus:.2f}."),
@@ -189,7 +208,8 @@ def show_result(participant, outcome, bonus):
 class RockPaperScissorsTrial(Trial):
     """One game between the two participants of a pair. The trial's definition
     says which of the pair's games it is, how many rounds it has and what a
-    round won pays, and the trial's answer is the game's outcome."""
+    round won pays, and the trial's answer is the player's part of the game's
+    outcome."""
 
     sync_group_type = GROUP
     time_estimate = 65
@@ -260,7 +280,7 @@ class RockPaperScissorsTrial(Trial):
         if answer is None:
             # The game page had no session, so no game was played.
             return 0
-        return answer["wins"][str(self.participant_id)]
+        return answer["wins"]
 
     def compute_performance_reward(self, score):
         return score * self.definition["bonus_per_win"]
@@ -269,7 +289,7 @@ class RockPaperScissorsTrial(Trial):
         return self.answer is not None
 
     def show_feedback(self, experiment, participant):
-        return show_result(participant, self.answer, self.performance_reward)
+        return show_result(self.answer, self.performance_reward)
 
 
 def left_pair(participant):
@@ -348,19 +368,14 @@ class Exp(psynet.experiment.Experiment):
         result = live_session_result(live_session_id(bot, "rock_paper_scissors"))
         assert result.status == "ended", result.error
         assert result.end_reason == "finished"
-        assert trials[-1].answer == result.outcome
-        me = str(bot.id)
+        assert trials[-1].group_round.live_session_outcome == result.outcome
         reward = 0
         for trial in trials:
             rounds = trial.answer["rounds"]
             # Each game has the number of rounds its trial's definition says.
             assert len(rounds) == trial.definition["rounds"]
-            partner = partner_of(me, rounds[0])
-            wins = sum(
-                round_result(choices[me], choices[partner]) == "win"
-                for choices in rounds
-            )
-            assert trial.score == trial.answer["wins"][me] == wins
+            wins = sum(played["result"] == "win" for played in rounds)
+            assert trial.score == trial.answer["wins"] == wins
             # The trial pays what its definition says for each round won.
             bonus = wins * trial.definition["bonus_per_win"]
             assert trial.performance_reward == pytest.approx(bonus)

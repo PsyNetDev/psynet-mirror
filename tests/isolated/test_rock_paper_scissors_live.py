@@ -101,18 +101,33 @@ class TestRockPaperScissorsLive:
         assert len(finished["rounds"]) == 3
         assert finished["wins"] == {"1": 2, "2": 0}
 
+    def test_each_player_s_answer_is_their_part_of_the_outcome(self, demo, finished):
+        answer = demo.RockPaperScissors().answer(finished, "finished", "2")
+        assert answer == {
+            "reason": "finished",
+            "rounds": [
+                {"mine": "rock", "theirs": "paper", "result": "loss"},
+                {"mine": "rock", "theirs": "paper", "result": "loss"},
+                {"mine": "paper", "theirs": "paper", "result": "draw"},
+            ],
+            "wins": 0,
+            "partner_wins": 2,
+        }
+
     def test_the_trial_scores_the_rounds_won_and_pays_its_definition_s_bonus(
         self, demo, finished
     ):
-        trial = demo.RockPaperScissorsTrial
-        player, partner = (SimpleNamespace(participant_id=id) for id in (1, 2))
-        assert trial.score_answer(player, finished, None) == 2
-        assert trial.score_answer(partner, finished, None) == 0
+        game = demo.RockPaperScissors()
+        score = demo.RockPaperScissorsTrial.score_answer
+        assert score(None, game.answer(finished, "finished", "1"), None) == 2
+        assert score(None, game.answer(finished, "finished", "2"), None) == 0
         # A trial whose game page had no session has no answer.
-        assert trial.score_answer(player, None, None) == 0
+        assert score(None, None, None) == 0
         # Two rounds won, at the 0.1 a round that the trial's definition says.
         paid = SimpleNamespace(definition={"bonus_per_win": 0.1})
-        assert trial.compute_performance_reward(paid, 2) == pytest.approx(0.2)
+        assert demo.RockPaperScissorsTrial.compute_performance_reward(
+            paid, 2
+        ) == pytest.approx(0.2)
 
     @pytest.mark.parametrize(
         "case, participant_id, summary, score",
@@ -124,27 +139,33 @@ class TestRockPaperScissorsLive:
                 "Your partner won the game.",
                 "You won 0 of the 3 rounds played",
             ),
-            ("draw", 1, "The game was a draw.", "You won 1 of the 1 rounds played"),
+            ("draw", 1, "The game was a draw.", "You won 0 of the 1 rounds played"),
             ("early", 1, "The game ended early.", "You won 2 of the 3 rounds played"),
         ],
     )
     def test_the_feedback_page_shows_how_the_game_ended_and_the_bonus_paid(
         self, demo, finished, case, participant_id, summary, score
     ):
-        outcome = {
-            "finished": finished,
-            "draw": {"reason": "finished", "rounds": [{}], "wins": {"1": 1, "2": 1}},
-            "early": {**finished, "reason": "max_duration"},
+        draw = {
+            "reason": "finished",
+            "rounds": [{"1": "rock", "2": "rock"}],
+            "wins": {"1": 0, "2": 0},
+        }
+        outcome, reason = {
+            "finished": (finished, "finished"),
+            "draw": (draw, "finished"),
+            "early": (finished, "max_duration"),
         }[case]
-        participant = SimpleNamespace(id=participant_id)
-        feedback = str(demo.show_result(participant, outcome, 0.2).content)
+        answer = demo.RockPaperScissors().answer(outcome, reason, str(participant_id))
+        feedback = str(demo.show_result(answer, 0.2).content)
         assert f"<h2>{summary}</h2>" in feedback
         assert score in feedback
         assert "Your bonus for this game is $0.20." in feedback
 
     def test_the_feedback_page_says_when_no_round_was_played(self, demo):
         outcome = {"reason": "not_joined", "rounds": [], "wins": {"1": 0, "2": 0}}
-        page = demo.show_result(SimpleNamespace(id=1), outcome, 0.2)
+        answer = demo.RockPaperScissors().answer(outcome, "not_joined", "1")
+        page = demo.show_result(answer, 0.2)
         assert str(page.content) == "The game ended before any rounds were played."
 
     def test_a_trial_without_an_answer_shows_no_feedback(self, demo, finished):

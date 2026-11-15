@@ -106,8 +106,9 @@ export function activate({ root, vars, psynet }) {
     } else {
       status.textContent = "Eat the food!";
     }
-    if (view.ends_at !== null && time !== null) {
-      timer.textContent = Math.ceil(Math.max(0, view.ends_at - time));
+    let left = live.secondsLeft();
+    if (left !== null) {
+      timer.textContent = Math.ceil(left);
     }
   }
 
