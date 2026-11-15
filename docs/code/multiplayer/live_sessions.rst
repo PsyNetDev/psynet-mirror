@@ -70,12 +70,13 @@ what a player's page shows, ``is_over`` says when the game ends, and ``bot``
 plays for bots (see `Bots and testing`_). The state and the views are dicts.
 Each player's id is their participant id as a string, such as ``"12"``.
 Ids are strings because the state is saved as JSON, whose dict keys are
-strings, so they work as keys in the state's dicts. To list the players in
-the order they joined, read ``state["live_session"]["players"]`` (see `The
-ready step`_) rather than sorting the ids, which sorts ``"10"`` before
-``"9"``. Code outside the game rarely needs the ids: the game's ``answer``
-gives each player their own part of the outcome (see `The answer and
-rewards`_).
+strings, so they work as keys in the state's dicts. ``initial_state`` gets
+the players in the order they signed up, which is participant id order, and
+``state["live_session"]["players"]`` (see `The ready step`_) keeps that
+order, so number the players with ``enumerate(players)`` rather than by
+sorting the ids, which sorts ``"10"`` before ``"9"``. Code outside the game
+rarely needs the ids: the game's ``answer`` gives each player their own part
+of the outcome (see `The answer and rewards`_).
 
 A game can also have a time limit, a clock that ticks, an outcome and more,
 which come from Dallinger's :class:`~dallinger.realtime.RealtimeGame`.
@@ -190,6 +191,10 @@ group that reaches the ``PlayLiveGame`` with fewer active members, for example
 because the others left it while it waited, starts no session, and its
 members' game pages show the no-session notice (see `Cases a game page should
 allow for`_). Set ``min_players = 1`` for a game a player can play alone.
+A game that has something for each player that runs out, such as a color or
+a starting square, sets ``max_players``. A larger group is a mistake in the
+experiment, so instead of starting a session for it, PsyNet raises an error
+that says so.
 
 ``PlayLiveGame`` takes the options of a :class:`~psynet.sync.GroupBarrier`,
 such as ``max_wait_time``, for its barrier. Its ``on_session_start`` runs
@@ -306,7 +311,12 @@ function, which PsyNet runs each time the page opens
 - ``started`` says whether the session has started, and ``ended`` whether it
   has ended. In ``onView``, both are already up to date for the view. On a
   page that opens after the end, ``started`` stays ``false``, so check
-  ``ended`` first.
+  ``ended`` first. ``playing`` says whether it has started and not ended,
+  for a check such as before sending a key press.
+- ``sessionTime()`` returns the session time now, the same clock as ``now``
+  in the game's methods, or ``null`` before the page knows it. Compare it
+  with a session time from the view, such as when a crashed player comes
+  back.
 - ``onEnded(callback)`` calls ``callback`` once the session ends, with why it
   ended and the player's final view, which ``onView`` has already had.
 - ``onPlayersAway(callback)`` calls ``callback`` with the ids of the players
@@ -448,7 +458,8 @@ page, it waits until the game's ``max_duration``.
 
 Until the start, the game rejects messages with the reason ``"The game hasn't
 started yet."``, and its ``tick`` and ``bot`` don't run, so disable the page's
-controls with ``enableWhilePlaying``, as above, or wait for ``onStarted``.
+controls with ``enableWhilePlaying``, as above, check ``playing``, or wait
+for ``onStarted``.
 The game's other methods run before the start: ``on_join``, ``on_leave``,
 ``view``, ``is_over``, and ``outcome`` if the session ends before it starts.
 
@@ -606,14 +617,14 @@ call ``game.add_performance_reward(player_id, amount)`` in a message's
 player's reward a few seconds later, so the player keeps it even if they
 leave early.
 
-Both kinds of reward are added to the participant's reward only. When a trial
-shows the game, they don't appear in the trial's ``performance_reward``,
-which stays 0. To have each trial record what its game paid, let the trial
-pay, as the ``rock_paper_scissors_live`` demo does: the trial's
-``score_answer`` reads the player's score from the answer, which is the
-game's outcome, and its ``compute_performance_reward`` turns the score into
-the bonus. The game then defines no ``performance_reward``, so that the
-player isn't paid twice.
+When the game is played as a trial, PsyNet also records both kinds of
+reward on the player's trial, adding them to its ``performance_reward``, so
+each trial shows what its game paid. A trial can pay through its own
+``score_answer`` and ``compute_performance_reward`` instead, as the
+``rock_paper_scissors_live`` demo does, when what a game pays depends on the
+trial's definition. The trial's reward is then added to the game's, so a
+game whose trial pays defines no ``performance_reward``, or the player is
+paid twice.
 
 A session can fail without an outcome: its record couldn't be saved, or the
 game's ``outcome`` raised an error as well. The answer is then ``None`` and
@@ -658,19 +669,35 @@ By the page after the game page, the whole record has been written, unless
 failed.
 
 A game saves every message by default. A game whose pages send many messages,
-such as a move on every key press, can leave some out by defining
-``save_message`` to return ``False`` for them. It runs after the game has
-accepted or rejected the message, and ``rejection`` is the
-:class:`~dallinger.realtime.Reject` the game raised, or ``None``:
+such as a move on every key press, can leave some out with the message
+type's ``save``, which returns ``False`` for a message to leave out. It runs
+after the game has accepted or rejected the message, on the same message
+object that ``apply`` received, so ``apply`` can note what the message did
+in a private attribute, one whose name starts with an underscore.
+``rejection`` is the :class:`~dallinger.realtime.Reject` that ``apply``
+raised, or ``None``:
 
 .. code-block:: python
 
-    class Maze(LiveGame):
-        ...
+    class Step(LiveMessage):
+        type = "step"
+        direction: Literal["up", "down", "left", "right"]
+        _found_exit: bool = False
 
-        def save_message(self, state, player_id, message, rejection):
-            # Leave out moves into a wall, which apply rejects.
-            return rejection is None or rejection.reason != "That's a wall."
+        def apply(self, game, state, player_id, now):
+            ...
+            self._found_exit = state["positions"][player_id] == state["exit"]
+
+        def save(self, game, state, player_id, rejection):
+            # Keep the steps into walls, which apply rejects, and the step
+            # that found the exit.
+            return rejection is not None or self._found_exit
+
+PsyNet always saves its own messages, such as each player's
+:class:`~psynet.live_session.PlayerReady`. A message the game couldn't read
+is saved too, with ``message`` set to ``None``. For a rule that covers every
+message type, a game can instead define Dallinger's ``save_message``, which
+gets the message as the page sent it.
 
 A message left out isn't in the exported data, so leave out only what the
 analysis won't need. Dallinger's `save_message <dallinger-save-message_>`_

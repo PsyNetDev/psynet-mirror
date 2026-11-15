@@ -305,9 +305,9 @@ the ``reason`` in the outcome.
 
 A game can also pay bonuses itself, through its ``performance_reward``
 method, as the snake demo in Part 2 does, or with
-``add_performance_reward``. Those are added to the participant's reward but
-not to a trial's ``performance_reward``, so a game that a trial shows is
-better paid by the trial.
+``add_performance_reward``. In a trial, PsyNet records those on the trial
+too. This demo lets the trial pay instead, because what a round won pays is
+in the trial's definition, so the game defines no ``performance_reward``.
 
 The experiment's timeline forms the pairs, and then gives each player their
 trials:
@@ -605,7 +605,7 @@ removes when the participant moves on to the next page.
 
 The time left comes from ``live.secondsLeft()``, which counts down to the
 end of the game's ``duration``. A crashed snake's ``back_at`` is a session
-time, so the page compares it with ``live.socket.sessionTime()``, which
+time, so the page compares it with ``live.sessionTime()``, which
 counts the same seconds as ``now`` on the server:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/static/snake.js
@@ -679,13 +679,16 @@ Saving fewer messages
 
 By default, the session's record keeps every message. With 30 moves a second
 from each moving player, that's a lot of data that the analysis may not
-need. The game's ``save_message`` decides which messages to keep:
+need. A message type's ``save`` decides which of its messages to keep. It
+runs on the same message object as ``apply``, so ``Move.apply``, above, notes
+in ``_collected`` whether the move collected a coin, for ``save`` to read:
 
 .. literalinclude:: ../../../demos/experiments/shared_canvas_live/experiment.py
-   :pyobject: SharedCanvas.save_message
+   :pyobject: Move.save
    :dedent:
 
-Here, the record keeps only the moves that collected a coin. A message that
+Here, the record keeps only the moves that collected a coin. PsyNet's own
+messages, such as each player's ready message, are always saved. A message that
 isn't saved can't be recovered later, so decide what your analysis needs
 before you leave anything out.
 
