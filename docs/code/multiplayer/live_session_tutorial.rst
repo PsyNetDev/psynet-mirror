@@ -212,11 +212,11 @@ their own rounds, with both choices and the result for them, the rounds each
 of them won, and the reason, so that later pages and your analysis can tell
 a finished game from one that ended early. Without ``answer``, every player's
 answer would be the whole outcome, and code reading it would need the
-player's id to find their part. ``rounds_played_by`` builds the same list of
+player's id to find their part. ``rounds_as_seen_by`` builds the same list of
 rounds for the view, so the page and the answer show a round the same way:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
-   :pyobject: rounds_played_by
+   :pyobject: rounds_as_seen_by
    :dedent:
 
 Bots
@@ -679,12 +679,13 @@ Saving fewer messages
 
 By default, the session's record keeps every message. With 30 moves a second
 from each moving player, that's a lot of data that the analysis may not
-need. A message type's ``save`` decides which of its messages to keep. It
-runs on the same message object as ``apply``, so ``Move.apply``, above, notes
-in ``_collected`` whether the move collected a coin, for ``save`` to read:
+need. A message type's ``should_save`` decides which of its messages to
+keep. It runs on the same message object as ``apply``, so ``Move.apply``,
+above, notes in ``_found_coin`` whether the move collected a coin, for
+``should_save`` to read:
 
 .. literalinclude:: ../../../demos/experiments/shared_canvas_live/experiment.py
-   :pyobject: Move.save
+   :pyobject: Move.should_save
    :dedent:
 
 Here, the record keeps only the moves that collected a coin. PsyNet's own

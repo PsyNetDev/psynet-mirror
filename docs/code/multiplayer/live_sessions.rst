@@ -193,8 +193,8 @@ members' game pages show the no-session notice (see `Cases a game page should
 allow for`_). Set ``min_players = 1`` for a game a player can play alone.
 A game that has something for each player that runs out, such as a color or
 a starting square, sets ``max_players``. A larger group is a mistake in the
-experiment, so instead of starting a session for it, PsyNet raises an error
-that says so.
+experiment's design, so it starts no session either, and PsyNet logs an error
+that says so. Make the grouper's groups no larger than the game allows.
 
 ``PlayLiveGame`` takes the options of a :class:`~psynet.sync.GroupBarrier`,
 such as ``max_wait_time``, for its barrier. Its ``on_session_start`` runs
@@ -670,7 +670,7 @@ failed.
 
 A game saves every message by default. A game whose pages send many messages,
 such as a move on every key press, can leave some out with the message
-type's ``save``, which returns ``False`` for a message to leave out. It runs
+type's ``should_save``, which returns ``False`` for a message to leave out. It runs
 after the game has accepted or rejected the message, on the same message
 object that ``apply`` received, so ``apply`` can note what the message did
 in a private attribute, one whose name starts with an underscore.
@@ -688,7 +688,7 @@ raised, or ``None``:
             ...
             self._found_exit = state["positions"][player_id] == state["exit"]
 
-        def save(self, game, state, player_id, rejection):
+        def should_save(self, game, state, player_id, rejection):
             # Keep the steps into walls, which apply rejects, and the step
             # that found the exit.
             return rejection is not None or self._found_exit

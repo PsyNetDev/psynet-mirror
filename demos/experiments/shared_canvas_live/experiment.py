@@ -132,7 +132,7 @@ def is_moving(player):
 def advance(state, player_id, dx, dy, seconds, now):
     """Move a player for ``seconds``, holding the keys for ``dx``, ``dy``, and
     collect the coins they pass, each counted at session time ``now``. Return
-    how many coins they collected.
+    the number of coins collected.
 
     The page's ``advance`` does the same arithmetic in the same order, so its
     prediction lands where the game does, unless the game shortens or rejects
@@ -205,8 +205,8 @@ class Move(LiveMessage):
     dx: Literal[-1, 0, 1]
     dy: Literal[-1, 0, 1]
     seconds: float = Field(gt=0, le=SAVED_MOVEMENT)
-    # Whether the move collected a coin, which apply notes for save.
-    _collected: bool = False
+    # Whether the move collected a coin, which apply notes for should_save.
+    _found_coin: bool = False
 
     def apply(self, game, state, player_id, now):
         player = state["players"][player_id]
@@ -218,12 +218,13 @@ class Move(LiveMessage):
         if seconds <= 0:
             raise Reject("You've used up your movement time.")
         player["moved_until"] = start + seconds
-        self._collected = advance(state, player_id, self.dx, self.dy, seconds, now) > 0
+        coins = advance(state, player_id, self.dx, self.dy, seconds, now)
+        self._found_coin = coins > 0
 
-    def save(self, game, state, player_id, rejection):
+    def should_save(self, game, state, player_id, rejection):
         # Pages send many moves a second, so only the moves that collected a
         # coin go in the session's record.
-        return self._collected
+        return self._found_coin
 
 
 class SharedCanvas(LiveGame):
@@ -329,14 +330,16 @@ class SharedCanvas(LiveGame):
         }
 
     def answer(self, outcome, reason, player_id):
-        """The player's own part of the outcome, for their result page."""
-        coins = outcome["coins"][player_id]
-        others = [n for other, n in outcome["coins"].items() if other != player_id]
+        """The player's own part of the outcome, for their result page: their
+        score, the coins they collected, whether it was the best, and the
+        group's total, as in the snake demo."""
+        coins = outcome["coins"]
+        score = coins[player_id]
         return {
             "reason": reason,
-            "coins": coins,
-            "collected_most": coins > max(others),
-            "group_coins": len(outcome["collected"]),
+            "score": score,
+            "best": all(score > n for other, n in coins.items() if other != player_id),
+            "group_total": sum(coins.values()),
         }
 
     def performance_reward(self, outcome, reason, player_id):
@@ -452,10 +455,10 @@ def show_result(participant):
     answer = participant.var.shared_canvas_live
     if answer is None:
         return InfoPage("Your group couldn't play the game.", time_estimate=5)
-    coins = answer["coins"]
+    coins = answer["score"]
     if answer["reason"] != "finished":
         summary = "The game ended early."
-    elif answer["collected_most"]:
+    elif answer["best"]:
         summary = "You collected the most coins!"
     else:
         summary = "Time's up!"
@@ -465,7 +468,7 @@ def show_result(participant):
             tags.p(
                 f"You collected {coins_text(coins)}, earning a bonus of "
                 f"${BONUS_PER_COIN * coins:.2f}. Your group collected "
-                f"{coins_text(answer['group_coins'])} in all."
+                f"{coins_text(answer['group_total'])} in all."
             ),
         ),
         time_estimate=5,
@@ -542,7 +545,7 @@ class Exp(psynet.experiment.Experiment):
         assert result.status == "ended", result.error
         assert result.end_reason == "finished"
         me = str(bot.id)
-        assert bot.var.shared_canvas_live["coins"] == result.outcome["coins"][me]
+        assert bot.var.shared_canvas_live["score"] == result.outcome["coins"][me]
         collected = result.outcome["collected"]
         coins = result.outcome["coins"][me]
         assert coins == sum(entry["by"] == me for entry in collected)

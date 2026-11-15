@@ -66,15 +66,16 @@ class LiveMessage(BaseModel):
         """
         raise NotImplementedError
 
-    def save(self, game, state, player_id, rejection):
+    def should_save(self, game, state, player_id, rejection):
         """Return whether to save this message in the session's record. By
         default, every message is saved.
 
         A game whose pages send many messages, such as a move many times a
-        second, can leave out the ones its analysis won't need. ``save`` runs
-        after :meth:`apply`, on the same message object, so :meth:`apply` can
-        note what the message did in a private attribute, one whose name
-        starts with an underscore, for ``save`` to read.
+        second, can leave out the ones its analysis won't need.
+        ``should_save`` runs after :meth:`apply`, on the same message object,
+        so :meth:`apply` can note what the message did in a private
+        attribute, one whose name starts with an underscore, for
+        ``should_save`` to read.
 
         Parameters
         ----------

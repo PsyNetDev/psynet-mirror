@@ -2238,7 +2238,7 @@ def test_a_live_session_page_can_t_have_a_validate_of_its_own(page_type, kwargs)
 class Shot(LiveMessage):
     type = "shot"
     at: int
-    # Whether the shot hit, which apply notes for save.
+    # Whether the shot hit, which apply notes for should_save.
     _hit: bool = False
 
     def apply(self, game, state, player_id, now):
@@ -2246,7 +2246,7 @@ class Shot(LiveMessage):
             raise Reject("Aim at the board.")
         self._hit = self.at == state["target"]
 
-    def save(self, game, state, player_id, rejection):
+    def should_save(self, game, state, player_id, rejection):
         return rejection is not None or self._hit
 
 
@@ -2273,7 +2273,7 @@ def _shot(at):
 
 
 @pytest.mark.parametrize("at, saved", [(3, True), (4, False), (-1, True)])
-def test_a_message_s_save_sees_what_its_apply_noted(range_game, at, saved):
+def test_a_message_s_should_save_sees_what_its_apply_noted(range_game, at, saved):
     state = _started(target=3)
     message = _shot(at)
     rejection = None
@@ -2324,13 +2324,19 @@ def test_max_players_must_be_a_whole_number_of_at_least_min_players(
         type("TooFew", (LiveGame,), {"max_players": max_players})
 
 
-def test_a_group_larger_than_the_game_s_max_players_is_refused(pair, monkeypatch):
+def test_a_group_larger_than_the_game_s_max_players_starts_no_session(
+    pair, monkeypatch, caplog
+):
     members, game_barrier = pair
     monkeypatch.setattr(type(_pick_numbers()), "min_players", 1)
     monkeypatch.setattr(type(_pick_numbers()), "max_players", 1)
 
-    with pytest.raises(ValueError, match="has a max_players of 1"):
-        game_barrier._start_session(members)
+    # Not an error, which would leave the group waiting at the barrier.
+    for member in members:
+        _arrive(game_barrier, member)
+
+    assert live_session_id(members[0], game_barrier.id) is None
+    assert "has a max_players of 1" in caplog.text
 
 
 def test_a_session_lists_its_players_in_participant_id_order(pair, monkeypatch):

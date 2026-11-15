@@ -816,10 +816,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         reward = self.compute_performance_reward(score=self.score)
         assert isinstance(reward, (float, int))
         self._log_performance_reward(reward)
-        # Added to, because a live game played in the trial records its own
-        # rewards on the trial too, which can come first.
-        self.performance_reward = (self.performance_reward or 0) + reward
+        self._record_performance_reward(reward)
         self.participant.inc_performance_reward(reward)
+
+    def _record_performance_reward(self, amount):
+        """Add ``amount`` to the trial's ``performance_reward``, without paying
+        it. It adds rather than sets, because a live game played in the trial
+        records its rewards on the trial as well, before or after the trial's
+        own."""
+        self.performance_reward = (self.performance_reward or 0) + amount
 
     def _log_performance_reward(self, reward):
         logger.debug(

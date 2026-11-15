@@ -253,14 +253,17 @@ class Snake(LiveGame):
         }
 
     def answer(self, outcome, reason, player_id):
-        """The player's own part of the outcome, for their result page."""
-        food = outcome["food"][player_id]
-        others = [n for other, n in outcome["food"].items() if other != player_id]
+        """The player's own part of the outcome, for their result page: their
+        score, the food their snake ate, whether it was the best, and the
+        group's total, as in the shared canvas demo, and their crashes."""
+        food = outcome["food"]
+        score = food[player_id]
         return {
             "reason": reason,
-            "food": food,
+            "score": score,
+            "best": all(score > n for other, n in food.items() if other != player_id),
+            "group_total": sum(food.values()),
             "crashes": outcome["crashes"][player_id],
-            "ate_most": food > max(others),
         }
 
     def performance_reward(self, outcome, reason, player_id):
@@ -312,11 +315,11 @@ def show_result(participant):
     answer = participant.var.snake_live
     if answer is None:
         return InfoPage("Your group couldn't play the game.", time_estimate=5)
-    food = answer["food"]
+    food = answer["score"]
     crashes = answer["crashes"]
     if answer["reason"] != "finished":
         summary = "The game ended early."
-    elif answer["ate_most"]:
+    elif answer["best"]:
         summary = "Your snake ate the most!"
     else:
         summary = "Time's up!"
@@ -408,5 +411,5 @@ class Exp(psynet.experiment.Experiment):
         assert result.status == "ended", result.error
         assert result.end_reason == "finished"
         food = result.outcome["food"][str(bot.id)]
-        assert bot.var.snake_live["food"] == food
+        assert bot.var.snake_live["score"] == food
         assert bot.performance_reward == pytest.approx(BONUS_PER_FOOD * food)

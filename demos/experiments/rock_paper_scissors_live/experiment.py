@@ -67,8 +67,8 @@ def partner_of(player_id, players):
     return partner
 
 
-def rounds_played_by(player_id, rounds):
-    """The rounds played so far as the player saw them: their choice, their
+def rounds_as_seen_by(player_id, rounds):
+    """The rounds played so far, as the player sees them: their choice, their
     partner's, and the result for them."""
     if not rounds:
         return []
@@ -143,7 +143,7 @@ class RockPaperScissors(LiveGame):
             "n_rounds": state["n_rounds"],
             "chosen": state["choices"][player_id] is not None,
             "partner_chosen": state["choices"][partner] is not None,
-            "results": rounds_played_by(player_id, state["rounds"]),
+            "results": rounds_as_seen_by(player_id, state["rounds"]),
             "wins": state["wins"][player_id],
             "partner_wins": state["wins"][partner],
         }
@@ -164,7 +164,7 @@ class RockPaperScissors(LiveGame):
         partner = partner_of(player_id, outcome["wins"])
         return {
             "reason": reason,
-            "rounds": rounds_played_by(player_id, outcome["rounds"]),
+            "rounds": rounds_as_seen_by(player_id, outcome["rounds"]),
             "wins": outcome["wins"][player_id],
             "partner_wins": outcome["wins"][partner],
         }

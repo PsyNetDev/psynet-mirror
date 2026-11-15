@@ -28,17 +28,15 @@ def _add_reward(participant, amount, session_row):
     if not amount:
         return
     participant.inc_performance_reward(amount)
-    trial = _trial_played_in(participant, session_row)
+    trial = _lock_trial_played_in(participant, session_row)
     if trial is not None:
-        # Added to, because the trial adds its own reward when it's
-        # finalized, which can come before or after this.
-        trial.performance_reward = (trial.performance_reward or 0) + amount
+        trial._record_performance_reward(amount)
 
 
-def _trial_played_in(participant, session_row):
-    """The participant's trial in the round the session was played in, if the
-    game was played as a trial: their latest in the round, which is the one
-    whose show_trial started the session."""
+def _lock_trial_played_in(participant, session_row):
+    """Return the participant's trial in the round the session was played
+    in, locked for update, if the game was played as a trial: their latest in
+    the round, which is the one whose show_trial started the session."""
     from ..sync import SyncGroupRound
     from ..trial.main import Trial
 

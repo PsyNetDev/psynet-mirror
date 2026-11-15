@@ -8,6 +8,7 @@ that sets a ``channel``, so that the experiment adds it to
 """
 
 import functools
+from typing import NamedTuple
 
 from dallinger.realtime import RealtimeGame
 from dallinger.realtime.utils import is_number
@@ -33,6 +34,16 @@ from .reward import (
     _handles_ending,
     _handles_reward,
 )
+
+
+class _LastApplied(NamedTuple):
+    """The message a game's apply last parsed, for its save_message."""
+
+    player_id: str
+    #: The message as the page sent it.
+    payload: dict
+    #: The message as a LiveMessage.
+    message: LiveMessage
 
 
 class LiveGame(RealtimeGame):
@@ -97,8 +108,8 @@ class LiveGame(RealtimeGame):
     #: limit. Set it when the game has something for each player that runs
     #: out, such as a color or a starting square. A group that reaches the
     #: :class:`PlayLiveGame` with more active members is a mistake in the
-    #: experiment's design, so the session doesn't start and PsyNet raises an
-    #: error that says so.
+    #: experiment's design, so it starts no session, as for too few players,
+    #: and PsyNet logs an error that says so.
     max_players = None
 
     def __init_subclass__(cls, **kwargs):
@@ -220,25 +231,26 @@ class LiveGame(RealtimeGame):
         itself. An override runs only once the session has started, and never
         receives a :class:`PlayerReady` message, which PsyNet handles itself.
         """
-        read = self.read_message(message)
+        parsed = self.read_message(message)
         # Kept for save_message, which Dallinger calls next with the same
-        # message, so that LiveMessage.save sees what apply saw.
-        self._applied = (player_id, message, read)
-        read.apply(self, state, player_id, now)
+        # message, so that LiveMessage.should_save sees what apply saw.
+        self._last_applied = _LastApplied(player_id, message, parsed)
+        parsed.apply(self, state, player_id, now)
 
     def save_message(self, state, player_id, message, rejection):
         """Return whether to save a page's message in the session's record,
         as in Dallinger's ``save_message``. By default, it asks the message's
-        :meth:`LiveMessage.save`, with the same message object that
+        :meth:`LiveMessage.should_save`, with the same message object that
         :meth:`LiveMessage.apply` received, and saves a message the game
         couldn't read. PsyNet always saves its own messages, such as
         :class:`PlayerReady`, without calling this.
         """
-        applied = getattr(self, "_applied", None)
-        self._applied = None
-        if applied is None or applied[0] != player_id or applied[1] != message:
+        last = getattr(self, "_last_applied", None)
+        self._last_applied = None
+        if last is None or (last.player_id, last.payload) != (player_id, message):
+            # The game couldn't read the message, or overrides apply.
             return True
-        return applied[2].save(self, state, player_id, rejection)
+        return last.message.should_save(self, state, player_id, rejection)
 
     def elapsed(self, state, now):
         """Return the seconds since the session started, once every player

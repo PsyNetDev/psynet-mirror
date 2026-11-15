@@ -20,8 +20,11 @@ from ..bot import Bot
 from ..modular_page import ModularPage
 from ..sync import BarrierBehaviorMismatch, GroupBarrier
 from ..timeline import CodeBlock, EltCollection, join
+from ..utils import get_logger
 from .game import LiveGame
 from .ready_step import _new_session_settings
+
+logger = get_logger()
 
 
 class PlayLiveGame(EltCollection):
@@ -219,17 +222,26 @@ class _LiveGameBarrier(GroupBarrier):
 
     def _start_session(self, participants, group_round=None):
         game_class = self.game_class
-        if len(participants) < game_class.min_players:
+        n_players = len(participants)
+        if n_players < game_class.min_players:
             return None
-        if game_class.max_players is not None and len(participants) > (
-            game_class.max_players
-        ):
-            raise ValueError(
-                f"A group of {len(participants)} reached the PlayLiveGame "
-                f"{self.id!r}, but {game_class.__name__} has a max_players of "
-                f"{game_class.max_players}. Make the groups of its group type, "
-                f"{self.group_type!r}, no larger than that."
+        too_many = game_class.max_players is not None and (
+            n_players > game_class.max_players
+        )
+        if too_many:
+            # Logged rather than raised: an error while a group is released
+            # is only logged anyway, and would leave the group waiting.
+            logger.error(
+                "A group of %d reached the PlayLiveGame %r, but %s has a "
+                "max_players of %d, so it starts no session. Make the groups "
+                "of its group type, %r, no larger than that.",
+                n_players,
+                self.id,
+                game_class.__name__,
+                game_class.max_players,
+                self.group_type,
             )
+            return None
         # In id order, which is the order the players signed up in, so a
         # game's initial_state and state["live_session"]["players"] list them
         # in that order.
