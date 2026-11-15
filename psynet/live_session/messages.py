@@ -51,8 +51,9 @@ class LiveMessage(BaseModel):
         ----------
 
         game
-            The game, for its settings or to call
-            :meth:`~LiveGame.queue_effect`.
+            The game, for example to call
+            :meth:`~LiveGame.add_performance_reward` or
+            :meth:`~LiveGame.elapsed`.
 
         state
             The session's state.

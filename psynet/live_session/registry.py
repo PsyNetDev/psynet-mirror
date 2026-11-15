@@ -16,7 +16,7 @@ def _live_game_class(channel):
     return _live_game_classes.get(channel)
 
 
-def _register_live_session(game_class):
+def _register_live_game(game_class):
     channel = game_class.channel
     existing = _live_game_classes.get(channel)
     if existing is not None and not _same_definition(existing, game_class):

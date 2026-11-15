@@ -72,9 +72,9 @@ Each player's id is their participant id as a string, such as ``"12"``.
 Ids are strings because the state is saved as JSON, whose dict keys are
 strings, so they work as keys in the state's dicts. ``initial_state`` gets
 the players in the order they signed up, which is participant id order, and
-``state["live_session"]["players"]`` (see `The ready step`_) keeps that
-order, so number the players with ``enumerate(players)`` rather than by
-sorting the ids, which sorts ``"10"`` before ``"9"``. Code outside the game
+``state["live_session"]["players"]`` (see `PsyNet's entry in the state`_)
+keeps that order, so number the players with ``enumerate(players)`` rather
+than by sorting the ids, which sorts ``"10"`` before ``"9"``. Code outside the game
 rarely needs the ids: the game's ``answer`` gives each player their own part
 of the outcome (see `The answer and rewards`_).
 
@@ -198,7 +198,8 @@ that says so. Make the grouper's groups no larger than the game allows.
 
 ``PlayLiveGame`` takes the options of a :class:`~psynet.sync.GroupBarrier`,
 such as ``max_wait_time``, for its barrier. Its ``on_session_start`` runs
-once the session has started, with the arguments a group barrier's
+once the session has been created, before the game starts, with the
+arguments a group barrier's
 ``on_release`` takes and also ``live_session_id``. Use it for group
 bookkeeping at the start of a round, such as choosing who leaves after it.
 
@@ -293,35 +294,47 @@ function, which PsyNet runs each time the page opens
 
 ``psynet.liveSession`` offers:
 
-- ``send(type, message)`` sends the game a message, and returns its number,
-  or ``undefined`` once the page's connection is closed or refused.
-- ``onView(callback)`` calls ``callback`` with each new view, what the game's
-  ``view`` returns for this player, ending with the final view. A page that
-  opens after the session has ended gets just the final view.
-- ``onRejected(callback)`` calls ``callback`` with the number of each message
-  the game rejected and the reason. The view that follows comes straight
-  after, so show the reason somewhere ``onView`` doesn't overwrite, as the
-  example does.
-- ``onStarted(callback)`` calls ``callback`` with the first view once the
-  session has started, or at once if it already has. A page that opens after
-  the session has ended gets ``onEnded`` instead.
-- ``enableWhilePlaying(...elements)`` enables the elements, such as
-  buttons, only while the session is played: they are disabled until it
-  starts, and again once it ends.
-- ``started`` says whether the session has started, and ``ended`` whether it
+Whether there's a game to play:
+
+- ``hasSession`` says whether the group started a session at the
+  ``PlayLiveGame``. Without one, PsyNet shows the participant a notice, and
+  the other methods throw an error. Check it first.
+- ``started`` says whether the game has started, and ``ended`` whether it
   has ended. In ``onView``, both are already up to date for the view. On a
   page that opens after the end, ``started`` stays ``false``, so check
   ``ended`` first. ``playing`` says whether it has started and not ended,
   for a check such as before sending a key press.
+
+Time:
+
 - ``sessionTime()`` returns the session time now, the same clock as ``now``
   in the game's methods, or ``null`` before the page knows it. Compare it
   with a session time from the view, such as when a crashed player comes
   back.
-- ``onEnded(callback)`` calls ``callback`` once the session ends, with why it
-  ended and the player's final view, which ``onView`` has already had.
-- ``onPlayersAway(callback)`` calls ``callback`` with the ids of the players
-  who have left the game page and not come back (see "Joining and leaving"
-  below).
+- ``duration`` is the game's ``duration`` in seconds, and ``secondsLeft()``
+  the seconds until it ends, 0 once the session has ended. Both are ``null``
+  before the game starts or for a game without a ``duration`` (see `Timed
+  games`_).
+- ``showResultFor`` is the control's ``show_result_for``, for a countdown
+  while the page shows the result (see "The end" below).
+
+Sending messages:
+
+- ``send(type, message)`` sends the game a message, and returns its number,
+  or ``undefined`` once the page's connection is closed or refused.
+- ``onRejected(callback)`` calls ``callback`` with the number of each message
+  the game rejected and the reason. The view that follows comes straight
+  after, so show the reason somewhere ``onView`` doesn't overwrite, as the
+  example does.
+- ``enableWhilePlaying(...elements)`` enables the elements, such as
+  buttons, only while the game is played: they are disabled until it
+  starts, and again once the session ends.
+
+Views:
+
+- ``onView(callback)`` calls ``callback`` with each new view, what the game's
+  ``view`` returns for this player, ending with the final view. A page that
+  opens after the session has ended gets just the final view.
 - ``predict(callback)`` and ``predictedView()`` show the player's own
   messages at once. ``callback(view, type, message, sentAt)`` changes a view
   as the game will once it applies the message, and ``predictedView()``
@@ -342,15 +355,25 @@ function, which PsyNet runs each time the page opens
   between the tick views either side of that time. Call it each time the page
   draws, and draw the player's own piece from ``predictedView()``. Without it,
   other players jump from one tick to the next.
+
+Events in the session:
+
+- ``onStarted(callback)`` calls ``callback`` with the first view once the
+  game has started, or at once if it already has. A page that opens after
+  the session has ended gets ``onEnded`` instead.
+- ``onEnded(callback)`` calls ``callback`` once the session ends, with why it
+  ended and the player's final view, which ``onView`` has already had.
+- ``onPlayersAway(callback)`` calls ``callback`` with the ids of the players
+  who have left the game page and not come back (see "Joining and leaving"
+  below).
 - ``onResultSaved(callback)`` and ``onRefused(callback)`` call ``callback``
   once the session's result is saved, or with the close code and reason if
   the server refuses the page's connection. Either way, the page then moves
   on by itself (see "The end" below).
-- ``hasSession`` says whether the group started a session at the ``PlayLiveGame``.
-  Without one, PsyNet shows the participant a notice, and the other methods
-  throw an error.
-- ``socket`` is the page's Dallinger socket, for anything else, such as
-  ``serverTime``.
+
+Anything else:
+
+- ``socket`` is the page's Dallinger socket, such as for ``serverTime``.
 
 The page leaves the session when the participant moves on, so ``activate``
 doesn't need to return a cleanup function for it.
@@ -447,49 +470,41 @@ Another tab
 The ready step
 --------------
 
-A session starts once every player is ready. A game page says so by itself a
+A session begins when the group's wait at the ``PlayLiveGame`` ends, and the
+game starts once every player is ready. A game page says so by itself a
 moment after it opens, and a bot is ready at once, or at the first tick in a
-game with ticks. A player whose page closes before the start isn't ready any
-more, until the page reconnects. If some players aren't ready by the game's
-``ready_timeout``, 60 seconds unless the game sets it, the session starts
-without them, and they can still join and play. With ``ready_timeout = None``
-the session waits for every player, so if someone never reaches the game
-page, it waits until the game's ``max_duration``.
+game with ticks. A player whose page closes before the game starts isn't
+ready any more, until the page reconnects. If some players aren't ready by
+the game's ``ready_timeout``, 60 seconds unless the game sets it, the game
+starts without them, and they can still join and play. With
+``ready_timeout = None`` the session waits for every player, so if someone
+never reaches the game page, it waits until the game's ``max_duration``.
 
-Until the start, the game rejects messages with the reason ``"The game hasn't
-started yet."``, and its ``tick`` and ``bot`` don't run, so disable the page's
-controls with ``enableWhilePlaying``, as above, check ``playing``, or wait
-for ``onStarted``.
-The game's other methods run before the start: ``on_join``, ``on_leave``,
-``view``, ``is_over``, and ``outcome`` if the session ends before it starts.
-
-PsyNet keeps track of the ready step in ``state["live_session"]``, and adds
-the same entry to each view. Don't use the name ``live_session`` for anything
-else in the state or a view. It holds:
-
-- ``players``, the ids of the session's players
-- ``ready``, the ids of the players who are ready
-- ``started_at``, the session time at which the session started, or ``None``
-  before the start
-- ``ends_at``, the session time at which a game with a ``duration`` ends, or
-  ``None`` before the start or without a ``duration``
-- ``time_up``, whether a game with a ``duration`` has reached ``ends_at``
-- ``away``, the ids of the players who have left the game page and not come
-  back. A player who hasn't opened it yet isn't in it.
+Until the game starts, it rejects messages with the reason ``"The game
+hasn't started yet."``, and its ``tick`` and ``bot`` don't run, so disable
+the page's controls with ``enableWhilePlaying``, as above, check
+``playing``, or wait for ``onStarted``. The game's other methods run before
+it starts: ``on_join``, ``on_leave``, ``view``, ``is_over``, and ``outcome``
+if the session ends before the game starts.
 
 The messages that say a player is ready are PsyNet's, so the game's ``apply``
 never receives them, even if the game defines its own. To show who is ready,
-read ``ready`` from the view.
+read ``state["live_session"]["ready"]`` from the view (see `PsyNet's entry
+in the state`_).
 
-The session time, and ``max_duration``, count from when the group's wait at
-the ``PlayLiveGame`` ended, not from the start. ``self.elapsed(state, now)`` gives the
-seconds since the start, or ``None`` before it, for example to record how
-long a group took to agree.
+The session time, ``now``, and ``max_duration`` count from when the session
+began, not from when the game starts. ``self.elapsed(state, now)`` gives the
+seconds since the game started, or ``None`` before it, for example to record
+how long a group took to agree.
 
-A game that lasts a fixed time sets ``duration``, in seconds from the start.
-PsyNet runs the game's ``tick`` at the end, if it has one, and then ends the
-session with the reason ``"finished"``, unless the game's ``is_over`` ended
-it earlier. This version of the game gives the pair 10 seconds to choose:
+Timed games
+-----------
+
+A game that lasts a fixed time sets ``duration``, in seconds from when the
+game starts. PsyNet runs the game's ``tick`` at the end, if it has one, and
+then ends the session with the reason ``"finished"``, unless the game's
+``is_over`` ended it earlier. This version of the game gives the pair 10
+seconds to choose:
 
 .. code-block:: python
 
@@ -512,11 +527,28 @@ and ``psynet.liveSession.duration``:
     }, 250);
 
 For other deadlines, such as one for each move, a game sets them in
-``on_start``, which runs at the start even if some players aren't ready, and
-returns the next one from ``next_deadline``. Its ``tick`` runs at each one,
-and at the end of its ``duration``. A tick that runs late gets the end as
-``now``, so a game that counts things on a schedule, such as catches every
-few seconds, counts none after the end.
+``on_start``, which runs when the game starts, even if some players aren't
+ready, and returns the next one from ``next_deadline``. Its ``tick`` runs at
+each one, and at the end of its ``duration``. A tick that runs late gets the
+end as ``now``, so a game that counts things on a schedule, such as catches
+every few seconds, counts none after the end.
+
+PsyNet's entry in the state
+---------------------------
+
+PsyNet keeps its own record of the session in ``state["live_session"]``,
+and adds the same entry to each view. Don't use the name ``live_session``
+for anything else in the state or a view. It holds:
+
+- ``players``, the ids of the session's players
+- ``ready``, the ids of the players who are ready
+- ``started_at``, the session time at which the game started, or ``None``
+  before it starts
+- ``ends_at``, the session time at which a game with a ``duration`` ends, or
+  ``None`` before it starts or without a ``duration``
+- ``time_up``, whether a game with a ``duration`` has reached ``ends_at``
+- ``away``, the ids of the players who have left the game page and not come
+  back. A player who hasn't opened it yet isn't in it.
 
 The answer and rewards
 ----------------------
@@ -719,7 +751,7 @@ next message, or ``None`` to send nothing. A message the game can't read
 makes the session fail. A :class:`~psynet.live_session.PlayLiveGame`
 refuses a game without ``bot``, since its bots would never move.
 
-In a game without ticks, ``bot`` runs once the session has started, and again
+In a game without ticks, ``bot`` runs once the game has started, and again
 after every message (other bots' too), join and leave, until no bot sends a
 message the game accepts. So it must return ``None`` once the bot has nothing
 to do. In a game with ticks, it runs once per tick. Dallinger's
@@ -732,7 +764,7 @@ need a ``bot_response``.
 
 To test a game's methods in Python, start the session with
 :func:`~psynet.live_session.testing.start_session` first, since the game
-rejects messages and ``bot`` sends nothing until the start. Then pass a
+rejects messages and ``bot`` sends nothing until the game starts. Then pass a
 message to the game as a page would, with ``Sent`` from ``dallinger.realtime``,
 or give ``bot`` a view the game made:
 

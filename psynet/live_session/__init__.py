@@ -12,9 +12,9 @@ from .control import LiveSessionControl
 from .game import LiveGame
 from .messages import LiveMessage, SavedMessage
 from .play import PlayLiveGame, live_session_id
-from .ready_step import NOT_STARTED, PlayerReady
 from .registry import live_game_classes
 from .result import LiveSessionResult, live_session_result
+from .session_entry import NOT_STARTED, PlayerReady
 
 __all__ = [
     "LiveMessage",

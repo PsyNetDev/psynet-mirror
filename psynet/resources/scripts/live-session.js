@@ -338,8 +338,8 @@
     }
 
     /**
-     * Call ``callback`` once the session has started, with the first view
-     * after the start, or at once if it already has. Until then the game
+     * Call ``callback`` once the game has started, with the first view
+     * after the game starts, or at once if it already has. Until then the game
      * rejects the page's messages. Once the session has ended, it doesn't
      * run, so a page that opens after the end keeps its controls disabled.
      *
@@ -362,7 +362,7 @@
 
     /**
      * Enable each of ``elements`` only while the session is being played:
-     * disable it until the session starts, and again once it ends, when the
+     * disable it until the game starts, and again once it ends, when the
      * game would ignore anything the participant sends.
      *
      * @example
@@ -407,7 +407,7 @@
      * ending with the final view. Once the session has ended, ``ended`` is
      * ``true``, and no more views come. A page that opens after the session
      * has ended gets just the final view. Its ``live_session`` says who is
-     * ready, when the session started and who has left.
+     * ready, when the game started and who has left.
      *
      * If the session failed, the final view can be ``null``, so check
      * ``ended`` before reading the view.
@@ -600,7 +600,7 @@
         return Boolean(current && current.sessionId != null);
       },
       /**
-       * Whether the page has had a view from after the session started
+       * Whether the page has had a view from after the game started
        * and before it ended, so it stays ``false`` on a page that opens
        * after the end. Check ``ended`` first. ``onView``'s callbacks see it
        * already updated for the view they get. Reading it doesn't join the
@@ -644,8 +644,8 @@
       },
       /**
        * The game's ``duration`` in seconds, once the page has had a view
-       * from after the start, or ``null``, as for a game without one. Use it
-       * with ``secondsLeft()`` for a time bar. Reading it doesn't join the
+       * from after the game starts, or ``null``, as for a game without one.
+       * Use it with ``secondsLeft()`` for a time bar. Reading it doesn't join the
        * session.
        *
        * @member {number|null} duration

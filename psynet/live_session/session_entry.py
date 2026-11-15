@@ -1,7 +1,7 @@
 """PsyNet's part of a game's state, the ``state["live_session"]`` entry that
 _live_session_entry returns, and the wrappers that keep it up to date.
 
-The ready step: a session starts once every player is ready, or at the
+The ready step: the game starts once every player is ready, or at the
 game's ready_timeout. Once it starts, a game with a duration rejects
 messages from its end, and the entry also keeps track of which players have
 left."""
@@ -21,14 +21,14 @@ _new_session_settings = contextvars.ContextVar("_new_session_settings", default=
 class PlayerReady(LiveMessage):
     """The message that says a player is ready to play. A game page sends it
     by itself a moment after it opens, once it has checked the server's time,
-    and a bot sends it at once. The session starts when every player is
+    and a bot sends it at once. The game starts when every player is
     ready, or at the game's :attr:`~LiveGame.ready_timeout`.
 
     Every game reads it, so don't list it in a game's
     :attr:`~LiveGame.messages`. PsyNet handles it before the game's
     ``apply``, so the game never receives it, even in an ``apply`` of its
     own. A game reads who is ready from ``state["live_session"]["ready"]``,
-    and reacts to the start in :meth:`~LiveGame.on_start`.
+    and reacts to the game starting in :meth:`~LiveGame.on_start`.
     ``PlayerReady.saved_messages(session_id)`` returns when each player became
     ready.
     """
@@ -109,7 +109,7 @@ def _record_join(self, method, state, player_id, now):
     return method(self, state, player_id, now)
 
 
-def _add_ready_step(self, method, players, *settings):
+def _add_live_session_entry(self, method, players, *settings):
     # Dallinger calls initial_state with the players alone, so a
     # PlayLiveGame's settings come from _new_session_settings.
     if not settings and _new_session_settings.get() is not None:
@@ -136,16 +136,17 @@ def _add_ready_step(self, method, players, *settings):
     return state
 
 
-# Returned by an entry in _READY_STEP that left the state as it was, so it
-# isn't converted.
+# Returned by an entry in _SESSION_BOOKKEEPING that left the state as it
+# was, so it isn't converted.
 _UNCHANGED = object()
 
 
-# The ready step's part of a state method, which runs in its place.
-_READY_STEP = {
+# PsyNet's part of each state method, which keeps the live_session entry up
+# to date and runs in the method's place, calling the game's own method.
+_SESSION_BOOKKEEPING = {
     "apply": _apply_once_started,
     "tick": _tick_once_started,
     "on_leave": _record_leave,
     "on_join": _record_join,
-    "initial_state": _add_ready_step,
+    "initial_state": _add_live_session_entry,
 }

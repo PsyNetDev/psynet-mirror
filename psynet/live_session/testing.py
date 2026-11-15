@@ -1,14 +1,14 @@
 """Helpers for testing a live session's game in Python, without a server."""
 
-from .ready_step import _live_session_entry
+from .session_entry import _live_session_entry
 
 
 def start_session(game, state, now=0):
-    """Start the session in ``state``, as PsyNet does once every player is
+    """Start the game in ``state``, as PsyNet does once every player is
     ready: it marks every player ready and runs the game's ``on_start``.
-    Until the start, the game rejects messages and ``bot`` sends only the
+    Until the game starts, the game rejects messages and ``bot`` sends only the
     message that says the bot is ready, so a test of a message or of ``bot``
-    starts the session first.
+    starts the game first.
 
     ::
 
@@ -29,7 +29,7 @@ def start_session(game, state, now=0):
         A state that the game's ``initial_state`` returned.
 
     now
-        The session time at which the session starts.
+        The session time at which the game starts.
     """
     entry = _live_session_entry(state)
     entry["ready"] = list(entry["players"])

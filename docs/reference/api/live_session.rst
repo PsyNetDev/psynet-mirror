@@ -10,7 +10,7 @@ Live Session
 .. data:: NOT_STARTED
     :value: "The game hasn't started yet."
 
-    The reason a message sent before the session starts is rejected.
+    The reason a message sent before the game starts is rejected.
 
 Testing
 -------

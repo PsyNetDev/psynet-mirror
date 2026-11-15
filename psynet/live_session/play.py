@@ -28,7 +28,7 @@ from ..sync import BarrierBehaviorMismatch, GroupBarrier
 from ..timeline import CodeBlock, EltCollection, join
 from ..utils import get_logger
 from .game import LiveGame
-from .ready_step import _new_session_settings
+from .session_entry import _new_session_settings
 
 logger = get_logger()
 
@@ -88,7 +88,8 @@ class PlayLiveGame(EltCollection):
         trial.
 
     on_session_start
-        Optional function called once the session has started, with the
+        Optional function called once the session has been created, before
+        the game starts, with the
         arguments that a :class:`~psynet.sync.GroupBarrier`'s ``on_release``
         can take, such as ``trials`` and ``group_round``, and also
         ``live_session_id``, the new session's id. Use it for group

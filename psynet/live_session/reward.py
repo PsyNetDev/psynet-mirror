@@ -94,10 +94,12 @@ def _handles_reward(method):
 def _handles_ending(method):
     @functools.wraps(method)
     def handle_ending(self, session_row):
+        players = _locked_players(session_row)
         # A failed session has no outcome if Dallinger couldn't get one from
         # the game's outcome method.
-        players = _locked_players(session_row)
-        if session_row.status != "failed" or session_row.outcome is not None:
+        failed = session_row.status == "failed"
+        has_outcome = not failed or session_row.outcome is not None
+        if has_outcome:
             _pay_outcome_rewards(self, session_row, players)
             _record_outcome_on_round(session_row)
         _end_game_page_deadlines(session_row, players)
@@ -128,8 +130,10 @@ def _end_game_page_deadlines(session_row, players):
     ended = min(deadline, session_row.end_time)
     for participant in players:
         for link in participant.sync_group_links:
-            # The PlayLiveGame's barrier cleared the deadline, so one at or after the
-            # latest end was set by the game page.
+            # Only the game page sets a deadline this late: the PlayLiveGame's
+            # barrier clears the previous one, and the game page sets its own
+            # to the latest end, plus show_result_for. A deadline before the
+            # latest end belongs to another page, so it stays as it is.
             if (
                 link.active
                 and link.page_deadline is not None

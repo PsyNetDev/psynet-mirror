@@ -8,7 +8,12 @@ from dallinger.realtime import Reject
 from pydantic_core import to_jsonable_python
 
 from .messages import LiveMessage
-from .ready_step import _READY_STEP, _UNCHANGED, PlayerReady, _live_session_entry
+from .session_entry import (
+    _SESSION_BOOKKEEPING,
+    _UNCHANGED,
+    PlayerReady,
+    _live_session_entry,
+)
 
 # The game methods that can change the state, which is converted after each.
 _STATE_METHODS = ("apply", "tick", "on_join", "on_leave", "on_start")
@@ -25,8 +30,8 @@ def _converts_outermost_call(method, name, convert):
     """Wrap the state method ``name`` so that ``convert(self, result, args)``
     runs after the outermost call only, and each call to the game's ``name``,
     as opposed to a ``super()`` call, goes through its entry in
-    ``_READY_STEP``, if it has one."""
-    session_part = _READY_STEP.get(name)
+    ``_SESSION_BOOKKEEPING``, if it has one."""
+    session_part = _SESSION_BOOKKEEPING.get(name)
 
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
@@ -100,7 +105,7 @@ def _ends_when_time_is_up(method):
     return is_over
 
 
-def _shows_ready_step(method):
+def _shows_live_session_entry(method):
     @functools.wraps(method)
     def view(self, state, player_id):
         shown = method(self, state, player_id)
