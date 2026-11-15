@@ -12,7 +12,7 @@ import pytest
 from dallinger.realtime import Reject, Sent
 
 from psynet.experiment import import_local_experiment
-from psynet.live_session.testing import start_session
+from psynet.live_session.testing import start_game
 from psynet.pytest_psynet import path_to_demo_experiment
 
 DEMO = path_to_demo_experiment("shared_canvas_live")
@@ -67,7 +67,7 @@ class TestSharedCanvasLive:
     def test_a_page_cannot_move_its_player_faster_than_the_game_clock(self, demo):
         game = demo.SharedCanvas()
         state = game.initial_state(["1", "2"])
-        start_session(game, state, now=10)
+        start_game(game, state, now=10)
 
         def move(now):
             message = {"type": "move", "message": {"dx": 1, "dy": 0, "seconds": 0.5}}

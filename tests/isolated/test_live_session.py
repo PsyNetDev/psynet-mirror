@@ -36,7 +36,7 @@ from psynet.live_session import (
     live_session_result,
 )
 from psynet.live_session import registry as game_registry
-from psynet.live_session.testing import start_session
+from psynet.live_session.testing import start_game
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.participant import Participant
@@ -524,7 +524,7 @@ def _game_part(state):
 def test_a_message_that_doesn_t_match_its_type_is_rejected(message, reason):
     game = _pick_numbers()
     state = game.initial_state(["1", "2"])
-    start_session(game, state)
+    start_game(game, state)
 
     with pytest.raises(Reject) as rejected:
         game.apply(state, "1", message, 0.5, Sent())
@@ -1418,7 +1418,7 @@ def test_a_game_can_turn_the_conversion_off(registry):
 
     game = Unconverted()
     state = game.initial_state(["1"])
-    start_session(game, state)
+    start_game(game, state)
     game.tick(state, 0)
     game.apply(state, "1", {"type": "move", "message": {"to": [2, 3]}}, 0, Sent())
 
@@ -1761,7 +1761,7 @@ def test_a_deadline_due_by_the_ready_timeout_runs_when_the_session_starts(relay)
 def test_the_testing_helper_starts_a_session_at_the_time_given(relay):
     state = relay.initial_state(["1", "2"])
 
-    start_session(relay, state, now=3)
+    start_game(relay, state, now=3)
 
     assert state["live_session"]["started_at"] == 3
     assert state["deadline"] == 8
@@ -1770,7 +1770,7 @@ def test_the_testing_helper_starts_a_session_at_the_time_given(relay):
 def test_a_bot_plays_once_the_testing_helper_has_started_its_session():
     game = _pick_numbers()
     state = game.initial_state(["1", "2"])
-    start_session(game, state)
+    start_game(game, state)
 
     assert game.bot(game.view(state, "1"), "1", 0) == {
         "type": "pick",

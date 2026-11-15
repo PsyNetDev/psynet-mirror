@@ -757,13 +757,13 @@ message the game accepts. So it must return ``None`` once the bot has nothing
 to do. In a game with ticks, it runs once per tick. Dallinger's
 `bot <dallinger-bot_>`_ has the details.
 
-A group's bots have to reach the ``PlayLiveGame`` together, so set the experiment's
-``test_mode = "parallel"``, and ``test_n_bots`` to a multiple of the group
-size. A bot's answer on the game page is the outcome too, so the page doesn't
-need a ``bot_response``.
+A group's bots have to reach the ``PlayLiveGame`` together, so set the
+experiment's ``test_mode = "parallel"``, and ``test_n_bots`` to a multiple of
+the group size. A bot's answer on the game page comes from the game's
+``answer`` too, so the page doesn't need a ``bot_response``.
 
-To test a game's methods in Python, start the session with
-:func:`~psynet.live_session.testing.start_session` first, since the game
+To test a game's methods in Python, start the game with
+:func:`~psynet.live_session.testing.start_game` first, since the game
 rejects messages and ``bot`` sends nothing until the game starts. Then pass a
 message to the game as a page would, with ``Sent`` from ``dallinger.realtime``,
 or give ``bot`` a view the game made:
@@ -771,11 +771,11 @@ or give ``bot`` a view the game made:
 .. code-block:: python
 
     from dallinger.realtime import Sent
-    from psynet.live_session.testing import start_session
+    from psynet.live_session.testing import start_game
 
     game = RockPaperScissors()
     state = game.initial_state(["1", "2"])
-    start_session(game, state)
+    start_game(game, state)
     message = {"type": "choose", "message": {"action": "rock"}}
     game.apply(state, "1", message, 0, Sent())
     assert state["choices"]["1"] == "rock"

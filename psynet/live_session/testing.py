@@ -3,7 +3,7 @@
 from .session_entry import _live_session_entry
 
 
-def start_session(game, state, now=0):
+def start_game(game, state, now=0):
     """Start the game in ``state``, as PsyNet does once every player is
     ready: it marks every player ready and runs the game's ``on_start``.
     Until the game starts, the game rejects messages and ``bot`` sends only the
@@ -12,11 +12,11 @@ def start_session(game, state, now=0):
 
     ::
 
-        from psynet.live_session.testing import start_session
+        from psynet.live_session.testing import start_game
 
         game = RockPaperScissors()
         state = game.initial_state(["1", "2"])
-        start_session(game, state)
+        start_game(game, state)
 
     Parameters
     ----------

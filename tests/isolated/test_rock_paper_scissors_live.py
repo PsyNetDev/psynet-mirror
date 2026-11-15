@@ -8,7 +8,7 @@ import pytest
 from dallinger.realtime import Reject, Sent
 
 from psynet.experiment import import_local_experiment
-from psynet.live_session.testing import start_session
+from psynet.live_session.testing import start_game
 from psynet.pytest_psynet import path_to_demo_experiment
 from psynet.timeline import StartSwitch
 
@@ -38,7 +38,7 @@ class TestRockPaperScissorsLive:
         def new_game(rounds=5):
             game = demo.RockPaperScissors()
             state = game.initial_state(["1", "2"], {"rounds": rounds})
-            start_session(game, state)
+            start_game(game, state)
             return game, state
 
         return new_game
