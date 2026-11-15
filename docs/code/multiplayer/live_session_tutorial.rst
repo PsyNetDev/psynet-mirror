@@ -59,7 +59,7 @@ the time each one arrived, so you can analyze what each participant did and
 when. A game can leave some messages out of the record, as Part 3 shows.
 
 You write the game as a Python class, a subclass of
-:class:`~psynet.live_session.LiveSession`. Its methods say what the state is
+:class:`~psynet.live_session.LiveGame`. Its methods say what the state is
 at the start, what each message does, what each player sees, and when the
 game is over. PsyNet does the rest. It connects the pages, applies the
 messages one at a time in the order they arrive, sends the views, and saves
@@ -109,7 +109,7 @@ The game and its state
 The game is the class ``RockPaperScissors``:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
-   :start-at: class RockPaperScissors(LiveSession):
+   :start-at: class RockPaperScissors(LiveGame):
    :end-before: def initial_state(
    :dedent:
 
@@ -162,7 +162,8 @@ the three listed, is rejected, and ``apply`` never runs.
 ``apply`` runs for each message that passes the check. It receives the game,
 which is the ``RockPaperScissors`` object that the next sections describe,
 the state, the id of the player who sent the message, and the session time
-``now``, which is the number of seconds since the pair left the initializer.
+``now``, which is the number of seconds since the pair finished waiting for
+each other.
 This ``apply`` needs only the state and the player's id. It changes the
 state directly. Here, it records the player's choice, and once both players
 have chosen, it scores the round and starts the next one.
@@ -241,14 +242,18 @@ game page, and then scores and pays for the game:
 
 - ``sync_group_type`` says that a group plays the trial, here the pair that
   the grouper in the timeline below forms. It is the same ``GROUP`` that the
-  grouper and the initializer use. Each player has a trial of their own, and
+  grouper and the :class:`~psynet.live_session.PlayLiveGame` use. Each player
+  has a trial of their own, and
   the two trials share a definition.
-- The :class:`~psynet.live_session.LiveSessionInitializer` starts a session
-  for each pair that reaches it, and the pair then moves on together. Its
-  ``group_type`` is the pair's, its ``game_type`` is the game, and its
+- :class:`~psynet.live_session.PlayLiveGame` is the step where the pair plays
+  the game. It waits for both players, starts a session for the pair, and
+  then shows them the game page together. Its ``group_type`` is the pair's,
+  its ``game_class`` is the game, its ``page`` is the game page, and its
   ``settings`` are the number of rounds from the trial's definition, which
-  the game's ``initial_state`` receives.
-- A player whose partner doesn't arrive at the initializer within
+  the game's ``initial_state`` receives. Its ``id_`` names the step, which
+  ``live_session_id`` takes in the test below; without one it would be the
+  game's ``channel``.
+- A player whose partner doesn't arrive within
   ``max_wait_time`` seconds leaves the pair, and goes on to the game page
   without a session. The wait starts when the player arrives, and their
   partner may still be reading the last game's result, so
@@ -259,10 +264,10 @@ game page, and then scores and pays for the game:
   find it. The first element says which game this is, how many rounds it has
   and what a round won pays, all from the trial's definition. The
   :class:`~psynet.live_session.LiveSessionControl` connects the
-  page to the session that the initializer started, so its first argument is
-  the initializer's ``id_``. ``player_left_message`` is the notice that the
-  page shows while the partner is away from the game page, and
-  ``no_session_message`` is the notice on a game page without a session.
+  page to the session that the ``PlayLiveGame`` started.
+  ``player_left_message`` is the notice that the page shows while the
+  partner is away from the game page, and ``no_session_message`` is the
+  notice on a game page without a session.
 - ``js_page_modules`` lists the page's JavaScript file, which is in the demo's
   ``static`` folder.
 - The game page's answer is the game's outcome, which becomes the trial's
@@ -279,18 +284,19 @@ game page, and then scores and pays for the game:
   ``gives_feedback`` leaves that page out for a trial without an answer.
 
 A trial that a group plays needs a :class:`~psynet.sync.GroupBarrier` in its
-``show_trial``, where the group's members wait for each other. The
-initializer is one, so this trial needs no other. A group barrier in such a
+``show_trial``, where the group's members wait for each other.
+``PlayLiveGame`` includes one, so this trial needs no other. A group barrier in such a
 trial closes the group's round when it releases the group, and here that is
 when the game starts, not when it ends. Each trial's ``sync_group_outcome``
 therefore says whether the player was in the pair when the game started. To
 tell a game that was played to the end from one that a player abandoned, read
 the ``reason`` in the outcome.
 
-A game can also pay bonuses itself, through its ``bonus`` method, as the
-snake demo in Part 2 does, or with ``queue_bonus``. Those are added to the
-participant's reward but not to a trial's ``performance_reward``, so a game
-that a trial shows is better paid by the trial.
+A game can also pay bonuses itself, through its ``performance_reward``
+method, as the snake demo in Part 2 does, or with
+``add_performance_reward``. Those are added to the participant's reward but
+not to a trial's ``performance_reward``, so a game that a trial shows is
+better paid by the trial.
 
 The experiment's timeline forms the pairs, and then gives each player their
 trials:
@@ -324,10 +330,10 @@ trials:
 - The :class:`~psynet.timeline.Module` gives the trials a ``module_id``, which
   you can find them by in the experiment's data.
 - ``test_n_bots`` and ``test_mode`` set up ``psynet test``. A pair's bots have
-  to reach the initializer together, so the bots run in parallel.
+  to reach the game together, so the bots run in parallel.
 
-The initializer and the game page can also go straight in the timeline,
-without a trial, as they do in the snake and shared canvas demos.
+A ``PlayLiveGame`` can also go straight in the timeline, without a trial, as
+it does in the snake and shared canvas demos.
 
 The trial's ``show_feedback`` passes the trial's answer, and the bonus that
 the trial paid, to ``show_result``:
@@ -358,7 +364,7 @@ and sets up the variables that the rest of the page uses:
    :dedent:
 
 A participant reaches the game page without a session when their partner
-didn't arrive at the initializer in time. PsyNet then shows them the
+didn't arrive in time. PsyNet then shows them the
 control's ``no_session_message`` in a notice. The page hides the game, which
 can't be played, and does nothing more, and its Next button lets them move
 on.
@@ -470,7 +476,7 @@ Ticks
 The game class sets how often the game ticks:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/experiment.py
-   :start-at: class Snake(LiveSession):
+   :start-at: class Snake(LiveGame):
    :end-before: def initial_state(
    :dedent:
 
@@ -480,7 +486,7 @@ view. ``send_views_on_messages = False`` stops the game from also sending the
 player a view after each of their messages, since a turn doesn't change the
 board until the next tick.
 
-``max_duration`` counts from when the group left the initializer. Before the
+``max_duration`` counts from when the group finished waiting for each other. Before the
 game starts, there's a **ready step**, while the players' pages open. The game
 starts once every player's page is open, or after ``ready_timeout`` seconds
 (60 unless the game sets it). So ``max_duration`` allows for the longest ready
@@ -538,15 +544,16 @@ The bonus
 ~~~~~~~~~
 
 Snake isn't played in a trial, so the game pays the bonus itself, through its
-``bonus`` method:
+``performance_reward`` method:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/experiment.py
-   :pyobject: Snake.bonus
+   :pyobject: Snake.performance_reward
    :dedent:
 
-``bonus`` works out each player's bonus from the game's outcome, which is why
-the outcome includes how much food each snake ate. PsyNet adds the bonus to
-the player's performance reward when they leave the game page.
+``performance_reward`` works out each player's bonus from the game's
+outcome, which is why the outcome includes how much food each snake ate.
+PsyNet adds it to the player's performance reward once, when the session's
+ending is saved, even for a player who has already left the game page.
 
 The snake page
 ~~~~~~~~~~~~~~
@@ -692,7 +699,8 @@ the bot won:
    :dedent:
 
 :func:`~psynet.live_session.live_session_id` finds the session that a
-participant last played at an initializer, here their second game, and
+participant last played at a ``PlayLiveGame`` with that id, here their
+second game, and
 :func:`~psynet.live_session.live_session_result` says how it ended and what
 its outcome was. To test a game's rules without starting the experiment, call
 its methods directly, as the "Bots and testing" section of
