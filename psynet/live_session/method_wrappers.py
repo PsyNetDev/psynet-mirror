@@ -8,7 +8,7 @@ from dallinger.realtime import Reject
 from pydantic_core import to_jsonable_python
 
 from .messages import LiveMessage
-from .ready_step import _READY_STEP, _UNCHANGED, PlayerReady, _ready_step
+from .ready_step import _READY_STEP, _UNCHANGED, PlayerReady, _live_session_entry
 
 # The game methods that can change the state, which is converted after each.
 _STATE_METHODS = ("apply", "tick", "on_join", "on_leave", "on_start")
@@ -26,12 +26,12 @@ def _converts_outermost_call(method, name, convert):
     runs after the outermost call only, and each call to the game's ``name``,
     as opposed to a ``super()`` call, goes through its entry in
     ``_READY_STEP``, if it has one."""
-    ready_step = _READY_STEP.get(name)
+    session_part = _READY_STEP.get(name)
 
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
-        if ready_step is not None and getattr(type(self), name) is wrapper:
-            call = functools.partial(ready_step, self, method)
+        if session_part is not None and getattr(type(self), name) is wrapper:
+            call = functools.partial(session_part, self, method)
         else:
             call = functools.partial(method, self)
         if _changing_state.get():
@@ -78,12 +78,12 @@ def _returns_json(method, name):
 def _waits_for_start(method):
     @functools.wraps(method)
     def next_deadline(self, state):
-        ready_step = _ready_step(state)
-        if ready_step["started_at"] is None:
+        entry = _live_session_entry(state)
+        if entry["started_at"] is None:
             return self.ready_timeout
         deadline = method(self, state)
-        ends_at = ready_step["ends_at"]
-        if ends_at is None or ready_step["time_up"]:
+        ends_at = entry["ends_at"]
+        if ends_at is None or entry["time_up"]:
             return deadline
         return ends_at if deadline is None else min(deadline, ends_at)
 
@@ -94,7 +94,7 @@ def _waits_for_start(method):
 def _ends_when_time_is_up(method):
     @functools.wraps(method)
     def is_over(self, state):
-        return _ready_step(state)["time_up"] or method(self, state)
+        return _live_session_entry(state)["time_up"] or method(self, state)
 
     is_over._psynet_wrapper = True
     return is_over
@@ -111,14 +111,14 @@ def _shows_ready_step(method):
                 f"{type(self).__name__}.view must return a dict, not "
                 f"{type(shown).__name__}."
             )
-        ready_step = _ready_step(state)
+        entry = _live_session_entry(state)
         # A view can be the state itself.
-        if shown.get("live_session", ready_step) != ready_step:
+        if shown.get("live_session", entry) != entry:
             raise ValueError(
                 f"{type(self).__name__}.view returned a 'live_session' entry, "
                 "which is PsyNet's. Give it another name."
             )
-        return {**shown, "live_session": ready_step}
+        return {**shown, "live_session": entry}
 
     view._psynet_wrapper = True
     return view
@@ -129,10 +129,10 @@ def _sends_message(method):
     def send(self, view, player_id, now):
         outermost = type(self).bot is send
         if outermost:
-            ready_step = _ready_step(view, "view")
-            if player_id not in ready_step["ready"]:
+            entry = _live_session_entry(view, "view")
+            if player_id not in entry["ready"]:
                 return {"type": PlayerReady.type, "message": {}}
-            if ready_step["started_at"] is None:
+            if entry["started_at"] is None:
                 return None
         message = method(self, view, player_id, now)
         # A bot calling super().bot() reaches its parent's wrapper, which
@@ -146,7 +146,7 @@ def _sends_message(method):
         # No page sees a bot's rejections, so a message the game can't read
         # fails the session here.
         try:
-            read = self.read_message(sent)
+            read = self.parse_message(sent)
         except Reject as rejection:
             problem = rejection.reason
         else:

@@ -1232,7 +1232,7 @@ def test_an_overridden_apply_is_converted(registry):
             return state
 
         def apply(self, state, player_id, message, now, sent):
-            state["moves"].append(self.read_message(message).to)
+            state["moves"].append(self.parse_message(message).to)
 
     class ViaSuper(Overridden):
         def apply(self, state, player_id, message, now, sent):

@@ -26,7 +26,7 @@ from .method_wrappers import (
     _stores_json,
     _waits_for_start,
 )
-from .ready_step import PlayerReady, _ready_step
+from .ready_step import PlayerReady, _live_session_entry
 from .registry import _register_live_session
 from .reward import (
     _REWARD_EFFECT,
@@ -88,8 +88,9 @@ class LiveGame(RealtimeGame):
 
     #: Seconds the game lasts once the session starts, or ``None``, the
     #: default, for a game that ends by itself. PsyNet then runs ``tick`` at
-    #: the end, with the end as ``now`` even if the tick runs late, ends the session with the reason ``"finished"``, unless
-    #: ``is_over`` ended it earlier, and rejects messages that arrive later.
+    #: the end, with the end as ``now`` even if the tick runs late, ends the
+    #: session with the reason ``"finished"``, unless ``is_over`` ended it
+    #: earlier, and rejects messages that arrive later.
     #: ``state["live_session"]["ends_at"]`` holds the session time it ends at,
     #: and a page reads the time left from ``psynet.liveSession.secondsLeft()``
     #: and the duration from ``psynet.liveSession.duration``.
@@ -210,12 +211,12 @@ class LiveGame(RealtimeGame):
         """
 
     @_stores_json
-    def _start_session(self, state, now):
-        ready_step = _ready_step(state)
-        if ready_step["started_at"] is None:
-            ready_step["started_at"] = now
+    def _end_ready_step(self, state, now):
+        entry = _live_session_entry(state)
+        if entry["started_at"] is None:
+            entry["started_at"] = now
             if self.duration is not None:
-                ready_step["ends_at"] = now + self.duration
+                entry["ends_at"] = now + self.duration
             self.on_start(state, now)
 
     # Wrapped here, so __init_subclass__ doesn't copy a wrapper onto each
@@ -227,11 +228,11 @@ class LiveGame(RealtimeGame):
 
         Most games don't override this. A game that needs ``sent``, what the
         page reported about the message, such as when it sent it, can
-        override it, read the message with :meth:`read_message`, and apply it
+        override it, read the message with :meth:`parse_message`, and apply it
         itself. An override runs only once the session has started, and never
         receives a :class:`PlayerReady` message, which PsyNet handles itself.
         """
-        parsed = self.read_message(message)
+        parsed = self.parse_message(message)
         # Kept for save_message, which Dallinger calls next with the same
         # message, so that LiveMessage.should_save sees what apply saw.
         self._last_applied = _LastApplied(player_id, message, parsed)
@@ -255,10 +256,11 @@ class LiveGame(RealtimeGame):
     def elapsed(self, state, now):
         """Return the seconds since the session started, once every player
         was ready or at :attr:`ready_timeout`, or ``None`` before it starts.
-        The session clock, ``now``, counts from when the group left the game
-        barrier instead, so use this for the game's own timers.
+        The session clock, ``now``, counts from when the group's wait at the
+        :class:`PlayLiveGame` ended instead, so use this for the game's own
+        timers.
         """
-        started_at = _ready_step(state)["started_at"]
+        started_at = _live_session_entry(state)["started_at"]
         return None if started_at is None else now - started_at
 
     def answer(self, outcome, reason, player_id):
@@ -296,7 +298,9 @@ class LiveGame(RealtimeGame):
         once, when the session's ending is saved, however the session ended,
         and also for a player who has left the game page. It isn't paid for a
         session that failed without an outcome, because its record couldn't be
-        saved or its ``outcome`` raised an error. By default, there's no reward.
+        saved or its ``outcome`` raised an error. When the game is played in a
+        trial, the reward is also added to that trial's
+        ``performance_reward``. By default, there's no reward.
 
         Parameters
         ----------
@@ -323,8 +327,9 @@ class LiveGame(RealtimeGame):
         reward. Call it in a method that changes the state, such as a
         message's :meth:`~LiveMessage.apply`. PsyNet adds the reward a few
         seconds later, and the player keeps it even if they leave before the
-        game ends. For a reward based on the outcome, define :meth:`performance_reward`
-        instead.
+        game ends. When the game is played in a trial, the reward is also
+        added to that trial's ``performance_reward``. For a reward based on
+        the outcome, define :meth:`performance_reward` instead.
 
         Parameters
         ----------
@@ -338,6 +343,7 @@ class LiveGame(RealtimeGame):
         amount = _check_reward(amount, f"{type(self).__name__}.add_performance_reward")
         if not amount:
             return
+        # Past this class's queue_effect, which refuses PsyNet's own effect name.
         super().queue_effect(
             _REWARD_EFFECT, {"player_id": str(player_id), "amount": amount}
         )
@@ -383,7 +389,7 @@ class LiveGame(RealtimeGame):
             ) from None
         super().queue_effect(name, payload)
 
-    def read_message(self, message):
+    def parse_message(self, message):
         """Check a page's message and return it as a :class:`LiveMessage`.
 
         Avoid overriding this method. :meth:`saved_messages` doesn't call

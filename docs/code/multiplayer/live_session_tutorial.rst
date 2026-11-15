@@ -241,10 +241,10 @@ Adding the game to the timeline
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 In this demo, each game is a trial. The player's answer on the game page is
-saved as the trial's answer, like any other trial's, and what differs
-between the two games is in the trial's definition: which game it is, how
-many rounds it has and what a round won pays. The trial starts a session for the pair, shows the
-game page, and then scores and pays for the game:
+saved as the trial's answer, like any other trial's, and what differs between
+the two games is in the trial's definition: which game it is, how many rounds
+it has and what a round won pays. The trial starts a session for the pair,
+shows the game page, and then scores and pays for the game:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
    :pyobject: RockPaperScissorsTrial

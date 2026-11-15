@@ -1,5 +1,10 @@
-"""The ready step: a session starts once every player is ready, or at the
-game's ready_timeout. It also keeps track of which players have left."""
+"""PsyNet's part of a game's state, the ``state["live_session"]`` entry that
+_live_session_entry returns, and the wrappers that keep it up to date.
+
+The ready step: a session starts once every player is ready, or at the
+game's ready_timeout. Once it starts, a game with a duration rejects
+messages from its end, and the entry also keeps track of which players have
+left."""
 
 import contextvars
 
@@ -33,11 +38,11 @@ class PlayerReady(LiveMessage):
     def apply(self, game, state, player_id, now):
         """Mark the player ready, and start the session once every player
         is."""
-        ready_step = _ready_step(state)
-        if player_id not in ready_step["ready"]:
-            ready_step["ready"].append(player_id)
-        if set(ready_step["players"]) <= set(ready_step["ready"]):
-            game._start_session(state, now)
+        entry = _live_session_entry(state)
+        if player_id not in entry["ready"]:
+            entry["ready"].append(player_id)
+        if set(entry["players"]) <= set(entry["ready"]):
+            game._end_ready_step(state, now)
 
 
 # Documented in docs/reference/api/live_session.rst, since Sphinx doesn't
@@ -47,7 +52,7 @@ NOT_STARTED = "The game hasn't started yet."
 _TIME_UP = "The game's time is up."
 
 
-def _ready_step(state, what="state"):
+def _live_session_entry(state, what="state"):
     try:
         return state["live_session"]
     except (KeyError, TypeError):
@@ -61,51 +66,51 @@ def _apply_once_started(self, method, state, player_id, message, now, sent):
     if isinstance(message, dict) and message.get("type") == PlayerReady.type:
         _parse_message(self._message_types, message).apply(self, state, player_id, now)
         return None
-    ready_step = _ready_step(state)
-    if ready_step["started_at"] is None:
+    entry = _live_session_entry(state)
+    if entry["started_at"] is None:
         raise Reject(NOT_STARTED)
-    if ready_step["ends_at"] is not None and now >= ready_step["ends_at"]:
+    if entry["ends_at"] is not None and now >= entry["ends_at"]:
         raise Reject(_TIME_UP)
     return method(self, state, player_id, message, now, sent)
 
 
 def _tick_once_started(self, method, state, now):
-    if _ready_step(state)["started_at"] is None:
+    if _live_session_entry(state)["started_at"] is None:
         if self.ready_timeout is None or now < self.ready_timeout:
             return _UNCHANGED
-        self._start_session(state, now)
+        self._end_ready_step(state, now)
         # Dallinger counts this tick as run, so a deadline due by now gets
         # no other.
         if self.is_over(state):
             return None
-    ends_at = _ready_step(state)["ends_at"]
+    ends_at = _live_session_entry(state)["ends_at"]
     if ends_at is None or now < ends_at:
         return method(self, state, now)
     # A tick that runs late sees the end, so the game counts nothing after it.
     result = method(self, state, ends_at)
-    _ready_step(state)["time_up"] = True
+    _live_session_entry(state)["time_up"] = True
     return result
 
 
 def _record_leave(self, method, state, player_id, now):
-    ready_step = _ready_step(state)
-    if ready_step["started_at"] is None and player_id in ready_step["ready"]:
-        ready_step["ready"].remove(player_id)
-    if player_id not in ready_step["away"]:
-        ready_step["away"].append(player_id)
+    entry = _live_session_entry(state)
+    if entry["started_at"] is None and player_id in entry["ready"]:
+        entry["ready"].remove(player_id)
+    if player_id not in entry["away"]:
+        entry["away"].append(player_id)
     return method(self, state, player_id, now)
 
 
 def _record_join(self, method, state, player_id, now):
     # A game's initial_state can call on_join before PsyNet adds its entry.
-    ready_step = state.get("live_session") if isinstance(state, dict) else None
-    if ready_step is not None and player_id in ready_step["away"]:
-        ready_step["away"].remove(player_id)
+    entry = state.get("live_session") if isinstance(state, dict) else None
+    if entry is not None and player_id in entry["away"]:
+        entry["away"].remove(player_id)
     return method(self, state, player_id, now)
 
 
 def _add_ready_step(self, method, players, *settings):
-    # Dallinger calls initial_state with the players alone, so an
+    # Dallinger calls initial_state with the players alone, so a
     # PlayLiveGame's settings come from _new_session_settings.
     if not settings and _new_session_settings.get() is not None:
         settings = (_new_session_settings.get(),)

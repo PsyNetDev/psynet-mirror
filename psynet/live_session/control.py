@@ -5,8 +5,8 @@ The control has the page load ``live-session.js``. Its page code creates
 the page. ``get_participant_js_vars`` gives the script the session's id and
 channel each time the page renders. ``check_ready_for_response`` refuses the
 page's response until the session's result is saved, and ``validate`` then
-sets the answer to the outcome. The game pays its rewards itself, when the
-session's ending is saved.
+sets the answer to what the game's ``answer`` returns for the participant.
+The game pays its rewards itself, when the session's ending is saved.
 """
 
 from datetime import timedelta
@@ -39,7 +39,8 @@ class LiveSessionControl(NullControl):
     and list the JavaScript file that plays the game in the page's
     ``js_page_modules``, as :class:`PlayLiveGame` shows.
 
-    PsyNet sets the page's answer to the session's outcome, once the
+    PsyNet sets the page's answer to what the game's
+    :meth:`~LiveGame.answer` returns for the participant, once the
     session's ending is saved, which is also when it pays the game's
     :meth:`~LiveGame.performance_reward`. The page can't have a ``validate``
     of its own.
@@ -235,12 +236,12 @@ def _check_session_can_still_end(session_id):
     latest = _latest_end_seconds(session_id)
     if latest is None:
         return
-    max_duration = _session_game_class(session_id).max_duration
     running_for = (timenow() - _session_start_time(session_id)).total_seconds()
     if running_for > latest:
         raise RuntimeError(
             f"Live session {session_id} is still running after "
             f"{running_for:.0f} seconds, though its game's max_duration is "
-            f"{max_duration:g}, so its game page can't move on. The worker "
-            "that runs the experiment's live sessions has probably stopped."
+            f"{latest - _SAVING_MARGIN:g}, so its game page can't move on. "
+            "The worker that runs the "
+            "experiment's live sessions has probably stopped."
         )

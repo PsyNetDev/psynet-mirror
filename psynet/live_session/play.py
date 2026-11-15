@@ -8,6 +8,12 @@ the page's LiveSessionControl reads it from there. Reaching the barrier sets
 that entry to ``None`` first, so the page finds only the session from the
 participant's latest visit, and an id without an entry is one whose step the
 participant never reached.
+
+A PlayLiveGame in a trial also records the id on the trial's
+SyncGroupRound, as ``live_session_id``, beside the outcome. That record
+lasts, so it's the one to use in an analysis, while ``live_sessions`` holds
+only each step's latest session, and is what the game page reads, including
+for a game played outside a trial, which has no round.
 """
 
 import inspect

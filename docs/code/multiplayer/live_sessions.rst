@@ -115,13 +115,13 @@ or the game's ``tick``, ``on_join``, ``on_leave`` or ``on_start`` runs:
   ``"2026-11-02T09:30:00"`` or ``"PT1M30S"``, and so does a ``Decimal`` or
   ``bytes`` value
 
-A dict key has to be a string already: a state with a key such as ``3``
-makes the session fail, because after a save the key would read back as
-``"3"`` and ``state["scores"][3]`` would fail. Player ids are already
-strings. A value PsyNet can't convert, such as an object of a class of your
-own, also makes the session fail. So does ``math.inf`` or ``NaN``, which JSON can't hold, so
-store ``None`` instead. Because a field stored in the state is converted,
-compare like with like:
+A dict key has to be a string already: a state with a key such as ``3`` makes
+the session fail, because after a save the key would read back as ``"3"`` and
+``state["scores"][3]`` would fail. Player ids are already strings. A value
+PsyNet can't convert, such as an object of a class of your own, also makes the
+session fail. So does ``math.inf`` or ``NaN``, which JSON can't hold, so store
+``None`` instead. Because a field stored in the state is converted, compare
+like with like:
 
 .. code-block:: python
 
@@ -405,13 +405,13 @@ The end
     countdown. A later :class:`~psynet.sync.GroupBarrier`'s ``late_after``
     counts from the end of these seconds, so it needn't cover them.
 
-    To move on from the page's JavaScript instead, pass
-    ``auto_advance=False`` to the control, and call ``psynet.nextPage()`` in
-    both ``onResultSaved`` and ``onRefused``. The Next button then stays, and if the participant clicks
-    it before the result is saved, the page says the game isn't over yet and
-    sends the response again every second until it's accepted. If you hide
-    the Next button with ``show_next_button=False``, give a page without a
-    session another way to move on, such as a button of its own that calls
+    To move on from the page's JavaScript instead, pass ``auto_advance=False``
+    to the control, and call ``psynet.nextPage()`` in both ``onResultSaved``
+    and ``onRefused``. The Next button then stays, and if the participant
+    clicks it before the result is saved, the page says the game isn't over
+    yet and sends the response again every second until it's accepted. If you
+    hide the Next button with ``show_next_button=False``, give a page without
+    a session another way to move on, such as a button of its own that calls
     ``psynet.nextPage()``.
 
 Joining and leaving
@@ -575,11 +575,12 @@ page waits as long as the session runs.
 The game page also stops a later :class:`~psynet.sync.GroupBarrier` from
 counting a player who is still in the game as late. ``late_after`` counts from
 the group's previous barrier, which is usually the barrier of a
-``PlayLiveGame``, so it would otherwise include the whole game. Instead, as for a page with a
-``time_limit``, it counts from when the game page ends: at first the game's
-``max_duration`` plus a minute, and once the session's ending is saved, when
-the game actually ended, plus the control's ``show_result_for``. So
-``late_after`` needs to cover only the pages after the game.
+``PlayLiveGame``, so it would otherwise include the whole game. Instead, as
+for a page with a ``time_limit``, it counts from when the game page ends: at
+first the game's ``max_duration`` plus a minute, and once the session's ending
+is saved, when the game actually ended, plus the control's
+``show_result_for``. So ``late_after`` needs to cover only the pages after the
+game.
 
 A game can add to each player's performance reward in two ways. Each amount
 must be a number of 0 or more. For a reward based on the outcome, define
@@ -629,9 +630,10 @@ paid twice.
 A session can fail without an outcome: its record couldn't be saved, or the
 game's ``outcome`` raised an error as well. The answer is then ``None`` and
 PsyNet doesn't call ``performance_reward``, but amounts from
-``add_performance_reward`` saved before the problem are still paid. A game that must pay players whatever happens can
-pay them as it goes. :func:`~psynet.live_session.live_session_result` says
-how a session ended, and whether its record is complete.
+``add_performance_reward`` saved before the problem are still paid. A game
+that must pay players whatever happens can pay them as it goes.
+:func:`~psynet.live_session.live_session_result` says how a session ended, and
+whether its record is complete.
 
 Saved messages
 --------------
@@ -651,10 +653,13 @@ for all of them, or on a message type, for that type's. On a later page:
                 print(saved.player_id, saved.message.action, saved.session_time)
 
 ``live_session_id`` finds the session from the participant's latest visit to
-the ``PlayLiveGame`` with that ``id_``, or returns ``None`` if their group didn't start one. In an
-analysis, ``realtime_sessions_for(participant, game_type)`` from
-``dallinger.realtime`` returns all of a participant's sessions of a game, and
-each one's ``id`` is its session id.
+the ``PlayLiveGame`` with that ``id_``, or returns ``None`` if their group
+didn't start one. In an analysis, use the round's record instead: for a game
+played in a trial, each :class:`~psynet.sync.SyncGroupRound` keeps its
+session's ``live_session_id``. For other games,
+``realtime_sessions_for(participant, game_type)`` from ``dallinger.realtime``
+returns all of a participant's sessions of a game, and each one's ``id`` is
+its session id.
 
 Each message is a :class:`~psynet.live_session.SavedMessage`, in the order the
 game applied them. Its ``message`` is ``None`` if what the page sent can't be

@@ -5453,7 +5453,7 @@ class SyncGroupRound(SQLBase, SQLMixin):
         :class:`~psynet.live_session.PlayLiveGame` in the round's trials
         started, or ``None``. Pass it to
         :func:`~psynet.live_session.live_session_result` or
-        :func:`~psynet.live_session.saved_messages`, for example to export
+        :meth:`LiveGame.saved_messages <psynet.live_session.LiveGame.saved_messages>`, for example to export
         each round's game.
     live_session_outcome : object or None
         What the ``outcome`` method of that session's game returned, copied

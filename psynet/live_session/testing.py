@@ -1,6 +1,6 @@
 """Helpers for testing a live session's game in Python, without a server."""
 
-from .ready_step import _ready_step
+from .ready_step import _live_session_entry
 
 
 def start_session(game, state, now=0):
@@ -31,6 +31,6 @@ def start_session(game, state, now=0):
     now
         The session time at which the session starts.
     """
-    ready_step = _ready_step(state)
-    ready_step["ready"] = list(ready_step["players"])
-    game._start_session(state, now)
+    entry = _live_session_entry(state)
+    entry["ready"] = list(entry["players"])
+    game._end_ready_step(state, now)

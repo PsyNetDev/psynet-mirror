@@ -18,7 +18,8 @@ _REWARD_EFFECT = "psynet_performance_reward"
 def _check_reward(amount, what):
     if not is_number(amount) or amount < 0:
         raise ValueError(
-            f"{what} gave the reward {amount!r}. A reward must be a number of 0 or more."
+            f"{what} gave the reward {amount!r}. A reward must be a number "
+            "of 0 or more."
         )
     # A NumPy number, for example, can't go into JSON or Postgres as it is.
     return float(amount)
