@@ -38,10 +38,6 @@ from psynet.sync import SimpleGrouper
 from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop
 from psynet.trial.main import Trial
 
-# The group type of the pairs, which the grouper, the trial and the
-# PlayLiveGame share.
-GROUP = "pair"
-
 Action = Literal["rock", "paper", "scissors"]
 ACTIONS = list(get_args(Action))
 BEATS = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
@@ -211,7 +207,7 @@ class RockPaperScissorsTrial(Trial):
     round won pays, and the trial's answer is the player's part of the game's
     outcome."""
 
-    sync_group_type = GROUP
+    sync_group_type = "pair"
     time_estimate = 65
 
     def show_trial(self, experiment, participant):
@@ -221,7 +217,7 @@ class RockPaperScissorsTrial(Trial):
         # releasing any group barrier in a cued trial does.
         return PlayLiveGame(
             id_="rock_paper_scissors",
-            group_type=GROUP,
+            group_type="pair",
             game_class=RockPaperScissors,
             settings={"rounds": game["rounds"]},
             # A player whose partner doesn't arrive leaves the pair, and goes
@@ -293,7 +289,7 @@ class RockPaperScissorsTrial(Trial):
 
 
 def left_pair(participant):
-    return not participant.in_sync_group(GROUP)
+    return not participant.in_sync_group("pair")
 
 
 # Why a participant isn't in a pair, as sync_group_removal_reason returns it.
@@ -305,7 +301,7 @@ NO_PARTNER_TEXTS = {
 
 
 def no_more_games(participant):
-    text = NO_PARTNER_TEXTS[participant.sync_group_removal_reason(GROUP)]
+    text = NO_PARTNER_TEXTS[participant.sync_group_removal_reason("pair")]
     return InfoPage(
         f"{text} Your bonus is ${participant.performance_reward:.2f}.",
         time_estimate=5,
@@ -325,7 +321,7 @@ class Exp(psynet.experiment.Experiment):
             time_estimate=5,
         ),
         SimpleGrouper(
-            group_type=GROUP,
+            group_type="pair",
             initial_group_size=2,
             waiting_message="Waiting for another participant to join you",
             # A participant who waits longer than this without a partner

@@ -11,6 +11,8 @@ import functools
 from dallinger import db
 from dallinger.realtime.utils import is_number
 
+from .result import _has_outcome
+
 # The name of the effect add_performance_reward queues.
 _REWARD_EFFECT = "psynet_performance_reward"
 
@@ -95,11 +97,7 @@ def _handles_ending(method):
     @functools.wraps(method)
     def handle_ending(self, session_row):
         players = _locked_players(session_row)
-        # A failed session has no outcome if Dallinger couldn't get one from
-        # the game's outcome method.
-        failed = session_row.status == "failed"
-        has_outcome = not failed or session_row.outcome is not None
-        if has_outcome:
+        if _has_outcome(session_row.status, session_row.outcome):
             _pay_outcome_rewards(self, session_row, players)
             _record_outcome_on_round(session_row)
         _end_game_page_deadlines(session_row, players)

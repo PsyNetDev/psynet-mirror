@@ -79,3 +79,9 @@ def live_session_result(session_id):
     if row.status == "running":
         return None
     return LiveSessionResult(row.status, row.end_reason, row.outcome, row.error)
+
+
+def _has_outcome(status, outcome):
+    # A failed session has no outcome if its record couldn't be saved, or if
+    # Dallinger couldn't get one from the game's outcome method.
+    return status != "failed" or outcome is not None

@@ -196,7 +196,7 @@ class TestRockPaperScissorsLive:
         }
         participant = SimpleNamespace(
             id=1,
-            in_sync_group=lambda group_type: in_pair and group_type == demo.GROUP,
+            in_sync_group=lambda group_type: in_pair and group_type == "pair",
             for_loops={"games": {"lst": [0, 1], "index": index}},
             module_state=None,
             append_branch_log=lambda entry: None,
@@ -212,7 +212,7 @@ class TestRockPaperScissorsLive:
         def text(reason):
             participant = SimpleNamespace(
                 sync_group_removal_reason=lambda group_type: (
-                    reason if group_type == demo.GROUP else None
+                    reason if group_type == "pair" else None
                 ),
                 performance_reward=0.25,
             )

@@ -36,8 +36,8 @@ How a live game works
 In most PsyNet experiments, each participant works through the pages alone
 and submits an answer on each one. In a live game, the members of a group are
 on the same page at the same time, and what one player does shows up on the
-other players' screens within a fraction of a second. Each group's game is
-called a **session**.
+other players' screens within a fraction of a second. Each time a group
+plays a game is a **session**.
 
 The server runs the game. It keeps the game's **state**, which is everything
 the game needs to know. In rock, paper, scissors, that's each player's choice
@@ -90,7 +90,7 @@ The demo's ``experiment.py`` starts with the rules of the game, written as
 ordinary Python:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
-   :start-at: # The group type of the pairs
+   :start-at: Action = Literal
    :end-before: class Choose(LiveMessage):
    :dedent:
 
@@ -98,8 +98,7 @@ Each player is known by an id, which is their participant id as a string,
 such as ``"12"``. ``partner_of`` finds the other player in a pair. ``Action``
 is the type of a player's choice, which the message below uses for its
 ``action`` field, and ``ACTIONS`` lists the three choices, for the page's
-buttons and the bots. ``GROUP``, ``GAMES`` and ``PARTNER_WAIT_SECONDS`` are
-used by the timeline, which "Adding the game to the timeline" below
+buttons and the bots. ``GAMES`` and ``PARTNER_WAIT_SECONDS`` are used by the timeline, which "Adding the game to the timeline" below
 describes. The excerpts on this page leave out the file's imports, which are
 at the top of the demo's ``experiment.py``.
 
@@ -116,8 +115,8 @@ The game is the class ``RockPaperScissors``:
 ``channel`` is a name for the game, which must differ from the name of every
 other game in the experiment. ``messages`` lists the kinds of message that a
 page can send, which the next section describes. ``max_duration`` is a time
-limit in seconds for the whole game, so that a game ends even if a player
-walks away from it.
+limit in seconds for the whole session, ready step included, so that a game
+ends even if a player walks away from it.
 
 ``initial_state`` returns the state at the start of the game. It receives the
 ids of the session's players and the session's settings:
@@ -251,10 +250,10 @@ shows the game page, and then scores and pays for the game:
    :dedent:
 
 - ``sync_group_type`` says that a group plays the trial, here the pair that
-  the grouper in the timeline below forms. It is the same ``GROUP`` that the
-  grouper and the :class:`~psynet.live_session.PlayLiveGame` use. Each player
-  has a trial of their own, and
-  the two trials share a definition.
+  the grouper in the timeline below forms. The grouper and the
+  :class:`~psynet.live_session.PlayLiveGame` use the same group type,
+  ``"pair"``. Each player has a trial of their own, and the two trials share
+  a definition.
 - :class:`~psynet.live_session.PlayLiveGame` is the step where the pair plays
   the game. It waits for both players, starts a session for the pair, and
   then shows them the game page together. Its ``group_type`` is the pair's,
@@ -263,9 +262,8 @@ shows the game page, and then scores and pays for the game:
   the game's ``initial_state`` receives. Its ``id_`` names the step, which
   ``live_session_id`` takes in the test below; without one it would be the
   game's ``channel``.
-- A player whose partner doesn't arrive within
-  ``max_wait_time`` seconds leaves the pair, and goes on to the game page
-  without a session. The wait starts when the player arrives, and their
+- A player whose partner doesn't arrive within ``max_wait_time`` seconds
+  leaves the pair, and goes on to the game page without a session. The wait starts when the player arrives, and their
   partner may still be reading the last game's result, so
   ``PARTNER_WAIT_SECONDS`` is five minutes. A partner who arrives later than
   that is treated the same as one who never arrives.
@@ -290,16 +288,18 @@ shows the game page, and then scores and pays for the game:
   definition. PsyNet saves both on the trial, as its ``score`` and
   ``performance_reward``, so the experiment's data shows what each game paid.
   A trial whose game page had no session has no answer, and scores 0.
-- The participant can leave the game page only once the game is over, and the
-  page then moves on by itself, to the trial's ``show_feedback`` page.
+- The participant can leave the game page only once the session's result is
+  saved, a few seconds after the game ends, and the page then moves on by
+  itself, to the trial's ``show_feedback`` page.
   ``gives_feedback`` leaves that page out for a trial without an answer.
 
 A trial that a group plays needs a :class:`~psynet.sync.GroupBarrier` in its
 ``show_trial``, where the group's members wait for each other.
-``PlayLiveGame`` includes one, so this trial needs no other. A group barrier in such a
-trial closes the group's round when it releases the group, and here that is
-when the game starts, not when it ends. Each trial's ``sync_group_outcome``
-therefore says whether the player was in the pair when the game started. To
+``PlayLiveGame`` includes one, so this trial needs no other. A group barrier
+in such a trial closes the group's round when it releases the group, and
+here that is when the session begins, not when it ends. Each trial's
+``sync_group_outcome`` therefore says whether the player was in the pair
+when the session began. To
 tell a game that was played to the end from one that a player abandoned, read
 the ``reason`` in the outcome.
 
@@ -375,10 +375,9 @@ and sets up the variables that the rest of the page uses:
    :dedent:
 
 A participant reaches the game page without a session when their partner
-didn't arrive in time. PsyNet then shows them the
-control's ``no_session_message`` in a notice. The page hides the game, which
-can't be played, and does nothing more, and its Next button lets them move
-on.
+didn't arrive in time. PsyNet then shows them the control's
+``no_session_message`` in a notice. The page hides the game, which can't be
+played, and does nothing more, and its Next button lets them move on.
 
 The page then registers what happens when a view arrives, and when the game
 rejects one of the player's messages:
@@ -427,8 +426,8 @@ The view holds every round played so far, so a page that reloads draws the
 whole game again. ``describe``, defined above ``render`` in the file, puts a
 round's result into words, and ``enableButtons`` enables or disables the
 three buttons. ``psynet.liveSession.started`` says whether the game has
-started, which it does once both players have the page open, or after a
-minute if one of them doesn't open it. ``psynet.liveSession.ended`` says
+started, which it does once both players are ready, or after a minute if
+one of them isn't. ``psynet.liveSession.ended`` says
 whether the game is over. The buttons are enabled only while the game is
 running and the player hasn't chosen yet. If the game fails with an error,
 the final view can be ``null``, so ``render`` checks for that first.
@@ -709,8 +708,7 @@ and that each trial's score and reward match the rounds the bot won:
 
 :func:`~psynet.live_session.live_session_id` finds the session that a
 participant last played at a ``PlayLiveGame`` with that id, here their
-second game, and
-:func:`~psynet.live_session.live_session_result` says how it ended and what
+second game, and :func:`~psynet.live_session.live_session_result` says how it ended and what
 its outcome was. To test a game's rules without starting the experiment, call
 its methods directly, as the "Bots and testing" section of
 :doc:`live_sessions` shows.
@@ -739,7 +737,10 @@ Next steps
 ----------
 
 :doc:`live_sessions` describes everything a game can do, including what
-happens when a player leaves, reloads, or opens the game in two tabs. Each
+happens when a player leaves, reloads, or opens the game in two tabs. The
+``bargaining_live``, ``public_goods_live`` and ``microsociety_live`` demos
+show more: re-pairing players between games, results on the group's round,
+``on_session_start`` and a group whose members change over time. Each
 demo's README describes its design, and Dallinger's guide to `real-time games
 <https://dallinger.readthedocs.io/latest/realtime_games.html>`__ describes the
 engine that runs the games.

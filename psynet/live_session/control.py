@@ -19,7 +19,7 @@ from ..timeline import ResponseNotReady
 from ..utils import get_translator
 from .messages import _game_channel, _session_game_class
 from .play import _check_reached_game, live_session_id
-from .result import live_session_result
+from .result import _has_outcome, live_session_result
 
 # Seconds a page waits before resending a response refused because the
 # session's result isn't saved yet.
@@ -60,9 +60,9 @@ class LiveSessionControl(NullControl):
     show_result_for
         Seconds the page stays once the session's result is saved, before
         it moves on by itself, so that its JavaScript can show the result,
-        for example in ``onResultSaved``. A :class:`~psynet.sync.GroupBarrier`'s
-        ``late_after`` counts from the end of these seconds, so it needn't
-        cover them. Default: 0. Needs ``auto_advance``.
+        for example in ``onResultSaved``. A
+        :class:`~psynet.sync.GroupBarrier`'s ``late_after`` counts from the
+        end of these seconds, so it needn't cover them. Default: 0. Needs ``auto_advance``.
 
     player_left_message
         What a notice at the top of the page says while another player has
@@ -145,9 +145,7 @@ class LiveSessionControl(NullControl):
             response.answer = None
             return None
         result = live_session_result(session_id)
-        # A failed session has no outcome if its record couldn't be saved, or
-        # if Dallinger couldn't get one from the game's outcome method.
-        if result.status == "failed" and result.outcome is None:
+        if not _has_outcome(result.status, result.outcome):
             response.answer = None
         else:
             game = _session_game_class(session_id)()
@@ -219,10 +217,12 @@ def _game_page_deadline(session_id):
     latest = _latest_end_seconds(session_id)
     if latest is None:
         return None
-    return _session_start_time(session_id) + timedelta(seconds=latest)
+    return _session_began_at(session_id) + timedelta(seconds=latest)
 
 
-def _session_start_time(session_id):
+def _session_began_at(session_id):
+    # Dallinger's start_time: when the wait at the PlayLiveGame ended, before
+    # the ready step.
     return (
         db.session.query(RealtimeSession.start_time).filter_by(id=session_id).scalar()
     )
@@ -236,7 +236,7 @@ def _check_session_can_still_end(session_id):
     latest = _latest_end_seconds(session_id)
     if latest is None:
         return
-    running_for = (timenow() - _session_start_time(session_id)).total_seconds()
+    running_for = (timenow() - _session_began_at(session_id)).total_seconds()
     if running_for > latest:
         raise RuntimeError(
             f"Live session {session_id} is still running after "
