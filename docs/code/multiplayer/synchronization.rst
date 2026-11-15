@@ -1226,7 +1226,10 @@ the maximum waiting time:
     waiting page, since the group last passed a barrier (or since being
     admitted) is not late until that limit has run out plus 10 seconds, so
     that an answer sent at the deadline can arrive. So the late limit need not be
-    longer than the pages' time limits. See
+    longer than the pages' time limits. A page without a time limit can say
+    when it ends at the latest with :meth:`~psynet.timeline.Page.ends_by`,
+    which counts in the same way; a live session's game page does this (see
+    :doc:`live_sessions`). See
     :ref:`a worked example <rounds-slow-players>`.
 
     At a group's first barrier the late limit counts from when each member

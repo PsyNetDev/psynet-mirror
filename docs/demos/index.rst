@@ -440,8 +440,9 @@ Groups
 `experiments/rock_paper_scissors_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/rock_paper_scissors_live>`__
     Pairs play two games of rock, paper, scissors as live sessions, each
     game on one page. Each game is a cued trial per player, whose answer is
-    the game's outcome. The trial's definition sets how many rounds the game
-    has and the bonus that the trial pays for a round won.
+    the player's part of the game's outcome. The trial's definition sets
+    how many rounds the game has and the bonus that the trial pays for a
+    round won.
     :doc:`/code/multiplayer/live_sessions`.
 
 `experiments/shared_canvas_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/shared_canvas_live>`__

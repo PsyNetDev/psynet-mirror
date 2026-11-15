@@ -194,8 +194,8 @@ allow for`_). Set ``min_players = 1`` for a game a player can play alone.
 ``PlayLiveGame`` takes the options of a :class:`~psynet.sync.GroupBarrier`,
 such as ``max_wait_time``, for its barrier. Its ``on_session_start`` runs
 once the session has started, with the arguments a group barrier's
-``on_release`` takes and also ``live_session_id``. Use it for group bookkeeping at the start
-of a round, such as choosing who leaves after it.
+``on_release`` takes and also ``live_session_id``. Use it for group
+bookkeeping at the start of a round, such as choosing who leaves after it.
 
 To play one game under different conditions, such as with a different
 number of rounds, pass ``PlayLiveGame`` ``settings``: a dict, or any other
@@ -513,8 +513,7 @@ The answer and rewards
 The game page's answer comes from the session's outcome: what the game's
 ``outcome`` method returned when the session ended. PsyNet sets it on the
 server and ignores what the page sends, and a participant without a session
-gets ``None``. The ``rock_paper_scissors_live`` demo shows a game played
-as a trial. By default, every player's answer is the whole outcome. Define
+gets ``None``. By default, every player's answer is the whole outcome. Define
 ``answer(outcome, reason, player_id)`` to give each player only their own
 part, so that a trial holds only its player's data and code reading
 ``trial.answer`` needs no player ids:
@@ -530,8 +529,11 @@ part, so that a trial holds only its player's data and code reading
             return {"mine": mine, "theirs": theirs, "reason": reason}
 
 Results that belong to the whole group, such as a team's total, stay in the
-outcome. When the game is played as a trial (see `Starting sessions and the
-game page`_), PsyNet copies the outcome to the round the session was played
+outcome. The ``rock_paper_scissors_live``, ``snake_live`` and
+``shared_canvas_live`` demos each define an ``answer``.
+
+When the game is played as a trial (see `Starting sessions and the game
+page`_), PsyNet copies the outcome to the round the session was played
 in once the session's ending is saved, so later pages and the export read it
 as ``trial.group_round.live_session_outcome``, with no need for another
 barrier after the game page to score the round:
@@ -561,8 +563,8 @@ page waits as long as the session runs.
 
 The game page also stops a later :class:`~psynet.sync.GroupBarrier` from
 counting a player who is still in the game as late. ``late_after`` counts from
-the group's previous barrier, which is usually the barrier of a ``PlayLiveGame``, so it would
-otherwise include the whole game. Instead, as for a page with a
+the group's previous barrier, which is usually the barrier of a
+``PlayLiveGame``, so it would otherwise include the whole game. Instead, as for a page with a
 ``time_limit``, it counts from when the game page ends: at first the game's
 ``max_duration`` plus a minute, and once the session's ending is saved, when
 the game actually ended, plus the control's ``show_result_for``. So
@@ -604,14 +606,14 @@ call ``game.add_performance_reward(player_id, amount)`` in a message's
 player's reward a few seconds later, so the player keeps it even if they
 leave early.
 
-Both kinds of bonus are added to the participant's reward only. When a trial
+Both kinds of reward are added to the participant's reward only. When a trial
 shows the game, they don't appear in the trial's ``performance_reward``,
 which stays 0. To have each trial record what its game paid, let the trial
 pay, as the ``rock_paper_scissors_live`` demo does: the trial's
 ``score_answer`` reads the player's score from the answer, which is the
 game's outcome, and its ``compute_performance_reward`` turns the score into
-the bonus. The game then defines no ``bonus``, so that the player isn't paid
-twice.
+the bonus. The game then defines no ``performance_reward``, so that the
+player isn't paid twice.
 
 A session can fail without an outcome: its record couldn't be saved, or the
 game's ``outcome`` raised an error as well. The answer is then ``None`` and
