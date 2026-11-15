@@ -196,7 +196,7 @@ export function activate({ root, vars, psynet }) {
       sendMove();
       direction = next;
     }
-    if (!live.started || live.ended || shown === null) {
+    if (!live.playing || shown === null) {
       pending = 0;
       return;
     }

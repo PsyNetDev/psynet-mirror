@@ -361,6 +361,8 @@ class Exp(psynet.experiment.Experiment):
             stake = trial.definition["stake"]
             assert stake in STAKES
             assert trial.coins() in (BOT_GIVES, stake - BOT_GIVES)
+            # The game's reward is recorded on the trial it was played in.
+            assert abs(trial.performance_reward - trial.coins() * COIN_VALUE) < 1e-9
             outcome = trial.group_round.live_session_outcome
             assert sorted(outcome["deal"].values()) == [BOT_GIVES, stake - BOT_GIVES]
         expected = sum(t.coins() for t in trials) * COIN_VALUE

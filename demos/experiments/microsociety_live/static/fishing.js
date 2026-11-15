@@ -160,7 +160,7 @@ export function activate({root, psynet}) {
       status.textContent = "The round is over.";
       return;
     }
-    let playing = live.started && !live.ended;
+    let playing = live.playing;
     if (live.ended) {
       status.textContent = results.hidden ? "Counting the catch…" : "The round is over.";
     } else if (!live.started) {
@@ -172,7 +172,7 @@ export function activate({root, psynet}) {
     for (let {tile} of spots) {
       tile.disabled = !playing;
     }
-    drawBoats(live.socket.sessionTime() ?? 0, instant);
+    drawBoats(live.sessionTime() ?? 0, instant);
     if (view.catch_number > seenCatch) {
       seenCatch = view.catch_number;
       showCatches(view.latest);

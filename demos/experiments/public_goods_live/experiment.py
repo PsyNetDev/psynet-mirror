@@ -269,5 +269,8 @@ class Exp(psynet.experiment.Experiment):
                 player: bot_contribution(player) for player in contributions
             }
             assert outcome["pot"] == sum(contributions.values())
+            # The game's reward is recorded on the trial it was played in.
+            reward = trial.answer["earned"] * TOKEN_VALUE
+            assert abs(trial.performance_reward - reward) < 1e-9
         expected = sum(t.answer["earned"] * TOKEN_VALUE for t in trials)
         assert abs(bot.performance_reward - expected) < 1e-9

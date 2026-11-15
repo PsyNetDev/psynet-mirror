@@ -81,7 +81,7 @@ export function activate({root, psynet}) {
     } else {
       status.textContent = `Round ${view.round} of ${view.n_rounds}: choose your action`;
     }
-    let playing = psynet.liveSession.started && !psynet.liveSession.ended;
+    let playing = psynet.liveSession.playing;
     partner.textContent = playing && view.partner_chosen ? "Your partner has chosen." : "";
     enableButtons(playing && !view.chosen);
   }

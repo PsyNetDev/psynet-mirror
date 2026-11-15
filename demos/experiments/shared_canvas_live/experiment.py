@@ -44,10 +44,9 @@ COLORS = [
     "#8c564b",
 ]
 
-#: Players in each game, from 2 to ``len(COLORS)``.
+#: Players in each game, from 2 to ``len(COLORS)``, the game's
+#: ``max_players``.
 GROUP_SIZE = 2
-if not 2 <= GROUP_SIZE <= len(COLORS):
-    raise ValueError(f"GROUP_SIZE must be from 2 to {len(COLORS)}.")
 
 #: The canvas is this many pixels square.
 SIZE = 640
@@ -132,7 +131,8 @@ def is_moving(player):
 
 def advance(state, player_id, dx, dy, seconds, now):
     """Move a player for ``seconds``, holding the keys for ``dx``, ``dy``, and
-    collect the coins they pass, each counted at session time ``now``.
+    collect the coins they pass, each counted at session time ``now``. Return
+    how many coins they collected.
 
     The page's ``advance`` does the same arithmetic in the same order, so its
     prediction lands where the game does, unless the game shortens or rejects
@@ -143,6 +143,7 @@ def advance(state, player_id, dx, dy, seconds, now):
     ax = ACCELERATION * dx * scale
     ay = ACCELERATION * dy * scale
     elapsed = 0
+    collected = 0
     while elapsed < seconds:
         dt = min(STEP, seconds - elapsed)
         elapsed += dt
@@ -165,10 +166,11 @@ def advance(state, player_id, dx, dy, seconds, now):
             if passes_near(x, y, player["x"], player["y"], coin):
                 state["coins"].remove(coin)
                 player["coins"] += 1
-                player["collected_on_last_move"] = True
+                collected += 1
                 state["collected"].append(
                     {"coin": coin["id"], "by": player_id, "time": now}
                 )
+    return collected
 
 
 def starting_points(n):
@@ -203,6 +205,8 @@ class Move(LiveMessage):
     dx: Literal[-1, 0, 1]
     dy: Literal[-1, 0, 1]
     seconds: float = Field(gt=0, le=SAVED_MOVEMENT)
+    # Whether the move collected a coin, which apply notes for save.
+    _collected: bool = False
 
     def apply(self, game, state, player_id, now):
         player = state["players"][player_id]
@@ -214,8 +218,12 @@ class Move(LiveMessage):
         if seconds <= 0:
             raise Reject("You've used up your movement time.")
         player["moved_until"] = start + seconds
-        player["collected_on_last_move"] = False
-        advance(state, player_id, self.dx, self.dy, seconds, now)
+        self._collected = advance(state, player_id, self.dx, self.dy, seconds, now) > 0
+
+    def save(self, game, state, player_id, rejection):
+        # Pages send many moves a second, so only the moves that collected a
+        # coin go in the session's record.
+        return self._collected
 
 
 class SharedCanvas(LiveGame):
@@ -231,6 +239,8 @@ class SharedCanvas(LiveGame):
 
     channel = "shared_canvas_live"
     messages = [Move]
+    # A color for each player.
+    max_players = len(COLORS)
     # Each tick sends every player a view, which the page interpolates
     # between.
     tick_rate = 20
@@ -240,7 +250,6 @@ class SharedCanvas(LiveGame):
     duration = ROUND_SECONDS
 
     def initial_state(self, players):
-        ordered = sorted(players, key=int)
         state = {
             "players": {
                 player_id: {
@@ -253,13 +262,9 @@ class SharedCanvas(LiveGame):
                     # The session time up to which the player's movement
                     # time is spent.
                     "moved_until": 0,
-                    # Whether the player's latest move collected a coin. It's
-                    # kept in the state for save_message, which sees only the
-                    # state after the move.
-                    "collected_on_last_move": False,
                 }
                 for number, (player_id, (x, y)) in enumerate(
-                    zip(ordered, starting_points(len(ordered))), start=1
+                    zip(players, starting_points(len(players))), start=1
                 )
             },
             "coins": [],
@@ -336,16 +341,6 @@ class SharedCanvas(LiveGame):
 
     def performance_reward(self, outcome, reason, player_id):
         return BONUS_PER_COIN * outcome["coins"][player_id]
-
-    def save_message(self, state, player_id, message, rejection):
-        # Pages send many moves a second, so of the moves, only the ones that
-        # collected a coin go in the session's record. Other messages, such as
-        # PsyNet's ready message, are all saved.
-        if not isinstance(message, dict) or message.get("type") != Move.type:
-            return True
-        return (
-            rejection is None and state["players"][player_id]["collected_on_last_move"]
-        )
 
     def bot(self, view, player_id, now):
         """Head for the nearest coin worth chasing (see

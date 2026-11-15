@@ -46,7 +46,7 @@ export function activate({root, psynet}) {
       status.textContent = "The game is over.";
       return;
     }
-    let playing = live.started && !live.ended;
+    let playing = live.playing;
     if (view.deal !== null) {
       status.textContent = "You made a deal.";
     } else if (live.ended) {

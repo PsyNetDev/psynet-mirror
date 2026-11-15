@@ -611,6 +611,9 @@ class Exp(psynet.experiment.Experiment):
             reward = bot.with_participant(lambda p: p.performance_reward)
             expected = sum(t.fish() for t in trials) * FISH_VALUE
             assert abs(reward - expected) < 1e-9, (bot.id, reward, expected)
+            # The game's rewards are recorded on the trials they were played in.
+            for t in trials:
+                assert abs(t.performance_reward - t.fish() * FISH_VALUE) < 1e-9, t.id
 
 
 def _play(bots):

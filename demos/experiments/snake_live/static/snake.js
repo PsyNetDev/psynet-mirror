@@ -66,7 +66,7 @@ export function activate({ root, vars, psynet }) {
       // The page doesn't show the reasons the game rejects a turn, such as a
       // turn back into the snake's neck: the key press just has no effect.
       let crashed = latest !== null && latest.players[latest.me].body.length === 0;
-      if (!event.repeat && live.started && !live.ended && !crashed) {
+      if (!event.repeat && live.playing && !crashed) {
         live.send("turn", { direction: direction });
       }
     }
@@ -94,7 +94,7 @@ export function activate({ root, vars, psynet }) {
   }
 
   function showStatus(view) {
-    let time = live.socket.sessionTime();
+    let time = live.sessionTime();
     let me = view.players[view.me];
     if (live.ended) {
       status.textContent = "The game is over.";

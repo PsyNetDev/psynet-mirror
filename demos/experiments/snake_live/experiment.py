@@ -33,10 +33,9 @@ from psynet.timeline import PageMaker, Timeline
 #: player a game can have.
 COLORS = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd"]
 
-#: Players in each game, from 2 to ``len(COLORS)``.
+#: Players in each game, from 2 to ``len(COLORS)``, the game's
+#: ``max_players``.
 GROUP_SIZE = 2
-if not 2 <= GROUP_SIZE <= len(COLORS):
-    raise ValueError(f"GROUP_SIZE must be from 2 to {len(COLORS)}.")
 
 #: The board is this many squares across and down.
 SIZE = 30
@@ -183,6 +182,8 @@ class Snake(LiveGame):
 
     channel = "snake_live"
     messages = [Turn]
+    # A color for each player.
+    max_players = len(COLORS)
     # The snakes move a square on each tick.
     tick_rate = 8
     # A turn changes nothing a page shows until the snake makes it, on the
@@ -192,11 +193,10 @@ class Snake(LiveGame):
     duration = ROUND_SECONDS
 
     def initial_state(self, players):
-        ordered = sorted(players, key=int)
         state = {"players": {}, "food": []}
-        for number, player_id in enumerate(ordered, start=1):
+        for number, player_id in enumerate(players, start=1):
             # The snakes start in evenly spaced rows, heading right.
-            row = number * SIZE // (len(ordered) + 1)
+            row = number * SIZE // (len(players) + 1)
             state["players"][player_id] = {
                 "number": number,
                 "body": [[START_LENGTH - i, row] for i in range(START_LENGTH)],
@@ -207,7 +207,7 @@ class Snake(LiveGame):
                 # The session time when a crashed snake comes back.
                 "back_at": None,
             }
-        for _ in range(FOOD_PER_PLAYER * len(ordered)):
+        for _ in range(FOOD_PER_PLAYER * len(players)):
             add_food(state)
         return state
 
