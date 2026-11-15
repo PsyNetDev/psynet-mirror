@@ -114,7 +114,7 @@ class TestRockPaperScissorsLive:
             "partner_wins": 2,
         }
 
-    def test_the_trial_scores_the_rounds_won_and_pays_its_definition_s_bonus(
+    def test_the_trial_scores_the_rounds_won_and_pays_its_definition_s_reward(
         self, demo, finished
     ):
         game = demo.RockPaperScissors()
@@ -124,7 +124,7 @@ class TestRockPaperScissorsLive:
         # A trial whose game page had no session has no answer.
         assert score(None, None, None) == 0
         # Two rounds won, at the 0.1 a round that the trial's definition says.
-        paid = SimpleNamespace(definition={"bonus_per_win": 0.1})
+        paid = SimpleNamespace(definition={"reward_per_win": 0.1})
         assert demo.RockPaperScissorsTrial.compute_performance_reward(
             paid, 2
         ) == pytest.approx(0.2)

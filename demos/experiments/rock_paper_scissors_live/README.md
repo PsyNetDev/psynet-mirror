@@ -14,7 +14,7 @@ session's settings, and shows the game page. The trial's answer is the
 player's part of the game's outcome: their rounds, with both choices and the
 result for them, and the rounds each player won. The pair's whole outcome is
 on the trial's `group_round`. The trial's score is the number of rounds the
-player won, and the trial pays the bonus for them, so each trial's
+player won, and the trial pays the reward for them, so each trial's
 `performance_reward` is what its game paid.
 
 ## When a partner leaves

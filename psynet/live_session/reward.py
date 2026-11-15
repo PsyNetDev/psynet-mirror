@@ -1,6 +1,6 @@
 """What PsyNet does with a live session's record as Dallinger writes it: the
 rewards from add_performance_reward, paid by effects queued during the game,
-and, once the ending is saved, the rewards from the outcome and the copy of
+and, once the result is saved, the rewards from the outcome and the copy of
 the outcome on the session's round. A reward is also recorded on the trial
 the game was played in, if any. All run in the job that writes the session's
 record, so each runs once, whether or not the players are still on the game

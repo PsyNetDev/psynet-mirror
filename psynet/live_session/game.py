@@ -300,7 +300,7 @@ class LiveGame(RealtimeGame):
     def performance_reward(self, outcome, reason, player_id):
         """Return the reward a player earns from the session's outcome, such as
         their winnings. PsyNet adds it to each player's performance reward
-        once, when the session's ending is saved, however the session ended,
+        once, when the session's result is saved, however the session ended,
         and also for a player who has left the game page. It isn't paid for a
         session that failed without an outcome, because its record couldn't be
         saved or its ``outcome`` raised an error. When the game is played in a

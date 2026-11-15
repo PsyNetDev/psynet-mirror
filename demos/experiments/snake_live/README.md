@@ -4,7 +4,7 @@ In this live session, each player in a group steers a snake around a shared
 board with the arrow keys for 60 seconds. A snake grows each time it eats a
 piece of food. If it hits a wall or any snake, its own body included, it
 crashes and comes back two seconds later somewhere else. Each piece of food
-eaten pays a bonus.
+eaten pays a reward.
 
 The game moves every snake one square on each of its ticks, eight times a
 second. A page only sends the game which way the player wants to turn. The

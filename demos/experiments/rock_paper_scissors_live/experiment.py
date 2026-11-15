@@ -9,7 +9,7 @@ definition says how many rounds the game has and what a round won pays. The
 trial starts the pair's session, with the number of rounds as its settings,
 and shows the game page. The game's ``answer`` gives each player their own
 part of the outcome, which is the trial's answer: the trial scores it as the
-rounds the player won and pays the bonus for them, and its feedback page
+rounds the player won and pays the reward for them, and its feedback page
 shows the final score. The whole pair's outcome is on the trial's
 ``group_round``.
 
@@ -48,8 +48,8 @@ BEATS = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
 # Each of the pair's games: how many rounds it has, and what a round won pays,
 # in dollars.
 GAMES = [
-    {"rounds": 5, "bonus_per_win": 0.05},
-    {"rounds": 3, "bonus_per_win": 0.10},
+    {"rounds": 5, "reward_per_win": 0.05},
+    {"rounds": 3, "reward_per_win": 0.10},
 ]
 # How long a player waits for their partner to start a game, in seconds. The
 # partner may still be reading the last game's result, so it allows for that.
@@ -175,9 +175,9 @@ class RockPaperScissors(LiveGame):
         return Choose(round=view["round"], action=random.choice(ACTIONS))
 
 
-def show_result(answer, bonus):
+def show_result(answer, reward):
     """The feedback page for a game whose answer for the player is
-    ``answer``, for which they were paid ``bonus``."""
+    ``answer``, for which they were paid ``reward``."""
     if not answer["rounds"]:
         return InfoPage(
             "The game ended before any rounds were played.", time_estimate=5
@@ -199,7 +199,7 @@ def show_result(answer, bonus):
                 f"You won {wins} of the {len(answer['rounds'])} rounds played, "
                 f"and your partner won {partner_wins}."
             ),
-            tags.p(f"Your bonus for this game is ${bonus:.2f}."),
+            tags.p(f"Your bonus for this game is ${reward:.2f}."),
         ),
         time_estimate=5,
     )
@@ -235,7 +235,7 @@ class RockPaperScissorsTrial(Trial):
                         tags.p(
                             f"Game {game['number']} of {len(GAMES)}, of "
                             f"{game['rounds']} rounds. Each round you win pays "
-                            f"a bonus of ${game['bonus_per_win']:.2f}.",
+                            f"a bonus of ${game['reward_per_win']:.2f}.",
                             id="rps-stakes",
                         ),
                         tags.p(id="rps-last"),
@@ -283,7 +283,7 @@ class RockPaperScissorsTrial(Trial):
         return answer["wins"]
 
     def compute_performance_reward(self, score):
-        return score * self.definition["bonus_per_win"]
+        return score * self.definition["reward_per_win"]
 
     def gives_feedback(self, experiment, participant):
         return self.answer is not None
@@ -361,8 +361,8 @@ class Exp(psynet.experiment.Experiment):
         super().test_check_bot(bot, **kwargs)
         trials = sorted(bot.alive_trials, key=lambda trial: trial.id)
         assert [trial.definition for trial in trials] == [
-            {"number": 1, "rounds": 5, "bonus_per_win": 0.05},
-            {"number": 2, "rounds": 3, "bonus_per_win": 0.10},
+            {"number": 1, "rounds": 5, "reward_per_win": 0.05},
+            {"number": 2, "rounds": 3, "reward_per_win": 0.10},
         ]
         # The bot's latest session is its second game.
         result = live_session_result(live_session_id(bot, "rock_paper_scissors"))
@@ -377,7 +377,7 @@ class Exp(psynet.experiment.Experiment):
             wins = sum(played["result"] == "win" for played in rounds)
             assert trial.score == trial.answer["wins"] == wins
             # The trial pays what its definition says for each round won.
-            bonus = wins * trial.definition["bonus_per_win"]
-            assert trial.performance_reward == pytest.approx(bonus)
-            reward += bonus
+            trial_reward = wins * trial.definition["reward_per_win"]
+            assert trial.performance_reward == pytest.approx(trial_reward)
+            reward += trial_reward
         assert bot.performance_reward == pytest.approx(reward)

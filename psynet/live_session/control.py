@@ -6,7 +6,7 @@ the page. ``get_participant_js_vars`` gives the script the session's id and
 channel each time the page renders. ``check_ready_for_response`` refuses the
 page's response until the session's result is saved, and ``validate`` then
 sets the answer to what the game's ``answer`` returns for the participant.
-The game pays its rewards itself, when the session's ending is saved.
+The game pays its rewards itself, when the session's result is saved.
 """
 
 from datetime import timedelta
@@ -41,7 +41,7 @@ class LiveSessionControl(NullControl):
 
     PsyNet sets the page's answer to what the game's
     :meth:`~LiveGame.answer` returns for the participant, once the
-    session's ending is saved, which is also when it pays the game's
+    session's result is saved, which is also when it pays the game's
     :meth:`~LiveGame.performance_reward`. The page can't have a ``validate``
     of its own.
     :doc:`/code/multiplayer/live_sessions` explains how to write the page's

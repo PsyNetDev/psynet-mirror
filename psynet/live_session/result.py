@@ -53,7 +53,7 @@ def live_session_result(session_id):
     """Return how the session ``session_id`` ended, as a
     :class:`LiveSessionResult`, or ``None`` if it's still running.
 
-    A session counts as running until its ending is saved, a few seconds after
+    A session counts as running until its result is saved, a few seconds after
     the game ends. That's when the game page's ``onResultSaved`` runs.
 
     Raises

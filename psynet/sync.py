@@ -5457,7 +5457,7 @@ class SyncGroupRound(SQLBase, SQLMixin):
         each round's game.
     live_session_outcome : object or None
         What the ``outcome`` method of that session's game returned, copied
-        here when the session's ending is saved, a few seconds after the game
+        here when the session's result is saved, a few seconds after the game
         ends. ``None`` before then, without a live session, or for a session
         that failed without an outcome.
     trials : list of Trial

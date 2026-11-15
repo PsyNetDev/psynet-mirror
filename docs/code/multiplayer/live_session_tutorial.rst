@@ -71,7 +71,7 @@ Part 1: Rock, paper, scissors
 In ``rock_paper_scissors_live``, pairs of participants play two games, the
 first of five rounds and the second of three. Each player chooses rock, paper
 or scissors, and once both have chosen, both see the result of the round.
-Each round that a player wins pays them a bonus, which is larger in the
+Each round that a player wins pays them a reward, which is larger in the
 second game.
 
 To play it yourself, run the demo from a PsyNet source checkout:
@@ -286,7 +286,7 @@ shows the game page, and then scores and pays for the game:
   both trials.
 - ``score_answer`` returns the trial's score, here the number of rounds the
   player won, which it reads from the answer. ``compute_performance_reward``
-  turns the score into the player's bonus, at the rate in the trial's
+  turns the score into the player's reward, at the rate in the trial's
   definition. PsyNet saves both on the trial, as its ``score`` and
   ``performance_reward``, so the experiment's data shows what each game paid.
   A trial whose game page had no session has no answer, and scores 0.
@@ -303,7 +303,7 @@ therefore says whether the player was in the pair when the game started. To
 tell a game that was played to the end from one that a player abandoned, read
 the ``reason`` in the outcome.
 
-A game can also pay bonuses itself, through its ``performance_reward``
+A game can also pay rewards itself, through its ``performance_reward``
 method, as the snake demo in Part 2 does, or with
 ``add_performance_reward``. In a trial, PsyNet records those on the trial
 too. This demo lets the trial pay instead, because what a round won pays is
@@ -346,7 +346,7 @@ trials:
 A ``PlayLiveGame`` can also go straight in the timeline, without a trial, as
 it does in the snake and shared canvas demos.
 
-The trial's ``show_feedback`` passes the trial's answer, and the bonus that
+The trial's ``show_feedback`` passes the trial's answer, and the reward that
 the trial paid, to ``show_result``:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
@@ -462,7 +462,7 @@ for 60 seconds. ``GROUP_SIZE`` in the demo's ``experiment.py`` sets how many
 play together, from 2 to 4, and it's 2 unless you change it. A snake grows
 each time it eats a piece of food. If it hits a wall or any snake, it crashes
 and comes back two seconds later somewhere else. Each piece of food eaten pays
-a bonus.
+a reward.
 
 Rock, paper, scissors changes only when a player sends a message. In snake,
 the snakes keep moving whether or not anyone presses a key, so the game has
@@ -499,8 +499,9 @@ board until the next tick.
 
 ``duration = ROUND_SECONDS`` makes the game last 60 seconds from its start.
 Before the game starts, there's a **ready step**, while the players' pages
-open. The game starts once every player's page is open, or after
-``ready_timeout`` seconds (60 unless the game sets it). PsyNet then runs the
+open. Each page says its player is ready a moment after it opens, and the
+game starts once every player is ready, or after ``ready_timeout`` seconds
+(60 unless the game sets it). PsyNet then runs the
 game's ``tick`` one last time at the end of the duration, ends the session
 with the reason ``"finished"``, and rejects messages that arrive later. A
 game with a ``duration`` doesn't set ``max_duration``: PsyNet allows for the
@@ -543,20 +544,20 @@ contested squares. When you design a game for an experiment, look for rules
 like this, where the order in which the server deals with players could
 favor some of them.
 
-The bonus
-~~~~~~~~~
+The reward
+~~~~~~~~~~
 
-Snake isn't played in a trial, so the game pays the bonus itself, through its
+Snake isn't played in a trial, so the game pays the reward itself, through its
 ``performance_reward`` method:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/experiment.py
    :pyobject: Snake.performance_reward
    :dedent:
 
-``performance_reward`` works out each player's bonus from the game's
+``performance_reward`` works out each player's reward from the game's
 outcome, which is why the outcome includes how much food each snake ate.
 PsyNet adds it to the player's performance reward once, when the session's
-ending is saved, even for a player who has already left the game page.
+result is saved, even for a player who has already left the game page.
 
 The snake page
 ~~~~~~~~~~~~~~
@@ -700,7 +701,7 @@ Run ``psynet test local`` in a demo's folder to play the experiment with
 bots. Each demo checks each bot's result at the end of the test. Rock, paper,
 scissors checks that its last game's outcome is on that game's round, that
 each of the bot's games had the number of rounds in its trial's definition,
-and that each trial's score and bonus match the rounds the bot won:
+and that each trial's score and reward match the rounds the bot won:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
    :pyobject: Exp.test_check_bot

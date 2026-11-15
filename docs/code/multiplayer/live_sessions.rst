@@ -68,18 +68,20 @@ A game of rock, paper, scissors:
 ``initial_state`` sets up the state for the session's players, ``view`` says
 what a player's page shows, ``is_over`` says when the game ends, and ``bot``
 plays for bots (see `Bots and testing`_). The state and the views are dicts.
-Each player's id is their participant id as a string, such as ``"12"``.
-Ids are strings because the state is saved as JSON, whose dict keys are
-strings, so they work as keys in the state's dicts. ``initial_state`` gets
-the players in the order they signed up, which is participant id order, and
-``state["live_session"]["players"]`` (see `PsyNet's entry in the state`_)
-keeps that order, so number the players with ``enumerate(players)`` rather
-than by sorting the ids, which sorts ``"10"`` before ``"9"``. Code outside the game
-rarely needs the ids: the game's ``answer`` gives each player their own part
-of the outcome (see `The answer and rewards`_).
 
-A game can also have a time limit, a clock that ticks, an outcome and more,
-which come from Dallinger's :class:`~dallinger.realtime.RealtimeGame`.
+Each player's id is their participant id as a string, such as ``"12"``,
+because the state is saved as JSON, whose dict keys are strings, so ids work
+as keys in the state's dicts. ``initial_state`` gets the players in the order
+they signed up, which is participant id order, and
+``state["live_session"]["players"]`` (see `PsyNet's entry in the state`_)
+keeps that order. Number the players with ``enumerate(players)`` rather than
+by sorting the ids, which sorts ``"10"`` before ``"9"``. Code outside the
+game rarely needs the ids: the game's ``answer`` gives each player their own
+part of the outcome (see `The answer`_).
+
+A game can also have a clock that ticks, an outcome and more, which come
+from Dallinger's :class:`~dallinger.realtime.RealtimeGame`. For a game that
+lasts a fixed time, see `Timed games`_.
 Dallinger's guide to `real-time games <dallinger-realtime-games_>`_ explains
 them, and its `API reference <dallinger-realtime-api_>`_ describes each
 method and setting that comes from ``RealtimeGame``.
@@ -191,6 +193,7 @@ group that reaches the ``PlayLiveGame`` with fewer active members, for example
 because the others left it while it waited, starts no session, and its
 members' game pages show the no-session notice (see `Cases a game page should
 allow for`_). Set ``min_players = 1`` for a game a player can play alone.
+
 A game that has something for each player that runs out, such as a color or
 a starting square, sets ``max_players``. A larger group is a mistake in the
 experiment's design, so it starts no session either, and PsyNet logs an error
@@ -199,9 +202,9 @@ that says so. Make the grouper's groups no larger than the game allows.
 ``PlayLiveGame`` takes the options of a :class:`~psynet.sync.GroupBarrier`,
 such as ``max_wait_time``, for its barrier. Its ``on_session_start`` runs
 once the session has been created, before the game starts, with the
-arguments a group barrier's
-``on_release`` takes and also ``live_session_id``. Use it for group
-bookkeeping at the start of a round, such as choosing who leaves after it.
+arguments a group barrier's ``on_release`` takes and also
+``live_session_id``. Use it for group bookkeeping at the start of a round,
+such as choosing who leaves after it.
 
 To play one game under different conditions, such as with a different
 number of rounds, pass ``PlayLiveGame`` ``settings``: a dict, or any other
@@ -247,9 +250,10 @@ error that says so. Trials that a group plays in one round share a
 definition, so set ``sync_group_type`` on the trial class and cue one trial
 per player (see :ref:`rounds-cued-trials`). The ``bargaining_live`` demo
 draws each pair's stake this way, with a function as the definition that
-``cue`` calls once for the pair. Such a trial needs a
-:class:`~psynet.sync.GroupBarrier` in its ``show_trial``, and the barrier of
-the ``PlayLiveGame`` is one. The round's
+``cue`` calls once for the pair.
+
+A trial played in a group needs a :class:`~psynet.sync.GroupBarrier` in its
+``show_trial``, and the barrier of the ``PlayLiveGame`` is one. The round's
 :attr:`~psynet.sync.SyncGroupRound.live_session_id` then names the session
 the group played in it, so ``trial.group_round`` leads from each trial to its
 round's game, for example in an export.
@@ -533,6 +537,35 @@ each one, and at the end of its ``duration``. A tick that runs late gets the
 end as ``now``, so a game that counts things on a schedule, such as catches
 every few seconds, counts none after the end.
 
+Time limits
+-----------
+
+Because participants can't leave the game page until their session ends,
+every session needs a time limit. A session still running at the game's
+``max_duration``, 10 minutes unless the game sets it, ends with the reason
+``"max_duration"``. ``max_duration = None`` removes the limit, so set it only
+if the game always ends by itself, even when players leave. A game with a
+``duration`` doesn't need to set it: PsyNet sets it to the ``ready_timeout``
+plus the ``duration`` plus 30 seconds, so that a game that starts at the
+ready timeout still ends on its own.
+
+The limit also tells PsyNet when a session can no longer end, for example
+because the worker that runs the experiment's sessions has stopped. If a
+session is still running more than a minute after its ``max_duration``, its
+game page stops waiting: the participant sees PsyNet's error page, and a bot
+fails with an error that names the session. Without a ``max_duration``, the
+page waits as long as the session runs.
+
+The game page also stops a later :class:`~psynet.sync.GroupBarrier` from
+counting a player who is still in the game as late. ``late_after`` counts from
+the group's previous barrier, which is usually the barrier of a
+``PlayLiveGame``, so it would otherwise include the whole game. Instead, as
+for a page with a ``time_limit``, it counts from when the game page ends: at
+first the game's ``max_duration`` plus a minute, and once the session's result
+is saved, when the game actually ended, plus the control's
+``show_result_for``. So ``late_after`` needs to cover only the pages after the
+game.
+
 PsyNet's entry in the state
 ---------------------------
 
@@ -550,8 +583,8 @@ for anything else in the state or a view. It holds:
 - ``away``, the ids of the players who have left the game page and not come
   back. A player who hasn't opened it yet isn't in it.
 
-The answer and rewards
-----------------------
+The answer
+----------
 
 The game page's answer comes from the session's outcome: what the game's
 ``outcome`` method returned when the session ended. PsyNet sets it on the
@@ -577,7 +610,7 @@ outcome. The ``rock_paper_scissors_live``, ``snake_live`` and
 
 When the game is played as a trial (see `Starting sessions and the game
 page`_), PsyNet copies the outcome to the round the session was played
-in once the session's ending is saved, so later pages and the export read it
+in once the session's result is saved, so later pages and the export read it
 as ``trial.group_round.live_session_outcome``, with no need for another
 barrier after the game page to score the round:
 
@@ -588,36 +621,13 @@ barrier after the game page to score the round:
 It is ``None`` until then, and ``answer`` isn't called, for a session that
 failed without an outcome.
 
-Because participants can't leave the game page until their session ends,
-every session needs a time limit. A session still running at the game's
-``max_duration``, 10 minutes unless the game sets it, ends with the reason
-``"max_duration"``. ``max_duration = None`` removes the limit, so set it only
-if the game always ends by itself, even when players leave. A game with a
-``duration`` doesn't need to set it: PsyNet sets it to the ``ready_timeout``
-plus the ``duration`` plus 30 seconds, so that a session that starts at the
-ready timeout still ends on its own.
-
-The limit also tells PsyNet when a session can no longer end, for example
-because the worker that runs the experiment's sessions has stopped. If a
-session is still running more than a minute after its ``max_duration``, its
-game page stops waiting: the participant sees PsyNet's error page, and a bot
-fails with an error that names the session. Without a ``max_duration``, the
-page waits as long as the session runs.
-
-The game page also stops a later :class:`~psynet.sync.GroupBarrier` from
-counting a player who is still in the game as late. ``late_after`` counts from
-the group's previous barrier, which is usually the barrier of a
-``PlayLiveGame``, so it would otherwise include the whole game. Instead, as
-for a page with a ``time_limit``, it counts from when the game page ends: at
-first the game's ``max_duration`` plus a minute, and once the session's ending
-is saved, when the game actually ended, plus the control's
-``show_result_for``. So ``late_after`` needs to cover only the pages after the
-game.
+Rewards
+-------
 
 A game can add to each player's performance reward in two ways. Each amount
 must be a number of 0 or more. For a reward based on the outcome, define
 ``performance_reward(outcome, reason, player_id)`` to return the player's
-reward. PsyNet pays it to each player once, when the session's ending is
+reward. PsyNet pays it to each player once, when the session's result is
 saved, however the session ended, so a player who left the game page early
 is paid too. This game pays 0.10 for a win:
 
@@ -639,7 +649,8 @@ is paid too. This game pays 0.10 for a win:
             ]
             return 0.10 if mine is not None and BEATS[mine] == theirs else 0
 
-``reason`` is ``"finished"`` when ``is_over`` ended the game, and Dallinger's
+``reason`` is ``"finished"`` when ``is_over`` ended the game or its
+``duration`` ran out, and Dallinger's
 `outcome <dallinger-outcome_>`_ lists the other reasons. If the game's code
 raised an error, ``reason`` is ``"failed"``, and ``outcome`` is the outcome of
 the state just before the error.
@@ -696,8 +707,8 @@ its session id.
 Each message is a :class:`~psynet.live_session.SavedMessage`, in the order the
 game applied them. Its ``message`` is ``None`` if what the page sent can't be
 read as one of the game's message types, and its ``payload`` holds what the
-page sent. ``PlayerReady.saved_messages(session_id)`` says when each player became
-ready.
+page sent. ``PlayerReady.saved_messages(session_id)`` says when each player
+became ready.
 
 The record is written a few seconds behind the game, so while a session is
 still running, ``saved_messages`` returns only the messages written so far.
@@ -705,12 +716,13 @@ By the page after the game page, the whole record has been written, unless
 ``live_session_result(session_id).record_complete`` says that saving it
 failed.
 
-A game saves every message by default. A game whose pages send many messages,
-such as a move on every key press, can leave some out with the message
-type's ``should_save``, which returns ``False`` for a message to leave out. It runs
-after the game has accepted or rejected the message, on the same message
-object that ``apply`` received, so ``apply`` can note what the message did
-in a private attribute, one whose name starts with an underscore.
+A game saves every message by default. A game whose pages send many
+messages, such as a move on every key press, can leave some out with the
+message type's ``should_save``, which returns ``False`` for a message to
+leave out. It runs after the game has accepted or rejected the message, on
+the same message object that ``apply`` received, so ``apply`` can note what
+the message did in a private attribute, one whose name starts with an
+underscore.
 ``rejection`` is the :class:`~dallinger.realtime.Reject` that ``apply``
 raised, or ``None``:
 

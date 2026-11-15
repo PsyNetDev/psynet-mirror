@@ -3,7 +3,7 @@
 In this live session, a group of players moves around a shared canvas with the
 arrow keys for 30 seconds, collecting coins. Players speed up while a key is
 held and slow down once it's released. More coins appear while the game runs,
-and each coin collected pays a bonus.
+and each coin collected pays a reward.
 
 The server keeps every player's position. Each page sends which keys were held
 and for how long. The game works out where that takes the player and which
