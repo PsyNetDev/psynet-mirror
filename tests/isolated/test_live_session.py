@@ -2233,3 +2233,114 @@ class ValidatingPage(ModularPage):
 def test_a_live_session_page_can_t_have_a_validate_of_its_own(page_type, kwargs):
     with pytest.raises(TypeError, match="LiveSessionControl and a validate function"):
         page_type("game", "Play", LiveSessionControl(), **kwargs)
+
+
+class Shot(LiveMessage):
+    type = "shot"
+    at: int
+    # Whether the shot hit, which apply notes for save.
+    _hit: bool = False
+
+    def apply(self, game, state, player_id, now):
+        if self.at < 0:
+            raise Reject("Aim at the board.")
+        self._hit = self.at == state["target"]
+
+    def save(self, game, state, player_id, rejection):
+        return rejection is not None or self._hit
+
+
+@pytest.fixture
+def range_game(registry):
+    class Range(LiveGame):
+        channel = "range"
+        messages = [Shot]
+
+        def initial_state(self, players):
+            return {"target": 3}
+
+        def view(self, state, player_id):
+            return {}
+
+        def bot(self, view, player_id, now):
+            return None
+
+    return Range()
+
+
+def _shot(at):
+    return {"type": "shot", "message": {"at": at}}
+
+
+@pytest.mark.parametrize("at, saved", [(3, True), (4, False), (-1, True)])
+def test_a_message_s_save_sees_what_its_apply_noted(range_game, at, saved):
+    state = _started(target=3)
+    message = _shot(at)
+    rejection = None
+    # As Dallinger does: apply, then save_message with a copy of the message.
+    try:
+        range_game.apply(state, "1", message, 0, Sent())
+    except Reject as raised:
+        rejection = raised
+    assert range_game.save_message(state, "1", dict(message), rejection) is saved
+
+
+def test_a_message_the_game_couldn_t_read_is_saved(range_game):
+    state = _started(target=3)
+    message = {"type": "shot", "message": {"at": "near"}}
+    with pytest.raises(Reject) as rejection:
+        range_game.apply(state, "1", message, 0, Sent())
+    assert range_game.save_message(state, "1", message, rejection.value) is True
+
+
+def test_psynet_s_ready_messages_are_saved_whatever_the_game_says(registry):
+    class Quiet(LiveGame):
+        channel = "quiet"
+        messages = [Shot]
+
+        def initial_state(self, players):
+            return {"target": 3}
+
+        def view(self, state, player_id):
+            return {}
+
+        def save_message(self, state, player_id, message, rejection):
+            return False
+
+        def bot(self, view, player_id, now):
+            return None
+
+    state = _started(target=3)
+    assert Quiet().save_message(state, "1", READY, None) is True
+    assert Quiet().save_message(state, "1", _shot(3), None) is False
+
+
+@pytest.mark.parametrize("max_players", [0, 1, 2.0, True])
+def test_max_players_must_be_a_whole_number_of_at_least_min_players(
+    registry, max_players
+):
+    with pytest.raises(ValueError, match="max_players must be None or a whole"):
+        # Defining the subclass checks it.
+        type("TooFew", (LiveGame,), {"max_players": max_players})
+
+
+def test_a_group_larger_than_the_game_s_max_players_is_refused(pair, monkeypatch):
+    members, game_barrier = pair
+    monkeypatch.setattr(type(_pick_numbers()), "min_players", 1)
+    monkeypatch.setattr(type(_pick_numbers()), "max_players", 1)
+
+    with pytest.raises(ValueError, match="has a max_players of 1"):
+        game_barrier._start_session(members)
+
+
+def test_a_session_lists_its_players_in_participant_id_order(pair, monkeypatch):
+    members, game_barrier = pair
+    started = []
+    monkeypatch.setattr(
+        "psynet.live_session.play.create_realtime_session",
+        lambda game_class, players, bots=(): started.append(players) or 1,
+    )
+
+    game_barrier._start_session(list(reversed(members)))
+
+    assert started == [sorted(member.id for member in members)]

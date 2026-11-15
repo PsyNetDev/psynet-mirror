@@ -567,6 +567,18 @@
       return now === null ? null : Math.max(0, times.ends_at - now);
     }
 
+    /**
+     * Return the session time now, in seconds, the same clock as ``now``
+     * in the game's methods on the server, or ``null`` before the page knows
+     * it. Use it with a session time from the view, such as when a crashed
+     * player comes back.
+     *
+     * @returns {number|null} The session time
+     */
+    function sessionTime() {
+      return pageSocket().sessionTime();
+    }
+
     function passOn(name) {
       return function (callback) {
         pageSocket()[name](callback);
@@ -609,6 +621,17 @@
         return pageState().ended;
       },
       /**
+       * Whether the session is being played: it has started and hasn't
+       * ended. Check it before sending a message from a key press, for
+       * example, and use ``enableWhilePlaying`` for controls that are
+       * enabled whenever it's ``true``. Reading it doesn't join the session.
+       *
+       * @member {boolean} playing
+       */
+      get playing() {
+        return pageState().startedView !== null && !pageState().ended;
+      },
+      /**
        * Seconds the page shows the session's result for once it's saved,
        * before moving on by itself: the control's ``show_result_for``, or 0.
        * Use it for a countdown. Reading it doesn't join the session.
@@ -632,6 +655,7 @@
         return times === null ? null : times.ends_at - times.started_at;
       },
       secondsLeft: secondsLeft,
+      sessionTime: sessionTime,
       send: send,
       onStarted: onStarted,
       enableWhilePlaying: enableWhilePlaying,

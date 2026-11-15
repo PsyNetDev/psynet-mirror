@@ -203,3 +203,18 @@ def _non_string_key(value, seen=None):
             if found is not None:
                 return found
     return None
+
+
+def _saves_ready_messages(method):
+    """Save PsyNet's own messages, such as PlayerReady, whatever the game's
+    save_message says, since the record needs them to show when each player
+    became ready."""
+
+    @functools.wraps(method)
+    def save_message(self, state, player_id, message, rejection):
+        if isinstance(message, dict) and message.get("type") == PlayerReady.type:
+            return True
+        return method(self, state, player_id, message, rejection)
+
+    save_message._psynet_wrapper = True
+    return save_message

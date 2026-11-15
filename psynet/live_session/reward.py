@@ -1,8 +1,10 @@
 """What PsyNet does with a live session's record as Dallinger writes it: the
 rewards from add_performance_reward, paid by effects queued during the game,
 and, once the ending is saved, the rewards from the outcome and the copy of
-the outcome on the session's round. All run in the job that writes the session's record, so each
-runs once, whether or not the players are still on the game page."""
+the outcome on the session's round. A reward is also recorded on the trial
+the game was played in, if any. All run in the job that writes the session's
+record, so each runs once, whether or not the players are still on the game
+page."""
 
 import functools
 
@@ -22,9 +24,36 @@ def _check_reward(amount, what):
     return float(amount)
 
 
-def _add_reward(participant, amount):
-    if amount:
-        participant.inc_performance_reward(amount)
+def _add_reward(participant, amount, session_row):
+    if not amount:
+        return
+    participant.inc_performance_reward(amount)
+    trial = _trial_played_in(participant, session_row)
+    if trial is not None:
+        # Added to, because the trial adds its own reward when it's
+        # finalized, which can come before or after this.
+        trial.performance_reward = (trial.performance_reward or 0) + amount
+
+
+def _trial_played_in(participant, session_row):
+    """The participant's trial in the round the session was played in, if the
+    game was played as a trial: their latest in the round, which is the one
+    whose show_trial started the session."""
+    from ..sync import SyncGroupRound
+    from ..trial.main import Trial
+
+    return (
+        db.session.query(Trial)
+        .join(SyncGroupRound, Trial.sync_group_round_id == SyncGroupRound.id)
+        .filter(
+            SyncGroupRound.live_session_id == session_row.id,
+            Trial.participant_id == participant.id,
+        )
+        .order_by(Trial.id.desc())
+        .with_for_update(of=Trial)
+        .populate_existing()
+        .first()
+    )
 
 
 def _locked_players(session_row):
@@ -57,7 +86,7 @@ def _handles_reward(method):
             )
         players = _locked_players(session_row)
         (participant,) = [p for p in players if p.id == int(player_id)]
-        _add_reward(participant, payload["amount"])
+        _add_reward(participant, payload["amount"], session_row)
 
     handle_effect._psynet_wrapper = True
     return handle_effect
@@ -85,7 +114,7 @@ def _pay_outcome_rewards(game, session_row, players):
         amount = game.performance_reward(
             session_row.outcome, session_row.end_reason, str(participant.id)
         )
-        _add_reward(participant, _check_reward(amount, what))
+        _add_reward(participant, _check_reward(amount, what), session_row)
 
 
 def _end_game_page_deadlines(session_row, players):

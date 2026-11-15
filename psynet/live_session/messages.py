@@ -66,6 +66,40 @@ class LiveMessage(BaseModel):
         """
         raise NotImplementedError
 
+    def save(self, game, state, player_id, rejection):
+        """Return whether to save this message in the session's record. By
+        default, every message is saved.
+
+        A game whose pages send many messages, such as a move many times a
+        second, can leave out the ones its analysis won't need. ``save`` runs
+        after :meth:`apply`, on the same message object, so :meth:`apply` can
+        note what the message did in a private attribute, one whose name
+        starts with an underscore, for ``save`` to read.
+
+        Parameters
+        ----------
+
+        game
+            The game.
+
+        state
+            The state after :meth:`apply`, or, for a message the game
+            rejected, the state as it was before.
+
+        player_id
+            The sender's player id.
+
+        rejection
+            The :class:`~dallinger.realtime.Reject` that :meth:`apply`
+            raised, or ``None`` if the game accepted the message.
+
+        Returns
+        -------
+
+        ``True`` to save the message, or ``False`` to leave it out.
+        """
+        return True
+
     @classmethod
     def saved_messages(cls, session_id):
         """Return the messages of this type saved for a session, in the order

@@ -218,12 +218,26 @@ class _LiveGameBarrier(GroupBarrier):
             )
 
     def _start_session(self, participants, group_round=None):
-        if len(participants) < self.game_class.min_players:
+        game_class = self.game_class
+        if len(participants) < game_class.min_players:
             return None
+        if game_class.max_players is not None and len(participants) > (
+            game_class.max_players
+        ):
+            raise ValueError(
+                f"A group of {len(participants)} reached the PlayLiveGame "
+                f"{self.id!r}, but {game_class.__name__} has a max_players of "
+                f"{game_class.max_players}. Make the groups of its group type, "
+                f"{self.group_type!r}, no larger than that."
+            )
+        # In id order, which is the order the players signed up in, so a
+        # game's initial_state and state["live_session"]["players"] list them
+        # in that order.
+        participants = sorted(participants, key=lambda member: member.id)
         token = _new_session_settings.set(self.settings)
         try:
             session_id = create_realtime_session(
-                self.game_class,
+                game_class,
                 [member.id for member in participants],
                 bots=[member.id for member in participants if isinstance(member, Bot)],
             )

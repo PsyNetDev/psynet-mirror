@@ -816,7 +816,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         reward = self.compute_performance_reward(score=self.score)
         assert isinstance(reward, (float, int))
         self._log_performance_reward(reward)
-        self.performance_reward = reward
+        # Added to, because a live game played in the trial records its own
+        # rewards on the trial too, which can come first.
+        self.performance_reward = (self.performance_reward or 0) + reward
         self.participant.inc_performance_reward(reward)
 
     def _log_performance_reward(self, reward):

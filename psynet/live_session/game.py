@@ -19,6 +19,7 @@ from .method_wrappers import (
     _STATE_METHODS,
     _ends_when_time_is_up,
     _returns_json,
+    _saves_ready_messages,
     _sends_message,
     _shows_ready_step,
     _stores_json,
@@ -92,6 +93,14 @@ class LiveGame(RealtimeGame):
     #: that a player can play alone.
     min_players = 2
 
+    #: The most players a session can have, or ``None``, the default, for no
+    #: limit. Set it when the game has something for each player that runs
+    #: out, such as a color or a starting square. A group that reaches the
+    #: :class:`PlayLiveGame` with more active members is a mistake in the
+    #: experiment's design, so the session doesn't start and PsyNet raises an
+    #: error that says so.
+    max_players = None
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         # Resolved through the MRO, so methods from a mixin are wrapped too.
@@ -105,6 +114,7 @@ class LiveGame(RealtimeGame):
             ("is_over", _ends_when_time_is_up),
             ("view", _shows_ready_step),
             ("bot", _sends_message),
+            ("save_message", _saves_ready_messages),
             ("handle_effect", _handles_reward),
             ("handle_ending", _handles_ending),
         ]:
@@ -116,6 +126,15 @@ class LiveGame(RealtimeGame):
         if not (isinstance(cls.min_players, int) and cls.min_players >= 1):
             raise ValueError(
                 f"{cls.__name__}'s min_players must be a whole number of 1 or more."
+            )
+        if cls.max_players is not None and not (
+            isinstance(cls.max_players, int)
+            and not isinstance(cls.max_players, bool)
+            and cls.max_players >= cls.min_players
+        ):
+            raise ValueError(
+                f"{cls.__name__}'s max_players must be None or a whole number of "
+                f"at least its min_players, {cls.min_players}."
             )
         if cls.ready_timeout is not None and (
             not is_number(cls.ready_timeout) or cls.ready_timeout <= 0
@@ -201,7 +220,25 @@ class LiveGame(RealtimeGame):
         itself. An override runs only once the session has started, and never
         receives a :class:`PlayerReady` message, which PsyNet handles itself.
         """
-        self.read_message(message).apply(self, state, player_id, now)
+        read = self.read_message(message)
+        # Kept for save_message, which Dallinger calls next with the same
+        # message, so that LiveMessage.save sees what apply saw.
+        self._applied = (player_id, message, read)
+        read.apply(self, state, player_id, now)
+
+    def save_message(self, state, player_id, message, rejection):
+        """Return whether to save a page's message in the session's record,
+        as in Dallinger's ``save_message``. By default, it asks the message's
+        :meth:`LiveMessage.save`, with the same message object that
+        :meth:`LiveMessage.apply` received, and saves a message the game
+        couldn't read. PsyNet always saves its own messages, such as
+        :class:`PlayerReady`, without calling this.
+        """
+        applied = getattr(self, "_applied", None)
+        self._applied = None
+        if applied is None or applied[0] != player_id or applied[1] != message:
+            return True
+        return applied[2].save(self, state, player_id, rejection)
 
     def elapsed(self, state, now):
         """Return the seconds since the session started, once every player

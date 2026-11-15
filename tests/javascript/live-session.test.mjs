@@ -253,6 +253,26 @@ describe("psynet.liveSession", () => {
     assert.equal(liveSession.started, false);
   });
 
+  it("says whether the session is being played, without joining", () => {
+    assert.equal(liveSession.playing, false);
+    assert.equal(sockets.length, 0);
+    const seen = [];
+    liveSession.onView(() => seen.push(liveSession.playing));
+    sockets[0].view(view(null));
+    sockets[0].view(view(4));
+    sockets[0].view(view(4), "finished");
+    assert.deepEqual(seen, [false, true, false]);
+    assert.ok(Object.keys(liveSession).includes("playing"));
+  });
+
+  it("gives the session time, on the same clock as the game's now", () => {
+    liveSession.onView(() => {});
+    sockets[0].time = null;
+    assert.equal(liveSession.sessionTime(), null);
+    sockets[0].time = 30;
+    assert.equal(liveSession.sessionTime(), 30);
+  });
+
   it("moves on once the result is saved, or the connection is refused", () => {
     liveSession.onView(() => {});
     sockets[0].fire("onResultSaved");
