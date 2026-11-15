@@ -23,21 +23,21 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.live_session import (
+    LiveGame,
     LiveMessage,
-    LiveSession,
     LiveSessionControl,
-    LiveSessionInitializer,
+    PlayLiveGame,
     live_session_id,
     live_session_result,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
-from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop, join
+from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop
 from psynet.trial.main import Trial
 
 # The group type of the pairs, which the grouper, the trial and the
-# initializer share.
+# PlayLiveGame share.
 GROUP = "pair"
 
 Action = Literal["rock", "paper", "scissors"]
@@ -92,7 +92,7 @@ class Choose(LiveMessage):
             state["choices"] = {player: None for player in choices}
 
 
-class RockPaperScissors(LiveSession):
+class RockPaperScissors(LiveGame):
     """A game of rock, paper, scissors between two players.
 
     The state holds the number of rounds in the game, which comes from the
@@ -105,8 +105,8 @@ class RockPaperScissors(LiveSession):
 
     channel = "rock_paper_scissors_live"
     messages = [Choose]
-    # A limit on the whole game, counted from when the pair left the
-    # initializer. A game takes a minute or two, so it ends within five
+    # A limit on the whole game, counted from when the pair finished
+    # waiting for each other. A game takes a minute or two, so it ends within five
     # minutes even if a player leaves it.
     max_duration = 300
 
@@ -196,20 +196,19 @@ class RockPaperScissorsTrial(Trial):
 
     def show_trial(self, experiment, participant):
         game = self.definition
-        return join(
-            # Starting the session closes the pair's round, as releasing any
-            # group barrier in a cued trial does.
-            LiveSessionInitializer(
-                id_="rock_paper_scissors",
-                group_type=GROUP,
-                game_type=RockPaperScissors,
-                settings={"rounds": game["rounds"]},
-                # A player whose partner doesn't arrive leaves the pair, and
-                # goes on to the game page without a session.
-                max_wait_time=PARTNER_WAIT_SECONDS,
-                max_wait_action="leave_group",
-            ),
-            ModularPage(
+        # PlayLiveGame waits for the pair, starts their session and shows the
+        # game page. Starting the session closes the pair's round, as
+        # releasing any group barrier in a cued trial does.
+        return PlayLiveGame(
+            id_="rock_paper_scissors",
+            group_type=GROUP,
+            game_class=RockPaperScissors,
+            settings={"rounds": game["rounds"]},
+            # A player whose partner doesn't arrive leaves the pair, and goes
+            # on to the game page without a session.
+            max_wait_time=PARTNER_WAIT_SECONDS,
+            max_wait_action="leave_group",
+            page=ModularPage(
                 "rock_paper_scissors",
                 Prompt(
                     tags.div(
@@ -242,7 +241,6 @@ class RockPaperScissorsTrial(Trial):
                     )
                 ),
                 LiveSessionControl(
-                    "rock_paper_scissors",
                     player_left_message=(
                         "Your partner has left the game. If they don't come "
                         "back, it will end in a few minutes."

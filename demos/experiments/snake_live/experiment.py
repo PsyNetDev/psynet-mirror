@@ -17,10 +17,10 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.live_session import (
+    LiveGame,
     LiveMessage,
-    LiveSession,
     LiveSessionControl,
-    LiveSessionInitializer,
+    PlayLiveGame,
     live_session_id,
     live_session_result,
 )
@@ -170,7 +170,7 @@ class Turn(LiveMessage):
         turns.append(self.direction)
 
 
-class Snake(LiveSession):
+class Snake(LiveGame):
     """A group of players steer snakes around one board.
 
     The state holds each player's snake, listed head first and empty while
@@ -189,11 +189,11 @@ class Snake(LiveSession):
     # next tick, so the sender gets its view with that tick, like everyone
     # else.
     send_views_on_messages = False
-    # A limit on the whole game, counted from when the group left the
-    # initializer: the longest the ready step can take, the round, and 30
+    # A limit on the whole game, counted from when the group finished
+    # waiting for each other: the longest the ready step can take, the round, and 30
     # seconds to spare. Without the spare time, a round that starts at the
     # ready timeout would end before its last tick.
-    max_duration = LiveSession.ready_timeout + ROUND_SECONDS + 30
+    max_duration = LiveGame.ready_timeout + ROUND_SECONDS + 30
 
     def initial_state(self, players):
         ordered = sorted(players, key=int)
@@ -266,7 +266,7 @@ class Snake(LiveSession):
             },
         }
 
-    def bonus(self, outcome, reason, player_id):
+    def performance_reward(self, outcome, reason, player_id):
         return BONUS_PER_FOOD * outcome["food"][player_id]
 
     def bot(self, view, player_id, now):
@@ -371,38 +371,38 @@ class Exp(psynet.experiment.Experiment):
             # A participant who waits longer than this leaves the experiment.
             max_wait_time=300,
         ),
-        LiveSessionInitializer(
-            id_="snake_live",
+        PlayLiveGame(
             group_type="snake",
-            game_type=Snake,
-        ),
-        ModularPage(
-            "snake_live",
-            Prompt(
-                tags.div(
-                    tags.h4(id="snake-status"),
-                    tags.p(
-                        "Time left: ",
-                        tags.span(ROUND_SECONDS, id="snake-timer"),
-                        id="snake-time",
-                    ),
-                    tags.canvas(
-                        id="snake-board",
-                        width=SIZE * SQUARE,
-                        height=SIZE * SQUARE,
-                        tabindex="0",
-                        aria_label="The board your snake moves around",
-                    ),
-                    tags.ul(id="snake-scores"),
-                    id="snake-game",
-                )
+            game_class=Snake,
+            id_="snake_live",
+            page=ModularPage(
+                "snake_live",
+                Prompt(
+                    tags.div(
+                        tags.h4(id="snake-status"),
+                        tags.p(
+                            "Time left: ",
+                            tags.span(ROUND_SECONDS, id="snake-timer"),
+                            id="snake-time",
+                        ),
+                        tags.canvas(
+                            id="snake-board",
+                            width=SIZE * SQUARE,
+                            height=SIZE * SQUARE,
+                            tabindex="0",
+                            aria_label="The board your snake moves around",
+                        ),
+                        tags.ul(id="snake-scores"),
+                        id="snake-game",
+                    )
+                ),
+                LiveSessionControl(),
+                js_page_modules=["/static/snake.js"],
+                css_links=["/static/snake.css"],
+                js_vars={"snake_rules": RULES},
+                time_estimate=60,
+                save_answer="snake_live",
             ),
-            LiveSessionControl("snake_live"),
-            js_page_modules=["/static/snake.js"],
-            css_links=["/static/snake.css"],
-            js_vars={"snake_rules": RULES},
-            time_estimate=60,
-            save_answer="snake_live",
         ),
         PageMaker(show_result, time_estimate=5),
     )

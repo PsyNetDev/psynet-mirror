@@ -19,10 +19,10 @@ from pydantic import Field
 
 import psynet.experiment
 from psynet.live_session import (
+    LiveGame,
     LiveMessage,
-    LiveSession,
     LiveSessionControl,
-    LiveSessionInitializer,
+    PlayLiveGame,
     live_session_id,
     live_session_result,
 )
@@ -218,7 +218,7 @@ class Move(LiveMessage):
         advance(state, player_id, self.dx, self.dy, seconds, now)
 
 
-class SharedCanvas(LiveSession):
+class SharedCanvas(LiveGame):
     """Players move around a canvas and collect coins.
 
     The state holds each player's position, velocity and coins, the coins
@@ -237,11 +237,11 @@ class SharedCanvas(LiveSession):
     # Pages send many moves a second and show their own at once, so the
     # sender gets its view with the next tick, like everyone else.
     send_views_on_messages = False
-    # A limit on the whole game, counted from when the group left the
-    # initializer: the longest the ready step can take, the round, and 30
+    # A limit on the whole game, counted from when the group finished
+    # waiting for each other: the longest the ready step can take, the round, and 30
     # seconds to spare. Without the spare time, a round that starts at the
     # ready timeout would end before its last tick.
-    max_duration = LiveSession.ready_timeout + ROUND_SECONDS + 30
+    max_duration = LiveGame.ready_timeout + ROUND_SECONDS + 30
 
     def initial_state(self, players):
         ordered = sorted(players, key=int)
@@ -337,7 +337,7 @@ class SharedCanvas(LiveSession):
             "collected": state["collected"],
         }
 
-    def bonus(self, outcome, reason, player_id):
+    def performance_reward(self, outcome, reason, player_id):
         return BONUS_PER_COIN * outcome["coins"][player_id]
 
     def save_message(self, state, player_id, message, rejection):
@@ -510,38 +510,38 @@ class Exp(psynet.experiment.Experiment):
             # A participant who waits longer than this leaves the experiment.
             max_wait_time=300,
         ),
-        LiveSessionInitializer(
-            id_="shared_canvas_live",
+        PlayLiveGame(
             group_type="canvas",
-            game_type=SharedCanvas,
-        ),
-        ModularPage(
-            "shared_canvas_live",
-            Prompt(
-                tags.div(
-                    tags.h4(id="canvas-status"),
-                    tags.p(
-                        "Time left: ",
-                        tags.span(ROUND_SECONDS, id="canvas-timer"),
-                        id="canvas-time",
-                    ),
-                    tags.canvas(
-                        id="canvas",
-                        width=SIZE,
-                        height=SIZE,
-                        tabindex="0",
-                        aria_label="The canvas you move around",
-                    ),
-                    tags.ul(id="canvas-scores"),
-                    id="canvas-game",
-                )
+            game_class=SharedCanvas,
+            id_="shared_canvas_live",
+            page=ModularPage(
+                "shared_canvas_live",
+                Prompt(
+                    tags.div(
+                        tags.h4(id="canvas-status"),
+                        tags.p(
+                            "Time left: ",
+                            tags.span(ROUND_SECONDS, id="canvas-timer"),
+                            id="canvas-time",
+                        ),
+                        tags.canvas(
+                            id="canvas",
+                            width=SIZE,
+                            height=SIZE,
+                            tabindex="0",
+                            aria_label="The canvas you move around",
+                        ),
+                        tags.ul(id="canvas-scores"),
+                        id="canvas-game",
+                    )
+                ),
+                LiveSessionControl(),
+                js_page_modules=["/static/shared-canvas.js"],
+                css_links=["/static/shared-canvas.css"],
+                js_vars={"canvas_rules": RULES},
+                time_estimate=60,
+                save_answer="shared_canvas_live",
             ),
-            LiveSessionControl("shared_canvas_live"),
-            js_page_modules=["/static/shared-canvas.js"],
-            css_links=["/static/shared-canvas.css"],
-            js_vars={"canvas_rules": RULES},
-            time_estimate=60,
-            save_answer="shared_canvas_live",
         ),
         PageMaker(show_result, time_estimate=5),
     )
