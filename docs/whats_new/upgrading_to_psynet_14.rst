@@ -465,7 +465,13 @@ lacks its own. PsyNet needs Python 3.11 or later and recommends 3.14.
 
 * ``psynet setup --docker`` is removed; run ``psynet setup``, then
   ``psynet debug local --docker``.
-* ``psynet services ensure`` starts PostgreSQL and Redis in Docker.
+* ``psynet services ensure`` starts PostgreSQL and Redis in Docker. It runs
+  PostgreSQL 18, which can't open the data of the PostgreSQL 12
+  ``dallinger_postgres`` container that earlier versions started. It, and
+  ``psynet debug local`` and ``psynet test local``, offer to replace that
+  container (``psynet services ensure --yes`` replaces it without asking), and
+  your local database then starts empty. The old data stays in the
+  ``dallinger_postgres`` volume.
 
 See :doc:`/install` and :doc:`/code/project/creating_an_experiment`.
 
@@ -489,6 +495,16 @@ debug, test or deploy command stops once and lists them.
   instead of packaging the source code.
 
 See :doc:`upgrading_deployment_file_selection`.
+
+A docker-ssh server set up by Dallinger 13.0 or earlier keeps PostgreSQL 12
+until ``dallinger docker-ssh servers upgrade`` moves it to PostgreSQL 18. That
+upgrade stops every classic app on the server while it copies the databases,
+and afterwards no one may deploy to the server with PsyNet 13 or earlier or
+with PsyNet 14.0.0rc1 to rc3.
+A Cloudflare-ingress app deployed with Dallinger 13.0 or earlier keeps
+PostgreSQL 12 when you update it with ``--update``. Read
+:ref:`Moving to PostgreSQL 18 <upgrading_to_postgresql_18>` before you
+upgrade a server.
 
 15. Failing participants and trial maker arguments
 --------------------------------------------------
