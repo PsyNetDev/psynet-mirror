@@ -384,7 +384,7 @@ def _terminate_connections(cursor, name):
     """Terminate the other client connections to database ``name``.
 
     ``DROP DATABASE ... WITH (FORCE)`` would do this, but needs PostgreSQL 13,
-    and ``psynet services ensure`` starts PostgreSQL 12. Autovacuum workers
+    and a PostgreSQL installed on the machine may be older. Autovacuum workers
     are left alone: only a superuser may terminate them, and ``CREATE
     DATABASE`` and ``DROP DATABASE`` stop them anyway.
     """

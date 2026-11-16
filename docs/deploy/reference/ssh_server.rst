@@ -228,7 +228,8 @@ All classic apps share these services, defined in ``~/dallinger/docker-compose.y
 
 Cloudflare-ingress apps instead run their own Postgres in the Compose project
 and reach the internet through ``cloudflared``. They do not publish ports
-80/443. Every app also has an unprivileged front-door Caddy and a private
+80/443. One deployed with Dallinger 13.0 or earlier keeps PostgreSQL 12 when
+updated with ``--update`` (see :ref:`Moving to PostgreSQL 18 <upgrading_to_postgresql_18>`). Every app also has an unprivileged front-door Caddy and a private
 hibernation controller.
 
 Every service has the restart policy ``unless-stopped``, so Docker restarts
@@ -344,7 +345,9 @@ commands do:
   app first, because its directory is where the new routes go. Shared
   services whose configuration changed are recreated, which briefly
   interrupts every classic app on the server, so upgrade when no classic
-  experiment is live.
+  experiment is live. On a server set up by Dallinger 13.0 or earlier, it
+  also moves the shared database to PostgreSQL 18 and stops every classic app
+  while it copies the databases (see :ref:`Moving to PostgreSQL 18 <upgrading_to_postgresql_18>`).
 
 When these commands write the server's ``Caddyfile``, they write it for the
 server's own DNS name (see :ref:`ssh_server_addresses`). Caddy gives Let's Encrypt the contact email
