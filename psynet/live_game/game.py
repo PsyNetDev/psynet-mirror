@@ -273,8 +273,8 @@ class LiveGame(RealtimeGame):
 
     def answer(self, outcome, reason, player):
         """Return a player's answer on the game page, which is also their
-        trial's answer when the game is played as a trial. By default, it's
-        the whole outcome. Return only the player's part, such as
+        trial's answer when the game is played as a trial. It covers the
+        player's time in the game. By default, it's the whole outcome. Return only the player's part, such as
         ``outcome["payoffs"][player]``, so the trial doesn't hold the
         other players' data and code reading it doesn't need the player's
         number.
@@ -285,11 +285,12 @@ class LiveGame(RealtimeGame):
         ----------
 
         outcome
-            What the game's ``outcome`` returned.
+            What the game's ``outcome`` returned when the player's game
+            ended, which is when the game ends.
 
         reason
-            Why the game ended. It's the ``reason`` that the game's
-            ``outcome`` received.
+            Why the player's game ended. It's the ``reason`` that the
+            game's ``outcome`` received.
 
         player
             The player's number: 0 for the first player, 1 for the next,
@@ -305,7 +306,7 @@ class LiveGame(RealtimeGame):
     def performance_reward(self, outcome, reason, player):
         """Return the reward a player earns from the game's outcome, such as
         their winnings. PsyNet adds it to each player's performance reward
-        once, when the game's result is saved, however the game ended,
+        once, when their result is saved, however the game ended,
         and also for a player who has left the game page. It isn't paid for a
         game that failed without an outcome, because its record couldn't be
         saved or its ``outcome`` raised an error. When the game is played in a
@@ -316,11 +317,12 @@ class LiveGame(RealtimeGame):
         ----------
 
         outcome
-            What the game's ``outcome`` returned.
+            What the game's ``outcome`` returned when the player's game
+            ended, which is when the game ends.
 
         reason
-            Why the game ended. It's the ``reason`` that the game's
-            ``outcome`` received.
+            Why the player's game ended. It's the ``reason`` that the
+            game's ``outcome`` received.
 
         player
             The player's number: 0 for the first player, 1 for the next,

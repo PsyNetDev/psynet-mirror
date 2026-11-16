@@ -703,8 +703,10 @@
         return pageState().startedView !== null;
       },
       /**
-       * Whether the game has ended. ``onView``'s callbacks see it already
-       * updated for the final view. Reading it doesn't join the game.
+       * Whether this player's game has ended, so the page gets no more
+       * views and the game ignores its messages. So far, that's when the
+       * game ends. ``onView``'s callbacks see it already updated for the
+       * final view. Reading it doesn't join the game.
        *
        * @member {boolean} ended
        */
@@ -768,9 +770,9 @@
        */
       onRejected: passOn("onRejected"),
       /**
-       * Call ``callback`` once, when the page learns the game has ended,
-       * with why it ended and this player's final view. Dallinger's
-       * ``Socket.onEnded`` lists the reasons.
+       * Call ``callback`` once, when the page learns this player's game
+       * has ended (see ``ended``), with why it ended and this player's
+       * final view. Dallinger's ``Socket.onEnded`` lists the reasons.
        *
        * @function onEnded
        * @param {function} callback - Called with the reason and the view
@@ -778,8 +780,9 @@
        */
       onEnded: passOn("onEnded"),
       /**
-       * Call ``callback`` once the game's result has been saved, after
-       * it ends. The page then moves on by itself, after the control's
+       * Call ``callback`` once this player's result, their answer and
+       * reward, has been saved, after their game ends. The page then moves
+       * on by itself, after the control's
        * ``show_result_for`` seconds, unless its ``auto_advance`` is
        * ``False``.
        *

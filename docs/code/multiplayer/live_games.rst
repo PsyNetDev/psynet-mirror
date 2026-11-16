@@ -325,8 +325,9 @@ Whether there's a game to play:
 - ``hasGame`` says whether the group started a game at the
   ``PlayLiveGame``. Without one, PsyNet shows the participant a notice, and
   the other methods throw an error. Check it first.
-- ``started`` says whether the game has started, and ``ended`` whether it
-  has ended. In ``onView``, both are already up to date for the view. On a
+- ``started`` says whether the game has started, and ``ended`` whether the
+  player's game has ended, which so far is when the game ends (see `The
+  end`_). In ``onView``, both are already up to date for the view. On a
   page that opens after the end, ``started`` stays ``false``, so check
   ``ended`` first. ``playing`` says whether it has started and not ended,
   for a check such as before sending a key press.
@@ -392,13 +393,14 @@ Events in the game:
 - ``onStarted(callback)`` calls ``callback`` with the first view once the
   game has started, or at once if it already has. A page that opens after
   the game has ended gets ``onEnded`` instead.
-- ``onEnded(callback)`` calls ``callback`` once the game ends, with why it
-  ended and the player's final view, which ``onView`` has already had.
+- ``onEnded(callback)`` calls ``callback`` once the player's game ends,
+  with why it ended and the player's final view, which ``onView`` has
+  already had.
 - ``onPlayersAway(callback)`` calls ``callback`` with the numbers of the
   players who have left the game page and not come back (see `Joining and
   leaving`_).
 - ``onResultSaved(callback)`` and ``onRefused(callback)`` call ``callback``
-  once the game's result is saved, or with the close code and reason if
+  once the player's result is saved, or with the close code and reason if
   the server refuses the page's connection. Either way, the page then moves
   on by itself (see `The end`_).
 
@@ -446,13 +448,17 @@ the participant the reason with ``showRejections``, or match the number
 The end
 ~~~~~~~
 
+A player's game ends when the game ends, for every player at once. Their
+answer and reward are then worked out from the outcome and saved, which
+this page calls the player's result.
+
 ``onView`` gets the final view with ``ended`` set, and ``onEnded`` runs,
 and the game ignores any message sent after that. If the game fails,
 the final view can be ``null``. The example reads the view only before
 the end, so it allows for that.
 
-The participant can leave the page only once the game's result is
-saved, a few seconds after the game ends, and the page then moves on by
+The participant can leave the page only once their result is saved, a few
+seconds after the game ends, and the page then moves on by
 itself. Until then its Next button is hidden. A participant without a
 game still sees it, so they can move on. So does a participant whose
 page has been disconnected for ten seconds: if they click it, the page
@@ -671,7 +677,8 @@ The answer
 ----------
 
 The game page's answer comes from the game's outcome: what the game's
-``outcome`` method returned when the game ended. PsyNet sets it on the
+``outcome`` method returned when the player's game ended. It covers the
+player's time in the game. PsyNet sets it on the
 server and ignores what the page sends, and a participant without a game
 gets ``None``. By default, every player's answer is the whole outcome. Define
 ``answer(outcome, reason, player)`` to give each player only their own
@@ -715,7 +722,7 @@ Rewards
 A game can add to each player's performance reward in two ways. Each amount
 must be a number of 0 or more. For a reward based on the outcome, define
 ``performance_reward(outcome, reason, player)`` to return the player's
-reward. PsyNet pays it to each player once, when the game's result is saved,
+reward. PsyNet pays it to each player once, when their result is saved,
 however the game ended, so a player who left the game page early is paid
 too. This game pays 0.10 for a win:
 
