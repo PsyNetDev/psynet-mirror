@@ -496,6 +496,16 @@ debug, test or deploy command stops once and lists them.
 
 See :doc:`upgrading_deployment_file_selection`.
 
+A docker-ssh server set up by Dallinger 13.0 or earlier keeps PostgreSQL 12
+until ``dallinger docker-ssh servers upgrade`` moves it to PostgreSQL 18. That
+upgrade stops every classic app on the server while it copies the databases,
+and afterwards no one may deploy to the server with PsyNet 13 or earlier or
+with PsyNet 14.0.0rc1 to rc3.
+A Cloudflare-ingress app deployed with Dallinger 13.0 or earlier keeps
+PostgreSQL 12 when you update it with ``--update``. Read
+:ref:`Moving to PostgreSQL 18 <upgrading_to_postgresql_18>` before you
+upgrade a server.
+
 15. Failing participants and trial maker arguments
 --------------------------------------------------
 

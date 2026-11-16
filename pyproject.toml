@@ -56,10 +56,8 @@ dependencies = [
 # this runtime.
 experiment = [
     "babel",
-    # Dallinger#10287 (participant socket admission and scope check), first
-    # released in 13.0.0, is a security requirement for directed timeline-hold
-    # wakes: never lower this bound below it.
-    "dallinger[docker]>=13.0.0,<14",
+    # 13.1.0 runs local PostgreSQL 18, which `psynet services ensure` matches.
+    "dallinger[docker]>=13.1.0,<14",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
