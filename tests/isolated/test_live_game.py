@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy
 import pytest
@@ -38,6 +39,7 @@ from psynet.live_game import (
     live_game_result,
 )
 from psynet.live_game import registry as game_registry
+from psynet.live_game.messages import _session_participant_ids
 from psynet.live_game.testing import LocalGame, start_game
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
@@ -1755,11 +1757,14 @@ def test_live_game_handles_every_hook_of_dallingers_game():
         "outcome",
         "on_join",
         "on_leave",
+        "on_add",
+        "is_done",
         "save_message",
         "bot",
         "queue_effect",
         "handle_effect",
         "handle_ending",
+        "handle_player_ending",
     }
 
 
@@ -2502,3 +2507,111 @@ def test_a_game_numbers_its_players_in_seat_order(pair, monkeypatch):
     game_barrier._start_session(members, group)
 
     assert started == [[members[1].id, members[0].id]]
+
+
+def _growing_picks():
+    return sys.modules[type(get_experiment()).__module__].GrowingPicks
+
+
+def test_a_player_added_to_a_game_gets_the_next_number_and_can_finish_first():
+    game = LocalGame(_growing_picks(), players=2)
+
+    assert game.add(now=1) == 2
+    game.send(2, _pick(4))
+
+    assert game.is_done(2) and not game.is_done(0)
+    with pytest.raises(Reject, match="Your game has ended"):
+        game.send(2, _pick(5))
+    assert game.answer(2) == [None, None, 4]
+
+
+def test_players_whose_game_has_ended_leave_too_few_for_the_game(monkeypatch):
+    growing = _growing_picks()
+    monkeypatch.setattr(growing, "away_timeout", 30)
+    monkeypatch.setattr(growing, "min_players", 2)
+    game = LocalGame(growing, players=3)
+
+    game.leave(1, now=5)
+    # With three players, the game can lose one, so it goes on to its timeout.
+    assert game.game.next_deadline(game.state) == 60
+    game.send(0, _pick(3))
+    # Players 1 and 2 still play, so it ends once player 1 has been away
+    # for its away_timeout.
+    assert game.game.next_deadline(game.state) == 5 + 30
+    game.send(2, _pick(4))
+    # Player 1 alone is too few at once.
+    assert game.game.next_deadline(game.state) == 0
+
+
+def test_a_newcomer_joins_the_group_s_running_game_and_finishes_before_it(
+    db_session,
+):
+    experiment = get_experiment()
+    members = [new_participant(experiment) for _ in range(3)]
+    group = SimpleSyncGroup(
+        group_type="pair",
+        initial_group_size=2,
+        max_group_size=3,
+        quorum=1,
+        n_active_participants=2,
+        below_quorum="continue_without_group",
+    )
+    db_session.add(group)
+    for member in members[:2]:
+        member.status = "working"
+        group.add_participant(member)
+    group.leader = members[0]
+    db_session.commit()
+    with pytest.raises(TypeError, match="has no on_add method"):
+        _play(join_running_game=True)
+    page = ModularPage("growing", "Play.", LiveGameControl(), time_estimate=5)
+    barrier = _play(
+        "growing", page, game_class=_growing_picks(), join_running_game=True
+    ).barrier
+    for member in members[:2]:
+        _arrive(barrier, member)
+    session_id = live_game_id(members[0], "growing")
+
+    members[2].status = "working"
+    group.add_participant(members[2])
+    _reach(barrier, members[2])
+    db.session.commit()
+
+    assert live_game_id(members[2], "growing") == session_id
+    first, second, newcomer = (str(member.id) for member in members)
+    _play_to_the_end(
+        session_id,
+        [
+            (first, 1, READY),
+            (second, 1, READY),
+            (newcomer, 1, READY),
+            (first, 2, {"type": "pick", "message": {"number": 3}}),
+            (newcomer, 2, {"type": "pick", "message": {"number": 4}}),
+            (second, 2, {"type": "pick", "message": {"number": 5}}),
+        ],
+    )
+
+    members = [
+        db.session.get(Participant, int(member)) for member in (first, second, newcomer)
+    ]
+    assert _session_participant_ids(session_id) == [m.id for m in members]
+    # Each player is paid once, from the outcome when their own game ended.
+    assert [_reward(m) for m in members] == pytest.approx([0.03, 0.05, 0.04])
+    answers = []
+    for member in members:
+        response = SimpleNamespace(answer=None)
+        page.control.validate(response, member)
+        answers.append(response.answer)
+    assert answers == [[3, None, None], [3, 5, 4], [3, None, 4]]
+    growing = _growing_picks()
+    ((joined),) = growing.moments(session_id)
+    # Added before the game started.
+    assert (joined.name, joined.data, joined.time < 0) == (
+        "joined",
+        {"player": 2},
+        True,
+    )
+    assert growing.checkpoints(session_id)[-1].state == {
+        "picks": [3, 5, 4],
+        "pick_reward": 0,
+    }

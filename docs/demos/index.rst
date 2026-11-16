@@ -471,10 +471,11 @@ Groups
     the team shares. :doc:`/code/multiplayer/live_games`.
 
 `experiments/microsociety_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety_live>`__
-    The live counterpart of ``microsociety``: each round, the members of a
-    fishing society steer boats between fishing spots and see who catches
-    what, where, while newcomers join and the longest-serving members
-    retire between rounds. :doc:`/code/multiplayer/live_games`.
+    The live counterpart of ``microsociety``, played as one continuous
+    game: the members of a fishing society steer boats between fishing
+    spots and see who catches what, where, while newcomers sail onto the
+    lake and each member leaves once their time is up or a newcomer takes
+    their place. :ref:`live-games-join-and-finish`.
 
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
     A multi-room chat written directly on WebSockets rather than

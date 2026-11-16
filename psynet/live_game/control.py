@@ -19,7 +19,7 @@ from ..timeline import ResponseNotReady
 from ..utils import get_translator
 from .messages import _game_channel, _session_game_class, _session_participant_ids
 from .play import _check_reached_game, live_game_id
-from .result import _has_outcome, live_game_result
+from .result import _has_outcome, _player_ending, live_game_result
 
 # Seconds a page waits before resending a response refused because the
 # game's result isn't saved yet.
@@ -115,6 +115,8 @@ class LiveGameControl(NullControl):
         session_id = live_game_id(participant, self._play_id())
         if session_id is None or live_game_result(session_id) is not None:
             return None
+        if _player_ending(session_id, participant.id) is not None:
+            return None
         _check_session_can_still_end(session_id)
         _p = get_translator(context=True)
         return ResponseNotReady(
@@ -138,19 +140,31 @@ class LiveGameControl(NullControl):
         return ends + timedelta(seconds=self.show_result_for)
 
     def validate(self, response, participant, **kwargs):
-        # check_ready_for_response has already seen the game end, and an
-        # ended game's row doesn't change, so this result is final.
+        # check_ready_for_response has already seen the player's game end,
+        # and neither a player's saved ending nor an ended game's row
+        # changes, so this result is final.
         session_id = live_game_id(participant, self._play_id())
         if session_id is None:
             response.answer = None
             return None
-        result = live_game_result(session_id)
-        if not _has_outcome(result.status, result.outcome):
-            response.answer = None
+        ended_early = _player_ending(session_id, participant.id)
+        if ended_early is not None:
+            reason, outcome = ended_early
         else:
-            game = _session_game_class(session_id)()
-            player = _session_participant_ids(session_id).index(participant.id)
-            response.answer = game.answer(result.outcome, result.end_reason, player)
+            result = live_game_result(session_id)
+            if not _has_outcome(result.status, result.outcome):
+                response.answer = None
+                return None
+            reason, outcome = result.end_reason, result.outcome
+        participant_ids = _session_participant_ids(session_id)
+        if participant.id not in participant_ids:
+            # Added to a game that ended before it could add them.
+            response.answer = None
+            return None
+        game = _session_game_class(session_id)()
+        response.answer = game.answer(
+            outcome, reason, participant_ids.index(participant.id)
+        )
         return None
 
     def _play_id(self):

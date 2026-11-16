@@ -1,24 +1,24 @@
-"""A live microsociety: a fishing society that keeps going while its members are replaced.
+"""A live microsociety: a fishing society on a lake that keeps going while its members come and go.
 
-Each round lasts ``ROUND_SECONDS``. Every member has a boat on a lake with
-``N_SPOTS`` fishing spots, and can move it to another spot at any time;
-moving takes ``TRAVEL_SECONDS``. Every ``CATCH_SECONDS``, each boat at a spot
-catches a noisy number of fish around the spot's hidden average, and
-everyone sees who caught what, where. So members can learn where to fish
-from each other while they play. Each fish pays ``FISH_VALUE``.
+Every member has a boat on a lake with ``N_SPOTS`` fishing spots, and can
+move it to another spot at any time; moving takes ``TRAVEL_SECONDS``. Every
+``CATCH_SECONDS``, each boat at a spot catches a noisy number of fish around
+the spot's hidden average, and everyone sees who caught what, where. So
+members can learn where to fish from each other while they play. Each fish
+pays ``FISH_VALUE``.
 
-As in the ``microsociety`` demo, the society takes newcomers for as long as
-it lasts. A newcomer first sees the society's recent catches and the tips of
-members who have left, and is then admitted at the start of the next round.
-When a round has more than ``SOCIETY_SIZE`` members, the longest-serving
-member retires at its end, and a member also stops after ``MAX_ROUNDS``
-rounds. Before leaving, they leave a tip for future members.
+The lake is one live game that runs for as long as the society has members.
+A newcomer joins the society, sees where its members have been catching fish
+lately and the tips of members who have left, and then sails onto the lake
+while the others fish: the ``PlayLiveGame`` has ``join_running_game=True``,
+and the game's ``on_add`` gives them a boat. Each member fishes for
+``STAY_SECONDS``, and when a newcomer makes the lake more crowded than
+``SOCIETY_SIZE``, the longest-serving member retires. The game's ``is_done``
+ends each member's game then, so they move on and leave a tip while the
+others carry on. The lake closes once nobody is left on it.
 
-Each round is one cued ``FishingTrial`` per member, whose ``show_trial``
-returns a ``PlayLiveGame``: a live game for the society, played on the
-lake. Its ``on_release`` chooses who leaves after the round, and the
-history page reads where earlier rounds' fish were caught from each round's
-``live_game_outcome``.
+The game records each catch with ``record``, so the newcomer's page and the
+export read the society's history from ``Fishing.moments``.
 """
 
 import random
@@ -34,52 +34,47 @@ from psynet.live_game import (
     LiveMessage,
     PlayLiveGame,
     Reject,
+    live_game_id,
+    live_game_result,
 )
-from psynet.modular_page import ModularPage, NullControl, Prompt, TextControl
+from psynet.modular_page import ModularPage, Prompt, TextControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import (
-    GroupBarrier,
-    SimpleGrouper,
-    SyncGroupRound,
-    leave_group,
-)
+from psynet.sync import SimpleGrouper, leave_group
 from psynet.timeline import (
     CodeBlock,
-    Module,
     PageMaker,
+    Response,
     Timeline,
     conditional,
     join,
     switch,
-    while_loop,
 )
-from psynet.trial.main import Trial
 
+# The most members fishing at once. A newcomer beyond it makes the
+# longest-serving member retire.
 SOCIETY_SIZE = 3
-MAX_ROUNDS = 4
+STAY_SECONDS = 40
 # Average catches of the spots, which members don't see.
 SPOT_MEANS = [1, 2, 4, 2, 1, 5, 3, 2]
 N_SPOTS = len(SPOT_MEANS)
 CATCH_NOISE = 1.5
 FISH_VALUE = 0.01
-ROUND_SECONDS = 40
 CATCH_SECONDS = 3
 TRAVEL_SECONDS = 2
-# How long the lake page shows a round's results before moving on.
+# How long the lake page shows a member's results before moving on.
 RESULTS_SECONDS = 8
-# Counts from when the lake page stops showing the results.
-LATE_AFTER = 15
 GROUPING_WAIT = 120
-TOP_UP_WAIT = 30
-# Covers a newcomer reading the society's history and waiting for the round
-# in progress to end.
-NEWCOMER_MAX_WAIT = 60 + ROUND_SECONDS + RESULTS_SECONDS
-HISTORY_ROUNDS = 3
+# The catches a newcomer sees before joining.
+HISTORY_CATCHES = 10
 TIPS_SHOWN = 3
-# Other members are named by the colour of their boat, and spots by letter.
+# Members are named by the colour of their boat, and spots by letter.
 COLOURS = ["purple", "green", "pink", "grey", "orange"]
 SPOT_LETTERS = "ABCDEFGH"
+
+# Why a member's game ended, which is their game's reason.
+RETIRED = "retired"
+STAYED = "stayed"
 
 
 class Move(LiveMessage):
@@ -102,19 +97,26 @@ class Move(LiveMessage):
 class Fishing(LiveGame):
     channel = "fishing"
     messages = [Move]
-    duration = ROUND_SECONDS
+    min_players = 1
+    # Members keep coming while the lake is open, so it closes after this
+    # long even if they do.
+    timeout = 20 * 60
 
     def initial_state(self, players):
         # Each player's boat, fish and moves, in player order.
-        return {
-            "boats": [{"spot": None, "arrives_at": None} for player in players],
-            "fish": [0 for player in players],
-            "moves": [0 for player in players],
-            # Each catch: when it happened, in seconds into the game, and what
-            # each boat caught where.
-            "catches": [],
-            "next_catch_at": CATCH_SECONDS,
-        }
+        state = {"boats": [], "fish": [], "moves": [], "next_catch_at": CATCH_SECONDS}
+        state["latest"] = {"number": 0, "caught": []}
+        for player in players:
+            _launch_boat(state, joined_at=0)
+        return state
+
+    def on_add(self, state, player, now):
+        # A player added before the lake opens starts fishing when it does.
+        _launch_boat(state, joined_at=0 if now is None else now)
+        fishing = _fishing(state)
+        if len(fishing) > SOCIETY_SIZE:
+            longest = min(fishing, key=lambda p: (state["boats"][p]["joined_at"], p))
+            self._leave(state, longest, RETIRED)
 
     def next_deadline(self, state):
         return state["next_catch_at"]
@@ -123,61 +125,81 @@ class Fishing(LiveGame):
         while state["next_catch_at"] <= now:
             at = state["next_catch_at"]
             caught = []
-            for player, boat in enumerate(state["boats"]):
+            for player in _fishing(state):
+                boat = state["boats"][player]
                 if boat["spot"] is None or boat["arrives_at"] > at:
                     continue
                 mean = SPOT_MEANS[boat["spot"] - 1]
                 fish = max(0, round(random.gauss(mean, CATCH_NOISE)))
                 state["fish"][player] += fish
                 caught.append({"player": player, "spot": boat["spot"], "fish": fish})
-            state["catches"].append({"at": at, "caught": caught})
+            state["latest"] = {
+                "number": state["latest"]["number"] + 1,
+                "caught": caught,
+            }
+            self.record("catch", {"at": at, "caught": caught})
+            for player in _fishing(state):
+                if state["boats"][player]["joined_at"] + STAY_SECONDS <= at:
+                    self._leave(state, player, STAYED)
             state["next_catch_at"] = at + CATCH_SECONDS
 
+    def _leave(self, state, player, why):
+        state["boats"][player]["left"] = why
+        self.record("left", {"player": player, "why": why})
+
+    def is_done(self, state, player):
+        return state["boats"][player]["left"] or False
+
+    def is_over(self, state):
+        return not _fishing(state)
+
     def view(self, state, player):
-        labels = player_labels(len(state["boats"]), player)
-        latest = state["catches"][-1] if state["catches"] else None
+        boats = state["boats"]
+        mine = boats[player]
+        shown = [p for p in range(len(boats)) if p == player or not boats[p]["left"]]
+        who = {p: "you" if p == player else boats[p]["colour"] for p in shown}
         return {
             "travel_seconds": TRAVEL_SECONDS,
             "boats": [
                 {
-                    "who": labels[number],
-                    "spot": boat["spot"],
-                    "arrives_at": boat["arrives_at"],
+                    "who": who[p],
+                    "spot": boats[p]["spot"],
+                    "arrives_at": boats[p]["arrives_at"],
                 }
-                for number, boat in enumerate(state["boats"])
+                for p in shown
             ],
-            "fish": dict(zip(labels, state["fish"])),
-            "catch_number": len(state["catches"]),
+            "fish": {who[p]: state["fish"][p] for p in shown},
+            "stay_seconds": STAY_SECONDS,
+            "leaves_at": mine["joined_at"] + STAY_SECONDS,
+            "left": mine["left"],
+            "catch_number": state["latest"]["number"],
             "latest": [
-                {"who": labels[c["player"]], "spot": c["spot"], "fish": c["fish"]}
-                for c in (latest["caught"] if latest else [])
+                {"who": who[c["player"]], "spot": c["spot"], "fish": c["fish"]}
+                for c in state["latest"]["caught"]
+                if c["player"] in who
             ],
         }
 
     def outcome(self, state, reason):
-        spot_fish = [0] * N_SPOTS
-        for catch in state["catches"]:
-            for c in catch["caught"]:
-                spot_fish[c["spot"] - 1] += c["fish"]
         return {
             "fish": state["fish"],
             "moves": state["moves"],
-            "catches": state["catches"],
-            # The fish caught at each spot, for the history page.
-            "spot_fish": spot_fish,
+            "left": [boat["left"] for boat in state["boats"]],
         }
 
     def answer(self, outcome, reason, player):
         return {
             "fish": outcome["fish"][player],
             "moves": outcome["moves"][player],
+            # A member still fishing when the lake closed left with it.
+            "left": outcome["left"][player] or reason,
         }
 
     def performance_reward(self, outcome, reason, player):
         return outcome["fish"][player] * FISH_VALUE
 
     def bot(self, view, player, now):
-        mine = view["boats"][player]
+        mine = next(boat for boat in view["boats"] if boat["who"] == "you")
         if mine["spot"] is None:
             return Move(spot=1 + player % N_SPOTS)
         if mine["arrives_at"] > now:
@@ -195,11 +217,26 @@ class Fishing(LiveGame):
         return None
 
 
-def player_labels(n_players, player):
-    """Return each player's label, in player order: "you" for ``player``,
-    and the others' boat colours, in player order."""
-    colours = iter(COLOURS)
-    return ["you" if number == player else next(colours) for number in range(n_players)]
+def _launch_boat(state, joined_at):
+    """Give a new player a boat at the dock, in a colour no other boat on the lake has."""
+    taken = {state["boats"][p]["colour"] for p in _fishing(state)}
+    colour = next(c for c in COLOURS if c not in taken)
+    state["boats"].append(
+        {
+            "spot": None,
+            "arrives_at": None,
+            "colour": colour,
+            "joined_at": joined_at,
+            "left": None,
+        }
+    )
+    state["fish"].append(0)
+    state["moves"].append(0)
+
+
+def _fishing(state):
+    """Return the players still on the lake."""
+    return [p for p, boat in enumerate(state["boats"]) if not boat["left"]]
 
 
 def _spot(spot):
@@ -250,192 +287,148 @@ def water():
     )
 
 
-def lake(title, status, scores="", **attributes):
-    """Return the lake, which the lake page and the waiting screens share so that a round's pages look like one."""
-    return tags.div(
-        tags.div(
-            tags.span(title, cls="fish-round"),
-            tags.span(status, id="fish-status"),
-            tags.div(tags.div(id="fish-time-left"), cls="fish-clock"),
-            tags.span(id="fish-seconds", cls="fish-seconds"),
-            cls="fish-header",
-        ),
-        water(),
-        tags.p(
-            "Boats start at the dock. Click a spot to sail your boat there, "
-            f"which takes {TRAVEL_SECONDS} s. Boats at a spot catch fish "
-            f"every {CATCH_SECONDS} s.",
-            cls="fish-help",
-        ),
-        tags.div(scores, id="fish-scores", cls="fish-scores"),
-        tags.p(id="fish-rejection", cls="fish-rejection"),
-        id="fish-game",
-        **attributes,
-    )
-
-
-def lake_page(round_number):
+def lake_page():
     return ModularPage(
         "fish",
-        Prompt(lake(f"Round {round_number + 1}", "Joining the lake…")),
-        # The page shows the round's results on the lake before moving on.
-        LiveGameControl(
-            show_result_for=RESULTS_SECONDS,
-            player_left_message="A member has left the lake.",
+        Prompt(
+            tags.div(
+                tags.div(
+                    tags.span("The lake", cls="fish-round"),
+                    tags.span("Sailing to the lake…", id="fish-status"),
+                    tags.div(tags.div(id="fish-time-left"), cls="fish-clock"),
+                    tags.span(id="fish-seconds", cls="fish-seconds"),
+                    cls="fish-header",
+                ),
+                water(),
+                tags.p(
+                    "Boats start at the dock. Click a spot to sail your boat "
+                    f"there, which takes {TRAVEL_SECONDS} s. Boats at a spot "
+                    f"catch fish every {CATCH_SECONDS} s.",
+                    cls="fish-help",
+                ),
+                tags.div(id="fish-scores", cls="fish-scores"),
+                tags.p(id="fish-rejection", cls="fish-rejection"),
+                id="fish-game",
+            )
         ),
+        # The page shows the member's results on the lake before moving on.
+        LiveGameControl(show_result_for=RESULTS_SECONDS, player_left_message=None),
         js_page_modules=["/static/fishing.js"],
         css_links=["/static/fishing.css"],
-        time_estimate=ROUND_SECONDS + RESULTS_SECONDS,
-    )
-
-
-def lake_waiting_screen(participant: Participant):
-    """Show the lake while a member waits for a round, so that they stay at the lake between rounds."""
-    fish = sum(t.fish() for t in own_trials(participant))
-    return ModularPage(
-        "lake_waiting",
-        Prompt(lake("", "Waiting for the others…", f"Your catch so far: {fish} fish")),
-        NullControl(show_next_button=False),
-        css_links=["/static/fishing.css"],
-        time_estimate=5,
+        time_estimate=STAY_SECONDS + RESULTS_SECONDS,
     )
 
 
 def get_timeline():
     return Timeline(
         InfoPage(
-            "You will join a small fishing society on a lake. Each round, "
-            f"you fish for {ROUND_SECONDS} seconds. You can move your boat "
-            "between spots at any time, and you see where the others fish "
-            "and what they catch. Some spots are better than others. Members "
-            f"come and go: you play up to {MAX_ROUNDS} rounds, and each fish "
-            f"you catch pays ${FISH_VALUE:.2f}.",
+            "You will join a small fishing society on a lake. You fish for "
+            f"up to {STAY_SECONDS} seconds. You can move your boat between "
+            "spots at any time, and you see where the others fish and what "
+            "they catch. Some spots are better than others. Members come and "
+            f"go, and each fish you catch pays ${FISH_VALUE:.2f}.",
             time_estimate=15,
         ),
         SimpleGrouper(
             group_type="society",
-            initial_group_size=SOCIETY_SIZE,
+            initial_group_size=2,
+            # Room for a newcomer while a retiring member finishes up.
             max_group_size=SOCIETY_SIZE + 1,
-            quorum=2,
+            quorum=1,
             join_existing_groups=True,
-            use_admission_points=True,
-            target_group_size=2,
+            use_admission_points=False,
+            max_groups=1,
             below_quorum="continue_without_group",
             max_wait_time=GROUPING_WAIT,
             max_wait_action="continue_without_group",
-            top_up_wait=TOP_UP_WAIT,
             waiting_message="Waiting for a society to join…",
         ),
-        Module(
-            "fishing",
-            while_loop(
-                "rounds",
-                lambda participant: life_stage(participant) == "playing",
-                join(
-                    # Read while the newcomer waits to be admitted, so the
-                    # society doesn't wait for them.
-                    conditional(
-                        "newcomer",
-                        is_newcomer,
-                        PageMaker(history_page, time_estimate=20),
-                    ),
-                    GroupBarrier(
-                        id_="round_starts",
-                        group_type="society",
-                        waiting_message="Waiting for the next round to start…",
-                        late_after=LATE_AFTER,
-                        late_action="leave_group",
-                        waiting_screen=lake_waiting_screen,
-                        admission_point=True,
-                        newcomer_max_wait=NEWCOMER_MAX_WAIT,
-                    ),
-                    conditional("in_society", in_society, FishingTrial.cue()),
+        conditional(
+            "in_society",
+            in_society,
+            join(
+                conditional(
+                    "newcomer", running_lake, PageMaker(history_page, time_estimate=20)
                 ),
-                expected_repetitions=MAX_ROUNDS,
+                PlayLiveGame(
+                    group_type="society",
+                    game_class=Fishing,
+                    page=lake_page(),
+                    join_running_game=True,
+                    waiting_message="Waiting for the others to reach the lake…",
+                ),
+                leave_group("society"),
+                switch(
+                    "leaving",
+                    why_left,
+                    {
+                        RETIRED: leave_a_tip(
+                            "A newcomer has taken your place, so you retire from the society."
+                        ),
+                        STAYED: leave_a_tip("Your time on the lake is up."),
+                        "closed": InfoPage("The lake has closed.", time_estimate=5),
+                    },
+                ),
             ),
-        ),
-        leave_group("society"),
-        switch(
-            "leaving",
-            life_stage,
-            {
-                "retired": leave_a_tip(
-                    "A new member has taken your place, so you retire from the society."
-                ),
-                "played_max_rounds": leave_a_tip(
-                    f"You have played your {MAX_ROUNDS} rounds."
-                ),
-                "group_dissolved": InfoPage(
-                    "Too few members stayed, so the society ended for you.",
-                    time_estimate=5,
-                ),
-                "late": InfoPage(
-                    "You were away for too long, so you left the society.",
-                    time_estimate=5,
-                ),
-                "removed_by_experimenter": InfoPage(
-                    "You were removed from the society.", time_estimate=5
-                ),
-                "no_group_formed": InfoPage(
-                    "We couldn't find a society for you to join.", time_estimate=5
-                ),
-                "not_admitted": InfoPage(
-                    "The society you joined couldn't start a round with you, "
-                    "so you didn't play.",
-                    time_estimate=5,
-                ),
-            },
+            InfoPage("We couldn't find a society for you to join.", time_estimate=5),
         ),
         PageMaker(final_page, time_estimate=5),
     )
+
+
+def lake_answer(participant: Participant) -> Optional[dict]:
+    """Return the participant's answer on the lake page: their fish, moves and why they left."""
+    response = (
+        Response.query.filter_by(
+            participant_id=participant.id, question="fish", successful_validation=True
+        )
+        .order_by(Response.id.desc())
+        .first()
+    )
+    return None if response is None else response.answer
+
+
+def why_left(participant: Participant) -> str:
+    """Return why the member left the lake, or ``"closed"`` if it closed while they fished."""
+    left = (lake_answer(participant) or {}).get("left")
+    return left if left in (RETIRED, STAYED) else "closed"
 
 
 def in_society(participant: Participant) -> bool:
     return participant.in_sync_group("society")
 
 
-def is_newcomer(participant: Participant) -> bool:
-    """Return whether the participant has joined the society but not been admitted yet."""
-    society = participant.active_sync_groups.get("society")
-    return society is not None and participant in society.pending_participants
-
-
-def own_trials(participant: Participant) -> List["FishingTrial"]:
-    return (
-        FishingTrial.query.filter_by(participant_id=participant.id)
-        .order_by(FishingTrial.id)
-        .all()
-    )
-
-
-def life_stage(participant: Participant) -> Optional[str]:
-    """Return ``"playing"`` while the member keeps playing, otherwise why they stopped."""
-    trials = own_trials(participant)
-    last = trials[-1] if trials else None
-    if last is not None and last.var.get("leaves_as"):
-        return last.var.leaves_as
-    if "society" not in participant.active_sync_groups:
-        return participant.sync_group_removal_reason("society")
-    return "playing"
+def running_lake(participant: Participant) -> Optional[int]:
+    """Return the id of the lake the participant's society is fishing on, or None."""
+    society = participant.active_sync_groups["society"]
+    for member in society.active_participants:
+        lake_id = live_game_id(member, "fishing")
+        if lake_id is not None and live_game_result(lake_id) is None:
+            return lake_id
+    return None
 
 
 def history_page(participant: Participant):
-    """Show a newcomer where the society fished lately and the tips of members who have left."""
-    society = participant.latest_sync_group("society")
-    rounds = society.rounds("fishing")
-    scored = [r for r in rounds if r.live_game_outcome is not None]
-    tips = [t.var.tip for r in rounds for t in r.trials if t.var.has("tip")]
+    """Show a newcomer where the society has been catching fish lately and the tips of members who have left."""
+    catches = Fishing.moments(running_lake(participant), "catch")[-HISTORY_CATCHES:]
+    spot_fish = [0] * N_SPOTS
+    for moment in catches:
+        for c in moment.data["caught"]:
+            spot_fish[c["spot"] - 1] += c["fish"]
+    society = participant.active_sync_groups["society"]
+    tips = [
+        link.participant.var.tip
+        for link in society.participant_links
+        if link.participant.var.has("tip")
+    ]
     content = tags.div()
     with content:
-        tags.p("Welcome to the society.")
-        if scored:
-            tags.p("Here is how many fish were caught at each spot lately:")
-            with tags.ul():
-                for r in scored[-HISTORY_ROUNDS:]:
-                    tags.li(
-                        f"Round {r.number + 1}: "
-                        + _spot_text(r.live_game_outcome["spot_fish"])
-                    )
+        tags.p("Welcome to the society. The others are already fishing.")
+        if any(spot_fish):
+            tags.p(
+                "Here is how many fish were caught at each spot lately: "
+                + _spot_text(spot_fish)
+            )
         if tips:
             tags.p("Tips from members who have left:")
             with tags.ul():
@@ -452,48 +445,8 @@ def _spot_text(spot_fish: List[int]) -> str:
     )
 
 
-class FishingTrial(Trial):
-    sync_group_type = "society"
-    time_estimate = ROUND_SECONDS + RESULTS_SECONDS
-
-    def show_trial(self, experiment, participant):
-        return PlayLiveGame(
-            group_type="society",
-            game_class=Fishing,
-            page=lake_page(self.sync_group_round),
-            on_release=self.plan_leaving,
-            waiting_message="Waiting for the others to reach the lake…",
-            waiting_screen=lake_waiting_screen,
-        )
-
-    def fish(self) -> int:
-        """Return the fish the member caught this round."""
-        return (self.answer or {}).get("fish", 0)
-
-    @classmethod
-    def plan_leaving(
-        cls, trials: List["FishingTrial"], group_round: SyncGroupRound, group
-    ):
-        """Choose who leaves after the round: the longest-serving member if the round has too many, and anyone who has played their last round."""
-        retiring = None
-        if len(trials) > SOCIETY_SIZE:
-            seats = group.seats
-            retiring = min(trials, key=lambda t: seats[t.participant_id])
-        group_round.var.retired_id = retiring.participant_id if retiring else None
-        for trial in trials:
-            trial.var.leaves_as = _leaves_as(trial, retiring)
-
-
-def _leaves_as(trial, retiring) -> Optional[str]:
-    if trial is retiring:
-        return "retired"
-    if trial.position + 1 >= MAX_ROUNDS:
-        return "played_max_rounds"
-    return None
-
-
 def leave_a_tip(intro: str):
-    """Ask a member who is leaving in good standing for a tip, and save it."""
+    """Ask a member who is leaving for a tip, and save it."""
     return join(
         ModularPage(
             "tip",
@@ -516,13 +469,12 @@ def leave_a_tip(intro: str):
 
 def save_tip(participant: Participant):
     if participant.answer.strip():
-        own_trials(participant)[-1].var.tip = participant.answer
+        participant.var.tip = participant.answer
 
 
 def final_page(participant: Participant):
-    fish = sum(t.fish() for t in own_trials(participant))
     return InfoPage(
-        f"You caught {fish} fish. Your bonus is ${participant.performance_reward:.2f}.",
+        f"Thank you for fishing. Your bonus is ${participant.performance_reward:.2f}.",
         time_estimate=5,
     )
 
@@ -534,89 +486,62 @@ class Exp(psynet.experiment.Experiment):
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
-        """Return one row per member per round and one per society per round."""
-        trials = FishingTrial.query.order_by(FishingTrial.id).all()
-        rounds = SyncGroupRound.query.filter_by(module_id="fishing").order_by(
-            SyncGroupRound.sync_group_id, SyncGroupRound.number
-        )
+        """Return one row per member and one per catch."""
+        members = Participant.query.order_by(Participant.id).all()
+        lake_ids = sorted({live_game_id(p, "fishing") for p in members} - {None})
         return {
-            "member_round": [
+            "member": [
                 {
-                    "society_id": t.sync_group_id,
-                    "round": t.sync_group_round,
-                    "participant_id": t.participant_id,
-                    "trial_id": t.id,
-                    "tenure": t.position,
-                    "group_status": t.sync_group_outcome,
-                    "fish": t.fish(),
-                    "moves": (t.answer or {}).get("moves"),
-                    "leaves_as": t.var.get("leaves_as"),
+                    "participant_id": p.id,
+                    "lake_id": live_game_id(p, "fishing"),
+                    "fish": (lake_answer(p) or {}).get("fish"),
+                    "left": (lake_answer(p) or {}).get("left"),
+                    "tip": p.var.get("tip"),
                 }
-                for t in trials
+                for p in members
             ],
-            "society_round": [
+            "catch": [
                 {
-                    "society_id": r.sync_group_id,
-                    "round": r.number,
-                    "round_id": r.id,
-                    "spot_fish": (r.live_game_outcome or {}).get("spot_fish"),
-                    "retired_id": r.var.get("retired_id"),
+                    "lake_id": lake_id,
+                    "time": moment.time,
+                    "player": c["player"],
+                    "spot": c["spot"],
+                    "fish": c["fish"],
                 }
-                for r in rounds
+                for lake_id in lake_ids
+                for moment in Fishing.moments(lake_id, "catch")
+                for c in moment.data["caught"]
             ],
         }
 
-    test_n_bots = 5
+    test_n_bots = 4
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        founders, newcomers = bots[:3], bots[3:]
+        founders, newcomers = bots[:2], bots[2:]
         for bot in founders:
             bot.take_page()
         advance_past_wait_pages(founders)
-        # The last founder stays on the lake, so the next round can't start yet.
-        _play(founders[:2])
-        for bot in founders[:2]:
-            assert bot.is_waiting
-            assert "Your catch so far" in bot.current_page_text
+        assert all(bot.current_page_label == "fish" for bot in founders)
 
-        # A newcomer joins between rounds, reads the society's history while
-        # waiting to be admitted, and plays the next round, so the
-        # longest-serving founder retires.
-        newcomers[0].take_page()
-        assert "Welcome to the society" in newcomers[0].current_page_text
-        assert "Round 1: spot" in newcomers[0].current_page_text
-        newcomers[0].take_page()
-        assert newcomers[0].is_waiting
-        founders[2].take_page()
-        advance_past_wait_pages([*founders, newcomers[0]])
-        _play([*founders, newcomers[0]])
-        (retiree,) = [bot for bot in founders if bot.current_page_label == "tip"]
-        retiree.take_page(response="Follow the others.")
-        assert retiree.current_page_text.startswith("You caught ")
+        # Newcomers join the society while the founders fish, read its
+        # history, and sail onto the lake without waiting. The second makes
+        # the lake too crowded, so the longest-serving founder retires.
+        for bot in newcomers:
+            bot.take_page()
+            assert "The others are already fishing" in bot.current_page_text
+            bot.take_page()
+            assert bot.current_page_label == "fish"
+        run_bots_to_completion(bots, timeout=STAY_SECONDS + 60)
 
-        # The next newcomer reads the tip.
-        newcomers[1].take_page()
-        assert "Follow the others." in newcomers[1].current_page_text
-        run_bots_to_completion(bots, timeout=MAX_ROUNDS * (ROUND_SECONDS + 30))
-
-        data = self.get_basic_data()
-        rounds = data["society_round"]
-        assert rounds[1]["retired_id"] == retiree.id, rounds
-        for row in data["member_round"]:
-            assert row["group_status"] == "stayed", row
+        members = {
+            row["participant_id"]: row for row in self.get_basic_data()["member"]
+        }
+        lefts = [members[bot.id]["left"] for bot in bots]
+        assert lefts.count(RETIRED) == 1, lefts
+        assert set(lefts) <= {RETIRED, STAYED, "finished"}, lefts
+        assert len({members[bot.id]["lake_id"] for bot in bots}) == 1
         for bot in bots:
-            trials = FishingTrial.query.filter_by(participant_id=bot.id).all()
             reward = bot.with_participant(lambda p: p.performance_reward)
-            expected = sum(t.fish() for t in trials) * FISH_VALUE
+            expected = members[bot.id]["fish"] * FISH_VALUE
             assert abs(reward - expected) < 1e-9, (bot.id, reward, expected)
-            # The game's rewards are recorded on the trials they were played in.
-            for t in trials:
-                assert abs(t.performance_reward - t.fish() * FISH_VALUE) < 1e-9, t.id
-
-
-def _play(bots):
-    """Play a round on the lake, which the game plays for bots, and leave the bots waiting for the next round."""
-    for bot in bots:
-        bot.take_page()
-    advance_past_wait_pages(bots, timeout=ROUND_SECONDS + 60, stop_at="round_starts")

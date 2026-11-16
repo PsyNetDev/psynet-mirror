@@ -5,7 +5,9 @@ The ready step: the game starts once every player is ready, or at the
 game's ready_timeout. Once it starts, the game ends at its duration or its
 time limit, and rejects messages from then on. The entry also keeps track of
 which players are away, and since when, so that a game with an
-away_timeout can end once too few players are left.
+away_timeout can end once too few players are left. A player added while
+the game runs gets the next number, and players whose game has ended, by
+the game's is_done, don't count towards min_players.
 
 The game's clock: Dallinger's session clock starts when the game is
 created, before the ready step, but the game's methods get ``now`` in
@@ -123,7 +125,7 @@ def _tick_once_started(self, method, outermost, state, now):
         if self.is_over(state):
             return None
     if outermost:
-        too_few_at = _too_few_players_at(self, entry)
+        too_few_at = _too_few_players_at(self, state)
         if too_few_at is not None and now >= too_few_at:
             entry["players_left"] = True
             return None
@@ -162,20 +164,47 @@ def _record_join(self, method, outermost, state, player_id, now):
     return method(self, state, player, _game_time(entry, now))
 
 
-def _too_few_players_at(self, entry):
+def _record_add(self, method, outermost, state, player_id, now):
+    entry = _psynet_entry(state)
+    if not outermost:
+        return method(self, state, player_id, now)
+    entry["participant_ids"].append(int(player_id))
+    player = len(entry["participant_ids"]) - 1
+    # Away until their page opens, so an away_timeout covers a player who
+    # never arrives. A bot joins at once.
+    entry["away"].append(player)
+    entry["away_since"].append(now)
+    return method(self, state, player, _game_time(entry, now))
+
+
+def _player_done(self, method, outermost, state, player_id):
+    entry = _psynet_entry(state)
+    if not outermost:
+        return method(self, state, player_id)
+    if entry["started_at"] is None:
+        return False
+    return method(self, state, _player(entry, player_id))
+
+
+def _too_few_players_at(self, state):
     """Return when, on Dallinger's clock, too few players will be left
     for the game to go on, if the players away now stay away, or None.
 
     A player away for the game's away_timeout, counted from the start for
     one who left before it, is gone, and the game ends once fewer than its
-    min_players aren't."""
+    min_players aren't. Players whose game has ended don't count."""
+    entry = _psynet_entry(state)
     if self.away_timeout is None or entry["started_at"] is None:
         return None
+    done = self._players_done(state)
     gone_at = sorted(
         max(entry["away_since"][player], entry["started_at"]) + self.away_timeout
         for player in entry["away"]
+        if player not in done
     )
-    can_lose = len(entry["participant_ids"]) - self.min_players
+    can_lose = len(entry["participant_ids"]) - len(done) - self.min_players
+    if can_lose < 0:
+        return entry["started_at"]
     return gone_at[can_lose] if len(gone_at) > can_lose else None
 
 
@@ -229,5 +258,7 @@ _SESSION_BOOKKEEPING = {
     "tick": _tick_once_started,
     "on_leave": _record_leave,
     "on_join": _record_join,
+    "on_add": _record_add,
+    "is_done": _player_done,
     "initial_state": _add_psynet_entry,
 }

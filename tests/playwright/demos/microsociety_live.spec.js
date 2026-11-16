@@ -3,9 +3,11 @@ const { test, expect } = require("../fixtures");
 
 const {
   assertNoBackendError,
+  clickNextAndWait,
   startExperiment,
   startParticipantsTogether,
-  stopExperiment
+  stopExperiment,
+  waitForPromptContains
 } = require("../psynetHarness");
 
 const STEP_TIMEOUT_MS = 120000;
@@ -37,54 +39,60 @@ function boatsAt(player, number, selector = ".fish-boat-wrapper") {
   );
 }
 
-test("a society of three fishes live on the lake, seeing each other's boats and catches", { tag: "@both" }, async ({
+test("a newcomer sails onto the lake while the founders fish, and fishes on after they leave", { tag: "@both" }, async ({
   browser
 }) => {
   const experiment = startExperiment(path.resolve("demos/experiments/microsociety_live"));
   const contexts = await Promise.all([0, 1, 2].map(() => browser.newContext()));
   try {
-    const society = await startParticipantsTogether(
-      contexts,
-      await experiment.urlPromise,
-      "microsociety_live"
-    );
-    for (const player of society) {
+    const url = await experiment.urlPromise;
+    const founders = await startParticipantsTogether(contexts.slice(0, 2), url, "microsociety_live");
+    for (const player of founders) {
       await expect(spot(player, 1)).toBeEnabled({ timeout: STEP_TIMEOUT_MS });
     }
-    const [first, second, third] = society;
-
+    const [first, second] = founders;
     await spot(first, 6).click();
     await spot(second, 3).click();
-    await spot(third, 6).click();
-    // Each member sees every boat sail to where it is going.
-    await expect.poll(() => boatsAt(third, 6)).toBe(2);
-    await expect.poll(() => boatsAt(third, 3)).toBe(1);
-    await expect.poll(() => boatsAt(first, 6, ".fish-boat-wrapper:has(.fish-who-you)")).toBe(1);
-    // Each boat shows its catch just below it.
-    await expect(third.locator(".fish-boat-wrapper .fish-count")).toHaveCount(3);
-    await expect(third.locator(".fish-boat-wrapper .fish-count.fish-who-you")).toHaveText(/^You 🐟 \d+$/);
-
     // Moving to the spot the boat is already at is rejected.
+    await expect.poll(() => boatsAt(first, 6, ".fish-boat-wrapper:has(.fish-who-you)")).toBe(1);
     await first.evaluate(() => psynet.liveGame.send("move", { spot: 6 }));
     await expect(first.locator("#fish-rejection")).toHaveText("Your boat is already there.");
 
-    // A catch shows on the lake for a moment; the screenshot catches it if it can.
-    await third.locator(".fish-catch").first().waitFor({ timeout: 10000 }).catch(() => {});
-    await screenshot(third, "microsociety_live_lake");
+    // A newcomer joins the society while the founders fish, reads its
+    // history, and sails onto the running lake without waiting.
+    const [newcomer] = await startParticipantsTogether(contexts.slice(2), url, "microsociety_live_newcomer");
+    await waitForPromptContains(newcomer, "The others are already fishing");
+    await screenshot(newcomer, "microsociety_live_history");
+    await clickNextAndWait(newcomer);
+    await expect(spot(newcomer, 1)).toBeEnabled({ timeout: STEP_TIMEOUT_MS });
+    await spot(newcomer, 6).click();
+    // Each member sees every boat on the lake, the newcomer's included.
+    await expect.poll(() => boatsAt(first, 6)).toBe(2);
+    await expect.poll(() => boatsAt(newcomer, 3)).toBe(1);
+    await expect(newcomer.locator(".fish-boat-wrapper .fish-count")).toHaveCount(3);
+    await expect(newcomer.locator(".fish-boat-wrapper .fish-count.fish-who-you")).toHaveText(/^You 🐟 \d+$/);
+    await newcomer.locator(".fish-catch").first().waitFor({ timeout: 10000 }).catch(() => {});
+    await screenshot(newcomer, "microsociety_live_lake");
 
-    // When the round's time is up, every member sees their results on the lake,
-    // and then the lake again for the next round.
-    for (const player of society) {
-      await expect(player.locator("#fish-results .fish-results-boat")).toHaveCount(3, {
+    // The founders' time on the lake ends first: each sees their results,
+    // then leaves a tip, while the newcomer fishes on alone.
+    for (const player of founders) {
+      await expect(player.locator("#fish-results .fish-results-boat")).not.toHaveCount(0, {
         timeout: STEP_TIMEOUT_MS
       });
+      await expect(player.locator("#fish-status")).toHaveText("Your time on the lake is up.");
     }
-    await expect(third.locator("#fish-results .fish-crown:not(:empty)")).not.toHaveCount(0);
-    await screenshot(third, "microsociety_live_results");
-    for (const player of society) {
-      await expect(player.locator(".fish-round")).toHaveText("Round 2", { timeout: STEP_TIMEOUT_MS });
+    await first
+      .locator("#fish-results")
+      .evaluate((panel) => Promise.all(panel.getAnimations().map((animation) => animation.finished)));
+    await screenshot(first, "microsociety_live_results");
+    await expect(newcomer.locator(".fish-boat-wrapper")).toHaveCount(1, { timeout: STEP_TIMEOUT_MS });
+    await expect(spot(newcomer, 1)).toBeEnabled();
+    for (const player of founders) {
+      await waitForPromptContains(player, "Leave one tip", STEP_TIMEOUT_MS);
       await assertNoBackendError(player);
     }
+    await assertNoBackendError(newcomer);
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
     await stopExperiment(experiment.proc);

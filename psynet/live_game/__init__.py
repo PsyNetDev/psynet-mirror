@@ -13,6 +13,7 @@ from dallinger.realtime import Reject
 
 from .control import LiveGameControl
 from .game import LiveGame
+from .history import LiveGameCheckpoint, LiveGameMoment
 from .messages import LiveMessage, SavedMessage
 from .play import PlayLiveGame, live_game_id
 from .psynet_entry import NOT_STARTED, PLAYERS_LEFT, TIMEOUT, PlayerReady
@@ -22,7 +23,9 @@ from .result import LiveGameResult, live_game_result
 __all__ = [
     "LiveMessage",
     "LiveGame",
+    "LiveGameCheckpoint",
     "LiveGameControl",
+    "LiveGameMoment",
     "PlayLiveGame",
     "LiveGameResult",
     "NOT_STARTED",

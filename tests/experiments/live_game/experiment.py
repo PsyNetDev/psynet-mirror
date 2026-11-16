@@ -62,6 +62,21 @@ class PickNumbers(LiveGame):
         return None if view["picked"] else Pick(number=10 + player)
 
 
+class GrowingPicks(PickNumbers):
+    """Pick numbers, which players can join while it runs, and in which
+    each player's game ends once they've picked."""
+
+    channel = "growing_picks"
+    min_players = 1
+
+    def on_add(self, state, player, now):
+        state["picks"].append(None)
+        self.record("joined", {"player": player})
+
+    def is_done(self, state, player):
+        return state["picks"][player] is not None
+
+
 class Exp(psynet.experiment.Experiment):
     label = "Live game test experiment"
     test_n_bots = 2

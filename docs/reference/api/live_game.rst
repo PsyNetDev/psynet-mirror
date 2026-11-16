@@ -25,6 +25,11 @@ Live games
     :attr:`~psynet.live_game.LiveGame.away_timeout` ends with when too few
     players are left.
 
+The reason a player's game ends with when the game's ``is_done`` returns
+``True`` is Dallinger's :data:`~dallinger.realtime.game.DONE`, ``"done"``,
+and the game then rejects their messages with
+:data:`~dallinger.realtime.game.PLAYER_DONE_REASON`.
+
 Testing
 -------
 

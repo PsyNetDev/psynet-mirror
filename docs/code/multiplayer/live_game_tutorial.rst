@@ -751,8 +751,8 @@ Next steps
 happens when a player leaves, reloads, or opens the game in two tabs. The
 ``bargaining_live``, ``public_goods_live`` and ``microsociety_live`` demos
 show more: re-pairing players between games, results on the group's round,
-``PlayLiveGame``'s ``on_release`` and a group whose members change over
-time. Each
+``PlayLiveGame``'s ``on_release``, and one continuous game that players
+join while it runs and each leave in their own time. Each
 demo's README describes its design, and Dallinger's guide to `real-time games
 <https://dallinger.readthedocs.io/latest/realtime_games.html>`__ describes the
 engine that runs the games.

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 from dallinger import db
-from dallinger.models import RealtimeSession
+from dallinger.models import RealtimeEvent, RealtimeSession
 
 
 @dataclass(frozen=True)
@@ -98,3 +98,28 @@ def _has_outcome(status, outcome):
     # A failed game has no outcome if its record couldn't be saved, or if
     # Dallinger couldn't get one from the game's outcome method.
     return status != "failed" or outcome is not None
+
+
+def _player_ending(session_id, participant_id):
+    """Return the reason and the outcome of a player's game that ended
+    before the game did, as saved, or None."""
+    return (
+        db.session.query(RealtimeEvent.reason, RealtimeEvent.outcome)
+        .filter_by(
+            session_id=session_id,
+            event_type="player_end",
+            participant_id=participant_id,
+        )
+        .one_or_none()
+    )
+
+
+def _players_ended_early(session_id):
+    """Return the participant ids of the players whose game ended before
+    the game did."""
+    return {
+        participant_id
+        for (participant_id,) in db.session.query(
+            RealtimeEvent.participant_id
+        ).filter_by(session_id=session_id, event_type="player_end")
+    }

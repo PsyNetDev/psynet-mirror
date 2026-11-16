@@ -9,6 +9,9 @@ that entry to ``None`` first, so the page finds only the game from the
 participant's latest visit, and an id without an entry is one whose step the
 participant never reached.
 
+With ``join_running_game``, a participant whose group is playing a game
+from the step is added to that game instead, and skips the barrier.
+
 A PlayLiveGame in a trial also records the id on the trial's
 SyncGroupRound, as ``live_game_id``, beside the outcome. That record
 lasts, so it's the one to use in an analysis, while ``live_games`` holds
@@ -19,13 +22,19 @@ for a game played outside a trial, which has no round.
 import inspect
 import json
 
-from dallinger.realtime import RealtimeGame, create_realtime_session
+from dallinger import db
+from dallinger.models import RealtimeSession
+from dallinger.realtime import (
+    RealtimeGame,
+    add_realtime_player,
+    create_realtime_session,
+)
 
 from ..barrier_spec import BarrierSpecError, barrier_spec_json
 from ..bot import Bot
 from ..modular_page import ModularPage
-from ..sync import BarrierBehaviorMismatch, GroupBarrier
-from ..timeline import CodeBlock, EltCollection, join
+from ..sync import BarrierBehaviorMismatch, GroupBarrier, _round_trial
+from ..timeline import CodeBlock, EltCollection, conditional, join
 from ..utils import get_logger
 from .game import LiveGame
 from .psynet_entry import _new_session_settings
@@ -97,6 +106,15 @@ class PlayLiveGame(EltCollection):
         ``None`` if no game started, because the group has fewer members than
         the game's ``min_players``.
 
+    join_running_game
+        Whether a member who reaches the step while their group is playing
+        a game from it joins that game, rather than waiting at the barrier
+        for the group's next game. The game must define ``on_add``, as
+        :ref:`live-games-join-and-finish` explains. Newcomers join a group,
+        and so its game, only with a :class:`~psynet.sync.Grouper` that has
+        ``join_existing_groups=True``. A game played in a trial can't take
+        newcomers, since its round is already under way. Default: ``False``.
+
     id_
         A name for this step, the game's ``channel`` unless given, which
         :func:`live_game_id` takes to find the group's game, for
@@ -119,12 +137,19 @@ class PlayLiveGame(EltCollection):
         page,
         settings=None,
         on_release=None,
+        join_running_game: bool = False,
         id_: str = None,
         **kwargs,
     ):
         from .control import LiveGameControl
 
         _check_game_class(game_class)
+        if join_running_game and game_class.on_add is RealtimeGame.on_add:
+            raise TypeError(
+                f"{game_class.__name__} has no on_add method, so players can't "
+                "join it while it runs. Define on_add to make room for a new "
+                "player, or leave out join_running_game."
+            )
         if id_ is None:
             id_ = game_class.channel
 
@@ -143,7 +168,13 @@ class PlayLiveGame(EltCollection):
             )
         page.control.play_id = id_
         self.barrier = _LiveGameBarrier(
-            id_, group_type, game_class, settings, on_release, **kwargs
+            id_,
+            group_type,
+            game_class,
+            settings,
+            on_release,
+            join_running_game=join_running_game,
+            **kwargs,
         )
         self.page = page
 
@@ -163,6 +194,7 @@ class _LiveGameBarrier(GroupBarrier):
         game_class,
         settings=None,
         on_release=None,
+        join_running_game=False,
         **kwargs,
     ):
         settings = _checked_settings(game_class, settings)
@@ -175,6 +207,7 @@ class _LiveGameBarrier(GroupBarrier):
         self.game_class = game_class
         self.settings = settings
         self.on_game_release = on_release
+        self.join_running_game = join_running_game
         try:
             barrier_spec_json(self)
         except BarrierSpecError as error:
@@ -198,10 +231,67 @@ class _LiveGameBarrier(GroupBarrier):
     def resolve(self):
         # Ahead of the barrier, which a participant who has left the group
         # passes without arriving at it.
-        return join(CodeBlock(self._forget_session), super().resolve())
+        arrive = CodeBlock(self._arrive)
+        if not self.join_running_game:
+            return join(arrive, super().resolve())
+        return join(
+            arrive,
+            conditional(
+                f"{self.id}_no_running_game",
+                lambda participant: live_game_id(participant, self.id) is None,
+                super().resolve(),
+            ),
+        )
 
-    def _forget_session(self, participant):
+    def _arrive(self, participant):
         _set_live_game_id(participant, self.id, None)
+        if self.join_running_game:
+            self._join_running_game(participant)
+
+    def _join_running_game(self, participant):
+        """Add the participant to their group's running game from this
+        step, if there is one with room for them."""
+        group = participant.active_sync_groups.get(self.group_type)
+        if group is None:
+            return
+        trial = _round_trial(group, participant)
+        if trial is not None and not trial.complete:
+            raise ValueError(
+                f"The PlayLiveGame {self.id!r} has join_running_game, but "
+                f"participant {participant.id} reached it in a trial. A game "
+                "played in a trial can't take newcomers, since its round is "
+                "already under way. Play the game outside a trial."
+            )
+        members = group.active_participants
+        if participant not in members:
+            return
+        session_ids = {live_game_id(member, self.id) for member in members} - {None}
+        if not session_ids:
+            return
+        # Locked, so players added at the same time are counted against
+        # max_players one after the other.
+        row = (
+            db.session.query(RealtimeSession)
+            .filter(
+                RealtimeSession.id.in_(session_ids),
+                RealtimeSession.status == "running",
+            )
+            .order_by(RealtimeSession.id.desc())
+            .with_for_update()
+            .first()
+        )
+        if row is None or participant.id in row.members:
+            return
+        max_players = self.game_class.max_players
+        # The row lists a newcomer only once their addition is written, a few
+        # seconds later, so the members playing it count too.
+        players = set(row.members) | {
+            member.id for member in members if live_game_id(member, self.id) == row.id
+        }
+        if max_players is not None and len(players) >= max_players:
+            return
+        add_realtime_player(row.id, participant, bot=isinstance(participant, Bot))
+        _set_live_game_id(participant, self.id, row.id)
 
     # The barrier's on_release has to be importable by name, and gets the
     # barrier rebuilt from its saved settings.

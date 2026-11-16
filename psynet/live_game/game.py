@@ -15,6 +15,7 @@ from dallinger.realtime.utils import is_number
 from pydantic import PydanticInvalidForJsonSchema
 from pydantic_core import to_jsonable_python
 
+from .history import _MOMENT_EFFECT, _checkpoints, _moments
 from .messages import (
     _STARTED_EFFECT,
     LiveMessage,
@@ -25,7 +26,9 @@ from .messages import (
 from .method_wrappers import (
     _GAME_CODE_METHODS,
     _STATE_METHODS,
+    _as_game_code,
     _ends_when_time_is_up,
+    _reads_state,
     _returns_json,
     _runs_game_code,
     _saves_ready_messages,
@@ -40,6 +43,7 @@ from .reward import (
     _REWARD_EFFECT,
     _check_reward,
     _handles_ending,
+    _handles_player_ending,
     _handles_reward,
 )
 
@@ -65,6 +69,14 @@ class LiveGame(RealtimeGame):
     a game keeps what each player has in a list, in player order.
     :doc:`/code/multiplayer/live_games` walks through a whole game, including
     how the game starts and which values PsyNet converts to plain data.
+
+    A game that players can join while it runs defines
+    ``on_add(self, state, player, now)``, which makes room for a new
+    player, such as by appending to each list in the state. A game in which
+    each player can finish before the others defines
+    ``is_done(self, state, player)``, which returns whether the player's game
+    has ended, or a string that says why. :ref:`live-games-join-and-finish`
+    explains both.
     """
 
     #: The game's message types, each a :class:`LiveMessage` subclass with
@@ -141,6 +153,8 @@ class LiveGame(RealtimeGame):
             ("save_message", _saves_ready_messages),
             ("handle_effect", _handles_reward),
             ("handle_ending", _handles_ending),
+            ("handle_player_ending", _handles_player_ending),
+            ("is_done", functools.partial(_reads_state, name="is_done")),
         ]:
             method = getattr(cls, name)
             if method is not getattr(RealtimeGame, name, None) and not getattr(
@@ -229,6 +243,18 @@ class LiveGame(RealtimeGame):
         says which players were ready. A game can end here, through its
         ``is_over``.
         """
+
+    def _players_done(self, state):
+        """Return the numbers of the players whose game has ended, by the
+        game's ``is_done``."""
+        if type(self).is_done is RealtimeGame.is_done:
+            return []
+        n_players = len(_psynet_entry(state)["participant_ids"])
+        return _as_game_code(
+            lambda: [
+                player for player in range(n_players) if self.is_done(state, player)
+            ]
+        )
 
     @_stores_json
     def _end_ready_step(self, state, now):
@@ -386,13 +412,56 @@ class LiveGame(RealtimeGame):
         """
         return super().handle_ending(session_row)
 
+    @_handles_player_ending
+    def handle_player_ending(self, session_row, player, ending):
+        """Do work that needs a player's ending, when the game's
+        ``is_done`` ended their game before the game ended, as in Dallinger's
+        ``handle_player_ending``, which gets the player's number. PsyNet pays
+        the player's :meth:`performance_reward` from the outcome then, before
+        this method runs.
+        """
+        return super().handle_player_ending(session_row, player, ending)
+
+    def record(self, name, data=None):
+        """Record a moment in the game, such as a round's result or a player
+        joining, which :meth:`moments` returns, with when it happened. Call it
+        in a method that changes the state, such as a message's
+        :meth:`~LiveMessage.apply` or ``tick``. Record what an analysis needs
+        to follow the game over time, rather than reading it from
+        :meth:`checkpoints`.
+
+        Parameters
+        ----------
+
+        name
+            What kind of moment it is, such as ``"catch"``.
+
+        data
+            What to record about it, a value that can be saved as JSON,
+            converted to plain data as the state is.
+        """
+        if not isinstance(name, str) or not name:
+            raise TypeError(
+                f"{type(self).__name__}.record needs a non-empty string as the "
+                f"moment's name, not {name!r}."
+            )
+        try:
+            data = to_jsonable_python(data)
+        except (ValueError, TypeError) as error:
+            raise ValueError(
+                f"The {name!r} moment's data holds a value PsyNet can't convert "
+                f"to JSON. {error}."
+            ) from None
+        # Past this class's queue_effect, which refuses PsyNet's own effect name.
+        super().queue_effect(_MOMENT_EFFECT, {"name": name, "data": data})
+
     def queue_effect(self, name, payload):
         """Queue an effect, as
         :meth:`~dallinger.realtime.RealtimeGame.queue_effect` does, with the
         payload converted to plain data in the same way as the state. A
         message's fields can go in the payload as they are.
         """
-        if name in (_REWARD_EFFECT, _STARTED_EFFECT):
+        if name in (_REWARD_EFFECT, _STARTED_EFFECT, _MOMENT_EFFECT):
             raise ValueError(
                 f"The effect name {name!r} is reserved for PsyNet's "
                 "add_performance_reward. Give the effect another name."
@@ -458,12 +527,56 @@ class LiveGame(RealtimeGame):
         ValueError
             If ``game_id`` is a game of another kind.
         """
+        cls._check_game(game_id)
+        return _saved_messages(game_id, cls._message_types)
+
+    @classmethod
+    def moments(cls, game_id, name=None):
+        """Return the moments that :meth:`record` recorded in one play of
+        this game, in order, as :class:`LiveGameMoment` objects. Like
+        :meth:`saved_messages`, it returns those written so far for a game
+        that's still being played.
+
+        Parameters
+        ----------
+
+        game_id
+            The game's id, as :func:`live_game_id` returns it.
+
+        name
+            The name of the moments to return, or ``None``, the default, for
+            all of them.
+        """
+        cls._check_game(game_id)
+        return _moments(game_id, name)
+
+    @classmethod
+    def checkpoints(cls, game_id):
+        """Return copies of the game's state, as
+        :class:`LiveGameCheckpoint` objects, in order: those Dallinger saved
+        while the game was played, at most every ``checkpoint_interval``
+        seconds (5 by default), and the state when the game ended. Each
+        state is as the game's code sees it, without PsyNet's ``psynet``
+        entry, so a player's number indexes its lists. Use it to look back
+        at a game, for example to check its code, and :meth:`record` for what
+        an analysis needs.
+
+        Parameters
+        ----------
+
+        game_id
+            The game's id, as :func:`live_game_id` returns it.
+        """
+        cls._check_game(game_id)
+        return _checkpoints(game_id)
+
+    @classmethod
+    def _check_game(cls, game_id):
         channel = _session_channel(game_id)
         if channel != cls.channel:
             raise ValueError(
                 f"Game {game_id} is a game of {channel!r}, not {cls.channel!r}."
             )
-        return _saved_messages(game_id, cls._message_types)
 
 
 # Seconds that Dallinger's max_duration leaves after the latest moment the

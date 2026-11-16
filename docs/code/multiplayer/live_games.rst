@@ -448,9 +448,10 @@ the participant the reason with ``showRejections``, or match the number
 The end
 ~~~~~~~
 
-A player's game ends when the game ends, for every player at once. Their
-answer and reward are then worked out from the outcome and saved, which
-this page calls the player's result.
+A player's game ends when the game ends, or earlier in a game that lets
+each player finish before the others (see `Players who join or finish
+during the game`_). Their answer and reward are then worked out from the
+outcome and saved, which this page calls the player's result.
 
 ``onView`` gets the final view with ``ended`` set, and ``onEnded`` runs,
 and the game ignores any message sent after that. If the game fails,
@@ -502,8 +503,9 @@ until it ends:
   away that long is gone, and once fewer than ``min_players`` players
   aren't, the game ends with the reason ``"players_left"``. A game for five
   with ``min_players = 3`` carries on until a third player is gone.
-- A game with a ``duration`` that is short anyway can carry on, as the
-  fishing game in the ``microsociety_live`` demo does.
+- A game with a ``duration`` that is short anyway can carry on, as can a
+  game in which each player's own time runs out, as in the
+  ``microsociety_live`` demo.
 - A game that should react in its own way, such as by handing the player's
   turn on, does so in ``on_leave``, or ends in ``is_over``.
 
@@ -539,6 +541,114 @@ The same page open in another tab plays as the same player. When the
 game's result is saved, both tabs try to move on. One of them does,
 and in the other PsyNet asks the participant to close their other tabs
 and refresh the page.
+
+.. _live-games-join-and-finish:
+
+Players who join or finish during the game
+------------------------------------------
+
+Most games are played from start to end by the group that started them. A
+game that keeps going while people come and go, such as a market or a
+society fishing on a shared lake, can take new players while it runs, and
+let each player finish before the others. The ``microsociety_live`` demo
+does both.
+
+Joining a running game
+~~~~~~~~~~~~~~~~~~~~~~
+
+Give the ``PlayLiveGame`` ``join_running_game=True``. A member who reaches
+it while their group is playing a game from it then joins that game, and
+goes straight to the game page instead of waiting at the barrier. A member
+who arrives while no game is running waits at the barrier as usual, and
+starts the next game with the others there. Newcomers join the group
+first, through a :class:`~psynet.sync.Grouper` with
+``join_existing_groups=True``. Give it ``use_admission_points=False``, so
+that it admits them at once: a pending member waits at the barrier.
+
+.. code-block:: python
+
+    SimpleGrouper(
+        group_type="society",
+        initial_group_size=2,
+        max_group_size=4,
+        quorum=1,
+        join_existing_groups=True,
+        use_admission_points=False,
+        below_quorum="continue_without_group",
+    ),
+    PlayLiveGame(
+        group_type="society",
+        game_class=Fishing,
+        page=lake_page(),
+        join_running_game=True,
+    ),
+
+The game defines ``on_add(self, state, player, now)``, which makes room in
+the state for the new player, such as by appending to each list in it:
+
+.. code-block:: python
+
+    class Fishing(LiveGame):
+        ...
+
+        def on_add(self, state, player, now):
+            state["boats"].append({"spot": None, "joined_at": now or 0})
+            state["fish"].append(0)
+
+A new player gets the next number, so later players' numbers follow the
+order they joined in, rather than their seats in the group. ``now`` is
+``None`` for a player added before the game starts, who has to be ready like
+the others. A new player is in ``state["psynet"]["away"]`` until their page
+opens, so an ``away_timeout`` covers one who never arrives. A game's
+``max_players`` counts every player it has had: a member who would go over
+it waits at the barrier for the group's next game. Write the page so that
+it allows for views with more players than before, and give each new
+player what they need, such as a colour no other player on the board has.
+
+A game played in a trial can't take newcomers, since its round is already
+under way, so a ``PlayLiveGame`` with ``join_running_game`` in a trial's
+``show_trial`` raises an error.
+
+Finishing before the others
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To let a player's game end while the others play on, define
+``is_done(self, state, player)``. It returns whether the player is done,
+such as once they've had their turns or their time, or a string that says
+why, which is then the reason their game ended. ``True`` gives the reason
+``"done"``. PsyNet asks it about each player still playing after every
+change to the state, once the game has started. It only reads the state,
+so a game that ends a player's game after some time marks that in its
+``tick``, as the demo does:
+
+.. code-block:: python
+
+        def tick(self, state, now):
+            ...
+            for boat in state["boats"]:
+                if not boat["left"] and now >= boat["joined_at"] + STAY_SECONDS:
+                    boat["left"] = "stayed"
+
+        def is_done(self, state, player):
+            return state["boats"][player]["left"] or False
+
+A player whose game has ended gets their final view, with ``ended`` set, and
+their page gets no more views. The game rejects their messages with the
+reason "Your game has ended.", and a bot stops playing. Their answer and
+``performance_reward`` come from the outcome of the state then, with their
+reason, and their result is saved a few seconds later, so ``onResultSaved``
+runs and the page moves on as it would at the end of the game. They no
+longer count towards the game's ``min_players`` for its ``away_timeout``.
+
+The game itself still ends through its ``is_over``, ``duration`` or
+``timeout``, and the players still playing then get their results from the
+outcome at the end. A game in which every player finishes in their own
+time can end once nobody is left, with an ``is_over`` that returns whether
+every player is done.
+
+:class:`~psynet.live_game.testing.LocalGame` plays both:
+``game.add(now=10)`` adds a player and returns their number, and
+``game.is_done(player)`` asks the game's ``is_done``.
 
 .. _live-games-ready:
 
@@ -659,8 +769,9 @@ PsyNet keeps its own record of the game in ``state["psynet"]``, and adds
 the same entry to each view. Don't use the name ``psynet`` for anything else
 in the state or a view. The parts a game can use are:
 
-- ``participant_ids``, each player's participant id, in player order. It
-  is in the state only, not in views.
+- ``participant_ids``, each player's participant id, in player order,
+  including players added while the game runs. It is in the state only, not
+  in views.
 - ``ready``, the numbers of the players who are ready
 - ``away``, the numbers of the players who have left the game page and not
   come back. A player who hasn't opened it yet isn't in it.
@@ -724,7 +835,8 @@ must be a number of 0 or more. For a reward based on the outcome, define
 ``performance_reward(outcome, reason, player)`` to return the player's
 reward. PsyNet pays it to each player once, when their result is saved,
 however the game ended, so a player who left the game page early is paid
-too. This game pays 0.10 for a win:
+too. A player whose game ended early, through ``is_done``, is paid from the
+outcome then. This game pays 0.10 for a win:
 
 .. code-block:: python
 
@@ -840,6 +952,40 @@ is saved too, with ``message`` set to ``None``.
 A message left out isn't in the exported data, so leave out only what the
 analysis won't need. Dallinger's `save_message <dallinger-save-message_>`_
 has the details.
+
+.. _live-games-history:
+
+Moments and copies of the state
+-------------------------------
+
+The outcome describes how a game ended, which is enough for a short game.
+A game that runs for a long time, or changes as players come and go,
+also needs a record of what happened along the way, such as each catch or
+each trade. Record it with ``self.record(name, data)`` in a method that
+changes the state, such as ``tick`` or a message's ``apply``:
+
+.. code-block:: python
+
+        def tick(self, state, now):
+            ...
+            self.record("catch", {"at": at, "caught": caught})
+
+``Fishing.moments(game_id)`` returns the game's moments in order, each a
+:class:`~psynet.live_game.LiveGameMoment` with its ``name``, its ``data``
+and its ``time`` in seconds since the game started. ``moments(game_id,
+"catch")`` returns only the catches. Moments are saved with the game's
+messages, so like them they're written a few seconds behind the game, and
+they're in the exported ``realtime_event`` table, as effects with the name
+``psynet_moment``. The ``microsociety_live`` demo shows newcomers the
+recent catches from its moments, and exports a row for each catch.
+
+Dallinger also saves copies of the game's state, at most every five seconds
+by default (the game's ``checkpoint_interval``), and when the game ends.
+``Fishing.checkpoints(game_id)`` returns them, each a
+:class:`~psynet.live_game.LiveGameCheckpoint` with the ``state``, without
+PsyNet's entry, and its ``time``. They help to check what a game did, but
+when they're taken depends on the game's traffic, so record what an
+analysis needs as moments.
 
 .. _live-games-bots:
 

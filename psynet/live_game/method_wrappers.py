@@ -21,7 +21,7 @@ from .psynet_entry import (
 )
 
 # The game methods that can change the state, which is converted after each.
-_STATE_METHODS = ("apply", "tick", "on_join", "on_leave", "on_start")
+_STATE_METHODS = ("apply", "tick", "on_join", "on_leave", "on_add", "on_start")
 
 # The game methods that get neither a participant id nor a session time.
 _GAME_CODE_METHODS = ("outcome", "answer", "performance_reward")
@@ -102,6 +102,13 @@ def _stores_json(method, name=None):
     return _converts_outermost_call(method, name, convert_in_place)
 
 
+def _reads_state(method, name):
+    """Wrap a method that only reads the state, such as ``is_done``, so
+    that its outermost call goes through its entry in
+    ``_SESSION_BOOKKEEPING``."""
+    return _converts_outermost_call(method, name, lambda self, result, args: result)
+
+
 def _returns_json(method, name):
     def convert_returned(self, state, args):
         return _to_json(state, f"{type(self).__name__}.{name}")
@@ -121,7 +128,7 @@ def _waits_for_start(method):
         if deadline is not None:
             # On the game's clock, as the game's other methods see it.
             deadline += entry["started_at"]
-        deadlines = [deadline, _too_few_players_at(self, entry)]
+        deadlines = [deadline, _too_few_players_at(self, state)]
         if not entry["time_up"]:
             deadlines.append(entry["ends_at"])
         return min((d for d in deadlines if d is not None), default=None)

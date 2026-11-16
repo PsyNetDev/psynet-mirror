@@ -1,6 +1,7 @@
 """Helpers for testing a game's rules in Python, without a server."""
 
-from dallinger.realtime import Sent
+from dallinger.realtime import RealtimeGame, Reject, Sent
+from dallinger.realtime.game import PLAYER_DONE_REASON, queued_effects
 
 from .messages import LiveMessage
 from .psynet_entry import _psynet_entry
@@ -19,6 +20,10 @@ class LocalGame:
         game = LocalGame(RockPaperScissors, players=2, settings={"rounds": 3})
         game.send(0, Choose(round=1, action="rock"))
         assert game.view(1)["partner_chosen"]
+
+    The rewards that the game adds with
+    :meth:`~psynet.live_game.LiveGame.add_performance_reward`, the moments it
+    records and the effects it queues are dropped.
 
     Parameters
     ----------
@@ -41,6 +46,8 @@ class LocalGame:
     def __init__(self, game_class, players, settings=None, start=True):
         #: The game, an instance of ``game_class``.
         self.game = game_class()
+        # As a runner does, so that the game's methods can queue effects.
+        queued_effects.set([])
         participants = [str(number + 1) for number in range(players)]
         if settings is None:
             #: The game's state.
@@ -64,8 +71,11 @@ class LocalGame:
         ------
 
         ~psynet.live_game.Reject
-            If the game rejects the message.
+            If the game rejects the message, or the player's game has ended,
+            by the game's ``is_done``.
         """
+        if self.is_done(player):
+            raise Reject(PLAYER_DONE_REASON)
         if isinstance(message, LiveMessage):
             message = {
                 "type": message.type,
@@ -88,6 +98,23 @@ class LocalGame:
         """Open a game page for ``player``, ``now`` seconds into the game,
         which runs the game's ``on_join``."""
         self.game.on_join(self.state, self._participant(player), self._clock(now))
+
+    def add(self, now=0):
+        """Add a player to the game, ``now`` seconds into the game, which
+        runs the game's ``on_add``, and open a game page for them, which
+        runs its ``on_join``. Return the new player's number."""
+        participant = str(max(_psynet_entry(self.state)["participant_ids"]) + 1)
+        self.game.on_add(self.state, participant, self._clock(now))
+        self.game.on_join(self.state, participant, self._clock(now))
+        return len(_psynet_entry(self.state)["participant_ids"]) - 1
+
+    def is_done(self, player):
+        """Return whether ``player``'s game has ended, by the game's
+        ``is_done``, or the reason it gives."""
+        if type(self.game).is_done is RealtimeGame.is_done:
+            return False
+        done = self.game.is_done(self.state, self._participant(player))
+        return done if isinstance(done, str) else bool(done)
 
     def view(self, player):
         """Return what ``player``'s page shows, as the game's ``view`` returns

@@ -1,6 +1,11 @@
 const SVG = "http://www.w3.org/2000/svg";
 // Seconds a boat takes to shift within a spot when another boat arrives or leaves.
 const SHUFFLE_SECONDS = 0.4;
+// Why a member's time on the lake ended, as the view's "left" says.
+const LEFT_TEXT = {
+  retired: "A newcomer has taken your place.",
+  stayed: "Your time on the lake is up.",
+};
 
 function svg(tag, attributes, ...children) {
   let element = document.createElementNS(SVG, tag);
@@ -66,6 +71,7 @@ export function activate({root, psynet}) {
   let view = null;
   let seenCatch = 0;
   let countdown = null;
+  let clock = null;
 
   live.predict((predicted, type, message, sentAt) => {
     if (type === "move") {
@@ -112,6 +118,13 @@ export function activate({root, psynet}) {
     for (let boat of view.boats) {
       groups.set(boat.spot, [...(groups.get(boat.spot) ?? []), boat.who]);
     }
+    // Boats of members who have left the lake.
+    for (let [who, boat] of boats) {
+      if (!view.boats.some((shown) => shown.who === who)) {
+        boat.element.remove();
+        boats.delete(who);
+      }
+    }
     for (let {who, spot, arrives_at} of view.boats) {
       let boat = boats.get(who);
       let group = groups.get(spot);
@@ -156,12 +169,12 @@ export function activate({root, psynet}) {
   function render({instant = false} = {}) {
     view = live.predictedView();
     if (view === null) {
-      status.textContent = "The round is over.";
+      status.textContent = endedText();
       return;
     }
     let playing = live.playing;
     if (live.ended) {
-      status.textContent = results.hidden ? "Counting the catch…" : "The round is over.";
+      status.textContent = results.hidden ? "Counting your catch…" : endedText();
     } else if (!live.started) {
       status.textContent = "Waiting for the others to reach the lake…";
     } else {
@@ -178,8 +191,12 @@ export function activate({root, psynet}) {
     }
   }
 
+  function endedText() {
+    return LEFT_TEXT[view && view.left] ?? "The lake has closed.";
+  }
+
   function showResults(seconds) {
-    status.textContent = "The round is over.";
+    status.textContent = endedText();
     let catches = document.createElement("div");
     catches.className = "fish-results-boats";
     let fish = byWho(view ? view.fish : {});
@@ -209,14 +226,20 @@ export function activate({root, psynet}) {
     countdown = setInterval(tell, 250);
   }
 
-  live.onTimeLeft((left) => {
-    timeLeft.style.width = `${(left / live.duration) * 100}%`;
+  // The member's own time on the lake, which starts when they join it.
+  clock = setInterval(() => {
+    let now = live.gameTime();
+    if (view === null || now === null) {
+      return;
+    }
+    let left = live.ended ? 0 : Math.max(0, view.leaves_at - now);
+    timeLeft.style.width = `${(left / view.stay_seconds) * 100}%`;
     secondsLeft.textContent = `${Math.ceil(left)} s`;
-    if (view && !live.ended) {
+    if (!live.ended) {
       // Redrawn so that boats that have arrived stop sailing.
       render();
     }
-  });
+  }, 250);
   let resize = () => view && render({instant: true});
   window.addEventListener("resize", resize);
 
@@ -225,6 +248,7 @@ export function activate({root, psynet}) {
   live.onResultSaved(() => showResults(live.showResultFor));
   return () => {
     clearInterval(countdown);
+    clearInterval(clock);
     window.removeEventListener("resize", resize);
   };
 }

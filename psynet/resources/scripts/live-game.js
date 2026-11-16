@@ -704,8 +704,9 @@
       },
       /**
        * Whether this player's game has ended, so the page gets no more
-       * views and the game ignores its messages. So far, that's when the
-       * game ends. ``onView``'s callbacks see it already updated for the
+       * views and the game ignores its messages. That's when the game
+       * ends, or before, when the game's ``is_done`` says the player is
+       * done. ``onView``'s callbacks see it already updated for the
        * final view. Reading it doesn't join the game.
        *
        * @member {boolean} ended
