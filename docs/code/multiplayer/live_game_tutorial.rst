@@ -36,13 +36,12 @@ How a live game works
 In most PsyNet experiments, each participant works through the pages alone
 and submits an answer on each one. In a live game, the members of a group are
 on the same page at the same time, and what one player does shows up on the
-other players' screens within a fraction of a second. Each time a group
-plays a game is a **session**.
+other players' screens within a fraction of a second.
 
 The server runs the game. It keeps the game's **state**, which is everything
 the game needs to know. In rock, paper, scissors, that's each player's choice
-in the current round, the rounds played so far, and how many rounds each
-player has won. The players' pages never change the state themselves:
+in the current round and the rounds played so far. The players' pages never
+change the state themselves:
 
 - When the player does something, such as clicking "Rock", their page sends
   the game a **message**. The game checks the message against its rules. It
@@ -94,13 +93,21 @@ ordinary Python:
    :end-before: class Choose(LiveMessage):
    :dedent:
 
-Each player is known by an id, which is their participant id as a string,
-such as ``"12"``. ``partner_of`` finds the other player in a pair. ``Action``
-is the type of a player's choice, which the message below uses for its
-``action`` field, and ``ACTIONS`` lists the three choices, for the page's
-buttons and the bots. ``GAMES`` and ``PARTNER_WAIT_SECONDS`` are used by the timeline, which "Adding the game to the timeline" below
-describes. The excerpts on this page leave out the file's imports, which are
-at the top of the demo's ``experiment.py``.
+``Action`` is the type of a player's choice, which the message below uses for
+its ``action`` field, and ``ACTIONS`` lists the three choices, for the page's
+buttons and the bots. ``GAMES`` and ``PARTNER_WAIT_SECONDS`` are used by the
+timeline, which "Adding the game to the timeline" below describes.
+
+PsyNet numbers a game's players from 0, in the order they signed up, so the
+two players here are 0 and 1, and ``1 - player`` is the other one. A round's
+choices are a list, in player order, such as ``["rock", "paper"]``.
+``result_for`` says how a round went for one player, and ``rounds_seen_by``
+lists the rounds played so far as one player sees them. The view and each
+player's answer, below, both use it, so the page and the answer show a round
+the same way.
+
+The excerpts on this page leave out the file's imports, which are at the top
+of the demo's ``experiment.py``.
 
 The game and its state
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -114,12 +121,12 @@ The game is the class ``RockPaperScissors``:
 
 ``channel`` is a name for the game, which must differ from the name of every
 other game in the experiment. ``messages`` lists the kinds of message that a
-page can send, which the next section describes. ``max_duration`` is a time
-limit in seconds for the whole session, ready step included, so that a game
-ends even if a player walks away from it.
+page can send, which the next section describes. ``min_players`` and
+``max_players`` say that the game is for exactly two players. ``timeout``
+ends the game after five minutes, even if a player walks away from it.
 
 ``initial_state`` returns the state at the start of the game. It receives the
-ids of the session's players and the session's settings:
+players' numbers, ``[0, 1]``, and the game's settings:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
    :pyobject: RockPaperScissors.initial_state
@@ -127,9 +134,10 @@ ids of the session's players and the session's settings:
 
 The state is a dictionary. It can hold dictionaries, lists, strings, numbers,
 ``True``, ``False`` and ``None``, the same kinds of data that JSON can hold.
-Here, each player's choice is ``None`` until they choose.
+Here, ``choices`` holds each player's choice in the current round, ``None``
+until they choose, and ``rounds`` the choices of each round played so far.
 
-The settings are what differs from one session of the game to another. Here,
+The settings are what differs from one play of the game to another. Here,
 they say how many rounds the game has, and they come from the trial, as
 "Adding the game to the timeline" below shows. The game's other methods
 receive the state but not the settings, so ``initial_state`` puts what they
@@ -146,7 +154,7 @@ A player makes a choice by sending a ``Choose`` message, a subclass of
    :pyobject: Choose
    :dedent:
 
-``type`` is the name that the page uses when it sends the message.
+``type`` is the name that the page uses when it sends the message, and
 ``round`` and ``action`` are the message's fields, each with its type. A page
 sends the message like this:
 
@@ -154,23 +162,23 @@ sends the message like this:
 
     psynet.liveGame.send("choose", {round: 2, action: "rock"});
 
-PsyNet checks every message against its fields before the game sees it. A
-message whose ``round`` isn't a whole number, or whose ``action`` isn't one of
-the three listed, is rejected, and ``apply`` never runs.
-
-``apply`` runs for each message that passes the check. It receives the game,
-which is the ``RockPaperScissors`` object that the next sections describe,
-the state, the id of the player who sent the message, and the session time
-``now``, which is the number of seconds since the pair finished waiting for
-each other.
-This ``apply`` needs only the state and the player's id. It changes the
-state directly. Here, it records the player's choice, and once both players
-have chosen, it scores the round and starts the next one.
+``apply`` is what the message does to the state. It receives the game, which
+is the ``RockPaperScissors`` object that the next sections describe, the
+state, the number of the player who sent the message, and ``now``, the
+number of seconds since the game started. It changes the state directly.
+Here, it records the player's choice, and once both players have chosen, it
+adds the round's choices to the rounds played and starts the next round.
+Each kind of message has its own ``apply``, so the game's rules are split
+between its message types, one for each thing a player can do.
 
 ``raise Reject("...")`` turns a message down. The state stays as it was
 before the message, and the player's page receives the reason. The round
 number in each message lets ``apply`` tell a click meant for this round from
 a late one meant for a round that has already finished.
+
+Before ``apply`` runs, PsyNet checks the message against its fields. A
+message whose ``round`` isn't a whole number, or whose ``action`` isn't one of
+the three listed, is rejected without reaching ``apply``.
 
 What each player sees
 ~~~~~~~~~~~~~~~~~~~~~
@@ -183,7 +191,8 @@ What each player sees
 
 The view says whether the partner has chosen in the current round, but not
 what they chose. The partner's choice appears in ``results`` only once the
-round is over. This is how a game keeps information private: whatever isn't
+round is over. ``count``, defined below the game, counts the rounds with a
+result. This is how a game keeps information private: whatever isn't
 in a player's view never reaches their browser, so they can't find it by
 looking at the page's code.
 
@@ -199,24 +208,19 @@ player's answer is:
    :dedent:
 
 The game checks ``is_over`` after every change to the state, and ends the
-session as soon as it returns ``True``.
+game as soon as it returns ``True``.
 
 ``outcome`` is the game's result for the whole pair, which is saved with the
-experiment's data. ``reason`` says why the game ended. For example, it is
-``"finished"`` when ``is_over`` ended the game, and ``"max_duration"`` when
-the time limit did.
+experiment's data: here, the choices of each round. ``reason`` says why the
+game ended. For example, it is ``"finished"`` when ``is_over`` ended the
+game, and ``"timeout"`` when the game's ``timeout`` did.
 
 ``answer`` turns the outcome into each player's answer on the game page:
 their own rounds, with both choices and the result for them, the rounds each
-of them won, and the reason, so that later pages and your analysis can tell
-a finished game from one that ended early. Without ``answer``, every player's
-answer would be the whole outcome, and code reading it would need the
-player's id to find their part. ``rounds_as_seen_by`` builds the same list of
-rounds for the view, so the page and the answer show a round the same way:
-
-.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
-   :pyobject: rounds_as_seen_by
-   :dedent:
+of them won, and whether the game was played to the end, so that later pages
+and your analysis can tell a finished game from one that ended early.
+Without ``answer``, every player's answer would be the whole outcome, and
+code reading it would need the player's number to find their part.
 
 Bots
 ~~~~
@@ -228,13 +232,15 @@ JavaScript. Instead, the game plays for them through its ``bot`` method:
    :pyobject: RockPaperScissors.bot
    :dedent:
 
-``bot`` receives the bot's view, and returns the message the bot sends next,
-or ``None`` when the bot has nothing to do. Here, a bot that has already
-chosen this round waits, and otherwise it chooses at random. The game calls
-``bot`` again after every message, including the other bot's, until it
-accepts no bot's message, so a bot that always sends an acceptable message
-ends the session with an error. (In a game with ticks, as in Part 2, ``bot``
-is called once per tick instead.)
+``bot`` receives the bot's view, its player number and ``now``, and returns
+the message the bot sends next, or ``None`` when the bot has nothing to do.
+Here, a bot that has already chosen this round waits, and otherwise it
+chooses at random. Nothing happens in this game between messages, so the
+game asks the bots again after every message, including the other bot's,
+until no bot sends one it accepts. ``bot`` must therefore return ``None``
+once the bot has nothing to do, or the bots would play forever and the game
+fails. (In a game with ticks, as in Part 2, ``bot`` is called once per tick
+instead.)
 
 Adding the game to the timeline
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -242,7 +248,7 @@ Adding the game to the timeline
 In this demo, each game is a trial. The player's answer on the game page is
 saved as the trial's answer, like any other trial's, and what differs between
 the two games is in the trial's definition: which game it is, how many rounds
-it has and what a round won pays. The trial starts a session for the pair,
+it has and what a round won pays. The trial starts a game for the pair,
 shows the game page, and then scores and pays for the game:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
@@ -255,27 +261,26 @@ shows the game page, and then scores and pays for the game:
   ``"pair"``. Each player has a trial of their own, and the two trials share
   a definition.
 - :class:`~psynet.live_game.PlayLiveGame` is the step where the pair plays
-  the game. It waits for both players, starts a session for the pair, and
-  then shows them the game page together. Its ``group_type`` is the pair's,
+  the game. It waits for both players, starts a game for the pair, and then
+  shows them the game page together. Its ``group_type`` is the pair's,
   its ``game_class`` is the game, its ``page`` is the game page, and its
   ``settings`` are the number of rounds from the trial's definition, which
   the game's ``initial_state`` receives. Its ``id_`` names the step, which
   ``live_game_id`` takes in the test below; without one it would be the
   game's ``channel``.
 - A player whose partner doesn't arrive within ``max_wait_time`` seconds
-  leaves the pair, and goes on to the game page without a session. The wait starts when the player arrives, and their
-  partner may still be reading the last game's result, so
-  ``PARTNER_WAIT_SECONDS`` is five minutes. A partner who arrives later than
-  that is treated the same as one who never arrives.
+  leaves the pair, and goes on to the game page without a game. The wait
+  starts when the player arrives, and their partner may still be reading the
+  last game's result, so ``PARTNER_WAIT_SECONDS`` is five minutes. A partner
+  who arrives later than that is treated the same as one who never arrives.
 - The game page is a :class:`~psynet.modular_page.ModularPage`. Its prompt
   holds the page's elements, each with an ``id`` so that the JavaScript can
   find it. The first element says which game this is, how many rounds it has
   and what a round won pays, all from the trial's definition. The
-  :class:`~psynet.live_game.LiveGameControl` connects the
-  page to the session that the ``PlayLiveGame`` started.
-  ``player_left_message`` is the notice that the page shows while the
-  partner is away from the game page, and ``no_game_message`` is the
-  notice on a game page without a session.
+  :class:`~psynet.live_game.LiveGameControl` connects the page to the game
+  that the ``PlayLiveGame`` started. ``player_left_message`` is the notice
+  that the page shows while the partner is away from the game page, and
+  ``no_game_message`` is the notice on a game page without a game.
 - ``js_page_modules`` lists the page's JavaScript file, which is in the demo's
   ``static`` folder.
 - The game page's answer, from the game's ``answer``, becomes the trial's
@@ -287,8 +292,8 @@ shows the game page, and then scores and pays for the game:
   turns the score into the player's reward, at the rate in the trial's
   definition. PsyNet saves both on the trial, as its ``score`` and
   ``performance_reward``, so the experiment's data shows what each game paid.
-  A trial whose game page had no session has no answer, and scores 0.
-- The participant can leave the game page only once the session's result is
+  A trial whose pair didn't start a game has no answer, and scores 0.
+- The participant can leave the game page only once the game's result is
   saved, a few seconds after the game ends, and the page then moves on by
   itself, to the trial's ``show_feedback`` page.
   ``gives_feedback`` leaves that page out for a trial without an answer.
@@ -297,11 +302,10 @@ A trial that a group plays needs a :class:`~psynet.sync.GroupBarrier` in its
 ``show_trial``, where the group's members wait for each other.
 ``PlayLiveGame`` includes one, so this trial needs no other. A group barrier
 in such a trial closes the group's round when it releases the group, and
-here that is when the session begins, not when it ends. Each trial's
-``sync_group_outcome`` therefore says whether the player was in the pair
-when the session began. To
-tell a game that was played to the end from one that a player abandoned, read
-the ``reason`` in the outcome.
+here that is when the wait for the game ends, not when the game does. Each
+trial's ``sync_group_outcome`` therefore says whether the player was in the
+pair when the game began. To tell a game that was played to the end from one
+that a player abandoned, read ``finished`` in the answer.
 
 A game can also pay rewards itself, through its ``performance_reward``
 method, as the snake demo in Part 2 does, or with
@@ -365,7 +369,7 @@ The page's JavaScript is in ``static/rock-paper-scissors.js``. It exports an
 ``psynet.liveGame``, the function sends the player's messages and draws each
 view that arrives.
 
-It checks that the participant has a session, then finds the page's elements
+It checks that the participant has a game, then finds the page's elements
 and sets up the variables that the rest of the page uses:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
@@ -374,7 +378,7 @@ and sets up the variables that the rest of the page uses:
    :end-before: function enableButtons(
    :dedent:
 
-A participant reaches the game page without a session when their partner
+A participant reaches the game page without a game when their partner
 didn't arrive in time. PsyNet then shows them the control's
 ``no_game_message`` in a notice. The page hides the game, which can't be
 played, and does nothing more, and its Next button lets them move on.
@@ -496,21 +500,21 @@ view. ``send_views_on_messages = False`` stops the game from also sending the
 player a view after each of their messages, since a turn doesn't change the
 board until the next tick.
 
-``duration = ROUND_SECONDS`` makes the game last 60 seconds from its start.
-Before the game starts, there's a **ready step**, while the players' pages
-open. Each page says its player is ready a moment after it opens, and the
-game starts once every player is ready, or after ``ready_timeout`` seconds
-(60 unless the game sets it). PsyNet then runs the
-game's ``tick`` one last time at the end of the duration, ends the session
-with the reason ``"finished"``, and rejects messages that arrive later. A
-game with a ``duration`` doesn't set ``max_duration``: PsyNet allows for the
-longest ready step, the round itself, and 30 seconds to spare.
+``duration = ROUND_SECONDS`` makes the game last 60 seconds. It doesn't
+start the moment the wait ends: there's a **ready step** first, while the
+players' pages open. Each page says its player is ready a moment after it
+opens, and the game starts once every player is ready, or after
+``ready_timeout`` seconds (60 unless the game sets it). The game's clock,
+``now`` in its methods, starts at 0 then. At the end of the duration, PsyNet
+runs the game's ``tick`` one last time, ends the game with the reason
+``"finished"``, and rejects messages that arrive later. A game with a
+``duration`` doesn't need a ``timeout``.
 
-A game with deadlines of its own, such as one for each move, sets them in
-``on_start``, which runs once, when the game starts, and keeps them in the
-state, because everything about a session has to. Don't keep them on
-``self``: one game object plays many sessions, and a session can move to
-another process. Part 3's ``on_start`` does this for its coins.
+A game with deadlines of its own, such as one for each move, keeps them in
+the state, because everything about a game has to be there, and returns the
+next one from ``next_deadline``. Don't keep them on ``self``: one game object
+plays many games, and a game can move to another process. The
+``microsociety_live`` demo does this for its catches.
 
 The message says what the player wants
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -554,9 +558,10 @@ Snake isn't played in a trial, so the game pays the reward itself, through its
    :dedent:
 
 ``performance_reward`` works out each player's reward from the game's
-outcome, which is why the outcome includes how much food each snake ate.
-PsyNet adds it to the player's performance reward once, when the session's
-result is saved, even for a player who has already left the game page.
+outcome, which is why the outcome lists how much food each snake ate, in
+player order. PsyNet adds it to the player's performance reward once, when
+the game's result is saved, even for a player who has already left the game
+page.
 
 The snake page
 ~~~~~~~~~~~~~~
@@ -587,8 +592,9 @@ Each view shows the whole board, so the page draws each view as it arrives:
    :end-at: });
    :dedent:
 
-``view.me`` is the player's own id, so their snake is
-``view.players[view.me]``.
+The view lists the snakes in player order, and ``live.player`` is this
+player's number, so their snake is ``view.snakes[live.player]``, and its
+color is ``rules.colors[live.player]``.
 
 The page sends a turn when the player presses an arrow key, or W, A, S or D.
 It sends nothing before the game starts, after it ends or while the snake is
@@ -604,9 +610,9 @@ crashed, and it ignores a key that's held down:
 removes when the participant moves on to the next page.
 
 The time left comes from ``live.secondsLeft()``, which counts down to the
-end of the game's ``duration``. A crashed snake's ``back_at`` is a session
-time, so the page compares it with ``live.sessionTime()``, which
-counts the same seconds as ``now`` on the server:
+end of the game's ``duration``. A crashed snake's ``back_at`` is a time in
+seconds into the game, so the page compares it with ``live.gameTime()``,
+which counts the same seconds as ``now`` on the server:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/static/snake.js
    :language: javascript
@@ -639,7 +645,7 @@ saying which keys were held and for how long:
 
 ``Field`` limits each move to half a second (``SAVED_MOVEMENT``). A page
 could still claim more time than has passed by sending many moves at once,
-so ``apply`` charges each move against the session clock. However many moves
+so ``apply`` charges each move against the game's clock. However many moves
 a page sends, its player can't move faster than the rules allow. The general
 point is that a message is a request from the participant's browser, which
 they control, so the game should check anything that matters to the result.
@@ -677,7 +683,7 @@ the past, moving smoothly between two ticks.
 Saving fewer messages
 ~~~~~~~~~~~~~~~~~~~~~
 
-By default, the session's record keeps every message. With 30 moves a second
+By default, the game's record keeps every message. With 30 moves a second
 from each moving player, that's a lot of data that the analysis may not
 need. A message type's ``should_save`` decides which of its messages to
 keep. It runs on the same message object as ``apply``, so ``Move.apply``,
@@ -706,12 +712,21 @@ and that each trial's score and reward match the rounds the bot won:
    :pyobject: Exp.test_check_bot
    :dedent:
 
-:func:`~psynet.live_game.live_game_id` finds the session that a
-participant last played at a ``PlayLiveGame`` with that id, here their
-second game, and :func:`~psynet.live_game.live_game_result` says how it ended and what
-its outcome was. To test a game's rules without starting the experiment, call
-its methods directly, as the "Bots and testing" section of
-:doc:`live_games` shows.
+:func:`~psynet.live_game.live_game_id` finds the game that a participant
+last played at a ``PlayLiveGame`` with that id, here their second, and
+:func:`~psynet.live_game.live_game_result` says how it ended and what its
+outcome was.
+
+To test a game's rules without starting the experiment, play it in Python
+with :class:`~psynet.live_game.testing.LocalGame`, which calls the game's
+methods as PsyNet does. The demos' rule tests, such as
+``tests/isolated/test_rock_paper_scissors_live.py``, do this:
+
+.. code-block:: python
+
+    game = LocalGame(RockPaperScissors, players=2, settings={"rounds": 3})
+    game.send(0, Choose(round=1, action="rock"))
+    assert game.view(1)["partner_chosen"]
 
 Bots don't run the page's JavaScript, so also play the game yourself, in a
 browser window for each player. Try reloading the page during the game,
@@ -720,18 +735,20 @@ closing one player's window, and pressing keys before the game starts.
 Your data
 ---------
 
-Each session's record is saved with the experiment's data, in Dallinger's
-``realtime_session`` and ``realtime_event`` tables. ``realtime_session`` holds
-each session's outcome and final state. ``realtime_event`` holds the
-session's events. Most are saved messages, from pages and bots, each with
-the participant who sent it and whether the game accepted it. Its
-``event_type`` column tells these apart from other events, such as the
-session's end. For each message, the table records when it arrived, both as
-a date and time and as a session time. It also records the time on the
-participant's own computer when their page sent the message, and the session
-time of the view the participant was looking at when they acted. The "Saved
-messages" section of :doc:`live_games` shows how to read a session's
-messages in Python.
+Each game's record is saved with the experiment's data, in Dallinger's
+``realtime_session`` and ``realtime_event`` tables, where Dallinger calls each
+game a session. ``realtime_session`` holds each game's players, outcome and
+final state. ``realtime_event`` holds the game's events. Most are saved
+messages, from pages and bots, each with the participant who sent it and
+whether the game accepted it. Its ``event_type`` column tells these apart
+from other events, such as the game's end. For each message, the table
+records when it arrived, as a date and time. It also records the time on the
+participant's own computer when their page sent the message, and when the
+view the participant was looking at when they acted was made.
+
+The "Saved messages" section of :doc:`live_games` shows how to read a game's
+messages in Python, with each one's time in seconds since the game started,
+the clock the game's methods use.
 
 Next steps
 ----------
@@ -740,7 +757,8 @@ Next steps
 happens when a player leaves, reloads, or opens the game in two tabs. The
 ``bargaining_live``, ``public_goods_live`` and ``microsociety_live`` demos
 show more: re-pairing players between games, results on the group's round,
-``on_session_start`` and a group whose members change over time. Each
+``PlayLiveGame``'s ``on_release`` and a group whose members change over
+time. Each
 demo's README describes its design, and Dallinger's guide to `real-time games
 <https://dallinger.readthedocs.io/latest/realtime_games.html>`__ describes the
 engine that runs the games.

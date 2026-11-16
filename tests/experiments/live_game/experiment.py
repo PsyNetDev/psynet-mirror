@@ -1,4 +1,4 @@
-"""The test experiment for live sessions, in which pairs play a session of a
+"""The test experiment for live games, in which pairs play a game of a
 toy game."""
 
 import pytest
@@ -24,9 +24,9 @@ class Pick(LiveMessage):
     type = "pick"
     number: int
 
-    def apply(self, game, state, player_id, now):
-        state["picks"][player_id] = self.number
-        game.add_performance_reward(player_id, state["pick_reward"])
+    def apply(self, game, state, player, now):
+        state["picks"][player] = self.number
+        game.add_performance_reward(player, state["pick_reward"])
 
 
 class PickNumbers(LiveGame):
@@ -34,36 +34,36 @@ class PickNumbers(LiveGame):
 
     channel = "pick_numbers"
     messages = [Pick]
-    # So that a session that stalls fails psynet test within a minute.
-    max_duration = 60
+    # So that a game that stalls fails psynet test within a few minutes.
+    timeout = 60
 
     def initial_state(self, players, settings=None):
         return {
-            "picks": {player: None for player in players},
+            "picks": [None for player in players],
             # The PlayLiveGame's settings say what a pick pays.
             "pick_reward": settings["pick_reward"] if settings else 0,
         }
 
-    def view(self, state, player_id):
-        return {"picked": state["picks"][player_id] is not None}
+    def view(self, state, player):
+        return {"picked": state["picks"][player] is not None}
 
     def is_over(self, state):
-        return all(pick is not None for pick in state["picks"].values())
+        return None not in state["picks"]
 
     def outcome(self, state, reason):
         return state["picks"]
 
-    def performance_reward(self, outcome, reason, player_id):
-        pick = outcome[player_id]
+    def performance_reward(self, outcome, reason, player):
+        pick = outcome[player]
         return 0 if pick is None else pick / 100
 
-    def bot(self, view, player_id, now):
-        # Its own id, so the outcome shows which bot picked what.
-        return None if view["picked"] else Pick(number=int(player_id))
+    def bot(self, view, player, now):
+        # 10 more than its number, so the outcome shows which bot picked what.
+        return None if view["picked"] else Pick(number=10 + player)
 
 
 class Exp(psynet.experiment.Experiment):
-    label = "Live session test experiment"
+    label = "Live game test experiment"
     test_n_bots = 2
     test_mode = "parallel"
 
@@ -97,7 +97,7 @@ class Exp(psynet.experiment.Experiment):
             ),
             settings={"pick_reward": 0.5},
             # A participant whose partner doesn't arrive goes on without a
-            # session.
+            # game.
             max_wait_time=15,
             max_wait_action="leave_group",
         ),
@@ -122,7 +122,7 @@ class Exp(psynet.experiment.Experiment):
         assert session.status == "ended", session.error
         assert sorted(session.bots) == sorted(session.members)
         assert session.end_reason == "finished"
-        assert session.outcome == {str(member): member for member in session.members}
+        assert session.outcome == [10 + player for player in range(2)]
         (answer,) = (
             db.session.query(Response.answer)
             .filter_by(
@@ -133,6 +133,7 @@ class Exp(psynet.experiment.Experiment):
             .one()
         )
         assert answer == session.outcome
-        # 0.5 from Pick's add_performance_reward, as the game's settings say, plus the bot's pick (its id) / 100
-        # from reward.
-        assert bot.performance_reward == pytest.approx(0.5 + bot.id / 100)
+        # 0.5 from Pick's add_performance_reward, as the game's settings say,
+        # plus the bot's pick / 100 from performance_reward.
+        player = [int(member) for member in session.members].index(bot.id)
+        assert bot.performance_reward == pytest.approx(0.5 + (10 + player) / 100)

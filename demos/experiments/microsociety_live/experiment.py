@@ -15,8 +15,8 @@ member retires at its end, and a member also stops after ``MAX_ROUNDS``
 rounds. Before leaving, they leave a tip for future members.
 
 Each round is one cued ``FishingTrial`` per member, whose ``show_trial``
-returns a ``PlayLiveGame``: a live session for the society, played on the
-lake. Its ``on_session_start`` chooses who leaves after the round, and the
+returns a ``PlayLiveGame``: a live game for the society, played on the
+lake. Its ``on_release`` chooses who leaves after the round, and the
 history page reads where earlier rounds' fish were caught from each round's
 ``live_game_outcome``.
 """
@@ -89,15 +89,15 @@ class Move(LiveMessage):
     type = "move"
     spot: int
 
-    def apply(self, game, state, player_id, now):
+    def apply(self, game, state, player, now):
         if not 1 <= self.spot <= N_SPOTS:
             raise Reject("There's no such spot.")
-        boat = state["boats"][player_id]
+        boat = state["boats"][player]
         if boat["spot"] == self.spot:
             raise Reject("Your boat is already there.")
         boat["spot"] = self.spot
         boat["arrives_at"] = now + TRAVEL_SECONDS
-        state["moves"][player_id] += 1
+        state["moves"][player] += 1
 
 
 class Fishing(LiveGame):
@@ -106,17 +106,16 @@ class Fishing(LiveGame):
     duration = ROUND_SECONDS
 
     def initial_state(self, players):
+        # Each player's boat, fish and moves, in player order.
         return {
-            "boats": {p: {"spot": None, "arrives_at": None} for p in players},
-            "fish": {p: 0 for p in players},
-            "moves": {p: 0 for p in players},
-            # Each catch: the session time and what each boat caught where.
+            "boats": [{"spot": None, "arrives_at": None} for player in players],
+            "fish": [0 for player in players],
+            "moves": [0 for player in players],
+            # Each catch: when it happened, in seconds into the game, and what
+            # each boat caught where.
             "catches": [],
-            "next_catch_at": None,
+            "next_catch_at": CATCH_SECONDS,
         }
-
-    def on_start(self, state, now):
-        state["next_catch_at"] = now + CATCH_SECONDS
 
     def next_deadline(self, state):
         return state["next_catch_at"]
@@ -125,7 +124,7 @@ class Fishing(LiveGame):
         while state["next_catch_at"] <= now:
             at = state["next_catch_at"]
             caught = []
-            for player, boat in state["boats"].items():
+            for player, boat in enumerate(state["boats"]):
                 if boat["spot"] is None or boat["arrives_at"] > at:
                     continue
                 mean = SPOT_MEANS[boat["spot"] - 1]
@@ -135,20 +134,20 @@ class Fishing(LiveGame):
             state["catches"].append({"at": at, "caught": caught})
             state["next_catch_at"] = at + CATCH_SECONDS
 
-    def view(self, state, player_id):
-        labels = player_labels(state["psynet"]["players"], player_id)
+    def view(self, state, player):
+        labels = player_labels(len(state["boats"]), player)
         latest = state["catches"][-1] if state["catches"] else None
         return {
             "travel_seconds": TRAVEL_SECONDS,
             "boats": [
                 {
-                    "who": labels[player],
+                    "who": labels[number],
                     "spot": boat["spot"],
                     "arrives_at": boat["arrives_at"],
                 }
-                for player, boat in state["boats"].items()
+                for number, boat in enumerate(state["boats"])
             ],
-            "fish": {labels[player]: n for player, n in state["fish"].items()},
+            "fish": dict(zip(labels, state["fish"])),
             "catch_number": len(state["catches"]),
             "latest": [
                 {"who": labels[c["player"]], "spot": c["spot"], "fish": c["fish"]}
@@ -169,19 +168,19 @@ class Fishing(LiveGame):
             "spot_fish": spot_fish,
         }
 
-    def answer(self, outcome, reason, player_id):
+    def answer(self, outcome, reason, player):
         return {
-            "fish": outcome["fish"][player_id],
-            "moves": outcome["moves"][player_id],
+            "fish": outcome["fish"][player],
+            "moves": outcome["moves"][player],
         }
 
-    def performance_reward(self, outcome, reason, player_id):
-        return outcome["fish"][player_id] * FISH_VALUE
+    def performance_reward(self, outcome, reason, player):
+        return outcome["fish"][player] * FISH_VALUE
 
-    def bot(self, view, player_id, now):
-        mine = next(b for b in view["boats"] if b["who"] == "you")
+    def bot(self, view, player, now):
+        mine = view["boats"][player]
         if mine["spot"] is None:
-            return Move(spot=1 + int(player_id) % N_SPOTS)
+            return Move(spot=1 + player % N_SPOTS)
         if mine["arrives_at"] > now:
             return None
         caught = {c["who"]: c for c in view["latest"]}
@@ -197,10 +196,11 @@ class Fishing(LiveGame):
         return None
 
 
-def player_labels(players, player_id):
-    """Label the player "you" and the others by boat colour, in the order they joined."""
-    others = [p for p in players if p != player_id]
-    return {player_id: "you", **dict(zip(others, COLOURS))}
+def player_labels(n_players, player):
+    """Return each player's label, in player order: "you" for ``player``,
+    and the others' boat colours, in player order."""
+    colours = iter(COLOURS)
+    return ["you" if number == player else next(colours) for number in range(n_players)]
 
 
 def _spot(spot):
@@ -462,7 +462,7 @@ class FishingTrial(Trial):
             group_type="society",
             game_class=Fishing,
             page=lake_page(self.sync_group_round),
-            on_session_start=self.plan_leaving,
+            on_release=self.plan_leaving,
             waiting_message="Waiting for the others to reach the lake…",
             waiting_screen=lake_waiting_screen,
         )

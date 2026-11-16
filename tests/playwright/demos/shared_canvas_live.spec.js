@@ -19,7 +19,7 @@ const DRAG = 4;
 function ownPlayer(page) {
   return page.evaluate(() => {
     const view = psynet.liveGame.predictedView();
-    return { id: view.me, ...view.players[view.me] };
+    return { id: view.psynet.you, ...view.players[view.psynet.you] };
   });
 }
 
@@ -42,7 +42,7 @@ function checkPredictions(page) {
     let before = null;
     const own = () => {
       const view = psynet.liveGame.predictedView();
-      return view && view.players[view.me];
+      return view && view.players[view.psynet.you];
     };
     const record = () => {
       before = own();
@@ -78,7 +78,7 @@ async function collectACoin(page) {
   while (Date.now() < deadline) {
     const { me, coins } = await page.evaluate(() => {
       const view = psynet.liveGame.predictedView();
-      return { me: view.players[view.me], coins: view.coins };
+      return { me: view.players[view.psynet.you], coins: view.coins };
     });
     if (me.coins > 0) {
       break;
@@ -218,7 +218,7 @@ test("players move around shared_canvas_live with prediction and interpolation, 
     expect(collector.coins).toBeGreaterThan(0);
     await expect(first.locator("#canvas-scores")).toContainText(`You: ${collector.coins}`);
     await expect(second.locator("#canvas-scores")).toContainText(
-      `Player ${collector.number}: ${collector.coins}`,
+      `Player ${collector.id + 1}: ${collector.coins}`,
       { timeout: STEP_TIMEOUT_MS }
     );
 

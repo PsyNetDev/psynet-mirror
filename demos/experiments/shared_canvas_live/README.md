@@ -1,6 +1,6 @@
 # README
 
-In this live session, a group of players moves around a shared canvas with the
+In this live game, a group of players moves around a shared canvas with the
 arrow keys for 30 seconds, collecting coins. Players speed up while a key is
 held and slow down once it's released. More coins appear while the game runs,
 and each coin collected pays a reward.
@@ -59,12 +59,13 @@ object, and it changes five things:
 
 ## What's saved
 
-The session's outcome records each player's coins, keyed by participant id,
-and every coin collected, with who collected it and the session time when
-the game counted it. Each player's answer on the game page is their own part
+The game's outcome records each player's coins, in player order, and every
+coin collected, with who collected it and the time into the game when the
+game counted it. Each player's answer on the game page is their own part
 of it: their score (the coins they collected), whether it was the best, the
-group's total, and why the game ended. Pages send many moves a second, so the
-session's record keeps only the moves that collected a coin. Each of those
+group's total, and whether the game was played to the end. Pages send many
+moves a second, so the game's record keeps only the moves that collected a
+coin. Each of those
 saved moves also says when the participant's page sent it, by the browser's
 clock, for analyses that need the participant's own timing.
 

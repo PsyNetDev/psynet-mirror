@@ -973,7 +973,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Default: unset.
 
     realtime_games : ``list``
-        The game types of the experiment's live sessions (see
+        The game types of the experiment's live games (see
         :mod:`psynet.live_game`). PsyNet adds every
         :class:`~psynet.live_game.LiveGame` with a ``channel``, whichever
         module defines it, so list only other game types the experiment
@@ -2934,7 +2934,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Accept a websocket connection only from one of the participant's own pages.
 
         PsyNet's pages send :attr:`~psynet.participant.Participant.websocket_scope`
-        as the connection's scope. A live session's game page adds a ``.``
+        as the connection's scope. A live game's page adds a ``.``
         and a name for its connection, of up to 64 letters, digits and
         dots, since Dallinger's real-time engine tells a player's open pages
         apart by their scope. PsyNet's own messages to a participant go to

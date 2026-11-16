@@ -11,11 +11,18 @@ import functools
 from typing import NamedTuple
 
 from dallinger.realtime import RealtimeGame
+from dallinger.realtime.game import queued_effects
 from dallinger.realtime.utils import is_number
 from pydantic import PydanticInvalidForJsonSchema
 from pydantic_core import to_jsonable_python
 
-from .messages import LiveMessage, _parse_message, _saved_messages, _session_channel
+from .messages import (
+    _STARTED_EFFECT,
+    LiveMessage,
+    _parse_message,
+    _saved_messages,
+    _session_channel,
+)
 from .method_wrappers import (
     _STATE_METHODS,
     _ends_when_time_is_up,
@@ -39,7 +46,7 @@ from .reward import (
 class _LastApplied(NamedTuple):
     """The message a game's apply last parsed, for its save_message."""
 
-    player_id: str
+    player: int
     #: The message as the page sent it.
     sent: dict
     #: The message as a LiveMessage.
@@ -47,7 +54,7 @@ class _LastApplied(NamedTuple):
 
 
 class LiveGame(RealtimeGame):
-    """A game that a group plays in a live session.
+    """A game that a group of participants play together in real time.
 
     Set ``channel`` to a name for the game, list its message types in
     :attr:`messages`, and define ``initial_state``, ``view`` and ``bot``. The
@@ -75,45 +82,41 @@ class LiveGame(RealtimeGame):
     #: data itself.
     convert_state_to_json = True
 
-    #: Seconds on the session clock after which the game starts, even if
-    #: some players aren't ready. They can still join and play. ``None``
-    #: waits for every player, until ``max_duration`` at the latest.
+    #: Seconds after the group's pages are sent to the game at which the
+    #: game starts, even if some players aren't ready. They can still join
+    #: and play.
     ready_timeout = 60
 
-    #: Seconds on the session clock after which the session ends with the
-    #: reason ``"max_duration"``, if the game hasn't ended it already. Players
-    #: can't leave the game page until the session ends, so set it to
-    #: ``None``, for no limit, only if the game always ends by itself.
-    max_duration = 600
-
     #: Seconds the game lasts once it starts, or ``None``, the default, for a
-    #: game that ends by itself.
+    #: game that ends by itself, through ``is_over``.
     #:
     #: At the end, PsyNet runs the game's ``tick`` with the end as ``now``,
-    #: even if the tick runs late. It then ends the session with the reason
+    #: even if the tick runs late. It then ends the game with the reason
     #: ``"finished"``, unless ``is_over`` has ended it already, and rejects
-    #: any later messages.
-    #:
-    #: ``state["psynet"]["ends_at"]`` holds the session time of the
-    #: end. A page reads the time left from
+    #: any later messages. A page reads the time left from
     #: ``psynet.liveGame.secondsLeft()``, and the duration from
-    #: ``psynet.liveGame.duration``. Unless the game sets
-    #: :attr:`max_duration`, PsyNet sets it to
-    #: ``ready_timeout + duration + 30``.
+    #: ``psynet.liveGame.duration``.
     duration = None
 
-    #: The fewest players a session needs. A group that reaches the
+    #: Seconds after it starts at which a game without a :attr:`duration`
+    #: ends with the reason ``"timeout"``, if ``is_over`` hasn't ended it
+    #: already, so that it ends even if a player walks away. Players can't
+    #: leave the game page until the game ends, so set it to ``None``, for no
+    #: limit, only if the game always ends by itself. Default: 600.
+    timeout = 600
+
+    #: The fewest players a game needs. A group that reaches the
     #: :class:`PlayLiveGame` with fewer active members, for example
-    #: because the others left it while it waited, starts no session, and its
-    #: members' game pages show the no-session notice. Set it to 1 for a game
+    #: because the others left it while it waited, starts no game, and its
+    #: members' game pages show the no-game notice. Set it to 1 for a game
     #: that a player can play alone.
     min_players = 2
 
-    #: The most players a session can have, or ``None``, the default, for no
+    #: The most players a game can have, or ``None``, the default, for no
     #: limit. Set it when the game has something for each player that runs
     #: out, such as a color or a starting square. A group that reaches the
     #: :class:`PlayLiveGame` with more active members is a mistake in the
-    #: experiment's design, so it starts no session, as for too few players,
+    #: experiment's design, so it starts no game, as for too few players,
     #: and PsyNet logs an error that says so.
     max_players = None
 
@@ -152,13 +155,11 @@ class LiveGame(RealtimeGame):
                 f"{cls.__name__}'s max_players must be None or a whole number of "
                 f"at least its min_players, {cls.min_players}."
             )
-        if cls.ready_timeout is not None and (
-            not is_number(cls.ready_timeout) or cls.ready_timeout <= 0
-        ):
+        if not is_number(cls.ready_timeout) or cls.ready_timeout <= 0:
             raise ValueError(
-                f"{cls.__name__}'s ready_timeout must be None or a positive number."
+                f"{cls.__name__}'s ready_timeout must be a positive number."
             )
-        _check_duration(cls)
+        _set_max_duration(cls)
         cls._message_types = _index_message_types(cls)
         if cls.channel is not None:
             _register_live_game(cls)
@@ -173,30 +174,32 @@ class LiveGame(RealtimeGame):
         return super().tick(state, now)
 
     @_stores_json
-    def on_join(self, state, player_id, now):
+    def on_join(self, state, player, now):
         """Respond to a player arriving, as in Dallinger's ``on_join``. A
         player arrives when they open the game page while none of theirs is
         open, so it runs again after a reload or a dropped connection. A bot
-        arrives when the game starts. A player who comes back after
-        leaving is no longer in ``state["psynet"]["away"]``.
+        arrives as soon as its group reaches the game, before it starts. A
+        player who comes back after leaving is no longer in
+        ``state["psynet"]["away"]``. ``now`` is ``None`` before the game
+        starts.
         """
-        return super().on_join(state, player_id, now)
+        return super().on_join(state, player, now)
 
     @_stores_json
-    def on_leave(self, state, player_id, now):
+    def on_leave(self, state, player, now):
         """Respond to a player's last open page closing, as in Dallinger's
         ``on_leave``. By default the game carries on without them. A player
         who leaves before the game starts isn't ready any more, and a player
         who leaves is in ``state["psynet"]["away"]`` until they come
-        back.
+        back. ``now`` is ``None`` before the game starts.
         """
-        return super().on_leave(state, player_id, now)
+        return super().on_leave(state, player, now)
 
     @_waits_for_start
     def next_deadline(self, state):
-        """Return the session time at which ``tick`` should next run, as in
-        Dallinger's ``next_deadline``. Until the game starts, PsyNet waits
-        for :attr:`ready_timeout` instead.
+        """Return the time at which ``tick`` should next run, in seconds
+        since the game started, as in Dallinger's ``next_deadline``. It's
+        called only once the game has started.
         """
         return super().next_deadline(state)
 
@@ -208,10 +211,10 @@ class LiveGame(RealtimeGame):
         return super().is_over(state)
 
     @_stores_json
-    def on_start(self, state, now):
-        """Respond to the game starting, such as by setting the game's
-        deadlines from ``now``. ``state["psynet"]["ready"]`` says which
-        players were ready. A game can end the session here, through its
+    def on_start(self, state):
+        """Respond to the game starting, the moment the game's clock, ``now``
+        in its other methods, starts at 0. ``state["psynet"]["ready"]``
+        says which players were ready. A game can end here, through its
         ``is_over``.
         """
 
@@ -220,14 +223,18 @@ class LiveGame(RealtimeGame):
         entry = _psynet_entry(state)
         if entry["started_at"] is None:
             entry["started_at"] = now
-            if self.duration is not None:
-                entry["ends_at"] = now + self.duration
-            self.on_start(state, now)
+            limit = self.duration if self.duration is not None else self.timeout
+            if limit is not None:
+                entry["ends_at"] = now + limit
+            if queued_effects.get(None) is not None:
+                # Past this class's queue_effect, which refuses PsyNet's names.
+                RealtimeGame.queue_effect(self, _STARTED_EFFECT, {})
+            self.on_start(state)
 
     # Wrapped here, so __init_subclass__ doesn't copy a wrapper onto each
     # subclass, which would hide a later base's apply.
     @_stores_json
-    def apply(self, state, player_id, message, now, sent):
+    def apply(self, state, player, message, now, sent):
         """Apply a page's message with its message type's
         :meth:`LiveMessage.apply`.
 
@@ -240,11 +247,11 @@ class LiveGame(RealtimeGame):
         parsed = self.parse_message(message)
         # Kept for save_message, which Dallinger calls next with the same
         # message, so that LiveMessage.should_save sees what apply saw.
-        self._last_applied = _LastApplied(player_id, message, parsed)
-        parsed.apply(self, state, player_id, now)
+        self._last_applied = _LastApplied(player, message, parsed)
+        parsed.apply(self, state, player, now)
 
-    def save_message(self, state, player_id, message, rejection):
-        """Return whether to save a page's message in the session's record,
+    def save_message(self, state, player, message, rejection):
+        """Return whether to save a page's message in the game's record,
         as in Dallinger's ``save_message``. By default, it asks the message's
         :meth:`LiveMessage.should_save`, with the same message object that
         :meth:`LiveMessage.apply` received, and saves a message the game
@@ -253,28 +260,19 @@ class LiveGame(RealtimeGame):
         """
         last = getattr(self, "_last_applied", None)
         self._last_applied = None
-        if last is None or (last.player_id, last.sent) != (player_id, message):
+        if last is None or (last.player, last.sent) != (player, message):
             # The game couldn't read the message, or overrides apply.
             return True
-        return last.parsed.should_save(self, state, player_id, rejection)
+        return last.parsed.should_save(self, state, player, rejection)
 
-    def elapsed(self, state, now):
-        """Return the seconds since the game started, once every player
-        was ready or at :attr:`ready_timeout`, or ``None`` before it starts.
-        The session clock, ``now``, counts from when the group's wait at the
-        :class:`PlayLiveGame` ended instead, so use this for the game's own
-        timers.
-        """
-        started_at = _psynet_entry(state)["started_at"]
-        return None if started_at is None else now - started_at
-
-    def answer(self, outcome, reason, player_id):
+    def answer(self, outcome, reason, player):
         """Return a player's answer on the game page, which is also their
         trial's answer when the game is played as a trial. By default, it's
         the whole outcome. Return only the player's part, such as
-        ``outcome["payoffs"][player_id]``, so the trial doesn't hold the
-        other players' data and code reading it doesn't need the player's id.
-        It isn't called for a session that failed without an outcome, whose
+        ``outcome["payoffs"][player]``, so the trial doesn't hold the
+        other players' data and code reading it doesn't need the player's
+        number.
+        It isn't called for a game that failed without an outcome, whose
         answer is ``None``.
 
         Parameters
@@ -284,11 +282,12 @@ class LiveGame(RealtimeGame):
             What the game's ``outcome`` returned.
 
         reason
-            Why the session ended. It's the ``reason`` that the game's
+            Why the game ended. It's the ``reason`` that the game's
             ``outcome`` received.
 
-        player_id
-            The player's id.
+        player
+            The player's number: 0 for the first player, 1 for the next,
+            and so on.
 
         Returns
         -------
@@ -297,12 +296,12 @@ class LiveGame(RealtimeGame):
         """
         return outcome
 
-    def performance_reward(self, outcome, reason, player_id):
-        """Return the reward a player earns from the session's outcome, such as
+    def performance_reward(self, outcome, reason, player):
+        """Return the reward a player earns from the game's outcome, such as
         their winnings. PsyNet adds it to each player's performance reward
-        once, when the session's result is saved, however the session ended,
+        once, when the game's result is saved, however the game ended,
         and also for a player who has left the game page. It isn't paid for a
-        session that failed without an outcome, because its record couldn't be
+        game that failed without an outcome, because its record couldn't be
         saved or its ``outcome`` raised an error. When the game is played in a
         trial, the reward is also added to that trial's
         ``performance_reward``. By default, there's no reward.
@@ -314,11 +313,12 @@ class LiveGame(RealtimeGame):
             What the game's ``outcome`` returned.
 
         reason
-            Why the session ended. It's the ``reason`` that the game's
+            Why the game ended. It's the ``reason`` that the game's
             ``outcome`` received.
 
-        player_id
-            The player's id.
+        player
+            The player's number: 0 for the first player, 1 for the next,
+            and so on.
 
         Returns
         -------
@@ -327,7 +327,7 @@ class LiveGame(RealtimeGame):
         """
         return 0
 
-    def add_performance_reward(self, player_id, amount):
+    def add_performance_reward(self, player, amount):
         """Add a reward earned during the game to a player's performance
         reward. Call it in a method that changes the state, such as a
         message's :meth:`~LiveMessage.apply`. PsyNet adds the reward a few
@@ -339,19 +339,23 @@ class LiveGame(RealtimeGame):
         Parameters
         ----------
 
-        player_id
-            The player's id.
+        player
+            The player's number: 0 for the first player, 1 for the next,
+            and so on.
 
         amount
             The reward, a number of 0 or more.
         """
         amount = _check_reward(amount, f"{type(self).__name__}.add_performance_reward")
+        if isinstance(player, bool) or not isinstance(player, int) or player < 0:
+            raise TypeError(
+                f"{type(self).__name__}.add_performance_reward needs a player's "
+                f"number, such as 0, not {player!r}."
+            )
         if not amount:
             return
         # Past this class's queue_effect, which refuses PsyNet's own effect name.
-        super().queue_effect(
-            _REWARD_EFFECT, {"player_id": str(player_id), "amount": amount}
-        )
+        super().queue_effect(_REWARD_EFFECT, {"player": player, "amount": amount})
 
     # Wrapped here, so a game that queues no effects of its own doesn't need
     # to define it.
@@ -365,10 +369,10 @@ class LiveGame(RealtimeGame):
 
     @_handles_ending
     def handle_ending(self, session_row):
-        """Do work that needs the session's ending, as in Dallinger's
+        """Do work that needs the game's ending, as in Dallinger's
         ``handle_ending``. PsyNet pays each player's
         :meth:`performance_reward`, and copies the outcome to the round the
-        session was played in, if any, as
+        game was played in, if any, as
         :attr:`~psynet.sync.SyncGroupRound.live_game_outcome`, before this
         method runs.
         """
@@ -380,7 +384,7 @@ class LiveGame(RealtimeGame):
         payload converted to plain data in the same way as the state. A
         message's fields can go in the payload as they are.
         """
-        if name == _REWARD_EFFECT:
+        if name in (_REWARD_EFFECT, _STARTED_EFFECT):
             raise ValueError(
                 f"The effect name {name!r} is reserved for PsyNet's "
                 "add_performance_reward. Give the effect another name."
@@ -419,14 +423,14 @@ class LiveGame(RealtimeGame):
         return _parse_message(self._message_types, message)
 
     @classmethod
-    def saved_messages(cls, session_id):
-        """Return the messages saved for a session of this game, in the order
+    def saved_messages(cls, game_id):
+        """Return the messages saved for one play of this game, in the order
         the game applied them, as :class:`SavedMessage` objects.
 
         They include each player's :class:`PlayerReady` messages, and the
         messages the game rejected, such as those sent before the game
         starts. The record is written a few seconds behind the game, so for a
-        session that's still being played, this returns the messages written
+        game that's still being played, this returns the messages written
         so far.
         :doc:`/code/multiplayer/live_games` says when the record is
         complete.
@@ -434,55 +438,56 @@ class LiveGame(RealtimeGame):
         Parameters
         ----------
 
-        session_id
-            The session's id, as :func:`live_game_id` returns it.
+        game_id
+            The game's id, as :func:`live_game_id` returns it.
 
         Raises
         ------
 
         KeyError
-            If there is no session ``session_id``.
+            If there is no game ``game_id``.
 
         ValueError
-            If the session is of another game.
+            If ``game_id`` is a game of another kind.
         """
-        channel = _session_channel(session_id)
+        channel = _session_channel(game_id)
         if channel != cls.channel:
             raise ValueError(
-                f"Session {session_id} is a session of {channel!r}, "
-                f"not {cls.channel!r}."
+                f"Game {game_id} is a game of {channel!r}, not {cls.channel!r}."
             )
-        return _saved_messages(session_id, cls._message_types)
+        return _saved_messages(game_id, cls._message_types)
 
 
-# Seconds that a derived max_duration leaves after a game's time is up, so
-# the game ends on its own tick rather than at max_duration.
+# Seconds that Dallinger's max_duration leaves after the latest moment the
+# game can end, so the game ends on its own tick rather than at max_duration,
+# which is only there in case it doesn't.
 _MAX_DURATION_MARGIN = 30
 
 
-def _check_duration(game_class):
-    """Check a game's duration, and set its max_duration from it unless the
-    game sets one itself."""
-    duration = game_class.duration
-    if duration is None:
-        return
+def _set_max_duration(game_class):
+    """Check a game's duration and time limit, and set Dallinger's
+    max_duration from them."""
     name = game_class.__name__
-    if not is_number(duration) or duration <= 0:
-        raise ValueError(f"{name}'s duration must be None or a positive number.")
-    if game_class.ready_timeout is None:
-        return
-    latest_end = game_class.ready_timeout + duration
-    owner = next(base for base in game_class.__mro__ if "max_duration" in vars(base))
-    if owner is LiveGame or vars(owner).get("_derived_max_duration"):
-        game_class.max_duration = latest_end + _MAX_DURATION_MARGIN
-        game_class._derived_max_duration = True
-    elif game_class.max_duration is not None and game_class.max_duration <= latest_end:
-        raise ValueError(
-            f"{name}'s max_duration, {game_class.max_duration}, must be later than "
-            f"its ready_timeout plus its duration, {latest_end}, or a session "
-            "that starts at the ready timeout ends before its time is up. Leave "
-            "max_duration unset, and PsyNet sets it from the duration."
+    if "max_duration" in vars(game_class) and not vars(game_class).get(
+        "_psynet_max_duration"
+    ):
+        raise TypeError(
+            f"{name} sets max_duration, which PsyNet sets itself. Set its "
+            "timeout instead, in seconds from when the game starts."
         )
+    for what in ("duration", "timeout"):
+        value = getattr(game_class, what)
+        if value is not None and (not is_number(value) or value <= 0):
+            raise ValueError(f"{name}'s {what} must be None or a positive number.")
+    limit = (
+        game_class.duration if game_class.duration is not None else game_class.timeout
+    )
+    game_class.max_duration = (
+        None
+        if limit is None
+        else game_class.ready_timeout + limit + _MAX_DURATION_MARGIN
+    )
+    game_class._psynet_max_duration = True
 
 
 def _index_message_types(game_class):

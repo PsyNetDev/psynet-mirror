@@ -48,7 +48,7 @@ export function activate({root, psynet}) {
   // reconnects shows the whole game again.
   function render(view) {
     if (view === null) {
-      // The final view of a session that failed.
+      // The final view of a game that failed.
       enableButtons(false);
       status.textContent = "The game is over.";
       return;

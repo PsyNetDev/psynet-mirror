@@ -138,9 +138,9 @@ payload, and the route answers without calling the experiment's
 the message in a status notice and resends the same submission after that
 many seconds, and the bot driver sleeps and resends. Neither limits its
 attempts, so the page has to stop refusing by itself.
-``LiveGameControl`` uses this to keep a game page open until its session's
-result is saved, and raises an error for a session that is still running more
-than a minute after its game's ``max_duration``, which can no longer end.
+``LiveGameControl`` uses this to keep a game page open until its game's
+result is saved, and raises an error for a game that is still running more
+than a minute after it should have ended, which can no longer end.
 
 Participant-facing write phases use a bounded PostgreSQL ``lock_timeout`` so
 unexpected contention fails safely instead of occupying a web worker
@@ -229,7 +229,7 @@ PsyNet:
 * stops page media and invalidates outstanding media loads;
 * clears Lucid termination state;
 * runs registered page cleanup callbacks and event-listener cleanup;
-* closes the page's live session connection, if it has one;
+* closes the page's live game connection, if it has one;
 * resets page-scoped response and JavaScript state.
 
 2. Commit the new fragment
@@ -610,20 +610,20 @@ skipped its own later hold, an ordinary POST of the previous hold uuid is
 catch-up, not a multi-tab reject. Hold-resume overlays catch up the same way
 so the browser can swap in place.
 
-Live session sockets
---------------------
+Live game sockets
+-----------------
 
 ``psynet.liveGame`` joins a page with a ``LiveGameControl`` to its live
-session, over Dallinger's ``/experiment-socket`` route. The control
+game, over Dallinger's ``/experiment-socket`` route. The control
 contributes everything the page needs through the component hooks:
 
 * ``get_js_dependencies`` loads ``live-game.js``, so only documents that
   show a game page load it;
 * ``get_js_page_code`` calls ``PsyNetLiveGame.activatePage``, which creates
   ``psynet.liveGame`` for the first game page a document shows, shows the
-  no-session notice, and returns the cleanup that closes the page's game
+  no-game notice, and returns the cleanup that closes the page's game
   socket;
-* ``get_participant_js_vars`` adds the session's id and game channel to the page's
+* ``get_participant_js_vars`` adds the game's id and channel to the page's
   ``js_vars`` each time the page renders. It raises an error for a participant
   who hasn't reached the barrier of the ``PlayLiveGame`` the page belongs to.
 
@@ -695,11 +695,11 @@ Key implementation and test locations
 * ``psynet/resources/scripts/websocket-channel.js`` — shared WebSocket channel
   framing and reconnect lifecycle.
 * ``psynet/resources/scripts/live-game.js`` — ``psynet.liveGame``, a game
-  page's connection to its live session.
-* ``psynet/live_game/`` — live sessions on the server: the game class, its
+  page's connection to its live game.
+* ``psynet/live_game/`` — live games on the server: the game class, its
   method wrappers, ``PlayLiveGame``, the control and the ready step.
 * ``tests/isolated/test_live_game.py``, ``tests/javascript/live-game.test.mjs``
-  and ``tests/playwright/live_game.spec.js`` — live sessions.
+  and ``tests/playwright/live_game.spec.js`` — live games.
 * ``psynet/timeline_hold.py`` — durable hold state, accounting, and wake
   publication.
 * ``psynet/experiment.py`` — GET hold resolution (``_resolve_get_timeline_hold``,

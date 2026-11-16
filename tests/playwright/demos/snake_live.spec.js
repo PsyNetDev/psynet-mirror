@@ -35,7 +35,7 @@ function latestView(page) {
 
 async function snakeOf(page, id) {
   const view = await latestView(page);
-  return view.players[id ?? view.me];
+  return view.snakes[id ?? view.psynet.you];
 }
 
 // Steers the player's snake toward the nearest food, onto empty squares
@@ -45,14 +45,14 @@ async function eatAPiece(page) {
   let pressed = null;
   while (Date.now() < deadline) {
     const view = await latestView(page);
-    const me = view.players[view.me];
+    const me = view.snakes[view.psynet.you];
     if (me.food > 0) {
       return;
     }
     const head = me.body[0];
     if (head && view.food.length) {
       const taken = new Set(
-        Object.values(view.players).flatMap((player) => player.body.map((square) => square.join()))
+        view.snakes.flatMap((snake) => snake.body.map((square) => square.join()))
       );
       const food = view.food.reduce((a, b) =>
         Math.abs(a[0] - head[0]) + Math.abs(a[1] - head[1]) <=
@@ -105,7 +105,7 @@ test("players steer snakes in snake_live, eat food, crash and come back, and fin
     );
     const [first, second] = participants;
     await expect(first.locator("#next-button")).toBeHidden();
-    const id = (await latestView(first)).me;
+    const id = (await latestView(first)).psynet.you;
 
     // A turn on one page shows on the other, since the game moves every
     // snake and sends both pages the board.
@@ -126,7 +126,7 @@ test("players steer snakes in snake_live, eat food, crash and come back, and fin
     const eater = await snakeOf(first);
     await expect(first.locator("#snake-scores")).toContainText(`You: ${eater.food} food`);
     await expect(second.locator("#snake-scores")).toContainText(
-      `Player ${eater.number}: ${eater.food} food`,
+      `Player ${id + 1}: ${eater.food} food`,
       { timeout: STEP_TIMEOUT_MS }
     );
 

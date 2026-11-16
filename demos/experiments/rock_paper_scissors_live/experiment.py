@@ -1,4 +1,4 @@
-"""Rock, paper, scissors as a live session.
+"""Rock, paper, scissors as a live game.
 
 Pairs of participants play two games of rock, paper, scissors, of five and
 then three rounds, each game on one page. Each round's result appears for both
@@ -6,7 +6,7 @@ players as soon as they have both chosen.
 
 Each game is one cued ``RockPaperScissorsTrial`` per player. The trial's
 definition says how many rounds the game has and what a round won pays. The
-trial starts the pair's session, with the number of rounds as its settings,
+trial starts the pair's game, with the number of rounds as its settings,
 and shows the game page. The game's ``answer`` gives each player their own
 part of the outcome, which is the trial's answer: the trial scores it as the
 rounds the player won and pays the reward for them, and its feedback page
@@ -52,28 +52,23 @@ GAMES = [
 PARTNER_WAIT_SECONDS = 300
 
 
-def round_result(mine, theirs):
+def result_for(player, choices):
+    """Return how a round went for ``player``, 0 or 1, from both players'
+    choices: ``"win"``, ``"loss"`` or ``"draw"``."""
+    mine, theirs = choices[player], choices[1 - player]
     if mine == theirs:
         return "draw"
     return "win" if BEATS[mine] == theirs else "loss"
 
 
-def partner_of(player_id, players):
-    (partner,) = [player for player in players if player != player_id]
-    return partner
-
-
-def rounds_as_seen_by(player_id, rounds):
-    """The rounds played so far, as the player sees them: their choice, their
+def rounds_seen_by(player, rounds):
+    """The rounds played so far, as ``player`` sees them: their choice, their
     partner's, and the result for them."""
-    if not rounds:
-        return []
-    partner = partner_of(player_id, rounds[0])
     return [
         {
-            "mine": choices[player_id],
-            "theirs": choices[partner],
-            "result": round_result(choices[player_id], choices[partner]),
+            "mine": choices[player],
+            "theirs": choices[1 - player],
+            "result": result_for(player, choices),
         }
         for choices in rounds
     ]
@@ -86,89 +81,81 @@ class Choose(LiveMessage):
     round: int
     action: Action
 
-    def apply(self, game, state, player_id, now):
+    def apply(self, game, state, player, now):
         # The round number stops a click on a page that hasn't caught up yet,
         # such as one in another tab, from counting for the next round.
         if self.round != len(state["rounds"]) + 1:
             raise Reject("That isn't the current round.")
-        if state["choices"][player_id] is not None:
+        if state["choices"][player] is not None:
             raise Reject("You've already chosen this round.")
-        choices = state["choices"]
-        choices[player_id] = self.action
-        if None not in choices.values():
-            partner = partner_of(player_id, choices)
-            result = round_result(choices[player_id], choices[partner])
-            if result == "win":
-                state["wins"][player_id] += 1
-            elif result == "loss":
-                state["wins"][partner] += 1
-            state["rounds"].append(choices)
-            state["choices"] = {player: None for player in choices}
+        state["choices"][player] = self.action
+        if None not in state["choices"]:
+            state["rounds"].append(state["choices"])
+            state["choices"] = [None, None]
 
 
 class RockPaperScissors(LiveGame):
-    """A game of rock, paper, scissors between two players.
+    """A game of rock, paper, scissors between two players, 0 and 1.
 
-    The state holds the number of rounds in the game, which comes from the
-    session's settings, each player's choice in the current round, ``None``
-    until they choose, the choices of every round played so far, and the
-    number of rounds each player has won. A player's view says whether their
-    partner has chosen in the current round, and shows the partner's choice
-    only once the round is over.
+    The state holds the number of rounds, from the game's settings, each
+    player's choice in the current round, ``None`` until they choose, and
+    both players' choices in each round played so far. A player's view says
+    whether their partner has chosen in the current round, and shows the
+    partner's choice only once the round is over.
     """
 
     channel = "rock_paper_scissors_live"
     messages = [Choose]
-    # A limit on the whole game, counted from when the pair finished
-    # waiting for each other. A game takes a minute or two, so it ends within five
-    # minutes even if a player leaves it.
-    max_duration = 300
+    min_players = max_players = 2
+    # A game takes a minute or two, so this ends it within five minutes even
+    # if a player leaves it.
+    timeout = 300
 
     def initial_state(self, players, settings):
         return {
             "n_rounds": settings["rounds"],
-            "choices": {player: None for player in players},
+            "choices": [None, None],
             "rounds": [],
-            "wins": {player: 0 for player in players},
         }
 
-    def view(self, state, player_id):
-        partner = partner_of(player_id, state["choices"])
+    def view(self, state, player):
+        results = rounds_seen_by(player, state["rounds"])
         return {
             "round": len(state["rounds"]) + 1,
             "n_rounds": state["n_rounds"],
-            "chosen": state["choices"][player_id] is not None,
-            "partner_chosen": state["choices"][partner] is not None,
-            "results": rounds_as_seen_by(player_id, state["rounds"]),
-            "wins": state["wins"][player_id],
-            "partner_wins": state["wins"][partner],
+            "chosen": state["choices"][player] is not None,
+            "partner_chosen": state["choices"][1 - player] is not None,
+            "results": results,
+            "wins": count(results, "win"),
+            "partner_wins": count(results, "loss"),
         }
 
     def is_over(self, state):
         return len(state["rounds"]) == state["n_rounds"]
 
     def outcome(self, state, reason):
-        return {
-            "reason": reason,
-            "rounds": state["rounds"],
-            "wins": state["wins"],
-        }
+        return {"rounds": state["rounds"]}
 
-    def answer(self, outcome, reason, player_id):
+    def answer(self, outcome, reason, player):
         """The player's own part of the outcome: their rounds, each with both
-        choices and the result for them, and the rounds each player won."""
-        partner = partner_of(player_id, outcome["wins"])
+        choices and the result for them, the rounds each player won, and
+        whether the game was played to the end."""
+        results = rounds_seen_by(player, outcome["rounds"])
         return {
-            "reason": reason,
-            "rounds": rounds_as_seen_by(player_id, outcome["rounds"]),
-            "wins": outcome["wins"][player_id],
-            "partner_wins": outcome["wins"][partner],
+            "finished": reason == "finished",
+            "rounds": results,
+            "wins": count(results, "win"),
+            "partner_wins": count(results, "loss"),
         }
 
-    def bot(self, view, player_id, now):
+    def bot(self, view, player, now):
         if view["chosen"]:
             return None
         return Choose(round=view["round"], action=random.choice(ACTIONS))
+
+
+def count(results, result):
+    return sum(played["result"] == result for played in results)
 
 
 def show_result(answer, reward):
@@ -180,7 +167,7 @@ def show_result(answer, reward):
         )
     wins = answer["wins"]
     partner_wins = answer["partner_wins"]
-    if answer["reason"] != "finished":
+    if not answer["finished"]:
         summary = "The game ended early."
     elif wins > partner_wins:
         summary = "You won the game!"
@@ -212,16 +199,16 @@ class RockPaperScissorsTrial(Trial):
 
     def show_trial(self, experiment, participant):
         game = self.definition
-        # PlayLiveGame waits for the pair, starts their session and shows the
-        # game page. Starting the session closes the pair's round, as
-        # releasing any group barrier in a cued trial does.
+        # PlayLiveGame waits for the pair, starts their game and shows the
+        # game page. Starting the game closes the pair's round, as releasing
+        # any group barrier in a cued trial does.
         return PlayLiveGame(
             id_="rock_paper_scissors",
             group_type="pair",
             game_class=RockPaperScissors,
             settings={"rounds": game["rounds"]},
             # A player whose partner doesn't arrive leaves the pair, and goes
-            # on to the game page without a session.
+            # on to the game page without a game.
             max_wait_time=PARTNER_WAIT_SECONDS,
             max_wait_action="leave_group",
             page=ModularPage(
@@ -272,7 +259,7 @@ class RockPaperScissorsTrial(Trial):
     def score_answer(self, answer, definition):
         """Return the number of rounds the player won."""
         if answer is None:
-            # The game page had no session, so no game was played.
+            # The pair didn't start a game.
             return 0
         return answer["wins"]
 
@@ -307,7 +294,7 @@ def no_more_games(participant):
 
 
 class Exp(psynet.experiment.Experiment):
-    label = "Rock, paper, scissors live session demo"
+    label = "Rock, paper, scissors live game demo"
     test_n_bots = 2
     test_mode = "parallel"
 
@@ -358,7 +345,7 @@ class Exp(psynet.experiment.Experiment):
             {"number": 1, "rounds": 5, "reward_per_win": 0.05},
             {"number": 2, "rounds": 3, "reward_per_win": 0.10},
         ]
-        # The bot's latest session is its second game.
+        # The bot's latest game is its second.
         result = live_game_result(live_game_id(bot, "rock_paper_scissors"))
         assert result.status == "ended", result.error
         assert result.end_reason == "finished"

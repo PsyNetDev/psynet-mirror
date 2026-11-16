@@ -11,7 +11,10 @@ from .messages import LiveMessage
 from .psynet_entry import (
     _SESSION_BOOKKEEPING,
     _UNCHANGED,
+    TIMEOUT,
     PlayerReady,
+    _game_time,
+    _player,
     _psynet_entry,
 )
 
@@ -36,7 +39,8 @@ def _converts_outermost_call(method, name, convert):
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
         if session_part is not None and getattr(type(self), name) is wrapper:
-            call = functools.partial(session_part, self, method)
+            outermost = not _changing_state.get()
+            call = functools.partial(session_part, self, method, outermost)
         else:
             call = functools.partial(method, self)
         if _changing_state.get():
@@ -87,6 +91,9 @@ def _waits_for_start(method):
         if entry["started_at"] is None:
             return self.ready_timeout
         deadline = method(self, state)
+        if deadline is not None:
+            # On the game's clock, as the game's other methods see it.
+            deadline += entry["started_at"]
         ends_at = entry["ends_at"]
         if ends_at is None or entry["time_up"]:
             return deadline
@@ -99,7 +106,10 @@ def _waits_for_start(method):
 def _ends_when_time_is_up(method):
     @functools.wraps(method)
     def is_over(self, state):
-        return _psynet_entry(state)["time_up"] or method(self, state)
+        if _psynet_entry(state)["time_up"]:
+            # A string is Dallinger's reason for the end.
+            return "finished" if self.duration is not None else TIMEOUT
+        return method(self, state)
 
     is_over._psynet_wrapper = True
     return is_over
@@ -108,22 +118,25 @@ def _ends_when_time_is_up(method):
 def _shows_psynet_entry(method):
     @functools.wraps(method)
     def view(self, state, player_id):
-        shown = method(self, state, player_id)
         if type(self).view is not view:
-            return shown
+            # A super() call, from the game's own view, gets the player's
+            # number as that view did.
+            return method(self, state, player_id)
+        entry = _psynet_entry(state)
+        player = _player(entry, player_id)
+        shown = method(self, state, player)
         if not isinstance(shown, dict):
             raise TypeError(
                 f"{type(self).__name__}.view must return a dict, not "
                 f"{type(shown).__name__}."
             )
-        entry = _psynet_entry(state)
         # A view can be the state itself.
         if shown.get("psynet", entry) != entry:
             raise ValueError(
                 f"{type(self).__name__}.view returned a 'psynet' entry, "
                 "which is PsyNet's. Give it another name."
             )
-        return {**shown, "psynet": entry}
+        return {**shown, "psynet": {**entry, "you": player}}
 
     view._psynet_wrapper = True
     return view
@@ -135,10 +148,12 @@ def _sends_message(method):
         outermost = type(self).bot is send
         if outermost:
             entry = _psynet_entry(view, "view")
+            player_id = _player(entry, player_id)
             if player_id not in entry["ready"]:
                 return {"type": PlayerReady.type, "message": {}}
             if entry["started_at"] is None:
                 return None
+            now = _game_time(entry, now)
         message = method(self, view, player_id, now)
         # A bot calling super().bot() reaches its parent's wrapper, which
         # leaves the message for the outermost one.
@@ -149,7 +164,7 @@ def _sends_message(method):
             "message": message.model_dump(mode="json", by_alias=True),
         }
         # No page sees a bot's rejections, so a message the game can't read
-        # fails the session here.
+        # fails the game here.
         try:
             read = self.parse_message(sent)
         except Reject as rejection:
@@ -175,8 +190,8 @@ def _to_json(state, what):
             f"After {what}, the state has a dict with the key {key!r}, of type "
             f"{type(key).__name__}. The state is saved as JSON, whose keys are "
             f"strings, so after a save the key would read back as {str(key)!r} "
-            "and looking it up would fail. Use string keys: player ids are "
-            "already strings."
+            "and looking it up would fail. Use string keys, or keep what each "
+            "player has in a list, in player order."
         )
     try:
         return to_jsonable_python(state)
@@ -217,9 +232,12 @@ def _saves_ready_messages(method):
 
     @functools.wraps(method)
     def save_message(self, state, player_id, message, rejection):
+        if type(self).save_message is not save_message:
+            return method(self, state, player_id, message, rejection)
         if isinstance(message, dict) and message.get("type") == PlayerReady.type:
             return True
-        return method(self, state, player_id, message, rejection)
+        player = _player(_psynet_entry(state), player_id)
+        return method(self, state, player, message, rejection)
 
     save_message._psynet_wrapper = True
     return save_message

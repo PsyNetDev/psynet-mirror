@@ -392,7 +392,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         Should not be modified directly.
 
     live_games : dict or None
-        The ids of the participant's live sessions, keyed by the id of the
+        The ids of the participant's live games, keyed by the id of the
         :class:`~psynet.live_game.PlayLiveGame` that started
         each one. Read it with :func:`~psynet.live_game.live_game_id`.
         Should not be modified directly.

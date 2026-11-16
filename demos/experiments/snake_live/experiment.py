@@ -1,4 +1,4 @@
-"""Snake for a group, played as a live session.
+"""Snake for a group, played as a live game.
 
 Each player steers a snake around a shared board with the arrow keys for
 ``ROUND_SECONDS``. The game moves every snake one square on each tick, and a
@@ -29,8 +29,8 @@ from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
 from psynet.timeline import PageMaker, Timeline
 
-#: Each player's color, in the order they signed up. There's one for each
-#: player a game can have.
+#: Each player's color, by player number. There's one for each player a
+#: game can have.
 COLORS = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd"]
 
 #: Players in each game, from 2 to ``len(COLORS)``, the game's
@@ -79,8 +79,8 @@ def on_board(square):
 def taken_squares(state):
     """Every square a snake or a piece of food is on."""
     taken = {tuple(square) for square in state["food"]}
-    for player in state["players"].values():
-        taken.update(tuple(square) for square in player["body"])
+    for snake in state["snakes"]:
+        taken.update(tuple(square) for square in snake["body"])
     return taken
 
 
@@ -91,7 +91,7 @@ def add_food(state):
     state["food"].append(random.choice(empty))
 
 
-def place_snake(player, state, kept_clear):
+def place_snake(snake, state, kept_clear):
     """Put a crashed snake back on a random empty part of the board, with three
     empty squares ahead of it. It doesn't go next to any other snake's head,
     which could turn into it on the next tick, or on the squares
@@ -99,7 +99,7 @@ def place_snake(player, state, kept_clear):
     squares ahead are added to ``kept_clear``. If there's no room, it tries
     again next tick."""
     taken = taken_squares(state) | kept_clear
-    for other in state["players"].values():
+    for other in state["snakes"]:
         if other["body"]:
             for direction in DIRECTIONS:
                 taken.add(tuple(step(other["body"][0], direction)))
@@ -110,9 +110,9 @@ def place_snake(player, state, kept_clear):
             squares.append(step(squares[-1], direction))
         if all(on_board(square) and tuple(square) not in taken for square in squares):
             # The body is listed head first.
-            player["body"] = squares[START_LENGTH - 1 :: -1]
-            player["direction"] = direction
-            player["back_at"] = None
+            snake["body"] = squares[START_LENGTH - 1 :: -1]
+            snake["direction"] = direction
+            snake["back_at"] = None
             kept_clear.update(tuple(square) for square in squares[START_LENGTH:])
             return
 
@@ -121,30 +121,30 @@ def move_snakes(state, now):
     """Move every snake one square, then crash each one whose head hit
     something. All the snakes move before any crashes are worked out, so no
     player gains from having their snake moved first."""
-    moving = [player for player in state["players"].values() if player["body"]]
+    moving = [snake for snake in state["snakes"] if snake["body"]]
     food = {tuple(square) for square in state["food"]}
-    for player in moving:
-        if player["turns"]:
-            player["direction"] = player["turns"].pop(0)
-        head = step(player["body"][0], player["direction"])
-        player["body"].insert(0, head)
+    for snake in moving:
+        if snake["turns"]:
+            snake["direction"] = snake["turns"].pop(0)
+        head = step(snake["body"][0], snake["direction"])
+        snake["body"].insert(0, head)
         # A snake that eats keeps its tail, so it grows a square.
         if tuple(head) not in food:
-            player["body"].pop()
+            snake["body"].pop()
 
     # A head that shares its square with any other part of a snake has hit it:
     # its own body, another snake's body, or another head that moved there too.
-    squares = Counter(tuple(square) for player in moving for square in player["body"])
-    for player in moving:
-        head = player["body"][0]
+    squares = Counter(tuple(square) for snake in moving for square in snake["body"])
+    for snake in moving:
+        head = snake["body"][0]
         if not on_board(head) or squares[tuple(head)] > 1:
-            player["body"] = []
-            player["turns"] = []
-            player["crashes"] += 1
-            player["back_at"] = now + RESPAWN_SECONDS
+            snake["body"] = []
+            snake["turns"] = []
+            snake["crashes"] += 1
+            snake["back_at"] = now + RESPAWN_SECONDS
         elif tuple(head) in food:
             state["food"].remove(head)
-            player["food"] += 1
+            snake["food"] += 1
 
 
 class Turn(LiveMessage):
@@ -154,12 +154,12 @@ class Turn(LiveMessage):
     type = "turn"
     direction: Literal["up", "down", "left", "right"]
 
-    def apply(self, game, state, player_id, now):
-        player = state["players"][player_id]
-        if not player["body"]:
+    def apply(self, game, state, player, now):
+        snake = state["snakes"][player]
+        if not snake["body"]:
             raise Reject("Your snake will be back in a moment.")
-        turns = player["turns"]
-        heading = turns[-1] if turns else player["direction"]
+        turns = snake["turns"]
+        heading = turns[-1] if turns else snake["direction"]
         if self.direction == heading:
             return
         if self.direction == OPPOSITE[heading]:
@@ -172,9 +172,10 @@ class Turn(LiveMessage):
 class Snake(LiveGame):
     """A group of players steer snakes around one board.
 
-    The state holds each player's snake, listed head first and empty while
-    the snake is crashed, the direction it's heading, the turns the player
-    has pressed that it hasn't made yet, and the player's food and crashes.
+    The state holds each player's snake, in player order: its body, listed
+    head first and empty while the snake is crashed, the direction it's
+    heading, the turns the player has pressed that it hasn't made yet, and
+    the snake's food and crashes.
     It also holds the food on the board. Pages send turns, and on each tick
     the game moves every snake a square. The game lasts ``ROUND_SECONDS``
     from its start.
@@ -193,20 +194,21 @@ class Snake(LiveGame):
     duration = ROUND_SECONDS
 
     def initial_state(self, players):
-        state = {"players": {}, "food": []}
-        for number, player_id in enumerate(players, start=1):
+        state = {"snakes": [], "food": []}
+        for player in players:
             # The snakes start in evenly spaced rows, heading right.
-            row = number * SIZE // (len(players) + 1)
-            state["players"][player_id] = {
-                "number": number,
-                "body": [[START_LENGTH - i, row] for i in range(START_LENGTH)],
-                "direction": "right",
-                "turns": [],
-                "food": 0,
-                "crashes": 0,
-                # The session time when a crashed snake comes back.
-                "back_at": None,
-            }
+            row = (player + 1) * SIZE // (len(players) + 1)
+            state["snakes"].append(
+                {
+                    "body": [[START_LENGTH - i, row] for i in range(START_LENGTH)],
+                    "direction": "right",
+                    "turns": [],
+                    "food": 0,
+                    "crashes": 0,
+                    # When a crashed snake comes back, in seconds into the game.
+                    "back_at": None,
+                }
+            )
         for _ in range(FOOD_PER_PLAYER * len(players)):
             add_food(state)
         return state
@@ -216,72 +218,54 @@ class Snake(LiveGame):
         # Crashed snakes come back after the others have moved, so every page
         # shows them before they can move or be hit.
         kept_clear = set()
-        for player in state["players"].values():
-            if player["back_at"] is not None and now >= player["back_at"]:
-                place_snake(player, state, kept_clear)
-        while len(state["food"]) < FOOD_PER_PLAYER * len(state["players"]):
+        for snake in state["snakes"]:
+            if snake["back_at"] is not None and now >= snake["back_at"]:
+                place_snake(snake, state, kept_clear)
+        while len(state["food"]) < FOOD_PER_PLAYER * len(state["snakes"]):
             add_food(state)
 
-    def view(self, state, player_id):
+    def view(self, state, player):
+        # Every snake but the turns its player has pressed.
         return {
-            "me": player_id,
-            "players": {
-                other_id: {
-                    "number": player["number"],
-                    "body": player["body"],
-                    "direction": player["direction"],
-                    "food": player["food"],
-                    "crashes": player["crashes"],
-                    "back_at": player["back_at"],
-                }
-                for other_id, player in state["players"].items()
-            },
+            "snakes": [
+                {key: value for key, value in snake.items() if key != "turns"}
+                for snake in state["snakes"]
+            ],
             "food": state["food"],
         }
 
     def outcome(self, state, reason):
         return {
-            "reason": reason,
-            "food": {
-                player_id: player["food"]
-                for player_id, player in state["players"].items()
-            },
-            "crashes": {
-                player_id: player["crashes"]
-                for player_id, player in state["players"].items()
-            },
+            "food": [snake["food"] for snake in state["snakes"]],
+            "crashes": [snake["crashes"] for snake in state["snakes"]],
         }
 
-    def answer(self, outcome, reason, player_id):
-        """The player's own part of the outcome, for their result page: their
-        score, the food their snake ate, whether it was the best, and the
-        group's total, as in the shared canvas demo, and their crashes."""
+    def answer(self, outcome, reason, player):
+        """The player's own part of the outcome, for their result page: the
+        food their snake ate, whether it was the most, the group's total, as
+        in the shared canvas demo, and their crashes."""
         food = outcome["food"]
-        score = food[player_id]
+        others = food[:player] + food[player + 1 :]
         return {
-            "reason": reason,
-            "score": score,
-            "best": all(score > n for other, n in food.items() if other != player_id),
-            "group_total": sum(food.values()),
-            "crashes": outcome["crashes"][player_id],
+            "finished": reason == "finished",
+            "score": food[player],
+            "best": all(food[player] > n for n in others),
+            "group_total": sum(food),
+            "crashes": outcome["crashes"][player],
         }
 
-    def performance_reward(self, outcome, reason, player_id):
-        return BONUS_PER_FOOD * outcome["food"][player_id]
+    def performance_reward(self, outcome, reason, player):
+        return BONUS_PER_FOOD * outcome["food"][player]
 
-    def bot(self, view, player_id, now):
+    def bot(self, view, player, now):
         """Head for the nearest food, turning only onto a square that's on
         the board and that no snake is on. A bot that has nowhere safe to go
         carries on and crashes."""
-        me = view["players"][player_id]
+        me = view["snakes"][player]
         if not me["body"]:
             return None
         head = me["body"][0]
-        taken = {
-            tuple(square)
-            for player in view["players"].values()
-            for square in player["body"]
-        }
+        taken = {tuple(square) for snake in view["snakes"] for square in snake["body"]}
         # The square behind the head is the snake's own neck, so this also
         # leaves out turning back.
         safe = [
@@ -317,7 +301,7 @@ def show_result(participant):
         return InfoPage("Your group couldn't play the game.", time_estimate=5)
     food = answer["score"]
     crashes = answer["crashes"]
-    if answer["reason"] != "finished":
+    if not answer["finished"]:
         summary = "The game ended early."
     elif answer["best"]:
         summary = "Your snake ate the most!"
@@ -342,7 +326,7 @@ def show_result(participant):
 
 
 class Exp(psynet.experiment.Experiment):
-    label = "Snake live session demo"
+    label = "Snake live game demo"
     test_n_bots = GROUP_SIZE
     test_mode = "parallel"
 
@@ -410,6 +394,6 @@ class Exp(psynet.experiment.Experiment):
         result = live_game_result(live_game_id(bot, "snake_live"))
         assert result.status == "ended", result.error
         assert result.end_reason == "finished"
-        food = result.outcome["food"][str(bot.id)]
+        food = result.outcome["food"][result.participant_ids.index(bot.id)]
         assert bot.var.snake_live["score"] == food
         assert bot.performance_reward == pytest.approx(BONUS_PER_FOOD * food)

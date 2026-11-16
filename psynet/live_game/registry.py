@@ -1,4 +1,4 @@
-"""The live session games defined so far, by channel."""
+"""The live games defined so far, by channel."""
 
 # Every LiveGame subclass that sets a channel, by channel. It is one
 # registry for the whole process, because a PlayLiveGame built in a trial's

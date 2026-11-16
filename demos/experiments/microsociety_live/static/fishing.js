@@ -172,7 +172,7 @@ export function activate({root, psynet}) {
     for (let {tile} of spots) {
       tile.disabled = !playing;
     }
-    drawBoats(live.sessionTime() ?? 0, instant);
+    drawBoats(live.gameTime() ?? 0, instant);
     if (view.catch_number > seenCatch) {
       seenCatch = view.catch_number;
       showCatches(view.latest);

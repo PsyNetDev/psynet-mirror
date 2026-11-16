@@ -438,22 +438,21 @@ Groups
     round they share. :doc:`/code/multiplayer/synchronization`.
 
 `experiments/rock_paper_scissors_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/rock_paper_scissors_live>`__
-    Pairs play two games of rock, paper, scissors as live sessions, each
-    game on one page. Each game is a cued trial per player, whose answer is
+    Pairs play two live games of rock, paper, scissors, each on one page. Each game is a cued trial per player, whose answer is
     the player's part of the game's outcome. The trial's definition sets
     how many rounds the game has and the bonus that the trial pays for a
     round won.
     :doc:`/code/multiplayer/live_games`.
 
 `experiments/shared_canvas_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/shared_canvas_live>`__
-    In this live session, two to eight players move around a shared canvas
+    In this live game, two to eight players move around a shared canvas
     with the arrow keys and collect coins. The server works out every player's
     position from the moves their page sends. The page predicts the player's
     own moves, and draws the other players by interpolating between the
     game's ticks. Each coin pays a bonus. :doc:`/code/multiplayer/live_games`.
 
 `experiments/snake_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/snake_live>`__
-    In this live session, two to four players each steer a snake around a
+    In this live game, two to four players each steer a snake around a
     shared board. The game moves every snake a square on each tick, and each
     page sends only the player's turns and draws the views as they arrive. Each
     piece of food eaten pays a bonus. :doc:`/code/multiplayer/live_games`.

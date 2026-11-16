@@ -1,5 +1,5 @@
 """Message types, how PsyNet reads a page's message, and the messages a
-session's record saved."""
+game's record saved."""
 
 import dataclasses
 import datetime
@@ -10,7 +10,6 @@ from dallinger import db
 from dallinger.models import RealtimeEvent, RealtimeSession
 from dallinger.realtime import Reject
 from pydantic import BaseModel, ConfigDict, ValidationError
-from sqlalchemy import String, cast
 
 from ..utils import get_logger
 from .registry import _live_game_class, _same_definition
@@ -39,7 +38,7 @@ class LiveMessage(BaseModel):
     #: Each message type in a game needs its own.
     type: ClassVar[str | None] = None
 
-    def apply(self, game, state, player_id, now):
+    def apply(self, game, state, player, now):
         """Change the game's state for this message.
 
         Change ``state`` in place. To refuse the message, such as a move
@@ -52,23 +51,22 @@ class LiveMessage(BaseModel):
 
         game
             The game, for example to call
-            :meth:`~LiveGame.add_performance_reward` or
-            :meth:`~LiveGame.elapsed`.
+            :meth:`~LiveGame.add_performance_reward`.
 
         state
-            The session's state.
+            The game's state.
 
-        player_id
-            The sender's player id.
+        player
+            The sender's player number: 0 for the first player, 1 for the
+            next, and so on.
 
         now
-            When the message arrived, in seconds on the session's clock,
-            which starts when the group's wait at the PlayLiveGame ends.
+            When the message arrived, in seconds since the game started.
         """
         raise NotImplementedError
 
-    def should_save(self, game, state, player_id, rejection):
-        """Return whether to save this message in the session's record. By
+    def should_save(self, game, state, player, rejection):
+        """Return whether to save this message in the game's record. By
         default, every message is saved.
 
         A game whose pages send many messages, such as a move many times a
@@ -88,8 +86,8 @@ class LiveMessage(BaseModel):
             The state after :meth:`apply`, or, for a message the game
             rejected, the state as it was before.
 
-        player_id
-            The sender's player id.
+        player
+            The sender's player number.
 
         rejection
             The :class:`~dallinger.realtime.Reject` that :meth:`apply`
@@ -103,8 +101,8 @@ class LiveMessage(BaseModel):
         return True
 
     @classmethod
-    def saved_messages(cls, session_id):
-        """Return the messages of this type saved for a session, in the order
+    def saved_messages(cls, game_id):
+        """Return the messages of this type saved for a game, in the order
         the game applied them, as :class:`SavedMessage` objects.
 
         A message sent with this :attr:`type` whose fields can't be read,
@@ -114,28 +112,28 @@ class LiveMessage(BaseModel):
         Parameters
         ----------
 
-        session_id
-            The session's id, as :func:`live_game_id` returns it.
+        game_id
+            The game's id, as :func:`live_game_id` returns it.
 
         Raises
         ------
 
         KeyError
-            If there is no session ``session_id``.
+            If there is no game ``game_id``.
 
         ValueError
-            If the session's game doesn't list this message type in its
+            If the game doesn't list this message type in its
             :attr:`~LiveGame.messages`, or the game isn't defined because
             the module that defines it hasn't been imported.
         """
-        game_class = _session_game_class(session_id)
+        game_class = _session_game_class(game_id)
         listed = game_class._message_types.get(cls.type)
         if not listed or not _same_definition(listed, cls):
             raise ValueError(
-                f"Session {session_id} is a session of {game_class.channel!r}, "
+                f"Game {game_id} is a game of {game_class.channel!r}, "
                 f"which doesn't list {cls.__name__} in its messages."
             )
-        return _saved_messages(session_id, {cls.type: cls}, only_type=cls.type)
+        return _saved_messages(game_id, {cls.type: cls}, only_type=cls.type)
 
 
 def _parse_message(message_types, message):
@@ -162,8 +160,8 @@ def _parse_message(message_types, message):
 
 @dataclasses.dataclass(frozen=True)
 class SavedMessage:
-    """A message that a player's page, or a bot, sent in a live session, as
-    the session's record saved it. :meth:`LiveGame.saved_messages` and
+    """A message that a player's page, or a bot, sent in a live game, as
+    the game's record saved it. :meth:`LiveGame.saved_messages` and
     :meth:`LiveMessage.saved_messages` return them.
     """
 
@@ -179,23 +177,27 @@ class SavedMessage:
     #: ``{"type": "choose", "message": {"action": "rock"}}``.
     payload: object
 
-    #: The sender's player id, which is their participant id as a string, as
-    #: the game's methods receive it.
-    player_id: str
+    #: The sender's player number, as the game's methods receive it: 0 for
+    #: the first player, 1 for the next, and so on.
+    player: int
+
+    #: The sender's participant id.
+    participant_id: int
 
     #: ``"accepted"``, ``"rejected"`` if the game raised
     #: :class:`~dallinger.realtime.Reject`, or ``"failed"`` if the game's code
     #: raised an error while handling it, or a message handled at the same
-    #: time, which made the session fail.
+    #: time, which made the game fail.
     status: Literal["accepted", "rejected", "failed"]
 
     #: The reason the game rejected the message, or ``None``.
     reason: object
 
-    #: When the message arrived, in seconds on the session's clock, which
-    #: starts when the group's wait at the PlayLiveGame ends. It's the ``now`` that
-    #: :meth:`LiveMessage.apply` received.
-    session_time: float
+    #: When the message arrived, in seconds since the game started: the
+    #: ``now`` that :meth:`LiveMessage.apply` received. It's negative for a
+    #: message that arrived before the game started, such as a
+    #: :class:`PlayerReady`, and ``None`` if the game never started.
+    time: float | None
 
     #: When the message arrived, as a date and time in the server's local
     #: time, like a participant's ``creation_time``.
@@ -209,8 +211,8 @@ class SavedMessage:
     #: 1970. For a bot's message, it's the server's clock.
     browser_time: float | None
 
-    #: The session time of the view the page was showing when it sent the
-    #: message.
+    #: The time of the view the page was showing when it sent the message,
+    #: in seconds since the game started, like :attr:`time`.
     view_time: float | None
 
 
@@ -231,20 +233,45 @@ def _session_game_class(session_id):
     game_class = _live_game_class(channel)
     if game_class is None:
         raise ValueError(
-            f"Session {session_id} is a session of {channel!r}, and no "
+            f"Game {session_id} is a game of {channel!r}, and no "
             "LiveGame with that channel is defined. Import the module "
             "that defines the game first."
         )
     return game_class
 
 
+# The effect PsyNet queues when the game starts, which records the start's
+# Dallinger session time with the game's events.
+_STARTED_EFFECT = "psynet_game_started"
+
+
+def _session_participant_ids(session_id):
+    """Return the participant ids of a game's players, in player order."""
+    members = (
+        db.session.query(RealtimeSession.members).filter_by(id=session_id).scalar()
+    )
+    if members is None:
+        raise KeyError(session_id)
+    return [int(member) for member in members]
+
+
+def _game_started_at(session_id):
+    """Return the Dallinger session time at which a game started, or None if
+    it hasn't."""
+    return (
+        db.session.query(RealtimeEvent.session_time)
+        .filter_by(session_id=session_id, event_type="effect", name=_STARTED_EFFECT)
+        .scalar()
+    )
+
+
 # Labelled as SavedMessage's fields.
 _SAVED_MESSAGE_COLUMNS = [
     RealtimeEvent.payload,
-    cast(RealtimeEvent.participant_id, String).label("player_id"),
+    RealtimeEvent.participant_id,
     RealtimeEvent.status,
     RealtimeEvent.reason,
-    RealtimeEvent.session_time,
+    RealtimeEvent.session_time.label("time"),
     RealtimeEvent.receive_time,
     RealtimeEvent.number,
     RealtimeEvent.browser_time,
@@ -258,6 +285,14 @@ def _saved_messages(session_id, message_types, only_type=None):
     )
     if only_type is not None:
         query = query.filter(RealtimeEvent.payload["type"].astext == only_type)
+    started_at = _game_started_at(session_id)
+    participant_ids = _session_participant_ids(session_id)
+
+    def game_time(session_time):
+        if started_at is None or session_time is None:
+            return None
+        return session_time - started_at
+
     saved = []
     errors = []
     for row in query.order_by(RealtimeEvent.sequence):
@@ -270,10 +305,14 @@ def _saved_messages(session_id, message_types, only_type=None):
         except Exception as error:
             message = None
             errors.append(error)
-        saved.append(SavedMessage(message=message, **row._asdict()))
+        fields = row._asdict()
+        fields["player"] = participant_ids.index(fields["participant_id"])
+        fields["time"] = game_time(fields["time"])
+        fields["view_time"] = game_time(fields["view_time"])
+        saved.append(SavedMessage(message=message, **fields))
     if errors:
         logger.warning(
-            "%d of session %s's saved messages came back with message None, "
+            "%d of game %s's saved messages came back with message None, "
             "because their message type raised an error reading them. The "
             "first error:",
             len(errors),

@@ -1,8 +1,8 @@
-"""What PsyNet does with a live session's record as Dallinger writes it: the
+"""What PsyNet does with a live game's record as Dallinger writes it: the
 rewards from add_performance_reward, paid by effects queued during the game,
 and, once the result is saved, the rewards from the outcome and the copy of
-the outcome on the session's round. A reward is also recorded on the trial
-the game was played in, if any. All run in the job that writes the session's
+the outcome on the game's round. A reward is also recorded on the trial
+the game was played in, if any. All run in the job that writes the game's
 record, so each runs once, whether or not the players are still on the game
 page."""
 
@@ -11,6 +11,7 @@ import functools
 from dallinger import db
 from dallinger.realtime.utils import is_number
 
+from .messages import _STARTED_EFFECT
 from .result import _has_outcome
 
 # The name of the effect add_performance_reward queues.
@@ -37,9 +38,9 @@ def _add_reward(participant, amount, session_row):
 
 
 def _lock_trial_played_in(participant, session_row):
-    """Return the participant's trial in the round the session was played
+    """Return the participant's trial in the round the game was played
     in, locked for update, if the game was played as a trial: their latest in
-    the round, which is the one whose show_trial started the session."""
+    the round, which is the one whose show_trial started the game."""
     from ..sync import SyncGroupRound
     from ..trial.main import Trial
 
@@ -58,7 +59,7 @@ def _lock_trial_played_in(participant, session_row):
 
 
 def _locked_players(session_row):
-    """Return the session's players, locked so a reward isn't lost to a
+    """Return the game's players, locked so a reward isn't lost to a
     request changing a participant at the same time. They are locked in id
     order, so a job paying several of them can't deadlock with another
     transaction locking them in a different order."""
@@ -77,16 +78,21 @@ def _locked_players(session_row):
 def _handles_reward(method):
     @functools.wraps(method)
     def handle_effect(self, name, payload, session_row):
+        if name == _STARTED_EFFECT:
+            # Only recorded, for saved_messages.
+            return None
         if name != _REWARD_EFFECT:
             return method(self, name, payload, session_row)
-        player_id = payload["player_id"]
-        if player_id not in {str(member) for member in session_row.members}:
+        player = payload["player"]
+        participant_ids = _participant_ids(session_row)
+        if player >= len(participant_ids):
             raise ValueError(
                 f"{type(self).__name__}.add_performance_reward gave a reward to "
-                f"{player_id!r}, who isn't a player in session {session_row.id}."
+                f"player {player}, but game {session_row.id} has only "
+                f"{len(participant_ids)} players, numbered from 0."
             )
         players = _locked_players(session_row)
-        (participant,) = [p for p in players if p.id == int(player_id)]
+        (participant,) = [p for p in players if p.id == participant_ids[player]]
         _add_reward(participant, payload["amount"], session_row)
 
     handle_effect._psynet_wrapper = True
@@ -107,18 +113,26 @@ def _handles_ending(method):
     return handle_ending
 
 
+def _participant_ids(session_row):
+    """Return the participant ids of a game's players, in player order."""
+    return [int(member) for member in session_row.members]
+
+
 def _pay_outcome_rewards(game, session_row, players):
     what = f"{type(game).__name__}.performance_reward"
+    participant_ids = _participant_ids(session_row)
     for participant in players:
         amount = game.performance_reward(
-            session_row.outcome, session_row.end_reason, str(participant.id)
+            session_row.outcome,
+            session_row.end_reason,
+            participant_ids.index(participant.id),
         )
         _add_reward(participant, _check_reward(amount, what), session_row)
 
 
 def _end_game_page_deadlines(session_row, players):
     """Move the players' game page deadline, which a group barrier's
-    ``late_after`` counts from, from the latest the session could end to when
+    ``late_after`` counts from, from the latest the game could end to when
     it ended, keeping the control's ``show_result_for`` on top."""
     from .control import _game_page_deadline
 

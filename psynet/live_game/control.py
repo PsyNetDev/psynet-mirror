@@ -1,12 +1,12 @@
-"""LiveGameControl, the control that joins a game page to its session.
+"""LiveGameControl, the control that joins a game page to its game.
 
 The control has the page load ``live-game.js``. Its page code creates
-``psynet.liveGame`` and leaves the session when the participant leaves
-the page. ``get_participant_js_vars`` gives the script the session's id and
+``psynet.liveGame`` and leaves the game when the participant leaves
+the page. ``get_participant_js_vars`` gives the script the game's id and
 channel each time the page renders. ``check_ready_for_response`` refuses the
-page's response until the session's result is saved, and ``validate`` then
+page's response until the game's result is saved, and ``validate`` then
 sets the answer to what the game's ``answer`` returns for the participant.
-The game pays its rewards itself, when the session's result is saved.
+The game pays its rewards itself, when the game's result is saved.
 """
 
 from datetime import timedelta
@@ -17,15 +17,15 @@ from dallinger.models import RealtimeSession, timenow
 from ..modular_page import ModularPage, NullControl
 from ..timeline import ResponseNotReady
 from ..utils import get_translator
-from .messages import _game_channel, _session_game_class
+from .messages import _game_channel, _session_game_class, _session_participant_ids
 from .play import _check_reached_game, live_game_id
 from .result import _has_outcome, live_game_result
 
 # Seconds a page waits before resending a response refused because the
-# session's result isn't saved yet.
+# game's result isn't saved yet.
 _RETRY_AFTER = 1
 
-# Seconds past its max_duration that a session may take to save its result.
+# Seconds past its max_duration that a game may take to save its result.
 # One still running after that will never end.
 _SAVING_MARGIN = 60
 
@@ -35,13 +35,13 @@ _DEFAULT = object()
 
 class LiveGameControl(NullControl):
     """The part of a game page where the participant plays their group's
-    live session. Give the page to a :class:`PlayLiveGame` as its ``page``,
+    live game. Give the page to a :class:`PlayLiveGame` as its ``page``,
     and list the JavaScript file that plays the game in the page's
     ``js_page_modules``, as :class:`PlayLiveGame` shows.
 
     PsyNet sets the page's answer to what the game's
     :meth:`~LiveGame.answer` returns for the participant, once the
-    session's result is saved, which is also when it pays the game's
+    game's result is saved, which is also when it pays the game's
     :meth:`~LiveGame.performance_reward`. The page can't have a ``validate``
     of its own.
     :doc:`/code/multiplayer/live_games` explains how to write the page's
@@ -51,14 +51,14 @@ class LiveGameControl(NullControl):
     ----------
 
     auto_advance
-        Whether the page moves on by itself once the session's result is
+        Whether the page moves on by itself once the game's result is
         saved, with its Next button hidden until then. A participant
-        without a session still sees the button, and so does one whose page
+        without a game still sees the button, and so does one whose page
         has been disconnected for ten seconds. Set it to ``False`` to
         move on from the page's JavaScript instead.
 
     show_result_for
-        Seconds the page stays once the session's result is saved, before
+        Seconds the page stays once the game's result is saved, before
         it moves on by itself, so that its JavaScript can show the result,
         for example in ``onResultSaved``. A
         :class:`~psynet.sync.GroupBarrier`'s ``late_after`` counts from the
@@ -72,7 +72,7 @@ class LiveGameControl(NullControl):
 
     no_game_message
         What a notice at the top of the page says to a participant whose
-        group didn't start a session, for example because they were removed
+        group didn't start a game, for example because they were removed
         from a group that took too long to arrive. By default it says "Your
         group couldn't start the game." Set it to ``None`` for no notice.
 
@@ -138,8 +138,8 @@ class LiveGameControl(NullControl):
         return ends + timedelta(seconds=self.show_result_for)
 
     def validate(self, response, participant, **kwargs):
-        # check_ready_for_response has already seen the session end, and an
-        # ended session's row doesn't change, so this result is final.
+        # check_ready_for_response has already seen the game end, and an
+        # ended game's row doesn't change, so this result is final.
         session_id = live_game_id(participant, self._game_id())
         if session_id is None:
             response.answer = None
@@ -149,16 +149,15 @@ class LiveGameControl(NullControl):
             response.answer = None
         else:
             game = _session_game_class(session_id)()
-            response.answer = game.answer(
-                result.outcome, result.end_reason, str(participant.id)
-            )
+            player = _session_participant_ids(session_id).index(participant.id)
+            response.answer = game.answer(result.outcome, result.end_reason, player)
         return None
 
     def _game_id(self):
         if self.game_id is None:
             raise TypeError(
                 "A page with a LiveGameControl has to be the page of a "
-                "PlayLiveGame, which starts the session the page plays."
+                "PlayLiveGame, which starts the game the page plays."
             )
         return self.game_id
 
@@ -205,14 +204,14 @@ class LiveGameControl(NullControl):
 
 
 def _latest_end_seconds(session_id):
-    # Seconds after its start by which a session has ended and saved its
+    # Seconds after its start by which a game has ended and saved its
     # result, or None for a game without a max_duration.
     max_duration = _session_game_class(session_id).max_duration
     return None if max_duration is None else max_duration + _SAVING_MARGIN
 
 
 def _game_page_deadline(session_id):
-    """Return when a session's game page ends at the latest, or None for a
+    """Return when a game's page ends at the latest, or None for a
     game without a max_duration."""
     latest = _latest_end_seconds(session_id)
     if latest is None:
@@ -239,9 +238,9 @@ def _check_session_can_still_end(session_id):
     running_for = (timenow() - _session_began_at(session_id)).total_seconds()
     if running_for > latest:
         raise RuntimeError(
-            f"Live session {session_id} is still running after "
-            f"{running_for:.0f} seconds, though its game's max_duration is "
+            f"Live game {session_id} is still running after "
+            f"{running_for:.0f} seconds, though it should have ended by "
             f"{latest - _SAVING_MARGIN:g}, so its game page can't move on. "
             "The worker that runs the "
-            "experiment's live sessions has probably stopped."
+            "experiment's live games has probably stopped."
         )

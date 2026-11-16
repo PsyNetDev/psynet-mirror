@@ -1,6 +1,6 @@
-============
-Live Session
-============
+=========
+Live Game
+=========
 
 .. automodule:: psynet.live_game
     :members:
@@ -11,6 +11,12 @@ Live Session
     :value: "The game hasn't started yet."
 
     The reason a message sent before the game starts is rejected.
+
+.. data:: TIMEOUT
+    :value: "timeout"
+
+    The reason a game ends with when it reaches its
+    :attr:`~psynet.live_game.LiveGame.timeout`.
 
 Testing
 -------

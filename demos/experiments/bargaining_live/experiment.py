@@ -48,22 +48,16 @@ COIN_VALUE = 0.05
 BOT_GIVES = 4
 
 
-def partner_of(state, player_id):
-    """Return the other player's id."""
-    (partner,) = [p for p in state["offers"] if p != player_id]
-    return partner
-
-
 class Propose(LiveMessage):
     """Propose a split: the player keeps ``keep`` coins and the partner gets the rest."""
 
     type = "propose"
     keep: int
 
-    def apply(self, game, state, player_id, now):
+    def apply(self, game, state, player, now):
         if not 0 <= self.keep <= state["stake"]:
             raise Reject(f"Keep between 0 and {state['stake']} coins.")
-        state["offers"][player_id] = self.keep
+        state["offers"][player] = self.keep
         state["n_proposals"] += 1
 
 
@@ -75,35 +69,39 @@ class Accept(LiveMessage):
     type = "accept"
     keep: int
 
-    def apply(self, game, state, player_id, now):
-        partner = partner_of(state, player_id)
+    def apply(self, game, state, player, now):
+        partner = 1 - player
         if state["offers"][partner] != self.keep:
             raise Reject("Your partner has just changed their proposal.")
-        state["deal"] = {partner: self.keep, player_id: state["stake"] - self.keep}
-        state["deal_at"] = game.elapsed(state, now)
+        # Each player's coins, in player order.
+        deal = [None, None]
+        deal[partner], deal[player] = self.keep, state["stake"] - self.keep
+        state["deal"] = deal
+        state["deal_at"] = now
 
 
 class Bargain(LiveGame):
     channel = "bargain"
     messages = [Propose, Accept]
+    min_players = max_players = 2
     duration = BARGAIN_SECONDS
 
     def initial_state(self, players, settings):
         return {
             "stake": settings["stake"],
-            "offers": {player: None for player in players},
+            # What each player keeps in their current proposal.
+            "offers": [None, None],
             "n_proposals": 0,
             "deal": None,
             "deal_at": None,
         }
 
-    def view(self, state, player_id):
-        partner = partner_of(state, player_id)
+    def view(self, state, player):
         return {
             "stake": state["stake"],
-            "mine": state["offers"][player_id],
-            "theirs": state["offers"][partner],
-            "deal": None if state["deal"] is None else state["deal"][player_id],
+            "mine": state["offers"][player],
+            "theirs": state["offers"][1 - player],
+            "deal": None if state["deal"] is None else state["deal"][player],
         }
 
     def is_over(self, state):
@@ -116,23 +114,24 @@ class Bargain(LiveGame):
             "n_proposals": state["n_proposals"],
         }
 
-    def answer(self, outcome, reason, player_id):
+    def answer(self, outcome, reason, player):
+        deal = outcome["deal"]
         return {
-            "deal": outcome["deal"] is not None,
-            "coins": (outcome["deal"] or {}).get(player_id, 0),
+            "deal": deal is not None,
+            "coins": 0 if deal is None else deal[player],
         }
 
-    def performance_reward(self, outcome, reason, player_id):
-        return self.answer(outcome, reason, player_id)["coins"] * COIN_VALUE
+    def performance_reward(self, outcome, reason, player):
+        return self.answer(outcome, reason, player)["coins"] * COIN_VALUE
 
-    def bot(self, view, player_id, now):
+    def bot(self, view, player, now):
         if view["deal"] is not None:
             return None
         theirs = view["theirs"]
         if theirs is not None and view["stake"] - theirs >= BOT_GIVES:
             return Accept(keep=theirs)
-        # The player who joined first opens.
-        if view["mine"] is None and player_id == view["psynet"]["players"][0]:
+        # Player 0 opens.
+        if view["mine"] is None and player == 0:
             return Propose(keep=view["stake"] - BOT_GIVES)
         return None
 
@@ -364,7 +363,7 @@ class Exp(psynet.experiment.Experiment):
             # The game's reward is recorded on the trial it was played in.
             assert abs(trial.performance_reward - trial.coins() * COIN_VALUE) < 1e-9
             outcome = trial.group_round.live_game_outcome
-            assert sorted(outcome["deal"].values()) == [BOT_GIVES, stake - BOT_GIVES]
+            assert sorted(outcome["deal"]) == [BOT_GIVES, stake - BOT_GIVES]
         expected = sum(t.coins() for t in trials) * COIN_VALUE
         assert abs(bot.performance_reward - expected) < 1e-9
         for pair in self.get_basic_data()["pair"]:

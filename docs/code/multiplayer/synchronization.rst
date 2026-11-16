@@ -1228,7 +1228,7 @@ the maximum waiting time:
     that an answer sent at the deadline can arrive. So the late limit need not be
     longer than the pages' time limits. A page without a time limit can say
     when it ends at the latest with :meth:`~psynet.timeline.Page.ends_by`,
-    which counts in the same way; a live session's game page does this (see
+    which counts in the same way; a live game's page does this (see
     :doc:`live_games`). See
     :ref:`a worked example <rounds-slow-players>`.
 

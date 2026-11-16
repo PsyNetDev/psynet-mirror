@@ -8,7 +8,7 @@ Then the pot is multiplied by ``MULTIPLIER`` and shared between the members,
 and each token a member earns pays ``TOKEN_VALUE``.
 
 Each round is one cued ``ContributionTrial`` per player, whose ``show_trial``
-starts a live session for the team and shows the game page. The trial's answer
+starts a live game for the team and shows the game page. The trial's answer
 holds what the player put in and earned; the results page reads the team's
 pot from the round's ``live_game_outcome``.
 """
@@ -23,6 +23,7 @@ from psynet.live_game import (
     LiveGameControl,
     LiveMessage,
     PlayLiveGame,
+    live_game_result,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
@@ -49,10 +50,10 @@ class Contribute(LiveMessage):
     type = "contribute"
     tokens: int
 
-    def apply(self, game, state, player_id, now):
+    def apply(self, game, state, player, now):
         if not 0 <= self.tokens <= ENDOWMENT:
             raise Reject(f"Put in between 0 and {ENDOWMENT} tokens.")
-        state["contributions"][player_id] = self.tokens
+        state["contributions"][player] = self.tokens
 
 
 class PublicGoods(LiveGame):
@@ -61,53 +62,47 @@ class PublicGoods(LiveGame):
     duration = ROUND_SECONDS
 
     def initial_state(self, players):
-        return {"contributions": {player: 0 for player in players}}
+        # Each player's contribution, in player order.
+        return {"contributions": [0 for player in players]}
 
-    def view(self, state, player_id):
+    def view(self, state, player):
+        contributions = state["contributions"]
         return {
             "endowment": ENDOWMENT,
             "multiplier": MULTIPLIER,
-            "mine": state["contributions"][player_id],
-            # The other players in the order they joined.
-            "others": [
-                state["contributions"][player]
-                for player in state["psynet"]["players"]
-                if player != player_id
-            ],
+            "mine": contributions[player],
+            "others": contributions[:player] + contributions[player + 1 :],
         }
 
     def outcome(self, state, reason):
         contributions = state["contributions"]
-        pot = sum(contributions.values())
+        pot = sum(contributions)
         share = MULTIPLIER * pot / len(contributions)
         return {
             "contributions": contributions,
             "pot": pot,
             "share": share,
-            "payoffs": {
-                player: ENDOWMENT - tokens + share
-                for player, tokens in contributions.items()
-            },
+            "payoffs": [ENDOWMENT - tokens + share for tokens in contributions],
         }
 
-    def answer(self, outcome, reason, player_id):
+    def answer(self, outcome, reason, player):
         return {
-            "contributed": outcome["contributions"][player_id],
-            "earned": outcome["payoffs"][player_id],
+            "contributed": outcome["contributions"][player],
+            "earned": outcome["payoffs"][player],
         }
 
-    def performance_reward(self, outcome, reason, player_id):
-        return outcome["payoffs"][player_id] * TOKEN_VALUE
+    def performance_reward(self, outcome, reason, player):
+        return outcome["payoffs"][player] * TOKEN_VALUE
 
-    def bot(self, view, player_id, now):
-        tokens = bot_contribution(player_id)
+    def bot(self, view, player, now):
+        tokens = bot_contribution(player)
         if view["mine"] == tokens:
             return None
         return Contribute(tokens=tokens)
 
 
-def bot_contribution(player_id):
-    return int(player_id) % 3 * 5
+def bot_contribution(player):
+    return player % 3 * 5
 
 
 def contribution_page(round_number):
@@ -262,13 +257,15 @@ class Exp(psynet.experiment.Experiment):
             [t.answer for t in trials],
         )
         for trial in trials:
-            assert trial.answer["contributed"] == bot_contribution(str(bot.id))
+            game = live_game_result(trial.group_round.live_game_id)
+            player = game.participant_ids.index(bot.id)
+            assert trial.answer["contributed"] == bot_contribution(player)
             outcome = trial.group_round.live_game_outcome
             contributions = outcome["contributions"]
-            assert contributions == {
-                player: bot_contribution(player) for player in contributions
-            }
-            assert outcome["pot"] == sum(contributions.values())
+            assert contributions == [
+                bot_contribution(player) for player in range(len(contributions))
+            ]
+            assert outcome["pot"] == sum(contributions)
             # The game's reward is recorded on the trial it was played in.
             reward = trial.answer["earned"] * TOKEN_VALUE
             assert abs(trial.performance_reward - reward) < 1e-9

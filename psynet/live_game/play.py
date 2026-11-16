@@ -1,18 +1,18 @@
-"""PlayLiveGame, the timeline step where a group plays a live session, and
-live_game_id, which finds the session.
+"""PlayLiveGame, the timeline step where a group plays a live game, and
+live_game_id, which finds the game.
 
-PlayLiveGame resolves into a group barrier, which starts the session when
+PlayLiveGame resolves into a group barrier, which starts the game when
 it releases the group, followed by the game page. The barrier stores the
-session's id in each member's ``live_games``, keyed by the step's id, and
+game's id in each member's ``live_games``, keyed by the step's id, and
 the page's LiveGameControl reads it from there. Reaching the barrier sets
-that entry to ``None`` first, so the page finds only the session from the
+that entry to ``None`` first, so the page finds only the game from the
 participant's latest visit, and an id without an entry is one whose step the
 participant never reached.
 
 A PlayLiveGame in a trial also records the id on the trial's
 SyncGroupRound, as ``live_game_id``, beside the outcome. That record
 lasts, so it's the one to use in an analysis, while ``live_games`` holds
-only each step's latest session, and is what the game page reads, including
+only each step's latest game, and is what the game page reads, including
 for a game played outside a trial, which has no round.
 """
 
@@ -34,13 +34,13 @@ logger = get_logger()
 
 
 class PlayLiveGame(EltCollection):
-    """The step of the timeline where a group plays a live session.
+    """The step of the timeline where a group plays a live game.
 
     Like a :class:`~psynet.sync.GroupBarrier`, it first waits for every
-    member of the participant's group to arrive. It then starts a session of
+    member of the participant's group to arrive. It then starts a game of
     ``game_class`` with the members as its players, and the group moves on
     together to ``page``, where they play it. A group that arrives again,
-    for example in a loop, plays a new session.
+    for example in a loop, plays a new game.
 
     ::
 
@@ -77,7 +77,7 @@ class PlayLiveGame(EltCollection):
         :class:`LiveGameControl`.
 
     settings
-        Settings for the sessions this step starts, such as the number of
+        Settings for the games this step starts, such as the number of
         rounds: a dict, or any other value that can be saved as JSON. The
         game's ``initial_state`` gets it as a second argument, so define
         that as ``initial_state(self, players, settings)``. In a trial's
@@ -87,19 +87,19 @@ class PlayLiveGame(EltCollection):
         maker, the group's ``sync_group_type``, which gives them the same
         trial.
 
-    on_session_start
-        Optional function called once the session has been created, before
-        the game starts, with the
-        arguments that a :class:`~psynet.sync.GroupBarrier`'s ``on_release``
-        can take, such as ``trials`` and ``group_round``, and also
-        ``live_game_id``, the new session's id. Use it for group
-        bookkeeping at the start of a round, such as choosing who retires
-        after it. It isn't called when no session starts, because the group
-        has fewer members than the game's ``min_players``.
+    on_release
+        Optional function called when the wait ends and the group's game
+        has been created, before its players' pages open, with the arguments
+        that a :class:`~psynet.sync.GroupBarrier`'s ``on_release`` can take,
+        such as ``trials`` and ``group_round``, and also ``live_game_id``,
+        the new game's id. Use it for group bookkeeping at the start of a
+        round, such as choosing who retires after it. ``live_game_id`` is
+        ``None`` if no game started, because the group has fewer members than
+        the game's ``min_players``.
 
     id_
         A name for this step, the game's ``channel`` unless given, which
-        :func:`live_game_id` takes to find the group's session, for
+        :func:`live_game_id` takes to find the group's game, for
         example on a later page. Steps with the same id share their wait,
         like barriers with the same id, so give a game that the timeline
         plays in two places, such as a practice game and the main game, a
@@ -109,7 +109,7 @@ class PlayLiveGame(EltCollection):
         Any other parameter of :class:`~psynet.sync.GroupBarrier`, for the
         wait before the game, such as ``max_wait_time``, ``late_after`` or
         ``waiting_message``. A participant who has left the group passes
-        the wait and reaches the game page without a session.
+        the wait and reaches the game page without a game.
     """
 
     def __init__(
@@ -118,7 +118,7 @@ class PlayLiveGame(EltCollection):
         game_class,
         page,
         settings=None,
-        on_session_start=None,
+        on_release=None,
         id_: str = None,
         **kwargs,
     ):
@@ -143,7 +143,7 @@ class PlayLiveGame(EltCollection):
             )
         page.control.game_id = id_
         self.barrier = _LiveGameBarrier(
-            id_, group_type, game_class, settings, on_session_start, **kwargs
+            id_, group_type, game_class, settings, on_release, **kwargs
         )
         self.page = page
 
@@ -153,7 +153,7 @@ class PlayLiveGame(EltCollection):
 
 class _LiveGameBarrier(GroupBarrier):
     """The group barrier of a :class:`PlayLiveGame`, which starts the
-    group's session when it releases the group. Its parameters are
+    group's game when it releases the group. Its parameters are
     PlayLiveGame's, without ``page``."""
 
     def __init__(
@@ -162,7 +162,7 @@ class _LiveGameBarrier(GroupBarrier):
         group_type: str,
         game_class,
         settings=None,
-        on_session_start=None,
+        on_release=None,
         **kwargs,
     ):
         settings = _checked_settings(game_class, settings)
@@ -174,7 +174,7 @@ class _LiveGameBarrier(GroupBarrier):
         )
         self.game_class = game_class
         self.settings = settings
-        self.on_session_start = on_session_start
+        self.on_game_release = on_release
         try:
             barrier_spec_json(self)
         except BarrierSpecError as error:
@@ -210,10 +210,10 @@ class _LiveGameBarrier(GroupBarrier):
         group, participants, trials, group_round, leader, left, admitted, barrier
     ):
         session_id = barrier._start_session(participants, group_round)
-        if session_id is not None and barrier.on_session_start is not None:
+        if barrier.on_game_release is not None:
             # Rebuilt from the barrier's saved settings, it passes each
             # function only the arguments it takes, as on_release does.
-            barrier.on_session_start(
+            barrier.on_game_release(
                 group=group,
                 participants=participants,
                 trials=trials,
@@ -239,7 +239,7 @@ class _LiveGameBarrier(GroupBarrier):
             # is only logged anyway, and would leave the group waiting.
             logger.error(
                 "A group of %d reached the PlayLiveGame %r, but %s has a "
-                "max_players of %d, so it starts no session. Make the groups "
+                "max_players of %d, so it starts no game. Make the groups "
                 "of its group type, %r, no larger than that.",
                 n_players,
                 self.id,
@@ -315,8 +315,8 @@ def _checked_settings(game_class, settings):
 
 
 def live_game_id(participant, id_):
-    """Return the id of the session that a participant's group played at a
-    :class:`PlayLiveGame`, to read the session's result or its saved
+    """Return the id of the game that a participant's group played at a
+    :class:`PlayLiveGame`, to read the game's result or its saved
     messages on a later page.
 
     Parameters
@@ -332,7 +332,7 @@ def live_game_id(participant, id_):
     Returns
     -------
 
-    The session's id, or ``None`` if the group hasn't started a session
+    The game's id, or ``None`` if the group hasn't started a game
     there since the participant last arrived, for example because the group
     broke up while it waited.
     """

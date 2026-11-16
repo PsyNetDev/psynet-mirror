@@ -1973,8 +1973,8 @@ class GroupBarrier(Barrier):
         has started a page with a ``time_limit`` since then, the time counts from when that limit runs out
         plus 10 seconds, so that an answer sent at the deadline can arrive, if that is later; this timeout
         therefore needs to cover only the pages without a time limit. The same holds for a page whose
-        :meth:`~psynet.timeline.Page.ends_by` says when it ends at the latest, such as a live session's
-        game page.
+        :meth:`~psynet.timeline.Page.ends_by` says when it ends at the latest, such as a live game's
+        page.
         Requires ``late_action``, and the grouper of ``group_type`` (and of each type in ``also_leave``)
         must then be given ``below_quorum``, which is checked when the experiment loads.
 
@@ -5449,17 +5449,17 @@ class SyncGroupRound(SQLBase, SQLMixin):
         members' trials had all ended before the group dissolved. Written
         under the members' row locks, so it is never set on a closed round.
     live_game_id : int or None
-        The id of the live session that a
+        The id of the live game that a
         :class:`~psynet.live_game.PlayLiveGame` in the round's trials
         started, or ``None``. Pass it to
         :func:`~psynet.live_game.live_game_result` or
         :meth:`LiveGame.saved_messages <psynet.live_game.LiveGame.saved_messages>`, for example to export
         each round's game.
     live_game_outcome : object or None
-        What the ``outcome`` method of that session's game returned, copied
-        here when the session's result is saved, a few seconds after the game
-        ends. ``None`` before then, without a live session, or for a session
-        that failed without an outcome.
+        What the ``outcome`` method of that game returned, copied here when
+        the game's result is saved, a few seconds after the game ends.
+        ``None`` before then, without a live game, or for a game that failed
+        without an outcome.
     trials : list of Trial
         The members' trials in the round, including failed ones.
     """

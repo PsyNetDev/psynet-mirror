@@ -1,6 +1,6 @@
 # README
 
-In this live session, each player in a group steers a snake around a shared
+In this live game, each player in a group steers a snake around a shared
 board with the arrow keys for 60 seconds. A snake grows each time it eats a
 piece of food. If it hits a wall or any snake, its own body included, it
 crashes and comes back two seconds later somewhere else. Each piece of food
@@ -17,7 +17,7 @@ snake moved first. A head that lands on another head crashes both snakes.
 Bots head for the nearest food, turning only onto empty squares. `psynet test`
 plays the game with bots.
 
-## How this differs from the other live session demos
+## How this differs from the other live game demos
 
 In the shared canvas demo, each page sends the keys its player is holding
 many times a second, and it predicts the player's moves and interpolates
@@ -32,12 +32,12 @@ about an eighth of a second of pressing a key.
 
 ## What's saved
 
-The session's outcome records how many pieces of food each player's snake
-ate and how many times it crashed, keyed by participant id. Each player's
+The game's outcome records how many pieces of food each player's snake ate
+and how many times it crashed, in player order. Each player's
 answer on the game page is their own part of it: their score (the food
 their snake ate), whether it was the best, the group's total, their crashes,
-and why the game ended.
-Players send only a few turns a second, so the session's record keeps every
+and whether the game was played to the end.
+Players send only a few turns a second, so the game's record keeps every
 turn, with when the participant's page sent it.
 
 ## Usage

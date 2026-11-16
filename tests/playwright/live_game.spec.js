@@ -121,7 +121,7 @@ test("a game page open in two tabs moves the participant on once", { tag: "@both
       timeout: STEP_TIMEOUT_MS
     });
 
-    // The other tab joins the session as the same player.
+    // The other tab joins the game as the same player.
     const otherTab = await contexts[0].newPage();
     await otherTab.goto(first.url());
     await expect(otherTab.locator("#game-status")).toHaveText("Picked", {
@@ -182,7 +182,7 @@ test("participants whose pair breaks up at the game barrier see the no-session n
     // the pair.
     await clickNextAndWait(first);
 
-    await expect(first.locator("#psynet-no-session-notice")).toHaveText(
+    await expect(first.locator("#psynet-no-game-notice")).toHaveText(
       "Your group couldn't start the game.",
       { timeout: STEP_TIMEOUT_MS }
     );
@@ -194,12 +194,12 @@ test("participants whose pair breaks up at the game barrier see the no-session n
     await expect(first.locator("#main-body")).toContainText("The page after the game.", {
       timeout: STEP_TIMEOUT_MS
     });
-    await expect(first.locator("#psynet-no-session-notice")).toHaveCount(0);
+    await expect(first.locator("#psynet-no-game-notice")).toHaveCount(0);
 
     // The partner, whose pair has ended, passes the game barrier without
     // waiting and has no session either.
     await clickNextAndWait(second);
-    await expect(second.locator("#psynet-no-session-notice")).toHaveText(
+    await expect(second.locator("#psynet-no-game-notice")).toHaveText(
       "Your group couldn't start the game.",
       { timeout: STEP_TIMEOUT_MS }
     );

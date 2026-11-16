@@ -35,7 +35,7 @@ function isMoving(player) {
 // order, so the prediction lands where the game does. rules is experiment.py's
 // RULES.
 export function advance(rules, view, dx, dy, seconds) {
-  let player = view.players[view.me];
+  let player = view.players[view.psynet.you];
   let low = rules.player_radius;
   let high = rules.size - rules.player_radius;
   let scale = dx !== 0 && dy !== 0 ? rules.diagonal : 1;
@@ -75,15 +75,14 @@ export function advance(rules, view, dx, dy, seconds) {
 
 // Places each player between two tick views.
 function interpolate(a, b, fraction) {
-  let players = {};
-  for (let [id, to] of Object.entries(b.players)) {
-    let from = a.players[id] || to;
-    players[id] = {
+  let players = b.players.map((to, player) => {
+    let from = a.players[player];
+    return {
       ...to,
       x: from.x + (to.x - from.x) * fraction,
       y: from.y + (to.y - from.y) * fraction,
     };
-  }
+  });
   return { ...b, players: players };
 }
 
@@ -116,15 +115,15 @@ function draw(context, rules, mine, others) {
   for (let coin of mine.coins) {
     drawCircle(context, coin.x, coin.y, rules.coin_radius, "#f4c430", "#a27400", 2);
   }
-  for (let [id, player] of Object.entries(others.players)) {
-    if (id !== mine.me) {
-      let color = rules.colors[player.number - 1];
+  let you = mine.psynet.you;
+  others.players.forEach((player, number) => {
+    if (number !== you) {
+      let color = rules.colors[number];
       drawCircle(context, player.x, player.y, rules.player_radius, color, "#ffffff", 2);
     }
-  }
-  let me = mine.players[mine.me];
-  let color = rules.colors[me.number - 1];
-  drawCircle(context, me.x, me.y, rules.player_radius, color, "#111827", 4);
+  });
+  let me = mine.players[you];
+  drawCircle(context, me.x, me.y, rules.player_radius, rules.colors[you], "#111827", 4);
 }
 
 export function activate({ root, vars, psynet }) {
@@ -201,7 +200,7 @@ export function activate({ root, vars, psynet }) {
       return;
     }
     let keysHeld = direction[0] !== 0 || direction[1] !== 0;
-    if (keysHeld || isMoving(shown.players[shown.me])) {
+    if (keysHeld || isMoving(shown.players[live.player])) {
       pending = Math.min(rules.longest_move, pending + elapsed);
       if (pending >= SECONDS_PER_MOVE) {
         sendMove();
@@ -224,19 +223,18 @@ export function activate({ root, vars, psynet }) {
   }
 
   function showScores(view) {
-    let players = Object.entries(view.players).sort(([, a], [, b]) => a.number - b.number);
-    let key = players.map(([, player]) => player.coins).join();
+    let key = view.players.map((player) => player.coins).join();
     if (key === shownScores) {
       return;
     }
     shownScores = key;
     scores.replaceChildren(
-      ...players.map(([id, player]) => {
+      ...view.players.map((player, number) => {
         let item = document.createElement("li");
         let swatch = document.createElement("span");
         swatch.className = "canvas-swatch";
-        swatch.style.background = rules.colors[player.number - 1];
-        let name = id === view.me ? "You" : `Player ${player.number}`;
+        swatch.style.background = rules.colors[number];
+        let name = number === live.player ? "You" : `Player ${number + 1}`;
         item.append(swatch, `${name}: ${player.coins}`);
         return item;
       })
@@ -273,7 +271,7 @@ export function activate({ root, vars, psynet }) {
     lastFrame = now;
     move(elapsed);
     shown = shownView();
-    // The view is null before the first view, and once a session that
+    // The view is null before the first view, and once a game that
     // failed has ended.
     if (shown !== null) {
       draw(context, rules, shown, live.interpolatedView() || shown);

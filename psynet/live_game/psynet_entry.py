@@ -2,9 +2,14 @@
 _psynet_entry returns, and the wrappers that keep it up to date.
 
 The ready step: the game starts once every player is ready, or at the
-game's ready_timeout. Once it starts, a game with a duration rejects
-messages from its end, and the entry also keeps track of which players have
-left."""
+game's ready_timeout. Once it starts, the game ends at its duration or its
+time limit, and rejects messages from then on. The entry also keeps track of
+which players have left.
+
+The game's clock: Dallinger's session clock starts when the game is
+created, before the ready step, but the game's methods get ``now`` in
+seconds since the game started, which these wrappers convert to. The entry's
+``started_at`` and ``ends_at`` are on Dallinger's clock."""
 
 import contextvars
 
@@ -12,7 +17,7 @@ from dallinger.realtime import Reject
 
 from .messages import LiveMessage, _parse_message
 
-# The settings of the session a PlayLiveGame is starting, set
+# The settings of the game a PlayLiveGame is starting, set
 # while it calls create_realtime_session, which calls the game's
 # initial_state before it returns.
 _new_session_settings = contextvars.ContextVar("_new_session_settings", default=None)
@@ -35,13 +40,13 @@ class PlayerReady(LiveMessage):
 
     type = "psynet_ready"
 
-    def apply(self, game, state, player_id, now):
-        """Mark the player ready, and start the session once every player
+    def apply(self, game, state, player, now):
+        """Mark the player ready, and start the game once every player
         is."""
         entry = _psynet_entry(state)
-        if player_id not in entry["ready"]:
-            entry["ready"].append(player_id)
-        if set(entry["players"]) <= set(entry["ready"]):
+        if player not in entry["ready"]:
+            entry["ready"].append(player)
+        if len(entry["ready"]) == len(entry["participant_ids"]):
             game._end_ready_step(state, now)
 
 
@@ -50,6 +55,10 @@ class PlayerReady(LiveMessage):
 NOT_STARTED = "The game hasn't started yet."
 
 _TIME_UP = "The game's time is up."
+
+#: The reason a game ends with when it reaches its
+#: :attr:`~LiveGame.timeout`.
+TIMEOUT = "timeout"
 
 
 def _psynet_entry(state, what="state"):
@@ -62,59 +71,100 @@ def _psynet_entry(state, what="state"):
         ) from None
 
 
-def _apply_once_started(self, method, state, player_id, message, now, sent):
-    if isinstance(message, dict) and message.get("type") == PlayerReady.type:
-        _parse_message(self._message_types, message).apply(self, state, player_id, now)
+def _player(entry, player_id):
+    """Return the number of the player whose participant id Dallinger gave,
+    as the game's methods see it: 0 for the first player, 1 for the next,
+    and so on, in the order they signed up."""
+    return entry["participant_ids"].index(int(player_id))
+
+
+def _game_time(entry, session_time):
+    """Return a Dallinger session time as the game's time, the seconds since the game
+    started, or None before it starts."""
+    started_at = entry["started_at"]
+    if started_at is None or session_time is None:
         return None
+    return session_time - started_at
+
+
+# Each of these takes ``outermost``: whether Dallinger called the method, so
+# that it has a participant id and a session time to convert, rather than the
+# game's own code, which already has the player's number and the game's time.
+
+
+def _apply_once_started(self, method, outermost, state, player_id, message, now, sent):
     entry = _psynet_entry(state)
+    player = _player(entry, player_id) if outermost else player_id
+    is_ready = isinstance(message, dict) and message.get("type") == PlayerReady.type
+    if outermost and is_ready:
+        _parse_message(self._message_types, message).apply(self, state, player, now)
+        return None
     if entry["started_at"] is None:
         raise Reject(NOT_STARTED)
-    if entry["ends_at"] is not None and now >= entry["ends_at"]:
+    game_now = _game_time(entry, now) if outermost else now
+    end = _game_end(entry)
+    if end is not None and game_now >= end:
         raise Reject(_TIME_UP)
-    return method(self, state, player_id, message, now, sent)
+    return method(self, state, player, message, game_now, sent)
 
 
-def _tick_once_started(self, method, state, now):
-    if _psynet_entry(state)["started_at"] is None:
-        if self.ready_timeout is None or now < self.ready_timeout:
+def _tick_once_started(self, method, outermost, state, now):
+    entry = _psynet_entry(state)
+    if entry["started_at"] is None:
+        if not outermost or now < self.ready_timeout:
             return _UNCHANGED
         self._end_ready_step(state, now)
         # Dallinger counts this tick as run, so a deadline due by now gets
         # no other.
         if self.is_over(state):
             return None
-    ends_at = _psynet_entry(state)["ends_at"]
-    if ends_at is None or now < ends_at:
-        return method(self, state, now)
+    game_now = _game_time(entry, now) if outermost else now
+    end = _game_end(entry)
+    if end is None or game_now < end:
+        return method(self, state, game_now)
     # A tick that runs late sees the end, so the game counts nothing after it.
-    result = method(self, state, ends_at)
-    _psynet_entry(state)["time_up"] = True
+    result = method(self, state, end)
+    entry["time_up"] = True
     return result
 
 
-def _record_leave(self, method, state, player_id, now):
+def _record_leave(self, method, outermost, state, player_id, now):
     entry = _psynet_entry(state)
-    if entry["started_at"] is None and player_id in entry["ready"]:
-        entry["ready"].remove(player_id)
-    if player_id not in entry["away"]:
-        entry["away"].append(player_id)
-    return method(self, state, player_id, now)
+    if not outermost:
+        return method(self, state, player_id, now)
+    player = _player(entry, player_id)
+    if entry["started_at"] is None and player in entry["ready"]:
+        entry["ready"].remove(player)
+    if player not in entry["away"]:
+        entry["away"].append(player)
+    return method(self, state, player, _game_time(entry, now))
 
 
-def _record_join(self, method, state, player_id, now):
+def _record_join(self, method, outermost, state, player_id, now):
     # A game's initial_state can call on_join before PsyNet adds its entry.
     entry = state.get("psynet") if isinstance(state, dict) else None
-    if entry is not None and player_id in entry["away"]:
-        entry["away"].remove(player_id)
-    return method(self, state, player_id, now)
+    if entry is None or not outermost:
+        return method(self, state, player_id, now)
+    player = _player(entry, player_id)
+    if player in entry["away"]:
+        entry["away"].remove(player)
+    return method(self, state, player, _game_time(entry, now))
 
 
-def _add_psynet_entry(self, method, players, *settings):
+def _game_end(entry):
+    """Return when the game ends at the latest, on the game's clock, or
+    None."""
+    ends_at = entry["ends_at"]
+    return None if ends_at is None else ends_at - entry["started_at"]
+
+
+def _add_psynet_entry(self, method, outermost, players, *settings):
     # Dallinger calls initial_state with the players alone, so a
     # PlayLiveGame's settings come from _new_session_settings.
     if not settings and _new_session_settings.get() is not None:
         settings = (_new_session_settings.get(),)
-    state = method(self, players, *settings)
+    participant_ids = [int(player_id) for player_id in players]
+    state = method(self, list(range(len(participant_ids))), *settings)
     name = type(self).__name__
     if not isinstance(state, dict):
         raise TypeError(
@@ -126,12 +176,13 @@ def _add_psynet_entry(self, method, players, *settings):
             "which is PsyNet's. Give it another name."
         )
     state["psynet"] = {
-        "players": list(players),
+        "participant_ids": participant_ids,
         "ready": [],
+        "away": [],
+        "duration": self.duration,
         "started_at": None,
         "ends_at": None,
         "time_up": False,
-        "away": [],
     }
     return state
 
