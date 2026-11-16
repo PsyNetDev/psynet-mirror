@@ -470,9 +470,9 @@ def _problems(reason):
 
 
 def _pick_numbers():
-    return {game.channel: game for game in get_experiment().realtime_games}[
-        "pick_numbers"
-    ]()
+    # From the experiment's module, since the registry fixture empties the
+    # registry that realtime_games reads.
+    return sys.modules[type(get_experiment()).__module__].PickNumbers()
 
 
 def _started(**state):
@@ -1059,15 +1059,15 @@ def test_a_file_imported_under_two_names_is_refused(registry, tmp_path):
         _import_games(tmp_path, "experiment_games", "original")
 
 
-def test_a_game_defined_after_the_experiment_class_is_refused(registry):
+def test_a_game_defined_after_the_experiment_class_is_listed(registry):
     class Early(Experiment):
         timeline = Timeline(InfoPage("No game barrier.", time_estimate=5))
 
     class Late(LiveGame):
         channel = "late"
 
-    with pytest.raises(RuntimeError, match="Late must be defined or imported before"):
-        Early.check_live_session_games()
+    assert Early.realtime_games == [Late]
+    assert object.__new__(Early).realtime_games == [Late]
 
 
 def test_a_subclass_with_its_parent_s_channel_is_refused(registry):
@@ -2172,9 +2172,7 @@ def test_a_reward_is_a_number_0_or_more(pair, monkeypatch, amount):
         game_class().add_performance_reward("1", amount)
 
 
-def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_rewards(
-    pair, registry
-):
+def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_rewards(pair):
     members, _ = pair
     session_id = _pair_session(pair)
     handled = []

@@ -396,6 +396,19 @@ def _reject_overridden_fail_participant(cls):
         )
 
 
+class _RealtimeGames:
+    """The experiment's ``realtime_games``: the games it lists, then every
+    :class:`~psynet.live_session.LiveGame` with a ``channel``. Worked out
+    each time it's read, so a game can be defined anywhere in
+    ``experiment.py``, before or after the experiment class."""
+
+    def __get__(self, instance, owner):
+        from .live_session import live_game_classes
+
+        listed = owner._listed_realtime_games
+        return list(dict.fromkeys([*listed, *live_game_classes()]))
+
+
 class ExperimentMeta(type):
     def __init__(cls, name, bases, dct):
         cls.assets = AssetRegistry(storage=cls.asset_storage)
@@ -405,11 +418,9 @@ class ExperimentMeta(type):
         cls.css = cls.css.copy()
         cls.css_links = cls.css_links.copy()
 
-        from .live_session import live_game_classes
-
         listed = dct.get("realtime_games", getattr(cls, "_listed_realtime_games", []))
         cls._listed_realtime_games = list(listed)
-        cls.realtime_games = list(dict.fromkeys([*listed, *live_game_classes()]))
+        cls.realtime_games = _RealtimeGames()
 
         if hasattr(cls, "test_create_bots"):
             raise RuntimeError(
@@ -964,11 +975,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     realtime_games : ``list``
         The game types of the experiment's live sessions (see
         :mod:`psynet.live_session`). PsyNet adds every
-        :class:`~psynet.live_session.LiveGame` with a ``channel`` that is
-        defined or imported before the experiment class, whichever module
-        defines it, so list only other game types the experiment plays. A
-        ``LiveGame`` defined after the experiment class stops the
-        experiment at launch.
+        :class:`~psynet.live_session.LiveGame` with a ``channel``, whichever
+        module defines it, so list only other game types the experiment
+        plays.
         Default: ``[]``.
 
 
@@ -3119,7 +3128,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         cls.check_stale_ad_page_override()
         cls.check_unused_dallinger_quality_checks()
         cls.check_stale_bonus_override()
-        cls.check_live_session_games()
         PsyNetProlificRecruiterMixin.check_screen_out_config(config)
 
         parser = configparser.ConfigParser()
@@ -3397,26 +3405,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "`bad_data` or `did_not_attend`). Fail participants during "
                 "the timeline instead, for example with `fail()` or "
                 "`UnsuccessfulEndPage`."
-            )
-
-    @classmethod
-    def check_live_session_games(cls):
-        """Check that each live session game is defined or imported before
-        the experiment class, since PsyNet adds only those to
-        ``realtime_games``."""
-        from .live_session import live_game_classes
-
-        listed = {game_class.channel for game_class in cls.realtime_games}
-        missing = [
-            game_class.__name__
-            for game_class in live_game_classes()
-            if game_class.channel not in listed
-        ]
-        if missing:
-            raise RuntimeError(
-                f"{', '.join(missing)} must be defined or imported before the "
-                f"experiment class, {cls.__name__}, for PsyNet to add them to "
-                "its realtime_games."
             )
 
     @classmethod

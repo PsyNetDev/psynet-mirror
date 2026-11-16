@@ -86,13 +86,9 @@ Dallinger's guide to `real-time games <dallinger-realtime-games_>`_ explains
 them, and its `API reference <dallinger-realtime-api_>`_ describes each
 method and setting that comes from ``RealtimeGame``.
 
-Define each game, or import it, before the experiment class. PsyNet then adds
-it to the experiment's ``realtime_games``, so you don't list it there. A game
-defined after the experiment class stops the experiment at launch, with an
-error that names it.
-
-PsyNet adds every game with a ``channel`` that Python has loaded by then,
-whether or not the timeline plays it. That includes a game in a module you
+PsyNet adds each game to the experiment's ``realtime_games`` itself, so you
+don't list it there. It adds every game that Python has loaded, whether or
+not the timeline plays it. That includes a game in a module you
 import from another experiment, so give every game a channel of its own.
 
 Messages and the state
