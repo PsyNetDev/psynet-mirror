@@ -1,4 +1,4 @@
-image: docker:26.1.1
+image: docker:29
 
 workflow:
   auto_cancel:
@@ -22,21 +22,22 @@ workflow:
 default:
   interruptible: true
 
+# Keep the Docker-in-Docker version in step with the job image above.
 services:
-  - docker:26.1.1-dind
-  - postgres:16.2-bookworm
-  - redis:latest
+  - &dind_image docker:29-dind
+  - &postgres_image postgres:18-trixie
+  - &redis_image redis:latest
 
 # Test jobs run Postgres without durability: their databases are thrown away,
 # and database-heavy tests run about twice as fast. Benchmark jobs keep the
 # default services so their results stay comparable over time.
 .test_services: &test_services
   services:
-    - docker:26.1.1-dind
-    - name: postgres:16.2-bookworm
+    - *dind_image
+    - name: *postgres_image
       alias: postgres
       command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"]
-    - redis:latest
+    - *redis_image
 
 variables:
   AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
