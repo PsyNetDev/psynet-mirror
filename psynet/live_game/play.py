@@ -209,7 +209,7 @@ class _LiveGameBarrier(GroupBarrier):
     def _release(
         group, participants, trials, group_round, leader, left, admitted, barrier
     ):
-        session_id = barrier._start_session(participants, group_round)
+        session_id = barrier._start_session(participants, group, group_round)
         if barrier.on_game_release is not None:
             # Rebuilt from the barrier's saved settings, it passes each
             # function only the arguments it takes, as on_release does.
@@ -226,7 +226,7 @@ class _LiveGameBarrier(GroupBarrier):
                 live_game_id=session_id,
             )
 
-    def _start_session(self, participants, group_round=None):
+    def _start_session(self, participants, group, group_round=None):
         game_class = self.game_class
         n_players = len(participants)
         if n_players < game_class.min_players:
@@ -248,10 +248,11 @@ class _LiveGameBarrier(GroupBarrier):
                 self.group_type,
             )
             return None
-        # In id order, which is the order the players signed up in, so a
-        # game's initial_state and state["psynet"]["players"] list them
-        # in that order.
-        participants = sorted(participants, key=lambda member: member.id)
+        # Numbered in seat order, as GroupPrompt shows the group's members,
+        # so a player's number gives away no more than the group's other
+        # pages do.
+        seats = group.seats
+        participants = sorted(participants, key=lambda member: seats[member.id])
         token = _new_session_settings.set(self.settings)
         try:
             session_id = create_realtime_session(

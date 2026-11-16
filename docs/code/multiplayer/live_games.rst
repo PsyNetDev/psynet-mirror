@@ -79,9 +79,15 @@ message does to the state. Then the game's methods:
 - ``is_over`` says when the game has ended.
 - ``bot`` plays for bots, as in ``psynet test`` (see `Bots and testing`_).
 
-The players are numbered from 0 in the order they signed up, which is
-participant id order, and each method gets the player's number as
-``player``. ``initial_state`` gets the list of numbers, such as ``[0, 1]``.
+The players are numbered from 0 in the order of their seats in the group,
+the order in which they joined it (see :attr:`~psynet.sync.SyncGroup.seats`),
+which is also the order in which a :class:`~psynet.group_prompt.GroupPrompt`
+shows the group. Each method gets the player's number as ``player``, and
+pages see only these numbers, never another player's participant id. A
+game in which a player's position matters, such as who moves first, should
+take it from a role, such as a :class:`~psynet.sync.Regrouper`'s
+``roles``, which are shuffled, rather than from the number, which favours
+whoever joined first. ``initial_state`` gets the list of numbers, such as ``[0, 1]``.
 So the state keeps what each player has in a list, in player order, and in a
 game for two, ``1 - player`` is the other player. Code outside the game
 rarely needs the numbers: the game's ``answer`` gives each player their own
@@ -576,7 +582,8 @@ PsyNet keeps its own record of the game in ``state["psynet"]``, and adds
 the same entry to each view. Don't use the name ``psynet`` for anything else
 in the state or a view. The parts a game can use are:
 
-- ``participant_ids``, each player's participant id, in player order
+- ``participant_ids``, each player's participant id, in player order. It
+  is in the state only, not in views.
 - ``ready``, the numbers of the players who are ready
 - ``away``, the numbers of the players who have left the game page and not
   come back. A player who hasn't opened it yet isn't in it.

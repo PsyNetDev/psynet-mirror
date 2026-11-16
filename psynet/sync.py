@@ -4801,24 +4801,6 @@ def check_admission_points(barriers):
         )
 
 
-def group_seats(group) -> Dict[int, int]:
-    """Return ``{participant_id: seat}`` for everyone who has been admitted to ``group``.
-
-    Seats number members in the order they were first admitted. Links are
-    kept when members leave, so seats never change while the group exists,
-    and pages can refer to members without their IDs. Pending members get a
-    seat once admitted, and members turned away never get one.
-    """
-    seats = {}
-    links = sorted(
-        (link for link in group.participant_links if link.admitted_at is not None),
-        key=lambda link: (link.admitted_at, link.id is None, link.id or 0),
-    )
-    for link in links:
-        seats.setdefault(link.participant_id, len(seats))
-    return seats
-
-
 def leave_group(group_type: str, reason: RemovalReason = "finished"):
     """Return a timeline step that takes the participant out of their ``group_type`` group.
 
@@ -4999,6 +4981,35 @@ class SyncGroup(SQLBase, SQLMixin):
         :ref:`sync-admission-points`).
         """
         return [link.participant for link in self._working_links(admitted=False)]
+
+    @property
+    def seats(self) -> Dict[int, int]:
+        """``{participant_id: seat}`` for everyone who has been admitted to the group.
+
+        Seats number members in the order they were first admitted. Links are
+        kept when members leave, so seats never change while the group exists,
+        and pages can refer to members without their IDs. Pending members get a
+        seat once admitted, and members turned away never get one.
+        """
+        seats = {}
+        links = sorted(
+            (link for link in self.participant_links if link.admitted_at is not None),
+            key=lambda link: (link.admitted_at, link.id is None, link.id or 0),
+        )
+        for link in links:
+            seats.setdefault(link.participant_id, len(seats))
+        return seats
+
+    def reached_barrier_after_time_limit(self, participant: Participant) -> bool:
+        """Return whether ``participant`` reached the group's barrier they wait at because a time limit ran out.
+
+        That is, they are waiting at a barrier of the group that they reached
+        after the time limit of their latest timed page ran out; untimed pages in
+        between, and a trial's feedback pages even if timed, don't count.
+        """
+        return any(
+            link.ran_out_of_time for _, link in _waiting_links(participant, self)
+        )
 
     def _active_link(self, participant) -> Optional["ParticipantLinkSyncGroup"]:
         """Return ``participant``'s active link to the group, or ``None``."""
@@ -5301,7 +5312,7 @@ class SyncGroup(SQLBase, SQLMixin):
                 return []
             rounds = _open_rounds(self, removed)
             _mark_rounds_dissolved(rounds)
-            group_size = len(group_seats(self))
+            group_size = len(self.seats)
             fail = (self.below_quorum or "fail") == "fail"
             self._turn_away_pending()
             for participant in removed:
@@ -6477,7 +6488,7 @@ def arrival_notice_payload(unique_id):
 def _ready_seats_for(participant):
     """Return ``{group_id, seats, ran_out_of_time, members}`` for each of the participant's groups.
 
-    ``seats`` (see :func:`group_seats`) are those of the members waiting at
+    ``seats`` (see :attr:`SyncGroup.seats`) are those of the members waiting at
     a barrier of the group, as :class:`~psynet.group_prompt.GroupPrompt`
     ticks them, ``ran_out_of_time`` those of the waiting members who came
     after their latest timed page ran out of time, and ``members`` those of all
@@ -6486,7 +6497,7 @@ def _ready_seats_for(participant):
     """
     ready = []
     for group in participant.active_sync_groups.values():
-        seats = group_seats(group)
+        seats = group.seats
         members = group.active_participants
         waiting, timed_out = [], []
         for member in members:
@@ -6532,16 +6543,6 @@ def _is_waiting_at_barrier(participant, group) -> bool:
     who has answered.
     """
     return bool(_waiting_links(participant, group))
-
-
-def reached_barrier_after_time_limit(participant, group) -> bool:
-    """Return whether ``participant`` reached the barrier of ``group`` they wait at because a time limit ran out.
-
-    That is, they are waiting at a barrier of ``group`` that they reached
-    after the time limit of their latest timed page ran out; untimed pages in
-    between, and a trial's feedback pages even if timed, don't count.
-    """
-    return any(link.ran_out_of_time for _, link in _waiting_links(participant, group))
 
 
 def _interruptible_waiting_barrier(page, participant):
@@ -7298,8 +7299,8 @@ class GroupCloser(GroupBarrier):
         if "id_" not in kwargs:
             kwargs["id_"] = f"closer_{group_type}"
 
-        super().__init__(group_type=group_type, on_release=close_sync_group, **kwargs)
+        super().__init__(group_type=group_type, on_release=_close_sync_group, **kwargs)
 
 
-def close_sync_group(group):
+def _close_sync_group(group):
     group.close()

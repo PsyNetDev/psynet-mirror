@@ -21,7 +21,7 @@ the society's size, a `while_loop` whose rounds start at a
 `GroupBarrier(admission_point=True, newcomer_page=...)` that admits waiting
 newcomers and shows them the society's history, then cued trials without
 `round=`, a round-end `GroupBarrier` whose `on_release` scores the round and
-uses `group_seats` to find the longest-serving member, and `SyncGroup.rounds`
+uses `SyncGroup.seats` to find the longest-serving member, and `SyncGroup.rounds`
 on `participant.latest_sync_group(...)` for the history, which still works
 if the newcomer leaves while reading it. Tips are stored
 on the leaving member's last trial, so no two participants write the same

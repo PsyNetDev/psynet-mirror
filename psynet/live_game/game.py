@@ -24,9 +24,11 @@ from .messages import (
     _session_channel,
 )
 from .method_wrappers import (
+    _GAME_CODE_METHODS,
     _STATE_METHODS,
     _ends_when_time_is_up,
     _returns_json,
+    _runs_game_code,
     _saves_ready_messages,
     _sends_message,
     _shows_psynet_entry,
@@ -66,8 +68,9 @@ class LiveGame(RealtimeGame):
     describes each of them. A subclass of a game needs a ``channel`` of its
     own.
 
-    The game's methods know each player by their number, 0 for the first
-    player, 1 for the next, and so on, in the order they signed up, and get
+    The game's methods know each player by their number, from 0, in the
+    order of the players' seats in the group (see
+    :attr:`~psynet.sync.SyncGroup.seats`), and get
     ``now`` in seconds since the game started. The state and each view are
     dicts that hold only plain data, such as lists, strings and numbers, so
     a game keeps what each player has in a list, in player order.
@@ -132,6 +135,7 @@ class LiveGame(RealtimeGame):
                 for name in _STATE_METHODS
             ),
             ("initial_state", functools.partial(_returns_json, name="initial_state")),
+            *((name, _runs_game_code) for name in _GAME_CODE_METHODS),
             ("next_deadline", _waits_for_start),
             ("is_over", _ends_when_time_is_up),
             ("view", _shows_psynet_entry),

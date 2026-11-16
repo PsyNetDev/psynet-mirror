@@ -21,12 +21,43 @@ from .psynet_entry import (
 # The game methods that can change the state, which is converted after each.
 _STATE_METHODS = ("apply", "tick", "on_join", "on_leave", "on_start")
 
+# The game methods that get neither a participant id nor a session time.
+_GAME_CODE_METHODS = ("outcome", "answer", "performance_reward")
 
-# Set while a state method runs, so one that calls another, as through
-# super() or from initial_state, converts once, after the outermost call.
+
+# Set while the game's own code runs. A call it makes to another of the
+# game's methods, directly or through super(), already has the player's
+# number and the game's time, so it passes them through unconverted, and a
+# state method converts the state once, after the outermost call.
 # Converting rebuilds every dict and list in the state, which would cut off
 # references the outer call still holds.
-_changing_state = contextvars.ContextVar("_changing_state", default=False)
+_in_game_code = contextvars.ContextVar("_in_game_code", default=False)
+
+
+def _as_game_code(call, *args, **kwargs):
+    """Return ``call(*args, **kwargs)``, run with ``_in_game_code`` set."""
+    if _in_game_code.get():
+        return call(*args, **kwargs)
+
+    # In a copy of the context, so nothing has to unset the flag, even when
+    # Dallinger's time limit interrupts the call.
+    def run():
+        _in_game_code.set(True)
+        return call(*args, **kwargs)
+
+    return contextvars.copy_context().run(run)
+
+
+def _runs_game_code(method):
+    """Wrap a method that neither gets a participant id nor a session time,
+    so that calls it makes to the game's other methods aren't converted."""
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        return _as_game_code(method, self, *args, **kwargs)
+
+    wrapper._psynet_wrapper = True
+    return wrapper
 
 
 def _converts_outermost_call(method, name, convert):
@@ -38,24 +69,16 @@ def _converts_outermost_call(method, name, convert):
 
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
+        outermost = not _in_game_code.get()
         if session_part is not None and getattr(type(self), name) is wrapper:
-            outermost = not _changing_state.get()
             call = functools.partial(session_part, self, method, outermost)
         else:
             call = functools.partial(method, self)
-        if _changing_state.get():
-            result = call(*args, **kwargs)
-            return None if result is _UNCHANGED else result
-
-        # In a copy of the context, so nothing has to unset the flag, even
-        # when Dallinger's time limit interrupts the call.
-        def run():
-            _changing_state.set(True)
-            return call(*args, **kwargs)
-
-        result = contextvars.copy_context().run(run)
+        result = _as_game_code(call, *args, **kwargs)
         if result is _UNCHANGED:
             return None
+        if not outermost:
+            return result
         if not self.convert_state_to_json:
             return result
         return convert(self, result, args)
@@ -87,10 +110,12 @@ def _returns_json(method, name):
 def _waits_for_start(method):
     @functools.wraps(method)
     def next_deadline(self, state):
+        if _in_game_code.get():
+            return method(self, state)
         entry = _psynet_entry(state)
         if entry["started_at"] is None:
             return self.ready_timeout
-        deadline = method(self, state)
+        deadline = _as_game_code(method, self, state)
         if deadline is not None:
             # On the game's clock, as the game's other methods see it.
             deadline += entry["started_at"]
@@ -109,7 +134,7 @@ def _ends_when_time_is_up(method):
         if _psynet_entry(state)["time_up"]:
             # A string is Dallinger's reason for the end.
             return "finished" if self.duration is not None else TIMEOUT
-        return method(self, state)
+        return _as_game_code(method, self, state)
 
     is_over._psynet_wrapper = True
     return is_over
@@ -118,13 +143,11 @@ def _ends_when_time_is_up(method):
 def _shows_psynet_entry(method):
     @functools.wraps(method)
     def view(self, state, player_id):
-        if type(self).view is not view:
-            # A super() call, from the game's own view, gets the player's
-            # number as that view did.
+        if _in_game_code.get():
             return method(self, state, player_id)
         entry = _psynet_entry(state)
         player = _player(entry, player_id)
-        shown = method(self, state, player)
+        shown = _as_game_code(method, self, state, player)
         if not isinstance(shown, dict):
             raise TypeError(
                 f"{type(self).__name__}.view must return a dict, not "
@@ -136,7 +159,12 @@ def _shows_psynet_entry(method):
                 f"{type(self).__name__}.view returned a 'psynet' entry, "
                 "which is PsyNet's. Give it another name."
             )
-        return {**shown, "psynet": {**entry, "you": player}}
+        # Pages get player numbers only, so no player learns another's
+        # participant id, and with it who they've played before.
+        public = {
+            key: value for key, value in entry.items() if key != "participant_ids"
+        }
+        return {**shown, "psynet": {**public, "you": player}}
 
     view._psynet_wrapper = True
     return view
@@ -145,16 +173,17 @@ def _shows_psynet_entry(method):
 def _sends_message(method):
     @functools.wraps(method)
     def send(self, view, player_id, now):
-        outermost = type(self).bot is send
+        outermost = not _in_game_code.get()
         if outermost:
             entry = _psynet_entry(view, "view")
-            player_id = _player(entry, player_id)
+            # The view is the bot's own, so it says which player the bot is.
+            player_id = entry["you"]
             if player_id not in entry["ready"]:
                 return {"type": PlayerReady.type, "message": {}}
             if entry["started_at"] is None:
                 return None
             now = _game_time(entry, now)
-        message = method(self, view, player_id, now)
+        message = _as_game_code(method, self, view, player_id, now)
         # A bot calling super().bot() reaches its parent's wrapper, which
         # leaves the message for the outermost one.
         if not outermost or not isinstance(message, LiveMessage):
@@ -232,12 +261,12 @@ def _saves_ready_messages(method):
 
     @functools.wraps(method)
     def save_message(self, state, player_id, message, rejection):
-        if type(self).save_message is not save_message:
+        if _in_game_code.get():
             return method(self, state, player_id, message, rejection)
         if isinstance(message, dict) and message.get("type") == PlayerReady.type:
             return True
         player = _player(_psynet_entry(state), player_id)
-        return method(self, state, player, message, rejection)
+        return _as_game_code(method, self, state, player, message, rejection)
 
     save_message._psynet_wrapper = True
     return save_message

@@ -37,7 +37,7 @@ from psynet.live_game import (
     live_game_result,
 )
 from psynet.live_game import registry as game_registry
-from psynet.live_game.testing import start_game
+from psynet.live_game.testing import LocalGame, start_game
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.participant import Participant
@@ -501,6 +501,14 @@ def _started(**state):
     return {**state, "psynet": _psynet(ready=[0], started_at=0)}
 
 
+def _started_view(**view):
+    """The view of player 0, participant 1, in a game they play alone, which
+    has started, as Dallinger gives it to a bot."""
+    entry = _psynet(ready=[0], started_at=0)
+    del entry["participant_ids"]
+    return {**view, "psynet": {**entry, "you": 0}}
+
+
 def _game_part(state):
     """The state without PsyNet's entry for the ready step."""
     return {key: value for key, value in state.items() if key != "psynet"}
@@ -909,7 +917,7 @@ def test_a_bot_s_message_is_sent_as_a_page_sends_it(hop):
             return message.model_copy(update={"to": (4, 5)})
 
     game = FurtherHop()
-    message = game.bot(_started(), "1", 0)
+    message = game.bot(_started_view(), "1", 0)
 
     assert message == {"type": "jump", "message": {"from": 1, "to": [4, 5]}}
     state = _started()
@@ -926,7 +934,7 @@ def test_a_bot_can_return_what_a_page_sends(hop):
         def bot(self, view, player_id, now):
             return sent
 
-    assert PlainHop().bot(_started(), "1", 0) == sent
+    assert PlainHop().bot(_started_view(), "1", 0) == sent
 
 
 class Aim(LiveMessage):
@@ -969,7 +977,7 @@ def test_a_bot_message_the_game_can_t_read_as_it_is_fails_loudly(
             return returned
 
     with pytest.raises(TypeError) as raised:
-        Archery().bot(_started(), "1", 0)
+        Archery().bot(_started_view(), "1", 0)
 
     assert str(raised.value) == (
         f"Archery.bot returned {returned!r}, which the game can't read as it "
@@ -1660,11 +1668,64 @@ def test_each_view_shows_who_is_ready_and_which_player_it_is_for(relay):
     state = relay.initial_state(["1", "2"])
     relay.apply(state, "2", READY, 1, Sent())
 
-    assert relay.view(state, "1") == {
-        "taps": 0,
-        "psynet": {**_psynet(participant_ids=[1, 2], ready=[1]), "you": 0},
-    }
+    # Without the participant ids, so a page can't tell who it plays with.
+    entry = _psynet(ready=[1])
+    del entry["participant_ids"]
+    assert relay.view(state, "1") == {"taps": 0, "psynet": {**entry, "you": 0}}
     assert relay.view(state, "2")["psynet"]["you"] == 1
+
+
+def test_a_game_calling_its_own_view_passes_the_player_s_number():
+    class Scores(LiveGame):
+        channel = "scores"
+
+        def initial_state(self, players):
+            return {"scores": [10, 20], "seen": []}
+
+        def view(self, state, player):
+            return {"mine": state["scores"][player]}
+
+        def tick(self, state, now):
+            state["seen"] = [self.view(state, player)["mine"] for player in (0, 1)]
+
+        def outcome(self, state, reason):
+            return [self.view(state, player)["mine"] for player in (0, 1)]
+
+        def bot(self, view, player, now):
+            return None
+
+    game = LocalGame(Scores, players=2)
+    game.tick(1)
+
+    assert game.state["seen"] == [10, 20]
+    assert game.outcome() == [10, 20]
+
+
+def test_live_game_handles_every_hook_of_dallingers_game():
+    # A new hook that gets a participant id or a session time needs
+    # converting to a player number and the game's time before LiveGame
+    # passes it on. Add it here once LiveGame handles it.
+    hooks = {
+        name
+        for name, value in vars(RealtimeGame).items()
+        if callable(value) and not name.startswith("_")
+    }
+    assert hooks == {
+        "initial_state",
+        "apply",
+        "tick",
+        "next_deadline",
+        "view",
+        "is_over",
+        "outcome",
+        "on_join",
+        "on_leave",
+        "save_message",
+        "bot",
+        "queue_effect",
+        "handle_effect",
+        "handle_ending",
+    }
 
 
 def test_each_view_lists_the_players_who_have_left(relay):
@@ -2387,14 +2448,19 @@ def test_a_group_larger_than_the_game_s_max_players_starts_no_game(
     assert "has a max_players of 1" in caplog.text
 
 
-def test_a_game_lists_its_players_in_participant_id_order(pair, monkeypatch):
+def test_a_game_numbers_its_players_in_seat_order(pair, monkeypatch):
     members, game_barrier = pair
+    group = members[0].active_sync_groups["pair"]
+    (first,) = [
+        link for link in group.participant_links if link.participant_id == members[0].id
+    ]
+    first.admitted_at += datetime.timedelta(seconds=1)
     started = []
     monkeypatch.setattr(
         "psynet.live_game.play.create_realtime_session",
         lambda game_class, players, bots=(): started.append(players) or 1,
     )
 
-    game_barrier._start_session(list(reversed(members)))
+    game_barrier._start_session(members, group)
 
-    assert started == [sorted(member.id for member in members)]
+    assert started == [[members[1].id, members[0].id]]

@@ -42,7 +42,6 @@ from psynet.sync import (
     GroupBarrier,
     SimpleGrouper,
     SyncGroupRound,
-    group_seats,
     leave_group,
 )
 from psynet.timeline import (
@@ -478,7 +477,7 @@ class FishingTrial(Trial):
         """Choose who leaves after the round: the longest-serving member if the round has too many, and anyone who has played their last round."""
         retiring = None
         if len(trials) > SOCIETY_SIZE:
-            seats = group_seats(group)
+            seats = group.seats
             retiring = min(trials, key=lambda t: seats[t.participant_id])
         group_round.var.retired_id = retiring.participant_id if retiring else None
         for trial in trials:

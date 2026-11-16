@@ -438,7 +438,7 @@ writes a story one sentence at a time. Each turn is one cued round in the
 group's loop, ``StoryTurn.cue(turn_definition, round=turn)`` (see
 :ref:`a fixed group's loop <rounds-fixed-group-loop>`). The definition
 function runs only at the turn's first cue, so it chooses the writer once,
-by seat with :func:`~psynet.sync.group_seats`, and the round's definition
+by seat with :attr:`~psynet.sync.SyncGroup.seats`, and the round's definition
 stores their ID for every member's trial and for the export:
 
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py

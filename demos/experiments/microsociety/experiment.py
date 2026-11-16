@@ -18,7 +18,7 @@ members learned survives their departure.
 Each round is one cued ``FishingTrial`` per member, after the round-start
 barrier, so every member of a round starts it together. Its
 ``GroupBarrier`` in ``show_trial`` ends the round, and its release scores
-it. Members are ranked by when they were admitted, which ``group_seats``
+it. Members are ranked by when they were admitted, which ``group.seats``
 records. ``life_stage`` names every way a membership ends; the loop runs
 while it is ``"playing"``, and the end of the timeline shows the page for
 the stored stage. See ``README.md`` for the failure cases.
@@ -41,7 +41,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl, TextControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import GroupBarrier, SimpleGrouper, SyncGroupRound, group_seats
+from psynet.sync import GroupBarrier, SimpleGrouper, SyncGroupRound
 from psynet.timeline import (
     CodeBlock,
     Module,
@@ -291,7 +291,7 @@ class FishingTrial(Trial):
         retiring = None
         too_many = len(trials) > SOCIETY_SIZE
         if too_many:
-            seats = group_seats(group)
+            seats = group.seats
             retiring = min(trials, key=lambda t: seats[t.participant_id])
         group_round.var.retired_id = retiring.participant_id if retiring else None
         for trial in trials:

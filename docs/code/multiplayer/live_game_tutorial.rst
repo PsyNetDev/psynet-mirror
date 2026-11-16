@@ -98,7 +98,7 @@ its ``action`` field, and ``ACTIONS`` lists the three choices, for the page's
 buttons and the bots. ``GAMES`` and ``PARTNER_WAIT_SECONDS`` are used by the
 timeline, which "Adding the game to the timeline" below describes.
 
-PsyNet numbers a game's players from 0, in the order they signed up, so the
+PsyNet numbers a game's players from 0, in the order they joined the group, so the
 two players here are 0 and 1, and ``1 - player`` is the other one. A round's
 choices are a list, in player order, such as ``["rock", "paper"]``.
 ``result_for`` says how a round went for one player, ``rounds_seen_by``

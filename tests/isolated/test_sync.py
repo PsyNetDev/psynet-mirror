@@ -76,7 +76,6 @@ from psynet.sync import (
     arrival_notice_payload,
     check_barriers,
     check_sync_groups,
-    group_seats,
     hold_message,
     leave_group,
     pending_arrival_notice_for,
@@ -8319,7 +8318,7 @@ def test_a_pending_member_is_admitted_only_at_an_admission_point(
     assert group.pending_participants == [newcomer]
     assert group.active_participants == founders
     assert newcomer.sync_group_link("society").admitted_at is None
-    assert newcomer.id not in group_seats(group)
+    assert newcomer.id not in group.seats
 
     ordinary = GroupBarrier("round_ends", group_type="society")
     assert not ordinary._waits_here(newcomer)
@@ -8343,7 +8342,7 @@ def test_a_pending_member_is_admitted_only_at_an_admission_point(
     assert _ADMITTED_AT_RELEASE == [[newcomer.id]]
     assert group.active_participants == [*founders, newcomer]
     assert group.pending_participants == []
-    assert group_seats(group)[newcomer.id] == 2
+    assert group.seats[newcomer.id] == 2
     assert start._just_admitted(newcomer) and not start._just_admitted(founders[0])
     assert [
         p.sync_group_link("society").admission_points_passed

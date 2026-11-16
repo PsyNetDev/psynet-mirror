@@ -169,7 +169,7 @@ says why they left (see
 participant out of their group of that type, for example after their last
 round. The list has no guaranteed
 order. When you need a stable one, for example to assign roles or turns,
-use :func:`group_seats(group) <psynet.sync.group_seats>`, which numbers
+use :attr:`group.seats <psynet.sync.SyncGroup.seats>`, which numbers
 everyone who has been in the group by when they joined, and keeps the
 numbers when members leave (see the ``story_chain`` demo).
 ``sync_group.leader`` is the group's leader.
@@ -680,7 +680,7 @@ have answered get a tick. A member has answered once they wait at a barrier
 of the group, typically the barrier
 after the decision page. A member who reached the barrier because their
 page's time limit ran out gets a grey dash instead
-(:func:`~psynet.sync.reached_barrier_after_time_limit`), and screen readers announce
+(:meth:`~psynet.sync.SyncGroup.reached_barrier_after_time_limit`), and screen readers announce
 that they ran out of time. Pass ``show_progress=False`` to
 hide the ticks.
 
@@ -1555,7 +1555,7 @@ group admits them. A pending member holds a seat, so the group's
 ``max_group_size`` counts them, but nothing else counts them: not the
 quorum, the barriers, the choice of leader,
 :class:`~psynet.group_prompt.GroupPrompt` or
-:func:`~psynet.sync.group_seats`. The group's other barriers let them
+:attr:`~psynet.sync.SyncGroup.seats`. The group's other barriers let them
 straight through, and a cue by a pending member raises an error. The
 admission points are:
 

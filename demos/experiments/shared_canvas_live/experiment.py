@@ -31,7 +31,7 @@ from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
 from psynet.timeline import PageMaker, Timeline
 
-#: Each player's color, in the order they signed up. There's one for each
+#: Each player's color, in player order. There's one for each
 #: player a game can have.
 COLORS = [
     "#1f77b4",

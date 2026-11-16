@@ -73,8 +73,7 @@ def _psynet_entry(state, what="state"):
 
 def _player(entry, player_id):
     """Return the number of the player whose participant id Dallinger gave,
-    as the game's methods see it: 0 for the first player, 1 for the next,
-    and so on, in the order they signed up."""
+    as the game's methods see it."""
     return entry["participant_ids"].index(int(player_id))
 
 
