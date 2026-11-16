@@ -20,7 +20,7 @@ async function reachTheGame(participant) {
   });
 }
 
-test("a live session page joins its session, shows a rejected message and moves on once the result is saved", { tag: "@both" }, async ({
+test("a live game page joins its game, shows a rejected message and moves on once the result is saved", { tag: "@both" }, async ({
   browser
 }) => {
   const experiment = startExperiment(path.resolve("tests/experiments/live_game"));
@@ -157,7 +157,7 @@ test("a game page open in two tabs moves the participant on once", { tag: "@both
   }
 });
 
-test("participants whose pair breaks up at the game barrier see the no-session notice and can move on", { tag: "@both" }, async ({
+test("participants whose pair breaks up at the game barrier see the no-game notice and can move on", { tag: "@both" }, async ({
   browser
 }) => {
   const experiment = startExperiment(path.resolve("tests/experiments/live_game"));
