@@ -1,5 +1,5 @@
-"""PsyNet's part of a game's state, the ``state["live_session"]`` entry that
-_live_session_entry returns, and the wrappers that keep it up to date.
+"""PsyNet's part of a game's state, the ``state["psynet"]`` entry that
+_psynet_entry returns, and the wrappers that keep it up to date.
 
 The ready step: the game starts once every player is ready, or at the
 game's ready_timeout. Once it starts, a game with a duration rejects
@@ -27,7 +27,7 @@ class PlayerReady(LiveMessage):
     Every game reads it, so don't list it in a game's
     :attr:`~LiveGame.messages`. PsyNet handles it before the game's
     ``apply``, so the game never receives it, even in an ``apply`` of its
-    own. A game reads who is ready from ``state["live_session"]["ready"]``,
+    own. A game reads who is ready from ``state["psynet"]["ready"]``,
     and reacts to the game starting in :meth:`~LiveGame.on_start`.
     ``PlayerReady.saved_messages(session_id)`` returns when each player became
     ready.
@@ -38,26 +38,26 @@ class PlayerReady(LiveMessage):
     def apply(self, game, state, player_id, now):
         """Mark the player ready, and start the session once every player
         is."""
-        entry = _live_session_entry(state)
+        entry = _psynet_entry(state)
         if player_id not in entry["ready"]:
             entry["ready"].append(player_id)
         if set(entry["players"]) <= set(entry["ready"]):
             game._end_ready_step(state, now)
 
 
-# Documented in docs/reference/api/live_session.rst, since Sphinx doesn't
+# Documented in docs/reference/api/live_game.rst, since Sphinx doesn't
 # read a comment on a re-exported constant.
 NOT_STARTED = "The game hasn't started yet."
 
 _TIME_UP = "The game's time is up."
 
 
-def _live_session_entry(state, what="state"):
+def _psynet_entry(state, what="state"):
     try:
-        return state["live_session"]
+        return state["psynet"]
     except (KeyError, TypeError):
         raise ValueError(
-            f"The {what} has no 'live_session' entry, which PsyNet adds to the "
+            f"The {what} has no 'psynet' entry, which PsyNet adds to the "
             "state initial_state returns, and to each view. Start from those."
         ) from None
 
@@ -66,7 +66,7 @@ def _apply_once_started(self, method, state, player_id, message, now, sent):
     if isinstance(message, dict) and message.get("type") == PlayerReady.type:
         _parse_message(self._message_types, message).apply(self, state, player_id, now)
         return None
-    entry = _live_session_entry(state)
+    entry = _psynet_entry(state)
     if entry["started_at"] is None:
         raise Reject(NOT_STARTED)
     if entry["ends_at"] is not None and now >= entry["ends_at"]:
@@ -75,7 +75,7 @@ def _apply_once_started(self, method, state, player_id, message, now, sent):
 
 
 def _tick_once_started(self, method, state, now):
-    if _live_session_entry(state)["started_at"] is None:
+    if _psynet_entry(state)["started_at"] is None:
         if self.ready_timeout is None or now < self.ready_timeout:
             return _UNCHANGED
         self._end_ready_step(state, now)
@@ -83,17 +83,17 @@ def _tick_once_started(self, method, state, now):
         # no other.
         if self.is_over(state):
             return None
-    ends_at = _live_session_entry(state)["ends_at"]
+    ends_at = _psynet_entry(state)["ends_at"]
     if ends_at is None or now < ends_at:
         return method(self, state, now)
     # A tick that runs late sees the end, so the game counts nothing after it.
     result = method(self, state, ends_at)
-    _live_session_entry(state)["time_up"] = True
+    _psynet_entry(state)["time_up"] = True
     return result
 
 
 def _record_leave(self, method, state, player_id, now):
-    entry = _live_session_entry(state)
+    entry = _psynet_entry(state)
     if entry["started_at"] is None and player_id in entry["ready"]:
         entry["ready"].remove(player_id)
     if player_id not in entry["away"]:
@@ -103,13 +103,13 @@ def _record_leave(self, method, state, player_id, now):
 
 def _record_join(self, method, state, player_id, now):
     # A game's initial_state can call on_join before PsyNet adds its entry.
-    entry = state.get("live_session") if isinstance(state, dict) else None
+    entry = state.get("psynet") if isinstance(state, dict) else None
     if entry is not None and player_id in entry["away"]:
         entry["away"].remove(player_id)
     return method(self, state, player_id, now)
 
 
-def _add_live_session_entry(self, method, players, *settings):
+def _add_psynet_entry(self, method, players, *settings):
     # Dallinger calls initial_state with the players alone, so a
     # PlayLiveGame's settings come from _new_session_settings.
     if not settings and _new_session_settings.get() is not None:
@@ -120,12 +120,12 @@ def _add_live_session_entry(self, method, players, *settings):
         raise TypeError(
             f"{name}.initial_state must return a dict, not {type(state).__name__}."
         )
-    if "live_session" in state:
+    if "psynet" in state:
         raise ValueError(
-            f"{name}.initial_state returned a state with a 'live_session' entry, "
+            f"{name}.initial_state returned a state with a 'psynet' entry, "
             "which is PsyNet's. Give it another name."
         )
-    state["live_session"] = {
+    state["psynet"] = {
         "players": list(players),
         "ready": [],
         "started_at": None,
@@ -141,12 +141,12 @@ def _add_live_session_entry(self, method, players, *settings):
 _UNCHANGED = object()
 
 
-# PsyNet's part of each state method, which keeps the live_session entry up
+# PsyNet's part of each state method, which keeps the psynet entry up
 # to date and runs in the method's place, calling the game's own method.
 _SESSION_BOOKKEEPING = {
     "apply": _apply_once_started,
     "tick": _tick_once_started,
     "on_leave": _record_leave,
     "on_join": _record_join,
-    "initial_state": _add_live_session_entry,
+    "initial_state": _add_psynet_entry,
 }

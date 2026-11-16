@@ -1,4 +1,4 @@
-.. _live_session_tutorial:
+.. _live_game_tutorial:
 
 ====================
 Building a live game
@@ -27,7 +27,7 @@ Before you start, you should know how a PsyNet timeline is put together
 (:doc:`/code/writing_a_timeline`), how trials work, and how participants
 are put into groups (:doc:`synchronization`). The game pages are written in
 JavaScript, so it helps if you have written a little of it.
-:doc:`live_sessions` is the reference for everything shown here, and it
+:doc:`live_games` is the reference for everything shown here, and it
 covers cases that this tutorial leaves out.
 
 How a live game works
@@ -59,7 +59,7 @@ the time each one arrived, so you can analyze what each participant did and
 when. A game can leave some messages out of the record, as Part 3 shows.
 
 You write the game as a Python class, a subclass of
-:class:`~psynet.live_session.LiveGame`. Its methods say what the state is
+:class:`~psynet.live_game.LiveGame`. Its methods say what the state is
 at the start, what each message does, what each player sees, and when the
 game is over. PsyNet does the rest. It connects the pages, applies the
 messages one at a time in the order they arrive, sends the views, and saves
@@ -140,7 +140,7 @@ The message
 ~~~~~~~~~~~
 
 A player makes a choice by sending a ``Choose`` message, a subclass of
-:class:`~psynet.live_session.LiveMessage`:
+:class:`~psynet.live_game.LiveMessage`:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
    :pyobject: Choose
@@ -152,7 +152,7 @@ sends the message like this:
 
 .. code-block:: javascript
 
-    psynet.liveSession.send("choose", {round: 2, action: "rock"});
+    psynet.liveGame.send("choose", {round: 2, action: "rock"});
 
 PsyNet checks every message against its fields before the game sees it. A
 message whose ``round`` isn't a whole number, or whose ``action`` isn't one of
@@ -251,16 +251,16 @@ shows the game page, and then scores and pays for the game:
 
 - ``sync_group_type`` says that a group plays the trial, here the pair that
   the grouper in the timeline below forms. The grouper and the
-  :class:`~psynet.live_session.PlayLiveGame` use the same group type,
+  :class:`~psynet.live_game.PlayLiveGame` use the same group type,
   ``"pair"``. Each player has a trial of their own, and the two trials share
   a definition.
-- :class:`~psynet.live_session.PlayLiveGame` is the step where the pair plays
+- :class:`~psynet.live_game.PlayLiveGame` is the step where the pair plays
   the game. It waits for both players, starts a session for the pair, and
   then shows them the game page together. Its ``group_type`` is the pair's,
   its ``game_class`` is the game, its ``page`` is the game page, and its
   ``settings`` are the number of rounds from the trial's definition, which
   the game's ``initial_state`` receives. Its ``id_`` names the step, which
-  ``live_session_id`` takes in the test below; without one it would be the
+  ``live_game_id`` takes in the test below; without one it would be the
   game's ``channel``.
 - A player whose partner doesn't arrive within ``max_wait_time`` seconds
   leaves the pair, and goes on to the game page without a session. The wait starts when the player arrives, and their
@@ -271,16 +271,16 @@ shows the game page, and then scores and pays for the game:
   holds the page's elements, each with an ``id`` so that the JavaScript can
   find it. The first element says which game this is, how many rounds it has
   and what a round won pays, all from the trial's definition. The
-  :class:`~psynet.live_session.LiveSessionControl` connects the
+  :class:`~psynet.live_game.LiveGameControl` connects the
   page to the session that the ``PlayLiveGame`` started.
   ``player_left_message`` is the notice that the page shows while the
-  partner is away from the game page, and ``no_session_message`` is the
+  partner is away from the game page, and ``no_game_message`` is the
   notice on a game page without a session.
 - ``js_page_modules`` lists the page's JavaScript file, which is in the demo's
   ``static`` folder.
 - The game page's answer, from the game's ``answer``, becomes the trial's
   answer. PsyNet also copies the pair's whole outcome to the round the game
-  was played in, so ``trial.group_round.live_session_outcome`` holds it for
+  was played in, so ``trial.group_round.live_game_outcome`` holds it for
   both trials.
 - ``score_answer`` returns the trial's score, here the number of rounds the
   player won, which it reads from the answer. ``compute_performance_reward``
@@ -362,7 +362,7 @@ The game page
 The page's JavaScript is in ``static/rock-paper-scissors.js``. It exports an
 ``activate`` function, which PsyNet runs when the page opens
 (:doc:`/code/pages/custom_front_ends` explains page modules). Through
-``psynet.liveSession``, the function sends the player's messages and draws each
+``psynet.liveGame``, the function sends the player's messages and draws each
 view that arrives.
 
 It checks that the participant has a session, then finds the page's elements
@@ -376,7 +376,7 @@ and sets up the variables that the rest of the page uses:
 
 A participant reaches the game page without a session when their partner
 didn't arrive in time. PsyNet then shows them the control's
-``no_session_message`` in a notice. The page hides the game, which can't be
+``no_game_message`` in a notice. The page hides the game, which can't be
 played, and does nothing more, and its Next button lets them move on.
 
 The page then registers what happens when a view arrives, and when the game
@@ -384,7 +384,7 @@ rejects one of the player's messages:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
    :language: javascript
-   :start-at: psynet.liveSession.onView(
+   :start-at: psynet.liveGame.onView(
    :end-before: for (let button of buttons) {
    :dedent:
 
@@ -408,7 +408,7 @@ Each button sends a ``Choose`` message when it's clicked, through the page's
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
    :language: javascript
    :start-at: function choose(action) {
-   :end-before: psynet.liveSession.onView(
+   :end-before: psynet.liveGame.onView(
    :dedent:
 
 ``send`` returns ``undefined`` if the page's connection has closed, so the
@@ -425,9 +425,9 @@ page clears the last rejection only for a message that was sent.
 The view holds every round played so far, so a page that reloads draws the
 whole game again. ``describe``, defined above ``render`` in the file, puts a
 round's result into words, and ``enableButtons`` enables or disables the
-three buttons. ``psynet.liveSession.started`` says whether the game has
+three buttons. ``psynet.liveGame.started`` says whether the game has
 started, which it does once both players are ready, or after a minute if
-one of them isn't. ``psynet.liveSession.ended`` says
+one of them isn't. ``psynet.liveGame.ended`` says
 whether the game is over. The buttons are enabled only while the game is
 running and the player hasn't chosen yet. If the game fails with an error,
 the final view can be ``null``, so ``render`` checks for that first.
@@ -439,11 +439,11 @@ A view usually arrives within a fraction of a second of the player's click.
 But sometimes a view that the partner's choice caused arrives first, and that
 view doesn't include the player's own choice yet. Drawn as it is, it would
 enable the buttons again for a moment. The page avoids this by telling
-``psynet.liveSession`` what a ``Choose`` message will do to the view:
+``psynet.liveGame`` what a ``Choose`` message will do to the view:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
    :language: javascript
-   :start-at: psynet.liveSession.predict(
+   :start-at: psynet.liveGame.predict(
    :end-before: function describe(
    :dedent:
 
@@ -571,7 +571,7 @@ copy these into the JavaScript, the demo keeps them in one place:
 
 The game page passes it to the JavaScript with
 ``js_vars={"snake_rules": RULES}``, and ``activate`` reads it from ``vars``.
-``live`` is short for ``psynet.liveSession``:
+``live`` is short for ``psynet.liveGame``:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/static/snake.js
    :language: javascript
@@ -706,12 +706,12 @@ and that each trial's score and reward match the rounds the bot won:
    :pyobject: Exp.test_check_bot
    :dedent:
 
-:func:`~psynet.live_session.live_session_id` finds the session that a
+:func:`~psynet.live_game.live_game_id` finds the session that a
 participant last played at a ``PlayLiveGame`` with that id, here their
-second game, and :func:`~psynet.live_session.live_session_result` says how it ended and what
+second game, and :func:`~psynet.live_game.live_game_result` says how it ended and what
 its outcome was. To test a game's rules without starting the experiment, call
 its methods directly, as the "Bots and testing" section of
-:doc:`live_sessions` shows.
+:doc:`live_games` shows.
 
 Bots don't run the page's JavaScript, so also play the game yourself, in a
 browser window for each player. Try reloading the page during the game,
@@ -730,13 +730,13 @@ session's end. For each message, the table records when it arrived, both as
 a date and time and as a session time. It also records the time on the
 participant's own computer when their page sent the message, and the session
 time of the view the participant was looking at when they acted. The "Saved
-messages" section of :doc:`live_sessions` shows how to read a session's
+messages" section of :doc:`live_games` shows how to read a session's
 messages in Python.
 
 Next steps
 ----------
 
-:doc:`live_sessions` describes everything a game can do, including what
+:doc:`live_games` describes everything a game can do, including what
 happens when a player leaves, reloads, or opens the game in two tabs. The
 ``bargaining_live``, ``public_goods_live`` and ``microsociety_live`` demos
 show more: re-pairing players between games, results on the group's round,

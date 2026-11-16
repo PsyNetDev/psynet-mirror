@@ -8,8 +8,8 @@ from dallinger.models import RealtimeSession
 
 
 @dataclass(frozen=True)
-class LiveSessionResult:
-    """How a live session ended, as :func:`live_session_result` returns it.
+class LiveGameResult:
+    """How a live session ended, as :func:`live_game_result` returns it.
 
     Attributes
     ----------
@@ -49,9 +49,9 @@ class LiveSessionResult:
         return self.end_reason is not None
 
 
-def live_session_result(session_id):
+def live_game_result(session_id):
     """Return how the session ``session_id`` ended, as a
-    :class:`LiveSessionResult`, or ``None`` if it's still running.
+    :class:`LiveGameResult`, or ``None`` if it's still running.
 
     A session counts as running until its result is saved, a few seconds after
     the game ends. That's when the game page's ``onResultSaved`` runs.
@@ -78,7 +78,7 @@ def live_session_result(session_id):
         raise KeyError(session_id)
     if row.status == "running":
         return None
-    return LiveSessionResult(row.status, row.end_reason, row.outcome, row.error)
+    return LiveGameResult(row.status, row.end_reason, row.outcome, row.error)
 
 
 def _has_outcome(status, outcome):

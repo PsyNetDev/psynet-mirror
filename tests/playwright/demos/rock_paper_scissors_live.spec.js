@@ -93,7 +93,7 @@ test("two participants play rock_paper_scissors_live to the end, with rejected c
     );
 
     await first.evaluate(() =>
-      psynet.liveSession.send("choose", { round: 1, action: "paper" })
+      psynet.liveGame.send("choose", { round: 1, action: "paper" })
     );
     await expect(first.locator("#rps-rejection")).toHaveText(
       "That isn't the current round.",
@@ -102,7 +102,7 @@ test("two participants play rock_paper_scissors_live to the end, with rejected c
     await first.getByRole("button", { name: "Rock" }).click();
     await expect(first.locator("#rps-rejection")).toHaveText("");
     await first.evaluate(() =>
-      psynet.liveSession.send("choose", { round: 2, action: "paper" })
+      psynet.liveGame.send("choose", { round: 2, action: "paper" })
     );
     await expect(first.locator("#rps-rejection")).toHaveText(
       "You've already chosen this round.",
@@ -143,7 +143,7 @@ test("two participants play rock_paper_scissors_live to the end, with rejected c
     await expect(first.getByRole("button", { name: "Rock" })).toBeDisabled();
     // A choice for round 4 that reaches the game after round 4 is over.
     await first.evaluate(() =>
-      psynet.liveSession.send("choose", { round: 4, action: "paper" })
+      psynet.liveGame.send("choose", { round: 4, action: "paper" })
     );
     await expect.poll(() => heldChoices.length, { timeout: STEP_TIMEOUT_MS }).toBe(2);
     await second.getByRole("button", { name: SECOND_PLAYER_ACTIONS[3] }).click();

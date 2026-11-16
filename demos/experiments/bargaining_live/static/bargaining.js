@@ -12,8 +12,8 @@ function drawCoins(container, stake, keep, keeperIsYou) {
 }
 
 export function activate({root, psynet}) {
-  let live = psynet.liveSession;
-  if (!live.hasSession) {
+  let live = psynet.liveGame;
+  if (!live.hasGame) {
     root.querySelector("#bargain-game").hidden = true;
     return;
   }

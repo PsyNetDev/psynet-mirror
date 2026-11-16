@@ -29,7 +29,7 @@ class LiveMessage(BaseModel):
     PsyNet checks each message strictly before :meth:`apply` runs, and
     rejects one whose fields don't match. A field can have any type Pydantic
     reads from JSON, such as a tuple, an enum or a datetime.
-    :doc:`/code/multiplayer/live_sessions` shows how to compare a field with
+    :doc:`/code/multiplayer/live_games` shows how to compare a field with
     the state, which holds only plain data, and how to test a message.
     """
 
@@ -115,7 +115,7 @@ class LiveMessage(BaseModel):
         ----------
 
         session_id
-            The session's id, as :func:`live_session_id` returns it.
+            The session's id, as :func:`live_game_id` returns it.
 
         Raises
         ------

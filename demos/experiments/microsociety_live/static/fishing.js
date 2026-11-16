@@ -43,9 +43,9 @@ function byWho(fish) {
 }
 
 export function activate({root, psynet}) {
-  let live = psynet.liveSession;
+  let live = psynet.liveGame;
   let status = root.querySelector("#fish-status");
-  if (!live.hasSession) {
+  if (!live.hasGame) {
     // PsyNet says why in a notice, and shows the Next button.
     status.textContent = "";
     return;

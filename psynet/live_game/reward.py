@@ -47,7 +47,7 @@ def _lock_trial_played_in(participant, session_row):
         db.session.query(Trial)
         .join(SyncGroupRound, Trial.sync_group_round_id == SyncGroupRound.id)
         .filter(
-            SyncGroupRound.live_session_id == session_row.id,
+            SyncGroupRound.live_game_id == session_row.id,
             Trial.participant_id == participant.id,
         )
         .order_by(Trial.id.desc())
@@ -143,6 +143,6 @@ def _end_game_page_deadlines(session_row, players):
 def _record_outcome_on_round(session_row):
     from ..sync import SyncGroupRound
 
-    SyncGroupRound.query.filter_by(live_session_id=session_row.id).update(
-        {"live_session_outcome": session_row.outcome}, synchronize_session="fetch"
+    SyncGroupRound.query.filter_by(live_game_id=session_row.id).update(
+        {"live_game_outcome": session_row.outcome}, synchronize_session="fetch"
     )

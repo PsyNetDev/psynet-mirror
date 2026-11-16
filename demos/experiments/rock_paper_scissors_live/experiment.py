@@ -24,13 +24,13 @@ from dallinger.realtime import Reject
 from dominate import tags
 
 import psynet.experiment
-from psynet.live_session import (
+from psynet.live_game import (
     LiveGame,
+    LiveGameControl,
     LiveMessage,
-    LiveSessionControl,
     PlayLiveGame,
-    live_session_id,
-    live_session_result,
+    live_game_id,
+    live_game_result,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
@@ -256,14 +256,12 @@ class RockPaperScissorsTrial(Trial):
                         id="rps-game",
                     )
                 ),
-                LiveSessionControl(
+                LiveGameControl(
                     player_left_message=(
                         "Your partner has left the game. If they don't come "
                         "back, it will end in a few minutes."
                     ),
-                    no_session_message=(
-                        "This game can't be played without your partner."
-                    ),
+                    no_game_message=("This game can't be played without your partner."),
                 ),
                 js_page_modules=["/static/rock-paper-scissors.js"],
                 css_links=["/static/rock-paper-scissors.css"],
@@ -361,10 +359,10 @@ class Exp(psynet.experiment.Experiment):
             {"number": 2, "rounds": 3, "reward_per_win": 0.10},
         ]
         # The bot's latest session is its second game.
-        result = live_session_result(live_session_id(bot, "rock_paper_scissors"))
+        result = live_game_result(live_game_id(bot, "rock_paper_scissors"))
         assert result.status == "ended", result.error
         assert result.end_reason == "finished"
-        assert trials[-1].group_round.live_session_outcome == result.outcome
+        assert trials[-1].group_round.live_game_outcome == result.outcome
         reward = 0
         for trial in trials:
             rounds = trial.answer["rounds"]

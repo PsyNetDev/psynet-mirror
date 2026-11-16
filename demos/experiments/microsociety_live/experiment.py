@@ -18,7 +18,7 @@ Each round is one cued ``FishingTrial`` per member, whose ``show_trial``
 returns a ``PlayLiveGame``: a live session for the society, played on the
 lake. Its ``on_session_start`` chooses who leaves after the round, and the
 history page reads where earlier rounds' fish were caught from each round's
-``live_session_outcome``.
+``live_game_outcome``.
 """
 
 import random
@@ -29,10 +29,10 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages, run_bots_to_completion
-from psynet.live_session import (
+from psynet.live_game import (
     LiveGame,
+    LiveGameControl,
     LiveMessage,
-    LiveSessionControl,
     PlayLiveGame,
 )
 from psynet.modular_page import ModularPage, NullControl, Prompt, TextControl
@@ -136,7 +136,7 @@ class Fishing(LiveGame):
             state["next_catch_at"] = at + CATCH_SECONDS
 
     def view(self, state, player_id):
-        labels = player_labels(state["live_session"]["players"], player_id)
+        labels = player_labels(state["psynet"]["players"], player_id)
         latest = state["catches"][-1] if state["catches"] else None
         return {
             "travel_seconds": TRAVEL_SECONDS,
@@ -280,7 +280,7 @@ def lake_page(round_number):
         "fish",
         Prompt(lake(f"Round {round_number + 1}", "Joining the lake…")),
         # The page shows the round's results on the lake before moving on.
-        LiveSessionControl(
+        LiveGameControl(
             show_result_for=RESULTS_SECONDS,
             player_left_message="A member has left the lake.",
         ),
@@ -424,7 +424,7 @@ def history_page(participant: Participant):
     """Show a newcomer where the society fished lately and the tips of members who have left."""
     society = participant.latest_sync_group("society")
     rounds = society.rounds("fishing")
-    scored = [r for r in rounds if r.live_session_outcome is not None]
+    scored = [r for r in rounds if r.live_game_outcome is not None]
     tips = [t.var.tip for r in rounds for t in r.trials if t.var.has("tip")]
     content = tags.div()
     with content:
@@ -435,7 +435,7 @@ def history_page(participant: Participant):
                 for r in scored[-HISTORY_ROUNDS:]:
                     tags.li(
                         f"Round {r.number + 1}: "
-                        + _spot_text(r.live_session_outcome["spot_fish"])
+                        + _spot_text(r.live_game_outcome["spot_fish"])
                     )
         if tips:
             tags.p("Tips from members who have left:")
@@ -560,7 +560,7 @@ class Exp(psynet.experiment.Experiment):
                     "society_id": r.sync_group_id,
                     "round": r.number,
                     "round_id": r.id,
-                    "spot_fish": (r.live_session_outcome or {}).get("spot_fish"),
+                    "spot_fish": (r.live_game_outcome or {}).get("spot_fish"),
                     "retired_id": r.var.get("retired_id"),
                 }
                 for r in rounds

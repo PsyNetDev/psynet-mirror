@@ -7,12 +7,12 @@ from dallinger.models import RealtimeSession
 from dominate import tags
 
 import psynet.experiment
-from psynet.live_session import (
+from psynet.live_game import (
     LiveGame,
+    LiveGameControl,
     LiveMessage,
-    LiveSessionControl,
     PlayLiveGame,
-    live_session_id,
+    live_game_id,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
@@ -91,7 +91,7 @@ class Exp(psynet.experiment.Experiment):
                         tags.p(id="game-error"),
                     )
                 ),
-                LiveSessionControl(),
+                LiveGameControl(),
                 js_page_modules=["/static/pick-numbers.js"],
                 time_estimate=5,
             ),
@@ -106,7 +106,7 @@ class Exp(psynet.experiment.Experiment):
 
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
-        session_id = live_session_id(bot, "pick_numbers")
+        session_id = live_game_id(bot, "pick_numbers")
         session = (
             db.session.query(
                 RealtimeSession.status,

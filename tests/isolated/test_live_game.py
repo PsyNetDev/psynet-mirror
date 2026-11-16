@@ -24,19 +24,19 @@ from rq import Queue, SimpleWorker
 import psynet
 from psynet.bot import Bot
 from psynet.experiment import Experiment, get_experiment
-from psynet.live_session import (
+from psynet.live_game import (
     NOT_STARTED,
     LiveGame,
+    LiveGameControl,
+    LiveGameResult,
     LiveMessage,
-    LiveSessionControl,
-    LiveSessionResult,
     PlayerReady,
     PlayLiveGame,
-    live_session_id,
-    live_session_result,
+    live_game_id,
+    live_game_result,
 )
-from psynet.live_session import registry as game_registry
-from psynet.live_session.testing import start_game
+from psynet.live_game import registry as game_registry
+from psynet.live_game.testing import start_game
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.participant import Participant
@@ -57,7 +57,7 @@ from timeline_hold_helpers import new_participant  # noqa: E402
 pytestmark = [
     pytest.mark.parametrize(
         "experiment_directory",
-        [path_to_test_experiment("live_session")],
+        [path_to_test_experiment("live_game")],
         indirect=True,
     ),
     pytest.mark.usefixtures("in_experiment_directory"),
@@ -111,7 +111,7 @@ def _play(id_="trial_game", page=None, **kwargs):
     """A PlayLiveGame of the pick-numbers game, as a trial's show_trial
     builds one for each participant."""
     if page is None:
-        page = ModularPage(id_, "Play.", LiveSessionControl(), time_estimate=5)
+        page = ModularPage(id_, "Play.", LiveGameControl(), time_estimate=5)
     kwargs.setdefault("game_class", type(_pick_numbers()))
     return PlayLiveGame(id_=id_, group_type="pair", page=page, **kwargs)
 
@@ -121,7 +121,7 @@ def _page_of(game_barrier, page_kwargs=None, **control_kwargs):
     page = ModularPage(
         "game",
         "Play.",
-        LiveSessionControl(**control_kwargs),
+        LiveGameControl(**control_kwargs),
         time_estimate=5,
         **(page_kwargs or {}),
     )
@@ -149,34 +149,34 @@ def _arrive(game_barrier, member):
 
 def test_each_pass_through_the_game_barrier_starts_a_new_session(pair):
     members, game_barrier = pair
-    members[0].live_sessions = {"earlier": 7}
+    members[0].live_games = {"earlier": 7}
     session_ids = []
     for _ in range(2):
         _arrive(game_barrier, members[0])
-        assert live_session_id(members[0], game_barrier.id) is None
+        assert live_game_id(members[0], game_barrier.id) is None
         _arrive(game_barrier, members[1])
-        session_ids.append(live_session_id(members[0], game_barrier.id))
+        session_ids.append(live_game_id(members[0], game_barrier.id))
 
     assert None not in session_ids
     assert session_ids[0] != session_ids[1]
-    assert live_session_id(members[0], "earlier") == 7
+    assert live_game_id(members[0], "earlier") == 7
 
 
 def test_a_participant_who_reaches_the_game_barrier_again_has_no_session_yet(pair):
     members, game_barrier = pair
     session_id = _pair_session(pair)
-    assert live_session_id(members[1], game_barrier.id) == session_id
+    assert live_game_id(members[1], game_barrier.id) == session_id
 
     # A participant who has left the group passes the barrier without
     # arriving at it.
     _reach(game_barrier, members[1])
 
-    assert live_session_id(members[1], game_barrier.id) is None
-    assert live_session_id(members[0], game_barrier.id) == session_id
+    assert live_game_id(members[1], game_barrier.id) is None
+    assert live_game_id(members[0], game_barrier.id) == session_id
 
 
 def test_the_page_script_sends_the_ready_message_s_type():
-    script = Path(psynet.__file__).parent / "resources/scripts/live-session.js"
+    script = Path(psynet.__file__).parent / "resources/scripts/live-game.js"
 
     assert f'const READY = "{PlayerReady.type}";' in script.read_text()
 
@@ -244,8 +244,8 @@ def test_each_round_s_game_barriers_start_a_session_with_that_round_s_settings(p
     for pick_reward in (0.1, 0.2):
         for member in members:
             _arrive(_trial_game_barrier({"pick_reward": pick_reward}), member)
-        session_id = live_session_id(members[0], "trial_game")
-        assert live_session_id(members[1], "trial_game") == session_id
+        session_id = live_game_id(members[0], "trial_game")
+        assert live_game_id(members[1], "trial_game") == session_id
         rewards.append(store.realtime_state(session_id)["pick_reward"])
 
     assert rewards == [0.1, 0.2]
@@ -258,14 +258,14 @@ def test_a_group_with_fewer_than_min_players_starts_no_session(pair, monkeypatch
     for member in members:
         _arrive(game_barrier, member)
 
-    assert live_session_id(members[0], game_barrier.id) is None
+    assert live_game_id(members[0], game_barrier.id) is None
 
 
 _session_starts = []
 
 
-def _note_session_start(participants, live_session_id):
-    _session_starts.append((sorted(p.id for p in participants), live_session_id))
+def _note_session_start(participants, live_game_id):
+    _session_starts.append((sorted(p.id for p in participants), live_game_id))
 
 
 def test_on_session_start_runs_once_the_session_has_started(pair):
@@ -276,7 +276,7 @@ def test_on_session_start_runs_once_the_session_has_started(pair):
     for member in members:
         _arrive(game_barrier, member)
 
-    session_id = live_session_id(members[0], "trial_game")
+    session_id = live_game_id(members[0], "trial_game")
     assert _session_starts == [(sorted(m.id for m in members), session_id)]
 
 
@@ -314,7 +314,7 @@ def _rendered_js_vars(page, participant, monkeypatch):
     return rendered["js_vars"]
 
 
-def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch):
+def test_a_live_game_page_gets_its_session_when_it_renders(pair, monkeypatch):
     members, game_barrier = pair
     page = _page_of(game_barrier)
 
@@ -325,50 +325,50 @@ def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch)
     ):
         _rendered_js_vars(page, members[0], monkeypatch)
     _reach(game_barrier, members[0])
-    assert _rendered_js_vars(page, members[0], monkeypatch)["liveSession"] == {
+    assert _rendered_js_vars(page, members[0], monkeypatch)["liveGame"] == {
         "gameId": game_barrier.id,
         "sessionId": None,
         "gameChannel": None,
         "autoAdvance": True,
         "showResultFor": 0,
         "playerLeftMessage": "Another player has left the game.",
-        "noSessionMessage": "Your group couldn't start the game.",
+        "noGameMessage": "Your group couldn't start the game.",
     }
     for member in members:
         _arrive(game_barrier, member)
 
-    session_id = live_session_id(members[1], game_barrier.id)
-    assert _rendered_js_vars(page, members[1], monkeypatch)["liveSession"] == {
+    session_id = live_game_id(members[1], game_barrier.id)
+    assert _rendered_js_vars(page, members[1], monkeypatch)["liveGame"] == {
         "gameId": game_barrier.id,
         "sessionId": session_id,
         "gameChannel": "pick_numbers",
         "autoAdvance": True,
         "showResultFor": 0,
         "playerLeftMessage": "Another player has left the game.",
-        "noSessionMessage": "Your group couldn't start the game.",
+        "noGameMessage": "Your group couldn't start the game.",
     }
 
 
-def test_a_live_session_page_can_leave_moving_on_to_its_javascript(pair, monkeypatch):
+def test_a_live_game_page_can_leave_moving_on_to_its_javascript(pair, monkeypatch):
     members, game_barrier = pair
     page = _page_of(game_barrier, auto_advance=False)
 
     _reach(game_barrier, members[0])
     js_vars = _rendered_js_vars(page, members[0], monkeypatch)
 
-    assert js_vars["liveSession"]["autoAdvance"] is False
+    assert js_vars["liveGame"]["autoAdvance"] is False
 
 
 @pytest.mark.parametrize(
     "kwargs", [{"show_result_for": -1}, {"show_result_for": 5, "auto_advance": False}]
 )
-def test_a_live_session_page_refuses_a_show_result_for_it_can_t_honour(kwargs):
+def test_a_live_game_page_refuses_a_show_result_for_it_can_t_honour(kwargs):
     with pytest.raises(ValueError, match="show_result_for"):
-        LiveSessionControl(**kwargs)
+        LiveGameControl(**kwargs)
 
 
 @pytest.mark.parametrize("message", ["Your partner has left.", None])
-def test_a_live_session_page_can_change_or_hide_its_player_left_notice(
+def test_a_live_game_page_can_change_or_hide_its_player_left_notice(
     pair, monkeypatch, message
 ):
     members, game_barrier = pair
@@ -377,53 +377,51 @@ def test_a_live_session_page_can_change_or_hide_its_player_left_notice(
     _reach(game_barrier, members[0])
     js_vars = _rendered_js_vars(page, members[0], monkeypatch)
 
-    assert js_vars["liveSession"]["playerLeftMessage"] == message
+    assert js_vars["liveGame"]["playerLeftMessage"] == message
 
 
 @pytest.mark.parametrize("message", ["Your partner didn't arrive.", None])
-def test_a_live_session_page_can_change_or_hide_its_no_session_notice(
+def test_a_live_game_page_can_change_or_hide_its_no_session_notice(
     pair, monkeypatch, message
 ):
     members, game_barrier = pair
-    page = _page_of(game_barrier, no_session_message=message)
+    page = _page_of(game_barrier, no_game_message=message)
 
     _reach(game_barrier, members[0])
     js_vars = _rendered_js_vars(page, members[0], monkeypatch)
 
-    assert js_vars["liveSession"]["noSessionMessage"] == message
+    assert js_vars["liveGame"]["noGameMessage"] == message
 
 
 def test_a_play_live_game_needs_a_game_page_of_its_own(pair):
     unnamed = PlayLiveGame(
         group_type="pair",
         game_class=type(_pick_numbers()),
-        page=ModularPage("game", "Play.", LiveSessionControl(), time_estimate=5),
+        page=ModularPage("game", "Play.", LiveGameControl(), time_estimate=5),
     )
     assert unnamed.barrier.id == "pick_numbers"
 
-    page = ModularPage("game", "Play.", LiveSessionControl(), time_estimate=5)
+    page = ModularPage("game", "Play.", LiveGameControl(), time_estimate=5)
     # The page follows the barrier.
     assert _play("first", page).resolve()[-1] is page
     with pytest.raises(
         ValueError, match="already the page of the PlayLiveGame 'first'"
     ):
         _play("second", page)
-    with pytest.raises(
-        TypeError, match="must be a ModularPage with a LiveSessionControl"
-    ):
+    with pytest.raises(TypeError, match="must be a ModularPage with a LiveGameControl"):
         _play("third", InfoPage("Play.", time_estimate=5))
 
 
-def test_a_live_session_page_has_to_belong_to_a_play_live_game(pair, monkeypatch):
+def test_a_live_game_page_has_to_belong_to_a_play_live_game(pair, monkeypatch):
     members, _ = pair
-    page = ModularPage("game", "Play.", LiveSessionControl(), time_estimate=5)
+    page = ModularPage("game", "Play.", LiveGameControl(), time_estimate=5)
 
     with pytest.raises(TypeError, match="has to be the page of a PlayLiveGame"):
         _rendered_js_vars(page, members[0], monkeypatch)
 
 
-def test_a_live_session_control_takes_any_control_parameter():
-    control = LiveSessionControl(show_next_button=False, bot_response=3)
+def test_a_live_game_control_takes_any_control_parameter():
+    control = LiveGameControl(show_next_button=False, bot_response=3)
 
     assert control.show_next_button is False
     assert control._bot_response == 3
@@ -431,14 +429,14 @@ def test_a_live_session_control_takes_any_control_parameter():
 
 def test_a_page_variable_can_t_share_the_control_s_name(pair, monkeypatch):
     members, game_barrier = pair
-    page = _page_of(game_barrier, page_kwargs=dict(js_vars={"liveSession": "mine"}))
+    page = _page_of(game_barrier, page_kwargs=dict(js_vars={"liveGame": "mine"}))
     _reach(game_barrier, members[0])
 
     with pytest.raises(
         ValueError,
-        match="Duplicate JavaScript variable 'liveSession': contributed by "
+        match="Duplicate JavaScript variable 'liveGame': contributed by "
         "the page's js_vars or a component's get_js_vars and control "
-        "LiveSessionControl.",
+        "LiveGameControl.",
     ):
         _rendered_js_vars(page, members[0], monkeypatch)
 
@@ -447,14 +445,14 @@ def test_a_follower_who_reloads_finds_the_group_s_session(pair):
     members, game_barrier = pair
     for member in members:
         _arrive(game_barrier, member)
-    leader_session = live_session_id(members[0], game_barrier.id)
+    leader_session = live_game_id(members[0], game_barrier.id)
     follower_id = members[1].id
     member_ids = sorted(member.id for member in members)
     db.session.expunge_all()
 
     follower = Participant.query.get(follower_id)
 
-    session_id = live_session_id(follower, game_barrier.id)
+    session_id = live_game_id(follower, game_barrier.id)
     assert session_id == leader_session
     row = db.session.get(RealtimeSession, session_id)
     assert row.game_type == "pick_numbers"
@@ -479,7 +477,7 @@ def _started(**state):
     """A state, or a view, of a session player "1" plays, which has started."""
     return {
         **state,
-        "live_session": {
+        "psynet": {
             "players": ["1"],
             "ready": ["1"],
             "started_at": 0,
@@ -492,7 +490,7 @@ def _started(**state):
 
 def _game_part(state):
     """The state without PsyNet's entry for the ready step."""
-    return {key: value for key, value in state.items() if key != "live_session"}
+    return {key: value for key, value in state.items() if key != "psynet"}
 
 
 @pytest.mark.parametrize(
@@ -537,7 +535,7 @@ def _pair_session(pair):
     members, game_barrier = pair
     for member in members:
         _arrive(game_barrier, member)
-    return live_session_id(members[0], game_barrier.id)
+    return live_game_id(members[0], game_barrier.id)
 
 
 def _play_to_the_end(session_id, messages):
@@ -1003,7 +1001,7 @@ def test_model_fields_and_numbers_are_checked_strictly(walk, fields, reason):
     assert _problems(rejected.value.reason) == _problems(reason)
 
 
-def test_realtime_games_lists_every_live_session_and_the_listed_games(registry):
+def test_realtime_games_lists_every_live_game_and_the_listed_games(registry):
     class Listed(RealtimeGame):
         channel = "listed"
 
@@ -1031,7 +1029,7 @@ def _import_games(tmp_path, name, directory):
     games = tmp_path / directory / "games.py"
     games.parent.mkdir(exist_ok=True)
     games.write_text(
-        "from psynet.live_session import LiveGame\n"
+        "from psynet.live_game import LiveGame\n"
         "class Imported(LiveGame):\n"
         "    channel = 'imported'\n"
     )
@@ -1526,7 +1524,7 @@ def test_messages_are_rejected_until_every_player_is_ready(relay):
         "taps": ["1"],
         "ticks": [],
         "deadline": 9,
-        "live_session": {
+        "psynet": {
             "players": ["1", "2"],
             "ready": ["1", "2"],
             "started_at": 4,
@@ -1562,10 +1560,10 @@ def test_the_session_starts_at_the_ready_timeout_without_everyone(relay):
 
     assert relay.next_deadline(state) == 10
     relay.tick(state, 9.9)
-    assert (state["live_session"]["started_at"], state["ticks"]) == (None, [])
+    assert (state["psynet"]["started_at"], state["ticks"]) == (None, [])
 
     relay.tick(state, 10)
-    assert state["live_session"] == {
+    assert state["psynet"] == {
         "players": ["1", "2"],
         "ready": ["1"],
         "started_at": 10,
@@ -1577,7 +1575,7 @@ def test_the_session_starts_at_the_ready_timeout_without_everyone(relay):
     assert relay.next_deadline(state) == 99
     relay.apply(state, "2", READY, 11, Sent())
     relay.apply(state, "2", TAP, 12, Sent())
-    assert state["live_session"]["started_at"] == 10
+    assert state["psynet"]["started_at"] == 10
     assert (state["taps"], state["deadline"]) == (["2"], 15)
 
 
@@ -1592,7 +1590,7 @@ def test_without_a_ready_timeout_the_session_waits_for_everyone(relay):
     assert game.next_deadline(state) is None
     game.tick(state, 1000)
 
-    assert state["live_session"]["started_at"] is None
+    assert state["psynet"]["started_at"] is None
 
 
 def advance(self, state, now):
@@ -1649,7 +1647,7 @@ def test_a_game_can_build_on_another_game_s_state(relay):
         "taps": [],
         "ticks": [],
         "deadline": None,
-        "live_session": {
+        "psynet": {
             "players": ["1"],
             "ready": [],
             "started_at": None,
@@ -1666,7 +1664,7 @@ def test_each_view_shows_who_is_ready_and_when_the_session_started(relay):
 
     assert relay.view(state, "1") == {
         "taps": 0,
-        "live_session": {
+        "psynet": {
             "players": ["1", "2"],
             "ready": ["2"],
             "started_at": None,
@@ -1684,9 +1682,9 @@ def test_each_view_lists_the_players_who_have_left(relay):
 
     relay.on_leave(state, "2", 1)
     # Player 3 hasn't joined yet, which isn't leaving.
-    assert relay.view(state, "1")["live_session"]["away"] == ["2"]
+    assert relay.view(state, "1")["psynet"]["away"] == ["2"]
     relay.on_join(state, "2", 2)
-    assert relay.view(state, "1")["live_session"]["away"] == []
+    assert relay.view(state, "1")["psynet"]["away"] == []
 
 
 def test_a_player_who_leaves_before_the_start_is_not_ready(relay):
@@ -1695,11 +1693,11 @@ def test_a_player_who_leaves_before_the_start_is_not_ready(relay):
     relay.apply(state, "1", READY, 1, Sent())
     relay.on_leave(state, "1", 2)
     relay.apply(state, "2", READY, 3, Sent())
-    assert state["live_session"]["started_at"] is None
+    assert state["psynet"]["started_at"] is None
     relay.apply(state, "1", READY, 4, Sent())
     relay.on_leave(state, "1", 5)
 
-    assert state["live_session"] == {
+    assert state["psynet"] == {
         "players": ["1", "2"],
         "ready": ["2", "1"],
         "started_at": 4,
@@ -1763,7 +1761,7 @@ def test_the_testing_helper_starts_a_session_at_the_time_given(relay):
 
     start_game(relay, state, now=3)
 
-    assert state["live_session"]["started_at"] == 3
+    assert state["psynet"]["started_at"] == 3
     assert state["deadline"] == 8
 
 
@@ -1783,7 +1781,7 @@ def test_an_on_start_that_ends_the_game_skips_its_tick(relay):
         channel = "everyone"
 
         def on_start(self, state, now):
-            ready_step = state["live_session"]
+            ready_step = state["psynet"]
             state["everyone"] = ready_step["ready"] == ready_step["players"]
 
         def is_over(self, state):
@@ -1828,7 +1826,7 @@ def test_a_game_with_a_duration_rejects_late_messages(relay):
 
     with pytest.raises(Reject, match="time is up"):
         game.apply(state, "1", TAP, 21, Sent())
-    assert state["live_session"]["ends_at"] == 21
+    assert state["psynet"]["ends_at"] == 21
     assert Timed.max_duration == Timed.ready_timeout + 20 + 30
 
 
@@ -1851,7 +1849,7 @@ def test_a_bot_is_ready_at_once_and_plays_once_the_session_starts(relay):
         return relay.bot(relay.view(state, "1"), "1", now)
 
     assert bot_message(0) == READY
-    with pytest.raises(ValueError, match="The view has no 'live_session' entry"):
+    with pytest.raises(ValueError, match="The view has no 'psynet' entry"):
         relay.bot({"taps": 0}, "1", 0)
     relay.apply(state, "1", READY, 0, Sent())
     assert bot_message(0) is None
@@ -1863,9 +1861,9 @@ def test_a_bot_is_ready_at_once_and_plays_once_the_session_starts(relay):
     "state, view, error",
     [
         ([], {}, "Game.initial_state must return a dict, not list"),
-        ({"live_session": 1}, {}, "a 'live_session' entry, which is PsyNet's"),
+        ({"psynet": 1}, {}, "a 'psynet' entry, which is PsyNet's"),
         ({}, [], "Game.view must return a dict, not list"),
-        ({}, {"live_session": 1}, "Game.view returned a 'live_session' entry"),
+        ({}, {"psynet": 1}, "Game.view returned a 'psynet' entry"),
     ],
 )
 def test_the_state_and_views_are_dicts_without_psynet_s_entry(
@@ -1951,7 +1949,7 @@ def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
     assert (
         db.session.query(Response).filter_by(participant_id=members[0].id).count() == 0
     )
-    assert live_session_result(session_id) is None
+    assert live_game_result(session_id) is None
 
     _play_to_the_end(
         session_id,
@@ -1974,9 +1972,7 @@ def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
     assert _submit_on_the_game_page(members[0])["submission"] == "approved"
 
     outcome = {first: 3, second: 5}
-    assert live_session_result(session_id) == LiveSessionResult(
-        "ended", "finished", outcome
-    )
+    assert live_game_result(session_id) == LiveGameResult("ended", "finished", outcome)
     assert _accepted_answers(members[0]) == [outcome, outcome]
     assert _reward(members[0]) == pytest.approx(0.53)
 
@@ -2034,7 +2030,7 @@ def test_a_failed_session_s_page_moves_on_with_what_was_saved(
 
     assert _submit_on_the_game_page(members[0])["submission"] == "approved"
 
-    result = live_session_result(session_id)
+    result = live_game_result(session_id)
     assert result.record_complete is record_complete
     assert result.error == "Traceback (most recent call last): ..."
     assert _accepted_answers(members[0]) == [outcome]
@@ -2109,7 +2105,7 @@ def test_the_ending_copies_the_outcome_to_the_round_and_ends_the_game_page_deadl
         sync_group_id=members[0].sync_group_links[0].sync_group_id,
         module_id="game",
         number=0,
-        live_session_id=session_id,
+        live_game_id=session_id,
     )
     db.session.add(group_round)
     for member in members:
@@ -2124,7 +2120,7 @@ def test_the_ending_copies_the_outcome_to_the_round_and_ends_the_game_page_deadl
     game_class().handle_ending(row)
 
     db.session.refresh(group_round)
-    assert group_round.live_session_outcome == row.outcome
+    assert group_round.live_game_outcome == row.outcome
     # So a later barrier's late_after counts from when the page stops showing
     # the result.
     shown_until = row.end_time + datetime.timedelta(seconds=show_result_for)
@@ -2134,7 +2130,7 @@ def test_the_ending_copies_the_outcome_to_the_round_and_ends_the_game_page_deadl
 def test_elapsed_counts_from_the_session_s_start():
     game = _pick_numbers()
     waiting = _started()
-    waiting["live_session"]["started_at"] = None
+    waiting["psynet"]["started_at"] = None
 
     assert game.elapsed(_started(), 5) == 5
     assert game.elapsed(waiting, 5) is None
@@ -2147,9 +2143,9 @@ def test_a_game_page_without_a_session_moves_on_with_no_answer(pair):
     assert _accepted_answers(members[0]) == [None]
 
 
-def test_live_session_result_needs_a_session(db_session):
+def test_live_game_result_needs_a_session(db_session):
     with pytest.raises(KeyError):
-        live_session_result(12345)
+        live_game_result(12345)
 
 
 @pytest.mark.parametrize("amount", [-1, "1"])
@@ -2228,9 +2224,9 @@ class ValidatingPage(ModularPage):
     "page_type, kwargs",
     [(ModularPage, {"validate": lambda response: None}), (ValidatingPage, {})],
 )
-def test_a_live_session_page_can_t_have_a_validate_of_its_own(page_type, kwargs):
-    with pytest.raises(TypeError, match="LiveSessionControl and a validate function"):
-        page_type("game", "Play", LiveSessionControl(), **kwargs)
+def test_a_live_game_page_can_t_have_a_validate_of_its_own(page_type, kwargs):
+    with pytest.raises(TypeError, match="LiveGameControl and a validate function"):
+        page_type("game", "Play", LiveGameControl(), **kwargs)
 
 
 class Shot(LiveMessage):
@@ -2333,7 +2329,7 @@ def test_a_group_larger_than_the_game_s_max_players_starts_no_session(
     for member in members:
         _arrive(game_barrier, member)
 
-    assert live_session_id(members[0], game_barrier.id) is None
+    assert live_game_id(members[0], game_barrier.id) is None
     assert "has a max_players of 1" in caplog.text
 
 
@@ -2341,7 +2337,7 @@ def test_a_session_lists_its_players_in_participant_id_order(pair, monkeypatch):
     members, game_barrier = pair
     started = []
     monkeypatch.setattr(
-        "psynet.live_session.play.create_realtime_session",
+        "psynet.live_game.play.create_realtime_session",
         lambda game_class, players, bots=(): started.append(players) or 1,
     )
 

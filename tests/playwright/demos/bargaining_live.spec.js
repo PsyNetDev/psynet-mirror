@@ -65,7 +65,7 @@ test("a cohort of four bargains live in pairs, and a proposal that changed can't
     await expect(first.locator("#bargain-theirs")).toHaveText(
       `They keep 9, you get ${stake - 9}.`
     );
-    await first.evaluate((keep) => psynet.liveSession.send("accept", { keep }), old);
+    await first.evaluate((keep) => psynet.liveGame.send("accept", { keep }), old);
     await expect(first.locator("#bargain-rejection")).toHaveText(
       "Your partner has just changed their proposal."
     );

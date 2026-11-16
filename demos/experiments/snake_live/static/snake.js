@@ -43,8 +43,8 @@ function draw(context, rules, view) {
 
 export function activate({ root, vars, psynet }) {
   let status = root.querySelector("#snake-status");
-  let live = psynet.liveSession;
-  if (!live.hasSession) {
+  let live = psynet.liveGame;
+  if (!live.hasGame) {
     return;
   }
   let rules = vars.snake_rules;

@@ -398,12 +398,12 @@ def _reject_overridden_fail_participant(cls):
 
 class _RealtimeGames:
     """The experiment's ``realtime_games``: the games it lists, then every
-    :class:`~psynet.live_session.LiveGame` with a ``channel``. Worked out
+    :class:`~psynet.live_game.LiveGame` with a ``channel``. Worked out
     each time it's read, so a game can be defined anywhere in
     ``experiment.py``, before or after the experiment class."""
 
     def __get__(self, instance, owner):
-        from .live_session import live_game_classes
+        from .live_game import live_game_classes
 
         listed = owner._listed_realtime_games
         return list(dict.fromkeys([*listed, *live_game_classes()]))
@@ -974,8 +974,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     realtime_games : ``list``
         The game types of the experiment's live sessions (see
-        :mod:`psynet.live_session`). PsyNet adds every
-        :class:`~psynet.live_session.LiveGame` with a ``channel``, whichever
+        :mod:`psynet.live_game`). PsyNet adds every
+        :class:`~psynet.live_game.LiveGame` with a ``channel``, whichever
         module defines it, so list only other game types the experiment
         plays.
         Default: ``[]``.
@@ -5035,8 +5035,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     "/static/scripts/websocket-channel.js",
                 ),
                 (
-                    resources.files("psynet") / "resources/scripts/live-session.js",
-                    "/static/scripts/live-session.js",
+                    resources.files("psynet") / "resources/scripts/live-game.js",
+                    "/static/scripts/live-game.js",
                 ),
                 (
                     resources.files("psynet")

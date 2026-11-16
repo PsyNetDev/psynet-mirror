@@ -12,7 +12,7 @@ Each player's round is one cued ``BargainTrial``. The trial class has
 ``sync_group_type = "pair"``, so the two trials of a pair share the trial's
 definition, with the pair's stake, which the trial passes to the game as its
 settings. The trial's answer holds the player's coins; how the pair bargained
-is kept in the round's ``live_session_outcome``.
+is kept in the round's ``live_game_outcome``.
 
 This is the live counterpart of the ``ultimatum_pairing`` demo, which uses
 the same cohort and pairing set-up for a one-shot offer.
@@ -25,10 +25,10 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.bot import Bot
-from psynet.live_session import (
+from psynet.live_game import (
     LiveGame,
+    LiveGameControl,
     LiveMessage,
-    LiveSessionControl,
     PlayLiveGame,
 )
 from psynet.modular_page import ModularPage, Prompt
@@ -132,7 +132,7 @@ class Bargain(LiveGame):
         if theirs is not None and view["stake"] - theirs >= BOT_GIVES:
             return Accept(keep=theirs)
         # The player who joined first opens.
-        if view["mine"] is None and player_id == view["live_session"]["players"][0]:
+        if view["mine"] is None and player_id == view["psynet"]["players"][0]:
             return Propose(keep=view["stake"] - BOT_GIVES)
         return None
 
@@ -208,7 +208,7 @@ def bargaining_page(stake):
                 id="bargain-game",
             )
         ),
-        LiveSessionControl(player_left_message="Your partner has left."),
+        LiveGameControl(player_left_message="Your partner has left."),
         js_page_modules=["/static/bargaining.js"],
         css_links=["/static/bargaining.css"],
         time_estimate=BARGAIN_SECONDS,
@@ -345,8 +345,8 @@ class Exp(psynet.experiment.Experiment):
                 {
                     "pair_id": r.sync_group_id,
                     "stake": r.definition["stake"],
-                    "deal_at": (r.live_session_outcome or {}).get("deal_at"),
-                    "n_proposals": (r.live_session_outcome or {}).get("n_proposals"),
+                    "deal_at": (r.live_game_outcome or {}).get("deal_at"),
+                    "n_proposals": (r.live_game_outcome or {}).get("n_proposals"),
                 }
                 for r in pairs
             ],
@@ -363,7 +363,7 @@ class Exp(psynet.experiment.Experiment):
             assert trial.coins() in (BOT_GIVES, stake - BOT_GIVES)
             # The game's reward is recorded on the trial it was played in.
             assert abs(trial.performance_reward - trial.coins() * COIN_VALUE) < 1e-9
-            outcome = trial.group_round.live_session_outcome
+            outcome = trial.group_round.live_game_outcome
             assert sorted(outcome["deal"].values()) == [BOT_GIVES, stake - BOT_GIVES]
         expected = sum(t.coins() for t in trials) * COIN_VALUE
         assert abs(bot.performance_reward - expected) < 1e-9

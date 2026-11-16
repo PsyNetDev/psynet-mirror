@@ -1,17 +1,17 @@
 """PlayLiveGame, the timeline step where a group plays a live session, and
-live_session_id, which finds the session.
+live_game_id, which finds the session.
 
 PlayLiveGame resolves into a group barrier, which starts the session when
 it releases the group, followed by the game page. The barrier stores the
-session's id in each member's ``live_sessions``, keyed by the step's id, and
-the page's LiveSessionControl reads it from there. Reaching the barrier sets
+session's id in each member's ``live_games``, keyed by the step's id, and
+the page's LiveGameControl reads it from there. Reaching the barrier sets
 that entry to ``None`` first, so the page finds only the session from the
 participant's latest visit, and an id without an entry is one whose step the
 participant never reached.
 
 A PlayLiveGame in a trial also records the id on the trial's
-SyncGroupRound, as ``live_session_id``, beside the outcome. That record
-lasts, so it's the one to use in an analysis, while ``live_sessions`` holds
+SyncGroupRound, as ``live_game_id``, beside the outcome. That record
+lasts, so it's the one to use in an analysis, while ``live_games`` holds
 only each step's latest session, and is what the game page reads, including
 for a game played outside a trial, which has no round.
 """
@@ -28,7 +28,7 @@ from ..sync import BarrierBehaviorMismatch, GroupBarrier
 from ..timeline import CodeBlock, EltCollection, join
 from ..utils import get_logger
 from .game import LiveGame
-from .session_entry import _new_session_settings
+from .psynet_entry import _new_session_settings
 
 logger = get_logger()
 
@@ -50,7 +50,7 @@ class PlayLiveGame(EltCollection):
             page=ModularPage(
                 "rock_paper_scissors",
                 Prompt(tags.div(tags.p(id="status"), ...)),
-                LiveSessionControl(),
+                LiveGameControl(),
                 js_page_modules=["/static/rock_paper_scissors.js"],
                 time_estimate=30,
             ),
@@ -74,7 +74,7 @@ class PlayLiveGame(EltCollection):
 
     page
         The game page: a :class:`~psynet.modular_page.ModularPage` with a
-        :class:`LiveSessionControl`.
+        :class:`LiveGameControl`.
 
     settings
         Settings for the sessions this step starts, such as the number of
@@ -92,14 +92,14 @@ class PlayLiveGame(EltCollection):
         the game starts, with the
         arguments that a :class:`~psynet.sync.GroupBarrier`'s ``on_release``
         can take, such as ``trials`` and ``group_round``, and also
-        ``live_session_id``, the new session's id. Use it for group
+        ``live_game_id``, the new session's id. Use it for group
         bookkeeping at the start of a round, such as choosing who retires
         after it. It isn't called when no session starts, because the group
         has fewer members than the game's ``min_players``.
 
     id_
         A name for this step, the game's ``channel`` unless given, which
-        :func:`live_session_id` takes to find the group's session, for
+        :func:`live_game_id` takes to find the group's session, for
         example on a later page. Steps with the same id share their wait,
         like barriers with the same id, so give a game that the timeline
         plays in two places, such as a practice game and the main game, a
@@ -122,19 +122,18 @@ class PlayLiveGame(EltCollection):
         id_: str = None,
         **kwargs,
     ):
-        from .control import LiveSessionControl
+        from .control import LiveGameControl
 
         _check_game_class(game_class)
         if id_ is None:
             id_ = game_class.channel
 
         if not (
-            isinstance(page, ModularPage)
-            and isinstance(page.control, LiveSessionControl)
+            isinstance(page, ModularPage) and isinstance(page.control, LiveGameControl)
         ):
             raise TypeError(
                 f"The page of the PlayLiveGame {id_!r} must be a ModularPage "
-                f"with a LiveSessionControl, not {page!r}."
+                f"with a LiveGameControl, not {page!r}."
             )
         if page.control.game_id not in (None, id_):
             raise ValueError(
@@ -202,7 +201,7 @@ class _LiveGameBarrier(GroupBarrier):
         return join(CodeBlock(self._forget_session), super().resolve())
 
     def _forget_session(self, participant):
-        _set_live_session_id(participant, self.id, None)
+        _set_live_game_id(participant, self.id, None)
 
     # The barrier's on_release has to be importable by name, and gets the
     # barrier rebuilt from its saved settings.
@@ -224,7 +223,7 @@ class _LiveGameBarrier(GroupBarrier):
                 left=left,
                 admitted=admitted,
                 barrier=barrier,
-                live_session_id=session_id,
+                live_game_id=session_id,
             )
 
     def _start_session(self, participants, group_round=None):
@@ -250,7 +249,7 @@ class _LiveGameBarrier(GroupBarrier):
             )
             return None
         # In id order, which is the order the players signed up in, so a
-        # game's initial_state and state["live_session"]["players"] list them
+        # game's initial_state and state["psynet"]["players"] list them
         # in that order.
         participants = sorted(participants, key=lambda member: member.id)
         token = _new_session_settings.set(self.settings)
@@ -263,9 +262,9 @@ class _LiveGameBarrier(GroupBarrier):
         finally:
             _new_session_settings.reset(token)
         for member in participants:
-            _set_live_session_id(member, self.id, session_id)
+            _set_live_game_id(member, self.id, session_id)
         if group_round is not None:
-            group_round.live_session_id = session_id
+            group_round.live_game_id = session_id
         return session_id
 
 
@@ -315,7 +314,7 @@ def _checked_settings(game_class, settings):
     return settings
 
 
-def live_session_id(participant, id_):
+def live_game_id(participant, id_):
     """Return the id of the session that a participant's group played at a
     :class:`PlayLiveGame`, to read the session's result or its saved
     messages on a later page.
@@ -337,11 +336,11 @@ def live_session_id(participant, id_):
     there since the participant last arrived, for example because the group
     broke up while it waited.
     """
-    return _live_session_ids(participant).get(id_)
+    return _live_game_ids(participant).get(id_)
 
 
 def _check_reached_game(participant, game_id):
-    if game_id not in _live_session_ids(participant):
+    if game_id not in _live_game_ids(participant):
         raise ValueError(
             f"Participant {participant.id} hasn't reached the PlayLiveGame "
             f"{game_id!r}, whose game page they were shown. Only its "
@@ -349,13 +348,13 @@ def _check_reached_game(participant, game_id):
         )
 
 
-def _live_session_ids(participant):
-    return participant.live_sessions or {}
+def _live_game_ids(participant):
+    return participant.live_games or {}
 
 
-def _set_live_session_id(participant, game_id, session_id):
+def _set_live_game_id(participant, game_id, session_id):
     # A new dict, which is what marks the column as changed.
-    participant.live_sessions = {
-        **_live_session_ids(participant),
+    participant.live_games = {
+        **_live_game_ids(participant),
         game_id: session_id,
     }

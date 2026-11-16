@@ -10,7 +10,7 @@ and each token a member earns pays ``TOKEN_VALUE``.
 Each round is one cued ``ContributionTrial`` per player, whose ``show_trial``
 starts a live session for the team and shows the game page. The trial's answer
 holds what the player put in and earned; the results page reads the team's
-pot from the round's ``live_session_outcome``.
+pot from the round's ``live_game_outcome``.
 """
 
 from dallinger.realtime import Reject
@@ -18,10 +18,10 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.bot import Bot
-from psynet.live_session import (
+from psynet.live_game import (
     LiveGame,
+    LiveGameControl,
     LiveMessage,
-    LiveSessionControl,
     PlayLiveGame,
 )
 from psynet.modular_page import ModularPage, Prompt
@@ -71,7 +71,7 @@ class PublicGoods(LiveGame):
             # The other players in the order they joined.
             "others": [
                 state["contributions"][player]
-                for player in state["live_session"]["players"]
+                for player in state["psynet"]["players"]
                 if player != player_id
             ],
         }
@@ -146,7 +146,7 @@ def contribution_page(round_number):
                 id="pg-game",
             )
         ),
-        LiveSessionControl(player_left_message="A player has left the game."),
+        LiveGameControl(player_left_message="A player has left the game."),
         js_page_modules=["/static/public-goods.js"],
         css_links=["/static/public-goods.css"],
         time_estimate=ROUND_SECONDS,
@@ -171,7 +171,7 @@ class ContributionTrial(Trial):
         answer = self.answer
         if answer is None:
             return InfoPage("Your group couldn't start this round.", time_estimate=5)
-        team = self.group_round.live_session_outcome
+        team = self.group_round.live_game_outcome
         return InfoPage(
             f"The group put {team['pot']} tokens in the pot, which was "
             f"multiplied and shared between {len(team['contributions'])} "
@@ -263,7 +263,7 @@ class Exp(psynet.experiment.Experiment):
         )
         for trial in trials:
             assert trial.answer["contributed"] == bot_contribution(str(bot.id))
-            outcome = trial.group_round.live_session_outcome
+            outcome = trial.group_round.live_game_outcome
             contributions = outcome["contributions"]
             assert contributions == {
                 player: bot_contribution(player) for player in contributions

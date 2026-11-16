@@ -10,7 +10,7 @@ shared answer. The :doc:`chatroom <chatroom>` is built this way.
 
 For a game whose rules run on the server while the players move, such as one
 where everyone acts at once or the game goes on between their moves, use a
-:doc:`live session <live_sessions>` instead. It runs on Dallinger's real-time
+:doc:`live session <live_games>` instead. It runs on Dallinger's real-time
 engine, which keeps the game's state, plays its bots and saves its record.
 
 How messages travel

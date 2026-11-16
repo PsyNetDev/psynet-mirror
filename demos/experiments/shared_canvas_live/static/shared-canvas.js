@@ -129,8 +129,8 @@ function draw(context, rules, mine, others) {
 
 export function activate({ root, vars, psynet }) {
   let status = root.querySelector("#canvas-status");
-  let live = psynet.liveSession;
-  if (!live.hasSession) {
+  let live = psynet.liveGame;
+  if (!live.hasGame) {
     return;
   }
   let rules = vars.canvas_rules;

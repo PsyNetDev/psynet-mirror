@@ -74,8 +74,8 @@ has written, checking it, and changing it yourself.
    multiplayer/realtime_interaction
    multiplayer/synchronization
    multiplayer/late_slow_and_leaving_players
-   multiplayer/live_session_tutorial
-   multiplayer/live_sessions
+   multiplayer/live_game_tutorial
+   multiplayer/live_games
 
 .. toctree::
    :caption: Database

@@ -5448,14 +5448,14 @@ class SyncGroupRound(SQLBase, SQLMixin):
         a page after the barrier, and so does a round whose remaining
         members' trials had all ended before the group dissolved. Written
         under the members' row locks, so it is never set on a closed round.
-    live_session_id : int or None
+    live_game_id : int or None
         The id of the live session that a
-        :class:`~psynet.live_session.PlayLiveGame` in the round's trials
+        :class:`~psynet.live_game.PlayLiveGame` in the round's trials
         started, or ``None``. Pass it to
-        :func:`~psynet.live_session.live_session_result` or
-        :meth:`LiveGame.saved_messages <psynet.live_session.LiveGame.saved_messages>`, for example to export
+        :func:`~psynet.live_game.live_game_result` or
+        :meth:`LiveGame.saved_messages <psynet.live_game.LiveGame.saved_messages>`, for example to export
         each round's game.
-    live_session_outcome : object or None
+    live_game_outcome : object or None
         What the ``outcome`` method of that session's game returned, copied
         here when the session's result is saved, a few seconds after the game
         ends. ``None`` before then, without a live session, or for a session
@@ -5482,8 +5482,8 @@ class SyncGroupRound(SQLBase, SQLMixin):
     definition = Column(PythonObject)
     closed_at = Column(DateTime)
     dissolved_at = Column(DateTime)
-    live_session_id = Column(Integer)
-    live_session_outcome = Column(JSONB)
+    live_game_id = Column(Integer)
+    live_game_outcome = Column(JSONB)
 
     trials = relationship(
         "psynet.trial.main.Trial",

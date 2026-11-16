@@ -22,10 +22,11 @@ from .method_wrappers import (
     _returns_json,
     _saves_ready_messages,
     _sends_message,
-    _shows_live_session_entry,
+    _shows_psynet_entry,
     _stores_json,
     _waits_for_start,
 )
+from .psynet_entry import PlayerReady, _psynet_entry
 from .registry import _register_live_game
 from .reward import (
     _REWARD_EFFECT,
@@ -33,7 +34,6 @@ from .reward import (
     _handles_ending,
     _handles_reward,
 )
-from .session_entry import PlayerReady, _live_session_entry
 
 
 class _LastApplied(NamedTuple):
@@ -60,7 +60,7 @@ class LiveGame(RealtimeGame):
     own.
 
     The state and each view are dicts that hold only plain data, such as
-    lists, strings and numbers. :doc:`/code/multiplayer/live_sessions` walks
+    lists, strings and numbers. :doc:`/code/multiplayer/live_games` walks
     through a whole game, including how the game starts and which values
     PsyNet converts to plain data.
     """
@@ -94,10 +94,10 @@ class LiveGame(RealtimeGame):
     #: ``"finished"``, unless ``is_over`` has ended it already, and rejects
     #: any later messages.
     #:
-    #: ``state["live_session"]["ends_at"]`` holds the session time of the
+    #: ``state["psynet"]["ends_at"]`` holds the session time of the
     #: end. A page reads the time left from
-    #: ``psynet.liveSession.secondsLeft()``, and the duration from
-    #: ``psynet.liveSession.duration``. Unless the game sets
+    #: ``psynet.liveGame.secondsLeft()``, and the duration from
+    #: ``psynet.liveGame.duration``. Unless the game sets
     #: :attr:`max_duration`, PsyNet sets it to
     #: ``ready_timeout + duration + 30``.
     duration = None
@@ -128,7 +128,7 @@ class LiveGame(RealtimeGame):
             ("initial_state", functools.partial(_returns_json, name="initial_state")),
             ("next_deadline", _waits_for_start),
             ("is_over", _ends_when_time_is_up),
-            ("view", _shows_live_session_entry),
+            ("view", _shows_psynet_entry),
             ("bot", _sends_message),
             ("save_message", _saves_ready_messages),
             ("handle_effect", _handles_reward),
@@ -178,7 +178,7 @@ class LiveGame(RealtimeGame):
         player arrives when they open the game page while none of theirs is
         open, so it runs again after a reload or a dropped connection. A bot
         arrives when the game starts. A player who comes back after
-        leaving is no longer in ``state["live_session"]["away"]``.
+        leaving is no longer in ``state["psynet"]["away"]``.
         """
         return super().on_join(state, player_id, now)
 
@@ -187,7 +187,7 @@ class LiveGame(RealtimeGame):
         """Respond to a player's last open page closing, as in Dallinger's
         ``on_leave``. By default the game carries on without them. A player
         who leaves before the game starts isn't ready any more, and a player
-        who leaves is in ``state["live_session"]["away"]`` until they come
+        who leaves is in ``state["psynet"]["away"]`` until they come
         back.
         """
         return super().on_leave(state, player_id, now)
@@ -210,14 +210,14 @@ class LiveGame(RealtimeGame):
     @_stores_json
     def on_start(self, state, now):
         """Respond to the game starting, such as by setting the game's
-        deadlines from ``now``. ``state["live_session"]["ready"]`` says which
+        deadlines from ``now``. ``state["psynet"]["ready"]`` says which
         players were ready. A game can end the session here, through its
         ``is_over``.
         """
 
     @_stores_json
     def _end_ready_step(self, state, now):
-        entry = _live_session_entry(state)
+        entry = _psynet_entry(state)
         if entry["started_at"] is None:
             entry["started_at"] = now
             if self.duration is not None:
@@ -265,7 +265,7 @@ class LiveGame(RealtimeGame):
         :class:`PlayLiveGame` ended instead, so use this for the game's own
         timers.
         """
-        started_at = _live_session_entry(state)["started_at"]
+        started_at = _psynet_entry(state)["started_at"]
         return None if started_at is None else now - started_at
 
     def answer(self, outcome, reason, player_id):
@@ -369,7 +369,7 @@ class LiveGame(RealtimeGame):
         ``handle_ending``. PsyNet pays each player's
         :meth:`performance_reward`, and copies the outcome to the round the
         session was played in, if any, as
-        :attr:`~psynet.sync.SyncGroupRound.live_session_outcome`, before this
+        :attr:`~psynet.sync.SyncGroupRound.live_game_outcome`, before this
         method runs.
         """
         return super().handle_ending(session_row)
@@ -428,14 +428,14 @@ class LiveGame(RealtimeGame):
         starts. The record is written a few seconds behind the game, so for a
         session that's still being played, this returns the messages written
         so far.
-        :doc:`/code/multiplayer/live_sessions` says when the record is
+        :doc:`/code/multiplayer/live_games` says when the record is
         complete.
 
         Parameters
         ----------
 
         session_id
-            The session's id, as :func:`live_session_id` returns it.
+            The session's id, as :func:`live_game_id` returns it.
 
         Raises
         ------

@@ -5,7 +5,7 @@ const RESULTS = {
 };
 
 export function activate({root, psynet}) {
-  if (!psynet.liveSession.hasSession) {
+  if (!psynet.liveGame.hasGame) {
     // PsyNet's notice says why, and the Next button moves on.
     root.querySelector("#rps-game").hidden = true;
     return;
@@ -31,7 +31,7 @@ export function activate({root, psynet}) {
   // The page draws the player's choice at once, even if a view from before
   // the game applied it arrives first, such as one the partner's choice
   // caused.
-  psynet.liveSession.predict((view, type, message) => {
+  psynet.liveGame.predict((view, type, message) => {
     if (type === "choose" && message.round === view.round) {
       view.chosen = true;
     }
@@ -72,29 +72,29 @@ export function activate({root, psynet}) {
       ? `Round ${view.results.length}: ${describe(latest)}`
       : "";
     score.textContent = `Rounds won: you ${view.wins}, your partner ${view.partner_wins}`;
-    if (psynet.liveSession.ended) {
+    if (psynet.liveGame.ended) {
       status.textContent = "The game is over.";
-    } else if (!psynet.liveSession.started) {
+    } else if (!psynet.liveGame.started) {
       status.textContent = "Waiting for your partner to open the game";
     } else if (view.chosen) {
       status.textContent = "Waiting for your partner to choose";
     } else {
       status.textContent = `Round ${view.round} of ${view.n_rounds}: choose your action`;
     }
-    let playing = psynet.liveSession.playing;
+    let playing = psynet.liveGame.playing;
     partner.textContent = playing && view.partner_chosen ? "Your partner has chosen." : "";
     enableButtons(playing && !view.chosen);
   }
 
   function choose(action) {
-    if (psynet.liveSession.send("choose", {round: round, action: action}) !== undefined) {
+    if (psynet.liveGame.send("choose", {round: round, action: action}) !== undefined) {
       rejection.textContent = "";
-      render(psynet.liveSession.predictedView());
+      render(psynet.liveGame.predictedView());
     }
   }
 
-  psynet.liveSession.onView(() => render(psynet.liveSession.predictedView()));
-  psynet.liveSession.onRejected((number, reason) => {
+  psynet.liveGame.onView(() => render(psynet.liveGame.predictedView()));
+  psynet.liveGame.onRejected((number, reason) => {
     rejection.textContent = reason;
     rejectedNow = true;
   });

@@ -4,28 +4,28 @@ time, such as a negotiation, a coordination game or a game on a shared board.
 A game is a :class:`LiveGame` subclass, with a :class:`LiveMessage`
 subclass for each kind of message its pages send. A
 :class:`PlayLiveGame` in the timeline starts a session for each
-group that reaches it, and its page, which has a :class:`LiveSessionControl`,
-plays it. :doc:`/code/multiplayer/live_sessions` walks through a whole game.
+group that reaches it, and its page, which has a :class:`LiveGameControl`,
+plays it. :doc:`/code/multiplayer/live_games` walks through a whole game.
 """
 
-from .control import LiveSessionControl
+from .control import LiveGameControl
 from .game import LiveGame
 from .messages import LiveMessage, SavedMessage
-from .play import PlayLiveGame, live_session_id
+from .play import PlayLiveGame, live_game_id
+from .psynet_entry import NOT_STARTED, PlayerReady
 from .registry import live_game_classes
-from .result import LiveSessionResult, live_session_result
-from .session_entry import NOT_STARTED, PlayerReady
+from .result import LiveGameResult, live_game_result
 
 __all__ = [
     "LiveMessage",
     "LiveGame",
-    "LiveSessionControl",
+    "LiveGameControl",
     "PlayLiveGame",
-    "LiveSessionResult",
+    "LiveGameResult",
     "NOT_STARTED",
     "PlayerReady",
     "SavedMessage",
     "live_game_classes",
-    "live_session_id",
-    "live_session_result",
+    "live_game_id",
+    "live_game_result",
 ]

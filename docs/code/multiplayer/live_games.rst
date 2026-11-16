@@ -1,4 +1,4 @@
-.. _live_sessions:
+.. _live_games:
 
 =============
 Live sessions
@@ -11,18 +11,18 @@ messages to it in order, and sends each player's page its own view of the
 game. Each session, with its messages, is saved with the experiment's data.
 
 If you haven't built a live game before, start with the
-:doc:`tutorial <live_session_tutorial>`, which works through three demo
+:doc:`tutorial <live_game_tutorial>`, which works through three demo
 games.
 
 A live session has three pieces:
 
-1. The game, a subclass of :class:`~psynet.live_session.LiveGame`, with a
-   :class:`~psynet.live_session.LiveMessage` subclass for each kind of
+1. The game, a subclass of :class:`~psynet.live_game.LiveGame`, with a
+   :class:`~psynet.live_game.LiveMessage` subclass for each kind of
    message a page can send.
 2. The game page, a :class:`~psynet.modular_page.ModularPage` with a
-   :class:`~psynet.live_session.LiveSessionControl`, and a JavaScript file
-   that plays the game through ``psynet.liveSession``.
-3. A :class:`~psynet.live_session.PlayLiveGame` in the timeline, which
+   :class:`~psynet.live_game.LiveGameControl`, and a JavaScript file
+   that plays the game through ``psynet.liveGame``.
+3. A :class:`~psynet.live_game.PlayLiveGame` in the timeline, which
    makes each group that reaches it wait for its members, starts a session
    for the group, and then shows them the game page.
 
@@ -36,7 +36,7 @@ A game of rock, paper, scissors:
     import random
     from typing import Literal
 
-    from psynet.live_session import LiveMessage, LiveGame
+    from psynet.live_game import LiveMessage, LiveGame
 
 
     class Choose(LiveMessage):
@@ -73,7 +73,7 @@ Each player's id is their participant id as a string, such as ``"12"``,
 because the state is saved as JSON, whose dict keys are strings, so ids work
 as keys in the state's dicts. ``initial_state`` gets the players in the order
 they signed up, which is participant id order, and
-``state["live_session"]["players"]`` (see `PsyNet's entry in the state`_)
+``state["psynet"]["players"]`` (see `PsyNet's entry in the state`_)
 keeps that order. Number the players with ``enumerate(players)`` rather than
 by sorting the ids, which sorts ``"10"`` before ``"9"``. Code outside the
 game rarely needs the ids: the game's ``answer`` gives each player their own
@@ -140,12 +140,12 @@ In the same way, compare an enum field's ``.value`` with the state, and turn
 a stored date back into a datetime with
 ``datetime.fromisoformat(state["deadline"])``. A game with a very large
 state, such as a big grid, can save the time the conversion takes with
-:attr:`~psynet.live_session.LiveGame.convert_state_to_json`.
+:attr:`~psynet.live_game.LiveGame.convert_state_to_json`.
 
 Starting sessions and the game page
 -----------------------------------
 
-Put a :class:`~psynet.live_session.PlayLiveGame` after the
+Put a :class:`~psynet.live_game.PlayLiveGame` after the
 :class:`~psynet.sync.Grouper` that forms the groups, and give it the game
 page. It waits at a barrier, a :class:`~psynet.sync.GroupBarrier` for the
 group's ``group_type``, until all of a group's members reach it, starts a
@@ -169,7 +169,7 @@ session, and then shows the group the game page:
                         tags.button("Scissors", type="button", id="scissors"),
                     )
                 ),
-                LiveSessionControl(),
+                LiveGameControl(),
                 js_page_modules=["/static/rock_paper_scissors.js"],
                 time_estimate=30,
             ),
@@ -199,7 +199,7 @@ that says so. Make the grouper's groups no larger than the game allows.
 such as ``max_wait_time``, for its barrier. Its ``on_session_start`` runs
 once the session has been created, before the game starts, with the
 arguments a group barrier's ``on_release`` takes and also
-``live_session_id``. Use it for group bookkeeping at the start of a round,
+``live_game_id``. Use it for group bookkeeping at the start of a round,
 such as choosing who leaves after it.
 
 To play one game under different conditions, such as with a different
@@ -250,7 +250,7 @@ draws each pair's stake this way, with a function as the definition that
 
 A trial played in a group needs a :class:`~psynet.sync.GroupBarrier` in its
 ``show_trial``, and the barrier of the ``PlayLiveGame`` is one. The round's
-:attr:`~psynet.sync.SyncGroupRound.live_session_id` then names the session
+:attr:`~psynet.sync.SyncGroupRound.live_game_id` then names the session
 the group played in it, so ``trial.group_round`` leads from each trial to its
 round's game, for example in an export.
 
@@ -264,39 +264,39 @@ function, which PsyNet runs each time the page opens
 
     export function activate({root, psynet}) {
         let status = root.querySelector("#status");
-        if (!psynet.liveSession.hasSession) {
+        if (!psynet.liveGame.hasGame) {
             return;
         }
         let buttons = ["rock", "paper", "scissors"].map(
             (action) => root.querySelector("#" + action)
         );
-        psynet.liveSession.enableWhilePlaying(...buttons);
-        psynet.liveSession.onView((view) => {
-            if (psynet.liveSession.ended) {
+        psynet.liveGame.enableWhilePlaying(...buttons);
+        psynet.liveGame.onView((view) => {
+            if (psynet.liveGame.ended) {
                 status.textContent = "The game is over.";
-            } else if (!psynet.liveSession.started) {
+            } else if (!psynet.liveGame.started) {
                 status.textContent = "Waiting for your partner to arrive";
             } else {
                 status.textContent =
                     view.chosen ? "Waiting for your partner" : "Your turn";
             }
         });
-        psynet.liveSession.onRejected((number, reason) => {
+        psynet.liveGame.onRejected((number, reason) => {
             root.querySelector("#rejection").textContent = reason;
         });
         for (let button of buttons) {
             button.addEventListener("click", () => {
                 root.querySelector("#rejection").textContent = "";
-                psynet.liveSession.send("choose", {action: button.id});
+                psynet.liveGame.send("choose", {action: button.id});
             });
         }
     }
 
-``psynet.liveSession`` offers:
+``psynet.liveGame`` offers:
 
 Whether there's a game to play:
 
-- ``hasSession`` says whether the group started a session at the
+- ``hasGame`` says whether the group started a session at the
   ``PlayLiveGame``. Without one, PsyNet shows the participant a notice, and
   the other methods throw an error. Check it first.
 - ``started`` says whether the game has started, and ``ended`` whether it
@@ -387,14 +387,14 @@ No session
     of a group whose other members were too slow to arrive, or when their
     group ended before they reached the ``PlayLiveGame``. PsyNet tells the
     participant with a notice at the top of the page, "Your group couldn't
-    start the game.", which the control's ``no_session_message`` changes or
+    start the game.", which the control's ``no_game_message`` changes or
     turns off. The page's JavaScript should check
-    ``psynet.liveSession.hasSession`` first, as above, and do nothing more
+    ``psynet.liveGame.hasGame`` first, as above, and do nothing more
     without a session.
 
 Joining in time
     The page joins the session when its JavaScript first uses
-    ``psynet.liveSession``, so call ``onView`` in ``activate``. The session's
+    ``psynet.liveGame``, so call ``onView`` in ``activate``. The session's
     clock starts when the group's wait at the ``PlayLiveGame`` ends, and if
     none of the group has opened the page by the game's ``join_timeout``, 60
     seconds unless the game sets it, the session ends.
@@ -422,9 +422,9 @@ The end
 
     To show the result on the game page first, pass the seconds to show it
     for as the control's ``show_result_for``, such as
-    ``LiveSessionControl(show_result_for=8)``, and draw the result
+    ``LiveGameControl(show_result_for=8)``, and draw the result
     in ``onResultSaved``. The page moves on once the seconds are up, and
-    ``psynet.liveSession.showResultFor`` gives them to the page for a
+    ``psynet.liveGame.showResultFor`` gives them to the page for a
     countdown. A later :class:`~psynet.sync.GroupBarrier`'s ``late_after``
     counts from the end of these seconds, so it needn't cover them.
 
@@ -446,7 +446,7 @@ Joining and leaving
     While a player is away for more than a few seconds, the other players'
     pages show a notice at the top that says "Another player has left the
     game." Change it with the control's ``player_left_message``, such as
-    ``LiveSessionControl(player_left_message="Your partner has
+    ``LiveGameControl(player_left_message="Your partner has
     left.")``. To show it your own way, set
     ``player_left_message=None`` and use ``onPlayersAway``, which gets the ids
     of the players who are away, and an empty list once they're all back.
@@ -489,7 +489,7 @@ if the session ends before the game starts.
 
 The messages that say a player is ready are PsyNet's, so the game's ``apply``
 never receives them, even if the game defines its own. To show who is ready,
-read ``state["live_session"]["ready"]`` from the view (see `PsyNet's entry
+read ``state["psynet"]["ready"]`` from the view (see `PsyNet's entry
 in the state`_).
 
 The session time, ``now``, and ``max_duration`` count from when the session
@@ -514,15 +514,15 @@ seconds to choose:
 
 Messages that arrive from then on are rejected with the reason ``"The
 game's time is up."``. The page shows the time left with
-``psynet.liveSession.secondsLeft()``, which is 0 once the session has ended,
-and ``psynet.liveSession.duration``:
+``psynet.liveGame.secondsLeft()``, which is 0 once the session has ended,
+and ``psynet.liveGame.duration``:
 
 .. code-block:: javascript
 
     setInterval(() => {
-      let left = psynet.liveSession.secondsLeft();
+      let left = psynet.liveGame.secondsLeft();
       if (left !== null) {
-        bar.style.width = `${(left / psynet.liveSession.duration) * 100}%`;
+        bar.style.width = `${(left / psynet.liveGame.duration) * 100}%`;
       }
     }, 250);
 
@@ -565,8 +565,8 @@ game.
 PsyNet's entry in the state
 ---------------------------
 
-PsyNet keeps its own record of the session in ``state["live_session"]``,
-and adds the same entry to each view. Don't use the name ``live_session``
+PsyNet keeps its own record of the session in ``state["psynet"]``,
+and adds the same entry to each view. Don't use the name ``psynet``
 for anything else in the state or a view. It holds:
 
 - ``players``, the ids of the session's players
@@ -607,12 +607,12 @@ outcome. The ``rock_paper_scissors_live``, ``snake_live`` and
 When the game is played as a trial (see `Starting sessions and the game
 page`_), PsyNet copies the outcome to the round the session was played
 in once the session's result is saved, so later pages and the export read it
-as ``trial.group_round.live_session_outcome``, with no need for another
+as ``trial.group_round.live_game_outcome``, with no need for another
 barrier after the game page to score the round:
 
 .. code-block:: python
 
-    pot = trial.group_round.live_session_outcome["pot"]
+    pot = trial.group_round.live_game_outcome["pot"]
 
 It is ``None`` until then, and ``answer`` isn't called, for a session that
 failed without an outcome.
@@ -671,7 +671,7 @@ game's ``outcome`` raised an error as well. The answer is then ``None`` and
 PsyNet doesn't call ``performance_reward``, but amounts from
 ``add_performance_reward`` saved before the problem are still paid. A game
 that must pay players whatever happens can pay them as it goes.
-:func:`~psynet.live_session.live_session_result` says how a session ended, and
+:func:`~psynet.live_game.live_game_result` says how a session ended, and
 whether its record is complete.
 
 Saved messages
@@ -685,22 +685,22 @@ for all of them, or on a message type, for that type's. On a later page:
 
 .. code-block:: python
 
-    session_id = live_session_id(participant, "rock_paper_scissors")
+    session_id = live_game_id(participant, "rock_paper_scissors")
     if session_id is not None:
         for saved in Choose.saved_messages(session_id):
             if saved.message is not None:
                 print(saved.player_id, saved.message.action, saved.session_time)
 
-``live_session_id`` finds the session from the participant's latest visit to
+``live_game_id`` finds the session from the participant's latest visit to
 the ``PlayLiveGame`` with that ``id_``, or returns ``None`` if their group
 didn't start one. In an analysis, use the round's record instead: for a game
 played in a trial, each :class:`~psynet.sync.SyncGroupRound` keeps its
-session's ``live_session_id``. For other games,
+session's ``live_game_id``. For other games,
 ``realtime_sessions_for(participant, game_type)`` from ``dallinger.realtime``
 returns all of a participant's sessions of a game, and each one's ``id`` is
 its session id.
 
-Each message is a :class:`~psynet.live_session.SavedMessage`, in the order the
+Each message is a :class:`~psynet.live_game.SavedMessage`, in the order the
 game applied them. Its ``message`` is ``None`` if what the page sent can't be
 read as one of the game's message types, and its ``payload`` holds what the
 page sent. ``PlayerReady.saved_messages(session_id)`` says when each player
@@ -709,7 +709,7 @@ became ready.
 The record is written a few seconds behind the game, so while a session is
 still running, ``saved_messages`` returns only the messages written so far.
 By the page after the game page, the whole record has been written, unless
-``live_session_result(session_id).record_complete`` says that saving it
+``live_game_result(session_id).record_complete`` says that saving it
 failed.
 
 A game saves every message by default. A game whose pages send many
@@ -739,7 +739,7 @@ raised, or ``None``:
             return rejection is not None or self._found_exit
 
 PsyNet always saves its own messages, such as each player's
-:class:`~psynet.live_session.PlayerReady`. A message the game couldn't read
+:class:`~psynet.live_game.PlayerReady`. A message the game couldn't read
 is saved too, with ``message`` set to ``None``. For a rule that covers every
 message type, a game can instead define Dallinger's ``save_message``, which
 gets the message as the page sent it.
@@ -756,7 +756,7 @@ JavaScript. When a group's members include bots, the game plays for them
 through its ``bot`` method, as in ``RockPaperScissors`` above. It gets the
 bot's view, the bot's player id and the session time, and returns the bot's
 next message, or ``None`` to send nothing. A message the game can't read
-makes the session fail. A :class:`~psynet.live_session.PlayLiveGame`
+makes the session fail. A :class:`~psynet.live_game.PlayLiveGame`
 refuses a game without ``bot``, since its bots would never move.
 
 In a game without ticks, ``bot`` runs once the game has started, and again
@@ -771,7 +771,7 @@ the group size. A bot's answer on the game page comes from the game's
 ``answer`` too, so the page doesn't need a ``bot_response``.
 
 To test a game's methods in Python, start the game with
-:func:`~psynet.live_session.testing.start_game` first, since the game
+:func:`~psynet.live_game.testing.start_game` first, since the game
 rejects messages and ``bot`` sends nothing until the game starts. Then pass a
 message to the game as a page would, with ``Sent`` from ``dallinger.realtime``,
 or give ``bot`` a view the game made:
@@ -779,7 +779,7 @@ or give ``bot`` a view the game made:
 .. code-block:: python
 
     from dallinger.realtime import Sent
-    from psynet.live_session.testing import start_game
+    from psynet.live_game.testing import start_game
 
     game = RockPaperScissors()
     state = game.initial_state(["1", "2"])

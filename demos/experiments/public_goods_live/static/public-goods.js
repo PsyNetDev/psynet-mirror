@@ -21,8 +21,8 @@ function tokenRow(name, tokens, endowment, you) {
 }
 
 export function activate({root, psynet}) {
-  let live = psynet.liveSession;
-  if (!live.hasSession) {
+  let live = psynet.liveGame;
+  if (!live.hasGame) {
     root.querySelector("#pg-game").hidden = true;
     return;
   }

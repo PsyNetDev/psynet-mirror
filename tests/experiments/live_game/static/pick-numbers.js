@@ -1,25 +1,25 @@
 export function activate({root, psynet}) {
   let status = root.querySelector("#game-status");
-  if (!psynet.liveSession.hasSession) {
+  if (!psynet.liveGame.hasGame) {
     return;
   }
   let pick = root.querySelector("#pick");
-  psynet.liveSession.enableWhilePlaying(pick);
-  psynet.liveSession.onView((view) => {
+  psynet.liveGame.enableWhilePlaying(pick);
+  psynet.liveGame.onView((view) => {
     if (view === null) {
       return;
     }
-    if (!psynet.liveSession.started) {
+    if (!psynet.liveGame.started) {
       status.textContent = "Waiting for your partner";
     } else {
       status.textContent = view.picked ? "Picked" : "Pick a number";
     }
   });
-  psynet.liveSession.onRejected((number, reason) => {
+  psynet.liveGame.onRejected((number, reason) => {
     root.querySelector("#game-error").textContent = reason;
   });
   pick.addEventListener("click", () => {
-    psynet.liveSession.send("pick", {
+    psynet.liveGame.send("pick", {
       number: Number(root.querySelector("#pick-number").value),
     });
   });

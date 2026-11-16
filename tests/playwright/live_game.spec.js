@@ -23,28 +23,28 @@ async function reachTheGame(participant) {
 test("a live session page joins its session, shows a rejected message and moves on once the result is saved", { tag: "@both" }, async ({
   browser
 }) => {
-  const experiment = startExperiment(path.resolve("tests/experiments/live_session"));
+  const experiment = startExperiment(path.resolve("tests/experiments/live_game"));
   const contexts = [await browser.newContext(), await browser.newContext()];
 
   try {
     const participants = await startParticipantsTogether(
       contexts,
       await experiment.urlPromise,
-      "live_session"
+      "psynet"
     );
     await Promise.all(participants.map(reachTheGame));
     const [first, second] = participants;
 
     const scopes = await first.evaluate(() => ({
-      game: new URL(psynet.liveSession.socket.raw.url).searchParams.get("scope"),
+      game: new URL(psynet.liveGame.socket.raw.url).searchParams.get("scope"),
       participant: psynetTemplateData.websocketScope,
       pageScope: dallinger.pageScope
     }));
     expect(scopes.game).toBe(scopes.participant + "." + scopes.pageScope + ".1");
     // A framework variable, so no deprecated window copy.
-    expect(await first.evaluate(() => "liveSession" in window)).toBe(false);
+    expect(await first.evaluate(() => "liveGame" in window)).toBe(false);
 
-    await first.evaluate(() => psynet.liveSession.send("pick", { number: "seven" }));
+    await first.evaluate(() => psynet.liveGame.send("pick", { number: "seven" }));
     await expect(first.locator("#game-error")).toHaveText(
       "Invalid 'pick' message: number: Input should be a valid integer.",
       { timeout: STEP_TIMEOUT_MS }
@@ -57,7 +57,7 @@ test("a live session page joins its session, shows a rejected message and moves 
     });
 
     await first.evaluate(() => {
-      window.gameSocket = psynet.liveSession.socket;
+      window.gameSocket = psynet.liveGame.socket;
     });
     // The page moves on by itself, so its Next button is hidden. Page code
     // can still submit it, but it can't move on until the second player
@@ -105,14 +105,14 @@ test("a live session page joins its session, shows a rejected message and moves 
 test("a game page open in two tabs moves the participant on once", { tag: "@both" }, async ({
   browser
 }) => {
-  const experiment = startExperiment(path.resolve("tests/experiments/live_session"));
+  const experiment = startExperiment(path.resolve("tests/experiments/live_game"));
   const contexts = [await browser.newContext(), await browser.newContext()];
 
   try {
     const participants = await startParticipantsTogether(
       contexts,
       await experiment.urlPromise,
-      "live_session_tabs"
+      "live_game_tabs"
     );
     await Promise.all(participants.map(reachTheGame));
     const [first, second] = participants;
@@ -160,14 +160,14 @@ test("a game page open in two tabs moves the participant on once", { tag: "@both
 test("participants whose pair breaks up at the game barrier see the no-session notice and can move on", { tag: "@both" }, async ({
   browser
 }) => {
-  const experiment = startExperiment(path.resolve("tests/experiments/live_session"));
+  const experiment = startExperiment(path.resolve("tests/experiments/live_game"));
   const contexts = [await browser.newContext(), await browser.newContext()];
 
   try {
     const participants = await startParticipantsTogether(
       contexts,
       await experiment.urlPromise,
-      "live_session_alone"
+      "live_game_alone"
     );
     const [first, second] = participants;
     await Promise.all(
@@ -187,7 +187,7 @@ test("participants whose pair breaks up at the game barrier see the no-session n
       { timeout: STEP_TIMEOUT_MS }
     );
     await expect(first.locator("#game-status")).toHaveText("Joining...");
-    expect(await first.evaluate(() => psynet.liveSession.hasSession)).toBe(false);
+    expect(await first.evaluate(() => psynet.liveGame.hasGame)).toBe(false);
 
     // The notice goes when the participant moves on.
     await clickNextAndWait(first);

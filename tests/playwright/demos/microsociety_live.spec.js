@@ -65,7 +65,7 @@ test("a society of three fishes live on the lake, seeing each other's boats and 
     await expect(third.locator(".fish-boat-wrapper .fish-count.fish-who-you")).toHaveText(/^You 🐟 \d+$/);
 
     // Moving to the spot the boat is already at is rejected.
-    await first.evaluate(() => psynet.liveSession.send("move", { spot: 6 }));
+    await first.evaluate(() => psynet.liveGame.send("move", { spot: 6 }));
     await expect(first.locator("#fish-rejection")).toHaveText("Your boat is already there.");
 
     // A catch shows on the lake for a moment; the screenshot catches it if it can.

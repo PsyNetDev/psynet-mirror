@@ -16,7 +16,7 @@
   // Legacy globals remain available through configurable accessors while
   // experiments migrate, allowing accesses to warn or fail with useful errors.
   const LEGACY_JS_VAR_GLOBAL_MODES = new Set(["warn", "error", "off"]);
-  const RESERVED_JS_VAR_GLOBALS = new Set(["pageUuid", "liveSession"]);
+  const RESERVED_JS_VAR_GLOBALS = new Set(["pageUuid", "liveGame"]);
   let legacyJsVarGlobalStates = new Map();
   let warnedLegacyJsVarGlobalCollisionKeys = new Set();
   let warnedLegacyJsVarGlobalLockedKeys = new Set();

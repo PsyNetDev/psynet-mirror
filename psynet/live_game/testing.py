@@ -1,6 +1,6 @@
 """Helpers for testing a live session's game in Python, without a server."""
 
-from .session_entry import _live_session_entry
+from .psynet_entry import _psynet_entry
 
 
 def start_game(game, state, now=0):
@@ -12,7 +12,7 @@ def start_game(game, state, now=0):
 
     ::
 
-        from psynet.live_session.testing import start_game
+        from psynet.live_game.testing import start_game
 
         game = RockPaperScissors()
         state = game.initial_state(["1", "2"])
@@ -22,7 +22,7 @@ def start_game(game, state, now=0):
     ----------
 
     game
-        The game, an instance of a :class:`~psynet.live_session.LiveGame`
+        The game, an instance of a :class:`~psynet.live_game.LiveGame`
         subclass.
 
     state
@@ -31,6 +31,6 @@ def start_game(game, state, now=0):
     now
         The session time at which the game starts.
     """
-    entry = _live_session_entry(state)
+    entry = _psynet_entry(state)
     entry["ready"] = list(entry["players"])
     game._end_ready_step(state, now)

@@ -138,7 +138,7 @@ payload, and the route answers without calling the experiment's
 the message in a status notice and resends the same submission after that
 many seconds, and the bot driver sleeps and resends. Neither limits its
 attempts, so the page has to stop refusing by itself.
-``LiveSessionControl`` uses this to keep a game page open until its session's
+``LiveGameControl`` uses this to keep a game page open until its session's
 result is saved, and raises an error for a session that is still running more
 than a minute after its game's ``max_duration``, which can no longer end.
 
@@ -613,14 +613,14 @@ so the browser can swap in place.
 Live session sockets
 --------------------
 
-``psynet.liveSession`` joins a page with a ``LiveSessionControl`` to its live
+``psynet.liveGame`` joins a page with a ``LiveGameControl`` to its live
 session, over Dallinger's ``/experiment-socket`` route. The control
 contributes everything the page needs through the component hooks:
 
-* ``get_js_dependencies`` loads ``live-session.js``, so only documents that
+* ``get_js_dependencies`` loads ``live-game.js``, so only documents that
   show a game page load it;
-* ``get_js_page_code`` calls ``PsyNetLiveSession.activatePage``, which creates
-  ``psynet.liveSession`` for the first game page a document shows, shows the
+* ``get_js_page_code`` calls ``PsyNetLiveGame.activatePage``, which creates
+  ``psynet.liveGame`` for the first game page a document shows, shows the
   no-session notice, and returns the cleanup that closes the page's game
   socket;
 * ``get_participant_js_vars`` adds the session's id and game channel to the page's
@@ -694,12 +694,12 @@ Key implementation and test locations
 * ``psynet/resources/scripts/psynet.js`` — browser lifecycle orchestration.
 * ``psynet/resources/scripts/websocket-channel.js`` — shared WebSocket channel
   framing and reconnect lifecycle.
-* ``psynet/resources/scripts/live-session.js`` — ``psynet.liveSession``, a game
+* ``psynet/resources/scripts/live-game.js`` — ``psynet.liveGame``, a game
   page's connection to its live session.
-* ``psynet/live_session/`` — live sessions on the server: the game class, its
+* ``psynet/live_game/`` — live sessions on the server: the game class, its
   method wrappers, ``PlayLiveGame``, the control and the ready step.
-* ``tests/isolated/test_live_session.py``, ``tests/javascript/live-session.test.mjs``
-  and ``tests/playwright/live_session.spec.js`` — live sessions.
+* ``tests/isolated/test_live_game.py``, ``tests/javascript/live-game.test.mjs``
+  and ``tests/playwright/live_game.spec.js`` — live sessions.
 * ``psynet/timeline_hold.py`` — durable hold state, accounting, and wake
   publication.
 * ``psynet/experiment.py`` — GET hold resolution (``_resolve_get_timeline_hold``,

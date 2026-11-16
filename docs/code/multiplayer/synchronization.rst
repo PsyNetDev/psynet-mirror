@@ -1229,7 +1229,7 @@ the maximum waiting time:
     longer than the pages' time limits. A page without a time limit can say
     when it ends at the latest with :meth:`~psynet.timeline.Page.ends_by`,
     which counts in the same way; a live session's game page does this (see
-    :doc:`live_sessions`). See
+    :doc:`live_games`). See
     :ref:`a worked example <rounds-slow-players>`.
 
     At a group's first barrier the late limit counts from when each member

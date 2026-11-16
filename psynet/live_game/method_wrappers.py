@@ -8,11 +8,11 @@ from dallinger.realtime import Reject
 from pydantic_core import to_jsonable_python
 
 from .messages import LiveMessage
-from .session_entry import (
+from .psynet_entry import (
     _SESSION_BOOKKEEPING,
     _UNCHANGED,
     PlayerReady,
-    _live_session_entry,
+    _psynet_entry,
 )
 
 # The game methods that can change the state, which is converted after each.
@@ -83,7 +83,7 @@ def _returns_json(method, name):
 def _waits_for_start(method):
     @functools.wraps(method)
     def next_deadline(self, state):
-        entry = _live_session_entry(state)
+        entry = _psynet_entry(state)
         if entry["started_at"] is None:
             return self.ready_timeout
         deadline = method(self, state)
@@ -99,13 +99,13 @@ def _waits_for_start(method):
 def _ends_when_time_is_up(method):
     @functools.wraps(method)
     def is_over(self, state):
-        return _live_session_entry(state)["time_up"] or method(self, state)
+        return _psynet_entry(state)["time_up"] or method(self, state)
 
     is_over._psynet_wrapper = True
     return is_over
 
 
-def _shows_live_session_entry(method):
+def _shows_psynet_entry(method):
     @functools.wraps(method)
     def view(self, state, player_id):
         shown = method(self, state, player_id)
@@ -116,14 +116,14 @@ def _shows_live_session_entry(method):
                 f"{type(self).__name__}.view must return a dict, not "
                 f"{type(shown).__name__}."
             )
-        entry = _live_session_entry(state)
+        entry = _psynet_entry(state)
         # A view can be the state itself.
-        if shown.get("live_session", entry) != entry:
+        if shown.get("psynet", entry) != entry:
             raise ValueError(
-                f"{type(self).__name__}.view returned a 'live_session' entry, "
+                f"{type(self).__name__}.view returned a 'psynet' entry, "
                 "which is PsyNet's. Give it another name."
             )
-        return {**shown, "live_session": entry}
+        return {**shown, "psynet": entry}
 
     view._psynet_wrapper = True
     return view
@@ -134,7 +134,7 @@ def _sends_message(method):
     def send(self, view, player_id, now):
         outermost = type(self).bot is send
         if outermost:
-            entry = _live_session_entry(view, "view")
+            entry = _psynet_entry(view, "view")
             if player_id not in entry["ready"]:
                 return {"type": PlayerReady.type, "message": {}}
             if entry["started_at"] is None:

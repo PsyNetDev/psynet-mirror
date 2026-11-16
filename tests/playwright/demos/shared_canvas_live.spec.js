@@ -18,14 +18,14 @@ const DRAG = 4;
 // The player's own piece as the page predicts it.
 function ownPlayer(page) {
   return page.evaluate(() => {
-    const view = psynet.liveSession.predictedView();
+    const view = psynet.liveGame.predictedView();
     return { id: view.me, ...view.players[view.me] };
   });
 }
 
 // Another player's piece as the page draws it.
 function drawnPlayer(page, id) {
-  return page.evaluate((id) => psynet.liveSession.interpolatedView().players[id], id);
+  return page.evaluate((id) => psynet.liveGame.interpolatedView().players[id], id);
 }
 
 function towardCenter(player) {
@@ -41,7 +41,7 @@ function checkPredictions(page) {
     const check = (window.predictionCheck = { checks: 0, largestError: 0 });
     let before = null;
     const own = () => {
-      const view = psynet.liveSession.predictedView();
+      const view = psynet.liveGame.predictedView();
       return view && view.players[view.me];
     };
     const record = () => {
@@ -49,7 +49,7 @@ function checkPredictions(page) {
       requestAnimationFrame(record);
     };
     requestAnimationFrame(record);
-    psynet.liveSession.onView(() => {
+    psynet.liveGame.onView(() => {
       const after = own();
       if (before && after) {
         check.checks += 1;
@@ -77,7 +77,7 @@ async function collectACoin(page) {
   const deadline = Date.now() + 10000;
   while (Date.now() < deadline) {
     const { me, coins } = await page.evaluate(() => {
-      const view = psynet.liveSession.predictedView();
+      const view = psynet.liveGame.predictedView();
       return { me: view.players[view.me], coins: view.coins };
     });
     if (me.coins > 0) {
@@ -178,7 +178,7 @@ test("players move around shared_canvas_live with prediction and interpolation, 
         new Promise((resolve) => {
           const xs = [];
           const frame = () => {
-            xs.push(psynet.liveSession.interpolatedView().players[id].x);
+            xs.push(psynet.liveGame.interpolatedView().players[id].x);
             if (xs.length < 30) {
               requestAnimationFrame(frame);
             } else {

@@ -7,7 +7,7 @@ import pytest
 from dallinger.realtime import Reject, Sent
 
 from psynet.experiment import import_local_experiment
-from psynet.live_session.testing import start_game
+from psynet.live_game.testing import start_game
 from psynet.pytest_psynet import path_to_demo_experiment
 
 # Food that no snake in these games reaches.

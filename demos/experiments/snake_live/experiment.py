@@ -16,13 +16,13 @@ from dallinger.realtime import Reject
 from dominate import tags
 
 import psynet.experiment
-from psynet.live_session import (
+from psynet.live_game import (
     LiveGame,
+    LiveGameControl,
     LiveMessage,
-    LiveSessionControl,
     PlayLiveGame,
-    live_session_id,
-    live_session_result,
+    live_game_id,
+    live_game_result,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
@@ -394,7 +394,7 @@ class Exp(psynet.experiment.Experiment):
                         id="snake-game",
                     )
                 ),
-                LiveSessionControl(),
+                LiveGameControl(),
                 js_page_modules=["/static/snake.js"],
                 css_links=["/static/snake.css"],
                 js_vars={"snake_rules": RULES},
@@ -407,7 +407,7 @@ class Exp(psynet.experiment.Experiment):
 
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
-        result = live_session_result(live_session_id(bot, "snake_live"))
+        result = live_game_result(live_game_id(bot, "snake_live"))
         assert result.status == "ended", result.error
         assert result.end_reason == "finished"
         food = result.outcome["food"][str(bot.id)]

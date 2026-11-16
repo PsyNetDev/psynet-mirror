@@ -391,10 +391,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         The number of pages that the participant has advanced through.
         Should not be modified directly.
 
-    live_sessions : dict or None
+    live_games : dict or None
         The ids of the participant's live sessions, keyed by the id of the
-        :class:`~psynet.live_session.PlayLiveGame` that started
-        each one. Read it with :func:`~psynet.live_session.live_session_id`.
+        :class:`~psynet.live_game.PlayLiveGame` that started
+        each one. Read it with :func:`~psynet.live_game.live_game_id`.
         Should not be modified directly.
 
     complete : bool
@@ -498,7 +498,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     #: or :attr:`psynet.timeline.Response.time_limit_reached` instead.
     timed_out_since_barrier = Column(Boolean, default=False)
     page_count = Column(Integer)
-    live_sessions = Column(PythonDict)
+    live_games = Column(PythonDict)
     early_exited = Column(Boolean)
     exit_plan = Column(PythonDict)
     complete = Column(Boolean)

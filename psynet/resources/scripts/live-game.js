@@ -73,11 +73,11 @@
   }
 
   /**
-   * ``psynet.liveSession`` lets a page with a ``LiveSessionControl`` play
+   * ``psynet.liveGame`` lets a page with a ``LiveGameControl`` play
    * the live session its group started: send the game messages, and show
    * the views the game sends back.
    *
-   * The page joins the session when it first uses ``psynet.liveSession``,
+   * The page joins the session when it first uses ``psynet.liveGame``,
    * and leaves it when the participant moves on. Once it has checked the
    * server's time, it tells the game the player is ready, and the game
    * starts when every player is. Unless the control's ``auto_advance`` is
@@ -86,8 +86,8 @@
    * If the connection drops, it reconnects by itself and rejoins. The same
    * page open in another tab plays as the same player.
    *
-   * ``PsyNetLiveSession.activatePage``, the page code of a
-   * ``LiveSessionControl``, creates ``psynet.liveSession`` with this
+   * ``PsyNetLiveGame.activatePage``, the page code of a
+   * ``LiveGameControl``, creates ``psynet.liveGame`` with this
    * function. The connection is Dallinger's ``/experiment-socket``, joined
    * to the session. Its scope is
    * the participant's ``websocketScope``, which the experiment's
@@ -96,11 +96,11 @@
    * participant's tabs apart, and a count of the connections the tab has
    * opened, since the game pages it shows one after another each open one.
    *
-   * @param {function} liveSession - Returns the page's ``liveSession``
+   * @param {function} liveGame - Returns the page's ``liveGame``
    *   variable: the control's ``gameId``, ``autoAdvance``,
-   *   ``showResultFor``, ``playerLeftMessage`` and ``noSessionMessage``, and the session's
+   *   ``showResultFor``, ``playerLeftMessage`` and ``noGameMessage``, and the session's
    *   ``sessionId`` and ``gameChannel``, which are ``null`` without a
-   *   session, or nothing on a page without a ``LiveSessionControl``
+   *   session, or nothing on a page without a ``LiveGameControl``
    * @param {Object} page - ``websocketScope()`` returns the participant's
    *   websocket scope, ``ready()`` says whether the page
    *   is ready to submit, ``nextPage()`` submits it,
@@ -108,16 +108,16 @@
    *   ``showNotice(id, text)`` shows ``text`` in a notice at the top of the
    *   page, or removes the notice if ``text`` is null
    */
-  function createLiveSession(liveSession, page) {
+  function createLiveGame(liveGame, page) {
     let api = null;
     let connections = 0;
 
     function session() {
-      let current = liveSession();
+      let current = liveGame();
       if (!current) {
         throw new Error(
           "This page has no live session to play: its control isn't a " +
-            "LiveSessionControl.",
+            "LiveGameControl.",
         );
       }
       if (current.sessionId == null) {
@@ -126,14 +126,14 @@
             "PlayLiveGame " +
             JSON.stringify(current.gameId) +
             ", because the participant was removed from their group " +
-            "there. Check psynet.liveSession.hasSession before the page " +
+            "there. Check psynet.liveGame.hasGame before the page " +
             "plays.",
         );
       }
       return current;
     }
 
-    // The current page's state, from its first use of psynet.liveSession
+    // The current page's state, from its first use of psynet.liveGame
     // until the participant leaves the page.
     let currentPage = null;
 
@@ -153,12 +153,12 @@
       return state.socket;
     }
 
-    // Run as each page with a LiveSessionControl activates. Returns the
+    // Run as each page with a LiveGameControl activates. Returns the
     // page's cleanup, which leaves the session.
     function activatePage() {
-      let control = liveSession();
-      if (control.sessionId == null && control.noSessionMessage) {
-        page.showNotice(NO_SESSION_NOTICE, control.noSessionMessage);
+      let control = liveGame();
+      if (control.sessionId == null && control.noGameMessage) {
+        page.showNotice(NO_SESSION_NOTICE, control.noGameMessage);
       }
       return () => {
         page.showNotice(NO_SESSION_NOTICE, null);
@@ -219,7 +219,7 @@
         !state.ended &&
         state.startedView === null &&
         view !== null &&
-        view.live_session.started_at !== null
+        view.psynet.started_at !== null
       ) {
         state.startedView = view;
         callEach(state.startedCallbacks.splice(0), view);
@@ -229,7 +229,7 @@
         state.playingElements.forEach((element) => (element.disabled = true));
         state.away.update([]);
       } else if (view !== null) {
-        state.away.update(view.live_session.away);
+        state.away.update(view.psynet.away);
       }
     }
 
@@ -344,7 +344,7 @@
      * run, so a page that opens after the end keeps its controls disabled.
      *
      * @param {function} callback - Called with the view
-     * @returns {Object} ``psynet.liveSession``
+     * @returns {Object} ``psynet.liveGame``
      */
     function onStarted(callback) {
       pageSocket();
@@ -366,11 +366,11 @@
      * game would ignore anything the participant sends.
      *
      * @example
-     * psynet.liveSession.enableWhilePlaying(...root.querySelectorAll("button"));
+     * psynet.liveGame.enableWhilePlaying(...root.querySelectorAll("button"));
      *
      * @param {...HTMLElement} elements - Elements with a ``disabled``
      *   property, such as buttons and inputs
-     * @returns {Object} ``psynet.liveSession``
+     * @returns {Object} ``psynet.liveGame``
      */
     function enableWhilePlaying(...elements) {
       pageSocket();
@@ -389,7 +389,7 @@
      * session ends, which still get a number.
      *
      * @example
-     * psynet.liveSession.send("choose", { action: "rock" });
+     * psynet.liveGame.send("choose", { action: "rock" });
      *
      * @param {string} type - The message's ``type``
      * @param {Object} [message] - Its fields
@@ -406,7 +406,7 @@
      * ``view`` returns for this player, starting when the page joins and
      * ending with the final view. Once the session has ended, ``ended`` is
      * ``true``, and no more views come. A page that opens after the session
-     * has ended gets just the final view. Its ``live_session`` says who is
+     * has ended gets just the final view. Its ``psynet`` says who is
      * ready, when the game started and who has left.
      *
      * If the session failed, the final view can be ``null``, so check
@@ -419,7 +419,7 @@
      *
      * @param {function} callback - Called with each view, which can be
      *   ``null`` at the end, and its details, which can be ``null`` too
-     * @returns {Object} ``psynet.liveSession``
+     * @returns {Object} ``psynet.liveGame``
      */
     function onView(callback) {
       pageSocket();
@@ -440,7 +440,7 @@
      * ``player_left_message=None``.
      *
      * @param {function} callback - Called with a list of player ids
-     * @returns {Object} ``psynet.liveSession``
+     * @returns {Object} ``psynet.liveGame``
      */
     function onPlayersAway(callback) {
       pageSocket();
@@ -468,7 +468,7 @@
      * so use it rather than the time now to predict when something happens.
      *
      * @example
-     * psynet.liveSession.predict((view, type, message) => {
+     * psynet.liveGame.predict((view, type, message) => {
      *   if (type === "choose" && message.round === view.round) {
      *     view.chosen = true;
      *   }
@@ -476,7 +476,7 @@
      *
      * @param {function} callback - Called with a view, the message's
      *   ``type``, its fields and the session time it was sent
-     * @returns {Object} ``psynet.liveSession``
+     * @returns {Object} ``psynet.liveGame``
      */
     function predict(callback) {
       pageSocket();
@@ -511,13 +511,13 @@
      * they're the tick views the page keeps.
      *
      * @example
-     * psynet.liveSession.interpolate((a, b, fraction) => ({
+     * psynet.liveGame.interpolate((a, b, fraction) => ({
      *   ...b,
      *   x: a.x + (b.x - a.x) * fraction,
      * }));
      *
      * @param {function} callback - Called with two views and a fraction
-     * @returns {Object} ``psynet.liveSession``
+     * @returns {Object} ``psynet.liveGame``
      */
     function interpolate(callback) {
       pageSocket();
@@ -539,7 +539,7 @@
       let socket = pageSocket();
       if (pageState().interpolate === null) {
         throw new Error(
-          "Set psynet.liveSession.interpolate's callback before calling interpolatedView."
+          "Set psynet.liveGame.interpolate's callback before calling interpolatedView."
         );
       }
       return socket.interpolatedView();
@@ -548,7 +548,7 @@
     // The started view's ready step, if the game has a duration.
     function startedTimes() {
       let view = pageState().startedView;
-      return view === null || view.live_session.ends_at == null ? null : view.live_session;
+      return view === null || view.psynet.ends_at == null ? null : view.psynet;
     }
 
     /**
@@ -590,13 +590,13 @@
       /**
        * Whether the participant's group started a session at the page's
        * PlayLiveGame. A participant removed from their group there has none.
-       * PsyNet then shows the control's ``no_session_message`` in a notice,
+       * PsyNet then shows the control's ``no_game_message`` in a notice,
        * and the other methods throw. Reading it doesn't join the session.
        *
-       * @member {boolean} hasSession
+       * @member {boolean} hasGame
        */
-      get hasSession() {
-        let current = liveSession();
+      get hasGame() {
+        let current = liveGame();
         return Boolean(current && current.sessionId != null);
       },
       /**
@@ -639,7 +639,7 @@
        * @member {number} showResultFor
        */
       get showResultFor() {
-        let current = liveSession();
+        let current = liveGame();
         return (current && current.showResultFor) || 0;
       },
       /**
@@ -671,7 +671,7 @@
        *
        * @function onRejected
        * @param {function} callback - Called with the number and the reason
-       * @returns {Object} ``psynet.liveSession``
+       * @returns {Object} ``psynet.liveGame``
        */
       onRejected: passOn("onRejected"),
       /**
@@ -681,7 +681,7 @@
        *
        * @function onEnded
        * @param {function} callback - Called with the reason and the view
-       * @returns {Object} ``psynet.liveSession``
+       * @returns {Object} ``psynet.liveGame``
        */
       onEnded: passOn("onEnded"),
       /**
@@ -692,7 +692,7 @@
        *
        * @function onResultSaved
        * @param {function} callback - Called once the result is saved
-       * @returns {Object} ``psynet.liveSession``
+       * @returns {Object} ``psynet.liveGame``
        */
       onResultSaved: passOn("onResultSaved"),
       /**
@@ -704,7 +704,7 @@
        *
        * @function onRefused
        * @param {function} callback - Called with the code and the reason
-       * @returns {Object} ``psynet.liveSession``
+       * @returns {Object} ``psynet.liveGame``
        */
       onRefused: passOn("onRefused"),
     };
@@ -716,18 +716,18 @@
      */
     // Not enumerable, since reading it joins the session.
     Object.defineProperty(api, "socket", { get: pageSocket });
-    // For PsyNetLiveSession.activatePage, not for pages.
+    // For PsyNetLiveGame.activatePage, not for pages.
     Object.defineProperty(api, "activatePage", { value: activatePage });
     return api;
   }
 
-  // The page code of a LiveSessionControl. Creates ``psynet.liveSession``
+  // The page code of a LiveGameControl. Creates ``psynet.liveGame``
   // for the first such page the document shows, and returns the page's
   // cleanup. This script can load before psynet.js, so it can't create
-  // ``psynet.liveSession`` as it loads.
+  // ``psynet.liveGame`` as it loads.
   function activatePage(psynet) {
-    if (!psynet.liveSession) {
-      psynet.liveSession = createLiveSession(() => psynet.var.liveSession, {
+    if (!psynet.liveGame) {
+      psynet.liveGame = createLiveGame(() => psynet.var.liveGame, {
         websocketScope: () => window.psynetTemplateData.websocketScope,
         ready: () => psynet.pageReady,
         nextPage: () => psynet.nextPage(),
@@ -740,11 +740,11 @@
         showNotice: (id, text) => psynet.showStatusNotice(id, text),
       });
     }
-    return psynet.liveSession.activatePage();
+    return psynet.liveGame.activatePage();
   }
 
-  window.PsyNetLiveSession = {
-    create: createLiveSession,
+  window.PsyNetLiveGame = {
+    create: createLiveGame,
     activatePage: activatePage,
   };
 })();

@@ -443,20 +443,20 @@ Groups
     the player's part of the game's outcome. The trial's definition sets
     how many rounds the game has and the bonus that the trial pays for a
     round won.
-    :doc:`/code/multiplayer/live_sessions`.
+    :doc:`/code/multiplayer/live_games`.
 
 `experiments/shared_canvas_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/shared_canvas_live>`__
     In this live session, two to eight players move around a shared canvas
     with the arrow keys and collect coins. The server works out every player's
     position from the moves their page sends. The page predicts the player's
     own moves, and draws the other players by interpolating between the
-    game's ticks. Each coin pays a bonus. :doc:`/code/multiplayer/live_sessions`.
+    game's ticks. Each coin pays a bonus. :doc:`/code/multiplayer/live_games`.
 
 `experiments/snake_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/snake_live>`__
     In this live session, two to four players each steer a snake around a
     shared board. The game moves every snake a square on each tick, and each
     page sends only the player's turns and draws the views as they arrive. Each
-    piece of food eaten pays a bonus. :doc:`/code/multiplayer/live_sessions`.
+    piece of food eaten pays a bonus. :doc:`/code/multiplayer/live_games`.
 
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
     A multi-room chat written directly on WebSockets rather than
