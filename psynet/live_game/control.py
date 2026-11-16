@@ -105,14 +105,14 @@ class LiveGameControl(NullControl):
                 "its own JavaScript decides itself how long to show the result."
             )
         # Set by the PlayLiveGame that the page is given to.
-        self.game_id = None
+        self.play_id = None
         self.auto_advance = auto_advance
         self.show_result_for = show_result_for
         self.player_left_message = player_left_message
         self.no_game_message = no_game_message
 
     def check_ready_for_response(self, experiment, participant):
-        session_id = live_game_id(participant, self._game_id())
+        session_id = live_game_id(participant, self._play_id())
         if session_id is None or live_game_result(session_id) is not None:
             return None
         _check_session_can_still_end(session_id)
@@ -126,7 +126,7 @@ class LiveGameControl(NullControl):
         )
 
     def ends_by(self, experiment, participant):
-        session_id = live_game_id(participant, self._game_id())
+        session_id = live_game_id(participant, self._play_id())
         if session_id is None:
             return None
         ends = _game_page_deadline(session_id)
@@ -140,7 +140,7 @@ class LiveGameControl(NullControl):
     def validate(self, response, participant, **kwargs):
         # check_ready_for_response has already seen the game end, and an
         # ended game's row doesn't change, so this result is final.
-        session_id = live_game_id(participant, self._game_id())
+        session_id = live_game_id(participant, self._play_id())
         if session_id is None:
             response.answer = None
             return None
@@ -153,13 +153,13 @@ class LiveGameControl(NullControl):
             response.answer = game.answer(result.outcome, result.end_reason, player)
         return None
 
-    def _game_id(self):
-        if self.game_id is None:
+    def _play_id(self):
+        if self.play_id is None:
             raise TypeError(
                 "A page with a LiveGameControl has to be the page of a "
                 "PlayLiveGame, which starts the game the page plays."
             )
-        return self.game_id
+        return self.play_id
 
     def _check_page(self, page):
         if (
@@ -179,8 +179,8 @@ class LiveGameControl(NullControl):
         return ["return PsyNetLiveGame.activatePage(psynet);"]
 
     def get_participant_js_vars(self, experiment, participant):
-        _check_reached_game(participant, self._game_id())
-        session_id = live_game_id(participant, self._game_id())
+        _check_reached_game(participant, self._play_id())
+        session_id = live_game_id(participant, self._play_id())
         _p = get_translator(context=True)
         player_left = self.player_left_message
         if player_left is _DEFAULT:
@@ -190,8 +190,8 @@ class LiveGameControl(NullControl):
             no_session = _p("live_game", "Your group couldn't start the game.")
         return {
             "liveGame": {
-                "gameId": self.game_id,
-                "sessionId": session_id,
+                "playId": self.play_id,
+                "liveGameId": session_id,
                 "gameChannel": (
                     None if session_id is None else _game_channel(session_id)
                 ),

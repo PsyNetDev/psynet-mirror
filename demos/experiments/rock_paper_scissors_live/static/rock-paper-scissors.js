@@ -1,7 +1,7 @@
 const RESULTS = {
-  win: "You won the round.",
-  loss: "You lost the round.",
-  draw: "The round was a draw."
+  win: "You won the throw.",
+  loss: "You lost the throw.",
+  draw: "The throw was a draw."
 };
 
 export function activate({root, psynet}) {
@@ -17,10 +17,7 @@ export function activate({root, psynet}) {
   let last = root.querySelector("#rps-last");
   let partner = root.querySelector("#rps-partner");
   let rejection = root.querySelector("#rps-rejection");
-  let round = null;
-  // A rejection comes just before the view that reports it, which can be the
-  // next round's, so that view mustn't clear it.
-  let rejectedNow = false;
+  let current = null;
 
   function enableButtons(enabled) {
     buttons.forEach((button) => {
@@ -32,7 +29,7 @@ export function activate({root, psynet}) {
   // the game applied it arrives first, such as one the partner's choice
   // caused.
   psynet.liveGame.predict((view, type, message) => {
-    if (type === "choose" && message.round === view.round) {
+    if (type === "choose" && message.throw === view.throw) {
       view.chosen = true;
     }
   });
@@ -44,7 +41,7 @@ export function activate({root, psynet}) {
     );
   }
 
-  // Each view holds every round played so far, so a page that reloads or
+  // Each view holds every throw played so far, so a page that reloads or
   // reconnects shows the whole game again.
   function render(view) {
     if (view === null) {
@@ -53,13 +50,7 @@ export function activate({root, psynet}) {
       status.textContent = "The game is over.";
       return;
     }
-    if (view.round !== round) {
-      if (!rejectedNow) {
-        rejection.textContent = "";
-      }
-      round = view.round;
-    }
-    rejectedNow = false;
+    current = view.throw;
     results.replaceChildren(
       ...view.results.map((played) => {
         let item = document.createElement("li");
@@ -69,9 +60,9 @@ export function activate({root, psynet}) {
     );
     let latest = view.results.at(-1);
     last.textContent = latest
-      ? `Round ${view.results.length}: ${describe(latest)}`
+      ? `Throw ${view.results.length}: ${describe(latest)}`
       : "";
-    score.textContent = `Rounds won: you ${view.wins}, your partner ${view.partner_wins}`;
+    score.textContent = `Throws won: you ${view.wins}, your partner ${view.partner_wins}`;
     if (psynet.liveGame.ended) {
       status.textContent = "The game is over.";
     } else if (!psynet.liveGame.started) {
@@ -79,7 +70,7 @@ export function activate({root, psynet}) {
     } else if (view.chosen) {
       status.textContent = "Waiting for your partner to choose";
     } else {
-      status.textContent = `Round ${view.round} of ${view.n_rounds}: choose your action`;
+      status.textContent = `Throw ${view.throw} of ${view.n_throws}: choose your action`;
     }
     let playing = psynet.liveGame.playing;
     partner.textContent = playing && view.partner_chosen ? "Your partner has chosen." : "";
@@ -87,17 +78,13 @@ export function activate({root, psynet}) {
   }
 
   function choose(action) {
-    if (psynet.liveGame.send("choose", {round: round, action: action}) !== undefined) {
-      rejection.textContent = "";
+    if (psynet.liveGame.send("choose", {throw: current, action: action}) !== undefined) {
       render(psynet.liveGame.predictedView());
     }
   }
 
   psynet.liveGame.onView(() => render(psynet.liveGame.predictedView()));
-  psynet.liveGame.onRejected((number, reason) => {
-    rejection.textContent = reason;
-    rejectedNow = true;
-  });
+  psynet.liveGame.showRejections(rejection);
 
   for (let button of buttons) {
     button.addEventListener("click", () => choose(button.dataset.action));

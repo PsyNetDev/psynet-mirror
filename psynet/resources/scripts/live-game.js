@@ -8,6 +8,7 @@
   // so that a player whose page reloads isn't reported.
   const AWAY_DELAY_MS = 5000;
   const DISCONNECTED_DELAY_MS = 10000;
+  const TIME_LEFT_INTERVAL_MS = 250;
 
   const AWAY_NOTICE = "psynet-player-away-notice";
   const NO_GAME_NOTICE = "psynet-no-game-notice";
@@ -97,9 +98,9 @@
    * opened, since the game pages it shows one after another each open one.
    *
    * @param {function} liveGame - Returns the page's ``liveGame``
-   *   variable: the control's ``gameId``, ``autoAdvance``,
+   *   variable: the control's ``playId``, ``autoAdvance``,
    *   ``showResultFor``, ``playerLeftMessage`` and ``noGameMessage``, and the game's
-   *   ``sessionId`` and ``gameChannel``, which are ``null`` without a
+   *   ``liveGameId`` and ``gameChannel``, which are ``null`` without a
    *   game, or nothing on a page without a ``LiveGameControl``
    * @param {Object} page - ``websocketScope()`` returns the participant's
    *   websocket scope, ``ready()`` says whether the page
@@ -120,11 +121,11 @@
             "LiveGameControl.",
         );
       }
-      if (current.sessionId == null) {
+      if (current.liveGameId == null) {
         throw new Error(
           "The participant's group hasn't started a live game at the " +
             "PlayLiveGame " +
-            JSON.stringify(current.gameId) +
+            JSON.stringify(current.playId) +
             ", because the participant was removed from their group " +
             "there. Check psynet.liveGame.hasGame before the page " +
             "plays.",
@@ -157,7 +158,7 @@
     // page's cleanup, which leaves the game.
     function activatePage() {
       let control = liveGame();
-      if (control.sessionId == null && control.noGameMessage) {
+      if (control.liveGameId == null && control.noGameMessage) {
         page.showNotice(NO_GAME_NOTICE, control.noGameMessage);
       }
       return () => {
@@ -170,6 +171,7 @@
           state.away.stop();
           clearTimeout(state.connectionTimer);
           clearTimeout(state.moveOnTimer);
+          clearInterval(state.timeLeftTimer);
           page.showNotice(AWAY_NOTICE, null);
         }
       };
@@ -191,6 +193,9 @@
         awayCallbacks: [],
         connectionTimer: null,
         moveOnTimer: null,
+        timeLeftTimer: null,
+        timeLeftCallbacks: [],
+        rejectionElements: [],
       };
       state.away = awayTracker((players) => {
         let message = state.session.playerLeftMessage;
@@ -281,7 +286,7 @@
 
     function openSocket(state) {
       let socket = dallinger.openExperimentSocket({
-        session: state.session.sessionId,
+        session: state.session.liveGameId,
         gameChannel: state.session.gameChannel,
         scope: [page.websocketScope(), dallinger.pageScope, ++connections].join("."),
         // Set at open, so it hands each message to the page's predict
@@ -407,7 +412,63 @@
      */
     function send(type, message) {
       let gameSocket = pageSocket();
-      return gameSocket.send(gameSocket.gameChannel, { type: type, message: message });
+      let number = gameSocket.send(gameSocket.gameChannel, {
+        type: type,
+        message: message,
+      });
+      if (number !== undefined) {
+        pageState().rejectionElements.forEach((element) => (element.textContent = ""));
+      }
+      return number;
+    }
+
+    /**
+     * Show the reason the game rejected the page's latest message in
+     * ``element``, until the page sends its next message.
+     *
+     * @example
+     * psynet.liveGame.showRejections(root.querySelector("#rejection"));
+     *
+     * @param {HTMLElement} element - Where to show the reason
+     * @returns {Object} ``psynet.liveGame``
+     */
+    function showRejections(element) {
+      pageState().rejectionElements.push(element);
+      pageSocket().onRejected((number, reason) => {
+        element.textContent = reason;
+      });
+      return api;
+    }
+
+    /**
+     * Call ``callback`` with ``secondsLeft()`` a few times a second, for a
+     * countdown, once the page knows the time left, which is 0 once the game
+     * has ended, until the participant leaves the page. A game without a
+     * ``duration`` has no time left, so it never runs.
+     *
+     * @example
+     * psynet.liveGame.onTimeLeft((left) => {
+     *   timer.textContent = Math.ceil(left);
+     * });
+     *
+     * @param {function} callback - Called with the seconds left
+     * @returns {Object} ``psynet.liveGame``
+     */
+    function onTimeLeft(callback) {
+      pageSocket();
+      let state = pageState();
+      state.timeLeftCallbacks.push(callback);
+      if (state.timeLeftTimer === null) {
+        let tick = () => {
+          let left = secondsLeft();
+          if (left !== null) {
+            callEach(state.timeLeftCallbacks, left);
+          }
+        };
+        state.timeLeftTimer = setInterval(tick, TIME_LEFT_INTERVAL_MS);
+        tick();
+      }
+      return api;
     }
 
     /**
@@ -627,7 +688,7 @@
        */
       get hasGame() {
         let current = liveGame();
-        return Boolean(current && current.sessionId != null);
+        return Boolean(current && current.liveGameId != null);
       },
       /**
        * Whether the page has had a view from after the game started
@@ -687,6 +748,8 @@
       secondsLeft: secondsLeft,
       gameTime: gameTime,
       send: send,
+      showRejections: showRejections,
+      onTimeLeft: onTimeLeft,
       onStarted: onStarted,
       enableWhilePlaying: enableWhilePlaying,
       onView: onView,

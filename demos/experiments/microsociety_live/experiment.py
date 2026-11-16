@@ -24,7 +24,6 @@ history page reads where earlier rounds' fish were caught from each round's
 import random
 from typing import List, Optional
 
-from dallinger.realtime import Reject
 from dominate import tags
 
 import psynet.experiment
@@ -34,6 +33,7 @@ from psynet.live_game import (
     LiveGameControl,
     LiveMessage,
     PlayLiveGame,
+    Reject,
 )
 from psynet.modular_page import ModularPage, NullControl, Prompt, TextControl
 from psynet.page import InfoPage

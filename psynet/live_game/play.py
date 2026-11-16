@@ -135,13 +135,13 @@ class PlayLiveGame(EltCollection):
                 f"The page of the PlayLiveGame {id_!r} must be a ModularPage "
                 f"with a LiveGameControl, not {page!r}."
             )
-        if page.control.game_id not in (None, id_):
+        if page.control.play_id not in (None, id_):
             raise ValueError(
                 f"The page given to the PlayLiveGame {id_!r} is already the page "
-                f"of the PlayLiveGame {page.control.game_id!r}. Give each "
+                f"of the PlayLiveGame {page.control.play_id!r}. Give each "
                 "PlayLiveGame a page of its own."
             )
-        page.control.game_id = id_
+        page.control.play_id = id_
         self.barrier = _LiveGameBarrier(
             id_, group_type, game_class, settings, on_release, **kwargs
         )
@@ -340,11 +340,11 @@ def live_game_id(participant, id_):
     return _live_game_ids(participant).get(id_)
 
 
-def _check_reached_game(participant, game_id):
-    if game_id not in _live_game_ids(participant):
+def _check_reached_game(participant, play_id):
+    if play_id not in _live_game_ids(participant):
         raise ValueError(
             f"Participant {participant.id} hasn't reached the PlayLiveGame "
-            f"{game_id!r}, whose game page they were shown. Only its "
+            f"{play_id!r}, whose game page they were shown. Only its "
             "barrier leads to the page, so check for anything that skips it."
         )
 

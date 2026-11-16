@@ -83,30 +83,17 @@ export function activate({root, psynet}) {
     accept.disabled = !playing || view.theirs === null;
   }
 
-  function tick() {
-    let left = live.secondsLeft();
-    if (left !== null) {
-      timeLeft.style.width = `${(left / live.duration) * 100}%`;
-    }
-  }
-  let timer = setInterval(tick, 250);
-
-  live.onView(() => {
-    render();
-    tick();
+  live.onTimeLeft((left) => {
+    timeLeft.style.width = `${(left / live.duration) * 100}%`;
   });
-  live.onRejected((number, reason) => {
-    rejection.textContent = reason;
-  });
+  live.onView(render);
+  live.showRejections(rejection);
   keep.addEventListener("input", render);
   propose.addEventListener("click", () => {
-    rejection.textContent = "";
     live.send("propose", {keep: Number(keep.value)});
     render();
   });
   accept.addEventListener("click", () => {
-    rejection.textContent = "";
     live.send("accept", {keep: view.theirs});
   });
-  return () => clearInterval(timer);
 }

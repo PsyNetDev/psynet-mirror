@@ -26,6 +26,7 @@ from psynet.bot import Bot
 from psynet.experiment import Experiment, get_experiment
 from psynet.live_game import (
     NOT_STARTED,
+    PLAYERS_LEFT,
     TIMEOUT,
     LiveGame,
     LiveGameControl,
@@ -333,8 +334,8 @@ def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
         _rendered_js_vars(page, members[0], monkeypatch)
     _reach(game_barrier, members[0])
     assert _rendered_js_vars(page, members[0], monkeypatch)["liveGame"] == {
-        "gameId": game_barrier.id,
-        "sessionId": None,
+        "playId": game_barrier.id,
+        "liveGameId": None,
         "gameChannel": None,
         "autoAdvance": True,
         "showResultFor": 0,
@@ -346,8 +347,8 @@ def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
 
     session_id = live_game_id(members[1], game_barrier.id)
     assert _rendered_js_vars(page, members[1], monkeypatch)["liveGame"] == {
-        "gameId": game_barrier.id,
-        "sessionId": session_id,
+        "playId": game_barrier.id,
+        "liveGameId": session_id,
         "gameChannel": "pick_numbers",
         "autoAdvance": True,
         "showResultFor": 0,
@@ -483,16 +484,19 @@ def _pick_numbers():
 def _psynet(**fields):
     """PsyNet's entry in a state, for a game played by participant 1 alone,
     with ``fields`` changed."""
-    return {
+    entry = {
         "participant_ids": [1],
         "ready": [],
         "away": [],
+        "players_left": False,
         "duration": None,
         "started_at": None,
         "ends_at": None,
         "time_up": False,
         **fields,
     }
+    entry.setdefault("away_since", [None] * len(entry["participant_ids"]))
+    return entry
 
 
 def _started(**state):
@@ -1669,7 +1673,7 @@ def test_each_view_shows_who_is_ready_and_which_player_it_is_for(relay):
     relay.apply(state, "2", READY, 1, Sent())
 
     # Without the participant ids, so a page can't tell who it plays with.
-    entry = _psynet(ready=[1])
+    entry = _psynet(participant_ids=[1, 2], ready=[1])
     del entry["participant_ids"]
     assert relay.view(state, "1") == {"taps": 0, "psynet": {**entry, "you": 0}}
     assert relay.view(state, "2")["psynet"]["you"] == 1
@@ -1699,6 +1703,37 @@ def test_a_game_calling_its_own_view_passes_the_player_s_number():
 
     assert game.state["seen"] == [10, 20]
     assert game.outcome() == [10, 20]
+
+
+def test_a_game_with_an_away_timeout_ends_once_too_few_players_are_left():
+    class Commons(LiveGame):
+        channel = "commons"
+        min_players = 2
+        away_timeout = 30
+
+        def initial_state(self, players):
+            return {}
+
+        def view(self, state, player):
+            return {}
+
+        def bot(self, view, player, now):
+            return None
+
+    game = LocalGame(Commons, players=3)
+    # Player 0 is gone at 40, which leaves enough players.
+    game.leave(0, now=10)
+    # Player 1 comes back in time, as after a reload, then leaves for good.
+    game.leave(1, now=20)
+    game.join(1, now=45)
+    game.leave(1, now=50)
+    # Dallinger ticks the game at its next deadline.
+    assert game.game.next_deadline(game.state) == 80
+
+    game.tick(79)
+    assert not game.is_over()
+    game.tick(80)
+    assert game.is_over() == PLAYERS_LEFT
 
 
 def test_live_game_handles_every_hook_of_dallingers_game():
@@ -1751,7 +1786,12 @@ def test_a_player_who_leaves_before_the_start_is_not_ready(relay):
     relay.on_leave(state, "1", 5)
 
     assert state["psynet"] == _psynet(
-        participant_ids=[1, 2], ready=[1, 0], away=[0], started_at=4, ends_at=604
+        participant_ids=[1, 2],
+        ready=[1, 0],
+        away=[0],
+        away_since=[2, None],
+        started_at=4,
+        ends_at=604,
     )
 
 
@@ -2347,16 +2387,14 @@ def test_a_live_game_page_can_t_have_a_validate_of_its_own(page_type, kwargs):
 class Shot(LiveMessage):
     type = "shot"
     at: int
-    # Whether the shot hit, which apply notes for should_save.
-    _hit: bool = False
 
     def apply(self, game, state, player_id, now):
         if self.at < 0:
             raise Reject("Aim at the board.")
-        self._hit = self.at == state["target"]
+        state["hits"] += self.at == state["target"]
 
     def should_save(self, game, state, player_id, rejection):
-        return rejection is not None or self._hit
+        return rejection is not None
 
 
 @pytest.fixture
@@ -2366,7 +2404,7 @@ def range_game(registry):
         messages = [Shot]
 
         def initial_state(self, players):
-            return {"target": 3}
+            return {"target": 3, "hits": 0}
 
         def view(self, state, player_id):
             return {}
@@ -2381,9 +2419,9 @@ def _shot(at):
     return {"type": "shot", "message": {"at": at}}
 
 
-@pytest.mark.parametrize("at, saved", [(3, True), (4, False), (-1, True)])
-def test_a_message_s_should_save_sees_what_its_apply_noted(range_game, at, saved):
-    state = _started(target=3)
+@pytest.mark.parametrize("at, saved", [(3, False), (-1, True)])
+def test_a_message_s_should_save_decides_whether_it_is_saved(range_game, at, saved):
+    state = _started(target=3, hits=0)
     message = _shot(at)
     rejection = None
     # As Dallinger does: apply, then save_message with a copy of the message.
@@ -2395,7 +2433,7 @@ def test_a_message_s_should_save_sees_what_its_apply_noted(range_game, at, saved
 
 
 def test_a_message_the_game_couldn_t_read_is_saved(range_game):
-    state = _started(target=3)
+    state = _started(target=3, hits=0)
     message = {"type": "shot", "message": {"at": "near"}}
     with pytest.raises(Reject) as rejection:
         range_game.apply(state, "1", message, 0, Sent())

@@ -80,7 +80,6 @@ export function activate({root, psynet}) {
   });
 
   function move(spot) {
-    rejection.textContent = "";
     if (live.send("move", {spot}) !== undefined) {
       render();
     }
@@ -179,15 +178,6 @@ export function activate({root, psynet}) {
     }
   }
 
-  function drawClock() {
-    let left = live.secondsLeft();
-    if (left === null) {
-      return;
-    }
-    timeLeft.style.width = `${(left / live.duration) * 100}%`;
-    secondsLeft.textContent = `${Math.ceil(left)} s`;
-  }
-
   function showResults(seconds) {
     status.textContent = "The round is over.";
     let catches = document.createElement("div");
@@ -219,26 +209,21 @@ export function activate({root, psynet}) {
     countdown = setInterval(tell, 250);
   }
 
-  let timer = setInterval(() => {
-    drawClock();
+  live.onTimeLeft((left) => {
+    timeLeft.style.width = `${(left / live.duration) * 100}%`;
+    secondsLeft.textContent = `${Math.ceil(left)} s`;
     if (view && !live.ended) {
       // Redrawn so that boats that have arrived stop sailing.
       render();
     }
-  }, 500);
+  });
   let resize = () => view && render({instant: true});
   window.addEventListener("resize", resize);
 
-  live.onView(() => {
-    render();
-    drawClock();
-  });
-  live.onRejected((number, reason) => {
-    rejection.textContent = reason;
-  });
+  live.onView(() => render());
+  live.showRejections(rejection);
   live.onResultSaved(() => showResults(live.showResultFor));
   return () => {
-    clearInterval(timer);
     clearInterval(countdown);
     window.removeEventListener("resize", resize);
   };

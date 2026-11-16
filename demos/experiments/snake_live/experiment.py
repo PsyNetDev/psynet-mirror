@@ -12,7 +12,6 @@ from collections import Counter
 from typing import Literal
 
 import pytest
-from dallinger.realtime import Reject
 from dominate import tags
 
 import psynet.experiment
@@ -21,6 +20,7 @@ from psynet.live_game import (
     LiveGameControl,
     LiveMessage,
     PlayLiveGame,
+    Reject,
     live_game_id,
     live_game_result,
 )

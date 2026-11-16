@@ -5,16 +5,16 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from dallinger.realtime import Reject
 
 from psynet.experiment import import_local_experiment
+from psynet.live_game import Reject
 from psynet.live_game.testing import LocalGame
 from psynet.pytest_psynet import path_to_demo_experiment
 from psynet.timeline import StartSwitch
 
 
-def _choose(game, player, round, action):
-    message = {"type": "choose", "message": {"round": round, "action": action}}
+def _choose(game, player, throw, action):
+    message = {"type": "choose", "message": {"throw": throw, "action": action}}
     try:
         game.send(player, message)
     except Reject as rejection:
@@ -35,31 +35,31 @@ class TestRockPaperScissorsLive:
 
     @pytest.fixture
     def new_game(self, demo):
-        def new_game(rounds=5):
+        def new_game(throws=5):
             return LocalGame(
-                demo.RockPaperScissors, players=2, settings={"rounds": rounds}
+                demo.RockPaperScissors, players=2, settings={"throws": throws}
             )
 
         return new_game
 
     @pytest.fixture
     def finished(self, new_game):
-        """A game of three rounds. Player 0 wins the first two, choosing
+        """A game of three throws. Player 0 wins the first two, choosing
         first in one and second in the other, and the last is a draw."""
-        game = new_game(rounds=3)
+        game = new_game(throws=3)
         plays = [
             (0, "paper", 1, "rock"),
             (1, "rock", 0, "paper"),
             (0, "paper", 1, "paper"),
         ]
-        for round, (first, first_action, second, second_action) in enumerate(plays, 1):
+        for throw, (first, first_action, second, second_action) in enumerate(plays, 1):
             assert not game.is_over()
-            _choose(game, first, round, first_action)
-            _choose(game, second, round, second_action)
+            _choose(game, first, throw, first_action)
+            _choose(game, second, throw, second_action)
         assert game.is_over()
         return game
 
-    def test_a_view_hides_the_partners_choice_until_the_round_is_over(self, new_game):
+    def test_a_view_hides_the_partners_choice_until_the_throw_is_over(self, new_game):
         game = new_game()
         _choose(game, 0, 1, "rock")
         waiting = game.view(1)
@@ -75,9 +75,9 @@ class TestRockPaperScissorsLive:
         assert loser["results"] == [
             {"mine": "scissors", "theirs": "rock", "result": "loss"}
         ]
-        assert (winner["wins"], winner["partner_wins"], winner["round"]) == (1, 0, 2)
+        assert (winner["wins"], winner["partner_wins"], winner["throw"]) == (1, 0, 2)
 
-    def test_the_game_rejects_a_repeated_choice_another_round_and_an_unknown_action(
+    def test_the_game_rejects_a_repeated_choice_another_throw_and_an_unknown_action(
         self, new_game
     ):
         game = new_game()
@@ -85,21 +85,21 @@ class TestRockPaperScissorsLive:
         _choose(game, 1, 1, "rock")
 
         assert _choose(game, 0, 2, "rock") == "accepted"
-        assert _choose(game, 0, 2, "paper") == "You've already chosen this round."
-        assert _choose(game, 1, 1, "paper") == "That isn't the current round."
-        assert _choose(game, 1, 3, "paper") == "That isn't the current round."
+        assert _choose(game, 0, 2, "paper") == "You've already chosen this throw."
+        assert _choose(game, 1, 1, "paper") == "That isn't the current throw."
+        assert _choose(game, 1, 3, "paper") == "That isn't the current throw."
         assert "action" in _choose(game, 1, 2, "lizard")
 
-    def test_the_game_has_the_rounds_its_settings_say(self, new_game, finished):
-        assert new_game(rounds=3).view(0)["n_rounds"] == 3
+    def test_the_game_has_the_throws_its_settings_say(self, new_game, finished):
+        assert new_game(throws=3).view(0)["n_throws"] == 3
         assert finished.outcome() == {
-            "rounds": [["paper", "rock"], ["paper", "rock"], ["paper", "paper"]]
+            "throws": [["paper", "rock"], ["paper", "rock"], ["paper", "paper"]]
         }
 
     def test_each_player_s_answer_is_their_part_of_the_outcome(self, finished):
         assert finished.answer(1) == {
             "finished": True,
-            "rounds": [
+            "throws": [
                 {"mine": "rock", "theirs": "paper", "result": "loss"},
                 {"mine": "rock", "theirs": "paper", "result": "loss"},
                 {"mine": "paper", "theirs": "paper", "result": "draw"},
@@ -108,7 +108,7 @@ class TestRockPaperScissorsLive:
             "partner_wins": 2,
         }
 
-    def test_the_trial_scores_the_rounds_won_and_pays_its_definition_s_reward(
+    def test_the_trial_scores_the_throws_won_and_pays_its_definition_s_reward(
         self, demo, finished
     ):
         score = demo.RockPaperScissorsTrial.score_answer
@@ -116,7 +116,7 @@ class TestRockPaperScissorsLive:
         assert score(None, finished.answer(1), None) == 0
         # A trial whose pair didn't start a game has no answer.
         assert score(None, None, None) == 0
-        # Two rounds won, at the 0.1 a round that the trial's definition says.
+        # Two throws won, at the 0.1 a throw that the trial's definition says.
         paid = SimpleNamespace(definition={"reward_per_win": 0.1})
         assert demo.RockPaperScissorsTrial.compute_performance_reward(
             paid, 2
@@ -125,21 +125,21 @@ class TestRockPaperScissorsLive:
     @pytest.mark.parametrize(
         "case, player, summary, score",
         [
-            ("finished", 0, "You won the game!", "You won 2 of the 3 rounds played"),
+            ("finished", 0, "You won the game!", "You won 2 of the 3 throws played"),
             (
                 "finished",
                 1,
                 "Your partner won the game.",
-                "You won 0 of the 3 rounds played",
+                "You won 0 of the 3 throws played",
             ),
-            ("draw", 0, "The game was a draw.", "You won 0 of the 1 rounds played"),
-            ("early", 0, "The game ended early.", "You won 2 of the 3 rounds played"),
+            ("draw", 0, "The game was a draw.", "You won 0 of the 1 throws played"),
+            ("early", 0, "The game ended early.", "You won 2 of the 3 throws played"),
         ],
     )
     def test_the_feedback_page_shows_how_the_game_ended_and_the_bonus_paid(
         self, demo, new_game, finished, case, player, summary, score
     ):
-        draw = new_game(rounds=1)
+        draw = new_game(throws=1)
         _choose(draw, 0, 1, "rock")
         _choose(draw, 1, 1, "rock")
         game, reason = {
@@ -152,10 +152,10 @@ class TestRockPaperScissorsLive:
         assert score in feedback
         assert "Your bonus for this game is $0.20." in feedback
 
-    def test_the_feedback_page_says_when_no_round_was_played(self, demo, new_game):
+    def test_the_feedback_page_says_when_no_throw_was_played(self, demo, new_game):
         answer = new_game().answer(0, "not_joined")
         page = demo.show_result(answer, 0.2)
-        assert str(page.content) == "The game ended before any rounds were played."
+        assert str(page.content) == "The game ended before any throws were played."
 
     def test_a_trial_without_an_answer_shows_no_feedback(self, demo, finished):
         gives_feedback = demo.RockPaperScissorsTrial.gives_feedback

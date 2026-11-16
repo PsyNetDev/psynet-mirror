@@ -34,8 +34,8 @@ function isMoving(player) {
 // Does to a view what experiment.py's advance does to the state, in the same
 // order, so the prediction lands where the game does. rules is experiment.py's
 // RULES.
-export function advance(rules, view, dx, dy, seconds) {
-  let player = view.players[view.psynet.you];
+export function advance(rules, view, you, dx, dy, seconds) {
+  let player = view.players[you];
   let low = rules.player_radius;
   let high = rules.size - rules.player_radius;
   let scale = dx !== 0 && dy !== 0 ? rules.diagonal : 1;
@@ -99,7 +99,7 @@ function drawCircle(context, x, y, radius, fill, stroke, lineWidth) {
 // Draws the coins and the player's own piece from mine, the player's
 // predicted view, and the other players from others, the interpolated view,
 // which is a little behind it.
-function draw(context, rules, mine, others) {
+function draw(context, rules, you, mine, others) {
   context.fillStyle = "#f8fbff";
   context.fillRect(0, 0, rules.size, rules.size);
   context.strokeStyle = "#d8e2ef";
@@ -115,7 +115,6 @@ function draw(context, rules, mine, others) {
   for (let coin of mine.coins) {
     drawCircle(context, coin.x, coin.y, rules.coin_radius, "#f4c430", "#a27400", 2);
   }
-  let you = mine.psynet.you;
   others.players.forEach((player, number) => {
     if (number !== you) {
       let color = rules.colors[number];
@@ -148,7 +147,7 @@ export function activate({ root, vars, psynet }) {
 
   live.predict((view, type, message) => {
     if (type === "move") {
-      advance(rules, view, message.dx, message.dy, message.seconds);
+      advance(rules, view, live.player, message.dx, message.dy, message.seconds);
     }
   });
   live.interpolate(interpolate);
@@ -218,7 +217,7 @@ export function activate({ root, vars, psynet }) {
       return view;
     }
     view = structuredClone(view);
-    advance(rules, view, direction[0], direction[1], pending);
+    advance(rules, view, live.player, direction[0], direction[1], pending);
     return view;
   }
 
@@ -257,11 +256,9 @@ export function activate({ root, vars, psynet }) {
     } else {
       setText(status, "Collect the coins!");
     }
-    let left = live.secondsLeft();
-    if (left !== null) {
-      setText(timer, String(Math.ceil(left)));
-    }
   }
+
+  live.onTimeLeft((left) => setText(timer, String(Math.ceil(left))));
 
   function frame(now) {
     if (!running) {
@@ -274,7 +271,7 @@ export function activate({ root, vars, psynet }) {
     // The view is null before the first view, and once a game that
     // failed has ended.
     if (shown !== null) {
-      draw(context, rules, shown, live.interpolatedView() || shown);
+      draw(context, rules, live.player, shown, live.interpolatedView() || shown);
       showScores(shown);
     }
     showStatus();

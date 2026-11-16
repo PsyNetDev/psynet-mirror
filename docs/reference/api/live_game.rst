@@ -1,6 +1,6 @@
-=========
-Live Game
-=========
+==========
+Live games
+==========
 
 .. automodule:: psynet.live_game
     :members:
@@ -17,6 +17,13 @@ Live Game
 
     The reason a game ends with when it reaches its
     :attr:`~psynet.live_game.LiveGame.timeout`.
+
+.. data:: PLAYERS_LEFT
+    :value: "players_left"
+
+    The reason a game with an
+    :attr:`~psynet.live_game.LiveGame.away_timeout` ends with when too few
+    players are left.
 
 Testing
 -------

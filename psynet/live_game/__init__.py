@@ -5,14 +5,17 @@ A game is a :class:`LiveGame` subclass, with a :class:`LiveMessage`
 subclass for each kind of message its pages send. A
 :class:`PlayLiveGame` in the timeline starts a game for each
 group that reaches it, and its page, which has a :class:`LiveGameControl`,
-plays it. :doc:`/code/multiplayer/live_games` walks through a whole game.
+plays it. :doc:`/code/multiplayer/live_game_tutorial` walks through whole
+games, and :doc:`/code/multiplayer/live_games` is the reference.
 """
+
+from dallinger.realtime import Reject
 
 from .control import LiveGameControl
 from .game import LiveGame
 from .messages import LiveMessage, SavedMessage
 from .play import PlayLiveGame, live_game_id
-from .psynet_entry import NOT_STARTED, TIMEOUT, PlayerReady
+from .psynet_entry import NOT_STARTED, PLAYERS_LEFT, TIMEOUT, PlayerReady
 from .registry import live_game_classes
 from .result import LiveGameResult, live_game_result
 
@@ -24,6 +27,8 @@ __all__ = [
     "LiveGameResult",
     "NOT_STARTED",
     "PlayerReady",
+    "PLAYERS_LEFT",
+    "Reject",
     "SavedMessage",
     "TIMEOUT",
     "live_game_classes",

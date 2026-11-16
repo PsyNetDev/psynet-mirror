@@ -20,7 +20,6 @@ the same cohort and pairing set-up for a one-shot offer.
 
 import random
 
-from dallinger.realtime import Reject
 from dominate import tags
 
 import psynet.experiment
@@ -30,6 +29,7 @@ from psynet.live_game import (
     LiveGameControl,
     LiveMessage,
     PlayLiveGame,
+    Reject,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage

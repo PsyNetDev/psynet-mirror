@@ -1,15 +1,15 @@
 """Rock, paper, scissors as a live game.
 
 Pairs of participants play two games of rock, paper, scissors, of five and
-then three rounds, each game on one page. Each round's result appears for both
+then three throws, each game on one page. Each throw's result appears for both
 players as soon as they have both chosen.
 
 Each game is one cued ``RockPaperScissorsTrial`` per player. The trial's
-definition says how many rounds the game has and what a round won pays. The
-trial starts the pair's game, with the number of rounds as its settings,
+definition says how many throws the game has and what a throw won pays. The
+trial starts the pair's game, with the number of throws as its settings,
 and shows the game page. The game's ``answer`` gives each player their own
 part of the outcome, which is the trial's answer: the trial scores it as the
-rounds the player won and pays the reward for them, and its feedback page
+throws the player won and pays the reward for them, and its feedback page
 shows the final score. The whole pair's outcome is on the trial's
 ``group_round``.
 
@@ -20,7 +20,6 @@ import random
 from typing import Literal, get_args
 
 import pytest
-from dallinger.realtime import Reject
 from dominate import tags
 
 import psynet.experiment
@@ -29,6 +28,7 @@ from psynet.live_game import (
     LiveGameControl,
     LiveMessage,
     PlayLiveGame,
+    Reject,
     live_game_id,
     live_game_result,
 )
@@ -41,11 +41,11 @@ from psynet.trial.main import Trial
 Action = Literal["rock", "paper", "scissors"]
 ACTIONS = list(get_args(Action))
 BEATS = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
-# Each of the pair's games: how many rounds it has, and what a round won pays,
+# Each of the pair's games: how many throws it has, and what a throw won pays,
 # in dollars.
 GAMES = [
-    {"rounds": 5, "reward_per_win": 0.05},
-    {"rounds": 3, "reward_per_win": 0.10},
+    {"throws": 5, "reward_per_win": 0.05},
+    {"throws": 3, "reward_per_win": 0.10},
 ]
 # How long a player waits for their partner to start a game, in seconds. The
 # partner may still be reading the last game's result, so it allows for that.
@@ -53,7 +53,7 @@ PARTNER_WAIT_SECONDS = 300
 
 
 def result_for(player, choices):
-    """Return how a round went for ``player``, 0 or 1, from both players'
+    """Return how a throw went for ``player``, 0 or 1, from both players'
     choices: ``"win"``, ``"loss"`` or ``"draw"``."""
     mine, theirs = choices[player], choices[1 - player]
     if mine == theirs:
@@ -61,8 +61,8 @@ def result_for(player, choices):
     return "win" if BEATS[mine] == theirs else "loss"
 
 
-def rounds_seen_by(player, rounds):
-    """The rounds played so far, as ``player`` sees them: their choice, their
+def throws_seen_by(player, throws):
+    """The throws played so far, as ``player`` sees them: their choice, their
     partner's, and the result for them."""
     return [
         {
@@ -70,65 +70,68 @@ def rounds_seen_by(player, rounds):
             "theirs": choices[1 - player],
             "result": result_for(player, choices),
         }
-        for choices in rounds
+        for choices in throws
     ]
 
 
 def count(results, result):
-    """Return how many of ``results``, from ``rounds_seen_by``, have
+    """Return how many of ``results``, from ``throws_seen_by``, have
     ``result``, such as ``"win"``."""
     return sum(played["result"] == result for played in results)
 
 
 class Choose(LiveMessage):
-    """A player's action in one round."""
+    """A player's action in one throw."""
 
     type = "choose"
-    round: int
+    throw: int
     action: Action
 
     def apply(self, game, state, player, now):
-        # The round number stops a click on a page that hasn't caught up yet,
-        # such as one in another tab, from counting for the next round.
-        if self.round != len(state["rounds"]) + 1:
-            raise Reject("That isn't the current round.")
+        # The throw number stops a click on a page that hasn't caught up yet,
+        # such as one in another tab, from counting for the next throw.
+        if self.throw != len(state["throws"]) + 1:
+            raise Reject("That isn't the current throw.")
         if state["choices"][player] is not None:
-            raise Reject("You've already chosen this round.")
+            raise Reject("You've already chosen this throw.")
         state["choices"][player] = self.action
         if None not in state["choices"]:
-            state["rounds"].append(state["choices"])
+            state["throws"].append(state["choices"])
             state["choices"] = [None, None]
 
 
 class RockPaperScissors(LiveGame):
     """A game of rock, paper, scissors between two players, 0 and 1.
 
-    The state holds the number of rounds, from the game's settings, each
-    player's choice in the current round, ``None`` until they choose, and
-    both players' choices in each round played so far. A player's view says
-    whether their partner has chosen in the current round, and shows the
-    partner's choice only once the round is over.
+    The state holds the number of throws, from the game's settings, each
+    player's choice in the current throw, ``None`` until they choose, and
+    both players' choices in each throw played so far. A player's view says
+    whether their partner has chosen in the current throw, and shows the
+    partner's choice only once the throw is over.
     """
 
     channel = "rock_paper_scissors_live"
     messages = [Choose]
     min_players = max_players = 2
+    # A player whose partner closes the page for good isn't left waiting:
+    # the game ends 30 seconds later, which allows for a reload.
+    away_timeout = 30
     # A game takes a minute or two, so this ends it within five minutes even
-    # if a player leaves it.
+    # if both players stop choosing.
     timeout = 300
 
     def initial_state(self, players, settings):
         return {
-            "n_rounds": settings["rounds"],
+            "n_throws": settings["throws"],
             "choices": [None, None],
-            "rounds": [],
+            "throws": [],
         }
 
     def view(self, state, player):
-        results = rounds_seen_by(player, state["rounds"])
+        results = throws_seen_by(player, state["throws"])
         return {
-            "round": len(state["rounds"]) + 1,
-            "n_rounds": state["n_rounds"],
+            "throw": len(state["throws"]) + 1,
+            "n_throws": state["n_throws"],
             "chosen": state["choices"][player] is not None,
             "partner_chosen": state["choices"][1 - player] is not None,
             "results": results,
@@ -137,19 +140,19 @@ class RockPaperScissors(LiveGame):
         }
 
     def is_over(self, state):
-        return len(state["rounds"]) == state["n_rounds"]
+        return len(state["throws"]) == state["n_throws"]
 
     def outcome(self, state, reason):
-        return {"rounds": state["rounds"]}
+        return {"throws": state["throws"]}
 
     def answer(self, outcome, reason, player):
-        """The player's own part of the outcome: their rounds, each with both
-        choices and the result for them, the rounds each player won, and
+        """The player's own part of the outcome: their throws, each with both
+        choices and the result for them, the throws each player won, and
         whether the game was played to the end."""
-        results = rounds_seen_by(player, outcome["rounds"])
+        results = throws_seen_by(player, outcome["throws"])
         return {
             "finished": reason == "finished",
-            "rounds": results,
+            "throws": results,
             "wins": count(results, "win"),
             "partner_wins": count(results, "loss"),
         }
@@ -157,15 +160,15 @@ class RockPaperScissors(LiveGame):
     def bot(self, view, player, now):
         if view["chosen"]:
             return None
-        return Choose(round=view["round"], action=random.choice(ACTIONS))
+        return Choose(throw=view["throw"], action=random.choice(ACTIONS))
 
 
 def show_result(answer, reward):
     """The feedback page for a game whose answer for the player is
     ``answer``, for which they were paid ``reward``."""
-    if not answer["rounds"]:
+    if not answer["throws"]:
         return InfoPage(
-            "The game ended before any rounds were played.", time_estimate=5
+            "The game ended before any throws were played.", time_estimate=5
         )
     wins = answer["wins"]
     partner_wins = answer["partner_wins"]
@@ -181,7 +184,7 @@ def show_result(answer, reward):
         tags.div(
             tags.h2(summary),
             tags.p(
-                f"You won {wins} of the {len(answer['rounds'])} rounds played, "
+                f"You won {wins} of the {len(answer['throws'])} throws played, "
                 f"and your partner won {partner_wins}."
             ),
             tags.p(f"Your bonus for this game is ${reward:.2f}."),
@@ -192,8 +195,8 @@ def show_result(answer, reward):
 
 class RockPaperScissorsTrial(Trial):
     """One game between the two participants of a pair. The trial's definition
-    says which of the pair's games it is, how many rounds it has and what a
-    round won pays, and the trial's answer is the player's part of the game's
+    says which of the pair's games it is, how many throws it has and what a
+    throw won pays, and the trial's answer is the player's part of the game's
     outcome."""
 
     sync_group_type = "pair"
@@ -208,7 +211,7 @@ class RockPaperScissorsTrial(Trial):
             id_="rock_paper_scissors",
             group_type="pair",
             game_class=RockPaperScissors,
-            settings={"rounds": game["rounds"]},
+            settings={"throws": game["throws"]},
             # A player whose partner doesn't arrive leaves the pair, and goes
             # on to the game page without a game.
             max_wait_time=PARTNER_WAIT_SECONDS,
@@ -219,7 +222,7 @@ class RockPaperScissorsTrial(Trial):
                     tags.div(
                         tags.p(
                             f"Game {game['number']} of {len(GAMES)}, of "
-                            f"{game['rounds']} rounds. Each round you win pays "
+                            f"{game['throws']} throws. Each throw you win pays "
                             f"a bonus of ${game['reward_per_win']:.2f}.",
                             id="rps-stakes",
                         ),
@@ -248,7 +251,7 @@ class RockPaperScissorsTrial(Trial):
                 LiveGameControl(
                     player_left_message=(
                         "Your partner has left the game. If they don't come "
-                        "back, it will end in a few minutes."
+                        "back within 30 seconds, it will end."
                     ),
                     no_game_message=("This game can't be played without your partner."),
                 ),
@@ -259,7 +262,7 @@ class RockPaperScissorsTrial(Trial):
         )
 
     def score_answer(self, answer, definition):
-        """Return the number of rounds the player won."""
+        """Return the number of throws the player won."""
         if answer is None:
             # The pair didn't start a game.
             return 0
@@ -303,7 +306,7 @@ class Exp(psynet.experiment.Experiment):
     timeline = Timeline(
         InfoPage(
             f"You'll play {len(GAMES)} games of rock, paper, scissors against "
-            "another participant, and you earn a bonus for each round you "
+            "another participant, and you earn a bonus for each throw you "
             "win. First, we'll find you a partner.",
             time_estimate=5,
         ),
@@ -344,8 +347,8 @@ class Exp(psynet.experiment.Experiment):
         super().test_check_bot(bot, **kwargs)
         trials = sorted(bot.alive_trials, key=lambda trial: trial.id)
         assert [trial.definition for trial in trials] == [
-            {"number": 1, "rounds": 5, "reward_per_win": 0.05},
-            {"number": 2, "rounds": 3, "reward_per_win": 0.10},
+            {"number": 1, "throws": 5, "reward_per_win": 0.05},
+            {"number": 2, "throws": 3, "reward_per_win": 0.10},
         ]
         # The bot's latest game is its second.
         result = live_game_result(live_game_id(bot, "rock_paper_scissors"))
@@ -354,12 +357,12 @@ class Exp(psynet.experiment.Experiment):
         assert trials[-1].group_round.live_game_outcome == result.outcome
         reward = 0
         for trial in trials:
-            rounds = trial.answer["rounds"]
-            # Each game has the number of rounds its trial's definition says.
-            assert len(rounds) == trial.definition["rounds"]
-            wins = sum(played["result"] == "win" for played in rounds)
+            throws = trial.answer["throws"]
+            # Each game has the number of throws its trial's definition says.
+            assert len(throws) == trial.definition["throws"]
+            wins = sum(played["result"] == "win" for played in throws)
             assert trial.score == trial.answer["wins"] == wins
-            # The trial pays what its definition says for each round won.
+            # The trial pays what its definition says for each throw won.
             trial_reward = wins * trial.definition["reward_per_win"]
             assert trial.performance_reward == pytest.approx(trial_reward)
             reward += trial_reward

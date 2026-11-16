@@ -13,7 +13,6 @@ holds what the player put in and earned; the results page reads the team's
 pot from the round's ``live_game_outcome``.
 """
 
-from dallinger.realtime import Reject
 from dominate import tags
 
 import psynet.experiment
@@ -23,6 +22,7 @@ from psynet.live_game import (
     LiveGameControl,
     LiveMessage,
     PlayLiveGame,
+    Reject,
     live_game_result,
 )
 from psynet.modular_page import ModularPage, Prompt

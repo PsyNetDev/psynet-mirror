@@ -13,7 +13,6 @@ import random
 from typing import Literal
 
 import pytest
-from dallinger.realtime import Reject
 from dominate import tags
 from pydantic import Field
 
@@ -23,6 +22,7 @@ from psynet.live_game import (
     LiveGameControl,
     LiveMessage,
     PlayLiveGame,
+    Reject,
     live_game_id,
     live_game_result,
 )
@@ -205,8 +205,6 @@ class Move(LiveMessage):
     dx: Literal[-1, 0, 1]
     dy: Literal[-1, 0, 1]
     seconds: float = Field(gt=0, le=SAVED_MOVEMENT)
-    # Whether the move collected a coin, which apply notes for should_save.
-    _found_coin: bool = False
 
     def apply(self, game, state, player, now):
         moved_until = state["players"][player]["moved_until"]
@@ -218,13 +216,13 @@ class Move(LiveMessage):
         if seconds <= 0:
             raise Reject("You've used up your movement time.")
         state["players"][player]["moved_until"] = start + seconds
-        coins = advance(state, player, self.dx, self.dy, seconds, now)
-        self._found_coin = coins > 0
+        advance(state, player, self.dx, self.dy, seconds, now)
 
     def should_save(self, game, state, player, rejection):
-        # Pages send many moves a second, so only the moves that collected a
-        # coin go in the game's record.
-        return self._found_coin
+        # Pages send many moves a second, so the game's record leaves them
+        # out. The coins collected, which the analysis needs, are in the
+        # state's "collected", and so in the outcome.
+        return False
 
 
 class SharedCanvas(LiveGame):

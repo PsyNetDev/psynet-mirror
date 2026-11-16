@@ -42,7 +42,7 @@ class LiveMessage(BaseModel):
         """Change the game's state for this message.
 
         Change ``state`` in place. To refuse the message, such as a move
-        that's against the rules, raise :class:`~dallinger.realtime.Reject`
+        that's against the rules, raise :class:`~psynet.live_game.Reject`
         with a reason. The sender's page gets the reason, and the state stays
         as it was.
 
@@ -70,11 +70,11 @@ class LiveMessage(BaseModel):
         default, every message is saved.
 
         A game whose pages send many messages, such as a move many times a
-        second, can leave out the ones its analysis won't need.
-        ``should_save`` runs after :meth:`apply`, on the same message object,
-        so :meth:`apply` can note what the message did in a private
-        attribute, one whose name starts with an underscore, for
-        ``should_save`` to read.
+        second, can leave out the ones its analysis won't need. Keep what
+        the analysis needs, such as the coins a move collected, in the state
+        or the outcome: ``should_save`` only decides whether the message
+        itself is kept too. It runs after :meth:`apply`, on a new copy of
+        the message.
 
         Parameters
         ----------
@@ -90,7 +90,7 @@ class LiveMessage(BaseModel):
             The sender's player number.
 
         rejection
-            The :class:`~dallinger.realtime.Reject` that :meth:`apply`
+            The :class:`~psynet.live_game.Reject` that :meth:`apply`
             raised, or ``None`` if the game accepted the message.
 
         Returns
@@ -185,7 +185,7 @@ class SavedMessage:
     participant_id: int
 
     #: ``"accepted"``, ``"rejected"`` if the game raised
-    #: :class:`~dallinger.realtime.Reject`, or ``"failed"`` if the game's code
+    #: :class:`~psynet.live_game.Reject`, or ``"failed"`` if the game's code
     #: raised an error while handling it, or a message handled at the same
     #: time, which made the game fail.
     status: Literal["accepted", "rejected", "failed"]

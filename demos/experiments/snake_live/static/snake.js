@@ -105,11 +105,11 @@ export function activate({ root, vars, psynet }) {
     } else {
       status.textContent = "Eat the food!";
     }
-    let left = live.secondsLeft();
-    if (left !== null) {
-      timer.textContent = Math.ceil(left);
-    }
   }
+
+  live.onTimeLeft((left) => {
+    timer.textContent = Math.ceil(left);
+  });
 
   // The game moves every snake on its ticks, and each tick's view shows the
   // whole board, so the page draws each view as it arrives.

@@ -82,8 +82,8 @@ beforeEach(() => {
   sockets = [];
   errors = [];
   session = {
-    gameId: "pick_numbers",
-    sessionId: 7,
+    playId: "pick_numbers",
+    liveGameId: 7,
     gameChannel: "pick_numbers",
     autoAdvance: true,
     playerLeftMessage: "Another player has left the game.",
@@ -104,6 +104,12 @@ beforeEach(() => {
       return timer;
     },
     clearTimeout: (...args) => clearTimeout(...args),
+    setInterval: (...args) => {
+      const timer = setInterval(...args);
+      timer?.unref?.();
+      return timer;
+    },
+    clearInterval: (...args) => clearInterval(...args),
     console: { error: (error) => errors.push(error.message) },
     WebSocket: { OPEN: 1 },
     dallinger: {
@@ -162,7 +168,7 @@ describe("psynet.liveGame", () => {
   it("is created by the control's page code, once for the pages a document shows", () => {
     const shown = [];
     const psynet = {
-      var: { liveGame: { sessionId: null, noGameMessage: "No game." } },
+      var: { liveGame: { liveGameId: null, noGameMessage: "No game." } },
       showStatusNotice: (id, text) => shown.push([id, text]),
     };
     const leave = context.PsyNetLiveGame.activatePage(psynet);
@@ -330,6 +336,40 @@ describe("psynet.liveGame", () => {
     assert.equal(liveGame.secondsLeft(), 0);
   });
 
+  it("shows the latest rejection until the page sends again", () => {
+    const element = { textContent: "" };
+    assert.equal(liveGame.showRejections(element), liveGame);
+    liveGame.send("pick", { number: 70 });
+    sockets[0].fire("onRejected", 1, "Pick a number up to 10.");
+    assert.equal(element.textContent, "Pick a number up to 10.");
+    liveGame.send("pick", { number: 7 });
+    assert.equal(element.textContent, "");
+  });
+
+  it("calls onTimeLeft a few times a second until the page goes", () => {
+    mock.timers.enable({ apis: ["setInterval"] });
+    const left = [];
+    assert.equal(
+      liveGame.onTimeLeft((seconds) => left.push(seconds)),
+      liveGame
+    );
+    mock.timers.tick(250);
+    // Nothing before the page knows the time left.
+    assert.deepEqual(left, []);
+    sockets[0].view(view(5, [], 45, 40));
+    sockets[0].time = 30;
+    mock.timers.tick(250);
+    sockets[0].time = 30.5;
+    mock.timers.tick(250);
+    sockets[0].view(view(5, [], 45, 40), "finished");
+    mock.timers.tick(250);
+    assert.deepEqual(left, [15, 14.5, 0]);
+
+    leavePage();
+    mock.timers.tick(1000);
+    assert.deepEqual(left, [15, 14.5, 0]);
+  });
+
   it("shows the Next button again once the connection has been down for ten seconds", () => {
     mock.timers.enable({ apis: ["setTimeout", "Date"] });
     liveGame.onView(() => {});
@@ -401,7 +441,7 @@ describe("psynet.liveGame", () => {
 
   it("says whether the group has a game, without joining it", () => {
     assert.equal(liveGame.hasGame, true);
-    session = { gameId: "pick_numbers", sessionId: null, gameChannel: null };
+    session = { playId: "pick_numbers", liveGameId: null, gameChannel: null };
     assert.equal(liveGame.hasGame, false);
     session = undefined;
     assert.equal(liveGame.hasGame, false);
@@ -411,8 +451,8 @@ describe("psynet.liveGame", () => {
   it("shows the control's notice on a page with no game, until the page ends", () => {
     assert.deepEqual(notices, []);
     session = {
-      gameId: "pick_numbers",
-      sessionId: null,
+      playId: "pick_numbers",
+      liveGameId: null,
       gameChannel: null,
       noGameMessage: null,
     };
@@ -435,7 +475,7 @@ describe("psynet.liveGame", () => {
   it("explains a page with no game", () => {
     session = undefined;
     assert.throws(() => liveGame.send("pick"), /control isn't a LiveGameControl/);
-    session = { gameId: "pick_numbers", sessionId: null, gameChannel: null };
+    session = { playId: "pick_numbers", liveGameId: null, gameChannel: null };
     assert.throws(
       () => liveGame.onView(() => {}),
       /hasn't started a live game at the PlayLiveGame "pick_numbers"/

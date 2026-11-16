@@ -63,7 +63,7 @@ class LocalGame:
         Raises
         ------
 
-        ~dallinger.realtime.Reject
+        ~psynet.live_game.Reject
             If the game rejects the message.
         """
         if isinstance(message, LiveMessage):
@@ -79,6 +79,16 @@ class LocalGame:
         """Run the game's ``tick``, ``now`` seconds into the game."""
         self.game.tick(self.state, self._clock(now))
 
+    def leave(self, player, now=0):
+        """Close ``player``'s last game page, ``now`` seconds into the game,
+        which runs the game's ``on_leave``."""
+        self.game.on_leave(self.state, self._participant(player), self._clock(now))
+
+    def join(self, player, now=0):
+        """Open a game page for ``player``, ``now`` seconds into the game,
+        which runs the game's ``on_join``."""
+        self.game.on_join(self.state, self._participant(player), self._clock(now))
+
     def view(self, player):
         """Return what ``player``'s page shows, as the game's ``view`` returns
         it, with PsyNet's entry."""
@@ -92,8 +102,10 @@ class LocalGame:
         )
 
     def is_over(self):
-        """Return whether the game's ``is_over`` says the game is over."""
-        return bool(self.game.is_over(self.state))
+        """Return whether the game's ``is_over`` says the game is over, or
+        the reason it gives, such as ``"players_left"``."""
+        over = self.game.is_over(self.state)
+        return over if isinstance(over, str) else bool(over)
 
     def outcome(self, reason="finished"):
         """Return the game's ``outcome``, as if it ended now for ``reason``."""

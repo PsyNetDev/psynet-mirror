@@ -9,9 +9,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from dallinger.realtime import Reject
 
 from psynet.experiment import import_local_experiment
+from psynet.live_game import Reject
 from psynet.live_game.testing import LocalGame
 from psynet.pytest_psynet import path_to_demo_experiment
 
@@ -26,9 +26,9 @@ const source = fs.readFileSync(script, "utf8");
 const { advance } = await import("data:text/javascript," + encodeURIComponent(source));
 const { rules, cases } = JSON.parse(fs.readFileSync(input, "utf8"));
 const results = cases.map((case_) => {
-  const view = { psynet: { you: 0 }, players: [case_.player], coins: case_.coins };
+  const view = { players: [case_.player], coins: case_.coins };
   for (const [dx, dy, seconds] of case_.moves) {
-    advance(rules, view, dx, dy, seconds);
+    advance(rules, view, 0, dx, dy, seconds);
   }
   return { player: view.players[0], coins: view.coins };
 });

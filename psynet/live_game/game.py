@@ -8,9 +8,8 @@ that sets a ``channel``, so that the experiment adds it to
 """
 
 import functools
-from typing import NamedTuple
 
-from dallinger.realtime import RealtimeGame
+from dallinger.realtime import RealtimeGame, Reject
 from dallinger.realtime.game import queued_effects
 from dallinger.realtime.utils import is_number
 from pydantic import PydanticInvalidForJsonSchema
@@ -43,16 +42,6 @@ from .reward import (
     _handles_ending,
     _handles_reward,
 )
-
-
-class _LastApplied(NamedTuple):
-    """The message a game's apply last parsed, for its save_message."""
-
-    player: int
-    #: The message as the page sent it.
-    sent: dict
-    #: The message as a LiveMessage.
-    parsed: LiveMessage
 
 
 class LiveGame(RealtimeGame):
@@ -126,6 +115,15 @@ class LiveGame(RealtimeGame):
     #: and PsyNet logs an error that says so.
     max_players = None
 
+    #: Seconds a player can be away, with none of their game pages open,
+    #: before they count as gone, or ``None``, the default, for a game that
+    #: carries on however many players are away. Once fewer than
+    #: :attr:`min_players` players aren't gone, the game ends with the
+    #: reason ``"players_left"``. A player away when the game starts counts
+    #: from the start. A reload or a dropped connection makes a player away
+    #: for a moment, so allow for one, with 30 seconds or more.
+    away_timeout = None
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         # Resolved through the MRO, so methods from a mixin are wrapped too.
@@ -166,6 +164,12 @@ class LiveGame(RealtimeGame):
             raise ValueError(
                 f"{cls.__name__}'s ready_timeout must be a positive number."
             )
+        if cls.away_timeout is not None and (
+            not is_number(cls.away_timeout) or cls.away_timeout <= 0
+        ):
+            raise ValueError(
+                f"{cls.__name__}'s away_timeout must be None or a positive number."
+            )
         _set_max_duration(cls)
         cls._message_types = _index_message_types(cls)
         if cls.channel is not None:
@@ -195,7 +199,8 @@ class LiveGame(RealtimeGame):
     @_stores_json
     def on_leave(self, state, player, now):
         """Respond to a player's last open page closing, as in Dallinger's
-        ``on_leave``. By default the game carries on without them. A player
+        ``on_leave``. By default the game carries on without them, or, with
+        an :attr:`away_timeout`, until too few players are left. A player
         who leaves before the game starts isn't ready any more, and a player
         who leaves is in ``state["psynet"]["away"]`` until they come
         back. ``now`` is ``None`` before the game starts.
@@ -251,26 +256,20 @@ class LiveGame(RealtimeGame):
         itself. An override runs only once the game has started, and never
         receives a :class:`PlayerReady` message, which PsyNet handles itself.
         """
-        parsed = self.parse_message(message)
-        # Kept for save_message, which Dallinger calls next with the same
-        # message, so that LiveMessage.should_save sees what apply saw.
-        self._last_applied = _LastApplied(player, message, parsed)
-        parsed.apply(self, state, player, now)
+        self.parse_message(message).apply(self, state, player, now)
 
     def save_message(self, state, player, message, rejection):
         """Return whether to save a page's message in the game's record,
         as in Dallinger's ``save_message``. By default, it asks the message's
-        :meth:`LiveMessage.should_save`, with the same message object that
-        :meth:`LiveMessage.apply` received, and saves a message the game
+        :meth:`LiveMessage.should_save`, and saves a message the game
         couldn't read. PsyNet always saves its own messages, such as
         :class:`PlayerReady`, without calling this.
         """
-        last = getattr(self, "_last_applied", None)
-        self._last_applied = None
-        if last is None or (last.player, last.sent) != (player, message):
-            # The game couldn't read the message, or overrides apply.
+        try:
+            parsed = self.parse_message(message)
+        except Reject:
             return True
-        return last.parsed.should_save(self, state, player, rejection)
+        return parsed.should_save(self, state, player, rejection)
 
     def answer(self, outcome, reason, player):
         """Return a player's answer on the game page, which is also their
@@ -423,7 +422,7 @@ class LiveGame(RealtimeGame):
         Raises
         ------
 
-        ~dallinger.realtime.Reject
+        ~psynet.live_game.Reject
             If the ``type`` isn't one of :attr:`messages`, or the fields don't
             match it.
         """

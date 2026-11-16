@@ -71,25 +71,13 @@ export function activate({root, psynet}) {
       `from the pot, and you would earn ${+(view.endowment - view.mine + share).toFixed(2)} tokens.`;
   }
 
-  function tick() {
-    let left = live.secondsLeft();
-    if (left !== null) {
-      timeLeft.style.width = `${(left / live.duration) * 100}%`;
-    }
-  }
-  let timer = setInterval(tick, 250);
-
-  live.onView(() => {
-    render();
-    tick();
+  live.onTimeLeft((left) => {
+    timeLeft.style.width = `${(left / live.duration) * 100}%`;
   });
-  live.onRejected((number, reason) => {
-    rejection.textContent = reason;
-  });
+  live.onView(render);
+  live.showRejections(rejection);
   slider.addEventListener("input", () => {
-    rejection.textContent = "";
     live.send("contribute", {tokens: Number(slider.value)});
     render();
   });
-  return () => clearInterval(timer);
 }

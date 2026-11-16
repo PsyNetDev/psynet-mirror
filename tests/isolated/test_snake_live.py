@@ -4,9 +4,9 @@ which turns it accepts."""
 import random
 
 import pytest
-from dallinger.realtime import Reject
 
 from psynet.experiment import import_local_experiment
+from psynet.live_game import Reject
 from psynet.live_game.testing import LocalGame
 from psynet.pytest_psynet import path_to_demo_experiment
 

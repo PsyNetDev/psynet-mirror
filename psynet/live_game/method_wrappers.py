@@ -11,11 +11,13 @@ from .messages import LiveMessage
 from .psynet_entry import (
     _SESSION_BOOKKEEPING,
     _UNCHANGED,
+    PLAYERS_LEFT,
     TIMEOUT,
     PlayerReady,
     _game_time,
     _player,
     _psynet_entry,
+    _too_few_players_at,
 )
 
 # The game methods that can change the state, which is converted after each.
@@ -119,10 +121,10 @@ def _waits_for_start(method):
         if deadline is not None:
             # On the game's clock, as the game's other methods see it.
             deadline += entry["started_at"]
-        ends_at = entry["ends_at"]
-        if ends_at is None or entry["time_up"]:
-            return deadline
-        return ends_at if deadline is None else min(deadline, ends_at)
+        deadlines = [deadline, _too_few_players_at(self, entry)]
+        if not entry["time_up"]:
+            deadlines.append(entry["ends_at"])
+        return min((d for d in deadlines if d is not None), default=None)
 
     next_deadline._psynet_wrapper = True
     return next_deadline
@@ -131,9 +133,12 @@ def _waits_for_start(method):
 def _ends_when_time_is_up(method):
     @functools.wraps(method)
     def is_over(self, state):
-        if _psynet_entry(state)["time_up"]:
-            # A string is Dallinger's reason for the end.
+        entry = _psynet_entry(state)
+        # A string is Dallinger's reason for the end.
+        if entry["time_up"]:
             return "finished" if self.duration is not None else TIMEOUT
+        if entry["players_left"]:
+            return PLAYERS_LEFT
         return _as_game_code(method, self, state)
 
     is_over._psynet_wrapper = True
