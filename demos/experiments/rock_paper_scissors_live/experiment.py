@@ -74,6 +74,12 @@ def rounds_seen_by(player, rounds):
     ]
 
 
+def count(results, result):
+    """Return how many of ``results``, from ``rounds_seen_by``, have
+    ``result``, such as ``"win"``."""
+    return sum(played["result"] == result for played in results)
+
+
 class Choose(LiveMessage):
     """A player's action in one round."""
 
@@ -152,10 +158,6 @@ class RockPaperScissors(LiveGame):
         if view["chosen"]:
             return None
         return Choose(round=view["round"], action=random.choice(ACTIONS))
-
-
-def count(results, result):
-    return sum(played["result"] == result for played in results)
 
 
 def show_result(answer, reward):

@@ -66,10 +66,13 @@ class LiveGame(RealtimeGame):
     describes each of them. A subclass of a game needs a ``channel`` of its
     own.
 
-    The state and each view are dicts that hold only plain data, such as
-    lists, strings and numbers. :doc:`/code/multiplayer/live_games` walks
-    through a whole game, including how the game starts and which values
-    PsyNet converts to plain data.
+    The game's methods know each player by their number, 0 for the first
+    player, 1 for the next, and so on, in the order they signed up, and get
+    ``now`` in seconds since the game started. The state and each view are
+    dicts that hold only plain data, such as lists, strings and numbers, so
+    a game keeps what each player has in a list, in player order.
+    :doc:`/code/multiplayer/live_games` walks through a whole game, including
+    how the game starts and which values PsyNet converts to plain data.
     """
 
     #: The game's message types, each a :class:`LiveMessage` subclass with

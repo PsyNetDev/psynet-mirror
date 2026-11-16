@@ -101,10 +101,11 @@ timeline, which "Adding the game to the timeline" below describes.
 PsyNet numbers a game's players from 0, in the order they signed up, so the
 two players here are 0 and 1, and ``1 - player`` is the other one. A round's
 choices are a list, in player order, such as ``["rock", "paper"]``.
-``result_for`` says how a round went for one player, and ``rounds_seen_by``
-lists the rounds played so far as one player sees them. The view and each
-player's answer, below, both use it, so the page and the answer show a round
-the same way.
+``result_for`` says how a round went for one player, ``rounds_seen_by``
+lists the rounds played so far as one player sees them, and ``count`` counts
+the rounds that went one way, such as the player's wins. The view and each
+player's answer, below, both use them, so the page and the answer show a
+round the same way.
 
 The excerpts on this page leave out the file's imports, which are at the top
 of the demo's ``experiment.py``.
@@ -162,10 +163,11 @@ sends the message like this:
 
     psynet.liveGame.send("choose", {round: 2, action: "rock"});
 
-``apply`` is what the message does to the state. It receives the game, which
-is the ``RockPaperScissors`` object that the next sections describe, the
-state, the number of the player who sent the message, and ``now``, the
-number of seconds since the game started. It changes the state directly.
+``apply`` is what the message does to the state. It receives the game, here
+a ``RockPaperScissors``, for the rare message that needs it, such as one
+that pays a reward; the state; the number of the player who sent the
+message; and ``now``, the number of seconds since the game started. It
+changes the state directly.
 Here, it records the player's choice, and once both players have chosen, it
 adds the round's choices to the rounds played and starts the next round.
 Each kind of message has its own ``apply``, so the game's rules are split
@@ -191,8 +193,7 @@ What each player sees
 
 The view says whether the partner has chosen in the current round, but not
 what they chose. The partner's choice appears in ``results`` only once the
-round is over. ``count``, defined below the game, counts the rounds with a
-result. This is how a game keeps information private: whatever isn't
+round is over. This is how a game keeps information private: whatever isn't
 in a player's view never reaches their browser, so they can't find it by
 looking at the page's code.
 
@@ -300,12 +301,7 @@ shows the game page, and then scores and pays for the game:
 
 A trial that a group plays needs a :class:`~psynet.sync.GroupBarrier` in its
 ``show_trial``, where the group's members wait for each other.
-``PlayLiveGame`` includes one, so this trial needs no other. A group barrier
-in such a trial closes the group's round when it releases the group, and
-here that is when the wait for the game ends, not when the game does. Each
-trial's ``sync_group_outcome`` therefore says whether the player was in the
-pair when the game began. To tell a game that was played to the end from one
-that a player abandoned, read ``finished`` in the answer.
+``PlayLiveGame`` includes one, so this trial needs no other.
 
 A game can also pay rewards itself, through its ``performance_reward``
 method, as the snake demo in Part 2 does, or with
