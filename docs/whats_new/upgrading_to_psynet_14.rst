@@ -440,12 +440,15 @@ Search for ``var.get(`` and ``conditional(``.
   ``custom_html.html``, escape plain strings. Pass ``html``, card bodies and
   list items as ``Markup``; for a ``dominate`` tag, ``Markup(tag.render())``.
 * PsyNet now requires dominate 3.1, which renders ``a``, ``span`` and ``sup``
-  inline, so sibling spans or links built with dominate lose the space between
-  them. Search for dominate ``span``, ``a`` and ``sup`` tags placed side by
-  side, and add the space where you want one:
+  inline: it no longer starts a new line before them, so the space that used
+  to appear before each of these tags is gone. This affects a tag that
+  follows text as well as tags placed side by side. Search for dominate
+  ``span``, ``a`` and ``sup`` tags, and add the space where you want one:
 
   .. code-block:: python
 
+      tags.p("Click", tags.a("here", href=url))  # now shows "Clickhere"
+      tags.p("Click ", tags.a("here", href=url))  # shows "Click here"
       tags.div(tags.span("A"), tags.span("B"))  # now shows "AB"
       tags.div(tags.span("A"), " ", tags.span("B"))  # shows "A B"
 
