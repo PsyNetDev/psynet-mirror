@@ -465,7 +465,13 @@ lacks its own. PsyNet needs Python 3.11 or later and recommends 3.14.
 
 * ``psynet setup --docker`` is removed; run ``psynet setup``, then
   ``psynet debug local --docker``.
-* ``psynet services ensure`` starts PostgreSQL and Redis in Docker.
+* ``psynet services ensure`` starts PostgreSQL and Redis in Docker. It runs
+  PostgreSQL 18, which can't open the data of the PostgreSQL 12
+  ``dallinger_postgres`` container that earlier versions started. It, and
+  ``psynet debug local`` and ``psynet test local``, offer to replace that
+  container (``psynet services ensure --yes`` replaces it without asking), and
+  your local database then starts empty. The old data stays in the
+  ``dallinger_postgres`` volume.
 
 See :doc:`/install` and :doc:`/code/project/creating_an_experiment`.
 
