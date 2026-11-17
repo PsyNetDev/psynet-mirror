@@ -15,13 +15,11 @@ from dallinger.realtime.utils import is_number
 from pydantic import PydanticInvalidForJsonSchema
 from pydantic_core import to_jsonable_python
 
-from .history import _MOMENT_EFFECT, _checkpoints, _moments
+from .history import _MOMENT_EFFECT
 from .messages import (
     _STARTED_EFFECT,
     LiveMessage,
     _parse_message,
-    _saved_messages,
-    _session_channel,
 )
 from .method_wrappers import (
     _GAME_CODE_METHODS,
@@ -436,11 +434,11 @@ class LiveGame(RealtimeGame):
 
     def record(self, name, data=None):
         """Record a moment in the game, such as a round's result or a player
-        joining, which :meth:`moments` returns, with when it happened. Call it
+        joining, which a game record's :attr:`~LiveGameRecord.moments` returns, with when it happened. Call it
         in a method that changes the state, such as a message's
         :meth:`~LiveMessage.apply` or ``tick``. Record what an analysis needs
         to follow the game over time, rather than reading it from
-        :meth:`checkpoints`.
+        :attr:`~LiveGameRecord.checkpoints`.
 
         Parameters
         ----------
@@ -490,10 +488,10 @@ class LiveGame(RealtimeGame):
     def parse_message(self, message):
         """Check a page's message and return it as a :class:`LiveMessage`.
 
-        Avoid overriding this method. :meth:`saved_messages` doesn't call
-        it, so a message that only your own reading accepts, such as an older
-        shape of a message, comes back from :meth:`saved_messages` with its
-        ``message`` set to ``None``.
+        Avoid overriding this method. A game record's
+        :attr:`~LiveGameRecord.messages` doesn't call it, so a message that
+        only your own reading accepts, such as an older shape of a message,
+        comes back there with its ``message`` set to ``None``.
 
         Parameters
         ----------
@@ -510,85 +508,6 @@ class LiveGame(RealtimeGame):
             match it.
         """
         return _parse_message(self._message_types, message)
-
-    @classmethod
-    def saved_messages(cls, game_id):
-        """Return the messages saved for one play of this game, in the order
-        the game applied them, as :class:`SavedMessage` objects.
-
-        They include each player's :class:`PlayerReady` messages, and the
-        messages the game rejected, such as those sent before the game
-        starts. The record is written a few seconds behind the game, so for a
-        game that's still being played, this returns the messages written
-        so far.
-        :doc:`/code/multiplayer/live_games` says when the record is
-        complete.
-
-        Parameters
-        ----------
-
-        game_id
-            The game's id, as :attr:`Participant.live_game_ids <psynet.participant.Participant.live_game_ids>` gives it.
-
-        Raises
-        ------
-
-        KeyError
-            If there is no game ``game_id``.
-
-        ValueError
-            If ``game_id`` is a game of another kind.
-        """
-        cls._check_game(game_id)
-        return _saved_messages(game_id, cls._message_types)
-
-    @classmethod
-    def moments(cls, game_id, name=None):
-        """Return the moments that :meth:`record` recorded in one play of
-        this game, in order, as :class:`LiveGameMoment` objects. Like
-        :meth:`saved_messages`, it returns those written so far for a game
-        that's still being played.
-
-        Parameters
-        ----------
-
-        game_id
-            The game's id, as :attr:`Participant.live_game_ids <psynet.participant.Participant.live_game_ids>` gives it.
-
-        name
-            The name of the moments to return, or ``None``, the default, for
-            all of them.
-        """
-        cls._check_game(game_id)
-        return _moments(game_id, name)
-
-    @classmethod
-    def checkpoints(cls, game_id):
-        """Return copies of the game's state, as
-        :class:`LiveGameCheckpoint` objects, in order: those Dallinger saved
-        while the game was played, at most every ``checkpoint_interval``
-        seconds (5 by default), and the state when the game ended. Each
-        state is as the game's code sees it, without PsyNet's ``psynet``
-        entry, so a player's number indexes its lists. Use it to look back
-        at a game, for example to check its code, and :meth:`record` for what
-        an analysis needs.
-
-        Parameters
-        ----------
-
-        game_id
-            The game's id, as :attr:`Participant.live_game_ids <psynet.participant.Participant.live_game_ids>` gives it.
-        """
-        cls._check_game(game_id)
-        return _checkpoints(game_id)
-
-    @classmethod
-    def _check_game(cls, game_id):
-        channel = _session_channel(game_id)
-        if channel != cls.channel:
-            raise ValueError(
-                f"Game {game_id} is a game of {channel!r}, not {cls.channel!r}."
-            )
 
 
 # Seconds that Dallinger's max_duration leaves after the latest moment the

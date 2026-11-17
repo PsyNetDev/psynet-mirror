@@ -15,7 +15,7 @@ from dallinger.realtime.utils import is_number
 
 from .history import _MOMENT_EFFECT
 from .messages import _STARTED_EFFECT
-from .result import _has_outcome, _players_ended_early
+from .record import _has_outcome, _players_ended_early
 
 # The name of the effect add_performance_reward queues.
 _REWARD_EFFECT = "psynet_performance_reward"
@@ -84,7 +84,7 @@ def _handles_reward(method):
     @functools.wraps(method)
     def handle_effect(self, name, payload, session_row):
         if name in (_STARTED_EFFECT, _MOMENT_EFFECT):
-            # Only recorded, for saved_messages and moments.
+            # Only recorded, for a game record's messages and moments.
             return None
         if name != _REWARD_EFFECT:
             return method(self, name, payload, session_row)

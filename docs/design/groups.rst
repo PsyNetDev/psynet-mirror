@@ -138,15 +138,58 @@ Talking to each other
 A **chatroom** lets group members exchange messages on a page. Messages are
 stored with the experiment's data, so conversations can be analyzed later.
 
-Other **real-time interaction**, such as taking turns in a game on one page,
-works the same way: each member's page sends actions to the server as they
-happen. The server is the authority on the shared state. It accepts or rejects
-each action, for example one made out of turn, and sends the result to every
-member, whose page shows only what the server sent. Decide what each member
-is allowed to see, what happens when a member's connection drops or they
-reload the page, and which parts of the interaction are recorded for
-analysis. The `websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__ demo
+Members can also act on one page together in real time, as in a **live
+game** (see `Live games`_). For other real-time interaction, the
+`websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__ demo
 sends messages live to everyone in a room.
+
+.. _design-groups-live-games:
+
+Live games
+----------
+
+In most group experiments, members act on separate pages and meet at
+barriers: each makes a choice, a barrier waits for all of them, and then
+everyone sees the result. In a **live game**, the members are on the same
+page at the same time, and what one player does shows on the others' screens
+within a fraction of a second. A negotiation in which offers go back and
+forth, players steering around a shared board, or a group fishing on a lake
+while members come and go are live games.
+
+Choose a live game when timing is part of what you study, or when players
+must react to each other as they act, such as conceding as a deadline nears
+or following a partner who moves. Round-based trials are simpler, and better
+when each decision is made on its own: they're easier to build, each
+decision is a trial in the data, and a slow connection matters less. A
+chatroom suits talk rather than moves in a game.
+
+The server runs a live game. It keeps one state for the whole group, checks
+each player's move against the game's rules, and sends each player's page
+what that player may see. A live game raises these decisions:
+
+- **What each player sees.** A player's page gets only their own view of
+  the game, so hidden information, such as a partner's choice before it's
+  revealed, stays hidden.
+- **Leaving.** A player can close the page or lose their connection during
+  the game. Decide whether the game ends for everyone, carries on without
+  them, or gives their turn to someone else, and how long to wait for them
+  to come back.
+- **How long a game lasts.** A game lasts a fixed time, or ends by itself,
+  such as once every throw is played, with a limit in case it doesn't. A
+  game can also take newcomers while it runs, and let each player finish in
+  their own time.
+- **What is recorded.** Every move is saved, with when it arrived, along
+  with the game's result. A fast game can send many moves a second, so
+  decide what the analysis needs, and keep events such as each catch or each
+  deal as they happen.
+- **Pay.** Players can be paid from the game's result, or as they earn
+  during it, such as for each coin collected.
+
+The demos in `Kinds of group experiment`_ include six live games. To build
+one, read :doc:`/code/multiplayer/live_game_tutorial`, which walks through
+three of them.
+
+
 
 Seeing who you're playing with
 ------------------------------
@@ -188,7 +231,8 @@ listed in order of complexity, each with a demo to start from:
 - `Groups whose members change`_
 
 Each diagram shows a demo's timeline as a sequence of blocks; a dashed box
-repeats. :doc:`/demos/index` lists every demo.
+repeats. Several kinds also have a demo played as a live game (see `Live
+games`_). :doc:`/demos/index` lists every demo.
 
 One group for the whole experiment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -209,6 +253,12 @@ see the result. Rounds don't need new groups when partners stay the same.
 
 .. figure:: ../_static/images/design/groups/rock_paper_scissors.svg
    :alt: A grouper forms pairs. Then, for three rounds, players choose with a time limit, a barrier scores the round, and both see the result and can chat.
+
+Played live, in `rock_paper_scissors_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/rock_paper_scissors_live>`__,
+the pair plays two games on one page, each throw shown to both as soon as
+both have chosen. In `snake_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/snake_live>`__ and
+`shared_canvas_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/shared_canvas_live>`__, a group plays one game
+for a fixed time, steering around a shared board.
 
 In `create_rate_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/create_rate_sync>`__, each member of a group of three
 writes an answer, then rates the others' answers, and the group sees which
@@ -325,6 +375,10 @@ the next split, which is an admission point.
 .. figure:: ../_static/images/design/groups/ultimatum_pairing.svg
    :alt: A grouper forms cohorts of four that latecomers can join. Then, for each round, a regrouper admits latecomers and splits the cohort into pairs, players decide with a time limit, a barrier waits for the partner, and both see the outcome.
 
+Played live, in `bargaining_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/bargaining_live>`__, each round's
+pairs bargain for up to a minute: either player can propose a split at any
+time, and either can accept the other's.
+
 Groups that carry on when members leave
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -356,6 +410,10 @@ and the payments agree.
 .. figure:: ../_static/images/design/groups/public_goods.svg
    :alt: A grouper forms groups of three that carry on with two. Then, for three rounds, players give tokens with a time limit, a barrier shares the pot, and everyone sees the results. Finally each player sees their bonus, or why the game ended early.
 
+Played live, in `public_goods_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods_live>`__, each
+member sees the others' contributions as they change, and can change their
+own until the round's time is up.
+
 Groups whose members change
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -378,6 +436,10 @@ after six rounds, and leave a tip for future members before they go.
 
 .. figure:: ../_static/images/design/groups/microsociety.svg
    :alt: A grouper forms a society of three that newcomers can join. Then, for each round of a membership, a barrier starts the round and admits newcomers, members fish with a time limit, a barrier scores the round and may retire the oldest member, and everyone sees all catches. Finally each member leaves a tip.
+
+Played live, in `microsociety_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety_live>`__, the
+society fishes on one lake without rounds: newcomers sail on while the
+others fish, and each member leaves in their own time.
 
 What to check when reviewing group experiments
 ----------------------------------------------

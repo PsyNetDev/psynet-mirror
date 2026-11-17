@@ -294,7 +294,8 @@ def food_text(n):
 
 
 def show_result(participant):
-    answer = participant.live_game_answers["snake_live"]
+    game = participant.live_games["snake_live"]
+    answer = None if game is None else game.answer
     if answer is None:
         return InfoPage("Your group couldn't play the game.", time_estimate=5)
     food = answer["score"]
@@ -396,9 +397,9 @@ class Exp(psynet.experiment.Experiment):
 
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
-        result = bot.live_game_results["snake_live"]
-        assert result.status == "ended", result.error
-        assert result.end_reason == "finished"
-        food = result.outcome["food"][result.participant_ids.index(bot.id)]
-        assert bot.live_game_answers["snake_live"]["score"] == food
+        game = bot.live_games["snake_live"]
+        assert game.status == "ended", game.error
+        assert game.end_reason == "finished"
+        food = game.outcome["food"][game.participant_ids.index(bot.id)]
+        assert game.answer["score"] == food
         assert bot.performance_reward == pytest.approx(BONUS_PER_FOOD * food)

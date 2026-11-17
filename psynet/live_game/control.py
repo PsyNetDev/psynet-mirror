@@ -19,7 +19,7 @@ from ..timeline import ResponseNotReady
 from ..utils import get_translator
 from .messages import _game_channel, _session_game_class, _session_participant_ids
 from .play import _check_reached_game, _live_game_id, _set_live_game_answer
-from .result import _has_outcome, _player_ending, live_game_result
+from .record import LiveGameRecord, _game_ended, _has_outcome, _player_ending
 
 # Seconds a page waits before resending a response refused because the
 # game's result isn't saved yet.
@@ -125,7 +125,7 @@ class LiveGameControl(NullControl):
 
     def check_ready_for_response(self, experiment, participant):
         session_id = _live_game_id(participant, self._play_id())
-        if session_id is None or live_game_result(session_id) is not None:
+        if session_id is None or _game_ended(session_id):
             return None
         if _player_ending(session_id, participant.id) is not None:
             return None
@@ -163,11 +163,12 @@ class LiveGameControl(NullControl):
         if ended_early is not None:
             reason, outcome = ended_early
         else:
-            result = live_game_result(session_id)
-            if not _has_outcome(result.status, result.outcome):
+            game = LiveGameRecord(session_id)
+            status, outcome = game.status, game.outcome
+            if not _has_outcome(status, outcome):
                 response.answer = None
                 return None
-            reason, outcome = result.end_reason, result.outcome
+            reason = game.end_reason
         participant_ids = _session_participant_ids(session_id)
         if participant.id not in participant_ids:
             # Added to a game that ended before it could add them.

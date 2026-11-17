@@ -12,7 +12,7 @@ from dallinger.realtime import Reject
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ..utils import get_logger
-from .registry import _live_game_class, _same_definition
+from .registry import _live_game_class
 
 logger = get_logger()
 
@@ -100,41 +100,6 @@ class LiveMessage(BaseModel):
         """
         return True
 
-    @classmethod
-    def saved_messages(cls, game_id):
-        """Return the messages of this type saved for a game, in the order
-        the game applied them, as :class:`SavedMessage` objects.
-
-        A message sent with this :attr:`type` whose fields can't be read,
-        such as one the game rejected for them, is included with ``message``
-        ``None``.
-
-        Parameters
-        ----------
-
-        game_id
-            The game's id, as :attr:`Participant.live_game_ids <psynet.participant.Participant.live_game_ids>` gives it.
-
-        Raises
-        ------
-
-        KeyError
-            If there is no game ``game_id``.
-
-        ValueError
-            If the game doesn't list this message type in its
-            :attr:`~LiveGame.messages`, or the game isn't defined because
-            the module that defines it hasn't been imported.
-        """
-        game_class = _session_game_class(game_id)
-        listed = game_class._message_types.get(cls.type)
-        if not listed or not _same_definition(listed, cls):
-            raise ValueError(
-                f"Game {game_id} is a game of {game_class.channel!r}, "
-                f"which doesn't list {cls.__name__} in its messages."
-            )
-        return _saved_messages(game_id, {cls.type: cls}, only_type=cls.type)
-
 
 def _parse_message(message_types, message):
     if (
@@ -161,8 +126,8 @@ def _parse_message(message_types, message):
 @dataclasses.dataclass(frozen=True)
 class SavedMessage:
     """A message that a player's page, or a bot, sent in a live game, as
-    the game's record saved it. :meth:`LiveGame.saved_messages` and
-    :meth:`LiveMessage.saved_messages` return them.
+    the game's record saved it. A game record's
+    :attr:`~LiveGameRecord.messages` returns them.
     """
 
     #: The message, as an instance of its :class:`LiveMessage` subclass, or
@@ -214,6 +179,17 @@ class SavedMessage:
     #: The time of the view the page was showing when it sent the message,
     #: in seconds since the game started, like :attr:`time`.
     view_time: float | None
+
+    @property
+    def type(self) -> str | None:
+        """The message's type, as the page sent it, such as ``"choose"``,
+        including for a message whose :attr:`message` is ``None``. Pick out
+        one type of message with it::
+
+            choices = [m for m in game.messages if m.type == "choose"]
+        """
+        payload = self.payload
+        return payload.get("type") if isinstance(payload, dict) else None
 
 
 def _game_channel(session_id):

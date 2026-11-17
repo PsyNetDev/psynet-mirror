@@ -357,10 +357,10 @@ class Exp(psynet.experiment.Experiment):
             {"number": 2, "throws": 3, "reward_per_win": 0.10},
         ]
         # The bot's latest game is its second.
-        result = bot.live_game_results["rock_paper_scissors"]
-        assert result.status == "ended", result.error
-        assert result.end_reason == "finished"
-        assert trials[-1].group_round.live_game_outcome == result.outcome
+        game = bot.live_games["rock_paper_scissors"]
+        assert game.status == "ended", game.error
+        assert game.end_reason == "finished"
+        assert trials[-1].group_round.live_game == game
         reward = 0
         for trial in trials:
             throws = trial.answer["throws"]

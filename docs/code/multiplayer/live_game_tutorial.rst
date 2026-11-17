@@ -23,12 +23,18 @@ can run each demo, change it and see what happens.
     Players move around a canvas collecting coins, and each page draws
     everyone's movement smoothly.
 
-Before you start, you should know how a PsyNet timeline is put together
-(:doc:`/code/writing_a_timeline`), how trials work, and how participants
-are put into groups (:doc:`synchronization`). The game pages are written in
-JavaScript, so it helps if you have written a little of it.
-:doc:`live_games` is the reference for everything shown here, and it
-covers cases that this tutorial leaves out.
+Read it once from start to end: each part builds on the one before. If you're
+still deciding whether your experiment needs a live game, read
+:ref:`design-groups-live-games` first, which says when one suits an
+experiment and the decisions it raises. Before you start, you should know how
+a PsyNet timeline is put together (:doc:`/code/writing_a_timeline`), how
+trials work, and how participants are put into groups
+(:doc:`synchronization`). The game pages are written in JavaScript, so it
+helps if you have written a little of it.
+
+:doc:`live_games` is the reference, for looking things up once you're
+building your own game. Each section here ends with a link to the matching
+section there, which covers the cases this tutorial leaves out.
 
 How a live game works
 ---------------------
@@ -101,8 +107,9 @@ buttons and the bots. ``GAMES``, ``RESULT_SECONDS`` and ``LATE_AFTER`` are
 used by the timeline, which "Adding the game to the timeline" below
 describes.
 
-PsyNet numbers a game's players from 0, in the order they joined the group, so the
-two players here are 0 and 1, and ``1 - player`` is the other one. A throw's
+PsyNet numbers a game's players in the order they joined the game, from 0,
+and those who start it together in seat order, so the two players here are 0
+and 1, and ``1 - player`` is the other one. A throw's
 choices are a list, in player order, such as ``["rock", "paper"]``.
 ``result_for`` says how a throw went for one player, ``throws_seen_by``
 lists the throws played so far as one player sees them, and ``count`` counts
@@ -151,6 +158,8 @@ receive the state but not the settings, so ``initial_state`` puts what they
 need into the state. A game that is always played the same way can leave
 ``settings`` out of ``initial_state``.
 
+Reference: :ref:`live-games-the-game`.
+
 The message
 ~~~~~~~~~~~
 
@@ -187,6 +196,8 @@ a late one meant for a throw that has already finished.
 Before ``apply`` runs, PsyNet checks the message against its fields. A
 message whose ``throw`` isn't a whole number, or whose ``action`` isn't one of
 the three listed, is rejected without reaching ``apply``.
+
+Reference: :ref:`live-games-messages`.
 
 What each player sees
 ~~~~~~~~~~~~~~~~~~~~~
@@ -229,6 +240,8 @@ and your analysis can tell a finished game from one that ended early.
 Without ``answer``, every player's answer would be the whole outcome, and
 code reading it would need the player's number to find their part.
 
+Reference: :ref:`live-games-the-game` and :ref:`live-games-answer`.
+
 Bots
 ~~~~
 
@@ -243,7 +256,9 @@ JavaScript. Instead, the game plays for them through its ``bot`` method:
 the message the bot sends next, or ``None`` when the bot has nothing to do.
 Here, a bot that has already chosen this throw waits, and otherwise it
 chooses at random. ``bot`` must return ``None`` once the bot has nothing to
-do, or the bots would play forever (see :ref:`live-games-bots`).
+do, or the bots would play forever.
+
+Reference: :ref:`live-games-bots`.
 
 Adding the game to the timeline
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -270,8 +285,8 @@ shows the game page, and then scores and pays for the game:
   ``settings`` are the number of throws from the trial's definition, which
   the game's ``initial_state`` receives. Its ``id_`` names the step, which
   keys the participant's records of their games, such as
-  ``participant.live_game_results`` in the test below; without one it would
-  be the game's ``channel``.
+  ``bot.live_games`` in the test below; without one it would be the game's
+  ``channel``.
 - ``late_after`` limits the wait for the pair. A partner who keeps the other
   player waiting more than ``LATE_AFTER`` seconds is late, and with
   ``late_action="leave_group"`` leaves the pair. The player who was on time
@@ -363,6 +378,8 @@ page in time, so ``show_result`` checks for that first. Its ``time_limit``
 moves the page on after ``RESULT_SECONDS``, which keeps the wait for the
 next game short.
 
+Reference: :ref:`live-games-page`, including :ref:`the wait before the game <live-games-wait>`.
+
 The game page
 ~~~~~~~~~~~~~
 
@@ -441,14 +458,46 @@ played: it has started, which it does once both pages have opened (Part 2
 explains this ready step), and hasn't ended. The buttons are enabled only
 while it is, and the player hasn't chosen yet.
 
+Reference: :ref:`live-games-page`, :ref:`live-games-status` and
+:ref:`live-games-cases`.
+
+.. _live-game-tutorial-predict:
+
 Showing a choice at once
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-A view usually arrives within a fraction of a second of the player's click.
-But sometimes a view that the partner's choice caused arrives first, and that
-view doesn't include the player's own choice yet. Drawn as it is, it would
-enable the buttons again for a moment. The page avoids this by telling
-``psynet.liveGame`` what a ``Choose`` message will do to the view:
+Only the server changes the state, so a player's own move shows on their
+page only once the server has applied it and sent back a view: a round trip,
+usually a tenth of a second or so, and more on a slow connection. In a fast
+game, that lag is enough to feel. And a view caused by another player's move
+can arrive in between, which doesn't have the player's move yet, so drawn as
+it is, it would briefly undo the move.
+
+The page avoids both by telling ``psynet.liveGame`` what each of its
+messages will do to the view. In a game on a board, where a ``move`` message
+gives the player's new square, that would be:
+
+.. code-block:: javascript
+
+    psynet.liveGame.predict((view, type, message) => {
+      if (type === "move") {
+        view.positions[psynet.liveGame.player] = message.to;
+      }
+    });
+
+The callback gets a copy of the newest view and changes it as the game will
+once it applies the message. ``predictedView()`` then returns the newest view
+with each of the page's messages that the game hasn't applied yet applied
+this way, so the page draws from it, in ``onView`` and after each ``send``,
+and the player's piece moves the moment they click. Once the game's own view
+with the move arrives, the prediction is no longer needed, and if the game
+rejects the move, the next view drops it.
+
+Rock, paper, scissors has the same problem in a small way. When both players
+choose at nearly the same moment, the view that the partner's choice caused
+can arrive first, and it says the player hasn't chosen, so the page would
+enable the buttons again for a moment. Its prediction marks the throw as
+chosen, for a choice in the throw the view is on:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
    :language: javascript
@@ -456,9 +505,11 @@ enable the buttons again for a moment. The page avoids this by telling
    :end-before: function describe(
    :dedent:
 
-``predictedView()`` then returns the latest view with this change applied
-for each of the page's messages that the game hasn't answered yet. Many
-games don't need this. The snake demo below draws each view as it arrives.
+Many games don't need this. The snake demo below draws each view as it
+arrives, since its snakes move only on the game's ticks anyway. Part 3 uses
+``predict`` to move the player's own piece on a canvas.
+
+Reference: :ref:`live-games-smooth-play`.
 
 Part 2: Snake
 -------------
@@ -516,6 +567,8 @@ next one from ``next_deadline``. Don't keep them on ``self``: one game object
 plays many games, and a game can move to another process. The
 ``microsociety_live`` demo does this for its catches.
 
+Reference: :ref:`live-games-ready` and :ref:`live-games-time-limits`.
+
 The message says what the player wants
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -560,6 +613,8 @@ Snake isn't played in a trial, so the game pays the reward itself, through its
 ``performance_reward`` works out each player's reward from the game's
 outcome, which is why the outcome lists how much food each snake ate, in
 player order. PsyNet pays it once, when the game's result is saved.
+
+Reference: :ref:`live-games-rewards`.
 
 The snake page
 ~~~~~~~~~~~~~~
@@ -619,6 +674,9 @@ seconds as ``now`` on the server:
    :end-before: // The game moves every snake on its ticks
    :dedent:
 
+Reference: :ref:`live-games-time-limits`, for ``onTimeLeft`` and
+``gameTime()``.
+
 Part 3: Shared canvas
 ---------------------
 
@@ -649,6 +707,8 @@ a page sends, its player can't move faster than the rules allow. The general
 point is that a message is a request from the participant's browser, which
 they control, so the game should check anything that matters to the result.
 
+Reference: :ref:`live-games-messages`.
+
 Smooth movement on the page
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -662,8 +722,8 @@ lag a fraction of a second behind their key presses. The page avoids both:
    :end-at: live.interpolate(interpolate);
    :dedent:
 
-``predict`` works as in rock, paper, scissors. Here, it moves the player's
-own piece at once, using ``advance``, which repeats the arithmetic of the
+``predict`` works as in `Showing a choice at once`_, the board example there
+in particular. Here, it moves the player's own piece at once, using ``advance``, which repeats the arithmetic of the
 game's own ``advance`` in ``experiment.py``. ``interpolate`` takes the views
 of two ticks and returns a view part of the way between them:
 
@@ -678,6 +738,8 @@ piece from ``live.predictedView()``, moved on by the movement that the page
 hasn't sent yet, which the demo's ``shownView`` function adds. It draws the
 other players from ``live.interpolatedView()``, which shows them a little in
 the past, moving smoothly between two ticks.
+
+Reference: :ref:`live-games-smooth-play`.
 
 Saving fewer messages
 ~~~~~~~~~~~~~~~~~~~~~
@@ -698,6 +760,8 @@ messages, such as each player's ready message, are always saved. A message that
 isn't saved can't be recovered later, so decide what your analysis needs
 before you leave anything out.
 
+Reference: :ref:`live-games-saved-messages`.
+
 Testing your game
 -----------------
 
@@ -711,11 +775,10 @@ and that each trial's score and reward match the throws the bot won:
    :pyobject: Exp.test_check_bot
    :dedent:
 
-``bot.live_game_results`` gives, for each ``PlayLiveGame`` the participant
-reached, keyed by its ``id_``, how their latest game there ended and what
-its outcome was, here their second game. ``participant.live_game_answers``
-gives their answers in the same way, as snake's result page reads its
-player's answer.
+``bot.live_games`` gives, for each ``PlayLiveGame`` the participant reached,
+keyed by its ``id_``, the record of their latest game there, here their
+second game: how it ended, its outcome, the participant's answer and the
+game's messages. Snake's result page reads its player's answer the same way.
 
 To test a game's rules without starting the experiment, play it in Python
 with :class:`~psynet.live_game.testing.LocalGame`, which calls the game's
@@ -728,7 +791,8 @@ methods as PsyNet does. The demos' rule tests, such as
     game.send(0, Choose(throw=1, action="rock"))
     assert game.view(1)["partner_chosen"]
 
-:ref:`live-games-bots` shows more of what ``LocalGame`` can do.
+Reference: :ref:`live-games-bots`, which shows more of what ``LocalGame``
+can do.
 
 Bots don't run the page's JavaScript, so also play the game yourself, in a
 browser window for each player. Try reloading the page during the game,
@@ -748,9 +812,10 @@ records when it arrived, as a date and time. It also records the time on the
 participant's own computer when their page sent the message, and when the
 view the participant was looking at when they acted was made.
 
-:ref:`live-games-saved-messages` shows how to read a game's messages in
-Python, with each one's time in seconds since the game started, the clock
-the game's methods use. :doc:`/data/exporting_data` explains how to export
+In Python, a participant's ``live_games`` gives each game's record, and a
+round's ``live_game`` the game played in it (see :ref:`live-games-record`),
+with each message's time in seconds since the game started, the clock the
+game's methods use. :doc:`/data/exporting_data` explains how to export
 the experiment's data.
 
 Next steps

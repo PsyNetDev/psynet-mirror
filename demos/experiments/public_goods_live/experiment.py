@@ -23,7 +23,6 @@ from psynet.live_game import (
     LiveMessage,
     PlayLiveGame,
     Reject,
-    live_game_result,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
@@ -258,10 +257,10 @@ class Exp(psynet.experiment.Experiment):
             [t.answer for t in trials],
         )
         for trial in trials:
-            game = live_game_result(trial.group_round.live_game_id)
+            game = trial.group_round.live_game
             player = game.participant_ids.index(bot.id)
             assert trial.answer["contributed"] == bot_contribution(player)
-            outcome = trial.group_round.live_game_outcome
+            outcome = game.outcome
             contributions = outcome["contributions"]
             assert contributions == [
                 bot_contribution(player) for player in range(len(contributions))

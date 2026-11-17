@@ -428,7 +428,8 @@ def coins_text(n):
 
 
 def show_result(participant):
-    answer = participant.live_game_answers["shared_canvas_live"]
+    game = participant.live_games["shared_canvas_live"]
+    answer = None if game is None else game.answer
     if answer is None:
         return InfoPage("Your group couldn't play the game.", time_estimate=5)
     coins = answer["score"]
@@ -524,16 +525,13 @@ class Exp(psynet.experiment.Experiment):
 
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
-        result = bot.live_game_results["shared_canvas_live"]
-        assert result.status == "ended", result.error
-        assert result.end_reason == "finished"
-        me = result.participant_ids.index(bot.id)
-        assert (
-            bot.live_game_answers["shared_canvas_live"]["score"]
-            == result.outcome["coins"][me]
-        )
-        collected = result.outcome["collected"]
-        coins = result.outcome["coins"][me]
+        game = bot.live_games["shared_canvas_live"]
+        assert game.status == "ended", game.error
+        assert game.end_reason == "finished"
+        me = game.participant_ids.index(bot.id)
+        assert game.answer["score"] == game.outcome["coins"][me]
+        collected = game.outcome["collected"]
+        coins = game.outcome["coins"][me]
         assert coins == sum(entry["by"] == me for entry in collected)
-        assert sum(result.outcome["coins"]) == len(collected)
+        assert sum(game.outcome["coins"]) == len(collected)
         assert bot.performance_reward == pytest.approx(BONUS_PER_COIN * coins)

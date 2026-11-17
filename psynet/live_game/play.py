@@ -3,21 +3,21 @@ each participant's record of the games they played.
 
 PlayLiveGame resolves into a group barrier, which starts the game when
 it releases the group, followed by the game page. The barrier stores the
-game's id in each member's ``live_games``, keyed by the step's id, and
+game's id in each member's ``live_game_data``, keyed by the step's id, and
 the page's LiveGameControl reads it from there, and saves the player's
 answer beside it. Reaching the barrier sets the id to ``None`` first, so the
 page finds only the game from the participant's latest visit, and a step
 without a record is one the participant never reached. The record also keeps
-every game the participant played at the step, its ``history``.
-Participant.live_game_ids, live_game_answers, live_game_results and
-live_game_history read it.
+every game the participant played at the step, with their answer in each,
+its ``history``. Participant.live_games and live_game_history read it, as
+LiveGameRecord objects.
 
 With ``join_running_game``, a participant whose group is playing a game
 from the step is added to that game instead, and skips the barrier.
 
 A PlayLiveGame in a trial also records the id on the trial's
 SyncGroupRound, as ``live_game_id``, beside the outcome. That record
-lasts, so it's the one to use in an analysis, while ``live_games`` holds
+lasts, so it's the one to use in an analysis, while ``live_game_data`` holds
 only each step's latest game, and is what the game page reads, including
 for a game played outside a trial, which has no round.
 """
@@ -120,8 +120,8 @@ class PlayLiveGame(EltCollection):
 
     id_
         A name for this step, the game's ``channel`` unless given, which
-        keys the participant's :attr:`~psynet.participant.Participant.live_game_ids`
-        and the other records of their games, for example to read the game's
+        keys the participant's :attr:`~psynet.participant.Participant.live_games`
+        and :attr:`~psynet.participant.Participant.live_game_history`, for example to read the game's
         answer on a later page. Steps with the same id share their wait,
         like barriers with the same id, so give a game that the timeline
         plays in two places, such as a practice game and the main game, a
@@ -435,11 +435,11 @@ def _checked_settings(game_class, settings):
 def _live_game_id(participant, play_id):
     """Return the id of the participant's latest game at the PlayLiveGame
     ``play_id``, or None."""
-    return _live_game_records(participant).get(play_id, {}).get("id")
+    return _live_game_data(participant).get(play_id, {}).get("id")
 
 
 def _check_reached_game(participant, play_id):
-    if play_id not in _live_game_records(participant):
+    if play_id not in _live_game_data(participant):
         raise ValueError(
             f"Participant {participant.id} hasn't reached the PlayLiveGame "
             f"{play_id!r}, whose game page they were shown. Only its "
@@ -447,31 +447,61 @@ def _check_reached_game(participant, play_id):
         )
 
 
-def _live_game_records(participant):
-    """Return the participant's record of each PlayLiveGame they reached,
-    keyed by its id: their latest game's ``id`` there, or None, their
-    ``answer`` in it, and the ``history`` of every game they played there."""
-    return participant.live_games or {}
+def _live_game_data(participant):
+    """Return what PsyNet stored about each PlayLiveGame the participant
+    reached, keyed by its id: the ``id`` of their latest game there, or None
+    if their group didn't start one, and the ``history`` of every game they
+    played there, as ``{"id": game_id, "answer": answer}``, oldest first."""
+    return participant.live_game_data or {}
 
 
 def _set_live_game_id(participant, play_id, game_id):
-    record = _live_game_records(participant).get(play_id, {})
-    history = list(record.get("history", []))
-    if game_id is not None and game_id not in history:
-        history.append(game_id)
-    _set_record(
-        participant, play_id, {"id": game_id, "answer": None, "history": history}
-    )
+    data = _live_game_data(participant).get(play_id, {})
+    history = list(data.get("history", []))
+    if game_id is not None and all(game["id"] != game_id for game in history):
+        history.append({"id": game_id, "answer": None})
+    _set_data(participant, play_id, {"id": game_id, "history": history})
 
 
 def _set_live_game_answer(participant, play_id, answer):
-    record = _live_game_records(participant)[play_id]
-    _set_record(participant, play_id, {**record, "answer": answer})
+    data = _live_game_data(participant)[play_id]
+    history = [
+        {**game, "answer": answer} if game["id"] == data["id"] else game
+        for game in data["history"]
+    ]
+    _set_data(participant, play_id, {**data, "history": history})
 
 
-def _set_record(participant, play_id, record):
+def _set_data(participant, play_id, data):
     # A new dict, which is what marks the column as changed.
-    participant.live_games = {**_live_game_records(participant), play_id: record}
+    participant.live_game_data = {**_live_game_data(participant), play_id: data}
+
+
+def _participant_live_games(participant):
+    """Return Participant.live_games."""
+    from .record import LiveGameRecord
+
+    games = {}
+    for play_id, data in _live_game_data(participant).items():
+        answers = {game["id"]: game["answer"] for game in data.get("history", [])}
+        game_id = data.get("id")
+        games[play_id] = (
+            None if game_id is None else LiveGameRecord(game_id, answers.get(game_id))
+        )
+    return games
+
+
+def _participant_live_game_history(participant):
+    """Return Participant.live_game_history."""
+    from .record import LiveGameRecord
+
+    return {
+        play_id: [
+            LiveGameRecord(game["id"], game["answer"])
+            for game in data.get("history", [])
+        ]
+        for play_id, data in _live_game_data(participant).items()
+    }
 
 
 def _running_game_query(members, play_id):
@@ -488,18 +518,20 @@ def _running_game_query(members, play_id):
     )
 
 
-def _running_live_game_ids(group):
-    """Return SyncGroup.running_live_game_ids."""
+def _running_live_games(group):
+    """Return SyncGroup.running_live_games."""
+    from .record import LiveGameRecord
+
     members = group.active_participants
     play_ids = {
         play_id
         for member in members
-        for play_id, record in _live_game_records(member).items()
-        if record.get("id") is not None
+        for play_id, data in _live_game_data(member).items()
+        if data.get("id") is not None
     }
     running = {}
     for play_id in sorted(play_ids):
         row = _running_game_query(members, play_id).first()
         if row is not None:
-            running[play_id] = row.id
+            running[play_id] = LiveGameRecord(row.id)
     return running

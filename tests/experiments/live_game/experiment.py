@@ -120,7 +120,7 @@ class Exp(psynet.experiment.Experiment):
 
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
-        session_id = bot.live_game_ids.get("pick_numbers")
+        session_id = bot.live_games["pick_numbers"].id
         session = (
             db.session.query(
                 RealtimeSession.status,

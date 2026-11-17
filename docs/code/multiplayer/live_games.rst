@@ -10,9 +10,11 @@ server keeps one state for the whole group, applies each player's messages
 to it in the order they arrive, and sends each player's page its own view of
 the game.
 
-This page is the reference, for looking things up. If you haven't built a
-live game before, start with the :doc:`tutorial <live_game_tutorial>`,
-which builds three demo games step by step.
+This page is the reference, for looking things up rather than reading
+through. If you haven't built a live game before, start with
+:ref:`design-groups-live-games`, on when a live game suits an experiment and
+the decisions it raises, and then the :doc:`tutorial <live_game_tutorial>`,
+which builds three demo games step by step and links to the sections here.
 
 A live game has three pieces:
 
@@ -43,12 +45,12 @@ reward
     What a player is paid for the game (see `Rewards`_).
 record
     What is saved about a game: its outcome, its final state and the
-    messages its pages sent (see `Saved messages`_). The game page moves on
-    once the record is saved.
+    messages its pages sent. A :class:`~psynet.live_game.LiveGameRecord`
+    reads it back (see `A game's record`_). The game page moves on once the
+    record is saved.
 game id
-    The id of one game a group played, which a participant's
-    :attr:`~psynet.participant.Participant.live_game_ids` gives. Dallinger
-    calls a game a *session*, so its tables and functions say ``session``.
+    The id of one game a group played, a record's ``id``. Dallinger calls a
+    game a *session*, so its tables say ``session``.
 
 .. _live-games-the-game:
 
@@ -89,10 +91,12 @@ A game's ``outcome`` is its final state, without PsyNet's entry, unless it
 defines ``outcome`` to return less, such as only what the analysis needs from
 a large state.
 
-The players are numbered from 0 in the order of their seats in the group,
-the order in which they joined it (see :attr:`~psynet.sync.SyncGroup.seats`),
-which is also the order in which a :class:`~psynet.group_prompt.GroupPrompt`
-shows the group. Each method gets the player's number as ``player``, and
+Players are numbered in the order they joined the game, from 0. Those who
+start it together are numbered in seat order (see
+:attr:`~psynet.sync.SyncGroup.seats`), the order in which a
+:class:`~psynet.group_prompt.GroupPrompt` shows the group, and a player who
+joins a running game gets the next number. Each method gets the player's
+number as ``player``, and
 pages see only these numbers, never another player's participant id. A
 game in which a player's position matters, such as who moves first, should
 take it from a role, such as a :class:`~psynet.sync.Regrouper`'s
@@ -114,6 +118,8 @@ PsyNet adds each game to the experiment's ``realtime_games`` itself, so you
 don't list it there. It adds every game that Python has loaded, whether or
 not the timeline plays it. That includes a game in a module you import from
 another experiment, so give every game a channel of its own.
+
+.. _live-games-messages:
 
 Messages and the state
 ----------------------
@@ -160,6 +166,8 @@ a stored date back into a datetime with
 of a set, whose list has no fixed order. A game with a very large
 state, such as a big grid, can save the time the conversion takes with
 :attr:`~psynet.live_game.LiveGame.convert_state_to_json`.
+
+.. _live-games-page:
 
 Starting games and the game page
 --------------------------------
@@ -222,20 +230,22 @@ grouper's groups no larger than the game allows.
 .. _live-games-wait:
 
 ``PlayLiveGame`` takes the options of a :class:`~psynet.sync.GroupBarrier`
-for its wait, and needs a limit on it, one of two kinds:
+for its wait, and needs a limit on it. Use ``late_after`` unless the group
+takes newcomers:
 
-- ``late_after``, with ``late_action="leave_group"``, is usually the one. A
-  member who keeps the others waiting that many seconds is late and leaves
-  the group, and the members who were on time reach the game page without a
-  game. Give the pages before the game a ``time_limit``, such as
+- ``late_after``, with ``late_action="leave_group"``, waits for the slowest
+  member, and removes them from the group if they keep the others waiting
+  that many seconds. The members who were on time then reach the game page
+  without a game. Give the pages before the game a ``time_limit``, such as
   instructions or the last game's result: ``late_after`` counts only once a
   page's time limit has run out, so it only has to cover the untimed
   moments. The group's grouper needs a ``below_quorum``, such as
   ``"continue_without_group"``, for the members left behind.
-- ``max_wait_time``, with ``max_wait_action="leave_group"``, moves on the
-  members who wait instead, after that many seconds from when each arrived.
-  Use it for a group that takes newcomers, which ``late_after`` can't wait
-  for, as in the ``microsociety_live`` demo.
+- ``max_wait_time``, with ``max_wait_action="leave_group"``, is for a group
+  that takes newcomers, as in the ``microsociety_live`` demo. There PsyNet
+  can't tell a slow member from one who hasn't joined yet, so it can't use
+  ``late_after``. Instead each member waits ``max_wait_time`` seconds from
+  when they arrive, and then leaves the group themselves.
 
 .. code-block:: python
 
@@ -346,106 +356,149 @@ function, which PsyNet runs each time the page opens
 
 ``psynet.liveGame`` offers:
 
-Whether there's a game to play:
+Showing the game:
 
-- ``hasGame`` says whether the group started a game at the
-  ``PlayLiveGame``. Without one, PsyNet shows the participant a notice and
-  hides the page's elements marked ``data-live-game``, and the other methods
-  do nothing, so the page needn't check it, unless it has work of its own,
-  such as an animation loop, that it shouldn't start (see `No game`_).
-- ``started`` says whether the game has started, and ``ended`` whether the
-  player's game has ended, which so far is when the game ends (see `The
-  end`_). In ``onView``, both are already up to date for the view. On a
-  page that opens after the end, ``started`` stays ``false``, so check
-  ``ended`` first. ``playing`` says whether it has started and not ended,
-  for a check such as before sending a key press.
-- ``player`` is this player's number, as the game's methods see it, from
-  the page's first view.
-
-Time:
-
-- ``gameTime()`` returns the seconds since the game started, the same clock
-  as ``now`` in the game's methods, or ``null`` before the game starts.
-  Compare it with a time the game put in the view, such as when a crashed
-  player comes back.
-- ``duration`` is the game's ``duration`` in seconds, and ``secondsLeft()``
-  the seconds until it ends, 0 once the game has ended. Both are ``null``
-  before the game starts or for a game without a ``duration`` (see `Time
-  limits`_).
-- ``onTimeLeft(callback)`` calls ``callback`` with ``secondsLeft()`` a few
-  times a second, for a countdown, until the participant leaves the page.
-- ``showResultFor`` is the control's ``show_result_for``, for a countdown
-  while the page shows the result (see `The end`_).
-
-Sending messages:
-
-- ``send(type, message)`` sends the game a message, and returns its number,
-  or ``undefined`` once the page's connection is closed or refused.
-- ``showStatus(element, playing)`` keeps ``element`` showing the game's
-  status: the control's ``waiting_status`` until the game starts, what
-  ``playing(view)`` returns while it's played, and the control's
-  ``ended_status`` once the player's game has ended, translated by default.
-  With a ``predict`` callback, ``playing`` gets the predicted view. A third
-  argument, ``{waiting, ended}``, replaces the control's texts, and
-  ``ended`` can be a function of the final view, such as for "You made a
-  deal." or "Time's up: no deal."
-- ``showRejections(element)`` shows the reason the game rejected the page's
-  latest message in ``element``, until the page sends its next message, as
-  the example does.
-- ``onRejected(callback)`` calls ``callback`` with the number of each message
-  the game rejected and the reason, to show it some other way.
-- ``enableWhilePlaying(...elements)`` enables the elements, such as
-  buttons, only while the game is played: they are disabled until it
-  starts, and again once it ends.
-
-Views:
-
-- ``onView(callback)`` calls ``callback`` with each new view, what the game's
-  ``view`` returns for this player, ending with the final view. A page that
-  opens after the game has ended gets just the final view.
-- ``predict(callback)`` and ``predictedView()`` show the player's own
-  messages at once. ``callback(view, type, message, sentAt)`` changes a view
-  as the game will once it applies the message, and ``predictedView()``
-  returns the newest view with the page's messages that the game hasn't
-  applied yet applied by ``callback``. Draw from it in ``onView`` and after
-  ``send``. ``sentAt`` is the game time when the page sent the message
-  (``null`` if it wasn't known yet), and stays the same each time the
-  callback runs again for a new view, so use it to predict when something
-  happens, such as when a boat that is moving arrives.
-  Without it, a view that arrives just after the player's move, such as one
-  the partner's move caused, doesn't show that move yet.
-- ``interpolate(callback)`` and ``interpolatedView()`` show other players
-  moving smoothly, in a game whose ``tick_rate`` is above 0.
-  ``callback(a, b, fraction)`` returns a new view part of the way between two
-  tick views. Unlike ``predict``'s callback, it must leave ``a`` and ``b``
-  unchanged, since they're the tick views the page keeps.
-  ``interpolatedView()`` returns the game two tick intervals in the past,
-  between the tick views either side of that time. Call it each time the page
-  draws, and draw the player's own piece from ``predictedView()``. Without it,
-  other players jump from one tick to the next.
-
-Events in the game:
-
+- ``onView(callback)`` calls ``callback`` with each new view, ending with
+  the final view.
+- ``showStatus(element, playing)`` keeps a status line up to date (see `The
+  status line`_).
+- ``enableWhilePlaying(...elements)`` enables buttons and other elements
+  only while the game is played.
+- ``player`` is this player's number.
+- ``started`` and ``ended`` say whether the game has started and whether
+  the player's game has ended, and ``playing`` whether it has started and
+  not ended.
+- ``hasGame`` says whether the group started a game at all (see `No game`_).
 - ``onStarted(callback)`` calls ``callback`` with the first view once the
-  game has started, or at once if it already has. A page that opens after
-  the game has ended gets ``onEnded`` instead.
-- ``onEnded(callback)`` calls ``callback`` once the player's game ends,
-  with why it ended and the player's final view, which ``onView`` has
-  already had.
+  game starts.
+
+Sending moves:
+
+- ``send(type, message)`` sends the game a message and returns its number.
+- ``showRejections(element)`` shows why the game rejected the page's latest
+  message.
+- ``onRejected(callback)`` calls ``callback`` with the number of each
+  rejected message and the reason, to show it some other way.
+
+Showing time:
+
+- ``onTimeLeft(callback)`` calls ``callback`` with the seconds left, a few
+  times a second, for a countdown.
+- ``gameTime()`` returns the seconds since the game started, the clock of
+  ``now`` in the game's methods.
+- ``duration`` and ``secondsLeft()`` give the game's ``duration`` and the
+  seconds left in it (see `Time limits`_).
+
+Smooth play (see `Smooth play`_):
+
+- ``predict(callback)`` and ``predictedView()`` show the player's own moves
+  at once.
+- ``interpolate(callback)`` and ``interpolatedView()`` show other players
+  moving smoothly between ticks.
+
+At the end, and when players leave:
+
+- ``onEnded(callback)`` calls ``callback`` once the player's game ends (see
+  `The end`_).
+- ``onResultSaved(callback)`` calls ``callback`` once the player's result is
+  saved, and ``onRefused(callback)`` if the server refuses the page's
+  connection. Either way, the page then moves on by itself.
+- ``showResultFor`` is the control's ``show_result_for``, for a countdown
+  while the page shows the result.
 - ``onPlayersAway(callback)`` calls ``callback`` with the numbers of the
-  players who have left the game page and not come back (see `Joining and
-  leaving`_).
-- ``onResultSaved(callback)`` and ``onRefused(callback)`` call ``callback``
-  once the player's result is saved, or with the close code and reason if
-  the server refuses the page's connection. Either way, the page then moves
-  on by itself (see `The end`_).
+  players who have left the game page (see `Joining and leaving`_).
 
-Anything else:
+And ``socket`` is the page's Dallinger socket, such as for ``serverTime``.
 
-- ``socket`` is the page's Dallinger socket, such as for ``serverTime``.
+In ``onView``, ``started``, ``ended`` and ``playing`` are already up to date
+for the view. On a page that opens after the end, ``started`` stays
+``false``, so check ``ended`` first, and the page gets just the final view
+and ``onEnded``, not ``onStarted``. ``player`` is set from the page's first
+view. ``gameTime()`` is ``null`` before the game starts, and so are
+``duration`` and ``secondsLeft()``, which are also ``null`` for a game
+without a ``duration``. ``send`` returns ``undefined`` once the page's
+connection is closed or refused. ``enableWhilePlaying`` disables its
+elements until the game starts, and again once it ends.
+
+.. _live-games-status:
+
+The status line
+~~~~~~~~~~~~~~~
+
+``showStatus(element, playing)`` keeps ``element`` saying what's happening:
+
+- before the game starts, the control's ``waiting_status``, "Waiting for
+  the other players to open the game" by default;
+- while it's played, what ``playing(view)`` returns for each view;
+- once the player's game has ended, the control's ``ended_status``, "The
+  game is over." by default.
+
+The default texts are translated. A third argument, ``{waiting, ended}``,
+replaces the control's texts on one page, and ``ended`` can be a function of
+the final view:
+
+.. code-block:: javascript
+
+    psynet.liveGame.showStatus(status, (view) => `Offer: ${view.offer}`, {
+      ended: (view) => (view.deal ? "You made a deal." : "Time's up: no deal."),
+    });
+
+With a ``predict`` callback, ``playing`` gets the predicted view, and the
+line is drawn again after each ``send``.
+
+.. _live-games-smooth-play:
+
+Smooth play
+~~~~~~~~~~~
+
+A page draws the game from the views the server sends, and those come with
+two delays that a fast game shows.
+
+The first is the player's own move. The page sends it, the server applies
+it, and the view with the move comes back a round trip later, usually a
+tenth of a second or so, more on a slow connection. Worse, a view caused by
+another player's move can arrive in between, which doesn't have the
+player's move yet, so the page would briefly undo it, such as by enabling
+buttons the player has just used. ``predict`` fixes both. Its callback
+changes a view as the game will once it applies one of the page's messages,
+and ``predictedView()`` returns the newest view with each message the game
+hasn't applied yet applied by the callback. Draw from it in ``onView`` and
+after ``send``. In a game on a board:
+
+.. code-block:: javascript
+
+    psynet.liveGame.predict((view, type, message) => {
+      if (type === "move") {
+        view.positions[psynet.liveGame.player] = message.to;
+      }
+    });
+
+    psynet.liveGame.onView(() => draw(psynet.liveGame.predictedView()));
+
+The callback gets a copy of the view, so it can change it, and runs again
+for each new view until the game has applied the message. A fourth argument,
+``sentAt``, is the game time when the page sent the message (``null`` if it
+wasn't known yet), the same each time, for predicting when something
+happens, such as when a moving boat arrives. If the game rejects the
+message, the prediction goes, and the page draws the view as the game has
+it. Keep the callback to what the game will certainly do, since the game's
+rules decide.
+
+The second delay is between ticks. A game that moves things by itself, with
+a ``tick_rate`` above 0, sends a view at each tick, so other players jump
+from one tick to the next. ``interpolate`` smooths this. Its callback,
+``callback(a, b, fraction)``, returns a new view part of the way between two
+tick views, and must leave ``a`` and ``b`` unchanged, since they're the tick
+views the page keeps. ``interpolatedView()`` returns the game two tick
+intervals in the past, between the tick views either side of that time. Call
+it each time the page draws, about 60 times a second, and draw the player's
+own piece from ``predictedView()``, so it isn't behind. The tutorial's
+shared canvas does both.
 
 The page leaves the game when the participant moves on, so ``activate``
 doesn't need to return a cleanup function for it.
+
+.. _live-games-cases:
 
 Cases a game page should allow for
 ----------------------------------
@@ -636,8 +689,7 @@ the state for the new player, such as by appending to each list in it:
             state["boats"].append({"spot": None, "joined_at": now or 0})
             state["fish"].append(0)
 
-A new player gets the next number, so later players' numbers follow the
-order they joined in, rather than their seats in the group. ``now`` is
+A new player gets the next number. ``now`` is
 ``None`` for a player added before the game starts, who has to be ready like
 the others. A new player is in ``state["psynet"]["away"]`` until their page
 opens, so an ``away_timeout`` covers one who never arrives. A game's
@@ -864,24 +916,13 @@ after the game page to score the round:
     pot = trial.group_round.live_game_outcome["pot"]
 
 It is ``None`` until then, and ``answer`` isn't called, for a game that
-failed without an outcome.
-
-On a later page, the participant's records of their games give the answer
-and the result, keyed by the ``PlayLiveGame``'s ``id_``, as
-``participant.active_sync_groups`` is keyed by group type:
+failed without an outcome. On a later page, the participant's record of the
+game has their answer (see `A game's record`_):
 
 .. code-block:: python
 
-    answer = participant.live_game_answers["snake_live"]  # None without a game
-    result = participant.live_game_results["snake_live"]  # None while running
-
-:attr:`~psynet.participant.Participant.live_game_ids` gives the id of the
-participant's latest game at each step, ``None`` if their group started no
-game there, and :attr:`~psynet.participant.Participant.live_game_history`
-every game they played at each step, oldest first, such as one per round of
-a loop. A step the participant never reached isn't in them. A group's
-:attr:`~psynet.sync.SyncGroup.running_live_game_ids` gives the games it is
-playing now, keyed in the same way.
+    game = participant.live_games["snake_live"]  # None without a game
+    answer = None if game is None else game.answer
 
 .. _live-games-rewards:
 
@@ -935,48 +976,77 @@ A game can fail without an outcome: its record couldn't be saved, or the
 game's ``outcome`` raised an error as well. The answer is then ``None`` and
 PsyNet doesn't call ``performance_reward``, but amounts from
 ``add_performance_reward`` saved before the problem are still paid. A game
-that must pay players whatever happens can pay them as it goes.
-:func:`~psynet.live_game.live_game_result` says how a game ended, and
-whether its record is complete.
+that must pay players whatever happens can pay them as it goes. A game's
+record says how it ended, and whether the record is complete (see `A game's
+record`_).
 
-.. _live-games-saved-messages:
+.. _live-games-record:
 
-Saved messages
---------------
+A game's record
+---------------
 
 Each game's record is saved with the experiment's data, in Dallinger's
 ``realtime_session`` and ``realtime_event`` tables: the game's outcome and
 final state, and each message a page sent, with whether the game accepted it.
-To read a game's messages in Python, call ``saved_messages`` on the game,
-for all of them, or on a message type, for that type's. On a later page:
+In Python, a :class:`~psynet.live_game.LiveGameRecord` reads it back. The
+participant's :attr:`~psynet.participant.Participant.live_games` gives one
+for their latest game at each ``PlayLiveGame``, keyed by its ``id_``, as
+``participant.active_sync_groups`` is keyed by group type:
 
 .. code-block:: python
 
-    game_id = participant.live_game_ids.get("rock_paper_scissors")
-    if game_id is not None:
-        for saved in Choose.saved_messages(game_id):
-            if saved.message is not None:
+    game = participant.live_games["rock_paper_scissors"]  # None if no game started
+    if game is not None and game.status == "ended":
+        game.answer  # this participant's answer
+        game.outcome, game.end_reason
+        for saved in game.messages:
+            if saved.type == "choose":
                 print(saved.player, saved.message.action, saved.time)
 
-``live_game_ids`` gives the game from the participant's latest visit to the
-``PlayLiveGame`` with that ``id_``, and ``None`` if their group didn't start
-one. ``participant.live_game_history`` gives every game they played there.
-In an analysis of a game played in a trial, each
-:class:`~psynet.sync.SyncGroupRound` also keeps its game's
-``live_game_id``.
+A record has:
 
-Each message is a :class:`~psynet.live_game.SavedMessage`, in the order the
-game applied them, with the sender's ``player`` number and ``participant_id``,
-and its ``time`` in seconds since the game started, negative for a message
-that arrived before the start. Its ``message`` is ``None`` if what the page
-sent can't be read as one of the game's message types, and its ``payload``
-holds what the page sent. ``PlayerReady.saved_messages(game_id)`` says when
-each player became ready.
+- ``id``, the game id;
+- ``status``, ``"running"`` until the game's result is saved, then
+  ``"ended"``, or ``"failed"`` if the game's code raised an error or its
+  record couldn't be saved, with the error in ``error``;
+- ``outcome`` and ``end_reason``, the game's outcome and the ``reason`` it
+  ended, both ``None`` while it runs;
+- ``answer``, the participant's answer on the game page;
+- ``participant_ids``, the players' participant ids in player order;
+- ``messages``, ``moments`` and ``checkpoints``, below;
+- ``record_complete``, which is ``False`` if saving the record failed.
+
+Each attribute reads the database when you use it, so a record of a running
+game stays up to date. ``live_games`` holds ``None`` for a step where the
+participant's group didn't start a game, and a step they never reached isn't
+in it. :attr:`~psynet.participant.Participant.live_game_history`
+gives a list of every game they played at each step, oldest first, such as
+one per round of a loop, each with their answer in it. A group's
+:attr:`~psynet.sync.SyncGroup.running_live_games` gives the games it is
+playing now, keyed in the same way, and a round's
+:attr:`~psynet.sync.SyncGroupRound.live_game` the game played in it, so an
+analysis of trials reaches each game through ``trial.group_round.live_game``.
+Records from a group or a round have no ``answer``.
+
+.. _live-games-saved-messages:
+
+Saved messages
+~~~~~~~~~~~~~~
+
+``messages`` holds each message as a :class:`~psynet.live_game.SavedMessage`,
+in the order the game applied them, with its ``type``, the sender's
+``player`` number and ``participant_id``, and its ``time`` in seconds since
+the game started, negative for a message that arrived before the start.
+Pick out one type with ``[m for m in game.messages if m.type == "choose"]``.
+Its ``message`` is the :class:`~psynet.live_game.LiveMessage` the page sent,
+or ``None`` if what the page sent can't be read as one of the game's message
+types, and its ``payload`` holds what the page sent. Each player's
+:class:`~psynet.live_game.PlayerReady` message says when they became ready.
 
 The record is written a few seconds behind the game, so while a game is
-still running, ``saved_messages`` returns only the messages written so far.
-By the page after the game page, the whole record has been written, unless
-``live_game_result(game_id).record_complete`` says that saving it failed.
+still running, ``messages`` holds only the messages written so far. By the
+page after the game page, the whole record has been written, unless
+``record_complete`` says that saving it failed.
 
 A game saves every message by default. A game whose pages send many
 messages, such as a move on every key press, can leave some out with the
@@ -1013,7 +1083,7 @@ has the details.
 .. _live-games-history:
 
 Moments and copies of the state
--------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The outcome describes how a game ended, which is enough for a short game.
 A game that runs for a long time, or changes as players come and go,
@@ -1027,10 +1097,10 @@ changes the state, such as ``tick`` or a message's ``apply``:
             ...
             self.record("catch", {"at": at, "caught": caught})
 
-``Fishing.moments(game_id)`` returns the game's moments in order, each a
+A record's ``moments`` holds the game's moments in order, each a
 :class:`~psynet.live_game.LiveGameMoment` with its ``name``, its ``data``
-and its ``time`` in seconds since the game started. ``moments(game_id,
-"catch")`` returns only the catches. Moments are saved with the game's
+and its ``time`` in seconds since the game started, so
+``[m for m in game.moments if m.name == "catch"]`` is the catches. Moments are saved with the game's
 messages, so like them they're written a few seconds behind the game, and
 they're in the exported ``realtime_event`` table, as effects with the name
 ``psynet_moment``. The ``microsociety_live`` demo shows newcomers the
@@ -1038,7 +1108,7 @@ recent catches from its moments, and exports a row for each catch.
 
 Dallinger also saves copies of the game's state, at most every five seconds
 by default (the game's ``checkpoint_interval``), and when the game ends.
-``Fishing.checkpoints(game_id)`` returns them, each a
+A record's ``checkpoints`` holds them, each a
 :class:`~psynet.live_game.LiveGameCheckpoint` with the ``state``, without
 PsyNet's entry, and its ``time``. They help to check what a game did, but
 when they're taken depends on the game's traffic, so record what an
@@ -1070,7 +1140,23 @@ experiment's ``test_mode = "parallel"``, and ``test_n_bots`` to a multiple of
 the group size. The experiment refuses live games with more than one bot run
 one at a time, unless its ``test_serial_run_bots`` drives them, as the
 ``microsociety_live`` demo's does. A bot's answer on the game page comes from the game's
-``answer`` too, so the page doesn't need a ``bot_response``.
+``answer`` too, so the page doesn't need a ``bot_response``. Check each
+bot's game at the end of the test through its record:
+
+.. code-block:: python
+
+    class Exp(psynet.experiment.Experiment):
+        timeline = ...
+
+        test_mode = "parallel"
+        test_n_bots = 2
+
+        def test_check_bot(self, bot, **kwargs):
+            super().test_check_bot(bot, **kwargs)
+            game = bot.live_games["rock_paper_scissors"]
+            assert game.status == "ended", game.error
+            assert game.end_reason == "finished"
+            assert game.answer["mine"] is not None
 
 To test a game's rules in Python, without starting the experiment, play it
 with :class:`~psynet.live_game.testing.LocalGame`. It starts the game, and

@@ -18,7 +18,7 @@ ends each member's game then, so they move on and leave a tip while the
 others carry on. The lake closes once nobody is left on it.
 
 The game records each catch with ``record``, so the newcomer's page and the
-export read the society's history from ``Fishing.moments``.
+export read the society's history from the lake's ``moments``.
 """
 
 import random
@@ -393,8 +393,14 @@ def get_timeline():
 
 def why_left(participant: Participant) -> str:
     """Return why the member left the lake, or ``"closed"`` if it closed while they fished."""
-    left = (participant.live_game_answers.get("fishing") or {}).get("left")
+    left = lake_answer(participant).get("left")
     return left if left in (RETIRED, STAYED) else "closed"
+
+
+def lake_answer(participant: Participant) -> dict:
+    """Return the member's answer from their lake, or ``{}`` without one."""
+    lake = participant.live_games.get("fishing")
+    return (lake.answer if lake else None) or {}
 
 
 def in_society(participant: Participant) -> bool:
@@ -404,15 +410,16 @@ def in_society(participant: Participant) -> bool:
 def lake_is_open(participant: Participant) -> bool:
     """Return whether the participant's society is fishing on its lake now."""
     society = participant.active_sync_groups["society"]
-    return "fishing" in society.running_live_game_ids
+    return "fishing" in society.running_live_games
 
 
 def history_page(participant: Participant):
     """Show a newcomer where the society has been catching fish lately and the tips of members who have left."""
     society = participant.active_sync_groups["society"]
     # The lake can close between the check and this page.
-    lake_id = society.running_live_game_ids.get("fishing")
-    catches = [] if lake_id is None else Fishing.moments(lake_id, "catch")
+    lake = society.running_live_games.get("fishing")
+    moments = [] if lake is None else lake.moments
+    catches = [moment for moment in moments if moment.name == "catch"]
     spot_fish = [0] * N_SPOTS
     for moment in catches[-HISTORY_CATCHES:]:
         for c in moment.data["caught"]:
@@ -489,28 +496,29 @@ class Exp(psynet.experiment.Experiment):
     def get_basic_data(cls, context=None, **kwargs):
         """Return one row per member and one per catch."""
         members = Participant.query.order_by(Participant.id).all()
-        lake_ids = sorted({p.live_game_ids.get("fishing") for p in members} - {None})
+        lakes = {p.id: p.live_games.get("fishing") for p in members}
         return {
             "member": [
                 {
                     "participant_id": p.id,
-                    "lake_id": p.live_game_ids.get("fishing"),
-                    "fish": (p.live_game_answers.get("fishing") or {}).get("fish"),
-                    "left": (p.live_game_answers.get("fishing") or {}).get("left"),
+                    "lake_id": None if lakes[p.id] is None else lakes[p.id].id,
+                    "fish": lake_answer(p).get("fish"),
+                    "left": lake_answer(p).get("left"),
                     "tip": p.var.get("tip"),
                 }
                 for p in members
             ],
             "catch": [
                 {
-                    "lake_id": lake_id,
+                    "lake_id": lake.id,
                     "time": moment.time,
                     "player": c["player"],
                     "spot": c["spot"],
                     "fish": c["fish"],
                 }
-                for lake_id in lake_ids
-                for moment in Fishing.moments(lake_id, "catch")
+                for lake in sorted(set(lakes.values()) - {None}, key=lambda g: g.id)
+                for moment in lake.moments
+                if moment.name == "catch"
                 for c in moment.data["caught"]
             ],
         }

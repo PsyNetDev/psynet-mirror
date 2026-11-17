@@ -21,8 +21,8 @@ _MOMENT_EFFECT = "psynet_moment"
 
 @dataclass(frozen=True)
 class LiveGameMoment:
-    """A moment that a game recorded with :meth:`LiveGame.record`, as
-    :meth:`LiveGame.moments` returns it.
+    """A moment that a game recorded with :meth:`LiveGame.record`, as a game
+    record's :attr:`~LiveGameRecord.moments` returns it.
 
     Attributes
     ----------
@@ -46,7 +46,8 @@ class LiveGameMoment:
 
 @dataclass(frozen=True)
 class LiveGameCheckpoint:
-    """A copy of a game's state, as :meth:`LiveGame.checkpoints` returns it.
+    """A copy of a game's state, as a game record's
+    :attr:`~LiveGameRecord.checkpoints` returns it.
 
     Attributes
     ----------

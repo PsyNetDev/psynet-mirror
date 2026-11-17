@@ -37,8 +37,8 @@ class PlayerReady(LiveMessage):
     ``apply``, so the game never receives it, even in an ``apply`` of its
     own. A game reads who is ready from ``state["psynet"]["ready"]``,
     and reacts to the game starting in :meth:`~LiveGame.on_start`.
-    ``PlayerReady.saved_messages(session_id)`` returns when each player became
-    ready.
+    A game record's :attr:`~LiveGameRecord.messages` include when each
+    player became ready.
     """
 
     type = "psynet_ready"

@@ -130,6 +130,7 @@ from datetime import timedelta
 from functools import partial
 from math import ceil, floor
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Dict,
     List,
@@ -229,6 +230,9 @@ from psynet.utils import (
     get_translator,
     warn_from_caller,
 )
+
+if TYPE_CHECKING:
+    from psynet.live_game import LiveGameRecord
 
 logger = get_logger()
 
@@ -5001,18 +5005,19 @@ class SyncGroup(SQLBase, SQLMixin):
         return seats
 
     @property
-    def running_live_game_ids(self) -> Dict[str, int]:
-        """``{play_id: game_id}`` for each live game the group is playing now.
+    def running_live_games(self) -> Dict[str, "LiveGameRecord"]:
+        """``{play_id: game}`` for each live game the group is playing now,
+        as a :class:`~psynet.live_game.LiveGameRecord`.
 
         Keyed by the ``id_`` of the :class:`~psynet.live_game.PlayLiveGame`
-        that started the game, as :attr:`Participant.live_game_ids
-        <psynet.participant.Participant.live_game_ids>` is. A step whose game
+        that started the game, as :attr:`Participant.live_games
+        <psynet.participant.Participant.live_games>` is. A step whose game
         has ended isn't in it. Read it again rather than keep it, since games
         start and end.
         """
-        from .live_game.play import _running_live_game_ids
+        from .live_game.play import _running_live_games
 
-        return _running_live_game_ids(self)
+        return _running_live_games(self)
 
     def reached_barrier_after_time_limit(self, participant: Participant) -> bool:
         """Return whether ``participant`` reached the group's barrier they wait at because a time limit ran out.
@@ -5476,10 +5481,8 @@ class SyncGroupRound(SQLBase, SQLMixin):
     live_game_id : int or None
         The id of the live game that a
         :class:`~psynet.live_game.PlayLiveGame` in the round's trials
-        started, or ``None``. Pass it to
-        :func:`~psynet.live_game.live_game_result` or
-        :meth:`LiveGame.saved_messages <psynet.live_game.LiveGame.saved_messages>`, for example to export
-        each round's game.
+        started, or ``None``. :attr:`live_game` gives the game's record, for
+        example to export each round's messages.
     live_game_outcome : object or None
         What the ``outcome`` method of that game returned, copied here when
         the game's result is saved, a few seconds after the game ends.
@@ -5545,6 +5548,14 @@ class SyncGroupRound(SQLBase, SQLMixin):
             postgresql_where=text("trial_maker_id IS NOT NULL"),
         ),
     )
+
+    @property
+    def live_game(self) -> Optional["LiveGameRecord"]:
+        """The record of the live game played in the round, as a
+        :class:`~psynet.live_game.LiveGameRecord`, or ``None`` without one."""
+        from .live_game.record import LiveGameRecord
+
+        return None if self.live_game_id is None else LiveGameRecord(self.live_game_id)
 
     @property
     def sync_group(self) -> Optional[SyncGroup]:
