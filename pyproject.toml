@@ -48,55 +48,66 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Full experiment runtime.  Contains everything that was previously in the
-# unconditional `dependencies` list.  Install with:
-#   pip install psynet[experiment]
-# or (recommended) let `psynet setup` install it via constraints.txt.
-# PsyNet source/docs installs should prefer the ``dev`` extra, which includes
-# this runtime.
+# Experiment runtime, which `psynet setup` installs via constraints.txt.
+# PsyNet source and docs installs use ``dev``, which includes it.
+# List every package that PsyNet's runtime imports, even when Dallinger already
+# installs it, so that PsyNet doesn't break if Dallinger drops one.
 experiment = [
+    "arabic-reshaper",  # VocabTest
     "babel",
+    "beautifulsoup4",
+    "boto3",
+    "botocore",
     # 13.1.0 runs local PostgreSQL 18, which `psynet services ensure` matches.
     "dallinger[docker]>=13.1.0,<14",
     "debugpy",
     "dominate>=3.1",
+    "flask",
+    "flask-login",
+    "gevent",
     "html2text",
+    "itsdangerous",
+    "jinja2",
     "joblib",
     "jsonpickle",
+    "markdown-it-py",  # Audit reports
+    "markupsafe",
+    "numpy",
     "pandas",
+    "paramiko",
+    "pexpect",
+    "pillow",  # VocabTest
     "polib",
-    "progress",
+    "psutil",
+    "psycopg2",
+    "pygments>=2.20.0",  # Audit reports; minimum excludes CVE-2026-4539
     "pytest",
-    "pytest-dependency",
-    "pytest-mock",
-    "pytest-timeout",
-    "python-gettext",
-    "rich>=13",
-    "rpdb",
-    "slack_sdk",  # For Slack notifications
+    "redis",
+    "requests",
+    "rich",
+    "rpdb",  # For `import rpdb; rpdb.set_trace()` in experiment code
+    "rq",
+    "selenium",
+    "slack-sdk",  # Slack notifier
+    "sqlalchemy",
     "tabulate",
     "tenacity",
     "tomlkit",
     "tqdm",
+    "urllib3",
+    "werkzeug",
     "yaspin",
-    "arabic-reshaper",  # Used by VocabTest
-    "pillow",  # Used by VocabTest
-    # Experiment audit render/validate (shipped with experiment runtime)
-    "markdown-it-py>=3,<5",  # Dallinger 12.3 pins 4.x; keep an explicit compatible bound
-    "pygments>=2.20.0",
 ]
 # PsyNet source development and docs: runtime plus tooling.
 # Demo-only packages stay in ``demos`` so docs/CI installs stay lean.
 dev = [
-    "psynet[experiment]",
+    "psynet[experiment,test]",
     "asv",
-    "beautifulsoup4",
     "citeproc-py",
     "myst-parser",
     "openai",
     "pre-commit",
     "pydata-sphinx-theme",
-    "pytest-test-groups",
     "ruff",
     "sphinx",
     "sphinx-autobuild",
@@ -107,9 +118,15 @@ dev = [
     "sphinx-reredirects",
     "virtualenv",
 ]
+# Pytest plugins for PsyNet's own test suite, which the CI image installs
+# without the rest of ``dev``.
+test = [
+    "pytest-dependency",
+    "pytest-mock",
+    "pytest-timeout",
+]
 demos = [
     "music21",
-    "numpy",
     "praat-parselmouth",
     "psynet-step==0.1.0",
     "repp-tapping",
