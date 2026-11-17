@@ -107,11 +107,20 @@
    *   is ready to submit, ``nextPage()`` submits it,
    *   ``setNextButtonHidden(hidden)`` hides or shows its Next button, and
    *   ``showNotice(id, text)`` shows ``text`` in a notice at the top of the
-   *   page, or removes the notice if ``text`` is null
+   *   page, or removes the notice if ``text`` is null, and
+   *   ``hideGame()`` hides the page's elements marked ``data-live-game``
    */
   function createLiveGame(liveGame, page) {
     let api = null;
     let connections = 0;
+
+    // Whether the page is a game page whose group started no game. A page
+    // without a LiveGameControl isn't, so using psynet.liveGame there
+    // raises session()'s error.
+    function noGame() {
+      let current = liveGame();
+      return Boolean(current) && current.liveGameId == null;
+    }
 
     function session() {
       let current = liveGame();
@@ -158,8 +167,11 @@
     // page's cleanup, which leaves the game.
     function activatePage() {
       let control = liveGame();
-      if (control.liveGameId == null && control.noGameMessage) {
-        page.showNotice(NO_GAME_NOTICE, control.noGameMessage);
+      if (control.liveGameId == null) {
+        if (control.noGameMessage) {
+          page.showNotice(NO_GAME_NOTICE, control.noGameMessage);
+        }
+        page.hideGame();
       }
       return () => {
         page.showNotice(NO_GAME_NOTICE, null);
@@ -183,6 +195,8 @@
         socket: null,
         left: false,
         startedView: null,
+        // The latest view, which a failed game's pages keep at the end.
+        lastView: null,
         player: null,
         startedCallbacks: [],
         playingElements: [],
@@ -196,6 +210,7 @@
         timeLeftTimer: null,
         timeLeftCallbacks: [],
         rejectionElements: [],
+        statusCallbacks: [],
       };
       state.away = awayTracker((players) => {
         let message = state.session.playerLeftMessage;
@@ -219,25 +234,37 @@
 
     // Passes on a view, and, once the game has ended, nothing after it.
     function receive(state, view, details) {
-      // A failed game's final view can be null. A page that opens after
-      // the end gets no onStarted, which would turn its controls back on.
+      // A failed game's final view is null, so its pages keep the view
+      // they had.
+      if (view === null) {
+        view = state.lastView;
+      }
+      if (view === null) {
+        // A page that opened after its game failed has no view to show.
+        if (state.ended) {
+          state.playingElements.forEach((element) => (element.disabled = true));
+          callEach(state.statusCallbacks);
+        }
+        return;
+      }
+      state.lastView = view;
+      // A page that opens after the end gets no onStarted, which would turn
+      // its controls back on.
       if (
         !state.ended &&
         state.startedView === null &&
-        view !== null &&
         view.psynet.started_at !== null
       ) {
         state.startedView = view;
         callEach(state.startedCallbacks.splice(0), view);
       }
-      if (view !== null) {
-        state.player = view.psynet.you;
-      }
+      state.player = view.psynet.you;
       callEach(state.viewCallbacks, view, details);
+      callEach(state.statusCallbacks);
       if (state.ended) {
         state.playingElements.forEach((element) => (element.disabled = true));
         state.away.update([]);
-      } else if (view !== null) {
+      } else {
         state.away.update(view.psynet.away);
       }
     }
@@ -441,6 +468,64 @@
     }
 
     /**
+     * Keep ``element`` showing the game's status: the control's
+     * ``waiting_status`` until the game starts, what ``playing(view)``
+     * returns for each view while it's played, and the control's
+     * ``ended_status`` once the player's game has ended. ``texts`` can
+     * replace the control's two texts, as ``{waiting, ended}``.
+     *
+     * @example
+     * psynet.liveGame.showStatus(status, (view) =>
+     *   view.chosen ? "Waiting for your partner to choose" : "Your turn"
+     * );
+     *
+     * @param {HTMLElement} element - Where to show the status
+     * @param {function} playing - Returns the status for a view while the
+     *   game is played
+     * @param {Object} [texts] - ``waiting`` and ``ended`` texts
+     * @returns {Object} ``psynet.liveGame``
+     */
+    function showStatus(element, playing, texts = {}) {
+      let state = pageState();
+      let waiting = texts.waiting ?? state.session.waitingStatus;
+      let ended = texts.ended ?? state.session.endedStatus;
+      function show() {
+        let text;
+        if (state.ended) {
+          text = ended;
+        } else if (state.startedView === null) {
+          text = waiting;
+        } else {
+          text = playing(state.lastView);
+        }
+        if (element.textContent !== text) {
+          element.textContent = text;
+        }
+      }
+      pageSocket();
+      state.statusCallbacks.push(show);
+      show();
+      return api;
+    }
+
+    /**
+     * Call ``callback`` once, when the page learns this player's game
+     * has ended (see ``ended``), with why it ended and this player's
+     * final view, the last view the page had if the game failed.
+     * Dallinger's ``Socket.onEnded`` lists the reasons.
+     *
+     * @param {function} callback - Called with the reason and the view
+     * @returns {Object} ``psynet.liveGame``
+     */
+    function onEnded(callback) {
+      let state = pageState();
+      pageSocket().onEnded((reason, view) => {
+        callback(reason, view === null ? state.lastView : view);
+      });
+      return api;
+    }
+
+    /**
      * Call ``callback`` with ``secondsLeft()`` a few times a second, for a
      * countdown, once the page knows the time left, which is 0 once the game
      * has ended, until the participant leaves the page. A game without a
@@ -477,18 +562,19 @@
      * ending with the final view. Once the game has ended, ``ended`` is
      * ``true``, and no more views come. A page that opens after the game
      * has ended gets just the final view. Its ``psynet`` says who is
-     * ready, when the game started and who has left.
+     * ready and who has left.
      *
-     * If the game failed, the final view can be ``null``, so check
-     * ``ended`` before reading the view.
+     * If the game failed, the page keeps the view it had, which comes again
+     * with ``ended`` set. A page that opens after its game failed gets no
+     * view, so ``onView`` doesn't run there.
      *
      * The callback's second argument is the view's details, which
      * Dallinger's ``Socket.onView`` describes. It is ``null`` for a final
      * view that came with the ending, so check ``ended`` and not
      * ``details.ended``.
      *
-     * @param {function} callback - Called with each view, which can be
-     *   ``null`` at the end, and its details, which can be ``null`` too
+     * @param {function} callback - Called with each view, and its details,
+     *   which can be ``null``
      * @returns {Object} ``psynet.liveGame``
      */
     function onView(callback) {
@@ -676,13 +762,15 @@
        * @member {number|null} player
        */
       get player() {
-        return pageState().player;
+        return noGame() ? null : pageState().player;
       },
       /**
        * Whether the participant's group started a game at the page's
        * PlayLiveGame. A participant removed from their group there has none.
        * PsyNet then shows the control's ``no_game_message`` in a notice,
-       * and the other methods throw. Reading it doesn't join the game.
+       * hides the page's elements marked ``data-live-game``, and the
+       * other methods do nothing: ``send`` returns ``undefined``, and the
+       * page's callbacks never run. Reading it doesn't join the game.
        *
        * @member {boolean} hasGame
        */
@@ -700,7 +788,7 @@
        * @member {boolean} started
        */
       get started() {
-        return pageState().startedView !== null;
+        return !noGame() && pageState().startedView !== null;
       },
       /**
        * Whether this player's game has ended, so the page gets no more
@@ -712,7 +800,7 @@
        * @member {boolean} ended
        */
       get ended() {
-        return pageState().ended;
+        return !noGame() && pageState().ended;
       },
       /**
        * Whether the game is being played: it has started and hasn't
@@ -723,7 +811,7 @@
        * @member {boolean} playing
        */
       get playing() {
-        return pageState().startedView !== null && !pageState().ended;
+        return !noGame() && pageState().startedView !== null && !pageState().ended;
       },
       /**
        * Seconds the page shows the game's result for once it's saved,
@@ -745,6 +833,9 @@
        * @member {number|null} duration
        */
       get duration() {
+        if (noGame()) {
+          return null;
+        }
         let times = startedTimes();
         return times === null ? null : times.duration;
       },
@@ -752,6 +843,7 @@
       gameTime: gameTime,
       send: send,
       showRejections: showRejections,
+      showStatus: showStatus,
       onTimeLeft: onTimeLeft,
       onStarted: onStarted,
       enableWhilePlaying: enableWhilePlaying,
@@ -770,16 +862,7 @@
        * @returns {Object} ``psynet.liveGame``
        */
       onRejected: passOn("onRejected"),
-      /**
-       * Call ``callback`` once, when the page learns this player's game
-       * has ended (see ``ended``), with why it ended and this player's
-       * final view. Dallinger's ``Socket.onEnded`` lists the reasons.
-       *
-       * @function onEnded
-       * @param {function} callback - Called with the reason and the view
-       * @returns {Object} ``psynet.liveGame``
-       */
-      onEnded: passOn("onEnded"),
+      onEnded: onEnded,
       /**
        * Call ``callback`` once this player's result, their answer and
        * reward, has been saved, after their game ends. The page then moves
@@ -811,6 +894,32 @@
      *
      * @member {dallinger.Socket} socket
      */
+    // Without a game, each method does nothing, so a page needn't check
+    // hasGame first. What a method returns then, if not psynet.liveGame.
+    const WITHOUT_GAME = {
+      send: undefined,
+      predictedView: null,
+      interpolatedView: null,
+      secondsLeft: null,
+      gameTime: null,
+    };
+    // Through the descriptors, since reading a getter joins the game.
+    for (let [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(api))) {
+      let method = descriptor.value;
+      if (typeof method !== "function") {
+        continue;
+      }
+      api[name] = function (...args) {
+        if (!noGame()) {
+          return method(...args);
+        }
+        if (name === "enableWhilePlaying") {
+          // There's nothing to play.
+          args.forEach((element) => (element.disabled = true));
+        }
+        return name in WITHOUT_GAME ? WITHOUT_GAME[name] : api;
+      };
+    }
     // Not enumerable, since reading it joins the game.
     Object.defineProperty(api, "socket", { get: pageSocket });
     // For PsyNetLiveGame.activatePage, not for pages.
@@ -835,6 +944,11 @@
           }
         },
         showNotice: (id, text) => psynet.showStatusNotice(id, text),
+        hideGame: () => {
+          document.querySelectorAll("[data-live-game]").forEach((element) => {
+            element.hidden = true;
+          });
+        },
       });
     }
     return psynet.liveGame.activatePage();

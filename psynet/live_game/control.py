@@ -76,6 +76,14 @@ class LiveGameControl(NullControl):
         from a group that took too long to arrive. By default it says "Your
         group couldn't start the game." Set it to ``None`` for no notice.
 
+    waiting_status
+        What ``psynet.liveGame.showStatus`` says before the game starts. By
+        default it says "Waiting for the other players to open the game".
+
+    ended_status
+        What ``psynet.liveGame.showStatus`` says once the player's game has
+        ended. By default it says "The game is over."
+
     **kwargs
         Any other parameter of :class:`~psynet.modular_page.Control`, such as
         ``show_next_button``.
@@ -87,6 +95,8 @@ class LiveGameControl(NullControl):
         show_result_for=0,
         player_left_message=_DEFAULT,
         no_game_message=_DEFAULT,
+        waiting_status=_DEFAULT,
+        ended_status=_DEFAULT,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -110,6 +120,8 @@ class LiveGameControl(NullControl):
         self.show_result_for = show_result_for
         self.player_left_message = player_left_message
         self.no_game_message = no_game_message
+        self.waiting_status = waiting_status
+        self.ended_status = ended_status
 
     def check_ready_for_response(self, experiment, participant):
         session_id = _live_game_id(participant, self._play_id())
@@ -203,6 +215,12 @@ class LiveGameControl(NullControl):
         no_session = self.no_game_message
         if no_session is _DEFAULT:
             no_session = _p("live_game", "Your group couldn't start the game.")
+        waiting = self.waiting_status
+        if waiting is _DEFAULT:
+            waiting = _p("live_game", "Waiting for the other players to open the game")
+        ended = self.ended_status
+        if ended is _DEFAULT:
+            ended = _p("live_game", "The game is over.")
         return {
             "liveGame": {
                 "playId": self.play_id,
@@ -214,6 +232,8 @@ class LiveGameControl(NullControl):
                 "showResultFor": self.show_result_for,
                 "playerLeftMessage": player_left,
                 "noGameMessage": no_session,
+                "waitingStatus": waiting,
+                "endedStatus": ended,
             }
         }
 

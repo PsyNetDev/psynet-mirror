@@ -10,7 +10,7 @@ const read = (name) => fs.readFileSync(path.join(ROOT, "psynet/resources/scripts
 const SOURCE = read("live-game.js");
 const CALLBACKS = ["onView", "onRejected", "onEnded", "onResultSaved", "onRefused"];
 // The callbacks psynet.liveGame hands straight to the socket.
-const PASSED_ON = CALLBACKS.filter((name) => name !== "onView");
+const PASSED_ON = CALLBACKS.filter((name) => !["onView", "onEnded"].includes(name));
 const AWAY_NOTICE = "psynet-player-away-notice";
 const READY = ["pick_numbers", { type: "psynet_ready", message: {} }];
 
@@ -76,6 +76,7 @@ let pageReady;
 let nextPages;
 let events;
 let notices;
+let hiddenGames;
 let nextButtonHidden;
 
 beforeEach(() => {
@@ -90,6 +91,7 @@ beforeEach(() => {
   };
   pageReady = true;
   notices = [];
+  hiddenGames = 0;
   nextButtonHidden = [];
   nextPages = 0;
   events = new EventTarget();
@@ -133,6 +135,7 @@ beforeEach(() => {
       nextPage: () => nextPages++,
       setNextButtonHidden: (hidden) => nextButtonHidden.push(hidden),
       showNotice: (id, text) => notices.push([id, text]),
+      hideGame: () => hiddenGames++,
     }
   );
   leavePage = liveGame.activatePage();
@@ -171,9 +174,15 @@ describe("psynet.liveGame", () => {
       var: { liveGame: { liveGameId: null, noGameMessage: "No game." } },
       showStatusNotice: (id, text) => shown.push([id, text]),
     };
+    // The page's game area, which PsyNet hides without a game.
+    const gameArea = { hidden: false };
+    context.document = {
+      querySelectorAll: (selector) => (selector === "[data-live-game]" ? [gameArea] : []),
+    };
     const leave = context.PsyNetLiveGame.activatePage(psynet);
     const created = psynet.liveGame;
     assert.equal(created.hasGame, false);
+    assert.equal(gameArea.hidden, true);
     assert.deepEqual(shown, [["psynet-no-game-notice", "No game."]]);
     leave();
     assert.deepEqual(shown.at(-1), ["psynet-no-game-notice", null]);
@@ -472,15 +481,51 @@ describe("psynet.liveGame", () => {
     assert.equal(sockets.length, 0);
   });
 
-  it("explains a page with no game", () => {
+  it("does nothing on a page without a game, and explains a page that isn't a game page", () => {
     session = undefined;
     assert.throws(() => liveGame.send("pick"), /control isn't a LiveGameControl/);
     session = { playId: "pick_numbers", liveGameId: null, gameChannel: null };
-    assert.throws(
-      () => liveGame.onView(() => {}),
-      /hasn't started a live game at the PlayLiveGame "pick_numbers"/
+    changePage();
+    assert.equal(hiddenGames, 1);
+    const button = { disabled: false };
+    const status = { textContent: "" };
+    assert.equal(liveGame.onView(() => assert.fail("no views")), liveGame);
+    assert.equal(liveGame.showStatus(status, () => "Playing"), liveGame);
+    assert.equal(liveGame.enableWhilePlaying(button), liveGame);
+    assert.equal(liveGame.send("pick", { number: 7 }), undefined);
+    assert.equal(liveGame.predictedView(), null);
+    assert.equal(liveGame.gameTime(), null);
+    assert.deepEqual(
+      [liveGame.started, liveGame.ended, liveGame.playing, liveGame.player, liveGame.duration],
+      [false, false, false, null, null]
     );
+    // There's nothing to play, and the notice says why.
+    assert.equal(button.disabled, true);
+    assert.equal(status.textContent, "");
     assert.equal(sockets.length, 0);
+  });
+
+  it("shows the waiting, playing and ended status", () => {
+    session = { ...session, waitingStatus: "Waiting", endedStatus: "Over" };
+    changePage();
+    const status = { textContent: "" };
+    liveGame.showStatus(status, (v) => `Playing ${v.n}`);
+    assert.equal(status.textContent, "Waiting");
+    sockets[0].view({ ...view(null), n: 1 });
+    assert.equal(status.textContent, "Waiting");
+    sockets[0].view({ ...view(4), n: 2 });
+    assert.equal(status.textContent, "Playing 2");
+    sockets[0].view({ ...view(4), n: 3 }, "finished");
+    assert.equal(status.textContent, "Over");
+
+    // The page's own texts replace the control's.
+    changePage();
+    const own = { textContent: "" };
+    liveGame.showStatus(own, () => "Playing", { waiting: "Waiting for your partner" });
+    assert.equal(own.textContent, "Waiting for your partner");
+    // A game that failed before the page had a view still ends.
+    sockets[1].fire("onEnded", "failed", null);
+    assert.equal(own.textContent, "Over");
   });
 
   it("passes on the final view, with ended up to date, and no view after it", () => {
@@ -510,12 +555,19 @@ describe("psynet.liveGame", () => {
       ["ended", "finished", 5],
     ]);
 
-    // A failed session's final view can be null.
+    // A failed game's final view is null, so the page keeps its last view.
     changePage();
     seen.length = 0;
-    liveGame.onView((v, details) => seen.push(["view", v, details]));
+    liveGame.onView((v, details) => seen.push(["view", v.n, details]));
+    liveGame.onEnded((reason, v) => seen.push(["ended", reason, v.n]));
+    sockets[1].view({ ...view(4), n: 6 });
     sockets[1].fire("onEnded", "failed", null);
-    assert.deepEqual(plain(seen), [["view", null, null]]);
+    assert.deepEqual(plain(seen), [
+      ["view", 6, { ended: null }],
+      ["view", 6, null],
+      ["ended", "failed", 6],
+    ]);
+    assert.equal(liveGame.ended, true);
   });
 
   it("keeps controls disabled on a page that opens after the game has ended", () => {

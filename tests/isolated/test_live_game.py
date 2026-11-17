@@ -368,6 +368,8 @@ def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
         "showResultFor": 0,
         "playerLeftMessage": "Another player has left the game.",
         "noGameMessage": "Your group couldn't start the game.",
+        "waitingStatus": "Waiting for the other players to open the game",
+        "endedStatus": "The game is over.",
     }
     for member in members:
         _arrive(game_barrier, member)
@@ -381,6 +383,8 @@ def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
         "showResultFor": 0,
         "playerLeftMessage": "Another player has left the game.",
         "noGameMessage": "Your group couldn't start the game.",
+        "waitingStatus": "Waiting for the other players to open the game",
+        "endedStatus": "The game is over.",
     }
 
 
