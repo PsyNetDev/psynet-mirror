@@ -138,54 +138,19 @@ Talking to each other
 A **chatroom** lets group members exchange messages on a page. Messages are
 stored with the experiment's data, so conversations can be analyzed later.
 
-Members can also act on one page together in real time, as in a **live
-game** (see `Live games`_). For other real-time interaction, the
+Members can also act on one page together in real time, in a **live game**
+(see `Live games`_). For other real-time interaction, the
 `websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__ demo
 sends messages live to everyone in a room.
-
-.. _design-groups-live-games:
 
 Live games
 ----------
 
-In most group experiments, members act on separate pages and meet at
-barriers: each makes a choice, a barrier waits for all of them, and then
-everyone sees the result. In a **live game**, the members are on the same
-page at the same time, and what one player does shows on the others' screens
-within a fraction of a second. A negotiation in which offers go back and
-forth, players steering around a shared board, or a group fishing on a lake
-while members come and go are live games.
-
-Choose a live game when timing is part of what you study, or when players
-must react to each other as they act, such as conceding as a deadline nears
-or following a partner who moves. Round-based trials are simpler, and better
-when each decision is made on its own: they're easier to build, each
-decision is a trial in the data, and a slow connection matters less. A
-chatroom suits talk rather than moves in a game.
-
-The server runs a live game. It keeps one state for the whole group, checks
-each player's move against the game's rules, and sends each player's page
-what that player may see. A live game raises these questions:
-
-- **What may each player see, and when?** For example, does a player see
-  their partner's choice before choosing themselves? Whatever a player
-  mustn't see stays on the server.
-- **What happens when someone leaves?** A player can close the page or lose
-  their connection during the game. Does the game end for everyone, carry on
-  without them, or hand their turn on? How long do you wait for them to come
-  back?
-- **How long does a game last?** A fixed time, or until it ends by itself,
-  such as once every throw is played? Can newcomers join while it runs, and
-  can each player finish in their own time?
-- **What does the analysis need?** Every move is saved, with when it
-  arrived. A fast game can send many moves a second: do you need them all,
-  or events such as each catch or each deal?
-- **How are players paid?** From the game's result, or as they earn during
-  it, such as for each coin collected?
-
-The demos in `Kinds of group experiment`_ include six live games. To build
-one, read :doc:`/code/multiplayer/live_game_tutorial`, which walks through
-three of them.
+In a **live game**, the members stay on one page, and what each player does
+reaches the others while they play, instead of after a barrier. Choose one
+when players should react to each other as they act, such as in a negotiation
+or a game on a shared board. :doc:`live_games` explains how they work and the
+kinds of game they make possible.
 
 Seeing who you're playing with
 ------------------------------

@@ -23,10 +23,10 @@ can run each demo, change it and see what happens.
     Players move around a canvas collecting coins, and each page draws
     everyone's movement smoothly.
 
-Read it once from start to end: each part builds on the one before. If you're
-still deciding whether your experiment needs a live game, read
-:ref:`design-groups-live-games` first, which says when one suits an
-experiment and the decisions it raises. Before you start, you should know how
+Read it once from start to end: each part builds on the one before. Read
+:doc:`/design/live_games` first, which explains how a live game differs from
+moving through pages, and the ideas this tutorial puts into code: state,
+messages, views, prediction and the game's record. Before you start, you should know how
 a PsyNet timeline is put together (:doc:`/code/writing_a_timeline`), how
 trials work, and how participants are put into groups
 (:doc:`synchronization`). The game pages are written in JavaScript, so it
@@ -39,36 +39,18 @@ section there, which covers the cases this tutorial leaves out.
 How a live game works
 ---------------------
 
-In most PsyNet experiments, each participant works through the pages alone
-and submits an answer on each one. In a live game, the members of a group are
-on the same page at the same time, and what one player does shows up on the
-other players' screens within a fraction of a second.
-
-The server runs the game. It keeps the game's **state**, which is everything
-the game needs to know. In rock, paper, scissors, that's each player's choice
-in the current throw and the throws played so far. The players' pages never
-change the state themselves:
-
-- When the player does something, such as clicking "Rock", their page sends
-  the game a **message**. The game checks the message against its rules. It
-  then either changes the state or rejects the message, with a reason that
-  the page can show.
-- Whenever the state changes, the game sends each player's page a **view**,
-  which is the part of the state that the player is allowed to see. The page
-  draws the game from its view.
-
-Because only the server changes the state, all the players see the same game,
-and a participant can't change the result by editing their page. A page that
-reloads gets the game as it stands. The server also saves the messages, with
-the time each one arrived, so you can analyze what each participant did and
-when. A game can leave some messages out of the record, as Part 3 shows.
+As :doc:`/design/live_games` explains, the server runs the game. It keeps the
+game's **state**. When a player does something, such as clicking "Rock", their
+page sends the game a **message**, which the game's rules apply to the state
+or reject. Whenever the state changes, the game sends each player's page a
+**view**, the part of the state that player may see, and the page updates
+itself from it.
 
 You write the game as a Python class, a subclass of
-:class:`~psynet.live_game.LiveGame`. Its methods say what the state is
-at the start, what each message does, what each player sees, and when the
-game is over. PsyNet does the rest. It connects the pages, applies the
-messages one at a time in the order they arrive, sends the views, and saves
-the record.
+:class:`~psynet.live_game.LiveGame`. Its methods say what the state is at the
+start, what each message does, what each player sees, and when the game is
+over. PsyNet does the rest. It connects the pages, applies the messages one
+at a time in the order they arrive, sends the views, and saves the record.
 
 Part 1: Rock, paper, scissors
 -----------------------------

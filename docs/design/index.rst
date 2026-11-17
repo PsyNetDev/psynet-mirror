@@ -11,4 +11,5 @@ Designing experiments
    stimuli
    participants
    groups
+   live_games
    glossary

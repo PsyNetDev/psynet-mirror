@@ -12,8 +12,8 @@ the game.
 
 This page is the reference, for looking things up rather than reading
 through. If you haven't built a live game before, start with
-:ref:`design-groups-live-games`, on when a live game suits an experiment and
-the decisions it raises, and then the :doc:`tutorial <live_game_tutorial>`,
+:doc:`/design/live_games`, which explains how live games work and the ideas
+they're built from, and then the :doc:`tutorial <live_game_tutorial>`,
 which builds three demo games step by step and links to the sections here.
 
 A live game has three pieces:
