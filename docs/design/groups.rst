@@ -8,7 +8,7 @@ interact: they play a game against each other, rate the same stimuli together,
 or talk in a chatroom. The rest of the :doc:`timeline <timeline>` stays the
 same; groups add points where participants wait for each other.
 
-This page covers what every group experiment has. Most groups then play in
+This page covers what every group experiment has. Many groups then play in
 one of two ways, each with a page of its own: in :doc:`rounds <rounds>`, or
 in a :doc:`live game <live_games>`.
 

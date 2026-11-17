@@ -3,7 +3,7 @@
 Round-based experiments
 =======================
 
-Most group experiments are played in **rounds**: each member decides on their
+Many group experiments are played in **rounds**: each member decides on their
 own page, the group waits until everyone has, and then everyone sees the
 result, round after round. Economic games, rating the same stimuli together
 and taking turns all work this way. This page describes how rounds work, how
