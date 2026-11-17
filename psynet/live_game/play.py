@@ -236,8 +236,10 @@ class _LiveGameBarrier(GroupBarrier):
         for the game, which would pay each player twice."""
         from ..trial.main import Trial
 
-        game_pays = (
-            self.game_class.performance_reward is not LiveGame.performance_reward
+        # Unwrapped, since PsyNet wraps each game's methods, its inherited
+        # default included.
+        game_pays = inspect.unwrap(self.game_class.performance_reward) is not (
+            inspect.unwrap(LiveGame.performance_reward)
         )
         trial_pays = (
             type(trial).compute_performance_reward

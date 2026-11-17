@@ -298,6 +298,21 @@ def test_on_release_runs_when_the_group_s_game_is_created(
     assert _releases == [(sorted(m.id for m in members), game_id)]
 
 
+class UnpaidGame(LiveGame):
+    """A game that pays nothing itself, for a trial that pays."""
+
+    channel = "unpaid_game"
+
+    def initial_state(self, players):
+        return {}
+
+    def view(self, state, player):
+        return {}
+
+    def bot(self, view, player, now):
+        return None
+
+
 def test_a_game_and_the_trial_it_s_played_in_can_t_both_pay():
     from psynet.trial.main import Trial
 
@@ -313,6 +328,11 @@ def test_a_game_and_the_trial_it_s_played_in_can_t_both_pay():
     barrier._check_trial(PaysNothing())
     with pytest.raises(TypeError, match="PaysPerWin pays through compute_performance"):
         barrier._check_trial(PaysPerWin())
+
+    # A game that leaves the paying to its trial, whose inherited
+    # performance_reward PsyNet still wraps.
+    assert UnpaidGame.performance_reward is not LiveGame.performance_reward
+    _play("unpaid_game", game_class=UnpaidGame).barrier._check_trial(PaysPerWin())
 
 
 def test_the_members_of_a_group_must_arrive_with_the_same_settings(pair):
