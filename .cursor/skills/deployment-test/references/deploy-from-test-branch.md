@@ -224,7 +224,7 @@ cd <psynet-root>
 source <venv>/bin/activate
 echo "$VIRTUAL_ENV"
 uv pip install -e <dallinger-root>
-uv pip install -e ".[dev,slack]"
+uv pip install -e ".[dev]"
 ```
 
 7. Prepare deployable experiment boilerplate from the installed PsyNet (which

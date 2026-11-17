@@ -107,9 +107,6 @@ dev = [
     "sphinx-reredirects",
     "virtualenv",
 ]
-slack = [
-    "slack_sdk",
-]
 demos = [
     "music21",
     "numpy",
