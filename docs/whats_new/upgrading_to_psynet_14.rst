@@ -439,6 +439,21 @@ Search for ``var.get(`` and ``conditional(``.
   macros in ``macros/dashboard.html``, and pages that render
   ``custom_html.html``, escape plain strings. Pass ``html``, card bodies and
   list items as ``Markup``; for a ``dominate`` tag, ``Markup(tag.render())``.
+* PsyNet now requires dominate 3.1, which renders ``a``, ``span`` and ``sup``
+  inline: it no longer starts a new line before them, so the space that used
+  to appear before each of these tags is gone. This affects a tag that
+  follows text as well as tags placed side by side. Search for dominate
+  ``span``, ``a`` and ``sup`` tags, and add the space where you want one:
+
+  .. code-block:: python
+
+      tags.p("Click", tags.a("here", href=url))  # now shows "Clickhere"
+      tags.p("Click ", tags.a("here", href=url))  # shows "Click here"
+      tags.div(tags.span("A"), tags.span("B"))  # now shows "AB"
+      tags.div(tags.span("A"), " ", tags.span("B"))  # shows "A B"
+
+  Attributes set to ``0``, such as ``value=0``, are now rendered instead of
+  dropped.
 * ``KeyboardPage`` now requires ``prompt``.
 * A ``REPPVolumeCalibration`` subclass whose ``what_are_we_playing`` returns
   HTML must return ``Markup``.
