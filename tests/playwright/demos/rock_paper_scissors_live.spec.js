@@ -11,6 +11,13 @@ const {
 
 const STEP_TIMEOUT_MS = 120000;
 
+async function screenshot(page, name) {
+  expect(await page.evaluate(() => window.psynetLayout.check()), name).toEqual([]);
+  if (process.env.ARTIFACT_DIR) {
+    await page.screenshot({ path: `${process.env.ARTIFACT_DIR}/${name}.png`, fullPage: true });
+  }
+}
+
 // The demo's games: the first has five throws and the second three.
 const THROWS = [5, 3];
 // In the first game, the first player plays rock every throw, so they win
@@ -82,9 +89,10 @@ test("two participants play rock_paper_scissors_live to the end, with rejected c
     await expect(second.locator("#rps-results li")).toHaveText([
       "You played scissors, your partner played rock. You lost the throw."
     ]);
-    await expect(first.locator("#rps-last")).toHaveText(
-      "Throw 1: You played rock, your partner played scissors. You won the throw."
+    await expect(first.locator("#rps-results li").last()).toHaveText(
+      "You played rock, your partner played scissors. You won the throw."
     );
+    await screenshot(first, "rock_paper_scissors_live_throw");
     // The page moves on by itself when the game ends, so its Next button is hidden.
     await expect(first.locator("#next-button")).toBeHidden();
 
@@ -229,6 +237,7 @@ test("two participants play rock_paper_scissors_live to the end, with rejected c
       "Your bonus for this game is $0.00.",
       { timeout: STEP_TIMEOUT_MS }
     );
+    await screenshot(first, "rock_paper_scissors_live_result");
     await Promise.all(participants.map((participant) => clickNextAndWait(participant)));
     for (const participant of participants) {
       await expect(participant.locator("#main-body")).toContainText("That's the end", {

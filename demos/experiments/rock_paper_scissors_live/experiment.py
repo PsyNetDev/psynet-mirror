@@ -226,7 +226,6 @@ class RockPaperScissorsTrial(Trial):
                             f"a bonus of ${game['reward_per_win']:.2f}.",
                             id="rps-stakes",
                         ),
-                        tags.p(id="rps-last"),
                         tags.h4(id="rps-status"),
                         tags.p(id="rps-partner"),
                         tags.div(

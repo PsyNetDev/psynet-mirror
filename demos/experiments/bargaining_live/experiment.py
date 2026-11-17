@@ -73,9 +73,11 @@ class Accept(LiveMessage):
         partner = 1 - player
         if state["offers"][partner] != self.keep:
             raise Reject("Your partner has just changed their proposal.")
-        # Each player's coins, in player order.
-        deal = [None, None]
-        deal[partner], deal[player] = self.keep, state["stake"] - self.keep
+        # Each player's coins, in player order: the partner keeps what
+        # they proposed, and the player gets the rest.
+        deal = [0, 0]
+        deal[partner] = self.keep
+        deal[player] = state["stake"] - self.keep
         state["deal"] = deal
         state["deal_at"] = now
 

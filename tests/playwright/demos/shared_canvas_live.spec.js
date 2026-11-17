@@ -9,6 +9,13 @@ const {
 } = require("../psynetHarness");
 
 const STEP_TIMEOUT_MS = 120000;
+
+async function screenshot(page, name) {
+  expect(await page.evaluate(() => window.psynetLayout.check()), name).toEqual([]);
+  if (process.env.ARTIFACT_DIR) {
+    await page.screenshot({ path: `${process.env.ARTIFACT_DIR}/${name}.png`, fullPage: true });
+  }
+}
 // The game's ROUND_SECONDS. Every step until the player who leaves has
 // stopped has to happen within it.
 const ROUND_SECONDS = 30;
@@ -221,6 +228,7 @@ test("players move around shared_canvas_live with prediction and interpolation, 
       `Player ${collector.id + 1}: ${collector.coins}`,
       { timeout: STEP_TIMEOUT_MS }
     );
+    await screenshot(second, "shared_canvas_live_board");
 
     // The views that arrived while the first player went for the coin and
     // coasted never moved their piece from where the page predicted it.
@@ -269,6 +277,7 @@ test("players move around shared_canvas_live with prediction and interpolation, 
       `You collected ${collector.coins} ${collector.coins === 1 ? "coin" : "coins"}`,
       { timeout: STEP_TIMEOUT_MS }
     );
+    await screenshot(first, "shared_canvas_live_result");
     await assertNoBackendError(first);
   } finally {
     for (const context of contexts) {

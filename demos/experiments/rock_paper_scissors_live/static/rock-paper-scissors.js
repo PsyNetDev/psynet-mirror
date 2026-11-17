@@ -14,7 +14,6 @@ export function activate({root, psynet}) {
   let buttons = Array.from(root.querySelectorAll(".rps-action"));
   let score = root.querySelector("#rps-score");
   let results = root.querySelector("#rps-results");
-  let last = root.querySelector("#rps-last");
   let partner = root.querySelector("#rps-partner");
   let rejection = root.querySelector("#rps-rejection");
   let current = null;
@@ -58,10 +57,6 @@ export function activate({root, psynet}) {
         return item;
       })
     );
-    let latest = view.results.at(-1);
-    last.textContent = latest
-      ? `Throw ${view.results.length}: ${describe(latest)}`
-      : "";
     score.textContent = `Throws won: you ${view.wins}, your partner ${view.partner_wins}`;
     if (psynet.liveGame.ended) {
       status.textContent = "The game is over.";

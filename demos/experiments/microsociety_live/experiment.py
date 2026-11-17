@@ -104,8 +104,14 @@ class Fishing(LiveGame):
 
     def initial_state(self, players):
         # Each player's boat, fish and moves, in player order.
-        state = {"boats": [], "fish": [], "moves": [], "next_catch_at": CATCH_SECONDS}
-        state["latest"] = {"number": 0, "caught": []}
+        state = {
+            "boats": [],
+            "fish": [],
+            "moves": [],
+            # The latest catch, numbered so a page can tell a new one.
+            "latest": {"number": 0, "caught": []},
+            "next_catch_at": CATCH_SECONDS,
+        }
         for player in players:
             _launch_boat(state, joined_at=0)
         return state
@@ -425,9 +431,17 @@ def history_page(participant: Participant):
     with content:
         tags.p("Welcome to the society. The others are already fishing.")
         if any(spot_fish):
+            tags.p("Where the members have been catching fish lately:")
+            with tags.ul():
+                for letter, fish in sorted(
+                    zip(SPOT_LETTERS, spot_fish), key=lambda spot: -spot[1]
+                ):
+                    if fish:
+                        tags.li(f"Spot {letter}: {fish} fish")
+        else:
             tags.p(
-                "Here is how many fish were caught at each spot lately: "
-                + _spot_text(spot_fish)
+                "Nobody has caught anything yet, so you'll be among the first "
+                "to find the good spots."
             )
         if tips:
             tags.p("Tips from members who have left:")
@@ -435,14 +449,6 @@ def history_page(participant: Participant):
                 for tip in tips[-TIPS_SHOWN:]:
                     tags.li(tip)
     return InfoPage(content, time_estimate=20)
-
-
-def _spot_text(spot_fish: List[int]) -> str:
-    return ", ".join(
-        f"spot {letter}: {fish} fish"
-        for letter, fish in zip(SPOT_LETTERS, spot_fish)
-        if fish
-    )
 
 
 def leave_a_tip(intro: str):

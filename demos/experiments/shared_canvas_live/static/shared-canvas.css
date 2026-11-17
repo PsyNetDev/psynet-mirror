@@ -10,8 +10,12 @@
 
 #canvas {
   display: block;
-  width: 100%;
+  /* Square, and small enough to fit the window with the text around it,
+     since the arrow keys that move the player would otherwise scroll the
+     page. */
+  width: min(100%, 100vh - 22rem);
   height: auto;
+  margin: 0 auto;
   border: 1px solid #d8e2ef;
   border-radius: 0.25rem;
 }

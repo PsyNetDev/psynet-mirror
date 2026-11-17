@@ -58,8 +58,13 @@ test("a newcomer sails onto the lake while the founders fish, and fishes on afte
     await first.evaluate(() => psynet.liveGame.send("move", { spot: 6 }));
     await expect(first.locator("#fish-rejection")).toHaveText("Your boat is already there.");
 
-    // A newcomer joins the society while the founders fish, reads its
-    // history, and sails onto the running lake without waiting.
+    // Once the first player has caught something, so the society has a
+    // history, a newcomer joins while the founders fish, reads it, and
+    // sails onto the running lake without waiting.
+    await expect(first.locator(".fish-boat-wrapper .fish-count.fish-who-you")).not.toHaveText(
+      "You 🐟 0",
+      { timeout: STEP_TIMEOUT_MS }
+    );
     const [newcomer] = await startParticipantsTogether(contexts.slice(2), url, "microsociety_live_newcomer");
     await waitForPromptContains(newcomer, "The others are already fishing");
     await screenshot(newcomer, "microsociety_live_history");
