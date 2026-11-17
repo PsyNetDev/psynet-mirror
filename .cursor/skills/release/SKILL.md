@@ -25,7 +25,7 @@ that proposal, not a skip of the checkpoint.
 | RC (default for major and minor) | Pre-final validation → `references/release-candidates.md` |
 
 The major and minor path shares `references/shared-steps.md` (changelog,
-version bump, translations, tag, PyPI, GitLab release, Slack) with the
+version bump, translations, dependency check, tag, PyPI, GitLab release, Slack) with the
 patch path. See `references/version-reference.md` for version files,
 naming, and Dallinger upgrade notes.
 

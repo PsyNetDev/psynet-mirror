@@ -82,6 +82,29 @@ CI_COMMIT_REF_NAME=release-test pytest tests/isolated/translation/test_translati
 
 Commit the resulting ``psynet/locales`` changes before tagging.
 
+### Check declared dependencies
+
+The extras in `pyproject.toml` must declare every third-party package that
+`psynet/` imports, and nothing that it doesn't use. Feature merge requests
+are not checked for this, so check it on the release branch with
+[deptry](https://deptry.com/):
+
+```bash
+deptry psynet
+```
+
+Run it in the release virtual environment: `deptry` comes with the `dev`
+extra, and it reads the installed packages to map distribution names (such
+as `beautifulsoup4`) to import names (`bs4`), so it can't run through `uvx`.
+The `[tool.deptry]` section of `pyproject.toml` lists the deliberate
+exceptions, such as optional imports.
+
+If it reports issues, fix them on the release branch: declare a missing
+package in the `experiment` extra, remove an unused one, or add a deliberate
+exception to `[tool.deptry]` with a comment saying why. Commit the fix with
+a changelog fragment if it changes what `pip install psynet` installs. On a
+patch release, also bring the fix to `master` (see step 5 of the patch path).
+
 ### Update experiment templates (no longer required)
 
 PsyNet demos used to contain boilerplate that needed to be updated as part 

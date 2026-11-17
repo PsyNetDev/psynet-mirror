@@ -26,6 +26,7 @@ Perform the shared steps, in this order:
    experimenter-facing worth calling out
 4. [Update package translations](shared-steps.md#update-package-translations) if this
    patch changed translatable PsyNet strings
+5. [Check declared dependencies](shared-steps.md#check-declared-dependencies)
 
 ### 3. Push the release branch
 

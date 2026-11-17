@@ -1,0 +1,1 @@
+Added a [deptry](https://deptry.com/) configuration to `pyproject.toml` and a release step that runs `deptry psynet` to check that the extras declare every third-party package that `psynet/` imports. Contributors can run the same check after installing `.[dev]`.

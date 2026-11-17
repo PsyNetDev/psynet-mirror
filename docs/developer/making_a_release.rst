@@ -51,6 +51,10 @@ Overview
      current major version's pages under the index's first caption, and
      move the previous major version's pages under "Earlier versions" when
      a new major version is released; the changelog holds the full history.
+   * Run ``deptry psynet`` in the release virtual environment, which has the
+     ``dev`` extra, and fix what it reports. It checks that the extras in
+     ``pyproject.toml`` declare every third-party package that ``psynet/``
+     imports; the ``[tool.deptry]`` section lists the deliberate exceptions.
 
 3. Publish: tag ``vX.Y.Z`` on the release branch, wait for CI, build and
    upload to PyPI, create the GitLab release, and announce on Slack with

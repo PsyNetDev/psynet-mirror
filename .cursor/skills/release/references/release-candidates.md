@@ -47,7 +47,8 @@ using the shared steps with the RC version:
 2. [Bump the version](shared-steps.md#bump-the-version) from `13.2.0a0` to `13.2.0rc1`.
 3. [Update What's new](shared-steps.md#update-whats-new) for experimenter-facing highlights
    or breaking changes (usually on the first RC of a minor/major).
-4. Push the release branch and tag the RC. RC tags are pushed directly from
+4. [Check declared dependencies](shared-steps.md#check-declared-dependencies)
+   and commit any fixes. Then push the release branch and tag the RC. RC tags are pushed directly from
    the release branch — there is **no MR** and **no merge to `master`** at
    this stage:
 
@@ -135,7 +136,7 @@ back to `master` later if needed.
 
 When you have enough fixes to justify another candidate, cut the next RC by
 repeating the RC1 sequence with the next RC number (e.g. `13.2.0rc2`):
-CHANGELOG, version bump, demo update, then push, tag, upload, and
+CHANGELOG, version bump, dependency check, then push, tag, upload, and
 announcement, with the same human checkpoints. Repeat for `rc3`, `rc4`,
 etc. until you are confident the release is ready.
 

@@ -44,6 +44,7 @@ Perform the shared steps, in this order:
 3. [Update What's new](shared-steps.md#update-whats-new) when the release has
    experimenter-facing highlights or breaking changes
 4. [Update package translations](shared-steps.md#update-package-translations)
+5. [Check declared dependencies](shared-steps.md#check-declared-dependencies)
 
 ### 3. Push the release branch
 

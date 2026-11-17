@@ -104,6 +104,7 @@ dev = [
     "psynet[experiment,test]",
     "asv",
     "citeproc-py",
+    "deptry",
     "myst-parser",
     "openai",
     "pre-commit",
@@ -183,6 +184,28 @@ norecursedirs = [
     "tests/isolated",
     "tests/template_experiment_tests",
 ]
+
+# Checks that the runtime extras list what `psynet/` imports. Release managers
+# run `deptry psynet` on the release branch (see docs/developer/making_a_release.rst)
+# in an environment with the dev extra installed: deptry reads the installed
+# packages to map distribution names to import names.
+[tool.deptry]
+known_first_party = ["psynet"]
+optional_dependencies_dev_groups = ["dev", "demos", "test"]
+
+[tool.deptry.package_module_name_map]
+# Needed when the demos extra isn't installed.
+repp-tapping = "repp"
+
+[tool.deptry.per_rule_ignores]
+# Experiment authors import rpdb in their own code to debug.
+DEP002 = ["rpdb"]
+# Optional features that import these only when used, from a dev extra or the
+# experiment's own requirements.
+DEP004 = ["repp", "openai", "statsmodels"]
+# Imported only to detect Jupyter; PsyNet works without it.
+DEP001 = ["IPython"]
+DEP003 = ["IPython"]
 
 [tool.ruff]
 line-length = 88
