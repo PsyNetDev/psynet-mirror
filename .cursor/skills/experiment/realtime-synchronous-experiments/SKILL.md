@@ -11,7 +11,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 
 - `code/multiplayer/realtime_interaction` — channels, `WebSocketElt`, the
   server-authority model, consistency, disconnects, and testing
-- `design/groups` — group design concepts, including real-time interaction
+- `design/groups` — group design concepts, including how members interact
+- `design/live_games` — live games: how they work and the kinds of game
 - `code/multiplayer/synchronization` — groups, barriers, and timeouts
 - `code/multiplayer/chatroom` — the built-in chatroom, a complete
   `WebSocketElt` implementation

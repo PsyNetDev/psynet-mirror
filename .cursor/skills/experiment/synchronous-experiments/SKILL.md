@@ -13,6 +13,7 @@ If participants exchange live actions or messages within a trial, also read
 Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
 - `design/groups` — group design concepts
+- `design/rounds` — round-based experiments: cued trials, regrouping, slow players
 - `code/multiplayer/synchronization` — grouping, barriers, waiting, and release callbacks
 - `reference/api/sync` — synchronization API
 

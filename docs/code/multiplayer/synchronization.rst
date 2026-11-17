@@ -836,7 +836,7 @@ are fixed or formed anew each round. For a worked example, with the
 group's results in ``group_round.var`` and the exports, see
 :ref:`rounds-one-trial-per-player` in the round-based tutorial. For a group
 that works through a stimulus set or a chain, use a trial maker with
-``sync_group_type`` instead (see :ref:`concept_groups` for how to choose,
+``sync_group_type`` instead (see :ref:`design-rounds-cued-or-synced` for how to choose,
 and :ref:`rounds of a trial maker <trial-maker-rounds>`).
 
 ``cue`` numbers each group's rounds by itself, from 0:

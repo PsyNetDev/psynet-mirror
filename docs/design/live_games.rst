@@ -5,29 +5,10 @@ Live games
 
 In a **live game**, a group plays together on one page in real time: offers
 go back and forth in a negotiation, players steer around a shared board, or a
-society fishes on a lake while its members come and go.
-
-Two ways for a group to interact
---------------------------------
-
-In a round-based design, each step is a request to the server, which saves
-the participant's answer and renders their next page, and a barrier waits
-until every member has made that step. Above all, the group moves at the pace
-of its slowest member: nothing reaches the others until everyone has
-submitted a page.
-
-In a live game, the page stays open, and each move travels over an open
-connection to the game and straight back to every player, with nothing to
-save or render in between. On one computer, a move reaches the other players
-in about 5 ms, against about 30 ms for a page and 100 ms for a barrier. Over
-the internet, the network's round trip, typically 20–150 ms, comes on top of
-each. What matters more is that each move reaches the others as soon as it's
-made, so players can react to each other while they act. That's the reason
-to choose a live game. A design in which each player decides and then sees
-everyone's decisions is a round of trials, and needs no live game.
-
+society fishes on a lake while its members come and go. :doc:`groups`
+compares this with playing in rounds, and says when a live game is worth it.
 All the players need to be online at the same time, as in any group
-experiment (see :doc:`groups`).
+experiment.
 
 How it works
 ------------
