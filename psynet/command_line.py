@@ -3124,7 +3124,6 @@ def run_pre_checks(
             # The message explains how to add a consent page.
             raise click.ClickException(str(e)) from e
     exp._check_background_recording_pages()
-    exp.check_python_dependencies()
 
     try:
         with open("requirements.txt", "r") as f:

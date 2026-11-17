@@ -112,13 +112,6 @@ class Notifier:
         return get_experiment()
 
     @property
-    def python_dependencies(self):
-        """
-        List of Python dependencies required by the notifier.
-        """
-        return []
-
-    @property
     def launch_message(self):
         username = self.get_username()
         if username is not None:
@@ -400,10 +393,6 @@ class SlackNotifier(Notifier):
         from slack_sdk import WebClient
 
         return WebClient(token=self.bot_token)
-
-    @property
-    def python_dependencies(self):
-        return super().python_dependencies + ["slack-sdk"]
 
     def _notify(self, msg, thread_ts=None):
         if not self.slack_available:
