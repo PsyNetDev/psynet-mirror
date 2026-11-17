@@ -75,40 +75,44 @@ Changing partners between rounds
 New groups for each round
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Some designs give players new partners in each round, for example so that
-each player meets several others. To change groups once, for example from
-groups of three to pairs, a **group closer**, a barrier that ends the group
-once all its members reach it, closes the first groups, and a second grouper
-forms the new ones (see :ref:`sync-regrouping`).
+Many economic games give players a new partner every round, so that each
+player meets several others, and nobody can build a reputation with one
+partner or pay them back in the next round: in an ultimatum game, for
+example, each round's proposer faces a responder they haven't met. Other
+designs change groups only once, such as from discussing in threes to
+bargaining in pairs.
 
-Repeating this every round would make each player wait for their whole old
-group before they could be regrouped, and fail the group's members when one of
-them drops out. A **regrouper** is made for this instead. Each time
-participants reach it, it removes them from their previous group and splits
-those waiting into new groups at random and gives out roles such as
-proposer and responder at random. If the
-players don't divide evenly into groups, the player who has played the most
-rounds **sits out** the round; they see a page saying so and play again in a
-later round. A player who is late for a split joins the next one. If no
+To change groups once, end the first groups at a step that all their members
+reach, a *group closer*, and form the new groups with a second grouper (see
+:ref:`sync-regrouping`).
+
+To give players new partners every round, start each round with a
+*regrouper*. Each time players reach it, it takes them out of their previous
+group and splits those waiting into new groups at random, giving out roles,
+such as proposer and responder, at random too. It doesn't split them as soon
+as two are waiting, which would pair whoever finished at the same moment,
+often the same people every round: it collects players and splits them at a
+deadline, for example every 10 seconds (``every=10``).
+
+If the players don't divide evenly into groups, the one who has played the
+most rounds *sits out* the round: they see a page saying so, and play again
+in a later round. A player who is late for a split joins the next one. If no
 further split comes within the regrouper's maximum waiting time, for example
 after the last round, they are failed by default
-(``max_wait_action="fail"``), unless the regrouper lets them continue
-without a group (``max_wait_action="continue_without_group"``).
-
-A regrouper doesn't split players as soon as two are waiting, because that
-would pair whoever finished at the same moment, often the same people every
-round. It collects players first and splits them at a deadline, for example
-every 10 seconds (``every=10``).
+(``max_wait_action="fail"``), unless the regrouper lets them continue without
+a group (``max_wait_action="continue_without_group"``).
 
 Cohorts that regroup each round
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-When everyone waiting is split together, what a player experiences depends
-on how busy the experiment is: at a busy moment a group has eight players, at
-a quiet one two. To keep this the same for everyone, a grouper first forms
-**cohorts**, groups that stay together for the whole game (called *matching
-groups* in experimental economics). The regrouper then splits each cohort
-into new groups every round, so players only ever meet others in their cohort.
+When a regrouper splits everyone waiting, who a player can meet depends on
+how busy the experiment is: at a busy moment their partner is drawn from
+eight players, at a quiet one from two. Experimental economists keep this the
+same for everyone with *matching groups*: a fixed set of players, say four,
+whose members are paired with each other every round, and never with anyone
+else. In PsyNet, a grouper first forms these **cohorts**, which stay together
+for the whole game, and the regrouper then splits each cohort into new groups
+every round.
 Because the regrouper knows who is in the cohort, a round can start as soon as
 the whole cohort is back; the deadline only matters when someone is missing.
 
