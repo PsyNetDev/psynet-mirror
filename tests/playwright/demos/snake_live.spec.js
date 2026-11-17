@@ -93,7 +93,8 @@ async function eatAPiece(page) {
 test("players steer snakes in snake_live, eat food, crash and come back, and finish the round", { tag: "@both" }, async ({
   browser
 }) => {
-  const experiment = startExperiment(path.resolve("demos/experiments/snake_live"));
+  // The game ticks, so it runs on gunicorn, as a deployed experiment does.
+  const experiment = startExperiment(path.resolve("demos/experiments/snake_live"), { legacy: true });
   const contexts = [await browser.newContext(), await browser.newContext()];
 
   try {

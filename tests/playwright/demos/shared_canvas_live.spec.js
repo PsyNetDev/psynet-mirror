@@ -118,7 +118,8 @@ async function waitUntilStill(page) {
 test("players move around shared_canvas_live with prediction and interpolation, collect a coin, coast after leaving, and finish the round", { tag: "@both" }, async ({
   browser
 }) => {
-  const experiment = startExperiment(path.resolve("demos/experiments/shared_canvas_live"));
+  // The game ticks, so it runs on gunicorn, as a deployed experiment does.
+  const experiment = startExperiment(path.resolve("demos/experiments/shared_canvas_live"), { legacy: true });
   const contexts = [await browser.newContext(), await browser.newContext()];
   // While this is set, the first player's moves are held back from the
   // server, to be sent later.
