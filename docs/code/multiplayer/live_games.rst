@@ -72,7 +72,7 @@ A game's parts, each explained below or in the tutorial:
 
 
     class MyGame(LiveGame):
-        channel = "my_game"  # names the game
+        name = "my_game"  # must differ from every other game's
         messages = [Choose]  # the kinds of message its pages send
         min_players = 2  # and max_players, duration, timeout and away_timeout
 
@@ -117,7 +117,8 @@ comes from ``RealtimeGame``.
 PsyNet adds each game to the experiment's ``realtime_games`` itself, so you
 don't list it there. It adds every game that Python has loaded, whether or
 not the timeline plays it. That includes a game in a module you import from
-another experiment, so give every game a channel of its own.
+another experiment, so give every game a name of its own. Dallinger calls
+the name the game's ``channel``.
 
 .. _live-games-messages:
 
@@ -209,8 +210,9 @@ game, and then shows the group the game page:
     )
 
 The game page plays the game that this ``PlayLiveGame`` started, so give
-each ``PlayLiveGame`` a page of its own. Its ``id_`` is the game's
-``channel`` unless you give one. Steps with the same id share their wait,
+each ``PlayLiveGame`` a page of its own. Its ``id_``, which keys the
+participant's records of their games, is the game's ``name`` unless you give
+one. Steps with the same id share their wait,
 like barriers with the same id, so a game that the timeline plays in two
 places, such as a practice game and the main game, needs a different
 ``id_`` in each.
@@ -247,6 +249,9 @@ takes newcomers:
   ``late_after``. Instead each member waits ``max_wait_time`` seconds from
   when they arrive, and then leaves the group themselves.
 
+Here and below, ``rock_paper_scissors_page()`` returns a new game page like
+the one above:
+
 .. code-block:: python
 
     InfoPage(instructions, time_estimate=60, time_limit=90),
@@ -266,8 +271,9 @@ live games whose bots aren't run together (see `Bots and testing`_), and two
 
 Its ``on_release`` runs when the wait before the game ends, not when the
 game ends, once the group's game has been created. It gets the arguments a
-group barrier's ``on_release`` takes, and also ``live_game_id``, which is
-``None`` if the group started no game. Use it for group bookkeeping at the
+group barrier's ``on_release`` takes, and also ``live_game``, the new game's
+record (see `A game's record`_), whose ``status`` is ``"not_started"`` if the
+group started no game. Use it for group bookkeeping at the
 start of a round, such as choosing who leaves after it. Work done once the
 game ends, such as scoring, goes in the trial, which gets the game's answer
 (see `The answer`_), or in a later group barrier's ``on_release``.
@@ -276,8 +282,7 @@ To play one game under different conditions, such as with a different
 number of throws, pass ``PlayLiveGame`` ``settings``: a dict, or any other
 value that can be saved as JSON. The game's ``initial_state`` gets it as a
 second argument, and keeps what the game's other methods need in the state,
-since they get only the state. Here and below, ``rock_paper_scissors_page()``
-returns a new game page like the one above:
+since they get only the state:
 
 .. code-block:: python
 
@@ -325,10 +330,9 @@ draws each pair's stake this way, with a function as the definition that
 ``cue`` calls once for the pair.
 
 A trial played in a group needs a :class:`~psynet.sync.GroupBarrier` in its
-``show_trial``, and the barrier of the ``PlayLiveGame`` is one. The round's
-:attr:`~psynet.sync.SyncGroupRound.live_game_id` then names the game the
-group played in it, so ``trial.group_round`` leads from each trial to its
-round's game, for example in an export.
+``show_trial``, and the barrier of the ``PlayLiveGame`` is one. Each trial's
+:attr:`~psynet.trial.main.Trial.live_game` is then the record of the game
+played in it, with the trial's participant's answer.
 
 The page's JavaScript goes in a file in the experiment's ``static`` folder,
 listed in the page's ``js_page_modules``. It exports an ``activate``
@@ -359,7 +363,8 @@ function, which PsyNet runs each time the page opens
 Showing the game:
 
 - ``onView(callback)`` calls ``callback`` with each new view, ending with
-  the final view.
+  the final view. With a ``predict`` callback, it gets the predicted view,
+  and runs again after each ``send``.
 - ``showStatus(element, playing)`` keeps a status line up to date (see `The
   status line`_).
 - ``enableWhilePlaying(...elements)`` enables buttons and other elements
@@ -462,8 +467,10 @@ player's move yet, so the page would briefly undo it, such as by enabling
 buttons the player has just used. ``predict`` fixes both. Its callback
 changes a view as the game will once it applies one of the page's messages,
 and ``predictedView()`` returns the newest view with each message the game
-hasn't applied yet applied by the callback. Draw from it in ``onView`` and
-after ``send``. In a game on a board:
+hasn't applied yet applied by the callback. With a ``predict`` callback,
+``onView`` gets this predicted view instead of the game's own, and runs again
+after each ``send``, so a page that draws in ``onView`` shows the player's
+moves at once. In a game on a board:
 
 .. code-block:: javascript
 
@@ -473,7 +480,7 @@ after ``send``. In a game on a board:
       }
     });
 
-    psynet.liveGame.onView(() => draw(psynet.liveGame.predictedView()));
+    psynet.liveGame.onView(draw);  // draws the predicted view
 
 The callback gets a copy of the view, so it can change it, and runs again
 for each new view until the game has applied the message. A fourth argument,
@@ -482,7 +489,8 @@ wasn't known yet), the same each time, for predicting when something
 happens, such as when a moving boat arrives. If the game rejects the
 message, the prediction goes, and the page draws the view as the game has
 it. Keep the callback to what the game will certainly do, since the game's
-rules decide.
+rules decide. To draw at other times, such as in an animation loop, call
+``predictedView()``.
 
 The second delay is between ticks. A game that moves things by itself, with
 a ``tick_rate`` above 0, sends a view at each tick, so other players jump
@@ -907,13 +915,13 @@ outcome. The ``rock_paper_scissors_live``, ``snake_live`` and
 
 When the game is played as a trial (see `Starting games and the game
 page`_), PsyNet copies the outcome to the round the game was played in once
-the game's result is saved, so later pages and the export read it as
-``trial.group_round.live_game_outcome``, with no need for another barrier
-after the game page to score the round:
+the game's result is saved, so a trial and later pages read the whole
+group's outcome from the trial's record of its game, with no need for another
+barrier after the game page to score the round:
 
 .. code-block:: python
 
-    pot = trial.group_round.live_game_outcome["pot"]
+    pot = trial.live_game.outcome["pot"]
 
 It is ``None`` until then, and ``answer`` isn't called, for a game that
 failed without an outcome. On a later page, the participant's record of the
@@ -921,8 +929,7 @@ game has their answer (see `A game's record`_):
 
 .. code-block:: python
 
-    game = participant.live_games["snake_live"]  # None without a game
-    answer = None if game is None else game.answer
+    answer = participant.live_games["snake"].answer  # None without one
 
 .. _live-games-rewards:
 
@@ -989,44 +996,58 @@ Each game's record is saved with the experiment's data, in Dallinger's
 ``realtime_session`` and ``realtime_event`` tables: the game's outcome and
 final state, and each message a page sent, with whether the game accepted it.
 In Python, a :class:`~psynet.live_game.LiveGameRecord` reads it back. The
-participant's :attr:`~psynet.participant.Participant.live_games` gives one
-for their latest game at each ``PlayLiveGame``, keyed by its ``id_``, as
-``participant.active_sync_groups`` is keyed by group type:
+participant's :attr:`~psynet.participant.Participant.live_games` gives their
+record of their latest game at each ``PlayLiveGame`` they reached, keyed by
+its ``id_``, as ``participant.active_sync_groups`` is keyed by group type:
 
 .. code-block:: python
 
-    game = participant.live_games["rock_paper_scissors"]  # None if no game started
-    if game is not None and game.status == "ended":
+    game = participant.live_games["rock_paper_scissors"]
+    if game.finished:
         game.answer  # this participant's answer
-        game.outcome, game.end_reason
+        game.outcome  # the whole game's outcome
         for saved in game.messages:
             if saved.type == "choose":
                 print(saved.player, saved.message.action, saved.time)
 
 A record has:
 
-- ``id``, the game id;
-- ``status``, ``"running"`` until the game's result is saved, then
-  ``"ended"``, or ``"failed"`` if the game's code raised an error or its
-  record couldn't be saved, with the error in ``error``;
+- ``status``: ``"not_started"`` if the participant's group started no game
+  there, for example because it broke up while it waited, ``"running"``
+  until the game's result is saved, then ``"ended"``, or ``"failed"`` if the
+  game's code raised an error or its record couldn't be saved, with the
+  error in ``error``;
+- ``finished``, whether the game ended normally, through ``is_over`` or at
+  the end of its ``duration``, rather than early, for example because
+  players left;
 - ``outcome`` and ``end_reason``, the game's outcome and the ``reason`` it
-  ended, both ``None`` while it runs;
-- ``answer``, the participant's answer on the game page;
-- ``participant_ids``, the players' participant ids in player order;
+  ended, both ``None`` until it has ended;
+- ``answer``, the participant's answer on the game page, and ``player``,
+  their player number;
+- ``answers``, each player's answer, in player order, and
+  ``participant_ids``, each player's participant id;
 - ``messages``, ``moments`` and ``checkpoints``, below;
-- ``record_complete``, which is ``False`` if saving the record failed.
+- ``id``, the game id, and ``record_complete``, which is ``False`` if saving
+  the record failed.
 
-Each attribute reads the database when you use it, so a record of a running
-game stays up to date. ``live_games`` holds ``None`` for a step where the
-participant's group didn't start a game, and a step they never reached isn't
-in it. :attr:`~psynet.participant.Participant.live_game_history`
-gives a list of every game they played at each step, oldest first, such as
-one per round of a loop, each with their answer in it. A group's
-:attr:`~psynet.sync.SyncGroup.running_live_games` gives the games it is
-playing now, keyed in the same way, and a round's
-:attr:`~psynet.sync.SyncGroupRound.live_game` the game played in it, so an
-analysis of trials reaches each game through ``trial.group_round.live_game``.
-Records from a group or a round have no ``answer``.
+A game that didn't start has a record too, with ``None`` and empty lists, so
+a page can read ``participant.live_games["snake"].answer`` and get ``None``
+without a game. A step the participant never reached isn't in
+``live_games``. Each attribute reads the database when you use it, so a
+record of a running game stays up to date.
+
+Other records of the same games:
+
+- :attr:`~psynet.participant.Participant.live_game_history` gives a list of
+  every game the participant played at each step, oldest first, such as one
+  per round of a loop, each with their answer in it.
+- A trial's :attr:`~psynet.trial.main.Trial.live_game` is the participant's
+  record of the game played in the trial, so an analysis of trials reads
+  ``trial.live_game.outcome``.
+- A group's :attr:`~psynet.sync.SyncGroup.running_live_games` gives the
+  games it is playing now, keyed in the same way. These records are the
+  group's, not one participant's, so they have ``answers`` but no ``answer``
+  or ``player``.
 
 .. _live-games-saved-messages:
 
@@ -1154,8 +1175,7 @@ bot's game at the end of the test through its record:
         def test_check_bot(self, bot, **kwargs):
             super().test_check_bot(bot, **kwargs)
             game = bot.live_games["rock_paper_scissors"]
-            assert game.status == "ended", game.error
-            assert game.end_reason == "finished"
+            assert game.finished, game.error
             assert game.answer["mine"] is not None
 
 To test a game's rules in Python, without starting the experiment, play it

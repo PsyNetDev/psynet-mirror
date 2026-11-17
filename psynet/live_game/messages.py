@@ -210,7 +210,7 @@ def _session_game_class(session_id):
     if game_class is None:
         raise ValueError(
             f"Game {session_id} is a game of {channel!r}, and no "
-            "LiveGame with that channel is defined. Import the module "
+            "LiveGame with that name is defined. Import the module "
             "that defines the game first."
         )
     return game_class

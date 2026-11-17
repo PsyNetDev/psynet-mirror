@@ -110,7 +110,7 @@ class RockPaperScissors(LiveGame):
     partner's choice only once the throw is over.
     """
 
-    channel = "rock_paper_scissors_live"
+    name = "rock_paper_scissors"
     messages = [Choose]
     min_players = max_players = 2
     # A player whose partner closes the page for good isn't left waiting:
@@ -211,7 +211,6 @@ class RockPaperScissorsTrial(Trial):
         # game page. Starting the game closes the pair's round, as releasing
         # any group barrier in a cued trial does.
         return PlayLiveGame(
-            id_="rock_paper_scissors",
             group_type="pair",
             game_class=RockPaperScissors,
             settings={"throws": game["throws"]},
@@ -255,8 +254,8 @@ class RockPaperScissorsTrial(Trial):
                 ),
                 LiveGameControl(
                     player_left_message=(
-                        "Your partner has left the game. If they don't come "
-                        "back within 30 seconds, it will end."
+                        "Your partner has left the game. If they don't come back "
+                        f"within {RockPaperScissors.away_timeout} seconds, it will end."
                     ),
                     no_game_message=("This game can't be played without your partner."),
                     waiting_status="Waiting for your partner to open the game",
@@ -358,9 +357,8 @@ class Exp(psynet.experiment.Experiment):
         ]
         # The bot's latest game is its second.
         game = bot.live_games["rock_paper_scissors"]
-        assert game.status == "ended", game.error
-        assert game.end_reason == "finished"
-        assert trials[-1].group_round.live_game == game
+        assert game.finished, game.error
+        assert trials[-1].live_game == game
         reward = 0
         for trial in trials:
             throws = trial.answer["throws"]

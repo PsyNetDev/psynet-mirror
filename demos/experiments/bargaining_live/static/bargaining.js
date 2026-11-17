@@ -81,7 +81,6 @@ export function activate({root, psynet}) {
   keep.addEventListener("input", render);
   propose.addEventListener("click", () => {
     live.send("propose", {keep: Number(keep.value)});
-    render();
   });
   accept.addEventListener("click", () => {
     live.send("accept", {keep: view.theirs});

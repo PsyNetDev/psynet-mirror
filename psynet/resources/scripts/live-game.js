@@ -259,7 +259,9 @@
         callEach(state.startedCallbacks.splice(0), view);
       }
       state.player = view.psynet.you;
-      callEach(state.viewCallbacks, view, details);
+      if (state.viewCallbacks.length > 0) {
+        callEach(state.viewCallbacks, shownView(state, view), details);
+      }
       callEach(state.statusCallbacks);
       if (state.ended) {
         state.playingElements.forEach((element) => (element.disabled = true));
@@ -443,12 +445,29 @@
         type: type,
         message: message,
       });
+      let state = pageState();
       if (number !== undefined) {
-        pageState().rejectionElements.forEach((element) => (element.textContent = ""));
-        // A status drawn from the predicted view shows the message at once.
-        callEach(pageState().statusCallbacks);
+        state.rejectionElements.forEach((element) => (element.textContent = ""));
+        // Pages drawn from the predicted view show the message at once.
+        if (
+          state.predict !== null &&
+          state.lastView !== null &&
+          state.viewCallbacks.length > 0
+        ) {
+          callEach(state.viewCallbacks, shownView(state, state.lastView), null);
+        }
+        callEach(state.statusCallbacks);
       }
       return number;
+    }
+
+    // The view onView's callbacks get: with a predict callback, the
+    // predicted view, so a page draws the player's own messages at once.
+    function shownView(state, view) {
+      if (state.predict === null) {
+        return view;
+      }
+      return pageSocket().predictedView() ?? view;
     }
 
     /**
@@ -575,10 +594,15 @@
      * with ``ended`` set. A page that opens after its game failed gets no
      * view, so ``onView`` doesn't run there.
      *
+     * With a ``predict`` callback, the callback gets the predicted view
+     * instead, with the page's messages that the game hasn't applied yet
+     * applied, and it runs again after each ``send``, so the page draws the
+     * player's own moves at once.
+     *
      * The callback's second argument is the view's details, which
      * Dallinger's ``Socket.onView`` describes. It is ``null`` for a final
-     * view that came with the ending, so check ``ended`` and not
-     * ``details.ended``.
+     * view that came with the ending, and when the callback runs again
+     * after ``send``, so check ``ended`` and not ``details.ended``.
      *
      * @param {function} callback - Called with each view, and its details,
      *   which can be ``null``
@@ -651,8 +675,9 @@
     /**
      * Return the newest view, with the page's messages that the game hasn't
      * applied yet applied by ``predict``'s callback, in the order they were
-     * sent. Draw from it in ``onView``, and again after ``send``, so the
-     * player sees their own moves at once. A message the game rejects is
+     * sent. ``onView`` already gets it, and runs again after ``send``, so
+     * call this only to draw at other times, such as in an animation loop.
+     * A message the game rejects is
      * undone by the next view. Before the first view it's ``null``, and once
      * the game has ended it's the final view. Don't change the view it
      * returns.

@@ -50,6 +50,7 @@ from psynet.sync import (
     _take_pending_barrier_checks,
 )
 from psynet.timeline import Response, Timeline
+from psynet.trial.main import Trial
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -167,7 +168,7 @@ def test_each_pass_through_the_game_barrier_starts_a_new_game(pair):
     session_ids = []
     for _ in range(2):
         _arrive(game_barrier, members[0])
-        assert members[0].live_games[game_barrier.id] is None
+        assert members[0].live_games[game_barrier.id].status == "not_started"
         _arrive(game_barrier, members[1])
         session_ids.append(members[0].live_games[game_barrier.id].id)
 
@@ -216,7 +217,7 @@ def test_a_game_starts_from_its_game_barrier_s_settings(pair):
 
 def test_an_game_barrier_s_settings_must_be_json_the_game_takes(registry, monkeypatch):
     class Fixed(LiveGame):
-        channel = "fixed"
+        name = "fixed"
 
         def initial_state(self, players):
             return {}
@@ -228,7 +229,7 @@ def test_an_game_barrier_s_settings_must_be_json_the_game_takes(registry, monkey
             return None
 
     class Varied(Fixed):
-        channel = "varied"
+        name = "varied"
 
         def initial_state(self, players, settings):
             return {"settings": settings}
@@ -289,8 +290,8 @@ def test_a_group_with_fewer_than_min_players_starts_no_game(pair, monkeypatch):
 _releases = []
 
 
-def _note_release(participants, live_game_id):
-    _releases.append((sorted(p.id for p in participants), live_game_id))
+def _note_release(participants, live_game):
+    _releases.append((sorted(p.id for p in participants), live_game.id))
 
 
 @pytest.mark.parametrize("min_players, starts", [(2, True), (3, False)])
@@ -307,14 +308,14 @@ def test_on_release_runs_when_the_group_s_game_is_created(
 
     game_id = _game_id(members[0], "trial_game")
     assert (game_id is not None) is starts
-    # With no game, because the group is too small, its id is None.
+    # With no game, because the group is too small, the record's id is None.
     assert _releases == [(sorted(m.id for m in members), game_id)]
 
 
 class UnpaidGame(LiveGame):
     """A game that pays nothing itself, for a trial that pays."""
 
-    channel = "unpaid_game"
+    name = "unpaid_game"
 
     def initial_state(self, players):
         return {}
@@ -865,7 +866,7 @@ def test_a_record_can_t_read_the_messages_of_a_game_that_isn_t_defined(
     session_id = _pair_session(pair)
     monkeypatch.setattr(game_registry, "_live_game_classes", {})
 
-    with pytest.raises(ValueError, match="no LiveGame with that channel"):
+    with pytest.raises(ValueError, match="no LiveGame with that name"):
         LiveGameRecord(session_id).messages
 
 
@@ -901,7 +902,7 @@ class Place(LiveMessage):
 @pytest.fixture
 def walk(registry):
     class Walk(LiveGame):
-        channel = "walk"
+        name = "walk"
         messages = [Move, Place]
 
         def initial_state(self, players):
@@ -943,7 +944,7 @@ class Jump(LiveMessage):
 @pytest.fixture
 def hop(registry):
     class Hop(LiveGame):
-        channel = "hop"
+        name = "hop"
         messages = [Jump]
 
         def initial_state(self, players):
@@ -960,7 +961,7 @@ def hop(registry):
 
 def test_a_bot_s_message_is_sent_as_a_page_sends_it(hop):
     class FurtherHop(hop):
-        channel = "further_hop"
+        name = "further_hop"
 
         def bot(self, view, player_id, now):
             # Its parent's message, as a Jump.
@@ -980,7 +981,7 @@ def test_a_bot_can_return_what_a_page_sends(hop):
     sent = {"type": "jump", "message": {"from": 1, "to": [2, 3]}}
 
     class PlainHop(hop):
-        channel = "plain_hop"
+        name = "plain_hop"
 
         def bot(self, view, player_id, now):
             return sent
@@ -1015,7 +1016,7 @@ def test_a_bot_message_the_game_can_t_read_as_it_is_fails_loudly(
     registry, listed, returned, problem
 ):
     class Archery(LiveGame):
-        channel = "archery"
+        name = "archery"
         messages = [listed]
 
         def initial_state(self, players):
@@ -1088,16 +1089,16 @@ def test_model_fields_and_numbers_are_checked_strictly(walk, fields, reason):
 
 def test_realtime_games_lists_every_live_game_and_the_listed_games(registry):
     class Listed(RealtimeGame):
-        channel = "listed"
+        name = "listed"
 
     class Played(LiveGame):
-        channel = "played"
+        name = "played"
 
     class AlsoListed(LiveGame):
-        channel = "also_listed"
+        name = "also_listed"
 
     class Unplayed(LiveGame):
-        """A base class for games, with no channel."""
+        """A base class for games, with no name."""
 
     class Games(Experiment):
         realtime_games = [Listed, AlsoListed]
@@ -1116,7 +1117,7 @@ def _import_games(tmp_path, name, directory):
     games.write_text(
         "from psynet.live_game import LiveGame\n"
         "class Imported(LiveGame):\n"
-        "    channel = 'imported'\n"
+        "    name = 'imported'\n"
     )
     spec = importlib.util.spec_from_file_location(name, games)
     module = importlib.util.module_from_spec(spec)
@@ -1147,7 +1148,7 @@ def test_a_game_defined_after_the_experiment_class_is_listed(registry):
         timeline = Timeline(InfoPage("No game barrier.", time_estimate=5))
 
     class Late(LiveGame):
-        channel = "late"
+        name = "late"
 
     assert Early.realtime_games == [Late]
     assert object.__new__(Early).realtime_games == [Late]
@@ -1189,14 +1190,30 @@ def test_live_games_need_their_bots_to_play_together(pair):
     Driven.check_live_games()
 
 
-def test_a_subclass_with_its_parent_s_channel_is_refused(registry):
+def test_a_subclass_with_its_parent_s_name_is_refused(registry):
     class Parent(LiveGame):
-        channel = "shared"
+        name = "shared"
 
-    with pytest.raises(ValueError, match="Parent and Child both use the channel"):
+    with pytest.raises(ValueError, match="Parent and Child both use the name"):
 
         class Child(Parent):
             pass
+
+
+def test_a_game_s_name_is_its_channel(registry):
+    class Named(LiveGame):
+        name = "named"
+
+    class OldStyle(LiveGame):
+        channel = "old_style"
+
+    assert (Named.name, Named.channel) == ("named", "named")
+    assert (OldStyle.name, OldStyle.channel) == ("old_style", "old_style")
+    with pytest.raises(TypeError, match="Both sets both a name and a channel"):
+
+        class Both(LiveGame):
+            name = "both"
+            channel = "other"
 
 
 class NoType(LiveMessage):
@@ -1227,7 +1244,7 @@ def test_an_annotated_type_is_refused():
             messages = [Annotated]
 
 
-def test_a_game_class_must_be_a_live_game_with_a_channel_and_a_bot(
+def test_a_game_class_must_be_a_live_game_with_a_name_and_a_bot(
     registry,
 ):
     class Plain(RealtimeGame):
@@ -1238,11 +1255,11 @@ def test_a_game_class_must_be_a_live_game_with_a_channel_and_a_bot(
             return None
 
     class Botless(LiveGame):
-        channel = "botless"
+        name = "botless"
 
     with pytest.raises(TypeError, match="game_class must be a LiveGame subclass"):
         _play("plain", game_class=Plain)
-    with pytest.raises(TypeError, match="Unnamed has no channel"):
+    with pytest.raises(TypeError, match="Unnamed has no name"):
         _play("unnamed", game_class=Unnamed)
     with pytest.raises(TypeError, match="Botless has no bot method"):
         _play("botless", game_class=Botless)
@@ -1621,7 +1638,7 @@ def relay(registry):
     class Relay(LiveGame):
         # A game for one, as the test plays it.
         away_timeout = None
-        channel = "relay"
+        name = "relay"
         messages = [Tap]
         ready_timeout = 10
 
@@ -1669,7 +1686,7 @@ def test_messages_are_rejected_until_every_player_is_ready(relay):
 
 def test_an_overridden_apply_gets_only_the_game_s_messages_after_the_start(relay):
     class Counted(type(relay)):
-        channel = "counted"
+        name = "counted"
 
         def apply(self, state, player, message, now, sent):
             state["applied"] = state.get("applied", 0) + 1
@@ -1725,12 +1742,12 @@ class Clock(RealtimeGame):
 
 def test_the_ready_step_covers_renamed_methods_and_later_bases(relay):
     class Renamed(type(relay)):
-        channel = "renamed"
+        name = "renamed"
         tick = advance
 
     class Later(LiveGame, Clock):
         away_timeout = None
-        channel = "later"
+        name = "later"
 
         def initial_state(self, players):
             return {"ticks": []}
@@ -1752,7 +1769,7 @@ def test_the_ready_step_covers_renamed_methods_and_later_bases(relay):
 
 def test_a_game_can_build_on_another_game_s_state(relay):
     class Extended(type(relay)):
-        channel = "extended"
+        name = "extended"
 
         def initial_state(self, players):
             return {**super().initial_state(players), "deadline": None}
@@ -1780,7 +1797,7 @@ def test_each_view_shows_who_is_ready_and_which_player_it_is_for(relay):
 
 def test_a_game_calling_its_own_view_passes_the_player_s_number():
     class Scores(LiveGame):
-        channel = "scores"
+        name = "scores"
 
         def initial_state(self, players):
             return {"scores": [10, 20], "seen": []}
@@ -1806,7 +1823,7 @@ def test_a_game_calling_its_own_view_passes_the_player_s_number():
 
 def test_a_game_with_an_away_timeout_ends_once_too_few_players_are_left():
     class Commons(LiveGame):
-        channel = "commons"
+        name = "commons"
         min_players = 2
         away_timeout = 30
 
@@ -1837,7 +1854,7 @@ def test_a_game_with_an_away_timeout_ends_once_too_few_players_are_left():
 
 def test_by_default_a_game_for_two_ends_a_minute_after_one_player_leaves():
     class Pair(LiveGame):
-        channel = "pair_by_default"
+        name = "pair_by_default"
 
         def initial_state(self, players):
             return {"left_alone": False}
@@ -1934,7 +1951,7 @@ def test_a_player_who_leaves_before_the_start_is_not_ready(relay):
 
 def test_join_and_leave_get_no_time_before_the_game_starts(relay):
     class Logged(type(relay)):
-        channel = "logged"
+        name = "logged"
 
         def on_join(self, state, player, now):
             state["ticks"].append(["join", player, now])
@@ -1953,7 +1970,7 @@ def test_join_and_leave_get_no_time_before_the_game_starts(relay):
 
 def test_a_game_method_that_calls_another_gets_the_ready_step(relay):
     class Eager(type(relay)):
-        channel = "eager"
+        name = "eager"
 
         def on_join(self, state, player, now):
             self.tick(state, now)
@@ -1981,7 +1998,7 @@ def _session_entry(kind, time, player_id, payload=None):
 
 def test_a_deadline_due_by_the_ready_timeout_runs_when_the_game_starts(relay):
     class Overdue(type(relay)):
-        channel = "overdue"
+        name = "overdue"
 
         def next_deadline(self, state):
             return 0
@@ -2026,7 +2043,7 @@ def test_a_bot_plays_once_the_testing_helper_has_started_its_game():
 
 def test_an_on_start_that_ends_the_game_skips_its_tick(relay):
     class Everyone(type(relay)):
-        channel = "everyone"
+        name = "everyone"
 
         def on_start(self, state):
             entry = state["psynet"]
@@ -2050,7 +2067,7 @@ def test_an_on_start_that_ends_the_game_skips_its_tick(relay):
 
 def test_a_game_with_a_duration_ends_when_its_time_is_up(relay):
     class Timed(type(relay)):
-        channel = "timed"
+        name = "timed"
         duration = 20
 
     game = Timed()
@@ -2070,7 +2087,7 @@ def test_a_game_with_a_duration_ends_when_its_time_is_up(relay):
 
 def test_a_game_without_a_duration_ends_at_its_timeout(relay):
     class Patient(type(relay)):
-        channel = "patient"
+        name = "patient"
         timeout = 30
 
     game = Patient()
@@ -2092,7 +2109,7 @@ def test_a_game_without_a_duration_ends_at_its_timeout(relay):
 
 def test_a_game_with_a_duration_rejects_late_messages(relay):
     class Timed(type(relay)):
-        channel = "timed"
+        name = "timed"
         duration = 20
 
     game = Timed()
@@ -2276,9 +2293,38 @@ def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
     assert _reward(members[0]) == pytest.approx(0.53)
     # Later pages read the answer and the result through the participant.
     db.session.refresh(members[0])
-    assert members[0].live_games["pick_numbers"] == game
+    assert members[0].live_games["pick_numbers"].id == game.id
+    assert members[0].live_games["pick_numbers"].finished
     assert members[0].live_games["pick_numbers"].answer == outcome
     assert members[0].live_game_history["pick_numbers"][-1].answer == outcome
+    # Each player's answer, in player order, once their page has saved it.
+    players = [game.participant_ids.index(member.id) for member in members]
+    answers = [None, None]
+    answers[players[0]] = outcome
+    assert game.answers == answers
+    assert members[0].live_games["pick_numbers"].player == players[0]
+    # A record that isn't one participant's has no single answer.
+    with pytest.raises(AttributeError, match="has no single answer"):
+        game.answer
+    # A trial's game is its participant's.
+    group_round = SimpleNamespace(live_game_id=session_id)
+    trial = SimpleNamespace(group_round=group_round, participant=members[0])
+    assert Trial.live_game.fget(trial).answer == outcome
+    assert Trial.live_game.fget(SimpleNamespace(group_round=None)) is None
+
+
+def test_a_step_without_a_game_has_a_record_that_says_so(pair, monkeypatch):
+    members, game_barrier = pair
+    monkeypatch.setattr(type(_pick_numbers()), "min_players", 3)
+    for member in members:
+        _arrive(game_barrier, member)
+
+    game = members[0].live_games[game_barrier.id]
+    assert (game.id, game.status, game.finished) == (None, "not_started", False)
+    assert (game.answer, game.outcome, game.end_reason, game.player) == (None,) * 4
+    assert (game.messages, game.moments, game.participant_ids) == ([], [], [])
+    assert not game.record_complete
+    assert members[0].live_game_history[game_barrier.id] == []
 
 
 def test_the_game_page_fails_once_its_game_can_no_longer_end(pair, monkeypatch):
@@ -2550,7 +2596,7 @@ class Shot(LiveMessage):
 @pytest.fixture
 def range_game(registry):
     class Range(LiveGame):
-        channel = "range"
+        name = "range"
         messages = [Shot]
 
         def initial_state(self, players):
@@ -2592,7 +2638,7 @@ def test_a_message_the_game_couldn_t_read_is_saved(range_game):
 
 def test_psynet_s_ready_messages_are_saved_whatever_the_game_says(registry):
     class Quiet(LiveGame):
-        channel = "quiet"
+        name = "quiet"
         messages = [Shot]
 
         def initial_state(self, players):

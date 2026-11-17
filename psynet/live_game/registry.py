@@ -23,12 +23,12 @@ def _register_live_game(game_class):
         if existing.__qualname__ == game_class.__qualname__:
             raise ValueError(
                 f"{game_class.__qualname__} is defined in both {existing.__module__} "
-                f"and {game_class.__module__}, with the channel {channel!r}. If "
+                f"and {game_class.__module__}, with the name {channel!r}. If "
                 "that is one file imported under two names, import it one way."
             )
         raise ValueError(
-            f"{existing.__name__} and {game_class.__name__} both use the channel "
-            f"{channel!r}. A subclass of a game needs a channel of its own."
+            f"{existing.__name__} and {game_class.__name__} both use the name "
+            f"{channel!r}. A subclass of a game needs a name of its own."
         )
     _live_game_classes[channel] = game_class
 

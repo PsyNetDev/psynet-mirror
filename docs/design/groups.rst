@@ -165,31 +165,27 @@ chatroom suits talk rather than moves in a game.
 
 The server runs a live game. It keeps one state for the whole group, checks
 each player's move against the game's rules, and sends each player's page
-what that player may see. A live game raises these decisions:
+what that player may see. A live game raises these questions:
 
-- **What each player sees.** A player's page gets only their own view of
-  the game, so hidden information, such as a partner's choice before it's
-  revealed, stays hidden.
-- **Leaving.** A player can close the page or lose their connection during
-  the game. Decide whether the game ends for everyone, carries on without
-  them, or gives their turn to someone else, and how long to wait for them
-  to come back.
-- **How long a game lasts.** A game lasts a fixed time, or ends by itself,
-  such as once every throw is played, with a limit in case it doesn't. A
-  game can also take newcomers while it runs, and let each player finish in
-  their own time.
-- **What is recorded.** Every move is saved, with when it arrived, along
-  with the game's result. A fast game can send many moves a second, so
-  decide what the analysis needs, and keep events such as each catch or each
-  deal as they happen.
-- **Pay.** Players can be paid from the game's result, or as they earn
-  during it, such as for each coin collected.
+- **What may each player see, and when?** For example, does a player see
+  their partner's choice before choosing themselves? Whatever a player
+  mustn't see stays on the server.
+- **What happens when someone leaves?** A player can close the page or lose
+  their connection during the game. Does the game end for everyone, carry on
+  without them, or hand their turn on? How long do you wait for them to come
+  back?
+- **How long does a game last?** A fixed time, or until it ends by itself,
+  such as once every throw is played? Can newcomers join while it runs, and
+  can each player finish in their own time?
+- **What does the analysis need?** Every move is saved, with when it
+  arrived. A fast game can send many moves a second: do you need them all,
+  or events such as each catch or each deal?
+- **How are players paid?** From the game's result, or as they earn during
+  it, such as for each coin collected?
 
 The demos in `Kinds of group experiment`_ include six live games. To build
 one, read :doc:`/code/multiplayer/live_game_tutorial`, which walks through
 three of them.
-
-
 
 Seeing who you're playing with
 ------------------------------

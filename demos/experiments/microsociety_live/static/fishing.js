@@ -86,9 +86,7 @@ export function activate({root, psynet}) {
   });
 
   function move(spot) {
-    if (live.send("move", {spot}) !== undefined) {
-      render();
-    }
+    live.send("move", {spot});
   }
 
   // Where a boat sits: in a row at the dock before its first move, otherwise

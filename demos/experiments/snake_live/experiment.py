@@ -179,7 +179,7 @@ class Snake(LiveGame):
     from its start.
     """
 
-    channel = "snake_live"
+    name = "snake"
     messages = [Turn]
     # A color for each player.
     max_players = len(COLORS)
@@ -294,8 +294,8 @@ def food_text(n):
 
 
 def show_result(participant):
-    game = participant.live_games["snake_live"]
-    answer = None if game is None else game.answer
+    # None if the group started no game, or it failed without an outcome.
+    answer = participant.live_games["snake"].answer
     if answer is None:
         return InfoPage("Your group couldn't play the game.", time_estimate=5)
     food = answer["score"]
@@ -362,7 +362,6 @@ class Exp(psynet.experiment.Experiment):
             late_after=60,
             late_action="leave_group",
             game_class=Snake,
-            id_="snake_live",
             page=ModularPage(
                 "snake_live",
                 Prompt(
@@ -397,9 +396,8 @@ class Exp(psynet.experiment.Experiment):
 
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
-        game = bot.live_games["snake_live"]
-        assert game.status == "ended", game.error
-        assert game.end_reason == "finished"
+        game = bot.live_games["snake"]
+        assert game.finished, game.error
         food = game.outcome["food"][game.participant_ids.index(bot.id)]
         assert game.answer["score"] == food
         assert bot.performance_reward == pytest.approx(BONUS_PER_FOOD * food)

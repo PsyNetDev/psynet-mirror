@@ -56,7 +56,12 @@ function checkPredictions(page) {
       requestAnimationFrame(record);
     };
     requestAnimationFrame(record);
-    psynet.liveGame.onView(() => {
+    psynet.liveGame.onView((view, details) => {
+      // Only views from the game: onView also runs after each send, with
+      // no details, when the prediction has the new move in it.
+      if (details === null) {
+        return;
+      }
       const after = own();
       if (before && after) {
         check.checks += 1;

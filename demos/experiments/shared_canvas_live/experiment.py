@@ -234,7 +234,7 @@ class SharedCanvas(LiveGame):
     coins appear while it runs.
     """
 
-    channel = "shared_canvas_live"
+    name = "shared_canvas"
     messages = [Move]
     # A color for each player.
     max_players = len(COLORS)
@@ -428,8 +428,8 @@ def coins_text(n):
 
 
 def show_result(participant):
-    game = participant.live_games["shared_canvas_live"]
-    answer = None if game is None else game.answer
+    # None if the group started no game, or it failed without an outcome.
+    answer = participant.live_games["shared_canvas"].answer
     if answer is None:
         return InfoPage("Your group couldn't play the game.", time_estimate=5)
     coins = answer["score"]
@@ -490,7 +490,6 @@ class Exp(psynet.experiment.Experiment):
             late_after=60,
             late_action="leave_group",
             game_class=SharedCanvas,
-            id_="shared_canvas_live",
             page=ModularPage(
                 "shared_canvas_live",
                 Prompt(
@@ -525,9 +524,8 @@ class Exp(psynet.experiment.Experiment):
 
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
-        game = bot.live_games["shared_canvas_live"]
-        assert game.status == "ended", game.error
-        assert game.end_reason == "finished"
+        game = bot.live_games["shared_canvas"]
+        assert game.finished, game.error
         me = game.participant_ids.index(bot.id)
         assert game.answer["score"] == game.outcome["coins"][me]
         collected = game.outcome["collected"]

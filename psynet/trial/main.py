@@ -622,6 +622,22 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     def var(self):
         return VarStore(self)
 
+    @property
+    def live_game(self):
+        """The live game played in this trial, by the
+        :class:`~psynet.live_game.PlayLiveGame` that its ``show_trial``
+        returned, as the participant's
+        :class:`~psynet.live_game.LiveGameRecord`, with their ``answer``.
+        Its ``status`` is ``"not_started"`` if the group started no game in
+        the trial's round, and it's ``None`` for a trial that wasn't played
+        in a group's round.
+        """
+        from ..live_game.record import LiveGameRecord
+
+        if self.group_round is None:
+            return None
+        return LiveGameRecord(self.group_round.live_game_id, self.participant)
+
     @classmethod
     def get_for_participant(cls, participant_id: int, trial_maker_id: int = None):
         """

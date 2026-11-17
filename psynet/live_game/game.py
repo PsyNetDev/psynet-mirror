@@ -3,7 +3,7 @@ PsyNet's typed messages, ready step, plain-data state and rewards.
 
 ``__init_subclass__`` wraps each game's own methods with the wrappers in
 ``method_wrappers.py``, so game code stays plain, and registers each game
-that sets a ``channel``, so that the experiment adds it to
+that sets a ``name``, so that the experiment adds it to
 ``realtime_games``.
 """
 
@@ -49,19 +49,19 @@ from .reward import (
 class LiveGame(RealtimeGame):
     """A game that a group of participants play together in real time.
 
-    Set ``channel`` to a name for the game, list its message types in
+    Set :attr:`name` to a name for the game, list its message types in
     :attr:`messages`, and define ``initial_state``, ``view`` and ``bot``. The
     ``bot`` method plays for bots, as in ``psynet test``. A game can also
     define ``is_over``, ``outcome``, ``tick`` and the other methods of
     :class:`~dallinger.realtime.RealtimeGame`, which this class extends.
     Dallinger's `API reference
     <https://dallinger.readthedocs.io/latest/realtime_games.html#api-reference>`__
-    describes each of them. A subclass of a game needs a ``channel`` of its
+    describes each of them. A subclass of a game needs a ``name`` of its
     own.
 
     The game's methods know each player by their number, from 0, in the
-    order of the players' seats in the group (see
-    :attr:`~psynet.sync.SyncGroup.seats`), and get
+    order they joined the game, those who start it together in seat order
+    (see :attr:`~psynet.sync.SyncGroup.seats`), and get
     ``now`` in seconds since the game started. The state and each view are
     dicts that hold only plain data, such as lists, strings and numbers, so
     a game keeps what each player has in a list, in player order.
@@ -76,6 +76,13 @@ class LiveGame(RealtimeGame):
     has ended, or a string that says why. :ref:`live-games-join-and-finish`
     explains both.
     """
+
+    #: The game's name, which must differ from every other game's, such as
+    #: ``"rock_paper_scissors"``. It's also the default ``id_`` of a
+    #: :class:`PlayLiveGame` of the game, so it keys the participant's
+    #: :attr:`~psynet.participant.Participant.live_games`. Dallinger calls
+    #: it the game's ``channel``, which PsyNet sets from it.
+    name = None
 
     #: The game's message types, each a :class:`LiveMessage` subclass with
     #: its own :attr:`~LiveMessage.type`.
@@ -138,6 +145,7 @@ class LiveGame(RealtimeGame):
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+        _set_name(cls)
         # Resolved through the MRO, so methods from a mixin are wrapped too.
         for name, wrap in [
             *(
@@ -508,6 +516,24 @@ class LiveGame(RealtimeGame):
             match it.
         """
         return _parse_message(self._message_types, message)
+
+
+def _set_name(game_class):
+    """Set a game's Dallinger channel from its name, or its name from a
+    channel it set itself."""
+    own = vars(game_class)
+    if "name" in own and "channel" in own and own["name"] != own["channel"]:
+        raise TypeError(
+            f"{game_class.__name__} sets both a name and a channel. Set only its name."
+        )
+    if "name" in own:
+        game_class.channel = own["name"]
+    elif "channel" in own:
+        game_class.name = own["channel"]
+    elif game_class.name is not None:
+        # A subclass of a named game, which needs a name of its own; the
+        # registry says so.
+        game_class.channel = game_class.name
 
 
 # Seconds that Dallinger's max_duration leaves after the latest moment the

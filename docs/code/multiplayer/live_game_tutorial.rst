@@ -6,8 +6,8 @@ Building a live game
 
 This tutorial shows how to build a game that a group of participants play
 together in real time. It works through three demos in PsyNet's
-``demos/experiments`` folder. Apart from one short example, the code on
-this page is included from the demos' files, so it's the code that runs. You
+``demos/experiments`` folder. Most of the code on this page is included
+from the demos' files, so it's the code that runs. You
 can run each demo, change it and see what happens.
 
 ``rock_paper_scissors_live``
@@ -107,9 +107,8 @@ buttons and the bots. ``GAMES``, ``RESULT_SECONDS`` and ``LATE_AFTER`` are
 used by the timeline, which "Adding the game to the timeline" below
 describes.
 
-PsyNet numbers a game's players in the order they joined the game, from 0,
-and those who start it together in seat order, so the two players here are 0
-and 1, and ``1 - player`` is the other one. A throw's
+PsyNet numbers a game's players from 0, so the two players here are 0 and 1,
+and ``1 - player`` is the other one. A throw's
 choices are a list, in player order, such as ``["rock", "paper"]``.
 ``result_for`` says how a throw went for one player, ``throws_seen_by``
 lists the throws played so far as one player sees them, and ``count`` counts
@@ -119,6 +118,8 @@ throw the same way.
 
 The excerpts on this page leave out the file's imports, which are at the top
 of the demo's ``experiment.py``.
+
+Reference: :ref:`live-games-the-game`, on player numbers.
 
 The game and its state
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -130,7 +131,7 @@ The game is the class ``RockPaperScissors``:
    :end-before: def initial_state(
    :dedent:
 
-``channel`` is a name for the game, which must differ from the name of every
+``name`` is a name for the game, which must differ from the name of every
 other game in the experiment. ``messages`` lists the kinds of message that a
 page can send, which the next section describes. ``min_players`` and
 ``max_players`` say that the game is for exactly two players. If a player
@@ -214,6 +215,8 @@ throw is over. This is how a game keeps information private: whatever isn't
 in a player's view never reaches their browser, so they can't find it by
 looking at the page's code.
 
+Reference: :ref:`live-games-the-game`.
+
 The end and the outcome
 ~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -263,108 +266,119 @@ Reference: :ref:`live-games-bots`.
 Adding the game to the timeline
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-In this demo, each game is a trial. The player's answer on the game page is
-saved as the trial's answer, like any other trial's, and what differs between
-the two games is in the trial's definition: which game it is, how many throws
-it has and what a throw won pays. The trial starts a game for the pair,
-shows the game page, and then scores and pays for the game:
+The simplest timeline that plays the game forms pairs, plays one game, and
+then shows each player their score:
+
+.. code-block:: python
+
+    timeline = Timeline(
+        SimpleGrouper(group_type="pair", initial_group_size=2),
+        PlayLiveGame(
+            group_type="pair",
+            game_class=RockPaperScissors,
+            settings={"throws": 5},
+            page=ModularPage(
+                "rock_paper_scissors",
+                Prompt(tags.div(...)),  # the page's buttons and text
+                LiveGameControl(),
+                js_page_modules=["/static/rock-paper-scissors.js"],
+                time_estimate=60,
+            ),
+            late_after=20,
+            late_action="leave_group",
+        ),
+        PageMaker(show_score, time_estimate=5),
+    )
+
+
+    def show_score(participant):
+        answer = participant.live_games["rock_paper_scissors"].answer
+        if answer is None:
+            return InfoPage("Your partner didn't arrive in time.", time_estimate=5)
+        return InfoPage(f"You won {answer['wins']} throws.", time_estimate=5)
+
+- The :class:`~psynet.sync.SimpleGrouper` puts participants into pairs.
+- :class:`~psynet.live_game.PlayLiveGame` is the step where the pair plays
+  the game. It waits for both players of the pair, starts a game of
+  ``game_class`` for them, and shows them its ``page`` together. Its
+  ``group_type`` is the grouper's. Its ``settings`` are what
+  ``initial_state`` receives.
+- ``late_after`` limits that wait. A partner who keeps the other player
+  waiting more than 20 seconds is late, and with
+  ``late_action="leave_group"`` leaves the pair. The player who was on time
+  then goes on to the game page without a game. Every ``PlayLiveGame`` needs
+  a limit like this.
+- The game page is a :class:`~psynet.modular_page.ModularPage`. Its prompt
+  holds the page's elements, each with an ``id`` so that the JavaScript can
+  find it, and its :class:`~psynet.live_game.LiveGameControl` connects the
+  page to the game. ``js_page_modules`` lists the page's JavaScript, which
+  `The game page`_ below goes through.
+- On the next page, ``participant.live_games`` has the participant's record
+  of the game, keyed by the game's ``name``. Its ``answer`` is what the
+  game's ``answer`` returned for them, or ``None`` if the pair didn't start
+  a game.
+
+Reference: :ref:`live-games-page`, including :ref:`the wait before the game
+<live-games-wait>`, and :ref:`live-games-record`.
+
+Playing it as trials
+~~~~~~~~~~~~~~~~~~~~
+
+The demo plays two games, of five throws and then three, and pays for each
+throw won, more in the second game. So each game is a trial: the player's
+answer on the game page is saved as the trial's answer, like any other
+trial's, and what differs between the two games is in the trial's
+definition. The trial starts a game for the pair, shows the game page, and
+then scores and pays for the game:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
    :pyobject: RockPaperScissorsTrial
    :dedent:
 
-- ``sync_group_type`` says that a group plays the trial, here the pair that
-  the grouper in the timeline below forms. The grouper and the
-  :class:`~psynet.live_game.PlayLiveGame` use the same group type,
-  ``"pair"``. Each player has a trial of their own, and the two trials share
-  a definition.
-- :class:`~psynet.live_game.PlayLiveGame` is the step where the pair plays
-  the game. It waits for both players, starts a game for the pair, and then
-  shows them the game page together. Its ``group_type`` is the pair's,
-  its ``game_class`` is the game, its ``page`` is the game page, and its
-  ``settings`` are the number of throws from the trial's definition, which
-  the game's ``initial_state`` receives. Its ``id_`` names the step, which
-  keys the participant's records of their games, such as
-  ``bot.live_games`` in the test below; without one it would be the game's
-  ``channel``.
-- ``late_after`` limits the wait for the pair. A partner who keeps the other
-  player waiting more than ``LATE_AFTER`` seconds is late, and with
-  ``late_action="leave_group"`` leaves the pair. The player who was on time
-  then goes on to the game page without a game. Before the second game, the
-  partner may still be reading the first game's result, but that page has a
-  ``time_limit`` of ``RESULT_SECONDS``, and ``late_after`` counts only once
-  it has run out, so it only has to cover the moments after it.
-- The game page is a :class:`~psynet.modular_page.ModularPage`. Its prompt
-  holds the page's elements, each with an ``id`` so that the JavaScript can
-  find it. The first element says which game this is, how many throws it has
-  and what a throw won pays, all from the trial's definition. The
-  :class:`~psynet.live_game.LiveGameControl` connects the page to the game
-  that the ``PlayLiveGame`` started. ``player_left_message`` is the notice
-  that the page shows while the partner is away from the game page, and
-  ``no_game_message`` is the notice on a game page without a game.
-- ``js_page_modules`` lists the page's JavaScript file, which is in the demo's
-  ``static`` folder.
+- ``sync_group_type`` says that a group plays the trial, here the pair.
+  Each player has a trial of their own, and the two trials share a
+  definition.
+- ``show_trial`` returns the ``PlayLiveGame``, with the number of throws from
+  the trial's definition as its settings. Its barrier is the
+  :class:`~psynet.sync.GroupBarrier` that a trial a group plays needs, so
+  this trial needs no other.
+- The page's first element says which game this is, how many throws it has
+  and what a throw won pays, all from the trial's definition. The control's
+  ``player_left_message`` is the notice the page shows while the partner is
+  away, ``no_game_message`` the notice on a game page without a game, and
+  ``waiting_status`` what the page says until both pages have opened.
 - The game page's answer, from the game's ``answer``, becomes the trial's
-  answer. PsyNet also copies the pair's whole outcome to the round the game
-  was played in, so ``trial.group_round.live_game_outcome`` holds it for
-  both trials.
+  answer, and ``trial.live_game`` is the participant's record of the game,
+  with the whole pair's outcome.
 - ``score_answer`` returns the trial's score, here the number of throws the
-  player won, which it reads from the answer. ``compute_performance_reward``
-  turns the score into the player's reward, at the rate in the trial's
-  definition. PsyNet saves both on the trial, as its ``score`` and
-  ``performance_reward``, so the experiment's data shows what each game paid.
-  A trial whose pair didn't start a game has no answer, and scores 0.
-- The participant can leave the game page only once the game's result is
-  saved, a few seconds after the game ends, and the page then moves on by
-  itself, to the trial's ``show_feedback`` page.
-  ``gives_feedback`` leaves that page out for a trial without an answer.
-
-A trial that a group plays needs a :class:`~psynet.sync.GroupBarrier` in its
-``show_trial``, where the group's members wait for each other.
-``PlayLiveGame`` includes one, so this trial needs no other.
+  player won. ``compute_performance_reward`` turns the score into the
+  player's reward, at the rate in the trial's definition. PsyNet saves both
+  on the trial, so the experiment's data shows what each game paid. A trial
+  whose pair didn't start a game has no answer, and scores 0.
+- The game page moves on by itself once the game's result is saved, a few
+  seconds after the game ends, to the trial's ``show_feedback`` page, which
+  ``gives_feedback`` leaves out for a trial without an answer.
 
 A game can also pay rewards itself, as the snake demo in Part 2 does. This
 demo lets the trial pay instead, because what a throw won pays is in the
-trial's definition, so the game pays nothing itself. Pay in one place only
-(see :ref:`live-games-rewards`).
+trial's definition. Pay in one place only (see :ref:`live-games-rewards`).
 
-The experiment's timeline forms the pairs, and then gives each player their
-trials:
+The timeline forms the pairs, and then gives each player their trials:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
    :start-at: class Exp(psynet.experiment.Experiment):
    :end-before: def test_check_bot(
    :dedent:
 
-- The :class:`~psynet.sync.SimpleGrouper` puts participants into pairs. A
-  participant who waits five minutes without a partner fails, and goes to the
-  end of the experiment. To let them carry on without a partner instead, give
-  the grouper ``max_wait_action="continue_without_group"``.
-  ``below_quorum="continue_without_group"`` lets a participant carry on with
-  the experiment after their partner has left the pair, such as by being
-  late for the next game.
 - The loop runs once for each game. ``RockPaperScissorsTrial.cue`` gives the
   participant a trial with the definition that it's passed, here the game's
   number, its throws and what a throw won pays. The loop value is also the
   ``round``, so the two players' trials for a game belong to the same round
   of the pair. :ref:`rounds-cued-trials` explains rounds.
-- ``stop_if`` ends the loop for a participant who is no longer in a pair,
-  because their partner didn't come back or left the experiment. PsyNet checks
-  it before each game, never during one. The ``conditional`` after the loop
-  then shows that participant a page that says why there are no more games:
-
-  .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
-     :start-at: def left_pair(participant):
-     :end-before: class Exp(psynet.experiment.Experiment):
-     :dedent:
-
 - The :class:`~psynet.timeline.Module` gives the trials a ``module_id``, which
   you can find them by in the experiment's data.
 - ``test_n_bots`` and ``test_mode`` set up ``psynet test``. A pair's bots have
   to reach the game together, so the bots run in parallel.
-
-A ``PlayLiveGame`` can also go straight in the timeline, without a trial, as
-it does in the snake and shared canvas demos.
 
 The trial's ``show_feedback`` passes the trial's answer, and the reward that
 the trial paid, to ``show_result``:
@@ -374,11 +388,37 @@ the trial paid, to ``show_result``:
    :dedent:
 
 A game can end before any throw is played, when neither player opens the game
-page in time, so ``show_result`` checks for that first. Its ``time_limit``
-moves the page on after ``RESULT_SECONDS``, which keeps the wait for the
-next game short.
+page in time, so ``show_result`` checks for that first.
 
-Reference: :ref:`live-games-page`, including :ref:`the wait before the game <live-games-wait>`.
+Reference: :ref:`live-games-answer` and :ref:`live-games-rewards`.
+
+When a partner leaves
+~~~~~~~~~~~~~~~~~~~~~
+
+The rest of the timeline deals with a partner who doesn't come back:
+
+- The grouper's ``max_wait_time`` fails a participant who waits five minutes
+  without a partner, and sends them to the end of the experiment. To let them
+  carry on without a partner instead, give the grouper
+  ``max_wait_action="continue_without_group"``.
+- Before the second game, the partner may still be reading the first game's
+  result, so the result page has a ``time_limit`` of ``RESULT_SECONDS``.
+  ``late_after`` counts only once it has run out, so ``LATE_AFTER`` only has
+  to cover the moments after it.
+- A partner who is late leaves the pair, and
+  ``below_quorum="continue_without_group"`` lets the player left behind carry
+  on with the experiment.
+- ``stop_if`` ends the loop for a participant who is no longer in a pair.
+  PsyNet checks it before each game, never during one. The ``conditional``
+  after the loop then shows that participant a page that says why there are
+  no more games:
+
+  .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
+     :start-at: def left_pair(participant):
+     :end-before: class Exp(psynet.experiment.Experiment):
+     :dedent:
+
+Reference: :ref:`live-games-leaving` and :doc:`late_slow_and_leaving_players`.
 
 The game page
 ~~~~~~~~~~~~~
@@ -414,10 +454,11 @@ player's messages:
    :end-before: for (let button of buttons) {
    :dedent:
 
-``onView`` runs its callback each time a new view arrives, including the
-final view once the game is over. It draws ``predictedView()``, the view
-with the player's own unanswered messages applied, which `Showing a choice
-at once`_ below explains. ``showStatus`` keeps the status line up to date:
+``onView`` runs ``render`` each time a new view arrives, including the
+final view once the game is over. (The page also has a ``predict`` callback,
+so ``render`` gets the view with the player's latest choice already in it,
+and runs again after each choice; `Showing a choice at once`_ below explains
+why.) ``showStatus`` keeps the status line up to date:
 it says the control's ``waiting_status``, here "Waiting for your partner to
 open the game", until the game starts, then what its callback returns for
 each view, and "The game is over." at the end. ``showRejections`` shows the
@@ -436,11 +477,10 @@ Each button sends a ``Choose`` message when it's clicked, through the page's
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
    :language: javascript
    :start-at: function choose(action) {
-   :end-before: psynet.liveGame.onView(
+   :end-before: // With the predict callback above
    :dedent:
 
-``send`` returns ``undefined`` if the page's connection has closed, so the
-page draws the choice only for a message that was sent.
+``current`` is the throw the latest view is on, which ``render`` keeps.
 
 ``render`` draws the page from a view:
 
@@ -474,7 +514,7 @@ can arrive in between, which doesn't have the player's move yet, so drawn as
 it is, it would briefly undo the move.
 
 The page avoids both by telling ``psynet.liveGame`` what each of its
-messages will do to the view. In a game on a board, where a ``move`` message
+messages will do to the view, with ``predict``. In a game on a board, where a ``move`` message
 gives the player's new square, that would be:
 
 .. code-block:: javascript
@@ -486,10 +526,10 @@ gives the player's new square, that would be:
     });
 
 The callback gets a copy of the newest view and changes it as the game will
-once it applies the message. ``predictedView()`` then returns the newest view
-with each of the page's messages that the game hasn't applied yet applied
-this way, so the page draws from it, in ``onView`` and after each ``send``,
-and the player's piece moves the moment they click. Once the game's own view
+once it applies the message. From then on, ``onView``'s callback gets the
+newest view with each of the page's messages that the game hasn't applied
+yet applied this way, and runs again after each ``send``, so the player's
+piece moves the moment they click. Once the game's own view
 with the move arrives, the prediction is no longer needed, and if the game
 rejects the move, the next view drops it.
 
@@ -767,7 +807,7 @@ Testing your game
 
 Run ``psynet test local`` in a demo's folder to play the experiment with
 bots. Each demo checks each bot's result at the end of the test. Rock, paper,
-scissors checks that its last game's outcome is on that game's round, that
+scissors checks that its last game finished and is its last trial's game, that
 each of the bot's games had the number of throws in its trial's definition,
 and that each trial's score and reward match the throws the bot won:
 
@@ -777,8 +817,8 @@ and that each trial's score and reward match the throws the bot won:
 
 ``bot.live_games`` gives, for each ``PlayLiveGame`` the participant reached,
 keyed by its ``id_``, the record of their latest game there, here their
-second game: how it ended, its outcome, the participant's answer and the
-game's messages. Snake's result page reads its player's answer the same way.
+second game: whether it ``finished``, its outcome, the participant's answer
+and the game's messages. Snake's result page reads its player's answer the same way.
 
 To test a game's rules without starting the experiment, play it in Python
 with :class:`~psynet.live_game.testing.LocalGame`, which calls the game's
@@ -813,7 +853,7 @@ participant's own computer when their page sent the message, and when the
 view the participant was looking at when they acted was made.
 
 In Python, a participant's ``live_games`` gives each game's record, and a
-round's ``live_game`` the game played in it (see :ref:`live-games-record`),
+trial's ``live_game`` the game played in it (see :ref:`live-games-record`),
 with each message's time in seconds since the game started, the clock the
 game's methods use. :doc:`/data/exporting_data` explains how to export
 the experiment's data.

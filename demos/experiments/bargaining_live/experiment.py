@@ -83,7 +83,7 @@ class Accept(LiveMessage):
 
 
 class Bargain(LiveGame):
-    channel = "bargain"
+    name = "bargaining"
     messages = [Propose, Accept]
     min_players = max_players = 2
     duration = BARGAIN_SECONDS
@@ -368,7 +368,7 @@ class Exp(psynet.experiment.Experiment):
             assert trial.coins() in (BOT_GIVES, stake - BOT_GIVES)
             # The game's reward is recorded on the trial it was played in.
             assert abs(trial.performance_reward - trial.coins() * COIN_VALUE) < 1e-9
-            outcome = trial.group_round.live_game_outcome
+            outcome = trial.live_game.outcome
             assert sorted(outcome["deal"]) == [BOT_GIVES, stake - BOT_GIVES]
         expected = sum(t.coins() for t in trials) * COIN_VALUE
         assert abs(bot.performance_reward - expected) < 1e-9

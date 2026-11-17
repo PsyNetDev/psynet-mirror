@@ -92,7 +92,7 @@ class Move(LiveMessage):
 
 
 class Fishing(LiveGame):
-    channel = "fishing"
+    name = "fishing"
     messages = [Move]
     min_players = 1
     # Members keep coming while the lake is open, so it closes after this
@@ -400,7 +400,7 @@ def why_left(participant: Participant) -> str:
 def lake_answer(participant: Participant) -> dict:
     """Return the member's answer from their lake, or ``{}`` without one."""
     lake = participant.live_games.get("fishing")
-    return (lake.answer if lake else None) or {}
+    return (lake and lake.answer) or {}
 
 
 def in_society(participant: Participant) -> bool:
@@ -497,11 +497,13 @@ class Exp(psynet.experiment.Experiment):
         """Return one row per member and one per catch."""
         members = Participant.query.order_by(Participant.id).all()
         lakes = {p.id: p.live_games.get("fishing") for p in members}
+        # One record of each lake, for its catches.
+        by_id = {lake.id: lake for lake in lakes.values() if lake and lake.id}
         return {
             "member": [
                 {
                     "participant_id": p.id,
-                    "lake_id": None if lakes[p.id] is None else lakes[p.id].id,
+                    "lake_id": lakes[p.id].id if lakes[p.id] else None,
                     "fish": lake_answer(p).get("fish"),
                     "left": lake_answer(p).get("left"),
                     "tip": p.var.get("tip"),
@@ -510,13 +512,13 @@ class Exp(psynet.experiment.Experiment):
             ],
             "catch": [
                 {
-                    "lake_id": lake.id,
+                    "lake_id": lake_id,
                     "time": moment.time,
                     "player": c["player"],
                     "spot": c["spot"],
                     "fish": c["fish"],
                 }
-                for lake in sorted(set(lakes.values()) - {None}, key=lambda g: g.id)
+                for lake_id, lake in sorted(by_id.items())
                 for moment in lake.moments
                 if moment.name == "catch"
                 for c in moment.data["caught"]

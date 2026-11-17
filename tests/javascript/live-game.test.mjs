@@ -551,6 +551,34 @@ describe("psynet.liveGame", () => {
     assert.equal(deal.textContent, "You made a deal.");
   });
 
+  it("gives onView the predicted view, and again after each send", () => {
+    changePage();
+    const seen = [];
+    liveGame.onView((v, details) => seen.push([v.chosen, details]));
+    liveGame.send("choose", {});
+    // No view yet, so nothing to draw.
+    assert.deepEqual(seen, []);
+    liveGame.predict(() => {});
+    let chosen = false;
+    sockets[0].predictedView = () => ({ ...view(4), chosen: chosen });
+    sockets[0].view({ ...view(4), chosen: false });
+    chosen = true;
+    liveGame.send("choose", {});
+    assert.deepEqual(plain(seen), [
+      [false, { ended: null }],
+      [true, null],
+    ]);
+  });
+
+  it("gives onView the view itself without a predict callback", () => {
+    changePage();
+    const seen = [];
+    liveGame.onView((v) => seen.push(v.n));
+    sockets[0].view({ ...view(4), n: 1 });
+    liveGame.send("choose", {});
+    assert.deepEqual(seen, [1]);
+  });
+
   it("passes on the final view, with ended up to date, and no view after it", () => {
     const seen = [];
     liveGame.onView((v, details) => seen.push([v.n, liveGame.ended, details]));

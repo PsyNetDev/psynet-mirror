@@ -5481,8 +5481,8 @@ class SyncGroupRound(SQLBase, SQLMixin):
     live_game_id : int or None
         The id of the live game that a
         :class:`~psynet.live_game.PlayLiveGame` in the round's trials
-        started, or ``None``. :attr:`live_game` gives the game's record, for
-        example to export each round's messages.
+        started, or ``None``, for the export. In code, read a trial's
+        :attr:`~psynet.trial.main.Trial.live_game` instead.
     live_game_outcome : object or None
         What the ``outcome`` method of that game returned, copied here when
         the game's result is saved, a few seconds after the game ends.
@@ -5548,14 +5548,6 @@ class SyncGroupRound(SQLBase, SQLMixin):
             postgresql_where=text("trial_maker_id IS NOT NULL"),
         ),
     )
-
-    @property
-    def live_game(self) -> Optional["LiveGameRecord"]:
-        """The record of the live game played in the round, as a
-        :class:`~psynet.live_game.LiveGameRecord`, or ``None`` without one."""
-        from .live_game.record import LiveGameRecord
-
-        return None if self.live_game_id is None else LiveGameRecord(self.live_game_id)
 
     @property
     def sync_group(self) -> Optional[SyncGroup]:

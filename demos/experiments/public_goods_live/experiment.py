@@ -10,7 +10,7 @@ and each token a member earns pays ``TOKEN_VALUE``.
 Each round is one cued ``ContributionTrial`` per player, whose ``show_trial``
 starts a live game for the team and shows the game page. The trial's answer
 holds what the player put in and earned; the results page reads the team's
-pot from the round's ``live_game_outcome``.
+pot from the trial's ``live_game``.
 """
 
 from dominate import tags
@@ -56,7 +56,7 @@ class Contribute(LiveMessage):
 
 
 class PublicGoods(LiveGame):
-    channel = "public_goods"
+    name = "public_goods"
     messages = [Contribute]
     duration = ROUND_SECONDS
 
@@ -166,7 +166,7 @@ class ContributionTrial(Trial):
         answer = self.answer
         if answer is None:
             return InfoPage("Your group couldn't start this round.", time_estimate=5)
-        team = self.group_round.live_game_outcome
+        team = self.live_game.outcome
         return InfoPage(
             f"The group put {team['pot']} tokens in the pot, which was "
             f"multiplied and shared between {len(team['contributions'])} "
@@ -257,8 +257,8 @@ class Exp(psynet.experiment.Experiment):
             [t.answer for t in trials],
         )
         for trial in trials:
-            game = trial.group_round.live_game
-            player = game.participant_ids.index(bot.id)
+            game = trial.live_game
+            player = game.player
             assert trial.answer["contributed"] == bot_contribution(player)
             outcome = game.outcome
             contributions = outcome["contributions"]

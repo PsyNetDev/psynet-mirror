@@ -68,6 +68,5 @@ export function activate({root, psynet}) {
   live.showRejections(rejection);
   slider.addEventListener("input", () => {
     live.send("contribute", {tokens: Number(slider.value)});
-    render();
   });
 }

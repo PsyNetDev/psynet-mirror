@@ -41,6 +41,7 @@ from ..timeline import CodeBlock, EltCollection, conditional, join
 from ..utils import get_logger
 from .game import LiveGame
 from .psynet_entry import _new_session_settings
+from .record import LiveGameRecord
 
 logger = get_logger()
 
@@ -103,11 +104,11 @@ class PlayLiveGame(EltCollection):
         Optional function called when the wait ends and the group's game
         has been created, before its players' pages open, with the arguments
         that a :class:`~psynet.sync.GroupBarrier`'s ``on_release`` can take,
-        such as ``trials`` and ``group_round``, and also ``live_game_id``,
-        the new game's id. Use it for group bookkeeping at the start of a
-        round, such as choosing who retires after it. ``live_game_id`` is
-        ``None`` if no game started, because the group has fewer members than
-        the game's ``min_players``.
+        such as ``trials`` and ``group_round``, and also ``live_game``,
+        the new game's :class:`LiveGameRecord`. Use it for group bookkeeping
+        at the start of a round, such as choosing who retires after it. The
+        record's ``status`` is ``"not_started"`` if no game started, because
+        the group has fewer members than the game's ``min_players``.
 
     join_running_game
         Whether a member who reaches the step while their group is playing
@@ -119,7 +120,7 @@ class PlayLiveGame(EltCollection):
         newcomers, since its round is already under way. Default: ``False``.
 
     id_
-        A name for this step, the game's ``channel`` unless given, which
+        A name for this step, the game's ``name`` unless given, which
         keys the participant's :attr:`~psynet.participant.Participant.live_games`
         and :attr:`~psynet.participant.Participant.live_game_history`, for example to read the game's
         answer on a later page. Steps with the same id share their wait,
@@ -157,7 +158,7 @@ class PlayLiveGame(EltCollection):
                 "player, or leave out join_running_game."
             )
         if id_ is None:
-            id_ = game_class.channel
+            id_ = game_class.name
         if "late_after" not in kwargs and "max_wait_time" not in kwargs:
             raise TypeError(
                 f"The PlayLiveGame {id_!r} needs a limit on its wait. Usually "
@@ -340,7 +341,7 @@ class _LiveGameBarrier(GroupBarrier):
                 left=left,
                 admitted=admitted,
                 barrier=barrier,
-                live_game_id=session_id,
+                live_game=LiveGameRecord(session_id),
             )
 
     def _start_session(self, participants, group, group_round=None):
@@ -389,10 +390,10 @@ class _LiveGameBarrier(GroupBarrier):
 def _check_game_class(game_class):
     if not (isinstance(game_class, type) and issubclass(game_class, LiveGame)):
         raise TypeError(f"game_class must be a LiveGame subclass, not {game_class!r}.")
-    if game_class.channel is None:
+    if game_class.name is None:
         raise TypeError(
-            f"{game_class.__name__} has no channel, so it can't be played. "
-            "Set its channel to a name for the game."
+            f"{game_class.__name__} has no name, so it can't be played. "
+            'Set its name, such as name = "rock_paper_scissors".'
         )
     if game_class.bot is RealtimeGame.bot:
         raise TypeError(
@@ -479,26 +480,17 @@ def _set_data(participant, play_id, data):
 
 def _participant_live_games(participant):
     """Return Participant.live_games."""
-    from .record import LiveGameRecord
-
-    games = {}
-    for play_id, data in _live_game_data(participant).items():
-        answers = {game["id"]: game["answer"] for game in data.get("history", [])}
-        game_id = data.get("id")
-        games[play_id] = (
-            None if game_id is None else LiveGameRecord(game_id, answers.get(game_id))
-        )
-    return games
+    return {
+        play_id: LiveGameRecord(data.get("id"), participant)
+        for play_id, data in _live_game_data(participant).items()
+    }
 
 
 def _participant_live_game_history(participant):
     """Return Participant.live_game_history."""
-    from .record import LiveGameRecord
-
     return {
         play_id: [
-            LiveGameRecord(game["id"], game["answer"])
-            for game in data.get("history", [])
+            LiveGameRecord(game["id"], participant) for game in data.get("history", [])
         ]
         for play_id, data in _live_game_data(participant).items()
     }
@@ -520,7 +512,6 @@ def _running_game_query(members, play_id):
 
 def _running_live_games(group):
     """Return SyncGroup.running_live_games."""
-    from .record import LiveGameRecord
 
     members = group.active_participants
     play_ids = {

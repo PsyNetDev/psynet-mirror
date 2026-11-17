@@ -31,7 +31,7 @@ class Pick(LiveMessage):
 class PickNumbers(LiveGame):
     """Each player picks a whole number, and the game ends once both have."""
 
-    channel = "pick_numbers"
+    name = "pick_numbers"
     messages = [Pick]
     # So that a game that stalls fails psynet test within a few minutes.
     timeout = 60
@@ -65,7 +65,7 @@ class GrowingPicks(PickNumbers):
     """Pick numbers, which players can join while it runs, and in which
     each player's game ends once they've picked."""
 
-    channel = "growing_picks"
+    name = "growing_picks"
     min_players = 1
 
     def on_add(self, state, player, now):
