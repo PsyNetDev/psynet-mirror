@@ -416,7 +416,8 @@ What to check when reviewing group experiments
 - Is sitting out fair, and do rounds a player sits out count towards their
   total?
 - In a real-time interaction, can a member see information meant only for
-  others, and can the interaction resume after a reload?
+  others, and can the interaction resume after a reload? For a live game,
+  see :ref:`the checks on its own page <design-live-games-checks>`.
 - Can players recognise each other across rounds, and should they?
 
 .. seealso::

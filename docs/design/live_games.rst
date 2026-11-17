@@ -5,209 +5,148 @@ Live games
 
 In most group experiments, members interact by moving through pages: each
 answers on their own page, a barrier waits for all of them, and then everyone
-moves on to a page that shows the result. A **live game** works differently.
-The members stay on one page, and what one player does reaches the others'
-screens while they play. This page explains how the two differ, the ideas a
-live game is built from, and the kinds of game they make possible. To build
-one, read :doc:`/code/multiplayer/live_game_tutorial` next.
+moves on to a page that shows the result. In a **live game**, the members
+stay on one page, and what one player does reaches the others while they
+play: offers go back and forth in a negotiation, players steer around a
+shared board, or a society fishes on a lake while its members come and go.
 
-Moving pages and redrawing a page
----------------------------------
+Two ways for a group to interact
+--------------------------------
 
-**Moving pages.** Each step a participant takes is a request to the server:
+In a round-based design, each step is a request to the server, which saves
+the answer and renders the next page. On one computer that takes about 30 ms
+for a page, and 100 ms at a barrier, plus the network's round trip, typically
+20–150 ms. Above all, the group moves at the pace of its slowest member:
+nothing reaches the others until everyone has submitted a page.
 
-.. code-block:: text
+In a live game, the page stays open, and each move travels over an open
+connection to the game and back to every player, in about 5 ms plus the round
+trip. Each move reaches the others as soon as it's made, so players can react
+to each other while they act. That's the reason to choose a live game. A
+design in which each player decides and then sees everyone's decisions is a
+round of trials, and needs no live game.
 
-    click Next ─► POST /response ─► the server saves the answer, works out
-                                    the next page and renders it ─► the
-                                    browser swaps it in
+The network still sets a limit. Players see each other's moves a round trip
+late, so a live game can't keep players in step more closely than that, which
+rules out tasks such as tapping together in time.
 
-At a barrier, the member who completes the group releases it in their own
-request. The server then sends each waiting member a wake over their open
-connection, and each waiting page makes a request of its own to move on.
+How it works
+------------
 
-**Redrawing a page.** In a live game, the page stays open, and its
-connection to the game stays open too:
+A game is played from start to end like this:
 
-.. code-block:: text
+1. A group reaches the game in the timeline and waits there until all its
+   members have arrived, as at any group barrier.
+2. The server creates the game and its **state**: everything the game needs
+   to know, such as each player's position or the offers made so far. The
+   game starts once every player's page has opened, so that nobody misses
+   the start.
+3. When a player acts, their page sends the game a **message**, such as
+   "move to this square". The game's rules apply it to the state, or reject
+   it with a reason the page shows.
+4. After each change, the server sends each player their **view**: the part
+   of the state they may see. Their page updates itself from it, without
+   moving to another page.
+5. A game can also change by itself on a clock, such as snakes that keep
+   moving whether anyone presses a key. It then **ticks** several times a
+   second, and sends new views after each tick.
+6. Players may close the page and come back, and in some games new players
+   join while it runs, or a player finishes before the others.
+7. The game ends when its rules say so, when its time is up, or when too
+   many players have left. Each player's result is worked out from the state
+   and saved, and their page moves on.
 
-    click ─► a message over the open connection ─► the game applies it to
-             the state it holds ─► it sends each player their new view ─►
-             each page redraws itself
+Only the server changes the state, so every player plays the same game, a
+participant can't change the result by editing their page, and a page that
+reloads gets the game as it stands. Every time in a game is in seconds since
+it started, on a clock that the server and the pages share.
 
-Nothing is saved or rendered in between: the message is recorded alongside,
-a few seconds behind the game.
+Designing a live game
+---------------------
 
-Measured on one computer, so without any network delay, with two browsers
-and the server deployments use (November 2026):
+Messages and rules
+~~~~~~~~~~~~~~~~~~
 
-.. list-table::
-   :header-rows: 1
-   :widths: 52 16 16
+Each thing a player can do is a kind of message, with its own rule, so a
+game's rules are split between its message types: "propose a split" and
+"accept the offer" in bargaining, "turn left" in snake. A message is a
+request from the participant's browser, which they control, so the rule
+checks everything that matters to the result, such as that it's the
+player's turn, or that a player can't move faster than the game allows by
+sending many moves at once.
 
-   * - From a click to …
-     - Median
-     - 90th percentile
-   * - the next page, for an ordinary page
-     - 32 ms
-     - 41 ms
-   * - the next page for both members, at a group barrier that the click
-       completes
-     - 94 ms
-     - 150 ms
-   * - a live game's new view on both players' pages
-     - 4 ms
-     - 5 ms
+When players act at the same moment, the server still handles their messages
+one at a time, so a rule that settles everything as each message arrives can
+favour whoever's message happened to arrive first. Snake moves every snake on
+each tick before it works out any crashes, so no snake gets a contested square
+just by moving first.
 
-Over the internet, each of these adds the network's round trip, typically
-20–150 ms depending on where participants are: one round trip for a page or
-a live message, and about two for a member waiting at a barrier, whose page
-hears of the release and then asks for its next page. Live games can also
-show a player's own move at once, before the server has answered (see
-`Prediction and interpolation`_).
+What each player sees
+~~~~~~~~~~~~~~~~~~~~~
 
-The bigger difference, though, isn't the speed of one step. With barriers, a
-group moves in steps, each as slow as its slowest member: nothing reaches the
-others until everyone has submitted a page. In a live game, nobody waits for
-anyone: each move reaches the others as soon as it's made, so players can
-react to each other while they act, such as an offer that a partner answers
-within a second, or a player steering to follow another. That's what to
-choose a live game for. A design in which each player makes a decision and
-then sees everyone's is a round of trials, and needs no live game.
+Whatever isn't in a player's view never reaches their browser, so the view
+decides what information is private. In rock, paper, scissors, a player
+sees that their partner has chosen, but not what, until both have. What
+players see of each other is often part of the design itself: in
+``public_goods_live``, each member sees the others' contributions as they
+change, which invites them to follow each other, unlike the sealed
+contributions of the round-based ``public_goods``.
 
-The network sets a limit that a live game can't remove. Players see each
-other's moves a round trip late, and a player on a slower connection sees
-them later than one on a faster one. So a live game can't keep players in
-step more closely than their connections allow, which rules out tasks such as
-tapping together in time. A rule that rewards being first, such as the first
-to grab a coin, partly rewards the faster connection. And times measured on
-the server include each player's network delay.
+Time
+~~~~
 
-The ideas a live game is built from
------------------------------------
+A game can last a fixed time, as snake's 60 seconds do, or end by itself,
+such as once every throw has been played, with a limit in case it doesn't.
+Players who know when the game ends behave differently near the end, such as
+conceding at the last moment in a negotiation.
 
-**State.** The server keeps one state for each game: everything the game
-needs to know, such as each player's position or the offers made so far. Only
-the server changes it, so every player plays the same game, a participant
-can't change the result by editing their page, and a page that reloads gets
-the game as it stands.
+A game that ticks, or in which players move quickly, has to hide the
+network's delay, or the player's own moves would show a round trip late and
+other players would jump from tick to tick. The page **predicts** the
+player's own move, showing it at once, before the server has answered, and
+**interpolates** other players, drawing them a moment in the past, moving
+smoothly between ticks. A prediction repeats the game's rule on the page, so
+keep it to rules that are easy to repeat.
 
-**Messages.** A player acts by sending the game a message, such as "move to
-this square". The message is a request: the game's rules either apply it to
-the state or reject it, with a reason the page can show. Each kind of message
-has its own rule, so a game's rules are its message types, one for each thing
-a player can do.
+Delay also differs between players: someone on a slower connection sees
+others' moves later. So a rule that rewards being first, such as the first to
+grab a coin, partly rewards the faster connection, and times measured on the
+server include each player's network delay.
 
-**Views.** Each player's page is sent their view: the part of the state they
-may see. Whatever isn't in a player's view never reaches their browser, so
-the view is how a game keeps information private, such as a partner's
-choice before it's revealed.
+Who plays
+~~~~~~~~~
 
-**The page updates itself.** A game page doesn't move from one page to the
-next: it changes whenever the game as the player sees it changes, by
-redrawing what it shows from the newest view.
+Most games are played from start to end by the group that started them. A
+player who closes the page or loses their connection is **away**, and counts
+as gone only after a grace period, long enough for a reload. The game then
+ends for everyone, carries on without them, or hands their part on, as its
+design says.
 
-**The clock.** Every time in a game is in seconds since the game started:
-when each message arrived, when the game ends, when a crashed player comes
-back. The server and the pages count on the same clock, so a page can show a
-countdown or work out where a moving piece is.
+Some games keep going while their members change. A newcomer who reaches the
+game while their group is playing joins it, and the game makes room for them,
+such as a new boat on the lake. Each player can also finish in their own
+time, such as after a set time on the lake, while the others play on. Such
+games suit designs about what a group passes on as its members change.
 
-**Ticks.** A game can also change by itself, on a clock, such as snakes that
-keep moving whether anyone presses a key. It then *ticks* a number of times a
-second, typically 8 to 20, and sends every player a new view after each tick.
+A game can also be played as a trial in each round of a group's trials, so
+that each player's result is their trial's answer, and what differs between
+games, such as the stake, is in the trial's definition.
 
-Prediction and interpolation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The wait before the game
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-A page that only drew the views the server sends would show the player's own
-move a round trip late, and other players' movement in jumps, one per tick.
-Two ideas hide this:
-
-**Prediction.** The page knows what the player's own move will do, so it
-shows the move at once, applied to the newest view, and keeps doing so until
-the server's view with the move arrives. If the game rejects the move, the
-prediction goes. The page has to work out the move as the game does, so a
-prediction is a copy of a rule, and best kept to rules that are easy to
-copy.
-
-**Interpolation.** In a game that ticks, a page draws other players a little
-in the past, about two ticks, moving smoothly between the views either side.
-At 20 ticks a second, that's a tenth of a second behind, which players don't
-notice, and much smoother than jumping from tick to tick.
-
-What's recorded
----------------
-
-A game's record is saved with the experiment's data:
-
-**Outcome.** The game's result, worked out from the state when it ends, such
-as each player's score. Each player's **answer** is their part of it, which
-is what their game page saves, so that a trial played as a live game has an
-answer like any other trial.
-
-**Messages.** Every message a page sent, in order, with when it arrived and
-whether the game accepted it. This is the complete record of what each player
-did and when, but a fast game can send many messages a second, so a game can
-leave out messages the analysis won't need, such as every movement.
-
-**Moments.** Events the game records as they happen, such as each catch or
-each deal, with when they happened. Moments are what an analysis of what
-happened during a long game reads, rather than every message.
-
-**Checkpoints.** Copies of the whole state, taken every few seconds and at the
-end. They help to check what a game did, but when they're taken depends on
-the game's traffic, so the analysis should rely on moments instead.
-
-So decide what the analysis needs before running the experiment: the outcome
-answers how a game ended, moments what happened along the way, and messages
-exactly what each player did.
-
-Around the game: the wait, the start and the end
-------------------------------------------------
-
-A game starts when a group reaches it, and that step is a group barrier like
-any other: the group waits there until all its members arrive. So everything
-:doc:`groups` says about waiting applies, and in particular the wait needs a
-limit. Usually that's how long a member may keep the others waiting before
-they're late and leave the group. A group that takes newcomers can't wait for
-its slowest member, since it can't tell a slow member from one who hasn't
-joined yet, so each member instead waits for a set time and then moves on.
-
-Once the group is released, the game is created, but it starts only once every
-player's page has opened, or after a minute: the **ready step**. Otherwise a
-page that opened a moment late would miss the start of a timed game.
-
-The game ends when its rules say so, when its time is up, or when too many
-players have left for it to carry on. A player who closes the page or loses
-their connection is **away**, and only counts as gone after a grace period,
-long enough for a reload. Decide what happens then: the game ends for
-everyone, carries on without them, or hands their part on.
-
-When the game ends, each player's page stays until their result is saved, a
-few seconds later, and then moves on. A barrier after the
-game counts from then, not from when the game started.
-
-Two kinds of game don't fit "start together, end together":
-
-**Joining a running game.** A newcomer who reaches the game while their
-group is playing joins the game, and the game makes room for them, such as a
-new boat on the lake. This suits societies whose members change while they
-play.
-
-**Finishing before the others.** Each player's game can end in their own
-time, such as after a set time on the lake, while the others play on. Their
-result is worked out then, and they move on.
-
-A game can also be played as a trial in each round of a group's trials: the
-round's barrier is the game's, each player's answer is their trial's, and
-what differs between games, such as the stake, is in the trial's definition.
+The wait for the group's members is a group barrier, so everything
+:doc:`groups` says about waiting applies. In particular, it needs a limit:
+usually how long a member may keep the others waiting before they're late
+and leave the group. A group that takes newcomers can't wait for its slowest
+member, since it can't tell a slow member from one who hasn't joined yet, so
+there each member waits a set time and then moves on.
 
 Kinds of live game
 ------------------
 
-Live games differ in three ways: what moves the game on (only the players'
-messages, or a clock too), whether the group is fixed or changes while it
-plays, and how the game ends. PsyNet's demos cover these:
+Live games differ in what moves them on, who plays, and how they end.
+PsyNet's demos cover these:
 
 .. list-table::
    :header-rows: 1
@@ -215,7 +154,7 @@ plays, and how the game ends. PsyNet's demos cover these:
 
    * - Demo
      - What moves it on
-     - The group
+     - Who plays
      - How it ends
      - What it shows
    * - `rock_paper_scissors_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/rock_paper_scissors_live>`__
@@ -232,25 +171,68 @@ plays, and how the game ends. PsyNet's demos cover these:
      - players' contributions, against a deadline
      - a team that carries on if one leaves
      - time's up
-     - seeing others' contributions as they change
+     - others' contributions seen as they change
    * - `snake_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/snake_live>`__
      - ticks, 8 a second
      - a fixed group
      - after 60 seconds
-     - a game that moves by itself, and fair rules for simultaneous moves
+     - a game that moves by itself, with fair rules for simultaneous moves
    * - `shared_canvas_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/shared_canvas_live>`__
      - ticks, 20 a second
      - a fixed group
      - a set time
      - smooth movement, with prediction and interpolation
    * - `microsociety_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety_live>`__
-     - ticks and catches every few seconds
+     - ticks, and catches every few seconds
      - a society that members join and leave while it plays
      - once nobody's left
      - joining a running game, finishing early, and moments
 
-Other designs fit the same three questions. An auction in which bids rise
-until nobody outbids moves on players' messages, with a deadline. A
-coordination game in which players converge on a meeting point moves on a
-clock. Collaborative drawing, with each stroke a message, is a fixed group
-until the drawing is done.
+Other designs fit the same pattern. An auction in which bids rise until
+nobody outbids moves on players' messages, against a deadline. Players
+converging on a meeting point move on a clock. Collaborative drawing, with
+each stroke a message, is a fixed group that plays until the drawing is done.
+
+Where the data goes
+-------------------
+
+Each game's record is saved with the experiment's data:
+
+- its **outcome**, worked out from the state when it ends, such as each
+  player's score. Each player's **answer** is their part of it, which their
+  game page saves, so a game played as a trial gives the trial an answer
+  like any other.
+- its **messages**: every message a page sent, in order, with when it arrived
+  and whether the game accepted it. This is the complete record of what each
+  player did and when. A fast game can send many messages a second, so it can
+  leave out those the analysis won't need, such as every small movement.
+- its **moments**: events the game records as they happen, such as each
+  catch or each deal, with when they happened. An analysis of what happened
+  during a long game reads these, rather than every message.
+- **checkpoints**: copies of the whole state, every few seconds and at the
+  end, which help to check what a game did.
+
+When planning the analysis, check that the outcome holds how each game ended,
+and that what happened along the way is in its moments or its messages.
+
+.. _design-live-games-checks:
+
+What to check when reviewing live games
+---------------------------------------
+
+- Do players need to react to each other as they act? If not, a round of
+  trials is simpler.
+- Can a player see anything in their view that's meant only for others?
+- Does each rule check what a player's message could get wrong, or claim
+  falsely?
+- Is anything decided by speed, and so partly by each player's connection?
+- What happens to the others when a player leaves, and how long does the
+  game wait for them to come back?
+- Does the wait before the game have a limit, and does the game itself
+  always end?
+- Is what the analysis needs in the outcome, the moments or the messages?
+
+.. seealso::
+
+   :doc:`/code/multiplayer/live_game_tutorial` builds three of the demos step
+   by step, and :doc:`/code/multiplayer/live_games` is the reference.
