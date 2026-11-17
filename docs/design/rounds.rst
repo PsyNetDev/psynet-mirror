@@ -47,7 +47,7 @@ A group's rounds can be run in two ways, as **cued trials** or by a
      - **Cued trials**: a loop in the timeline with one
        :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` per player in each
        round, after a regrouper when partners change (see
-       `Partners each round`_). The trials of a group's round share a
+       `Changing partners between rounds`_). The trials of a group's round share a
        :class:`~psynet.sync.SyncGroupRound` that holds the group's results.
      - `public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__,
        `ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__,
@@ -68,8 +68,8 @@ In a trial maker, the group can also share its trials. One member acts as the
 trial maker alone, and the other members get trials on the same node, so
 everyone sees the same stimulus in each round.
 
-Partners each round
--------------------
+Changing partners between rounds
+--------------------------------
 
 New groups for each round
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -206,8 +206,8 @@ questions alone.
 .. figure:: ../_static/images/design/groups/crowd_estimate.svg
    :alt: A grouper forms groups of up to four that latecomers can join, and a barrier starts the game and closes the group to latecomers. Then, for each question, members estimate, a barrier shares the group's median, and members revise their estimate on a group page that shows everyone's estimate.
 
-New partners each round
-~~~~~~~~~~~~~~~~~~~~~~~
+Pairs from a cohort
+~~~~~~~~~~~~~~~~~~~
 
 In `ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__, a grouper forms cohorts of four,
 or of two or three once the first player has waited a minute. Each round, the

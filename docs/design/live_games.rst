@@ -5,10 +5,12 @@ Live games
 
 In a **live game**, a group plays together on one page in real time: offers
 go back and forth in a negotiation, players steer around a shared board, or a
-society fishes on a lake while its members come and go. :doc:`groups`
-compares this with playing in rounds, and says when a live game is worth it.
-All the players need to be online at the same time, as in any group
-experiment.
+society fishes on a lake while its members come and go. Each move
+reaches the others as soon as it's made, so players can react to each other
+while they act. That's the reason to choose a live game: a design in which
+each player decides and then sees everyone's decisions is a round, and is
+simpler played in :doc:`rounds <rounds>`. As in any :doc:`group experiment
+<groups>`, all the players need to be online at the same time.
 
 How it works
 ------------
@@ -35,10 +37,8 @@ A game is played from start to end like this:
 7. The game ends when its rules say so, when its time is up, or when too
    many players have left. Each player's result is worked out from the state
    and saved, and their page moves on. If the game's own code raises an
-   error, the game *fails*, and PsyNet treats it as any other error in the
-   experiment: it records the error for the dashboard, and its players are
-   failed and leave through PsyNet's error page, which pays them as error
-   recovery does.
+   error, the game *fails*, and its players leave through PsyNet's error
+   page, as for an error anywhere in the experiment.
 
 Only the server changes the state, so every player plays the same game, a
 participant can't change the result by editing their page, and a page that
@@ -83,11 +83,14 @@ game page can show everyone as the same anonymous figure instead (see
 Delay
 ~~~~~
 
-In a fast game, the page hides the round trip. It **predicts** the player's own move, showing it
-at once, before the server has answered, and **interpolates** other players
-in a game that ticks, drawing them a moment in the past, moving smoothly
-between ticks rather than jumping from one to the next. A prediction repeats
-the game's rule on the page, so keep it to rules that are easy to repeat.
+Each move reaches the other players about a network round trip after it's
+made, typically 20–150 ms, and only then does the player's own page hear
+back from the server. In a fast game, the page hides this. It **predicts**
+the player's own move, showing it at once, before the server has answered,
+and **interpolates** other players in a game that ticks, drawing them a
+moment in the past, moving smoothly between ticks rather than jumping from
+one to the next. A prediction repeats the game's rule on the page, so keep it
+to rules that are easy to repeat.
 
 What the page can't hide is that delay differs between players: someone on a
 slower connection sees others' moves later, and their own moves arrive later.
@@ -110,6 +113,9 @@ game while their group is playing joins it, and the game makes room for them,
 such as a new boat on the lake. Each player can also finish in their own
 time, such as after a set time on the lake, while the others play on. Such
 games suit designs about what a group passes on as its members change.
+
+Pay
+~~~
 
 A game can pay each player from its result, or as they earn during the game,
 such as for each coin they collect. A player who leaves early keeps what they
