@@ -1,5 +1,3 @@
-const NAMES = ["Player B", "Player C", "Player D"];
-
 function tokenRow(name, tokens, endowment, you) {
   let row = document.createElement("div");
   row.className = `pg-row${you ? " pg-row-you" : ""}`;
@@ -38,6 +36,13 @@ export function activate({root, psynet}) {
     }
   });
 
+  // The label of the i-th of the others, who are in player order without
+  // this player: their pseudonym, as the group's other pages show them.
+  function othersLabel(i) {
+    let others = live.players.filter((player) => !player.you);
+    return others[i]?.label ?? "Another player";
+  }
+
   function render() {
     view = live.predictedView();
     if (view === null) {
@@ -49,7 +54,7 @@ export function activate({root, psynet}) {
     }
     rows.replaceChildren(
       tokenRow("You", view.mine, view.endowment, true),
-      ...view.others.map((tokens, i) => tokenRow(NAMES[i], tokens, view.endowment, false))
+      ...view.others.map((tokens, i) => tokenRow(othersLabel(i), tokens, view.endowment, false))
     );
     let total = view.mine + view.others.reduce((a, b) => a + b, 0);
     let players = view.others.length + 1;

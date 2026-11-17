@@ -32,6 +32,9 @@ _SAVING_MARGIN = 60
 # The default text of a notice, translated as the page renders.
 _DEFAULT = object()
 
+# How a game page shows the other players.
+_NAMES = ("shown", "anonymous")
+
 
 class LiveGameControl(NullControl):
     """The part of a game page where the participant plays their group's
@@ -84,6 +87,14 @@ class LiveGameControl(NullControl):
         What ``psynet.liveGame.showStatus`` says once the player's game has
         ended. By default it says "The game is over."
 
+    names
+        How the page shows the other players, through
+        ``psynet.liveGame.players``: ``"shown"``, the default, by their
+        pseudonym, such as "Pink koala", as the group's other pages show
+        them, or ``"anonymous"``, all as the same neutral figure, so players
+        can't recognise each other from one game to the next. A page that's
+        anonymous is never sent the others' pseudonyms.
+
     **kwargs
         Any other parameter of :class:`~psynet.modular_page.Control`, such as
         ``show_next_button``.
@@ -97,9 +108,15 @@ class LiveGameControl(NullControl):
         no_game_message=_DEFAULT,
         waiting_status=_DEFAULT,
         ended_status=_DEFAULT,
+        names="shown",
         **kwargs,
     ):
         super().__init__(**kwargs)
+        if names not in _NAMES:
+            raise ValueError(
+                f"LiveGameControl's names must be one of "
+                f"{', '.join(map(repr, _NAMES))}, not {names!r}."
+            )
         if (
             isinstance(show_result_for, bool)
             or not isinstance(show_result_for, (int, float))
@@ -122,6 +139,7 @@ class LiveGameControl(NullControl):
         self.no_game_message = no_game_message
         self.waiting_status = waiting_status
         self.ended_status = ended_status
+        self.names = names
 
     def check_ready_for_response(self, experiment, participant):
         session_id = _live_game_id(participant, self._play_id())
@@ -235,6 +253,7 @@ class LiveGameControl(NullControl):
                 "noGameMessage": no_session,
                 "waitingStatus": waiting,
                 "endedStatus": ended,
+                "players": _players(participant, self._play_id()),
             }
         }
 
@@ -280,3 +299,64 @@ def _check_session_can_still_end(session_id):
             "The worker that runs the "
             "experiment's live games has probably stopped."
         )
+
+
+def _players(participant, play_id):
+    """Return how the participant's game page shows each player of their
+    latest game at the PlayLiveGame ``play_id``, in player order: the
+    player's pseudonym, unless the page is anonymous, and whether it's the
+    participant. Pages read it as ``psynet.liveGame.players``."""
+    from ..participant import Participant
+    from ..pseudonym import anonymous_sticker_html
+    from .play import _live_game_data
+
+    data = _live_game_data(participant).get(play_id) or {}
+    game_id = data.get("id")
+    if game_id is None:
+        return []
+    anonymous = data.get("names") == "anonymous"
+    participant_ids = _session_participant_ids(game_id)
+    if participant.id not in participant_ids:
+        # Added to a running game, so not in its row until the addition is
+        # written; the page asks again once its views show more players.
+        participant_ids = [*participant_ids, participant.id]
+    shown = {
+        member.id: member
+        for member in Participant.query.filter(Participant.id.in_(participant_ids))
+    }
+    _p = get_translator(context=True)
+    players = []
+    for participant_id in participant_ids:
+        you = participant_id == participant.id
+        if anonymous or participant_id not in shown:
+            player = {
+                "name": None,
+                "css_color": None,
+                "emoji": None,
+                "sticker_html": str(anonymous_sticker_html()),
+            }
+            # As GroupPrompt and chat rooms label an anonymous member.
+            label = (
+                _p("live_game", "Your partner")
+                if len(participant_ids) == 2
+                else _p("live_game", "Another player")
+            )
+        else:
+            player = shown[participant_id].pseudonym.to_dict()
+            del player["color"], player["animal"]
+            label = player["name"]
+        player["you"] = you
+        player["label"] = _p("live_game", "You") if you else label
+        players.append(player)
+    return players
+
+
+def _players_payload(unique_id, play_id):
+    """Return the participant's game page's players, for
+    GET /live_game/players."""
+    from ..participant import Participant
+
+    participant = Participant.query.filter_by(unique_id=unique_id).one_or_none()
+    if participant is None or play_id is None:
+        return {"players": []}
+    return {"players": _players(participant, play_id)}

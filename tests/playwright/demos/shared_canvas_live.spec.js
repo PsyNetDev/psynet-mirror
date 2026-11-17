@@ -225,8 +225,14 @@ test("players move around shared_canvas_live with prediction and interpolation, 
     const collector = await ownPlayer(first);
     expect(collector.coins).toBeGreaterThan(0);
     await expect(first.locator("#canvas-scores")).toContainText(`You: ${collector.coins}`);
+    // The other page shows the collector by their pseudonym.
+    const label = await second.evaluate(
+      (player) => psynet.liveGame.players[player].label,
+      collector.id
+    );
+    expect(label).not.toBe("You");
     await expect(second.locator("#canvas-scores")).toContainText(
-      `Player ${collector.id + 1}: ${collector.coins}`,
+      `${label}: ${collector.coins}`,
       { timeout: STEP_TIMEOUT_MS }
     );
     await screenshot(second, "shared_canvas_live_board");

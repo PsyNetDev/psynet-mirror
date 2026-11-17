@@ -81,7 +81,8 @@ export function activate({ root, vars, psynet }) {
         let swatch = document.createElement("span");
         swatch.className = "snake-swatch";
         swatch.style.background = rules.colors[player];
-        let name = player === live.player ? "You" : `Player ${player + 1}`;
+        // "You", or the player's pseudonym, as the group's other pages show them.
+        let name = live.players[player]?.label ?? `Player ${player + 1}`;
         let crashes = snake.crashes === 1 ? "1 crash" : `${snake.crashes} crashes`;
         item.append(swatch, `${name}: ${snake.food} food, ${crashes}`);
         return item;

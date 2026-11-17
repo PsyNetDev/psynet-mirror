@@ -191,6 +191,7 @@ class PlayLiveGame(EltCollection):
             settings,
             on_release,
             join_running_game=join_running_game,
+            names=page.control.names,
             **kwargs,
         )
         self.page = page
@@ -212,6 +213,7 @@ class _LiveGameBarrier(GroupBarrier):
         settings=None,
         on_release=None,
         join_running_game=False,
+        names="shown",
         **kwargs,
     ):
         settings = _checked_settings(game_class, settings)
@@ -225,6 +227,9 @@ class _LiveGameBarrier(GroupBarrier):
         self.settings = settings
         self.on_game_release = on_release
         self.join_running_game = join_running_game
+        # The game page's names, kept with each member's game, so that the
+        # players route sends pseudonyms only to pages that show them.
+        self.names = names
         try:
             barrier_spec_json(self)
         except BarrierSpecError as error:
@@ -284,7 +289,7 @@ class _LiveGameBarrier(GroupBarrier):
         )
 
     def _arrive(self, participant):
-        _set_live_game_id(participant, self.id, None)
+        _set_live_game_id(participant, self.id, None, names=self.names)
         if self.join_running_game:
             self._join_running_game(participant)
 
@@ -451,17 +456,19 @@ def _check_reached_game(participant, play_id):
 def _live_game_data(participant):
     """Return what PsyNet stored about each PlayLiveGame the participant
     reached, keyed by its id: the ``id`` of their latest game there, or None
-    if their group didn't start one, and the ``history`` of every game they
-    played there, as ``{"id": game_id, "answer": answer}``, oldest first."""
+    if their group didn't start one, the ``history`` of every game they
+    played there, as ``{"id": game_id, "answer": answer}``, oldest first, and
+    its game page's ``names``, ``"shown"`` or ``"anonymous"``."""
     return participant.live_game_data or {}
 
 
-def _set_live_game_id(participant, play_id, game_id):
+def _set_live_game_id(participant, play_id, game_id, names=None):
     data = _live_game_data(participant).get(play_id, {})
     history = list(data.get("history", []))
     if game_id is not None and all(game["id"] != game_id for game in history):
         history.append({"id": game_id, "answer": None})
-    _set_data(participant, play_id, {"id": game_id, "history": history})
+    names = names or data.get("names", "shown")
+    _set_data(participant, play_id, {"id": game_id, "history": history, "names": names})
 
 
 def _set_live_game_answer(participant, play_id, answer):

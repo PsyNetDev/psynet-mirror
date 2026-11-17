@@ -190,8 +190,14 @@
     }
 
     function newPage() {
+      let current = session();
       let state = {
-        session: session(),
+        session: current,
+        // How the page shows each player, by player number, as the control
+        // gave it, and then as GET /live_game/players does once the views
+        // show players the page doesn't know, such as newcomers.
+        players: (current.players || []).slice(),
+        fetchingPlayers: false,
         socket: null,
         left: false,
         startedView: null,
@@ -249,6 +255,9 @@
         return;
       }
       state.lastView = view;
+      if ((view.psynet.away_since || []).length > state.players.length) {
+        fetchPlayers(state);
+      }
       // A page that opens after the end gets no onStarted, which would turn
       // its controls back on.
       if (
@@ -461,6 +470,31 @@
         callEach(state.statusCallbacks);
       }
       return number;
+    }
+
+    // Asks the server how to show the game's players, once the views show
+    // more than the page knows, and updates the page with them.
+    function fetchPlayers(state) {
+      if (state.fetchingPlayers || !page.fetchPlayers) {
+        return;
+      }
+      state.fetchingPlayers = true;
+      Promise.resolve(page.fetchPlayers(state.session.playId))
+        .then((players) => {
+          if (state.left || !Array.isArray(players)) {
+            return;
+          }
+          if (players.length > state.players.length) {
+            state.players = players;
+            if (state.lastView !== null && state.changeCallbacks.length > 0) {
+              callEach(state.changeCallbacks, shownView(state, state.lastView));
+            }
+          }
+        })
+        .catch((error) => console.error(error))
+        .finally(() => {
+          state.fetchingPlayers = false;
+        });
     }
 
     // The view onChange's callbacks get: with a predict callback, the
@@ -815,6 +849,25 @@
         return noGame() ? null : pageState().player;
       },
       /**
+       * How to show each player, by player number, so that a page can label
+       * them as the group's other pages do: ``players[i].label`` is "You"
+       * for this player, and otherwise the player's pseudonym, such as
+       * "Pink koala", or, on a page whose control has
+       * ``names="anonymous"``, "Your partner" in a game for two and "Another
+       * player" otherwise. Each also has ``you``, ``name``,
+       * ``css_color``, ``emoji`` and ``sticker_html``, the pseudonym's
+       * parts, which are ``null`` on an anonymous page, where
+       * ``sticker_html`` is the same neutral figure for everyone. A player
+       * who joins while the game runs is added a moment after the views
+       * first show them, and ``onChange`` then runs again. Empty without a
+       * game.
+       *
+       * @member {Object[]} players
+       */
+      get players() {
+        return noGame() ? [] : pageState().players;
+      },
+      /**
        * Whether the participant's group started a game at the page's
        * PlayLiveGame. A participant removed from their group there has none.
        * PsyNet then shows the control's ``no_game_message`` in a notice,
@@ -999,6 +1052,13 @@
           document.querySelectorAll("[data-live-game]").forEach((element) => {
             element.hidden = true;
           });
+        },
+        fetchPlayers: async (playId) => {
+          let params = new URLSearchParams({ uniqueId: psynet.uniqueId, playId });
+          let response = await fetch(`/live_game/players?${params}`, {
+            cache: "no-store",
+          });
+          return response.ok ? (await response.json()).players : null;
         },
       });
     }

@@ -396,7 +396,8 @@ Showing the game:
   status line`_).
 - ``enableWhilePlaying(...elements)`` enables buttons and other elements
   only while the game is played.
-- ``player`` is this player's number.
+- ``player`` is this player's number, and ``players`` says how to show each
+  player (see `Who's who`_).
 - ``started`` and ``ended`` say whether the game has started and whether
   the player's game has ended, and ``playing`` whether it has started and
   not ended.
@@ -460,6 +461,37 @@ elements until the game starts, and again once it ends.
 
 The page leaves the game when the participant moves on, so ``activate``
 doesn't need to return a cleanup function for it.
+
+.. _live-games-whos-who:
+
+Who's who
+~~~~~~~~~
+
+``psynet.liveGame.players`` lists how to show each player, by player number,
+as the group's other pages show them. Each player's ``label`` is "You" for
+this player and otherwise their pseudonym, such as "Pink koala", and
+``sticker_html`` draws their animal in their colour, as
+:class:`~psynet.group_prompt.GroupPrompt` and chat rooms do. ``name``,
+``css_color`` and ``emoji`` are the pseudonym's parts, and ``you`` says
+whether it's this player:
+
+.. code-block:: javascript
+
+    let name = psynet.liveGame.players[player].label;  // "You" or "Pink koala"
+
+With ``LiveGameControl(names="anonymous")``, every other player's ``label``
+is "Your partner" in a game for two and "Another player" otherwise, as on the
+group's other anonymous pages, ``sticker_html`` is the same neutral figure for all of
+them, and the page is never sent their pseudonyms (see :doc:`pseudonyms`). A
+player who joins while the game runs is added a moment after the views first
+show them, and ``onChange`` then runs again, so a page that labels players in
+``onChange`` shows the newcomer's name. A game's colours for its pieces, such
+as each snake's, are the game's own, and needn't match the pseudonyms'.
+
+PsyNet translates its own texts on the page, such as the notices and the
+status line's defaults, and the labels above. Text that the game puts in its
+views or its JavaScript is the experiment's, so translate it as the
+experiment's other texts (see :doc:`/code/participants/internationalization`).
 
 .. _live-games-status:
 
@@ -1169,6 +1201,14 @@ scissors game:
 ``join`` close and open a player's game page, and ``is_over`` returns the
 reason the game ended when it has one, such as ``"players_left"``.
 
+Each of the experiment's worker processes plays the games given to it, one
+after another, so slow game code in one game delays the others. As a rough
+guide from Dallinger's `Running games <dallinger-running-games_>`_, 50 games
+at 20 ticks a second are fine if each game's ``tick`` and ``view`` take well
+under a millisecond. Before running many groups at once, check that the
+game's code keeps up: the worker logs a warning, naming the slowest games,
+when it falls behind.
+
 To play a game yourself, run ``psynet debug local`` and open the participant
 link in a browser window for each player. For a game with ticks, run
 ``psynet debug local --legacy`` instead, which uses gunicorn, the web server a
@@ -1202,3 +1242,4 @@ on Dallinger's clock rather than the game's. Use ``now`` and the page's
 .. _dallinger-outcome: https://dallinger.readthedocs.io/latest/realtime_games.html#dallinger.realtime.RealtimeGame.outcome
 .. _dallinger-save-message: https://dallinger.readthedocs.io/latest/realtime_games.html#dallinger.realtime.RealtimeGame.save_message
 .. _dallinger-bot: https://dallinger.readthedocs.io/latest/realtime_games.html#dallinger.realtime.RealtimeGame.bot
+.. _dallinger-running-games: https://dallinger.readthedocs.io/latest/realtime_games.html#running-games

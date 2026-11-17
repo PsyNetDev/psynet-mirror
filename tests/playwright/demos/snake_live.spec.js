@@ -133,8 +133,11 @@ test("players steer snakes in snake_live, eat food, crash and come back, and fin
     await eatAPiece(first);
     const eater = await snakeOf(first);
     await expect(first.locator("#snake-scores")).toContainText(`You: ${eater.food} food`);
+    // The other page shows the eater by their pseudonym.
+    const label = await second.evaluate((player) => psynet.liveGame.players[player].label, id);
+    expect(label).not.toBe("You");
     await expect(second.locator("#snake-scores")).toContainText(
-      `Player ${id + 1}: ${eater.food} food`,
+      `${label}: ${eater.food} food`,
       { timeout: STEP_TIMEOUT_MS }
     );
     await screenshot(second, "snake_live_board");

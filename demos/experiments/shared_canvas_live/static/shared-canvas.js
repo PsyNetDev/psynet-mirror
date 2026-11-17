@@ -235,7 +235,8 @@ export function activate({ root, vars, psynet }) {
         let swatch = document.createElement("span");
         swatch.className = "canvas-swatch";
         swatch.style.background = rules.colors[number];
-        let name = number === live.player ? "You" : `Player ${number + 1}`;
+        // "You", or the player's pseudonym, as the group's other pages show them.
+        let name = live.players[number]?.label ?? `Player ${number + 1}`;
         item.append(swatch, `${name}: ${player.coins}`);
         return item;
       })

@@ -53,10 +53,11 @@ class FakeSocket {
   }
 }
 
-const view = (startedAt, away = [], endsAt = null, duration = null) => ({
+const view = (startedAt, away = [], endsAt = null, duration = null, players = 2) => ({
   psynet: {
     ready: [],
     away: away,
+    away_since: Array(players).fill(null),
     duration: duration,
     started_at: startedAt,
     ends_at: endsAt,
@@ -68,6 +69,8 @@ const plain = (value) => JSON.parse(JSON.stringify(value));
 
 let sockets;
 let errors;
+let fetchedPlayers;
+let serverPlayers;
 let leavePage;
 let context;
 let session;
@@ -82,7 +85,13 @@ let nextButtonHidden;
 beforeEach(() => {
   sockets = [];
   errors = [];
+  fetchedPlayers = [];
+  serverPlayers = [];
   session = {
+    players: [
+      { label: "You", you: true, name: "Blue fox" },
+      { label: "Pink koala", you: false, name: "Pink koala" },
+    ],
     playId: "pick_numbers",
     liveGameId: 7,
     gameChannel: "pick_numbers",
@@ -136,6 +145,10 @@ beforeEach(() => {
       setNextButtonHidden: (hidden) => nextButtonHidden.push(hidden),
       showNotice: (id, text) => notices.push([id, text]),
       hideGame: () => hiddenGames++,
+      fetchPlayers: (playId) => {
+        fetchedPlayers.push(playId);
+        return Promise.resolve(serverPlayers);
+      },
     }
   );
   leavePage = liveGame.activatePage();
@@ -569,6 +582,31 @@ describe("psynet.liveGame", () => {
     assert.deepEqual(changes, [false, true]);
     // onReceive gets only the game's views, as they came.
     assert.deepEqual(plain(received), [[false, { ended: null }]]);
+  });
+
+  it("gives each player's label, and asks for a newcomer's", async () => {
+    changePage();
+    assert.deepEqual(
+      plain(liveGame.players.map((p) => p.label)),
+      ["You", "Pink koala"]
+    );
+    const changes = [];
+    liveGame.onChange((v) => changes.push(liveGame.players.length));
+    sockets[0].view(view(4));
+    assert.deepEqual(fetchedPlayers, []);
+    serverPlayers = [...session.players, { label: "Green otter", you: false }];
+    sockets[0].view(view(4, [], null, null, 3));
+    assert.deepEqual(fetchedPlayers, ["pick_numbers"]);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(liveGame.players[2].label, "Green otter");
+    // The page updates itself again with the newcomer's label.
+    assert.deepEqual(changes, [2, 2, 3]);
+  });
+
+  it("has no players without a game", () => {
+    session = { ...session, liveGameId: null };
+    changePage();
+    assert.deepEqual(plain(liveGame.players), []);
   });
 
   it("gives onChange the view itself without a predict callback", () => {

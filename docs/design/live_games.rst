@@ -53,7 +53,9 @@ A game is played from start to end like this:
    join while it runs, or a player finishes before the others.
 7. The game ends when its rules say so, when its time is up, or when too
    many players have left. Each player's result is worked out from the state
-   and saved, and their page moves on.
+   and saved, and their page moves on. If the game's own code raises an
+   error, the game ends as *failed*: the pages keep what they showed, and the
+   players move on without an answer.
 
 Only the server changes the state, so every player plays the same game, a
 participant can't change the result by editing their page, and a page that
@@ -88,6 +90,12 @@ see of each other is often part of the design itself: in
 ``public_goods_live``, each member sees the others' contributions as they
 change, which invites them to follow each other, unlike the sealed
 contributions of the round-based ``public_goods``.
+
+Players see each other by their pseudonyms, such as "Pink koala", as on the
+group's other pages, so they can recognise someone they've played before.
+If that could change how they play, such as by building a reputation, the
+game page can show everyone as the same anonymous figure instead (see
+:doc:`groups`).
 
 Delay
 ~~~~~
@@ -234,6 +242,8 @@ What to check when reviewing live games
 - Does the wait before the game have a limit, and does the game itself
   always end?
 - Is what the analysis needs in the outcome, the moments or the messages?
+  Does the analysis leave out games that failed?
+- Will the game's code keep up with as many games as will run at once?
 - Has someone played the game in several browser windows, reloading one
   and closing another during the game?
 

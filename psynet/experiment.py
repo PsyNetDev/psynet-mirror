@@ -221,6 +221,7 @@ else:
         "/timeline/arrival_notice",
         "/timeline/group_prompt",
         "/timeline/waiting_status",
+        "/live_game/players",
         "/timeline/progress_and_reward",
         "/dashboard/module/progress_info",
         "/dashboard/module/tooltip",
@@ -7850,6 +7851,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return waiting_status_payload(
             request.args.get("uniqueId"),
             request.args.get("barrierId"),
+        )
+
+    @experiment_route("/live_game/players", methods=["GET"])
+    @classmethod
+    @with_transaction
+    def get_live_game_players(cls):
+        """Tell a game page how to show the players of its game, once its
+        views show players it doesn't know yet, such as one who joined the
+        game while it runs."""
+        from .live_game.control import _players_payload
+
+        return _players_payload(
+            request.args.get("uniqueId"), request.args.get("playId")
         )
 
     @experiment_route("/timeline/progress_and_reward", methods=["GET"])

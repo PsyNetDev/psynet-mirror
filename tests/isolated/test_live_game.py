@@ -404,12 +404,17 @@ def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
         "noGameMessage": "Your group couldn't start the game.",
         "waitingStatus": "Waiting for the other players to open the game",
         "endedStatus": "The game is over.",
+        "players": [],
     }
     for member in members:
         _arrive(game_barrier, member)
 
     session_id = _game_id(members[1], game_barrier.id)
-    assert _rendered_js_vars(page, members[1], monkeypatch)["liveGame"] == {
+    js_vars = _rendered_js_vars(page, members[1], monkeypatch)["liveGame"]
+    assert [player["you"] for player in js_vars.pop("players")] == [
+        member.id == members[1].id for member in sorted(members, key=lambda m: m.id)
+    ]
+    assert js_vars == {
         "playId": game_barrier.id,
         "liveGameId": session_id,
         "gameChannel": "pick_numbers",
@@ -633,6 +638,52 @@ def _pair_session(pair):
     for member in members:
         _arrive(game_barrier, member)
     return _game_id(members[0], game_barrier.id)
+
+
+def test_a_game_page_shows_its_players_by_pseudonym(pair):
+    from psynet.live_game.control import _players, _players_payload
+
+    members, game_barrier = pair
+    session_id = _pair_session(pair)
+    order = _session_participant_ids(session_id)
+    first = next(m for m in members if m.id == order[0])
+    other = next(m for m in members if m.id == order[1])
+
+    players = _players(first, game_barrier.id)
+    assert [p["you"] for p in players] == [True, False]
+    assert players[0]["label"] == "You"
+    assert players[1]["label"] == players[1]["name"] == other.pseudonym.name
+    assert players[1]["css_color"] == other.pseudonym.css_color
+    # The page's variables carry them, and the route gives the same.
+    control = _game_page().control
+    assert control.play_id == game_barrier.id
+    js_vars = control.get_participant_js_vars(None, first)
+    assert js_vars["liveGame"]["players"] == players
+    assert _players_payload(first.unique_id, game_barrier.id) == {"players": players}
+    assert _players_payload("nobody", game_barrier.id) == {"players": []}
+    assert _players(first, "never_reached") == []
+
+
+def test_an_anonymous_game_page_never_gets_the_players_pseudonyms(db_session):
+    from psynet.live_game.control import _players
+
+    experiment = get_experiment()
+    members, _ = _pair(db_session, [new_participant(experiment) for _ in range(2)])
+    page = ModularPage(
+        "anonymous", "Play.", LiveGameControl(names="anonymous"), time_estimate=5
+    )
+    barrier = _play("anonymous", page=page).barrier
+    assert barrier.names == "anonymous"
+    for member in members:
+        _arrive(barrier, member)
+
+    players = _players(members[0], "anonymous")
+    assert [p["label"] for p in players if not p["you"]] == ["Your partner"]
+    for player in players:
+        assert (player["name"], player["css_color"], player["emoji"]) == (None,) * 3
+        assert members[1].pseudonym.name not in str(player)
+    with pytest.raises(ValueError, match="names must be one of"):
+        LiveGameControl(names="hidden")
 
 
 def _play_to_the_end(session_id, messages):
