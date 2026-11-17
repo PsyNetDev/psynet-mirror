@@ -17,7 +17,7 @@ envelope wording (stable release description, summary intro, upgrade
 instructions), so editing the announcement style should not require code
 changes.
 
-Posting requires the ``[slack]`` extra and a ``SLACK_BOT_TOKEN`` environment
+Posting requires the ``[dev]`` extra and a ``SLACK_BOT_TOKEN`` environment
 variable with ``chat:write`` access to the target channel. The message
 flavour (release candidate vs. final) is auto-detected from the version
 string.
@@ -370,8 +370,8 @@ def announce_command(
         from slack_sdk.errors import SlackApiError
     except ImportError as exc:
         raise ValueError(
-            "slack_sdk is not installed. Install the [slack] extra:\n"
-            "    uv pip install -e '.[slack]'"
+            "slack_sdk is not installed. Install the [dev] extra:\n"
+            "    uv pip install -e '.[dev]'"
         ) from exc
 
     token = os.environ.get("SLACK_BOT_TOKEN")

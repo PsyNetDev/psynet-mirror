@@ -246,8 +246,8 @@ Verify the release is live at
 
 Use the `psynet dev release announce` command. It composes the message
 envelope (title, RC notice, upgrade instructions, links) from the
-version argument and posts using the `[slack]` extra (already installed
-via the prerequisites). Set `SLACK_BOT_TOKEN` to a bot token that has
+version argument and posts using `slack_sdk` from the `[dev]` extra
+(already installed via the prerequisites). Set `SLACK_BOT_TOKEN` to a bot token that has
 `chat:write` access to the channel. If the token is not set in the
 environment and not present in the user's `~/.zshrc` or `~/.bashrc`
 (check for the variable name only; never print the value), ask the user

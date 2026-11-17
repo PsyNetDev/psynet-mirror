@@ -85,7 +85,7 @@ major and minor unless the manager explicitly skips it.
 
 ## Prerequisites
 
-- Active venv: `source .venv/bin/activate`; deps: `uv pip install -e '.[dev,slack]'`
+- Active venv: `source .venv/bin/activate`; deps: `uv pip install -e '.[dev]'`
 - **Major / minor:** intended MRs merged; `master` CI green.
 - **Patch:** fixes committed/cherry-picked on the release branch.
 - The Dallinger dependency in `pyproject.toml` is pinned to a released

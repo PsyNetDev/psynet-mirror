@@ -194,7 +194,6 @@ from .utils import (
     get_authenticated_session,
     get_logger,
     get_translator,
-    is_in_repo_experiment,
     keep_alive_session,
     loading_experiment_classes,
     log_time_taken,
@@ -8326,41 +8325,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 f"{e} For a debug deploy, you can also skip the consent checks with "
                 "--no-consent."
             ) from None
-
-    def check_python_dependencies(self):
-        if os.environ.get("SKIP_DEPENDENCY_CHECK"):
-            return
-        if is_in_repo_experiment():
-            if Path("constraints.txt").exists():
-                logger.warning(
-                    "Ignoring constraints.txt in in-repo experiment %s; in-repo "
-                    "experiments use PsyNet's shared development environment "
-                    "instead of per-demo constraint pins.",
-                    Path.cwd(),
-                )
-            return
-        extra_deps = self.notifier.python_dependencies
-        if not extra_deps:
-            return
-        constraints_path = Path("constraints.txt")
-        constraints = (
-            constraints_path.read_text().splitlines()
-            if constraints_path.exists()
-            else []
-        )
-        for dep in extra_deps:
-            self.check_python_dependency(dep, constraints)
-
-    def check_python_dependency(self, dep, constraints):
-        for constraint in constraints:
-            if constraint.startswith(f"{dep}=="):
-                return
-        raise ValueError(
-            f"Missing Python dependency: {dep}. "
-            f"Please make sure it's installed locally (``pip install {dep}``), "
-            f"then add ``{dep}`` to requirements.txt, "
-            "then regenerate constraints.txt (``psynet generate-constraints``)."
-        )
 
 
 Experiment.SuccessfulEndLogic = SuccessfulEndLogic
