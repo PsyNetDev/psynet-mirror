@@ -81,8 +81,8 @@ ordinary Python:
 ``Action`` is the type of a player's choice, which the message below uses for
 its ``action`` field, and ``ACTIONS`` lists the three choices, for the page's
 buttons and the bots. ``GAMES``, ``RESULT_SECONDS`` and ``LATE_AFTER`` are
-used by the timeline, which "Adding the game to the timeline" below
-describes.
+used by the demo's trials and timeline, which "Playing it as trials" and
+"When a partner leaves" below describe.
 
 PsyNet numbers a game's players from 0, so the two players here are 0 and 1,
 and ``1 - player`` is the other one. A throw's
@@ -240,7 +240,25 @@ Reference: :ref:`live-games-bots`.
 The game page
 ~~~~~~~~~~~~~
 
-The page's JavaScript is in ``static/rock-paper-scissors.js``. It exports an
+The game page is a :class:`~psynet.modular_page.ModularPage`, built in the
+demo's trial, which `Playing it as trials`_ below shows in full:
+
+.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
+   :language: python
+   :start-at: page=ModularPage(
+   :end-at: time_estimate=60,
+   :dedent:
+
+Its prompt holds the page's elements, each with an ``id`` so that the
+JavaScript can find it, and ``data_live_game=True`` marks the game, which
+PsyNet hides on a page without a game. The
+:class:`~psynet.live_game.LiveGameControl` connects the page to the game. Its
+``waiting_status`` is what the page says until both pages have opened,
+``player_left_message`` the notice while the partner is away, and
+``no_game_message`` the notice on a page without a game.
+``js_page_modules`` lists the page's JavaScript.
+
+The JavaScript is in ``static/rock-paper-scissors.js``. It exports an
 ``activate`` function, which PsyNet runs when the page opens
 (:doc:`/code/pages/custom_front_ends` explains page modules). Through
 ``psynet.liveGame``, the function sends the player's messages and draws each
@@ -256,10 +274,8 @@ page uses:
    :dedent:
 
 A participant reaches the game page without a game when their partner was
-late for it. PsyNet then shows them the control's ``no_game_message`` in a
-notice, and hides the game, which the page's prompt marks with
-``data_live_game=True``. ``psynet.liveGame`` does nothing on such a page, so
-the script needs no check of its own, and the Next button lets them move on.
+late for it. ``psynet.liveGame`` does nothing on such a page, so the script
+needs no check of its own, and the Next button lets them move on.
 
 The page then registers what happens when the game changes, what the status
 line says, and where to show the reason when the game rejects one of the
@@ -384,7 +400,7 @@ then shows each player their score:
             settings={"throws": 5},
             page=ModularPage(
                 "rock_paper_scissors",
-                Prompt(tags.div(...)),  # the page's buttons and text
+                Prompt(tags.div(...)),  # the elements shown above
                 LiveGameControl(),
                 js_page_modules=["/static/rock-paper-scissors.js"],
                 time_estimate=60,
@@ -413,11 +429,7 @@ then shows each player their score:
   ``late_action="leave_group"`` leaves the pair. The player who was on time
   then goes on to the game page without a game. Every ``PlayLiveGame`` needs
   a limit like this.
-- The game page is a :class:`~psynet.modular_page.ModularPage`. Its prompt
-  holds the page's elements, each with an ``id`` so that the JavaScript can
-  find it, and its :class:`~psynet.live_game.LiveGameControl` connects the
-  page to the game. ``js_page_modules`` lists the page's JavaScript, which
-  `The game page`_ above went through.
+- ``page`` is the game page, as in `The game page`_ above.
 - On the next page, ``participant.live_games`` has the participant's record
   of the game, keyed by the game's ``name``. Its ``answer`` is what the
   game's ``answer`` returned for them, or ``None`` if the pair didn't start
@@ -448,10 +460,7 @@ then scores and pays for the game:
   :class:`~psynet.sync.GroupBarrier` that a trial a group plays needs, so
   this trial needs no other.
 - The page's first element says which game this is, how many throws it has
-  and what a throw won pays, all from the trial's definition. The control's
-  ``player_left_message`` is the notice the page shows while the partner is
-  away, ``no_game_message`` the notice on a game page without a game, and
-  ``waiting_status`` what the page says until both pages have opened.
+  and what a throw won pays, all from the trial's definition.
 - The game page's answer, from the game's ``answer``, becomes the trial's
   answer, and ``trial.live_game`` is the participant's record of the game,
   with the whole pair's outcome.
@@ -790,7 +799,7 @@ and that each trial's score and reward match the throws the bot won:
    :dedent:
 
 ``bot.live_games`` gives, for each ``PlayLiveGame`` the participant reached,
-keyed by its ``id_``, the record of their latest game there, here their
+keyed by its ``id_``, which is the game's ``name`` unless given, the record of their latest game there, here their
 second game: whether it ``finished``, its outcome, the participant's answer
 and the game's messages. Snake's result page reads its player's answer the same way.
 
