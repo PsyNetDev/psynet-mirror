@@ -18,7 +18,7 @@ from .history import LiveGameCheckpoint, LiveGameMoment
 from .messages import LiveMessage, SavedMessage
 from .play import PlayLiveGame
 from .psynet_entry import NOT_STARTED, PLAYERS_LEFT, TIMEOUT, PlayerReady
-from .record import LiveGameRecord
+from .record import LiveGameFailed, LiveGameRecord
 from .registry import live_game_classes
 
 __all__ = [
@@ -28,6 +28,7 @@ __all__ = [
     "LiveGameControl",
     "LiveGameMoment",
     "PlayLiveGame",
+    "LiveGameFailed",
     "LiveGameRecord",
     "NOT_STARTED",
     "PlayerReady",

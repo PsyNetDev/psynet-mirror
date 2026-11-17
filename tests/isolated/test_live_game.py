@@ -2415,9 +2415,11 @@ def test_the_game_page_fails_once_its_game_can_no_longer_end(pair, monkeypatch):
         (None, None, False),
     ],
 )
-def test_a_failed_game_s_page_moves_on_with_what_was_saved(
-    pair, end_reason, outcome, record_complete
+def test_a_failed_game_fails_its_players_as_any_error_does(
+    pair, monkeypatch, end_reason, outcome, record_complete
 ):
+    from psynet.error import ErrorRecord
+
     members, _ = pair
     session_id = _pair_session(pair)
     # How Dallinger saves a session that failed in the game's code, or one
@@ -2430,13 +2432,52 @@ def test_a_failed_game_s_page_moves_on_with_what_was_saved(
             "error": "Traceback (most recent call last): ...",
         }
     )
-
-    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
-
     result = LiveGameRecord(session_id)
     assert result.record_complete is record_complete
-    assert result.error == "Traceback (most recent call last): ..."
-    assert _accepted_answers(members[0]) == [outcome]
+
+    notified = []
+    monkeypatch.setattr(
+        Experiment, "log_to_notifier", lambda *args, **kwargs: notified.append(args)
+    )
+    experiment = get_experiment()
+    members[0].elt_id = _game_page().id
+    db.session.commit()
+    response = experiment.process_response(
+        participant_id=members[0].id,
+        raw_answer="sent by the page",
+        blobs={},
+        metadata={"time_taken": 1},
+        page_uuid=members[0].page_uuid,
+        client_ip_address="127.0.0.1",
+    )
+    db.session.commit()
+
+    # Handled as any error in the experiment: recorded, with the game's own
+    # error, notified, and the participant failed into error recovery.
+    assert response.flask_response.status_code == 500
+    participant = db.session.get(Participant, members[0].id)
+    assert participant.failed
+    (record,) = db.session.query(ErrorRecord).filter_by(participant_id=participant.id)
+    assert record.kind == "LiveGameFailed"
+    assert "Traceback (most recent call last): ..." in record.message
+    assert notified
+    assert _accepted_answers(participant) == []
+
+
+def test_a_player_whose_own_game_ended_moves_on_though_the_game_failed(
+    pair, monkeypatch
+):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    db.session.query(RealtimeSession).filter_by(id=session_id).update(
+        {"status": "failed", "end_reason": "failed", "error": "..."}
+    )
+    monkeypatch.setattr(
+        "psynet.live_game.control._player_ending",
+        lambda game_id, participant_id: ("done", [3, None]),
+    )
+
+    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
 
 
 @pytest.mark.parametrize(

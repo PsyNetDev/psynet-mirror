@@ -243,12 +243,19 @@ def _stored_answer(participant, game_id):
     return None
 
 
-def _game_ended(game_id):
-    """Whether the game's result has been saved."""
-    status = db.session.query(RealtimeSession.status).filter_by(id=game_id).scalar()
-    if status is None:
-        raise KeyError(game_id)
-    return status != "running"
+class LiveGameFailed(RuntimeError):
+    """Raised on a game page whose game failed, because the game's code
+    raised an error, or its record couldn't be saved. PsyNet then handles it
+    as any other error in the experiment: it records the error, with the
+    game's own, and fails the participant with an error-recovery exit."""
+
+    def __init__(self, game):
+        self.game_id = game.id
+        error = game.error or "Its record couldn't be saved."
+        super().__init__(
+            f"Live game {game.id} ({game.game_class.__name__}) failed, so its "
+            f"players can't go on with it. The game's error:\n\n{error}"
+        )
 
 
 def _has_outcome(status, outcome):

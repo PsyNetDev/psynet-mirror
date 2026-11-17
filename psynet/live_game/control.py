@@ -19,7 +19,7 @@ from ..timeline import ResponseNotReady
 from ..utils import get_translator
 from .messages import _game_channel, _session_game_class, _session_participant_ids
 from .play import _check_reached_game, _live_game_id, _set_live_game_answer
-from .record import LiveGameRecord, _game_ended, _has_outcome, _player_ending
+from .record import LiveGameFailed, LiveGameRecord, _has_outcome, _player_ending
 
 # Seconds a page waits before resending a response refused because the
 # game's result isn't saved yet.
@@ -45,8 +45,9 @@ class LiveGameControl(NullControl):
     PsyNet sets the page's answer to what the game's
     :meth:`~LiveGame.answer` returns for the participant, once the
     game's result is saved, which is also when it pays the game's
-    :meth:`~LiveGame.performance_reward`. The page can't have a ``validate``
-    of its own.
+    :meth:`~LiveGame.performance_reward`. If the game fails, the page raises
+    :class:`LiveGameFailed`, which PsyNet handles as any other error in the
+    experiment. The page can't have a ``validate`` of its own.
     :doc:`/code/multiplayer/live_games` explains how to write the page's
     JavaScript.
 
@@ -143,9 +144,15 @@ class LiveGameControl(NullControl):
 
     def check_ready_for_response(self, experiment, participant):
         session_id = _live_game_id(participant, self._play_id())
-        if session_id is None or _game_ended(session_id):
+        if session_id is None:
             return None
+        # A player whose own game ended before the game did has their result.
         if _player_ending(session_id, participant.id) is not None:
+            return None
+        game = LiveGameRecord(session_id)
+        if game.status == "failed":
+            raise LiveGameFailed(game)
+        if game.status != "running":
             return None
         _check_session_can_still_end(session_id)
         _p = get_translator(context=True)

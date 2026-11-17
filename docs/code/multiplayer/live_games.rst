@@ -596,9 +596,19 @@ during the game`_). Their answer and reward are then worked out from the
 outcome and saved, which this page calls the player's result.
 
 ``onChange`` gets the final view with ``ended`` set, and ``onEnded`` runs,
-and the game ignores any message sent after that. If the game fails, its
-pages keep the view they had, which comes again with ``ended`` set, and a
-page that opens after its game failed gets no view.
+and the game ignores any message sent after that.
+
+A game fails when its code raises an error, or when its record can't be
+saved. Its pages keep the view they had, which comes again with ``ended``
+set, and once the failure is saved, each player's game page raises
+:class:`~psynet.live_game.LiveGameFailed`, with the game's own error. PsyNet
+then handles it as any other error in the experiment: it records the error
+for the dashboard and the notifier, and fails the participant, who leaves
+through the error page. In ``psynet test``, the bot's request raises, so a
+game with a bug fails the test. A player whose own game ended before the
+game failed, through ``is_done``, has their result and moves on as usual.
+Endings that are part of play, such as ``"players_left"``, ``"timeout"`` and
+``"not_joined"``, aren't failures.
 
 The participant can leave the page only once their result is saved, a few
 seconds after the game ends, and the page then moves on by
@@ -915,8 +925,7 @@ barrier after the game page to score the round:
 
     pot = trial.live_game.outcome["pot"]
 
-It is ``None`` until then, and ``answer`` isn't called, for a game that
-failed without an outcome. On a later page, the participant's record of the
+It is ``None`` until then. On a later page, the participant's record of the
 game has their answer (see `A game's record`_):
 
 .. code-block:: python
@@ -971,13 +980,12 @@ trial's definition. The two would add up, paying each player twice, so a
 game with a ``performance_reward`` played in a trial with a
 ``compute_performance_reward`` raises an error.
 
-A game can fail without an outcome: its record couldn't be saved, or the
-game's ``outcome`` raised an error as well. The answer is then ``None`` and
-PsyNet doesn't call ``performance_reward``, but amounts from
-``add_performance_reward`` saved before the problem are still paid. A game
-that must pay players whatever happens can pay them as it goes. A game's
-record says how it ended, and whether the record is complete (see `A game's
-record`_).
+A game that fails (see `The end`_) still pays its ``performance_reward`` from
+the outcome of the state before the error, unless the record couldn't be
+saved or ``outcome`` raised an error too, and amounts from
+``add_performance_reward`` saved before the problem are paid either way. Its
+players then leave through the error page, which pays them as error recovery
+does.
 
 .. _live-games-record:
 

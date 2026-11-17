@@ -54,8 +54,10 @@ A game is played from start to end like this:
 7. The game ends when its rules say so, when its time is up, or when too
    many players have left. Each player's result is worked out from the state
    and saved, and their page moves on. If the game's own code raises an
-   error, the game ends as *failed*: the pages keep what they showed, and the
-   players move on without an answer.
+   error, the game *fails*, and PsyNet treats it as any other error in the
+   experiment: it records the error for the dashboard, and its players are
+   failed and leave through PsyNet's error page, which pays them as error
+   recovery does.
 
 Only the server changes the state, so every player plays the same game, a
 participant can't change the result by editing their page, and a page that
@@ -242,7 +244,6 @@ What to check when reviewing live games
 - Does the wait before the game have a limit, and does the game itself
   always end?
 - Is what the analysis needs in the outcome, the moments or the messages?
-  Does the analysis leave out games that failed?
 - Will the game's code keep up with as many games as will run at once?
 - Has someone played the game in several browser windows, reloading one
   and closing another during the game?
