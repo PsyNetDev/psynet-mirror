@@ -141,8 +141,8 @@ and how the round ended for the player (``trial.sync_group_outcome``), so
 the data can be analyzed round by round. A group's rounds can be read back
 in order with :meth:`SyncGroup.rounds() <psynet.sync.SyncGroup.rounds>`.
 
-Kinds of round-based experiment
--------------------------------
+Examples
+--------
 
 Each diagram shows a demo's timeline as a sequence of blocks; a dashed box
 repeats. Several also have a demo played as a :doc:`live game <live_games>`.
