@@ -231,6 +231,27 @@ class _LiveGameBarrier(GroupBarrier):
                 f"The PlayLiveGame {id_!r} can't be saved: {error}"
             ) from None
 
+    def _check_trial(self, trial):
+        """Raise an error if both the game and the trial it's played in pay
+        for the game, which would pay each player twice."""
+        from ..trial.main import Trial
+
+        game_pays = (
+            self.game_class.performance_reward is not LiveGame.performance_reward
+        )
+        trial_pays = (
+            type(trial).compute_performance_reward
+            is not Trial.compute_performance_reward
+        )
+        if game_pays and trial_pays:
+            raise TypeError(
+                f"{type(trial).__name__} pays through compute_performance_reward, "
+                f"and its game, {self.game_class.__name__}, through "
+                "performance_reward, so each player would be paid twice. Pay "
+                "in one of them: in the trial when what the game pays depends "
+                "on the trial's definition, and otherwise in the game."
+            )
+
     def receive_participant(self, participant):
         try:
             return super().receive_participant(participant)

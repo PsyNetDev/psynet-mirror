@@ -3128,6 +3128,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         cls.check_stale_ad_page_override()
         cls.check_unused_dallinger_quality_checks()
         cls.check_stale_bonus_override()
+        cls.check_live_games()
         PsyNetProlificRecruiterMixin.check_screen_out_config(config)
 
         parser = configparser.ConfigParser()
@@ -3405,6 +3406,41 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "`bad_data` or `did_not_attend`). Fail participants during "
                 "the timeline instead, for example with `fail()` or "
                 "`UnsuccessfulEndPage`."
+            )
+
+    @classmethod
+    def check_live_games(cls):
+        """Fail fast on mistakes in the experiment's live games: two
+        :class:`~psynet.live_game.PlayLiveGame` steps in the timeline with
+        one id, which would share a wait, and bots that ``psynet test``
+        would run one at a time, so that a group's bots never meet."""
+        from .live_game import live_game_classes
+        from .live_game.play import _LiveGameBarrier
+
+        # Each barrier, by identity: the timeline's elements link back to the
+        # barrier they were resolved from.
+        barriers = {}
+        for elt in cls.timeline.all_elts:
+            barrier = (getattr(elt, "links", None) or {}).get("barrier")
+            if isinstance(barrier, _LiveGameBarrier):
+                barriers[id(barrier)] = barrier
+        ids = [barrier.id for barrier in barriers.values()]
+        repeated = sorted({id_ for id_ in ids if ids.count(id_) > 1})
+        if repeated:
+            raise RuntimeError(
+                f"The timeline has more than one PlayLiveGame with the id "
+                f"{repeated[0]!r}, so they would share one wait. Give each an "
+                f"id_ of its own, such as id_={repeated[0] + '_main'!r}."
+            )
+        serial = cls.test_mode != "parallel" and not cls._subclass_overridden_names(
+            "test_serial_run_bots"
+        )
+        if live_game_classes() and cls.test_n_bots > 1 and serial:
+            raise RuntimeError(
+                "The experiment plays live games, whose bots have to play "
+                "together, but psynet test runs its bots one at a time. Set "
+                'test_mode = "parallel", or drive the bots yourself in '
+                "test_serial_run_bots."
             )
 
     @classmethod

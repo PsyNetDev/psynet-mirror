@@ -1701,6 +1701,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 "to close each round."
             )
         check_late_removal_policies(barriers, participant)
+        for barrier in barriers:
+            # Such as a PlayLiveGame's, which checks that its game and the
+            # trial don't both pay for the game.
+            check_trial = getattr(barrier, "_check_trial", None)
+            if check_trial is not None:
+                check_trial(self)
         return logic
 
     @classmethod

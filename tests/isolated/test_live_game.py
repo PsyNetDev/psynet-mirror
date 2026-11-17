@@ -298,6 +298,23 @@ def test_on_release_runs_when_the_group_s_game_is_created(
     assert _releases == [(sorted(m.id for m in members), game_id)]
 
 
+def test_a_game_and_the_trial_it_s_played_in_can_t_both_pay():
+    from psynet.trial.main import Trial
+
+    class PaysPerWin:
+        def compute_performance_reward(self, score):
+            return score * 0.1
+
+    class PaysNothing:
+        compute_performance_reward = Trial.compute_performance_reward
+
+    # The pick-numbers game pays through its performance_reward.
+    barrier = _play().barrier
+    barrier._check_trial(PaysNothing())
+    with pytest.raises(TypeError, match="PaysPerWin pays through compute_performance"):
+        barrier._check_trial(PaysPerWin())
+
+
 def test_the_members_of_a_group_must_arrive_with_the_same_settings(pair):
     members, _ = pair
     _arrive(_trial_game_barrier({"pick_reward": 0.1}), members[0])
@@ -1121,6 +1138,42 @@ def test_a_game_defined_after_the_experiment_class_is_listed(registry):
 
     assert Early.realtime_games == [Late]
     assert object.__new__(Early).realtime_games == [Late]
+
+
+def test_two_play_live_games_with_one_id_are_refused_when_the_experiment_loads(
+    pair,
+):
+    class Twice(Experiment):
+        test_mode = "parallel"
+        test_n_bots = 2
+        timeline = Timeline(
+            _play("practice"),
+            InfoPage("Now the real game.", time_estimate=5),
+            _play("practice"),
+        )
+
+    with pytest.raises(
+        RuntimeError, match="more than one PlayLiveGame with the id 'practice'"
+    ):
+        Twice.check_live_games()
+
+
+def test_live_games_need_their_bots_to_play_together(pair):
+    class Serial(Experiment):
+        test_n_bots = 2
+        timeline = Timeline(_play("together"))
+
+    class Parallel(Serial):
+        test_mode = "parallel"
+
+    class Driven(Serial):
+        def test_serial_run_bots(self, bots):
+            pass
+
+    with pytest.raises(RuntimeError, match='Set test_mode = "parallel"'):
+        Serial.check_live_games()
+    Parallel.check_live_games()
+    Driven.check_live_games()
 
 
 def test_a_subclass_with_its_parent_s_channel_is_refused(registry):
