@@ -21,8 +21,8 @@ A group goes through the experiment like this:
    them into groups.
 2. Each group goes through the timeline together, and **barriers** keep its
    members in step, wherever they must all be in the same place.
-3. Members interact: on a shared page such as a chatroom, in rounds of
-   decisions, or in a live game.
+3. Members interact: by chatting, in rounds of decisions, or in a live
+   game.
 4. They see each other by a **pseudonym**, never by their real identity.
 5. Members may leave, for example by closing the tab, and in some designs
    newcomers join.
@@ -75,11 +75,13 @@ How members interact
 Members of a group interact in three ways, and an experiment can use more
 than one:
 
-- **On a shared page**, such as a **chatroom**, where members exchange
-  messages as they write them. The messages are stored with the experiment's
-  data, so conversations can be analyzed later. In
-  `chatroom_simple <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/chatroom_simple>`__, pairs discuss a topic, and a
-  barrier after the chat waits until both have finished.
+- **In a chatroom**, where members exchange messages as they write them. The
+  messages are stored with the experiment's data, so conversations can be
+  analyzed later. In `chatroom_simple <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/chatroom_simple>`__, pairs
+  discuss a topic, and a barrier after the chat waits until both have
+  finished. Other real-time pages that aren't games, such as editing a
+  shared answer, can be built from WebSocket messages (see
+  :doc:`/code/multiplayer/realtime_interaction`).
 - **In rounds**, where each member decides on their own page, a barrier waits
   for all of them, and then everyone sees the result. Economic games, rating
   stimuli together and taking turns work this way, at the pace of the
