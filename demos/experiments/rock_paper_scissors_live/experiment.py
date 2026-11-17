@@ -45,9 +45,11 @@ GAMES = [
     {"throws": 5, "reward_per_win": 0.05},
     {"throws": 3, "reward_per_win": 0.10},
 ]
-# How long a player waits for their partner to start a game, in seconds. The
-# partner may still be reading the last game's result, so it allows for that.
-PARTNER_WAIT_SECONDS = 300
+# Seconds a player has to read a game's result before the page moves on.
+RESULT_SECONDS = 30
+# Seconds a partner can keep the other waiting for the next game, besides the
+# result page, whose time limit the wait allows for.
+LATE_AFTER = 20
 
 
 def result_for(player, choices):
@@ -166,7 +168,9 @@ def show_result(answer, reward):
     ``answer``, for which they were paid ``reward``."""
     if not answer["throws"]:
         return InfoPage(
-            "The game ended before any throws were played.", time_estimate=5
+            "The game ended before any throws were played.",
+            time_estimate=5,
+            time_limit=RESULT_SECONDS,
         )
     wins = answer["wins"]
     partner_wins = answer["partner_wins"]
@@ -188,6 +192,7 @@ def show_result(answer, reward):
             tags.p(f"Your bonus for this game is ${reward:.2f}."),
         ),
         time_estimate=5,
+        time_limit=RESULT_SECONDS,
     )
 
 
@@ -210,10 +215,11 @@ class RockPaperScissorsTrial(Trial):
             group_type="pair",
             game_class=RockPaperScissors,
             settings={"throws": game["throws"]},
-            # A player whose partner doesn't arrive leaves the pair, and goes
+            # A partner who hasn't arrived LATE_AFTER seconds after their
+            # result page ran out leaves the pair, and the player waiting goes
             # on to the game page without a game.
-            max_wait_time=PARTNER_WAIT_SECONDS,
-            max_wait_action="leave_group",
+            late_after=LATE_AFTER,
+            late_action="leave_group",
             page=ModularPage(
                 "rock_paper_scissors",
                 Prompt(
@@ -281,7 +287,7 @@ def left_pair(participant):
 
 # Why a participant isn't in a pair, as sync_group_removal_reason returns it.
 NO_PARTNER_TEXTS = {
-    "waited_too_long": "Your partner didn't come back for the next game.",
+    "late": "You didn't come back in time for the next game.",
     "group_dissolved": "Your partner has left, so there are no more games.",
     "removed_by_experimenter": "You were removed from the game.",
 }

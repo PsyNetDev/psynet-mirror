@@ -97,8 +97,9 @@ ordinary Python:
 
 ``Action`` is the type of a player's choice, which the message below uses for
 its ``action`` field, and ``ACTIONS`` lists the three choices, for the page's
-buttons and the bots. ``GAMES`` and ``PARTNER_WAIT_SECONDS`` are used by the
-timeline, which "Adding the game to the timeline" below describes.
+buttons and the bots. ``GAMES``, ``RESULT_SECONDS`` and ``LATE_AFTER`` are
+used by the timeline, which "Adding the game to the timeline" below
+describes.
 
 PsyNet numbers a game's players from 0, in the order they joined the group, so the
 two players here are 0 and 1, and ``1 - player`` is the other one. A throw's
@@ -268,16 +269,16 @@ shows the game page, and then scores and pays for the game:
   its ``game_class`` is the game, its ``page`` is the game page, and its
   ``settings`` are the number of throws from the trial's definition, which
   the game's ``initial_state`` receives. Its ``id_`` names the step, which
-  ``live_game_id`` takes in the test below; without one it would be the
-  game's ``channel``.
-- ``max_wait_time`` is how long a player waits for their partner, from when
-  they arrive. By default it's 20 seconds, and a player still waiting then
-  fails the experiment. Here the partner may still be reading the last
-  game's result, so ``PARTNER_WAIT_SECONDS`` is five minutes, and
-  ``max_wait_action="leave_group"`` makes a player whose partner doesn't
-  arrive in time leave the pair instead. They go on to the game page without
-  a game. A partner who arrives later is treated the same as one who never
-  arrives.
+  keys the participant's records of their games, such as
+  ``participant.live_game_results`` in the test below; without one it would
+  be the game's ``channel``.
+- ``late_after`` limits the wait for the pair. A partner who keeps the other
+  player waiting more than ``LATE_AFTER`` seconds is late, and with
+  ``late_action="leave_group"`` leaves the pair. The player who was on time
+  then goes on to the game page without a game. Before the second game, the
+  partner may still be reading the first game's result, but that page has a
+  ``time_limit`` of ``RESULT_SECONDS``, and ``late_after`` counts only once
+  it has run out, so it only has to cover the moments after it.
 - The game page is a :class:`~psynet.modular_page.ModularPage`. Its prompt
   holds the page's elements, each with an ``id`` so that the JavaScript can
   find it. The first element says which game this is, how many throws it has

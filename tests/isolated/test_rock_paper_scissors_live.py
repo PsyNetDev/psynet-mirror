@@ -208,8 +208,8 @@ class TestRockPaperScissorsLive:
             return str(demo.no_more_games(participant).content)
 
         assert {reason: text(reason) for reason in demo.NO_PARTNER_TEXTS} == {
-            "waited_too_long": (
-                "Your partner didn't come back for the next game. Your bonus is $0.25."
+            "late": (
+                "You didn't come back in time for the next game. Your bonus is $0.25."
             ),
             "group_dissolved": (
                 "Your partner has left, so there are no more games. "

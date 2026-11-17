@@ -478,9 +478,16 @@ class Exp(psynet.experiment.Experiment):
             waiting_message="Waiting for other participants to join you",
             # A participant who waits longer than this leaves the experiment.
             max_wait_time=300,
+            # When a member is late for the game, the others go on without
+            # a group, and without a game.
+            below_quorum="continue_without_group",
         ),
         PlayLiveGame(
             group_type="canvas",
+            # The game page comes straight after the group forms, so this
+            # only has to allow for a page that is slow to load.
+            late_after=60,
+            late_action="leave_group",
             game_class=SharedCanvas,
             id_="shared_canvas_live",
             page=ModularPage(

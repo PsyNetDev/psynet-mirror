@@ -358,6 +358,13 @@ def get_timeline():
                     game_class=Fishing,
                     page=lake_page(),
                     join_running_game=True,
+                    # The founders reach the lake straight after the society
+                    # forms, and newcomers join the running lake without
+                    # waiting, so this only allows for a slow page. A group
+                    # that takes newcomers can't use late_after, which would
+                    # wait for members who may never come.
+                    max_wait_time=60,
+                    max_wait_action="leave_group",
                     waiting_message="Waiting for the others to reach the lake…",
                 ),
                 leave_group("society"),

@@ -129,9 +129,11 @@ class PlayLiveGame(EltCollection):
 
     **kwargs
         Any other parameter of :class:`~psynet.sync.GroupBarrier`, for the
-        wait before the game, such as ``max_wait_time``, ``late_after`` or
-        ``waiting_message``. A participant who has left the group passes
-        the wait and reaches the game page without a game.
+        wait before the game, such as ``late_after`` or ``waiting_message``.
+        Give the wait a limit, either ``late_after``, with ``late_action``,
+        or ``max_wait_time``: :ref:`live-games-wait` says which. A
+        participant who has left the group passes the wait and reaches the
+        game page without a game.
     """
 
     def __init__(
@@ -156,6 +158,16 @@ class PlayLiveGame(EltCollection):
             )
         if id_ is None:
             id_ = game_class.channel
+        if "late_after" not in kwargs and "max_wait_time" not in kwargs:
+            raise TypeError(
+                f"The PlayLiveGame {id_!r} needs a limit on its wait. Usually "
+                'give it late_after, with late_action="leave_group", which '
+                "moves on a member who keeps the others waiting, and a "
+                "time_limit to the pages before it, which late_after allows "
+                "for. Otherwise give it max_wait_time, which moves on the "
+                "members who wait. Without either, a member still waiting "
+                "after 20 seconds fails the experiment."
+            )
 
         if not (
             isinstance(page, ModularPage) and isinstance(page.control, LiveGameControl)

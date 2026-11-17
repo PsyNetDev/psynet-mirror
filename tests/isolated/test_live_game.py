@@ -116,6 +116,8 @@ def _play(id_="trial_game", page=None, **kwargs):
     if page is None:
         page = ModularPage(id_, "Play.", LiveGameControl(), time_estimate=5)
     kwargs.setdefault("game_class", type(_pick_numbers()))
+    if "late_after" not in kwargs:
+        kwargs.setdefault("max_wait_time", 60)
     return PlayLiveGame(id_=id_, group_type="pair", page=page, **kwargs)
 
 
@@ -414,8 +416,15 @@ def test_a_play_live_game_needs_a_game_page_of_its_own(pair):
         group_type="pair",
         game_class=type(_pick_numbers()),
         page=ModularPage("game", "Play.", LiveGameControl(), time_estimate=5),
+        max_wait_time=60,
     )
     assert unnamed.barrier.id == "pick_numbers"
+    with pytest.raises(TypeError, match="needs a limit on its wait"):
+        PlayLiveGame(
+            group_type="pair",
+            game_class=type(_pick_numbers()),
+            page=ModularPage("game", "Play.", LiveGameControl(), time_estimate=5),
+        )
 
     page = ModularPage("game", "Play.", LiveGameControl(), time_estimate=5)
     # The page follows the barrier.
@@ -1221,6 +1230,9 @@ def test_the_state_is_converted_to_json_after_each_method_that_changes_it(
     registry, value, converted
 ):
     class Store(LiveGame):
+        # A game for one, as the test plays it.
+        away_timeout = None
+
         def initial_state(self, players):
             return {"value": value}
 
@@ -1297,6 +1309,9 @@ def test_a_method_from_a_mixin_is_converted(registry):
             state["at"] = (now,)
 
     class Timed(Timer, LiveGame):
+        # A game for one, as the test plays it.
+        away_timeout = None
+
         def initial_state(self, players):
             return {}
 
@@ -1388,6 +1403,8 @@ def test_a_game_that_inherits_apply_keeps_the_order_of_its_bases(registry):
 
 def test_the_state_is_converted_after_a_rejected_message(registry):
     class Ticking(LiveGame):
+        # A game for one, as the test plays it.
+        away_timeout = None
         messages = [Move]
 
         def initial_state(self, players):
@@ -1446,6 +1463,8 @@ def test_an_effect_s_payload_is_converted_to_json(registry):
 
 def test_a_game_can_turn_the_conversion_off(registry):
     class Converted(LiveGame):
+        # A game for one, as the test plays it.
+        away_timeout = None
         messages = [Move]
 
         def initial_state(self, players):
@@ -1476,6 +1495,9 @@ def test_a_game_can_turn_the_conversion_off(registry):
 
 def test_a_state_that_can_t_be_converted_fails_loudly(registry):
     class Keep(LiveGame):
+        # A game for one, as the test plays it.
+        away_timeout = None
+
         def initial_state(self, players):
             return {"thing": Thing()}
 
@@ -1531,6 +1553,8 @@ TAP = {"type": "tap", "message": {}}
 @pytest.fixture
 def relay(registry):
     class Relay(LiveGame):
+        # A game for one, as the test plays it.
+        away_timeout = None
         channel = "relay"
         messages = [Tap]
         ready_timeout = 10
@@ -1639,6 +1663,7 @@ def test_the_ready_step_covers_renamed_methods_and_later_bases(relay):
         tick = advance
 
     class Later(LiveGame, Clock):
+        away_timeout = None
         channel = "later"
 
         def initial_state(self, players):
@@ -1742,6 +1767,41 @@ def test_a_game_with_an_away_timeout_ends_once_too_few_players_are_left():
     assert not game.is_over()
     game.tick(80)
     assert game.is_over() == PLAYERS_LEFT
+
+
+def test_by_default_a_game_for_two_ends_a_minute_after_one_player_leaves():
+    class Pair(LiveGame):
+        channel = "pair_by_default"
+
+        def initial_state(self, players):
+            return {"left_alone": False}
+
+        def view(self, state, player):
+            return {}
+
+        def bot(self, view, player, now):
+            return None
+
+    assert Pair.away_timeout == 60
+    game = LocalGame(Pair, players=2)
+    game.leave(1, now=5)
+    game.tick(64)
+    assert not game.is_over()
+    game.tick(65)
+    assert game.is_over() == PLAYERS_LEFT
+    # And the outcome is the final state, without PsyNet's entry.
+    assert game.outcome() == {"left_alone": False}
+
+
+def test_a_game_s_join_timeout_is_its_ready_timeout(registry):
+    class Quick(LiveGame):
+        ready_timeout = 20
+
+    assert Quick.join_timeout == 20
+    with pytest.raises(TypeError, match="Set its ready_timeout instead"):
+
+        class Slow(LiveGame):
+            join_timeout = 90
 
 
 def test_live_game_handles_every_hook_of_dallingers_game():
@@ -1958,7 +2018,9 @@ def test_a_game_without_a_duration_ends_at_its_timeout(relay):
 
     assert playing.next_due == 31
     assert ended.ended["reason"] == TIMEOUT
-    assert ended.ended["outcome"] is None
+    # Without an outcome method, the outcome is the final state, without
+    # PsyNet's entry.
+    assert ended.ended["outcome"] == {"taps": [], "ticks": [30], "deadline": 5}
     assert Patient.max_duration == Patient.ready_timeout + 30 + 30
 
 

@@ -89,9 +89,10 @@ class LiveGame(RealtimeGame):
     #: data itself.
     convert_state_to_json = True
 
-    #: Seconds after the group's pages are sent to the game at which the
+    #: Seconds after the wait at the :class:`PlayLiveGame` ends at which the
     #: game starts, even if some players aren't ready. They can still join
-    #: and play.
+    #: and play. If none of the players has opened the game page by then,
+    #: the game ends instead, with the reason ``"not_joined"``.
     ready_timeout = 60
 
     #: Seconds the game lasts once it starts, or ``None``, the default, for a
@@ -128,13 +129,14 @@ class LiveGame(RealtimeGame):
     max_players = None
 
     #: Seconds a player can be away, with none of their game pages open,
-    #: before they count as gone, or ``None``, the default, for a game that
-    #: carries on however many players are away. Once fewer than
-    #: :attr:`min_players` players aren't gone, the game ends with the
-    #: reason ``"players_left"``. A player away when the game starts counts
-    #: from the start. A reload or a dropped connection makes a player away
-    #: for a moment, so allow for one, with 30 seconds or more.
-    away_timeout = None
+    #: before they count as gone. Once fewer than :attr:`min_players` players
+    #: aren't gone, the game ends with the reason ``"players_left"``, so the
+    #: players left behind can move on. A player away when the game starts
+    #: counts from the start. A reload or a dropped connection makes a player
+    #: away for a moment, so allow for one, with 30 seconds or more. Set it to
+    #: ``None`` for a game that carries on however many players are away.
+    #: Default: 60.
+    away_timeout = 60
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -296,6 +298,16 @@ class LiveGame(RealtimeGame):
         except Reject:
             return True
         return parsed.should_save(self, state, player, rejection)
+
+    def outcome(self, state, reason):
+        """Return the game's result, which is saved with the experiment's
+        data, and from which each player's :meth:`answer` and
+        :meth:`performance_reward` come. ``reason`` says why the game ended,
+        such as ``"finished"``. By default, it's the final state, without
+        PsyNet's entry. A game with a large state can return only what the
+        analysis needs.
+        """
+        return {key: value for key, value in state.items() if key != "psynet"}
 
     def answer(self, outcome, reason, player):
         """Return a player's answer on the game page, which is also their
@@ -609,6 +621,16 @@ def _set_max_duration(game_class):
         else game_class.ready_timeout + limit + _MAX_DURATION_MARGIN
     )
     game_class._psynet_max_duration = True
+    if "join_timeout" in vars(game_class) and not vars(game_class).get(
+        "_psynet_join_timeout"
+    ):
+        raise TypeError(
+            f"{name} sets join_timeout, which PsyNet sets itself, to the "
+            "game's ready_timeout. Set its ready_timeout instead."
+        )
+    # A game that nobody has opened by the ready timeout ends then.
+    game_class.join_timeout = game_class.ready_timeout
+    game_class._psynet_join_timeout = True
 
 
 def _index_message_types(game_class):
