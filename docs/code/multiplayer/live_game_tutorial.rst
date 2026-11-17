@@ -326,7 +326,8 @@ trials:
   end of the experiment. To let them carry on without a partner instead, give
   the grouper ``max_wait_action="continue_without_group"``.
   ``below_quorum="continue_without_group"`` lets a participant carry on with
-  the experiment after their partner has left the pair.
+  the experiment after their partner has left the pair, such as by being
+  late for the next game.
 - The loop runs once for each game. ``RockPaperScissorsTrial.cue`` gives the
   participant a trial with the definition that it's passed, here the game's
   number, its throws and what a throw won pays. The loop value is also the
@@ -358,7 +359,9 @@ the trial paid, to ``show_result``:
    :dedent:
 
 A game can end before any throw is played, when neither player opens the game
-page in time, so ``show_result`` checks for that first.
+page in time, so ``show_result`` checks for that first. Its ``time_limit``
+moves the page on after ``RESULT_SECONDS``, which keeps the wait for the
+next game short.
 
 The game page
 ~~~~~~~~~~~~~
@@ -369,8 +372,8 @@ The page's JavaScript is in ``static/rock-paper-scissors.js``. It exports an
 ``psynet.liveGame``, the function sends the player's messages and draws each
 view that arrives.
 
-It checks that the participant has a game, then finds the page's elements
-and sets up the variables that the rest of the page uses:
+It finds the page's elements and sets up the variables that the rest of the
+page uses:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
    :language: javascript
@@ -378,13 +381,15 @@ and sets up the variables that the rest of the page uses:
    :end-before: function enableButtons(
    :dedent:
 
-A participant reaches the game page without a game when their partner
-didn't arrive in time. PsyNet then shows them the control's
-``no_game_message`` in a notice. The page hides the game, which can't be
-played, and does nothing more, and its Next button lets them move on.
+A participant reaches the game page without a game when their partner was
+late for it. PsyNet then shows them the control's ``no_game_message`` in a
+notice, and hides the game, which the page's prompt marks with
+``data_live_game=True``. ``psynet.liveGame`` does nothing on such a page, so
+the script needs no check of its own, and the Next button lets them move on.
 
-The page then registers what happens when a view arrives, and where to show
-the reason when the game rejects one of the player's messages:
+The page then registers what happens when a view arrives, what the status
+line says, and where to show the reason when the game rejects one of the
+player's messages:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
    :language: javascript
@@ -395,8 +400,12 @@ the reason when the game rejects one of the player's messages:
 ``onView`` runs its callback each time a new view arrives, including the
 final view once the game is over. It draws ``predictedView()``, the view
 with the player's own unanswered messages applied, which `Showing a choice
-at once`_ below explains. ``showRejections`` shows the reason for a rejected
-message in the element it's given, until the page sends its next message.
+at once`_ below explains. ``showStatus`` keeps the status line up to date:
+it says the control's ``waiting_status``, here "Waiting for your partner to
+open the game", until the game starts, then what its callback returns for
+each view, and "The game is over." at the end. ``showRejections`` shows the
+reason for a rejected message in the element it's given, until the page
+sends its next message.
 
 Each button sends a ``Choose`` message when it's clicked, through the page's
 ``choose`` function:
@@ -427,12 +436,10 @@ page draws the choice only for a message that was sent.
 The view holds every throw played so far, so a page that reloads draws the
 whole game again. ``describe``, defined above ``render`` in the file, puts a
 throw's result into words, and ``enableButtons`` enables or disables the
-three buttons. ``psynet.liveGame.started`` says whether the game has
-started, which it does once both pages have opened (Part 2 explains this
-ready step), and ``psynet.liveGame.ended`` says whether the game is over.
-The buttons are enabled only while the game is ``playing``, between the two,
-and the player hasn't chosen yet. If the game fails with an error,
-the final view can be ``null``, so ``render`` checks for that first.
+three buttons. ``psynet.liveGame.playing`` says whether the game is being
+played: it has started, which it does once both pages have opened (Part 2
+explains this ready step), and hasn't ended. The buttons are enabled only
+while it is, and the player hasn't chosen yet.
 
 Showing a choice at once
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -602,13 +609,13 @@ removes when the participant moves on to the next page.
 
 The time left comes from ``live.onTimeLeft``, which calls the page back with
 the seconds until the end of the game's ``duration`` a few times a second.
-A crashed snake's ``back_at`` is a time in
-seconds into the game, so the page compares it with ``live.gameTime()``,
-which counts the same seconds as ``now`` on the server:
+A crashed snake's ``back_at`` is a time in seconds into the game, so the
+status line compares it with ``live.gameTime()``, which counts the same
+seconds as ``now`` on the server:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/static/snake.js
    :language: javascript
-   :start-at: function showStatus(view) {
+   :start-at: live.showStatus(status
    :end-before: // The game moves every snake on its ticks
    :dedent:
 
@@ -704,10 +711,11 @@ and that each trial's score and reward match the throws the bot won:
    :pyobject: Exp.test_check_bot
    :dedent:
 
-:func:`~psynet.live_game.live_game_id` finds the game that a participant
-last played at a ``PlayLiveGame`` with that id, here their second, and
-:func:`~psynet.live_game.live_game_result` says how it ended and what its
-outcome was.
+``bot.live_game_results`` gives, for each ``PlayLiveGame`` the participant
+reached, keyed by its ``id_``, how their latest game there ended and what
+its outcome was, here their second game. ``participant.live_game_answers``
+gives their answers in the same way, as snake's result page reads its
+player's answer.
 
 To test a game's rules without starting the experiment, play it in Python
 with :class:`~psynet.live_game.testing.LocalGame`, which calls the game's

@@ -46,9 +46,9 @@ record
     messages its pages sent (see `Saved messages`_). The game page moves on
     once the record is saved.
 game id
-    The id of one game a group played, which
-    :func:`~psynet.live_game.live_game_id` finds. Dallinger calls a game a
-    *session*, so its tables and functions say ``session``.
+    The id of one game a group played, which a participant's
+    :attr:`~psynet.participant.Participant.live_game_ids` gives. Dallinger
+    calls a game a *session*, so its tables and functions say ``session``.
 
 .. _live-games-the-game:
 
@@ -85,8 +85,9 @@ A game's parts, each explained below or in the tutorial:
         # And, if the game needs them: tick and next_deadline for a clock,
         # on_start, on_join and on_leave.
 
-Define ``outcome``: without it, the game's result is ``None``, and so is
-every player's answer, and only the game's messages show what happened.
+A game's ``outcome`` is its final state, without PsyNet's entry, unless it
+defines ``outcome`` to return less, such as only what the analysis needs from
+a large state.
 
 The players are numbered from 0 in the order of their seats in the group,
 the order in which they joined it (see :attr:`~psynet.sync.SyncGroup.seats`),
@@ -176,6 +177,8 @@ game, and then shows the group the game page:
         PlayLiveGame(
             group_type="pair",
             game_class=RockPaperScissors,
+            late_after=60,
+            late_action="leave_group",
             page=ModularPage(
                 "rock_paper_scissors",
                 Prompt(
@@ -185,6 +188,8 @@ game, and then shows the group the game page:
                         tags.button("Rock", type="button", id="rock"),
                         tags.button("Paper", type="button", id="paper"),
                         tags.button("Scissors", type="button", id="scissors"),
+                        # Hidden on a page without a game.
+                        data_live_game=True,
                     )
                 ),
                 LiveGameControl(),
@@ -214,12 +219,40 @@ with something for each player that runs out, such as a color, sets
 it starts no game either, and PsyNet logs an error that says so. Make the
 grouper's groups no larger than the game allows.
 
+.. _live-games-wait:
+
 ``PlayLiveGame`` takes the options of a :class:`~psynet.sync.GroupBarrier`
-for its wait, and with them the barrier's defaults: a member still waiting
-after ``max_wait_time``, 20 seconds, fails the experiment. Set
-``max_wait_time`` to cover the slowest page before the game, and
-``max_wait_action="leave_group"`` to send a member whose group doesn't
-arrive to the game page without a game instead (see `Time limits`_).
+for its wait, and needs a limit on it, one of two kinds:
+
+- ``late_after``, with ``late_action="leave_group"``, is usually the one. A
+  member who keeps the others waiting that many seconds is late and leaves
+  the group, and the members who were on time reach the game page without a
+  game. Give the pages before the game a ``time_limit``, such as
+  instructions or the last game's result: ``late_after`` counts only once a
+  page's time limit has run out, so it only has to cover the untimed
+  moments. The group's grouper needs a ``below_quorum``, such as
+  ``"continue_without_group"``, for the members left behind.
+- ``max_wait_time``, with ``max_wait_action="leave_group"``, moves on the
+  members who wait instead, after that many seconds from when each arrived.
+  Use it for a group that takes newcomers, which ``late_after`` can't wait
+  for, as in the ``microsociety_live`` demo.
+
+.. code-block:: python
+
+    InfoPage(instructions, time_estimate=60, time_limit=90),
+    PlayLiveGame(
+        group_type="pair",
+        game_class=RockPaperScissors,
+        page=rock_paper_scissors_page(),
+        late_after=20,  # counts once the instructions' 90 seconds are up
+        late_action="leave_group",
+    ),
+
+A ``PlayLiveGame`` without either raises an error, since a group barrier's
+default is to fail a member still waiting after 20 seconds. Bots that
+``psynet test`` runs one at a time never meet, so the experiment refuses
+live games whose bots aren't run together (see `Bots and testing`_), and two
+``PlayLiveGame`` steps in the timeline with one id.
 
 Its ``on_release`` runs when the wait before the game ends, not when the
 game ends, once the group's game has been created. It gets the arguments a
@@ -243,6 +276,8 @@ returns a new game page like the one above:
         game_class=RockPaperScissors,
         page=rock_paper_scissors_page(),
         settings={"throws": 3},
+        late_after=60,
+        late_action="leave_group",
     )
 
 
@@ -267,6 +302,8 @@ trial's ``show_trial``, and pass the trial's ``definition`` as the settings:
                 game_class=RockPaperScissors,
                 page=rock_paper_scissors_page(),
                 settings=self.definition,
+                late_after=60,
+                late_action="leave_group",
             )
 
 Every member of a group has to arrive with the same settings: a member
@@ -292,24 +329,13 @@ function, which PsyNet runs each time the page opens
 .. code-block:: javascript
 
     export function activate({root, psynet}) {
-        let status = root.querySelector("#status");
-        if (!psynet.liveGame.hasGame) {
-            return;
-        }
         let buttons = ["rock", "paper", "scissors"].map(
             (action) => root.querySelector("#" + action)
         );
         psynet.liveGame.enableWhilePlaying(...buttons);
-        psynet.liveGame.onView((view) => {
-            if (psynet.liveGame.ended) {
-                status.textContent = "The game is over.";
-            } else if (!psynet.liveGame.started) {
-                status.textContent = "Waiting for your partner to arrive";
-            } else {
-                status.textContent =
-                    view.chosen ? "Waiting for your partner" : "Your turn";
-            }
-        });
+        psynet.liveGame.showStatus(root.querySelector("#status"), (view) =>
+            view.chosen ? "Waiting for your partner" : "Your turn"
+        );
         psynet.liveGame.showRejections(root.querySelector("#rejection"));
         for (let button of buttons) {
             button.addEventListener("click", () => {
@@ -323,8 +349,10 @@ function, which PsyNet runs each time the page opens
 Whether there's a game to play:
 
 - ``hasGame`` says whether the group started a game at the
-  ``PlayLiveGame``. Without one, PsyNet shows the participant a notice, and
-  the other methods throw an error. Check it first.
+  ``PlayLiveGame``. Without one, PsyNet shows the participant a notice and
+  hides the page's elements marked ``data-live-game``, and the other methods
+  do nothing, so the page needn't check it, unless it has work of its own,
+  such as an animation loop, that it shouldn't start (see `No game`_).
 - ``started`` says whether the game has started, and ``ended`` whether the
   player's game has ended, which so far is when the game ends (see `The
   end`_). In ``onView``, both are already up to date for the view. On a
@@ -353,6 +381,14 @@ Sending messages:
 
 - ``send(type, message)`` sends the game a message, and returns its number,
   or ``undefined`` once the page's connection is closed or refused.
+- ``showStatus(element, playing)`` keeps ``element`` showing the game's
+  status: the control's ``waiting_status`` until the game starts, what
+  ``playing(view)`` returns while it's played, and the control's
+  ``ended_status`` once the player's game has ended, translated by default.
+  With a ``predict`` callback, ``playing`` gets the predicted view. A third
+  argument, ``{waiting, ended}``, replaces the control's texts, and
+  ``ended`` can be a function of the final view, such as for "You made a
+  deal." or "Time's up: no deal."
 - ``showRejections(element)`` shows the reason the game rejected the page's
   latest message in ``element``, until the page sends its next message, as
   the example does.
@@ -417,24 +453,26 @@ Cases a game page should allow for
 No game
 ~~~~~~~
 
-A participant can reach the page without one, for example when the
-``max_wait_action="leave_group"`` of the ``PlayLiveGame`` took them out
-of a group whose other members were too slow to arrive, or when their
-group ended before they reached the ``PlayLiveGame``. PsyNet tells the
-participant with a notice at the top of the page, "Your group couldn't
-start the game.", which the control's ``no_game_message`` changes or
-turns off. The page's JavaScript should check
-``psynet.liveGame.hasGame`` first, as above, and do nothing more
-without a game.
+A participant can reach the page without one, for example when another
+member was late for the ``PlayLiveGame`` and their group broke up, or when
+their group ended before they reached it. PsyNet tells the participant with
+a notice at the top of the page, "Your group couldn't start the game.",
+which the control's ``no_game_message`` changes or turns off, and hides the
+page's elements marked ``data-live-game``, such as the board. The page's
+``psynet.liveGame`` methods then do nothing: ``send`` returns ``undefined``,
+callbacks never run, and ``enableWhilePlaying`` leaves its elements
+disabled. So a page needs no check for this, unless it starts work of its
+own, such as an animation loop, which it can skip when
+``psynet.liveGame.hasGame`` is ``false``.
 
 Joining in time
 ~~~~~~~~~~~~~~~
 
 The page joins the game when its JavaScript first uses
-``psynet.liveGame``, so call ``onView`` in ``activate``. If none of the
-group has opened the page within the game's ``join_timeout`` of the wait
-ending, 60 seconds unless the game sets it, the game ends with the reason
-``"not_joined"``.
+``psynet.liveGame``, so call ``onView`` or ``showStatus`` in ``activate``.
+If none of the group has opened the page by the game's ``ready_timeout``,
+60 seconds after the wait ends unless the game sets it, the game ends with
+the reason ``"not_joined"`` (see `The ready step`_).
 
 Rejected messages
 ~~~~~~~~~~~~~~~~~
@@ -454,9 +492,9 @@ during the game`_). Their answer and reward are then worked out from the
 outcome and saved, which this page calls the player's result.
 
 ``onView`` gets the final view with ``ended`` set, and ``onEnded`` runs,
-and the game ignores any message sent after that. If the game fails,
-the final view can be ``null``. The example reads the view only before
-the end, so it allows for that.
+and the game ignores any message sent after that. If the game fails, its
+pages keep the view they had, which comes again with ``ended`` set, and a
+page that opens after its game failed gets no view.
 
 The participant can leave the page only once their result is saved, a few
 seconds after the game ends, and the page then moves on by
@@ -494,18 +532,19 @@ none of theirs is open, and ``on_leave`` runs when their last one closes,
 so a participant who closes the page during the game leaves it. Before the
 game starts, both get ``None`` as ``now``.
 
-By default the game carries on without a player who has left. Decide what
-your game should do instead, since the players left behind can't move on
-until it ends:
+A player away for the game's ``away_timeout``, 60 seconds unless the game
+sets it, is gone, and once fewer than ``min_players`` players aren't, the
+game ends with the reason ``"players_left"``, so the players left behind
+can move on. A game for two ends a minute after one player goes, and a
+game for five with ``min_players = 3`` carries on until a third player is
+gone. Otherwise:
 
-- A game that needs everyone, such as a game for two, sets
-  ``away_timeout``, in seconds, such as ``away_timeout = 30``. A player
-  away that long is gone, and once fewer than ``min_players`` players
-  aren't, the game ends with the reason ``"players_left"``. A game for five
-  with ``min_players = 3`` carries on until a third player is gone.
-- A game with a ``duration`` that is short anyway can carry on, as can a
-  game in which each player's own time runs out, as in the
-  ``microsociety_live`` demo.
+- A game that should end sooner, such as rock, paper, scissors, sets a
+  shorter ``away_timeout``, such as 30.
+- A game that should carry on however many players are away sets
+  ``away_timeout = None``. Its players then wait until it ends by itself,
+  so make sure it does, through its ``duration``, ``timeout`` or
+  ``is_over``.
 - A game that should react in its own way, such as by handing the player's
   turn on, does so in ``on_leave``, or ends in ``is_over``.
 
@@ -581,6 +620,8 @@ that it admits them at once: a pending member waits at the barrier.
         game_class=Fishing,
         page=lake_page(),
         join_running_game=True,
+        max_wait_time=60,
+        max_wait_action="leave_group",
     ),
 
 The game defines ``on_add(self, state, player, now)``, which makes room in
@@ -661,8 +702,10 @@ doesn't miss the start. A game page says its player is ready by itself a
 moment after it opens, and a bot is ready at once. The game starts once every
 player is ready, or at the game's ``ready_timeout``, 60 seconds after the
 wait ended unless the game sets it, and players who aren't ready then can
-still join and play. A player whose page closes before the game starts isn't
-ready any more, until the page reconnects.
+still join and play. If none of the players has opened the game page by
+then, the game ends instead, with the reason ``"not_joined"``. A player
+whose page closes before the game starts isn't ready any more, until the
+page reconnects.
 
 Until the game starts, it rejects messages with the reason ``"The game
 hasn't started yet."``, and its ``tick`` and ``bot`` don't run, so disable
@@ -693,19 +736,17 @@ the ``PlayLiveGame``'s, and the others are the game's:
    * - Setting
      - Default
      - When it runs out
-   * - ``max_wait_time``, of the ``PlayLiveGame``
-     - 20 seconds
-     - The wait for the group's members ends. A member still waiting fails
-       the experiment, or, with ``max_wait_action="leave_group"``, leaves
-       the group and reaches the game page without a game.
-   * - ``join_timeout``
-     - 60 seconds after the wait
-     - If none of the group has opened the game page, the game ends with
-       the reason ``"not_joined"``.
+   * - ``late_after`` or ``max_wait_time``, of the ``PlayLiveGame``
+     - None: one is needed
+     - The wait for the group's members ends. With ``late_after``, a member
+       still keeping the others waiting is late and leaves the group; with
+       ``max_wait_time``, a member who has waited that long leaves it (see
+       `Starting games and the game page`_).
    * - ``ready_timeout``
      - 60 seconds after the wait
-     - The game starts without the players who aren't ready yet (see `The
-       ready step`_).
+     - The game starts without the players who aren't ready yet, or ends
+       with the reason ``"not_joined"`` if none of them has opened the game
+       page (see `The ready step`_).
    * - ``duration``
      - ``None``
      - The game ends with the reason ``"finished"``.
@@ -714,7 +755,7 @@ the ``PlayLiveGame``'s, and the others are the game's:
      - A game without a ``duration`` that hasn't ended by itself ends with
        the reason ``"timeout"``.
    * - ``away_timeout``
-     - ``None``
+     - 60 seconds
      - A player who has been away that long is gone, and once fewer than
        ``min_players`` players aren't, the game ends with the reason
        ``"players_left"`` (see `Joining and leaving`_).
@@ -825,6 +866,23 @@ after the game page to score the round:
 It is ``None`` until then, and ``answer`` isn't called, for a game that
 failed without an outcome.
 
+On a later page, the participant's records of their games give the answer
+and the result, keyed by the ``PlayLiveGame``'s ``id_``, as
+``participant.active_sync_groups`` is keyed by group type:
+
+.. code-block:: python
+
+    answer = participant.live_game_answers["snake_live"]  # None without a game
+    result = participant.live_game_results["snake_live"]  # None while running
+
+:attr:`~psynet.participant.Participant.live_game_ids` gives the id of the
+participant's latest game at each step, ``None`` if their group started no
+game there, and :attr:`~psynet.participant.Participant.live_game_history`
+every game they played at each step, oldest first, such as one per round of
+a loop. A step the participant never reached isn't in them. A group's
+:attr:`~psynet.sync.SyncGroup.running_live_game_ids` gives the games it is
+playing now, keyed in the same way.
+
 .. _live-games-rewards:
 
 Rewards
@@ -869,9 +927,9 @@ reward on the player's trial, adding them to its ``performance_reward``, so
 each trial shows what its game paid. A trial can pay through its own
 ``score_answer`` and ``compute_performance_reward`` instead, as the
 ``rock_paper_scissors_live`` demo does, when what a game pays depends on the
-trial's definition. The trial's reward is then added to the game's, so a
-game whose trial pays defines no ``performance_reward``, or the player is
-paid twice.
+trial's definition. The two would add up, paying each player twice, so a
+game with a ``performance_reward`` played in a trial with a
+``compute_performance_reward`` raises an error.
 
 A game can fail without an outcome: its record couldn't be saved, or the
 game's ``outcome`` raised an error as well. The answer is then ``None`` and
@@ -900,13 +958,12 @@ for all of them, or on a message type, for that type's. On a later page:
             if saved.message is not None:
                 print(saved.player, saved.message.action, saved.time)
 
-``live_game_id`` finds the game from the participant's latest visit to the
-``PlayLiveGame`` with that ``id_``, or returns ``None`` if their group didn't
-start one. In an analysis, use the round's record instead: for a game played
-in a trial, each :class:`~psynet.sync.SyncGroupRound` keeps its game's
-``live_game_id``. For other games, ``realtime_sessions_for(participant,
-game_type)`` from ``dallinger.realtime`` returns all of a participant's games
-of one kind, and each one's ``id`` is its game's id.
+``live_game_ids`` gives the game from the participant's latest visit to the
+``PlayLiveGame`` with that ``id_``, and ``None`` if their group didn't start
+one. ``participant.live_game_history`` gives every game they played there.
+In an analysis of a game played in a trial, each
+:class:`~psynet.sync.SyncGroupRound` also keeps its game's
+``live_game_id``.
 
 Each message is a :class:`~psynet.live_game.SavedMessage`, in the order the
 game applied them, with the sender's ``player`` number and ``participant_id``,
@@ -1010,7 +1067,9 @@ the game fails. In a game with ticks, it runs once per tick. Dallinger's `bot
 
 A group's bots have to reach the ``PlayLiveGame`` together, so set the
 experiment's ``test_mode = "parallel"``, and ``test_n_bots`` to a multiple of
-the group size. A bot's answer on the game page comes from the game's
+the group size. The experiment refuses live games with more than one bot run
+one at a time, unless its ``test_serial_run_bots`` drives them, as the
+``microsociety_live`` demo's does. A bot's answer on the game page comes from the game's
 ``answer`` too, so the page doesn't need a ``bot_response``.
 
 To test a game's rules in Python, without starting the experiment, play it

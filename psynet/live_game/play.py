@@ -131,7 +131,7 @@ class PlayLiveGame(EltCollection):
         Any other parameter of :class:`~psynet.sync.GroupBarrier`, for the
         wait before the game, such as ``late_after`` or ``waiting_message``.
         Give the wait a limit, either ``late_after``, with ``late_action``,
-        or ``max_wait_time``: :ref:`live-games-wait` says which. A
+        or ``max_wait_time``, as :ref:`the guide <live-games-wait>` explains. A
         participant who has left the group passes the wait and reaches the
         game page without a game.
     """
