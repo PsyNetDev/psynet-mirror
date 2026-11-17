@@ -113,7 +113,7 @@ class LiveMessage(BaseModel):
         ----------
 
         game_id
-            The game's id, as :func:`live_game_id` returns it.
+            The game's id, as :attr:`Participant.live_game_ids <psynet.participant.Participant.live_game_ids>` gives it.
 
         Raises
         ------

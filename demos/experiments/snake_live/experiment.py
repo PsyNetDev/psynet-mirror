@@ -21,8 +21,6 @@ from psynet.live_game import (
     LiveMessage,
     PlayLiveGame,
     Reject,
-    live_game_id,
-    live_game_result,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
@@ -296,7 +294,7 @@ def food_text(n):
 
 
 def show_result(participant):
-    answer = participant.var.snake_live
+    answer = participant.live_game_answers["snake_live"]
     if answer is None:
         return InfoPage("Your group couldn't play the game.", time_estimate=5)
     food = answer["score"]
@@ -383,7 +381,6 @@ class Exp(psynet.experiment.Experiment):
                 css_links=["/static/snake.css"],
                 js_vars={"snake_rules": RULES},
                 time_estimate=60,
-                save_answer="snake_live",
             ),
         ),
         PageMaker(show_result, time_estimate=5),
@@ -391,9 +388,9 @@ class Exp(psynet.experiment.Experiment):
 
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
-        result = live_game_result(live_game_id(bot, "snake_live"))
+        result = bot.live_game_results["snake_live"]
         assert result.status == "ended", result.error
         assert result.end_reason == "finished"
         food = result.outcome["food"][result.participant_ids.index(bot.id)]
-        assert bot.var.snake_live["score"] == food
+        assert bot.live_game_answers["snake_live"]["score"] == food
         assert bot.performance_reward == pytest.approx(BONUS_PER_FOOD * food)

@@ -12,7 +12,6 @@ from psynet.live_game import (
     LiveGameControl,
     LiveMessage,
     PlayLiveGame,
-    live_game_id,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
@@ -121,7 +120,7 @@ class Exp(psynet.experiment.Experiment):
 
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
-        session_id = live_game_id(bot, "pick_numbers")
+        session_id = bot.live_game_ids.get("pick_numbers")
         session = (
             db.session.query(
                 RealtimeSession.status,

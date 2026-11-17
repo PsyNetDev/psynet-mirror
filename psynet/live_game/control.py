@@ -18,7 +18,7 @@ from ..modular_page import ModularPage, NullControl
 from ..timeline import ResponseNotReady
 from ..utils import get_translator
 from .messages import _game_channel, _session_game_class, _session_participant_ids
-from .play import _check_reached_game, live_game_id
+from .play import _check_reached_game, _live_game_id, _set_live_game_answer
 from .result import _has_outcome, _player_ending, live_game_result
 
 # Seconds a page waits before resending a response refused because the
@@ -112,7 +112,7 @@ class LiveGameControl(NullControl):
         self.no_game_message = no_game_message
 
     def check_ready_for_response(self, experiment, participant):
-        session_id = live_game_id(participant, self._play_id())
+        session_id = _live_game_id(participant, self._play_id())
         if session_id is None or live_game_result(session_id) is not None:
             return None
         if _player_ending(session_id, participant.id) is not None:
@@ -128,7 +128,7 @@ class LiveGameControl(NullControl):
         )
 
     def ends_by(self, experiment, participant):
-        session_id = live_game_id(participant, self._play_id())
+        session_id = _live_game_id(participant, self._play_id())
         if session_id is None:
             return None
         ends = _game_page_deadline(session_id)
@@ -143,7 +143,7 @@ class LiveGameControl(NullControl):
         # check_ready_for_response has already seen the player's game end,
         # and neither a player's saved ending nor an ended game's row
         # changes, so this result is final.
-        session_id = live_game_id(participant, self._play_id())
+        session_id = _live_game_id(participant, self._play_id())
         if session_id is None:
             response.answer = None
             return None
@@ -165,6 +165,7 @@ class LiveGameControl(NullControl):
         response.answer = game.answer(
             outcome, reason, participant_ids.index(participant.id)
         )
+        _set_live_game_answer(participant, self._play_id(), response.answer)
         return None
 
     def _play_id(self):
@@ -194,7 +195,7 @@ class LiveGameControl(NullControl):
 
     def get_participant_js_vars(self, experiment, participant):
         _check_reached_game(participant, self._play_id())
-        session_id = live_game_id(participant, self._play_id())
+        session_id = _live_game_id(participant, self._play_id())
         _p = get_translator(context=True)
         player_left = self.player_left_message
         if player_left is _DEFAULT:

@@ -29,8 +29,6 @@ from psynet.live_game import (
     LiveMessage,
     PlayLiveGame,
     Reject,
-    live_game_id,
-    live_game_result,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
@@ -350,7 +348,7 @@ class Exp(psynet.experiment.Experiment):
             {"number": 2, "throws": 3, "reward_per_win": 0.10},
         ]
         # The bot's latest game is its second.
-        result = live_game_result(live_game_id(bot, "rock_paper_scissors"))
+        result = bot.live_game_results["rock_paper_scissors"]
         assert result.status == "ended", result.error
         assert result.end_reason == "finished"
         assert trials[-1].group_round.live_game_outcome == result.outcome

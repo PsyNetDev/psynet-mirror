@@ -15,7 +15,7 @@ from .control import LiveGameControl
 from .game import LiveGame
 from .history import LiveGameCheckpoint, LiveGameMoment
 from .messages import LiveMessage, SavedMessage
-from .play import PlayLiveGame, live_game_id
+from .play import PlayLiveGame
 from .psynet_entry import NOT_STARTED, PLAYERS_LEFT, TIMEOUT, PlayerReady
 from .registry import live_game_classes
 from .result import LiveGameResult, live_game_result
@@ -35,6 +35,5 @@ __all__ = [
     "SavedMessage",
     "TIMEOUT",
     "live_game_classes",
-    "live_game_id",
     "live_game_result",
 ]

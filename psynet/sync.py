@@ -5000,6 +5000,20 @@ class SyncGroup(SQLBase, SQLMixin):
             seats.setdefault(link.participant_id, len(seats))
         return seats
 
+    @property
+    def running_live_game_ids(self) -> Dict[str, int]:
+        """``{play_id: game_id}`` for each live game the group is playing now.
+
+        Keyed by the ``id_`` of the :class:`~psynet.live_game.PlayLiveGame`
+        that started the game, as :attr:`Participant.live_game_ids
+        <psynet.participant.Participant.live_game_ids>` is. A step whose game
+        has ended isn't in it. Read it again rather than keep it, since games
+        start and end.
+        """
+        from .live_game.play import _running_live_game_ids
+
+        return _running_live_game_ids(self)
+
     def reached_barrier_after_time_limit(self, participant: Participant) -> bool:
         """Return whether ``participant`` reached the group's barrier they wait at because a time limit ran out.
 

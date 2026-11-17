@@ -516,7 +516,7 @@ class LiveGame(RealtimeGame):
         ----------
 
         game_id
-            The game's id, as :func:`live_game_id` returns it.
+            The game's id, as :attr:`Participant.live_game_ids <psynet.participant.Participant.live_game_ids>` gives it.
 
         Raises
         ------
@@ -541,7 +541,7 @@ class LiveGame(RealtimeGame):
         ----------
 
         game_id
-            The game's id, as :func:`live_game_id` returns it.
+            The game's id, as :attr:`Participant.live_game_ids <psynet.participant.Participant.live_game_ids>` gives it.
 
         name
             The name of the moments to return, or ``None``, the default, for
@@ -565,7 +565,7 @@ class LiveGame(RealtimeGame):
         ----------
 
         game_id
-            The game's id, as :func:`live_game_id` returns it.
+            The game's id, as :attr:`Participant.live_game_ids <psynet.participant.Participant.live_game_ids>` gives it.
         """
         cls._check_game(game_id)
         return _checkpoints(game_id)

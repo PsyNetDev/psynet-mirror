@@ -22,7 +22,7 @@ export read the society's history from ``Fishing.moments``.
 """
 
 import random
-from typing import List, Optional
+from typing import List
 
 from dominate import tags
 
@@ -34,8 +34,6 @@ from psynet.live_game import (
     LiveMessage,
     PlayLiveGame,
     Reject,
-    live_game_id,
-    live_game_result,
 )
 from psynet.modular_page import ModularPage, Prompt, TextControl
 from psynet.page import InfoPage
@@ -44,7 +42,6 @@ from psynet.sync import SimpleGrouper, leave_group
 from psynet.timeline import (
     CodeBlock,
     PageMaker,
-    Response,
     Timeline,
     conditional,
     join,
@@ -354,7 +351,7 @@ def get_timeline():
             in_society,
             join(
                 conditional(
-                    "newcomer", running_lake, PageMaker(history_page, time_estimate=20)
+                    "newcomer", lake_is_open, PageMaker(history_page, time_estimate=20)
                 ),
                 PlayLiveGame(
                     group_type="society",
@@ -382,21 +379,9 @@ def get_timeline():
     )
 
 
-def lake_answer(participant: Participant) -> Optional[dict]:
-    """Return the participant's answer on the lake page: their fish, moves and why they left."""
-    response = (
-        Response.query.filter_by(
-            participant_id=participant.id, question="fish", successful_validation=True
-        )
-        .order_by(Response.id.desc())
-        .first()
-    )
-    return None if response is None else response.answer
-
-
 def why_left(participant: Participant) -> str:
     """Return why the member left the lake, or ``"closed"`` if it closed while they fished."""
-    left = (lake_answer(participant) or {}).get("left")
+    left = (participant.live_game_answers.get("fishing") or {}).get("left")
     return left if left in (RETIRED, STAYED) else "closed"
 
 
@@ -404,24 +389,22 @@ def in_society(participant: Participant) -> bool:
     return participant.in_sync_group("society")
 
 
-def running_lake(participant: Participant) -> Optional[int]:
-    """Return the id of the lake the participant's society is fishing on, or None."""
+def lake_is_open(participant: Participant) -> bool:
+    """Return whether the participant's society is fishing on its lake now."""
     society = participant.active_sync_groups["society"]
-    for member in society.active_participants:
-        lake_id = live_game_id(member, "fishing")
-        if lake_id is not None and live_game_result(lake_id) is None:
-            return lake_id
-    return None
+    return "fishing" in society.running_live_game_ids
 
 
 def history_page(participant: Participant):
     """Show a newcomer where the society has been catching fish lately and the tips of members who have left."""
-    catches = Fishing.moments(running_lake(participant), "catch")[-HISTORY_CATCHES:]
+    society = participant.active_sync_groups["society"]
+    # The lake can close between the check and this page.
+    lake_id = society.running_live_game_ids.get("fishing")
+    catches = [] if lake_id is None else Fishing.moments(lake_id, "catch")
     spot_fish = [0] * N_SPOTS
-    for moment in catches:
+    for moment in catches[-HISTORY_CATCHES:]:
         for c in moment.data["caught"]:
             spot_fish[c["spot"] - 1] += c["fish"]
-    society = participant.active_sync_groups["society"]
     tips = [
         link.participant.var.tip
         for link in society.participant_links
@@ -494,14 +477,14 @@ class Exp(psynet.experiment.Experiment):
     def get_basic_data(cls, context=None, **kwargs):
         """Return one row per member and one per catch."""
         members = Participant.query.order_by(Participant.id).all()
-        lake_ids = sorted({live_game_id(p, "fishing") for p in members} - {None})
+        lake_ids = sorted({p.live_game_ids.get("fishing") for p in members} - {None})
         return {
             "member": [
                 {
                     "participant_id": p.id,
-                    "lake_id": live_game_id(p, "fishing"),
-                    "fish": (lake_answer(p) or {}).get("fish"),
-                    "left": (lake_answer(p) or {}).get("left"),
+                    "lake_id": p.live_game_ids.get("fishing"),
+                    "fish": (p.live_game_answers.get("fishing") or {}).get("fish"),
+                    "left": (p.live_game_answers.get("fishing") or {}).get("left"),
                     "tip": p.var.get("tip"),
                 }
                 for p in members

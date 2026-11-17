@@ -1,13 +1,16 @@
 """PlayLiveGame, the timeline step where a group plays a live game, and
-live_game_id, which finds the game.
+each participant's record of the games they played.
 
 PlayLiveGame resolves into a group barrier, which starts the game when
 it releases the group, followed by the game page. The barrier stores the
 game's id in each member's ``live_games``, keyed by the step's id, and
-the page's LiveGameControl reads it from there. Reaching the barrier sets
-that entry to ``None`` first, so the page finds only the game from the
-participant's latest visit, and an id without an entry is one whose step the
-participant never reached.
+the page's LiveGameControl reads it from there, and saves the player's
+answer beside it. Reaching the barrier sets the id to ``None`` first, so the
+page finds only the game from the participant's latest visit, and a step
+without a record is one the participant never reached. The record also keeps
+every game the participant played at the step, its ``history``.
+Participant.live_game_ids, live_game_answers, live_game_results and
+live_game_history read it.
 
 With ``join_running_game``, a participant whose group is playing a game
 from the step is added to that game instead, and skips the barrier.
@@ -117,8 +120,9 @@ class PlayLiveGame(EltCollection):
 
     id_
         A name for this step, the game's ``channel`` unless given, which
-        :func:`live_game_id` takes to find the group's game, for
-        example on a later page. Steps with the same id share their wait,
+        keys the participant's :attr:`~psynet.participant.Participant.live_game_ids`
+        and the other records of their games, for example to read the game's
+        answer on a later page. Steps with the same id share their wait,
         like barriers with the same id, so give a game that the timeline
         plays in two places, such as a practice game and the main game, a
         different id in each.
@@ -238,7 +242,7 @@ class _LiveGameBarrier(GroupBarrier):
             arrive,
             conditional(
                 f"{self.id}_no_running_game",
-                lambda participant: live_game_id(participant, self.id) is None,
+                lambda participant: _live_game_id(participant, self.id) is None,
                 super().resolve(),
             ),
         )
@@ -265,28 +269,16 @@ class _LiveGameBarrier(GroupBarrier):
         members = group.active_participants
         if participant not in members:
             return
-        session_ids = {live_game_id(member, self.id) for member in members} - {None}
-        if not session_ids:
-            return
         # Locked, so players added at the same time are counted against
         # max_players one after the other.
-        row = (
-            db.session.query(RealtimeSession)
-            .filter(
-                RealtimeSession.id.in_(session_ids),
-                RealtimeSession.status == "running",
-            )
-            .order_by(RealtimeSession.id.desc())
-            .with_for_update()
-            .first()
-        )
+        row = _running_game_query(members, self.id).with_for_update().first()
         if row is None or participant.id in row.members:
             return
         max_players = self.game_class.max_players
         # The row lists a newcomer only once their addition is written, a few
         # seconds later, so the members playing it count too.
         players = set(row.members) | {
-            member.id for member in members if live_game_id(member, self.id) == row.id
+            member.id for member in members if _live_game_id(member, self.id) == row.id
         }
         if max_players is not None and len(players) >= max_players:
             return
@@ -405,33 +397,14 @@ def _checked_settings(game_class, settings):
     return settings
 
 
-def live_game_id(participant, id_):
-    """Return the id of the game that a participant's group played at a
-    :class:`PlayLiveGame`, to read the game's result or its saved
-    messages on a later page.
-
-    Parameters
-    ----------
-
-    participant
-        The participant.
-
-    id_
-        The PlayLiveGame's ``id_``, which is its game's ``channel`` unless it
-        was given one.
-
-    Returns
-    -------
-
-    The game's id, or ``None`` if the group hasn't started a game
-    there since the participant last arrived, for example because the group
-    broke up while it waited.
-    """
-    return _live_game_ids(participant).get(id_)
+def _live_game_id(participant, play_id):
+    """Return the id of the participant's latest game at the PlayLiveGame
+    ``play_id``, or None."""
+    return _live_game_records(participant).get(play_id, {}).get("id")
 
 
 def _check_reached_game(participant, play_id):
-    if play_id not in _live_game_ids(participant):
+    if play_id not in _live_game_records(participant):
         raise ValueError(
             f"Participant {participant.id} hasn't reached the PlayLiveGame "
             f"{play_id!r}, whose game page they were shown. Only its "
@@ -439,13 +412,59 @@ def _check_reached_game(participant, play_id):
         )
 
 
-def _live_game_ids(participant):
+def _live_game_records(participant):
+    """Return the participant's record of each PlayLiveGame they reached,
+    keyed by its id: their latest game's ``id`` there, or None, their
+    ``answer`` in it, and the ``history`` of every game they played there."""
     return participant.live_games or {}
 
 
-def _set_live_game_id(participant, game_id, session_id):
+def _set_live_game_id(participant, play_id, game_id):
+    record = _live_game_records(participant).get(play_id, {})
+    history = list(record.get("history", []))
+    if game_id is not None and game_id not in history:
+        history.append(game_id)
+    _set_record(
+        participant, play_id, {"id": game_id, "answer": None, "history": history}
+    )
+
+
+def _set_live_game_answer(participant, play_id, answer):
+    record = _live_game_records(participant)[play_id]
+    _set_record(participant, play_id, {**record, "answer": answer})
+
+
+def _set_record(participant, play_id, record):
     # A new dict, which is what marks the column as changed.
-    participant.live_games = {
-        **_live_game_ids(participant),
-        game_id: session_id,
+    participant.live_games = {**_live_game_records(participant), play_id: record}
+
+
+def _running_game_query(members, play_id):
+    """Return a query for the running game, if any, that the group's
+    ``members`` played at the PlayLiveGame ``play_id``, newest first."""
+    game_ids = {_live_game_id(member, play_id) for member in members} - {None}
+    return (
+        db.session.query(RealtimeSession)
+        .filter(
+            RealtimeSession.id.in_(game_ids),
+            RealtimeSession.status == "running",
+        )
+        .order_by(RealtimeSession.id.desc())
+    )
+
+
+def _running_live_game_ids(group):
+    """Return SyncGroup.running_live_game_ids."""
+    members = group.active_participants
+    play_ids = {
+        play_id
+        for member in members
+        for play_id, record in _live_game_records(member).items()
+        if record.get("id") is not None
     }
+    running = {}
+    for play_id in sorted(play_ids):
+        row = _running_game_query(members, play_id).first()
+        if row is not None:
+            running[play_id] = row.id
+    return running

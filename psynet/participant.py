@@ -13,7 +13,7 @@ import time
 import zipfile
 from contextlib import ExitStack
 from smtplib import SMTPAuthenticationError
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 import dallinger.models
 import requests
@@ -326,6 +326,7 @@ def _raise_for_status_with_server_details(response):
 
 
 if TYPE_CHECKING:
+    from .live_game import LiveGameResult
     from .sync import ParticipantLinkSyncGroup, SyncGroup
     from .timeline import Module
 
@@ -392,9 +393,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         Should not be modified directly.
 
     live_games : dict or None
-        The ids of the participant's live games, keyed by the id of the
-        :class:`~psynet.live_game.PlayLiveGame` that started
-        each one. Read it with :func:`~psynet.live_game.live_game_id`.
+        PsyNet's record of the participant's live games, keyed by the id of
+        the :class:`~psynet.live_game.PlayLiveGame` that started each one.
+        Read it through :attr:`live_game_ids`, :attr:`live_game_answers`,
+        :attr:`live_game_results` and :attr:`live_game_history`.
         Should not be modified directly.
 
     complete : bool
@@ -752,6 +754,64 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     @property
     def active_sync_groups(self) -> Dict[str, "SyncGroup"]:
         return {group.group_type: group for group in self.sync_groups if group.active}
+
+    @property
+    def live_game_ids(self) -> Dict[str, Optional[int]]:
+        """``{play_id: game_id}``: the participant's latest game at each
+        :class:`~psynet.live_game.PlayLiveGame` they have reached, keyed by
+        its ``id_``, which is the game's ``channel`` unless it was given one.
+        The value is ``None`` if their group didn't start a game there, for
+        example because it broke up while it waited. A step they never
+        reached isn't in it.
+        """
+        from .live_game.play import _live_game_records
+
+        return {
+            play_id: record.get("id")
+            for play_id, record in _live_game_records(self).items()
+        }
+
+    @property
+    def live_game_answers(self) -> Dict[str, object]:
+        """``{play_id: answer}``: the participant's answer on the game page of
+        their latest game at each :class:`~psynet.live_game.PlayLiveGame`,
+        as the game's ``answer`` gave it. It's ``None`` without a game, or
+        before the page has saved the answer.
+        """
+        from .live_game.play import _live_game_records
+
+        return {
+            play_id: record.get("answer")
+            for play_id, record in _live_game_records(self).items()
+        }
+
+    @property
+    def live_game_results(self) -> Dict[str, Optional["LiveGameResult"]]:
+        """``{play_id: result}``: how the participant's latest game at each
+        :class:`~psynet.live_game.PlayLiveGame` ended, as a
+        :class:`~psynet.live_game.LiveGameResult`. It's ``None`` without a
+        game, or while the game is still running, so read it again rather
+        than keep it.
+        """
+        from .live_game.result import live_game_result
+
+        return {
+            play_id: None if game_id is None else live_game_result(game_id)
+            for play_id, game_id in self.live_game_ids.items()
+        }
+
+    @property
+    def live_game_history(self) -> Dict[str, List[int]]:
+        """``{play_id: [game_id, ...]}``: every game the participant played
+        at each :class:`~psynet.live_game.PlayLiveGame`, oldest first, such
+        as a game played in each round of a loop.
+        """
+        from .live_game.play import _live_game_records
+
+        return {
+            play_id: list(record.get("history", []))
+            for play_id, record in _live_game_records(self).items()
+        }
 
     def latest_sync_group(self, group_type: str) -> Optional["SyncGroup"]:
         """Return the participant's latest group of ``group_type``, or ``None`` if they had none.

@@ -35,7 +35,6 @@ from psynet.live_game import (
     LiveMessage,
     PlayerReady,
     PlayLiveGame,
-    live_game_id,
     live_game_result,
 )
 from psynet.live_game import registry as game_registry
@@ -153,30 +152,37 @@ def _arrive(game_barrier, member):
 
 def test_each_pass_through_the_game_barrier_starts_a_new_game(pair):
     members, game_barrier = pair
-    members[0].live_games = {"earlier": 7}
+    members[0].live_games = {"earlier": {"id": 7, "answer": "won", "history": [7]}}
     session_ids = []
     for _ in range(2):
         _arrive(game_barrier, members[0])
-        assert live_game_id(members[0], game_barrier.id) is None
+        assert members[0].live_game_ids[game_barrier.id] is None
         _arrive(game_barrier, members[1])
-        session_ids.append(live_game_id(members[0], game_barrier.id))
+        session_ids.append(members[0].live_game_ids[game_barrier.id])
 
     assert None not in session_ids
     assert session_ids[0] != session_ids[1]
-    assert live_game_id(members[0], "earlier") == 7
+    assert members[0].live_game_ids["earlier"] == 7
+    assert members[0].live_game_answers == {"earlier": "won", game_barrier.id: None}
+    # Every game the participant played at each step, oldest first.
+    assert members[0].live_game_history == {
+        "earlier": [7],
+        game_barrier.id: session_ids,
+    }
+    assert "never_reached" not in members[0].live_game_ids
 
 
 def test_a_participant_who_reaches_the_game_barrier_again_has_no_game_yet(pair):
     members, game_barrier = pair
     session_id = _pair_session(pair)
-    assert live_game_id(members[1], game_barrier.id) == session_id
+    assert members[1].live_game_ids.get(game_barrier.id) == session_id
 
     # A participant who has left the group passes the barrier without
     # arriving at it.
     _reach(game_barrier, members[1])
 
-    assert live_game_id(members[1], game_barrier.id) is None
-    assert live_game_id(members[0], game_barrier.id) == session_id
+    assert members[1].live_game_ids.get(game_barrier.id) is None
+    assert members[0].live_game_ids.get(game_barrier.id) == session_id
 
 
 def test_the_page_script_sends_the_ready_message_s_type():
@@ -248,8 +254,8 @@ def test_each_round_s_game_barriers_start_a_game_with_that_round_s_settings(pair
     for pick_reward in (0.1, 0.2):
         for member in members:
             _arrive(_trial_game_barrier({"pick_reward": pick_reward}), member)
-        session_id = live_game_id(members[0], "trial_game")
-        assert live_game_id(members[1], "trial_game") == session_id
+        session_id = members[0].live_game_ids.get("trial_game")
+        assert members[1].live_game_ids.get("trial_game") == session_id
         rewards.append(store.realtime_state(session_id)["pick_reward"])
 
     assert rewards == [0.1, 0.2]
@@ -262,7 +268,7 @@ def test_a_group_with_fewer_than_min_players_starts_no_game(pair, monkeypatch):
     for member in members:
         _arrive(game_barrier, member)
 
-    assert live_game_id(members[0], game_barrier.id) is None
+    assert members[0].live_game_ids.get(game_barrier.id) is None
 
 
 _releases = []
@@ -284,7 +290,7 @@ def test_on_release_runs_when_the_group_s_game_is_created(
     for member in members:
         _arrive(game_barrier, member)
 
-    game_id = live_game_id(members[0], "trial_game")
+    game_id = members[0].live_game_ids.get("trial_game")
     assert (game_id is not None) is starts
     # With no game, because the group is too small, its id is None.
     assert _releases == [(sorted(m.id for m in members), game_id)]
@@ -347,7 +353,7 @@ def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
     for member in members:
         _arrive(game_barrier, member)
 
-    session_id = live_game_id(members[1], game_barrier.id)
+    session_id = members[1].live_game_ids.get(game_barrier.id)
     assert _rendered_js_vars(page, members[1], monkeypatch)["liveGame"] == {
         "playId": game_barrier.id,
         "liveGameId": session_id,
@@ -455,14 +461,14 @@ def test_a_follower_who_reloads_finds_the_group_s_game(pair):
     members, game_barrier = pair
     for member in members:
         _arrive(game_barrier, member)
-    leader_session = live_game_id(members[0], game_barrier.id)
+    leader_session = members[0].live_game_ids.get(game_barrier.id)
     follower_id = members[1].id
     member_ids = sorted(member.id for member in members)
     db.session.expunge_all()
 
     follower = Participant.query.get(follower_id)
 
-    session_id = live_game_id(follower, game_barrier.id)
+    session_id = follower.live_game_ids.get(game_barrier.id)
     assert session_id == leader_session
     row = db.session.get(RealtimeSession, session_id)
     assert row.game_type == "pick_numbers"
@@ -562,7 +568,7 @@ def _pair_session(pair):
     members, game_barrier = pair
     for member in members:
         _arrive(game_barrier, member)
-    return live_game_id(members[0], game_barrier.id)
+    return members[0].live_game_ids.get(game_barrier.id)
 
 
 def _play_to_the_end(session_id, messages):
@@ -2134,6 +2140,10 @@ def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
     )
     assert _accepted_answers(members[0]) == [outcome, outcome]
     assert _reward(members[0]) == pytest.approx(0.53)
+    # Later pages read the answer and the result through the participant.
+    db.session.refresh(members[0])
+    assert members[0].live_game_answers["pick_numbers"] == outcome
+    assert members[0].live_game_results["pick_numbers"] == live_game_result(session_id)
 
 
 def test_the_game_page_fails_once_its_game_can_no_longer_end(pair, monkeypatch):
@@ -2487,7 +2497,7 @@ def test_a_group_larger_than_the_game_s_max_players_starts_no_game(
     for member in members:
         _arrive(game_barrier, member)
 
-    assert live_game_id(members[0], game_barrier.id) is None
+    assert members[0].live_game_ids.get(game_barrier.id) is None
     assert "has a max_players of 1" in caplog.text
 
 
@@ -2570,14 +2580,16 @@ def test_a_newcomer_joins_the_group_s_running_game_and_finishes_before_it(
     ).barrier
     for member in members[:2]:
         _arrive(barrier, member)
-    session_id = live_game_id(members[0], "growing")
+    session_id = members[0].live_game_ids.get("growing")
 
     members[2].status = "working"
     group.add_participant(members[2])
     _reach(barrier, members[2])
     db.session.commit()
 
-    assert live_game_id(members[2], "growing") == session_id
+    assert members[2].live_game_ids.get("growing") == session_id
+    assert group.running_live_game_ids == {"growing": session_id}
+    group_id = group.id
     first, second, newcomer = (str(member.id) for member in members)
     _play_to_the_end(
         session_id,
@@ -2595,6 +2607,7 @@ def test_a_newcomer_joins_the_group_s_running_game_and_finishes_before_it(
         db.session.get(Participant, int(member)) for member in (first, second, newcomer)
     ]
     assert _session_participant_ids(session_id) == [m.id for m in members]
+    assert db.session.get(SimpleSyncGroup, group_id).running_live_game_ids == {}
     # Each player is paid once, from the outcome when their own game ended.
     assert [_reward(m) for m in members] == pytest.approx([0.03, 0.05, 0.04])
     answers = []

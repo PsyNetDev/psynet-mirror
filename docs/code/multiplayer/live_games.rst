@@ -894,7 +894,7 @@ for all of them, or on a message type, for that type's. On a later page:
 
 .. code-block:: python
 
-    game_id = live_game_id(participant, "rock_paper_scissors")
+    game_id = participant.live_game_ids.get("rock_paper_scissors")
     if game_id is not None:
         for saved in Choose.saved_messages(game_id):
             if saved.message is not None:

@@ -23,8 +23,6 @@ from psynet.live_game import (
     LiveMessage,
     PlayLiveGame,
     Reject,
-    live_game_id,
-    live_game_result,
 )
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
@@ -430,7 +428,7 @@ def coins_text(n):
 
 
 def show_result(participant):
-    answer = participant.var.shared_canvas_live
+    answer = participant.live_game_answers["shared_canvas_live"]
     if answer is None:
         return InfoPage("Your group couldn't play the game.", time_estimate=5)
     coins = answer["score"]
@@ -511,7 +509,6 @@ class Exp(psynet.experiment.Experiment):
                 css_links=["/static/shared-canvas.css"],
                 js_vars={"canvas_rules": RULES},
                 time_estimate=60,
-                save_answer="shared_canvas_live",
             ),
         ),
         PageMaker(show_result, time_estimate=5),
@@ -519,11 +516,14 @@ class Exp(psynet.experiment.Experiment):
 
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
-        result = live_game_result(live_game_id(bot, "shared_canvas_live"))
+        result = bot.live_game_results["shared_canvas_live"]
         assert result.status == "ended", result.error
         assert result.end_reason == "finished"
         me = result.participant_ids.index(bot.id)
-        assert bot.var.shared_canvas_live["score"] == result.outcome["coins"][me]
+        assert (
+            bot.live_game_answers["shared_canvas_live"]["score"]
+            == result.outcome["coins"][me]
+        )
         collected = result.outcome["collected"]
         coins = result.outcome["coins"][me]
         assert coins == sum(entry["by"] == me for entry in collected)
