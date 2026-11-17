@@ -46,8 +46,9 @@ A group's rounds can be run in two ways, as **cued trials** or by a
        game, with the same group or new partners every round
      - **Cued trials**: a loop in the timeline with one
        :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` per player in each
-       round, after a regrouper when partners change (see
-       `Changing partners between rounds`_). The trials of a group's round share a
+       round. If partners change between rounds, a regrouper comes first in
+       each round (see `Changing partners between rounds`_). The trials of
+       a group's round share a
        :class:`~psynet.sync.SyncGroupRound` that holds the group's results.
      - `public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__,
        `ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__,
