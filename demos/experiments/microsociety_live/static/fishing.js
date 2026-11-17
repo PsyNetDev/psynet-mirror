@@ -51,8 +51,8 @@ export function activate({root, psynet}) {
   let live = psynet.liveGame;
   let status = root.querySelector("#fish-status");
   if (!live.hasGame) {
-    // PsyNet says why in a notice, and shows the Next button.
-    status.textContent = "";
+    // PsyNet says why in a notice, and shows the Next button. Without a
+    // game, the page doesn't start its clock.
     return;
   }
   let lake = root.querySelector("#fish-lake");
@@ -169,17 +169,10 @@ export function activate({root, psynet}) {
   function render({instant = false} = {}) {
     view = live.predictedView();
     if (view === null) {
-      status.textContent = endedText();
+      // Before the first view.
       return;
     }
     let playing = live.playing;
-    if (live.ended) {
-      status.textContent = results.hidden ? "Counting your catch…" : endedText();
-    } else if (!live.started) {
-      status.textContent = "Waiting for the others to reach the lake…";
-    } else {
-      status.textContent = "";
-    }
     lake.classList.toggle("fish-playing", playing);
     for (let {tile} of spots) {
       tile.disabled = !playing;
@@ -244,6 +237,11 @@ export function activate({root, psynet}) {
   window.addEventListener("resize", resize);
 
   live.onView(() => render());
+  // Once the member's time ends, the page counts their catch until their
+  // result is saved, and then shows why they left.
+  live.showStatus(status, () => "", {
+    ended: () => (results.hidden ? "Counting your catch…" : endedText()),
+  });
   live.showRejections(rejection);
   live.onResultSaved(() => showResults(live.showResultFor));
   return () => {

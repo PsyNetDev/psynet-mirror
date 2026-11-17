@@ -381,6 +381,7 @@ class Exp(psynet.experiment.Experiment):
                         ),
                         tags.ul(id="snake-scores"),
                         id="snake-game",
+                        data_live_game=True,
                     )
                 ),
                 LiveGameControl(),

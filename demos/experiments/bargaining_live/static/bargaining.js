@@ -13,10 +13,6 @@ function drawCoins(container, stake, keep, keeperIsYou) {
 
 export function activate({root, psynet}) {
   let live = psynet.liveGame;
-  if (!live.hasGame) {
-    root.querySelector("#bargain-game").hidden = true;
-    return;
-  }
   let status = root.querySelector("#bargain-status");
   let timeLeft = root.querySelector("#bargain-time-left");
   let keep = root.querySelector("#bargain-keep");
@@ -43,19 +39,10 @@ export function activate({root, psynet}) {
   function render() {
     view = live.predictedView();
     if (view === null) {
-      status.textContent = "The game is over.";
+      // Before the first view.
       return;
     }
     let playing = live.playing;
-    if (view.deal !== null) {
-      status.textContent = "You made a deal.";
-    } else if (live.ended) {
-      status.textContent = "Time's up: no deal.";
-    } else if (!live.started) {
-      status.textContent = "Waiting for your partner to open the game";
-    } else {
-      status.textContent = "Propose a split, or accept your partner's.";
-    }
     drawCoins(mineCoins, view.stake, Number(keep.value), true);
     keepValue.textContent = keep.value;
     mine.textContent =
@@ -87,6 +74,9 @@ export function activate({root, psynet}) {
     timeLeft.style.width = `${(left / live.duration) * 100}%`;
   });
   live.onView(render);
+  live.showStatus(status, () => "Propose a split, or accept your partner's.", {
+    ended: (final) => (final.deal !== null ? "You made a deal." : "Time's up: no deal."),
+  });
   live.showRejections(rejection);
   keep.addEventListener("input", render);
   propose.addEventListener("click", () => {

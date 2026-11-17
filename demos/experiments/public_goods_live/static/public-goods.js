@@ -22,10 +22,6 @@ function tokenRow(name, tokens, endowment, you) {
 
 export function activate({root, psynet}) {
   let live = psynet.liveGame;
-  if (!live.hasGame) {
-    root.querySelector("#pg-game").hidden = true;
-    return;
-  }
   let status = root.querySelector("#pg-status");
   let timeLeft = root.querySelector("#pg-time-left");
   let slider = root.querySelector("#pg-tokens");
@@ -45,15 +41,8 @@ export function activate({root, psynet}) {
   function render() {
     view = live.predictedView();
     if (view === null) {
-      status.textContent = "The round is over.";
+      // Before the first view.
       return;
-    }
-    if (live.ended) {
-      status.textContent = "Time's up.";
-    } else if (!live.started) {
-      status.textContent = "Waiting for the other players to open the game";
-    } else {
-      status.textContent = "";
     }
     if (document.activeElement !== slider) {
       slider.value = view.mine;
@@ -75,6 +64,7 @@ export function activate({root, psynet}) {
     timeLeft.style.width = `${(left / live.duration) * 100}%`;
   });
   live.onView(render);
+  live.showStatus(status, () => "", { ended: "Time's up." });
   live.showRejections(rejection);
   slider.addEventListener("input", () => {
     live.send("contribute", {tokens: Number(slider.value)});

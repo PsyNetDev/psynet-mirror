@@ -630,7 +630,7 @@ so a game that ends a player's game after some time marks that in its
                     boat["left"] = "stayed"
 
         def is_done(self, state, player):
-            return state["boats"][player]["left"] or False
+            return state["boats"][player]["left"]  # a reason, or None
 
 A player whose game has ended gets their final view, with ``ended`` set, and
 their page gets no more views. The game rejects their messages with the

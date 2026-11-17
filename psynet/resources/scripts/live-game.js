@@ -445,6 +445,8 @@
       });
       if (number !== undefined) {
         pageState().rejectionElements.forEach((element) => (element.textContent = ""));
+        // A status drawn from the predicted view shows the message at once.
+        callEach(pageState().statusCallbacks);
       }
       return number;
     }
@@ -472,7 +474,11 @@
      * ``waiting_status`` until the game starts, what ``playing(view)``
      * returns for each view while it's played, and the control's
      * ``ended_status`` once the player's game has ended. ``texts`` can
-     * replace the control's two texts, as ``{waiting, ended}``.
+     * replace the control's two texts, as ``{waiting, ended}``, and
+     * ``ended`` can be a function that gets the final view, for an ending
+     * that depends on how the game went. With a
+     * ``predict`` callback, ``playing`` gets the predicted view, so the
+     * status shows the player's own messages at once.
      *
      * @example
      * psynet.liveGame.showStatus(status, (view) =>
@@ -492,11 +498,12 @@
       function show() {
         let text;
         if (state.ended) {
-          text = ended;
+          text = typeof ended === "function" ? ended(state.lastView) : ended;
         } else if (state.startedView === null) {
           text = waiting;
         } else {
-          text = playing(state.lastView);
+          let view = state.predict === null ? null : pageSocket().predictedView();
+          text = playing(view ?? state.lastView);
         }
         if (element.textContent !== text) {
           element.textContent = text;

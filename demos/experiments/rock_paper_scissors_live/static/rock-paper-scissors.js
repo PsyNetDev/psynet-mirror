@@ -5,11 +5,6 @@ const RESULTS = {
 };
 
 export function activate({root, psynet}) {
-  if (!psynet.liveGame.hasGame) {
-    // PsyNet's notice says why, and the Next button moves on.
-    root.querySelector("#rps-game").hidden = true;
-    return;
-  }
   let status = root.querySelector("#rps-status");
   let buttons = Array.from(root.querySelectorAll(".rps-action"));
   let score = root.querySelector("#rps-score");
@@ -43,12 +38,6 @@ export function activate({root, psynet}) {
   // Each view holds every throw played so far, so a page that reloads or
   // reconnects shows the whole game again.
   function render(view) {
-    if (view === null) {
-      // The final view of a game that failed.
-      enableButtons(false);
-      status.textContent = "The game is over.";
-      return;
-    }
     current = view.throw;
     results.replaceChildren(
       ...view.results.map((played) => {
@@ -58,15 +47,6 @@ export function activate({root, psynet}) {
       })
     );
     score.textContent = `Throws won: you ${view.wins}, your partner ${view.partner_wins}`;
-    if (psynet.liveGame.ended) {
-      status.textContent = "The game is over.";
-    } else if (!psynet.liveGame.started) {
-      status.textContent = "Waiting for your partner to open the game";
-    } else if (view.chosen) {
-      status.textContent = "Waiting for your partner to choose";
-    } else {
-      status.textContent = `Throw ${view.throw} of ${view.n_throws}: choose your action`;
-    }
     let playing = psynet.liveGame.playing;
     partner.textContent = playing && view.partner_chosen ? "Your partner has chosen." : "";
     enableButtons(playing && !view.chosen);
@@ -79,6 +59,11 @@ export function activate({root, psynet}) {
   }
 
   psynet.liveGame.onView(() => render(psynet.liveGame.predictedView()));
+  psynet.liveGame.showStatus(status, (view) =>
+    view.chosen
+      ? "Waiting for your partner to choose"
+      : `Throw ${view.throw} of ${view.n_throws}: choose your action`
+  );
   psynet.liveGame.showRejections(rejection);
 
   for (let button of buttons) {

@@ -518,14 +518,37 @@ describe("psynet.liveGame", () => {
     sockets[0].view({ ...view(4), n: 3 }, "finished");
     assert.equal(status.textContent, "Over");
 
+    // With a predict callback, the status shows the predicted view.
+    changePage();
+    const predicted = { textContent: "" };
+    liveGame.predict(() => {});
+    liveGame.showStatus(predicted, (v) => (v.chosen ? "Chosen" : "Choose"));
+    // Dallinger's predicted view: the newest view, with the page's messages.
+    let chosen = false;
+    sockets[1].predictedView = () => ({ ...view(4), chosen: chosen });
+    sockets[1].view({ ...view(4), chosen: false });
+    assert.equal(predicted.textContent, "Choose");
+    chosen = true;
+    liveGame.send("choose", {});
+    assert.equal(predicted.textContent, "Chosen");
+
     // The page's own texts replace the control's.
     changePage();
     const own = { textContent: "" };
     liveGame.showStatus(own, () => "Playing", { waiting: "Waiting for your partner" });
     assert.equal(own.textContent, "Waiting for your partner");
     // A game that failed before the page had a view still ends.
-    sockets[1].fire("onEnded", "failed", null);
+    sockets[2].fire("onEnded", "failed", null);
     assert.equal(own.textContent, "Over");
+
+    // The ended text can depend on the final view.
+    changePage();
+    const deal = { textContent: "" };
+    liveGame.showStatus(deal, () => "Playing", {
+      ended: (v) => (v.deal ? "You made a deal." : "No deal."),
+    });
+    sockets[3].view({ ...view(4), deal: true }, "finished");
+    assert.equal(deal.textContent, "You made a deal.");
   });
 
   it("passes on the final view, with ended up to date, and no view after it", () => {

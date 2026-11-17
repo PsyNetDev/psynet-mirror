@@ -151,7 +151,7 @@ class Fishing(LiveGame):
         self.record("left", {"player": player, "why": why})
 
     def is_done(self, state, player):
-        return state["boats"][player]["left"] or False
+        return state["boats"][player]["left"]
 
     def is_over(self, state):
         return not _fishing(state)
@@ -312,10 +312,15 @@ def lake_page():
                 tags.div(id="fish-scores", cls="fish-scores"),
                 tags.p(id="fish-rejection", cls="fish-rejection"),
                 id="fish-game",
+                data_live_game=True,
             )
         ),
         # The page shows the member's results on the lake before moving on.
-        LiveGameControl(show_result_for=RESULTS_SECONDS, player_left_message=None),
+        LiveGameControl(
+            show_result_for=RESULTS_SECONDS,
+            player_left_message=None,
+            waiting_status="Waiting for the others to reach the lake…",
+        ),
         js_page_modules=["/static/fishing.js"],
         css_links=["/static/fishing.css"],
         time_estimate=STAY_SECONDS + RESULTS_SECONDS,

@@ -129,6 +129,8 @@ export function activate({ root, vars, psynet }) {
   let status = root.querySelector("#canvas-status");
   let live = psynet.liveGame;
   if (!live.hasGame) {
+    // Without a game there's nothing to animate, so the page doesn't start
+    // its drawing loop.
     return;
   }
   let rules = vars.canvas_rules;
@@ -248,15 +250,7 @@ export function activate({ root, vars, psynet }) {
     }
   }
 
-  function showStatus() {
-    if (live.ended) {
-      setText(status, "The game is over.");
-    } else if (!live.started) {
-      setText(status, "Waiting for the other players to open the game");
-    } else {
-      setText(status, "Collect the coins!");
-    }
-  }
+  live.showStatus(status, () => "Collect the coins!");
 
   live.onTimeLeft((left) => setText(timer, String(Math.ceil(left))));
 
@@ -268,13 +262,11 @@ export function activate({ root, vars, psynet }) {
     lastFrame = now;
     move(elapsed);
     shown = shownView();
-    // The view is null before the first view, and once a game that
-    // failed has ended.
+    // The view is null before the first view.
     if (shown !== null) {
       draw(context, rules, live.player, shown, live.interpolatedView() || shown);
       showScores(shown);
     }
-    showStatus();
     if (live.ended) {
       running = false;
     } else {

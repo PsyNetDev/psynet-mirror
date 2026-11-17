@@ -139,6 +139,7 @@ def contribution_page(round_number):
                 ),
                 tags.p(id="pg-rejection", cls="pg-rejection"),
                 id="pg-game",
+                data_live_game=True,
             )
         ),
         LiveGameControl(player_left_message="A player has left the game."),

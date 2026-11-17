@@ -509,6 +509,7 @@ class Exp(psynet.experiment.Experiment):
                         ),
                         tags.ul(id="canvas-scores"),
                         id="canvas-game",
+                        data_live_game=True,
                     )
                 ),
                 LiveGameControl(),

@@ -207,9 +207,13 @@ def bargaining_page(stake):
                 tags.div(id="bargain-deal", cls="bargain-deal", hidden=True),
                 tags.p(id="bargain-rejection", cls="bargain-rejection"),
                 id="bargain-game",
+                data_live_game=True,
             )
         ),
-        LiveGameControl(player_left_message="Your partner has left."),
+        LiveGameControl(
+            player_left_message="Your partner has left.",
+            waiting_status="Waiting for your partner to open the game",
+        ),
         js_page_modules=["/static/bargaining.js"],
         css_links=["/static/bargaining.css"],
         time_estimate=BARGAIN_SECONDS,

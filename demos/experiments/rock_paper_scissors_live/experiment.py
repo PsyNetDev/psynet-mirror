@@ -249,6 +249,8 @@ class RockPaperScissorsTrial(Trial):
                         tags.p(id="rps-score"),
                         tags.ol(id="rps-results"),
                         id="rps-game",
+                        # PsyNet hides it on a page without a game.
+                        data_live_game=True,
                     )
                 ),
                 LiveGameControl(
@@ -257,6 +259,7 @@ class RockPaperScissorsTrial(Trial):
                         "back within 30 seconds, it will end."
                     ),
                     no_game_message=("This game can't be played without your partner."),
+                    waiting_status="Waiting for your partner to open the game",
                 ),
                 js_page_modules=["/static/rock-paper-scissors.js"],
                 css_links=["/static/rock-paper-scissors.css"],

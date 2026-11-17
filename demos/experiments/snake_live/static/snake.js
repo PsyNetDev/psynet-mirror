@@ -44,9 +44,6 @@ function draw(context, rules, view, me) {
 export function activate({ root, vars, psynet }) {
   let status = root.querySelector("#snake-status");
   let live = psynet.liveGame;
-  if (!live.hasGame) {
-    return;
-  }
   let rules = vars.snake_rules;
   let context = root.querySelector("#snake-board").getContext("2d");
   let timer = root.querySelector("#snake-timer");
@@ -92,20 +89,15 @@ export function activate({ root, vars, psynet }) {
     );
   }
 
-  function showStatus(view) {
+  live.showStatus(status, (view) => {
     let time = live.gameTime();
     let me = view.snakes[live.player];
-    if (live.ended) {
-      status.textContent = "The game is over.";
-    } else if (!live.started) {
-      status.textContent = "Waiting for the other players to open the game";
-    } else if (me.back_at !== null && time !== null) {
+    if (me.back_at !== null && time !== null) {
       let seconds = Math.max(1, Math.ceil(me.back_at - time));
-      status.textContent = `You crashed! Your snake will be back in ${seconds} s.`;
-    } else {
-      status.textContent = "Eat the food!";
+      return `You crashed! Your snake will be back in ${seconds} s.`;
     }
-  }
+    return "Eat the food!";
+  });
 
   live.onTimeLeft((left) => {
     timer.textContent = Math.ceil(left);
@@ -114,14 +106,8 @@ export function activate({ root, vars, psynet }) {
   // The game moves every snake on its ticks, and each tick's view shows the
   // whole board, so the page draws each view as it arrives.
   live.onView((view) => {
-    if (view === null) {
-      // The final view of a game that failed.
-      status.textContent = "The game is over.";
-      return;
-    }
     latest = view;
     draw(context, rules, view, live.player);
     showScores(view);
-    showStatus(view);
   });
 }
