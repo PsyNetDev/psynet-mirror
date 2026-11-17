@@ -208,8 +208,7 @@ class RockPaperScissorsTrial(Trial):
     def show_trial(self, experiment, participant):
         game = self.definition
         # PlayLiveGame waits for the pair, starts their game and shows the
-        # game page. Starting the game closes the pair's round, as releasing
-        # any group barrier in a cued trial does.
+        # game page.
         return PlayLiveGame(
             group_type="pair",
             game_class=RockPaperScissors,

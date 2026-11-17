@@ -23,8 +23,8 @@ can run each demo, change it and see what happens.
     Players move around a canvas collecting coins, and each page draws
     everyone's movement smoothly.
 
-Read it once from start to end: each part builds on the one before. Read
-:doc:`/design/live_games` first, which explains how a live game differs from
+Read it once from start to end: each part builds on the one before. Read the
+:doc:`live games design page </design/live_games>` first, which explains how a live game differs from
 moving through pages, and the ideas this tutorial puts into code: state,
 messages, views, prediction and the game's record. Before you start, you should know how
 a PsyNet timeline is put together (:doc:`/code/writing_a_timeline`), how
@@ -32,25 +32,20 @@ trials work, and how participants are put into groups
 (:doc:`synchronization`). The game pages are written in JavaScript, so it
 helps if you have written a little of it.
 
-:doc:`live_games` is the reference, for looking things up once you're
-building your own game. Each section here ends with a link to the matching
+:doc:`The reference <live_games>` is for looking things up once you're
+building your own game. Most sections here end with a link to the matching
 section there, which covers the cases this tutorial leaves out.
 
 How a live game works
 ---------------------
 
-As :doc:`/design/live_games` explains, the server runs the game. It keeps the
-game's **state**. When a player does something, such as clicking "Rock", their
-page sends the game a **message**, which the game's rules apply to the state
-or reject. Whenever the state changes, the game sends each player's page a
-**view**, the part of the state that player may see, and the page updates
-itself from it.
-
 You write the game as a Python class, a subclass of
-:class:`~psynet.live_game.LiveGame`. Its methods say what the state is at the
-start, what each message does, what each player sees, and when the game is
-over. PsyNet does the rest. It connects the pages, applies the messages one
-at a time in the order they arrive, sends the views, and saves the record.
+:class:`~psynet.live_game.LiveGame`, with a
+:class:`~psynet.live_game.LiveMessage` subclass for each kind of message a
+page can send. Its methods say what the state is at the start, what each
+message does, what each player sees, and when the game is over. PsyNet does
+the rest: it connects the pages, applies the messages one at a time in the
+order they arrive, sends the views, and saves the record.
 
 Part 1: Rock, paper, scissors
 -----------------------------
@@ -101,7 +96,6 @@ throw the same way.
 The excerpts on this page leave out the file's imports, which are at the top
 of the demo's ``experiment.py``.
 
-Reference: :ref:`live-games-the-game`, on player numbers.
 
 The game and its state
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -135,13 +129,13 @@ Here, ``choices`` holds each player's choice in the current throw, ``None``
 until they choose, and ``throws`` the choices of each throw played so far.
 
 The settings are what differs from one play of the game to another. Here,
-they say how many throws the game has, and they come from the trial, as
-"Adding the game to the timeline" below shows. The game's other methods
+they say how many throws the game has, which differs between the demo's two
+games, as "Playing it as trials" below shows. The game's other methods
 receive the state but not the settings, so ``initial_state`` puts what they
 need into the state. A game that is always played the same way can leave
 ``settings`` out of ``initial_state``.
 
-Reference: :ref:`live-games-the-game`.
+Reference: :ref:`live-games-the-game` and :ref:`live-games-time-limits`.
 
 The message
 ~~~~~~~~~~~
@@ -197,8 +191,6 @@ throw is over. This is how a game keeps information private: whatever isn't
 in a player's view never reaches their browser, so they can't find it by
 looking at the page's code.
 
-Reference: :ref:`live-games-the-game`.
-
 The end and the outcome
 ~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -244,6 +236,137 @@ chooses at random. ``bot`` must return ``None`` once the bot has nothing to
 do, or the bots would play forever.
 
 Reference: :ref:`live-games-bots`.
+
+The game page
+~~~~~~~~~~~~~
+
+The page's JavaScript is in ``static/rock-paper-scissors.js``. It exports an
+``activate`` function, which PsyNet runs when the page opens
+(:doc:`/code/pages/custom_front_ends` explains page modules). Through
+``psynet.liveGame``, the function sends the player's messages and draws each
+view that arrives.
+
+It finds the page's elements and sets up the variables that the rest of the
+page uses:
+
+.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
+   :language: javascript
+   :start-at: export function activate
+   :end-before: function enableButtons(
+   :dedent:
+
+A participant reaches the game page without a game when their partner was
+late for it. PsyNet then shows them the control's ``no_game_message`` in a
+notice, and hides the game, which the page's prompt marks with
+``data_live_game=True``. ``psynet.liveGame`` does nothing on such a page, so
+the script needs no check of its own, and the Next button lets them move on.
+
+The page then registers what happens when the game changes, what the status
+line says, and where to show the reason when the game rejects one of the
+player's messages:
+
+.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
+   :language: javascript
+   :start-at: psynet.liveGame.onChange(
+   :end-before: for (let button of buttons) {
+   :dedent:
+
+``onChange`` runs ``render`` whenever the game as the player sees it
+changes: each time a new view arrives, including the final view once the
+game is over, and, because the page also has a ``predict`` callback, as soon
+as the player chooses, with their choice already in the view. `Showing a
+choice at once`_ below explains why. ``showStatus`` keeps the status line up to date:
+it says the control's ``waiting_status``, here "Waiting for your partner to
+open the game", until the game starts, then what its callback returns for
+each view, and "The game is over." at the end. ``showRejections`` shows the
+reason for a rejected message in the element it's given, until the page
+sends its next message.
+
+Each button sends a ``Choose`` message when it's clicked, through the page's
+``choose`` function:
+
+.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
+   :language: javascript
+   :start-at: for (let button of buttons) {
+   :end-at: }
+   :dedent:
+
+.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
+   :language: javascript
+   :start-at: function choose(action) {
+   :end-before: // render runs whenever
+   :dedent:
+
+``current`` is the throw the latest view is on, which ``render`` keeps.
+
+``render`` draws the page from a view:
+
+.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
+   :language: javascript
+   :start-at: function render(view) {
+   :end-before: function choose(action) {
+   :dedent:
+
+The view holds every throw played so far, so a page that reloads draws the
+whole game again. ``describe``, defined above ``render`` in the file, puts a
+throw's result into words, and ``enableButtons`` enables or disables the
+three buttons. ``psynet.liveGame.playing`` says whether the game is being
+played: it has started, which it does once both pages have opened, and
+hasn't ended. The buttons are enabled only
+while it is, and the player hasn't chosen yet.
+
+Reference: :ref:`live-games-page`, :ref:`live-games-status` and
+:ref:`live-games-cases`.
+
+.. _live-game-tutorial-predict:
+
+Showing a choice at once
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Only the server changes the state, so a player's own move shows on their
+page only once the server has applied it and sent back a view: a round trip,
+usually a tenth of a second or so, and more on a slow connection. In a fast
+game, that lag is enough to feel. And a view caused by another player's move
+can arrive in between, which doesn't have the player's move yet, so drawn as
+it is, it would briefly undo the move.
+
+The page avoids both by telling ``psynet.liveGame`` what each of its
+messages will do to the view, with ``predict``. In a game on a board, where a ``move`` message
+gives the player's new square, that would be:
+
+.. code-block:: javascript
+
+    psynet.liveGame.predict((view, type, message) => {
+      if (type === "move") {
+        view.positions[psynet.liveGame.player] = message.to;
+      }
+    });
+
+The callback gets a copy of the newest view and changes it as the game will
+once it applies the message. From then on, ``onChange``'s callback gets the
+newest view with each of the page's messages that the game hasn't applied
+yet applied this way, and runs again after each ``send``, so the player's
+piece moves the moment they click. Once the game's own view
+with the move arrives, the prediction is no longer needed, and if the game
+rejects the move, the next view drops it.
+
+Rock, paper, scissors has the same problem in a small way. When both players
+choose at nearly the same moment, the view that the partner's choice caused
+can arrive first, and it says the player hasn't chosen, so the page would
+enable the buttons again for a moment. Its prediction marks the throw as
+chosen, for a choice in the throw the view is on:
+
+.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
+   :language: javascript
+   :start-at: psynet.liveGame.predict(
+   :end-before: function describe(
+   :dedent:
+
+Many games don't need this. The snake demo below draws each view as it
+arrives, since its snakes move only on the game's ticks anyway. Part 3 uses
+``predict`` to move the player's own piece on a canvas.
+
+Reference: :ref:`live-games-smooth-play`.
 
 Adding the game to the timeline
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -294,13 +417,13 @@ then shows each player their score:
   holds the page's elements, each with an ``id`` so that the JavaScript can
   find it, and its :class:`~psynet.live_game.LiveGameControl` connects the
   page to the game. ``js_page_modules`` lists the page's JavaScript, which
-  `The game page`_ below goes through.
+  `The game page`_ above went through.
 - On the next page, ``participant.live_games`` has the participant's record
   of the game, keyed by the game's ``name``. Its ``answer`` is what the
   game's ``answer`` returned for them, or ``None`` if the pair didn't start
   a game.
 
-Reference: :ref:`live-games-page`, including :ref:`the wait before the game
+Reference: :ref:`live-games-play`, including :ref:`the wait before the game
 <live-games-wait>`, and :ref:`live-games-record`.
 
 Playing it as trials
@@ -401,137 +524,6 @@ The rest of the timeline deals with a partner who doesn't come back:
      :dedent:
 
 Reference: :ref:`live-games-leaving` and :doc:`late_slow_and_leaving_players`.
-
-The game page
-~~~~~~~~~~~~~
-
-The page's JavaScript is in ``static/rock-paper-scissors.js``. It exports an
-``activate`` function, which PsyNet runs when the page opens
-(:doc:`/code/pages/custom_front_ends` explains page modules). Through
-``psynet.liveGame``, the function sends the player's messages and draws each
-view that arrives.
-
-It finds the page's elements and sets up the variables that the rest of the
-page uses:
-
-.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
-   :language: javascript
-   :start-at: export function activate
-   :end-before: function enableButtons(
-   :dedent:
-
-A participant reaches the game page without a game when their partner was
-late for it. PsyNet then shows them the control's ``no_game_message`` in a
-notice, and hides the game, which the page's prompt marks with
-``data_live_game=True``. ``psynet.liveGame`` does nothing on such a page, so
-the script needs no check of its own, and the Next button lets them move on.
-
-The page then registers what happens when the game changes, what the status
-line says, and where to show the reason when the game rejects one of the
-player's messages:
-
-.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
-   :language: javascript
-   :start-at: psynet.liveGame.onChange(
-   :end-before: for (let button of buttons) {
-   :dedent:
-
-``onChange`` runs ``render`` whenever the game as the player sees it
-changes: each time a new view arrives, including the final view once the
-game is over, and, because the page also has a ``predict`` callback, as soon
-as the player chooses, with their choice already in the view. `Showing a
-choice at once`_ below explains why. ``showStatus`` keeps the status line up to date:
-it says the control's ``waiting_status``, here "Waiting for your partner to
-open the game", until the game starts, then what its callback returns for
-each view, and "The game is over." at the end. ``showRejections`` shows the
-reason for a rejected message in the element it's given, until the page
-sends its next message.
-
-Each button sends a ``Choose`` message when it's clicked, through the page's
-``choose`` function:
-
-.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
-   :language: javascript
-   :start-at: for (let button of buttons) {
-   :end-at: }
-   :dedent:
-
-.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
-   :language: javascript
-   :start-at: function choose(action) {
-   :end-before: // render runs whenever
-   :dedent:
-
-``current`` is the throw the latest view is on, which ``render`` keeps.
-
-``render`` draws the page from a view:
-
-.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
-   :language: javascript
-   :start-at: function render(view) {
-   :end-before: function choose(action) {
-   :dedent:
-
-The view holds every throw played so far, so a page that reloads draws the
-whole game again. ``describe``, defined above ``render`` in the file, puts a
-throw's result into words, and ``enableButtons`` enables or disables the
-three buttons. ``psynet.liveGame.playing`` says whether the game is being
-played: it has started, which it does once both pages have opened (Part 2
-explains this ready step), and hasn't ended. The buttons are enabled only
-while it is, and the player hasn't chosen yet.
-
-Reference: :ref:`live-games-page`, :ref:`live-games-status` and
-:ref:`live-games-cases`.
-
-.. _live-game-tutorial-predict:
-
-Showing a choice at once
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-Only the server changes the state, so a player's own move shows on their
-page only once the server has applied it and sent back a view: a round trip,
-usually a tenth of a second or so, and more on a slow connection. In a fast
-game, that lag is enough to feel. And a view caused by another player's move
-can arrive in between, which doesn't have the player's move yet, so drawn as
-it is, it would briefly undo the move.
-
-The page avoids both by telling ``psynet.liveGame`` what each of its
-messages will do to the view, with ``predict``. In a game on a board, where a ``move`` message
-gives the player's new square, that would be:
-
-.. code-block:: javascript
-
-    psynet.liveGame.predict((view, type, message) => {
-      if (type === "move") {
-        view.positions[psynet.liveGame.player] = message.to;
-      }
-    });
-
-The callback gets a copy of the newest view and changes it as the game will
-once it applies the message. From then on, ``onChange``'s callback gets the
-newest view with each of the page's messages that the game hasn't applied
-yet applied this way, and runs again after each ``send``, so the player's
-piece moves the moment they click. Once the game's own view
-with the move arrives, the prediction is no longer needed, and if the game
-rejects the move, the next view drops it.
-
-Rock, paper, scissors has the same problem in a small way. When both players
-choose at nearly the same moment, the view that the partner's choice caused
-can arrive first, and it says the player hasn't chosen, so the page would
-enable the buttons again for a moment. Its prediction marks the throw as
-chosen, for a choice in the throw the view is on:
-
-.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
-   :language: javascript
-   :start-at: psynet.liveGame.predict(
-   :end-before: function describe(
-   :dedent:
-
-Many games don't need this. The snake demo below draws each view as it
-arrives, since its snakes move only on the game's ticks anyway. Part 3 uses
-``predict`` to move the player's own piece on a canvas.
-
-Reference: :ref:`live-games-smooth-play`.
 
 Part 2: Snake
 -------------
@@ -843,7 +835,7 @@ the experiment's data.
 Next steps
 ----------
 
-:doc:`live_games` describes everything a game can do, including what
+:doc:`The reference <live_games>` describes everything a game can do, including what
 happens when a player leaves, reloads, or opens the game in two tabs. The
 ``bargaining_live``, ``public_goods_live`` and ``microsociety_live`` demos
 show more: re-pairing players between games, results on the group's round,

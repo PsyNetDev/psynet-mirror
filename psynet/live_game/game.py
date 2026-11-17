@@ -65,8 +65,10 @@ class LiveGame(RealtimeGame):
     ``now`` in seconds since the game started. The state and each view are
     dicts that hold only plain data, such as lists, strings and numbers, so
     a game keeps what each player has in a list, in player order.
-    :doc:`/code/multiplayer/live_games` walks through a whole game, including
-    how the game starts and which values PsyNet converts to plain data.
+    :doc:`/code/multiplayer/live_game_tutorial` walks through whole games, and
+    :doc:`the reference </code/multiplayer/live_games>` covers the details,
+    such as how the game starts and which values PsyNet converts to plain
+    data.
 
     A game that players can join while it runs defines
     ``on_add(self, state, player, now)``, which makes room for a new

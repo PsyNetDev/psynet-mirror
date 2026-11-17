@@ -6,7 +6,8 @@ subclass for each kind of message its pages send. A
 :class:`PlayLiveGame` in the timeline starts a game for each
 group that reaches it, and its page, which has a :class:`LiveGameControl`,
 plays it. :doc:`/code/multiplayer/live_game_tutorial` walks through whole
-games, and :doc:`/code/multiplayer/live_games` is the reference.
+games, and :doc:`the reference </code/multiplayer/live_games>` covers the
+rest.
 """
 
 from dallinger.realtime import Reject

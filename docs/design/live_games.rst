@@ -246,4 +246,4 @@ What to check when reviewing live games
 .. seealso::
 
    :doc:`/code/multiplayer/live_game_tutorial` builds three of the demos step
-   by step, and :doc:`/code/multiplayer/live_games` is the reference.
+   by step, and :doc:`the reference </code/multiplayer/live_games>` is for looking things up.

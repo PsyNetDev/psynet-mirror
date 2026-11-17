@@ -1,20 +1,14 @@
 .. _live_games:
 
-==========
-Live games
-==========
+=====================
+Live games: reference
+=====================
 
-A live game is one that a group of participants play together in real time,
-such as a negotiation, a coordination game or a game on a shared board. The
-server keeps one state for the whole group, applies each player's messages
-to it in the order they arrive, and sends each player's page its own view of
-the game.
-
-This page is the reference, for looking things up rather than reading
-through. If you haven't built a live game before, start with
-:doc:`/design/live_games`, which explains how live games work and the ideas
-they're built from, and then the :doc:`tutorial <live_game_tutorial>`,
-which builds three demo games step by step and links to the sections here.
+This page is for looking things up rather than reading through. If you
+haven't built a live game before, read the :doc:`live games design page
+</design/live_games>` first, which explains how live games work and the ideas
+they're built from, and then the :doc:`tutorial <live_game_tutorial>`, which
+builds three demo games step by step and links to the sections here.
 
 A live game has three pieces:
 
@@ -28,14 +22,8 @@ A live game has three pieces:
    makes each group that reaches it wait for its members, starts a game for
    the group, and then shows them the game page.
 
-Words used on this page:
+The design page explains state, messages and views. This page also uses:
 
-state
-    The game's data on the server, a dict that the game's methods change.
-view
-    What a player's page is sent: what the game's ``view`` returns for that
-    player. Whatever isn't in a player's view never reaches their browser,
-    so the view is how a game keeps information private.
 outcome
     The game's result: what its ``outcome`` returns when the game ends.
 answer
@@ -168,10 +156,10 @@ of a set, whose list has no fixed order. A game with a very large
 state, such as a big grid, can save the time the conversion takes with
 :attr:`~psynet.live_game.LiveGame.convert_state_to_json`.
 
-.. _live-games-page:
+.. _live-games-play:
 
-Starting games and the game page
---------------------------------
+PlayLiveGame
+------------
 
 Put a :class:`~psynet.live_game.PlayLiveGame` after the
 :class:`~psynet.sync.Grouper` that forms the groups, and give it the game
@@ -202,7 +190,7 @@ game, and then shows the group the game page:
                     )
                 ),
                 LiveGameControl(),
-                js_page_modules=["/static/rock_paper_scissors.js"],
+                js_page_modules=["/static/rock-paper-scissors.js"],
                 time_estimate=30,
             ),
         ),
@@ -334,11 +322,48 @@ A trial played in a group needs a :class:`~psynet.sync.GroupBarrier` in its
 :attr:`~psynet.trial.main.Trial.live_game` is then the record of the game
 played in it, with the trial's participant's answer.
 
-The page's JavaScript goes in a file in the experiment's ``static`` folder,
+.. _live-games-ready:
+
+The ready step
+--------------
+
+Between the end of the wait and the start of the game, PsyNet waits a moment
+for the players' pages, so that a page that opens a little after the others
+doesn't miss the start. A game page says its player is ready by itself a
+moment after it opens, and a bot is ready at once. The game starts once every
+player is ready, or at the game's ``ready_timeout``, 60 seconds after the
+wait ended unless the game sets it, and players who aren't ready then can
+still join and play. If none of the players has opened the game page by
+then, the game ends instead, with the reason ``"not_joined"``. A player
+whose page closes before the game starts isn't ready any more, until the
+page reconnects.
+
+Until the game starts, it rejects messages with the reason ``"The game
+hasn't started yet."``, and its ``tick`` and ``bot`` don't run, so disable
+the page's controls with ``enableWhilePlaying`` (see `The game page`_), check
+``playing``, or wait for ``onStarted``. The game's clock, ``now`` in its
+methods, starts at 0 when the game starts, and the game's ``on_start`` runs
+then. The game's other methods can run before it starts: ``on_join``,
+``on_leave``, ``view``, ``is_over``, and ``outcome`` if the game ends before
+it starts.
+
+The messages that say a player is ready are PsyNet's, so a message's
+``apply`` never receives them. To show who is ready, read
+``state["psynet"]["ready"]`` from the view (see `PsyNet's entry in the
+state`_).
+
+.. _live-games-page:
+
+The game page
+-------------
+
+The game page is the ``ModularPage`` given to the ``PlayLiveGame``, with a
+:class:`~psynet.live_game.LiveGameControl`, as in the example under
+`PlayLiveGame`_. The page's JavaScript goes in a file in the experiment's ``static`` folder,
 listed in the page's ``js_page_modules``. It exports an ``activate``
 function, which PsyNet runs each time the page opens
 (:doc:`/code/pages/custom_front_ends` explains page modules).
-``static/rock_paper_scissors.js``:
+``static/rock-paper-scissors.js``:
 
 .. code-block:: javascript
 
@@ -650,6 +675,88 @@ game's result is saved, both tabs try to move on. One of them does,
 and in the other PsyNet asks the participant to close their other tabs
 and refresh the page.
 
+.. _live-games-time-limits:
+
+Time limits
+-----------
+
+Each of these limits ends a wait or a game when it runs out. The first is
+the ``PlayLiveGame``'s, and the others are the game's:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 20 55
+
+   * - Setting
+     - Default
+     - When it runs out
+   * - ``late_after`` or ``max_wait_time``, of the ``PlayLiveGame``
+     - None: one is needed
+     - The wait for the group's members ends. With ``late_after``, a member
+       still keeping the others waiting is late and leaves the group; with
+       ``max_wait_time``, a member who has waited that long leaves it (see
+       `PlayLiveGame`_).
+   * - ``ready_timeout``
+     - 60 seconds after the wait
+     - The game starts without the players who aren't ready yet, or ends
+       with the reason ``"not_joined"`` if none of them has opened the game
+       page (see `The ready step`_).
+   * - ``duration``
+     - ``None``
+     - The game ends with the reason ``"finished"``.
+   * - ``timeout``
+     - 600 seconds after the start
+     - A game without a ``duration`` that hasn't ended by itself ends with
+       the reason ``"timeout"``.
+   * - ``away_timeout``
+     - 60 seconds
+     - A player who has been away that long is gone, and once fewer than
+       ``min_players`` players aren't, the game ends with the reason
+       ``"players_left"`` (see `Joining and leaving`_).
+
+A game that lasts a fixed time sets ``duration``, in seconds. PsyNet runs
+the game's ``tick`` at the end, if it has one, and then ends the game with
+the reason ``"finished"``, unless the game's ``is_over`` ended it earlier.
+Messages that arrive from then on are rejected with the reason ``"The
+game's time is up."``. The page shows the time left with
+``psynet.liveGame.onTimeLeft``, which gets the seconds left, 0 once the game
+has ended, and ``psynet.liveGame.duration``:
+
+.. code-block:: javascript
+
+    psynet.liveGame.onTimeLeft((left) => {
+      bar.style.width = `${(left / psynet.liveGame.duration) * 100}%`;
+    });
+
+A game that ends by itself, through its ``is_over``, has a ``timeout``
+instead, in case it doesn't end: participants can't leave the game page until
+the game ends. A game still running ``timeout`` seconds after it started
+ends with the reason ``"timeout"``, and rejects messages from then on.
+``timeout = None`` removes the limit, so set it only if the game always
+ends by itself, even when players leave. A game
+with a ``duration`` ends then, so its ``timeout`` doesn't apply.
+
+For other deadlines, such as one for each move, a game returns the next one,
+in seconds since the game started, from ``next_deadline``. Its ``tick`` runs
+at each one, and at the end of its ``duration``. A tick that runs late gets
+the end as ``now``, so a game that counts things on a schedule, such as
+catches every few seconds, counts none after the end.
+
+If a game is still running more than a minute after it should have ended,
+for example because the worker that runs the experiment's games has stopped,
+its game page stops waiting: the participant sees PsyNet's error page, and a
+bot fails with an error that names the game.
+
+The game page also stops a later :class:`~psynet.sync.GroupBarrier` from
+counting a player who is still in the game as late. ``late_after`` counts from
+the group's previous barrier, which is usually the barrier of a
+``PlayLiveGame``, so it would otherwise include the whole game. Instead, as
+for a page with a ``time_limit``, it counts from when the game page ends: at
+first the latest the game could end, plus a minute, and once the game's
+result is saved, when the game actually ended, plus the control's
+``show_result_for``. So ``late_after`` needs to cover only the pages after the
+game.
+
 .. _live-games-join-and-finish:
 
 Players who join or finish during the game
@@ -759,138 +866,6 @@ every player is done.
 ``game.add(now=10)`` adds a player and returns their number, and
 ``game.is_done(player)`` asks the game's ``is_done``.
 
-.. _live-games-ready:
-
-The ready step
---------------
-
-Between the end of the wait and the start of the game, PsyNet waits a moment
-for the players' pages, so that a page that opens a little after the others
-doesn't miss the start. A game page says its player is ready by itself a
-moment after it opens, and a bot is ready at once. The game starts once every
-player is ready, or at the game's ``ready_timeout``, 60 seconds after the
-wait ended unless the game sets it, and players who aren't ready then can
-still join and play. If none of the players has opened the game page by
-then, the game ends instead, with the reason ``"not_joined"``. A player
-whose page closes before the game starts isn't ready any more, until the
-page reconnects.
-
-Until the game starts, it rejects messages with the reason ``"The game
-hasn't started yet."``, and its ``tick`` and ``bot`` don't run, so disable
-the page's controls with ``enableWhilePlaying``, as above, check
-``playing``, or wait for ``onStarted``. The game's clock, ``now`` in its
-methods, starts at 0 when the game starts, and the game's ``on_start`` runs
-then. The game's other methods can run before it starts: ``on_join``,
-``on_leave``, ``view``, ``is_over``, and ``outcome`` if the game ends before
-it starts.
-
-The messages that say a player is ready are PsyNet's, so a message's
-``apply`` never receives them. To show who is ready, read
-``state["psynet"]["ready"]`` from the view (see `PsyNet's entry in the
-state`_).
-
-.. _live-games-time-limits:
-
-Time limits
------------
-
-Each of these limits ends a wait or a game when it runs out. The first is
-the ``PlayLiveGame``'s, and the others are the game's:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 25 20 55
-
-   * - Setting
-     - Default
-     - When it runs out
-   * - ``late_after`` or ``max_wait_time``, of the ``PlayLiveGame``
-     - None: one is needed
-     - The wait for the group's members ends. With ``late_after``, a member
-       still keeping the others waiting is late and leaves the group; with
-       ``max_wait_time``, a member who has waited that long leaves it (see
-       `Starting games and the game page`_).
-   * - ``ready_timeout``
-     - 60 seconds after the wait
-     - The game starts without the players who aren't ready yet, or ends
-       with the reason ``"not_joined"`` if none of them has opened the game
-       page (see `The ready step`_).
-   * - ``duration``
-     - ``None``
-     - The game ends with the reason ``"finished"``.
-   * - ``timeout``
-     - 600 seconds after the start
-     - A game without a ``duration`` that hasn't ended by itself ends with
-       the reason ``"timeout"``.
-   * - ``away_timeout``
-     - 60 seconds
-     - A player who has been away that long is gone, and once fewer than
-       ``min_players`` players aren't, the game ends with the reason
-       ``"players_left"`` (see `Joining and leaving`_).
-
-A game that lasts a fixed time sets ``duration``, in seconds. PsyNet runs
-the game's ``tick`` at the end, if it has one, and then ends the game with
-the reason ``"finished"``, unless the game's ``is_over`` ended it earlier.
-Messages that arrive from then on are rejected with the reason ``"The
-game's time is up."``. The page shows the time left with
-``psynet.liveGame.onTimeLeft``, which gets the seconds left, 0 once the game
-has ended, and ``psynet.liveGame.duration``:
-
-.. code-block:: javascript
-
-    psynet.liveGame.onTimeLeft((left) => {
-      bar.style.width = `${(left / psynet.liveGame.duration) * 100}%`;
-    });
-
-A game that ends by itself, through its ``is_over``, has a ``timeout``
-instead, in case it doesn't end: participants can't leave the game page until
-the game ends. A game still running ``timeout`` seconds after it started
-ends with the reason ``"timeout"``, and rejects messages from then on.
-``timeout = None`` removes the limit, so set it only if the game always
-ends by itself, even when players leave. A game
-with a ``duration`` ends then, so its ``timeout`` doesn't apply.
-
-For other deadlines, such as one for each move, a game returns the next one,
-in seconds since the game started, from ``next_deadline``. Its ``tick`` runs
-at each one, and at the end of its ``duration``. A tick that runs late gets
-the end as ``now``, so a game that counts things on a schedule, such as
-catches every few seconds, counts none after the end.
-
-If a game is still running more than a minute after it should have ended,
-for example because the worker that runs the experiment's games has stopped,
-its game page stops waiting: the participant sees PsyNet's error page, and a
-bot fails with an error that names the game.
-
-The game page also stops a later :class:`~psynet.sync.GroupBarrier` from
-counting a player who is still in the game as late. ``late_after`` counts from
-the group's previous barrier, which is usually the barrier of a
-``PlayLiveGame``, so it would otherwise include the whole game. Instead, as
-for a page with a ``time_limit``, it counts from when the game page ends: at
-first the latest the game could end, plus a minute, and once the game's
-result is saved, when the game actually ended, plus the control's
-``show_result_for``. So ``late_after`` needs to cover only the pages after the
-game.
-
-PsyNet's entry in the state
----------------------------
-
-PsyNet keeps its own record of the game in ``state["psynet"]``, and adds
-the same entry to each view. Don't use the name ``psynet`` for anything else
-in the state or a view. The parts a game can use are:
-
-- ``participant_ids``, each player's participant id, in player order,
-  including players added while the game runs. It is in the state only, not
-  in views.
-- ``ready``, the numbers of the players who are ready
-- ``away``, the numbers of the players who have left the game page and not
-  come back. A player who hasn't opened it yet isn't in it.
-- in a view, ``you``, the number of the player it's for, which the page
-  reads as ``psynet.liveGame.player``
-
-The entry's other parts, such as ``started_at``, are PsyNet's timekeeping,
-on Dallinger's clock rather than the game's. Use ``now`` and the page's
-``gameTime()`` instead.
-
 .. _live-games-answer:
 
 The answer
@@ -921,8 +896,7 @@ Results that belong to the whole group, such as a team's total, stay in the
 outcome. The ``rock_paper_scissors_live``, ``snake_live`` and
 ``shared_canvas_live`` demos each define an ``answer``.
 
-When the game is played as a trial (see `Starting games and the game
-page`_), PsyNet copies the outcome to the round the game was played in once
+When the game is played as a trial (see `PlayLiveGame`_), PsyNet copies the outcome to the round the game was played in once
 the game's result is saved, so a trial and later pages read the whole
 group's outcome from the trial's record of its game, with no need for another
 barrier after the game page to score the round:
@@ -1217,6 +1191,26 @@ deployed experiment uses. The development server that ``psynet debug local``
 runs by default sometimes delivers the game's views late, in bursts, so other
 players' movement stalls or jumps, which looks like a problem with the game
 when it isn't. ``psynet debug local`` warns about this when it starts.
+
+PsyNet's entry in the state
+---------------------------
+
+PsyNet keeps its own record of the game in ``state["psynet"]``, and adds
+the same entry to each view. Don't use the name ``psynet`` for anything else
+in the state or a view. The parts a game can use are:
+
+- ``participant_ids``, each player's participant id, in player order,
+  including players added while the game runs. It is in the state only, not
+  in views.
+- ``ready``, the numbers of the players who are ready
+- ``away``, the numbers of the players who have left the game page and not
+  come back. A player who hasn't opened it yet isn't in it.
+- in a view, ``you``, the number of the player it's for, which the page
+  reads as ``psynet.liveGame.player``
+
+The entry's other parts, such as ``started_at``, are PsyNet's timekeeping,
+on Dallinger's clock rather than the game's. Use ``now`` and the page's
+``gameTime()`` instead.
 
 .. _dallinger-realtime-games: https://dallinger.readthedocs.io/latest/realtime_games.html
 .. _dallinger-realtime-api: https://dallinger.readthedocs.io/latest/realtime_games.html#api-reference
