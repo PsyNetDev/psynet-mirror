@@ -234,7 +234,7 @@ export function activate({root, psynet}) {
   let resize = () => view && render({instant: true});
   window.addEventListener("resize", resize);
 
-  live.onView(() => render());
+  live.onChange(() => render());
   // Once the member's time ends, the page counts their catch until their
   // result is saved, and then shows why they left.
   live.showStatus(status, () => "", {

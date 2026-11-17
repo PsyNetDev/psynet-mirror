@@ -56,10 +56,10 @@ export function activate({root, psynet}) {
     psynet.liveGame.send("choose", {throw: current, action: action});
   }
 
-  // With the predict callback above, each view includes the player's own
-  // choices that the game hasn't applied yet, and render runs again after
-  // each send.
-  psynet.liveGame.onView(render);
+  // render runs whenever the game as this player sees it changes. With the
+  // predict callback above, that includes their own choice, as soon as they
+  // send it.
+  psynet.liveGame.onChange(render);
   psynet.liveGame.showStatus(status, (view) =>
     view.chosen
       ? "Waiting for your partner to choose"

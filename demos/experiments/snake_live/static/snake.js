@@ -105,7 +105,7 @@ export function activate({ root, vars, psynet }) {
 
   // The game moves every snake on its ticks, and each tick's view shows the
   // whole board, so the page draws each view as it arrives.
-  live.onView((view) => {
+  live.onChange((view) => {
     latest = view;
     draw(context, rules, view, live.player);
     showScores(view);

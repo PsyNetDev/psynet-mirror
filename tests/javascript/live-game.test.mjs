@@ -155,7 +155,7 @@ afterEach(() => {
 describe("psynet.liveGame", () => {
   it("joins the page's game once, scoped by the participant's scope and page load", () => {
     assert.equal(sockets.length, 0);
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     liveGame.send("pick", { number: 7 });
     assert.equal(sockets.length, 1);
     assert.deepEqual(plain(sockets[0].options), {
@@ -260,11 +260,11 @@ describe("psynet.liveGame", () => {
     assert.deepEqual([pick.disabled, pass.disabled, late.disabled], [true, true, true]);
   });
 
-  it("says whether the game has started, up to date in onView, without joining", () => {
+  it("says whether the game has started, up to date in onChange, without joining", () => {
     assert.equal(liveGame.started, false);
     assert.equal(sockets.length, 0);
     const seen = [];
-    liveGame.onView(() => seen.push(liveGame.started));
+    liveGame.onChange(() => seen.push(liveGame.started));
     sockets[0].view(view(null));
     sockets[0].view(view(4));
     assert.deepEqual(seen, [false, true]);
@@ -278,7 +278,7 @@ describe("psynet.liveGame", () => {
     assert.equal(liveGame.playing, false);
     assert.equal(sockets.length, 0);
     const seen = [];
-    liveGame.onView(() => seen.push(liveGame.playing));
+    liveGame.onChange(() => seen.push(liveGame.playing));
     sockets[0].view(view(null));
     sockets[0].view(view(4));
     sockets[0].view(view(4), "finished");
@@ -287,7 +287,7 @@ describe("psynet.liveGame", () => {
   });
 
   it("gives the game time, on the same clock as the game's now", () => {
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     sockets[0].time = 30;
     assert.equal(liveGame.gameTime(), null);
     sockets[0].view(view(4));
@@ -298,7 +298,7 @@ describe("psynet.liveGame", () => {
   });
 
   it("moves on once the result is saved, or the connection is refused", () => {
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     sockets[0].fire("onResultSaved");
     assert.equal(nextPages, 1);
     sockets[0].fire("onRefused", 1008, "Gone");
@@ -306,7 +306,7 @@ describe("psynet.liveGame", () => {
 
     changePage();
     session = { ...session, autoAdvance: false };
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     sockets[1].fire("onResultSaved");
     sockets[1].fire("onRefused", 1008, "Gone");
     assert.equal(nextPages, 2);
@@ -318,7 +318,7 @@ describe("psynet.liveGame", () => {
     mock.timers.enable({ apis: ["setTimeout"] });
     session = { ...session, showResultFor: 8 };
     assert.equal(liveGame.showResultFor, 8);
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     sockets[0].fire("onResultSaved");
     mock.timers.tick(7999);
     assert.equal(nextPages, 0);
@@ -327,7 +327,7 @@ describe("psynet.liveGame", () => {
 
     // A page that has gone doesn't move the next one on.
     changePage();
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     sockets[1].fire("onResultSaved");
     changePage();
     mock.timers.tick(8000);
@@ -335,7 +335,7 @@ describe("psynet.liveGame", () => {
   });
 
   it("counts down to the end of a game with a duration", () => {
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     assert.equal(liveGame.secondsLeft(), null);
     sockets[0].view(view(5, [], 45, 40));
     assert.equal(liveGame.duration, 40);
@@ -381,7 +381,7 @@ describe("psynet.liveGame", () => {
 
   it("shows the Next button again once the connection has been down for ten seconds", () => {
     mock.timers.enable({ apis: ["setTimeout", "Date"] });
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     // Hidden from the start, for ten seconds even if it never connects.
     assert.deepEqual(nextButtonHidden, [true]);
     mock.timers.tick(9999);
@@ -407,7 +407,7 @@ describe("psynet.liveGame", () => {
     mock.timers.tick(60000);
     assert.deepEqual(nextButtonHidden, [true, true, false, true]);
     // or up.
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     sockets[1].raw.dispatchEvent(new Event("open"));
     const shown = nextButtonHidden.length;
     changePage();
@@ -418,7 +418,7 @@ describe("psynet.liveGame", () => {
 
   it("waits for the page to be ready before moving on, on that page only", () => {
     pageReady = false;
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     sockets[0].fire("onResultSaved");
     assert.equal(nextPages, 0);
     events.dispatchEvent(new Event("timelinePageReady"));
@@ -489,7 +489,7 @@ describe("psynet.liveGame", () => {
     assert.equal(hiddenGames, 1);
     const button = { disabled: false };
     const status = { textContent: "" };
-    assert.equal(liveGame.onView(() => assert.fail("no views")), liveGame);
+    assert.equal(liveGame.onChange(() => assert.fail("no views")), liveGame);
     assert.equal(liveGame.showStatus(status, () => "Playing"), liveGame);
     assert.equal(liveGame.enableWhilePlaying(button), liveGame);
     assert.equal(liveGame.send("pick", { number: 7 }), undefined);
@@ -551,29 +551,30 @@ describe("psynet.liveGame", () => {
     assert.equal(deal.textContent, "You made a deal.");
   });
 
-  it("gives onView the predicted view, and again after each send", () => {
+  it("gives onChange the predicted view, and again after each send", () => {
     changePage();
-    const seen = [];
-    liveGame.onView((v, details) => seen.push([v.chosen, details]));
+    const changes = [];
+    const received = [];
+    liveGame.onChange((v) => changes.push(v.chosen));
+    liveGame.onReceive((v, details) => received.push([v.chosen, details]));
     liveGame.send("choose", {});
-    // No view yet, so nothing to draw.
-    assert.deepEqual(seen, []);
+    // No view yet, so nothing has changed.
+    assert.deepEqual(changes, []);
     liveGame.predict(() => {});
     let chosen = false;
     sockets[0].predictedView = () => ({ ...view(4), chosen: chosen });
     sockets[0].view({ ...view(4), chosen: false });
     chosen = true;
     liveGame.send("choose", {});
-    assert.deepEqual(plain(seen), [
-      [false, { ended: null }],
-      [true, null],
-    ]);
+    assert.deepEqual(changes, [false, true]);
+    // onReceive gets only the game's views, as they came.
+    assert.deepEqual(plain(received), [[false, { ended: null }]]);
   });
 
-  it("gives onView the view itself without a predict callback", () => {
+  it("gives onChange the view itself without a predict callback", () => {
     changePage();
     const seen = [];
-    liveGame.onView((v) => seen.push(v.n));
+    liveGame.onChange((v) => seen.push(v.n));
     sockets[0].view({ ...view(4), n: 1 });
     liveGame.send("choose", {});
     assert.deepEqual(seen, [1]);
@@ -581,7 +582,7 @@ describe("psynet.liveGame", () => {
 
   it("passes on the final view, with ended up to date, and no view after it", () => {
     const seen = [];
-    liveGame.onView((v, details) => seen.push([v.n, liveGame.ended, details]));
+    liveGame.onReceive((v, details) => seen.push([v.n, liveGame.ended, details]));
     sockets[0].view({ ...view(4), n: 1 });
     sockets[0].view({ ...view(4), n: 2 }, "finished");
     sockets[0].view({ ...view(4), n: 3 });
@@ -595,9 +596,9 @@ describe("psynet.liveGame", () => {
     assert.equal(liveGame.ended, false);
   });
 
-  it("passes the final view that comes with the ending to onView, before onEnded", () => {
+  it("passes the final view that comes with the ending to onReceive, before onEnded", () => {
     const seen = [];
-    liveGame.onView((v, details) => seen.push(["view", v === null ? null : v.n, details]));
+    liveGame.onReceive((v, details) => seen.push(["view", v === null ? null : v.n, details]));
     liveGame.onEnded((reason, v) => seen.push(["ended", reason, v === null ? null : v.n]));
     sockets[0].fire("onEnded", "finished", { ...view(4), n: 5 });
     sockets[0].view({ ...view(4), n: 5 }, "finished");
@@ -609,7 +610,7 @@ describe("psynet.liveGame", () => {
     // A failed game's final view is null, so the page keeps its last view.
     changePage();
     seen.length = 0;
-    liveGame.onView((v, details) => seen.push(["view", v.n, details]));
+    liveGame.onReceive((v, details) => seen.push(["view", v.n, details]));
     liveGame.onEnded((reason, v) => seen.push(["ended", reason, v.n]));
     sockets[1].view({ ...view(4), n: 6 });
     sockets[1].fire("onEnded", "failed", null);
@@ -632,7 +633,7 @@ describe("psynet.liveGame", () => {
 
     // Nor on a page that played, then adds the callback after the end.
     changePage();
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     sockets[1].view(view(4));
     sockets[1].view(view(4), "finished");
     const afterTheEnd = { disabled: false };
@@ -642,7 +643,7 @@ describe("psynet.liveGame", () => {
 
   it("logs the error of a callback added while players are away", () => {
     mock.timers.enable({ apis: ["setTimeout", "Date"] });
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     sockets[0].view(view(4, ["2"]));
     mock.timers.tick(5000);
     liveGame.onPlayersAway(() => {
@@ -686,7 +687,7 @@ describe("psynet.liveGame", () => {
 
   it("tells a callback added later who is away at once", () => {
     mock.timers.enable({ apis: ["setTimeout", "Date"] });
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     sockets[0].view(view(4, ["2"]));
     mock.timers.tick(5000);
     const reports = [];
@@ -743,7 +744,7 @@ describe("psynet.liveGame", () => {
     assert.deepEqual(plain(liveGame.predictedView()), { chosen: true });
 
     changePage();
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     const unchanged = { chosen: false, ...view(null) };
     assert.equal(sockets[1].options.predict(unchanged, { type: "choose", message: {} }), unchanged);
   });
@@ -770,7 +771,7 @@ describe("psynet.liveGame", () => {
     assert.deepEqual(plain(liveGame.interpolatedView()), { x: 4 });
 
     changePage();
-    liveGame.onView(() => {});
+    liveGame.onChange(() => {});
     assert.equal(sockets[1].options.interpolate(a, b, 0.5), b);
     assert.throws(() => liveGame.interpolatedView(), /interpolate's callback/);
   });

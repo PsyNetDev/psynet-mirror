@@ -63,7 +63,7 @@ export function activate({root, psynet}) {
   live.onTimeLeft((left) => {
     timeLeft.style.width = `${(left / live.duration) * 100}%`;
   });
-  live.onView(render);
+  live.onChange(render);
   live.showStatus(status, () => "", { ended: "Time's up." });
   live.showRejections(rejection);
   slider.addEventListener("input", () => {

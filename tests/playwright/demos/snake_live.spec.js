@@ -28,7 +28,7 @@ function watchViews(page) {
   return page.evaluate(
     () =>
       new Promise((resolve) => {
-        psynet.liveGame.onView((view) => {
+        psynet.liveGame.onChange((view) => {
           window.latestView = view;
           resolve();
         });

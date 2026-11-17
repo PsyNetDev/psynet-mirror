@@ -203,7 +203,8 @@
         ended: false,
         predict: null,
         interpolate: null,
-        viewCallbacks: [],
+        receiveCallbacks: [],
+        changeCallbacks: [],
         awayCallbacks: [],
         connectionTimer: null,
         moveOnTimer: null,
@@ -259,8 +260,9 @@
         callEach(state.startedCallbacks.splice(0), view);
       }
       state.player = view.psynet.you;
-      if (state.viewCallbacks.length > 0) {
-        callEach(state.viewCallbacks, shownView(state, view), details);
+      callEach(state.receiveCallbacks, view, details);
+      if (state.changeCallbacks.length > 0) {
+        callEach(state.changeCallbacks, shownView(state, view));
       }
       callEach(state.statusCallbacks);
       if (state.ended) {
@@ -448,21 +450,21 @@
       let state = pageState();
       if (number !== undefined) {
         state.rejectionElements.forEach((element) => (element.textContent = ""));
-        // Pages drawn from the predicted view show the message at once.
+        // The game as the page sees it now includes the message.
         if (
           state.predict !== null &&
           state.lastView !== null &&
-          state.viewCallbacks.length > 0
+          state.changeCallbacks.length > 0
         ) {
-          callEach(state.viewCallbacks, shownView(state, state.lastView), null);
+          callEach(state.changeCallbacks, shownView(state, state.lastView));
         }
         callEach(state.statusCallbacks);
       }
       return number;
     }
 
-    // The view onView's callbacks get: with a predict callback, the
-    // predicted view, so a page draws the player's own messages at once.
+    // The view onChange's callbacks get: with a predict callback, the
+    // predicted view, so a page shows the player's own messages at once.
     function shownView(state, view) {
       if (state.predict === null) {
         return view;
@@ -583,34 +585,50 @@
     }
 
     /**
-     * Call ``callback`` with each new view of the game, what the game's
-     * ``view`` returns for this player, starting when the page joins and
-     * ending with the final view. Once the game has ended, ``ended`` is
-     * ``true``, and no more views come. A page that opens after the game
-     * has ended gets just the final view. Its ``psynet`` says who is
-     * ready and who has left.
+     * Call ``callback`` with the game as this player sees it, whenever that
+     * changes: with each new view, starting when the page joins and ending
+     * with the final view, and, with a ``predict`` callback, after each
+     * ``send``, with the message's prediction applied. Update the page
+     * here: what it shows, which controls work, and any state the page
+     * keeps from the view. Once the game has ended, ``ended`` is ``true``,
+     * and no more views come. A page that opens after the game has ended
+     * gets just the final view. The view's ``psynet`` says who is ready and
+     * who has left.
      *
      * If the game failed, the page keeps the view it had, which comes again
      * with ``ended`` set. A page that opens after its game failed gets no
-     * view, so ``onView`` doesn't run there.
+     * view, so ``onChange`` doesn't run there.
      *
-     * With a ``predict`` callback, the callback gets the predicted view
-     * instead, with the page's messages that the game hasn't applied yet
-     * applied, and it runs again after each ``send``, so the page draws the
-     * player's own moves at once.
+     * @example
+     * psynet.liveGame.onChange((view) => {
+     *   score.textContent = `Score: ${view.score}`;
+     * });
      *
-     * The callback's second argument is the view's details, which
-     * Dallinger's ``Socket.onView`` describes. It is ``null`` for a final
-     * view that came with the ending, and when the callback runs again
-     * after ``send``, so check ``ended`` and not ``details.ended``.
+     * @param {function} callback - Called with the view
+     * @returns {Object} ``psynet.liveGame``
+     */
+    function onChange(callback) {
+      pageSocket();
+      pageState().changeCallbacks.push(callback);
+      return api;
+    }
+
+    /**
+     * Call ``callback`` with each view as the game sends it, without the
+     * page's predictions, and its details, which Dallinger's
+     * ``Socket.onView`` describes. Most pages need ``onChange`` instead;
+     * this is for code that reacts to the views arriving, such as a
+     * measure of how far behind the page is. The details are ``null`` for a
+     * final view that came with the ending, so check ``ended`` and not
+     * ``details.ended``.
      *
      * @param {function} callback - Called with each view, and its details,
      *   which can be ``null``
      * @returns {Object} ``psynet.liveGame``
      */
-    function onView(callback) {
+    function onReceive(callback) {
       pageSocket();
-      pageState().viewCallbacks.push(callback);
+      pageState().receiveCallbacks.push(callback);
       return api;
     }
 
@@ -675,7 +693,7 @@
     /**
      * Return the newest view, with the page's messages that the game hasn't
      * applied yet applied by ``predict``'s callback, in the order they were
-     * sent. ``onView`` already gets it, and runs again after ``send``, so
+     * sent. ``onChange`` already gets it, and runs again after ``send``, so
      * call this only to draw at other times, such as in an animation loop.
      * A message the game rejects is
      * undone by the next view. Before the first view it's ``null``, and once
@@ -813,7 +831,7 @@
       /**
        * Whether the page has had a view from after the game started
        * and before it ended, so it stays ``false`` on a page that opens
-       * after the end. Check ``ended`` first. ``onView``'s callbacks see it
+       * after the end. Check ``ended`` first. ``onChange``'s callbacks see it
        * already updated for the view they get. Reading it doesn't join the
        * game.
        *
@@ -826,7 +844,7 @@
        * Whether this player's game has ended, so the page gets no more
        * views and the game ignores its messages. That's when the game
        * ends, or before, when the game's ``is_done`` says the player is
-       * done. ``onView``'s callbacks see it already updated for the
+       * done. ``onChange``'s callbacks see it already updated for the
        * final view. Reading it doesn't join the game.
        *
        * @member {boolean} ended
@@ -879,7 +897,8 @@
       onTimeLeft: onTimeLeft,
       onStarted: onStarted,
       enableWhilePlaying: enableWhilePlaying,
-      onView: onView,
+      onChange: onChange,
+      onReceive: onReceive,
       onPlayersAway: onPlayersAway,
       predict: predict,
       predictedView: predictedView,

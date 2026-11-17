@@ -362,9 +362,11 @@ function, which PsyNet runs each time the page opens
 
 Showing the game:
 
-- ``onView(callback)`` calls ``callback`` with each new view, ending with
-  the final view. With a ``predict`` callback, it gets the predicted view,
-  and runs again after each ``send``.
+- ``onChange(callback)`` calls ``callback`` with the game as the player sees
+  it, whenever that changes: with each new view, ending with the final view,
+  and, with a ``predict`` callback, after each ``send``, with the move
+  predicted. Update the page here: what it shows, which controls work, and
+  any state the page keeps from the view.
 - ``showStatus(element, playing)`` keeps a status line up to date (see `The
   status line`_).
 - ``enableWhilePlaying(...elements)`` enables buttons and other elements
@@ -413,9 +415,15 @@ At the end, and when players leave:
 - ``onPlayersAway(callback)`` calls ``callback`` with the numbers of the
   players who have left the game page (see `Joining and leaving`_).
 
-And ``socket`` is the page's Dallinger socket, such as for ``serverTime``.
+Anything else:
 
-In ``onView``, ``started``, ``ended`` and ``playing`` are already up to date
+- ``onReceive(callback)`` calls ``callback`` with each view as the game sends
+  it, without predictions, and Dallinger's details of it. Few pages need it:
+  it's for code that reacts to the views arriving, such as a measure of how
+  far behind the page is.
+- ``socket`` is the page's Dallinger socket, such as for ``serverTime``.
+
+In ``onChange``, ``started``, ``ended`` and ``playing`` are already up to date
 for the view. On a page that opens after the end, ``started`` stays
 ``false``, so check ``ended`` first, and the page gets just the final view
 and ``onEnded``, not ``onStarted``. ``player`` is set from the page's first
@@ -467,10 +475,10 @@ player's move yet, so the page would briefly undo it, such as by enabling
 buttons the player has just used. ``predict`` fixes both. Its callback
 changes a view as the game will once it applies one of the page's messages,
 and ``predictedView()`` returns the newest view with each message the game
-hasn't applied yet applied by the callback. With a ``predict`` callback,
-``onView`` gets this predicted view instead of the game's own, and runs again
-after each ``send``, so a page that draws in ``onView`` shows the player's
-moves at once. In a game on a board:
+hasn't applied yet applied by the callback. ``onChange`` then gets this
+predicted view, and runs again after each ``send``, so a page that updates
+itself in ``onChange`` shows the player's moves at once. In a game on a
+board:
 
 .. code-block:: javascript
 
@@ -480,7 +488,7 @@ moves at once. In a game on a board:
       }
     });
 
-    psynet.liveGame.onView(draw);  // draws the predicted view
+    psynet.liveGame.onChange(draw);  // gets the predicted view
 
 The callback gets a copy of the view, so it can change it, and runs again
 for each new view until the game has applied the message. A fourth argument,
@@ -530,7 +538,7 @@ Joining in time
 ~~~~~~~~~~~~~~~
 
 The page joins the game when its JavaScript first uses
-``psynet.liveGame``, so call ``onView`` or ``showStatus`` in ``activate``.
+``psynet.liveGame``, so call ``onChange`` or ``showStatus`` in ``activate``.
 If none of the group has opened the page by the game's ``ready_timeout``,
 60 seconds after the wait ends unless the game sets it, the game ends with
 the reason ``"not_joined"`` (see `The ready step`_).
@@ -552,7 +560,7 @@ each player finish before the others (see `Players who join or finish
 during the game`_). Their answer and reward are then worked out from the
 outcome and saved, which this page calls the player's result.
 
-``onView`` gets the final view with ``ended`` set, and ``onEnded`` runs,
+``onChange`` gets the final view with ``ended`` set, and ``onEnded`` runs,
 and the game ignores any message sent after that. If the game fails, its
 pages keep the view they had, which comes again with ``ended`` set, and a
 page that opens after its game failed gets no view.

@@ -73,7 +73,7 @@ export function activate({root, psynet}) {
   live.onTimeLeft((left) => {
     timeLeft.style.width = `${(left / live.duration) * 100}%`;
   });
-  live.onView(render);
+  live.onChange(render);
   live.showStatus(status, () => "Propose a split, or accept your partner's.", {
     ended: (final) => (final.deal !== null ? "You made a deal." : "Time's up: no deal."),
   });

@@ -444,21 +444,21 @@ notice, and hides the game, which the page's prompt marks with
 ``data_live_game=True``. ``psynet.liveGame`` does nothing on such a page, so
 the script needs no check of its own, and the Next button lets them move on.
 
-The page then registers what happens when a view arrives, what the status
+The page then registers what happens when the game changes, what the status
 line says, and where to show the reason when the game rejects one of the
 player's messages:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
    :language: javascript
-   :start-at: psynet.liveGame.onView(
+   :start-at: psynet.liveGame.onChange(
    :end-before: for (let button of buttons) {
    :dedent:
 
-``onView`` runs ``render`` each time a new view arrives, including the
-final view once the game is over. (The page also has a ``predict`` callback,
-so ``render`` gets the view with the player's latest choice already in it,
-and runs again after each choice; `Showing a choice at once`_ below explains
-why.) ``showStatus`` keeps the status line up to date:
+``onChange`` runs ``render`` whenever the game as the player sees it
+changes: each time a new view arrives, including the final view once the
+game is over, and, because the page also has a ``predict`` callback, as soon
+as the player chooses, with their choice already in the view. `Showing a
+choice at once`_ below explains why. ``showStatus`` keeps the status line up to date:
 it says the control's ``waiting_status``, here "Waiting for your partner to
 open the game", until the game starts, then what its callback returns for
 each view, and "The game is over." at the end. ``showRejections`` shows the
@@ -477,7 +477,7 @@ Each button sends a ``Choose`` message when it's clicked, through the page's
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/static/rock-paper-scissors.js
    :language: javascript
    :start-at: function choose(action) {
-   :end-before: // With the predict callback above
+   :end-before: // render runs whenever
    :dedent:
 
 ``current`` is the throw the latest view is on, which ``render`` keeps.
@@ -526,7 +526,7 @@ gives the player's new square, that would be:
     });
 
 The callback gets a copy of the newest view and changes it as the game will
-once it applies the message. From then on, ``onView``'s callback gets the
+once it applies the message. From then on, ``onChange``'s callback gets the
 newest view with each of the page's messages that the game hasn't applied
 yet applied this way, and runs again after each ``send``, so the player's
 piece moves the moment they click. Once the game's own view

@@ -5,7 +5,7 @@ export function activate({root, psynet}) {
   }
   let pick = root.querySelector("#pick");
   psynet.liveGame.enableWhilePlaying(pick);
-  psynet.liveGame.onView((view) => {
+  psynet.liveGame.onChange((view) => {
     if (view === null) {
       return;
     }
