@@ -487,6 +487,18 @@ lacks its own. PsyNet needs Python 3.11 or later and recommends 3.14.
   container (``psynet services ensure --yes`` replaces it without asking), and
   your local database then starts empty. The old data stays in the
   ``dallinger_postgres`` volume.
+* The PsyNet runtime no longer installs ``pytest-mock``, ``pytest-timeout``,
+  ``pytest-dependency``, ``progress`` or ``python-gettext``. If the
+  experiment's tests use ``mocker``, ``@pytest.mark.timeout`` or
+  ``@pytest.mark.dependency``, or its code imports ``progress`` or
+  ``pythongettext``, add that package to ``requirements.txt``.
+* The ``psynet[slack]`` extra is removed, because the runtime already
+  includes ``slack-sdk``. Drop ``slack`` from ``requirements.txt`` and from
+  install commands.
+* ``Notifier.python_dependencies`` and
+  ``Experiment.check_python_dependencies()`` are removed. If a custom
+  notifier listed packages in ``python_dependencies``, add them to
+  ``requirements.txt`` instead; deploys no longer check for them.
 
 See :doc:`/install` and :doc:`/code/project/creating_an_experiment`.
 
