@@ -1209,13 +1209,23 @@ scissors game:
 ``join`` close and open a player's game page, and ``is_over`` returns the
 reason the game ended when it has one, such as ``"players_left"``.
 
-Each of the experiment's worker processes plays the games given to it, one
-after another, so slow game code in one game delays the others. As a rough
-guide from Dallinger's `Running games <dallinger-running-games_>`_, 50 games
-at 20 ticks a second are fine if each game's ``tick`` and ``view`` take well
-under a millisecond. Before running many groups at once, check that the
-game's code keeps up: the worker logs a warning, naming the slowest games,
-when it falls behind.
+Each of the experiment's worker processes runs a game runner, which plays
+the games given to it one after another, so slow game code in one game
+delays the others. ``time_play`` plays a game with its bots for a while, as
+a runner would, and says how many games one runner can play at once:
+
+.. code-block:: python
+
+    print(LocalGame(Snake, players=4).time_play(30))
+
+.. code-block:: text
+
+    Snake: 240 turns in 30 s of play took 0.037 s of game code (0.15 ms a turn on average, 1.48 ms at most), 0.1% of a game runner, so one runner can play about 575 games at once.
+
+Before running many groups at once, run a performance test, which reports
+how late each game's ticks ran (see :ref:`performance_testing_live_games`).
+The worker also logs a warning, naming the slowest games, when it falls
+behind.
 
 To play a game yourself, run ``psynet debug local`` and open the participant
 link in a browser window for each player. For a game with ticks, run

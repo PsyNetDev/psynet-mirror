@@ -28,6 +28,8 @@ from urllib.parse import urlparse
 
 DEFAULT_MAX_P95_S = 0.5
 DEFAULT_MAX_QUEUE_P95_S = 5.0
+# Players notice a live game lagging at about a tenth of a second.
+DEFAULT_MAX_LIVE_DELAY_P95_S = 0.1
 CAPACITY_SEARCH_START = 10
 CAPACITY_SEARCH_MAX = 2000
 # The search stops once the gap between the largest passing and smallest
@@ -264,6 +266,10 @@ class PerformanceTestResult:
     startup_phase: dict = field(default_factory=dict)
     #: The same metrics from first_completion_s to the end of the test.
     steady_state_phase: dict = field(default_factory=dict)
+    #: How the live game runners kept up, if the experiment played live games
+    #: (see measure.live_game_stats), with the ``delay_bounds`` of the ranges
+    #: that the delays are counted in, ``None`` for the last, unbounded one.
+    live_games: dict = field(default_factory=dict)
 
     @property
     def steady_state_s(self):
@@ -457,7 +463,7 @@ class CapacityLimits:
         requests a test makes, for the occasional contention at timeline holds
         and synchronized groups.
     max_bot_error_rate : float
-        Largest acceptable share of bots that fail.
+        Largest acceptable share of bots that fail, and of live games.
     max_wait_timeout_rate : float
         Largest acceptable share of bots whose participants the experiment
         failed for waiting too long, for example at a timeline hold that
@@ -474,6 +480,10 @@ class CapacityLimits:
     allowed_busy_early_finishes : int
         Number of such bots per trial maker that is acceptable however few
         bots a test starts, so that one unlucky bot doesn't fail a small test.
+    max_live_delay_p95_s : float
+        Largest acceptable 95th-percentile delay of each live game's ticks,
+        and of the players' messages it applies, measured by
+        :func:`live_delay_p95`.
     """
 
     max_p95_s: float = DEFAULT_MAX_P95_S
@@ -486,6 +496,7 @@ class CapacityLimits:
     max_wait_timeout_rate: float = 0.01
     max_busy_early_finish_rate: float = 0.01
     allowed_busy_early_finishes: int = 1
+    max_live_delay_p95_s: float = DEFAULT_MAX_LIVE_DELAY_P95_S
 
     @classmethod
     def from_options(cls, max_p95_s=None, max_queue_p95_s=None):
@@ -523,8 +534,58 @@ class CapacityLimits:
         )
         return (
             f"{response}, p95 high-priority async queue wait under "
-            f"{self.max_queue_p95_s:g} s and {errors}"
+            f"{self.max_queue_p95_s:g} s, p95 live game delay under "
+            f"{self.max_live_delay_p95_s * 1000:.0f} ms and {errors}"
         )
+
+
+_DELAY_NOUNS = {"tick_delays": "tick", "message_delays": "message"}
+
+
+def live_delay_p95(result, game, kind):
+    """Return the range of the 95th-percentile delay of a live game's ticks or messages, or ``None``.
+
+    Runners count delays in ranges, so this is ``(low, high)`` in seconds:
+    the p95 delay was more than ``low`` and at most ``high``, which is
+    ``math.inf`` for the last range.
+
+    Parameters
+    ----------
+    result : PerformanceTestResult
+    game : str
+        The game's channel.
+    kind : str
+        ``"tick_delays"`` or ``"message_delays"``.
+    """
+    live = result.live_games or {}
+    counts = live["games"][game][kind]
+    total = sum(counts)
+    if not total:
+        return None
+    bounds = [math.inf if b is None else b for b in live["delay_bounds"]]
+    seen = 0
+    for i, n in enumerate(counts):
+        seen += n
+        if seen >= 0.95 * total:
+            return (bounds[i - 1] if i else 0, bounds[i])
+
+
+def runner_utilization(result):
+    """Return the share of the test that the live game runners were busy, or ``None`` without live games."""
+    live = result.live_games or {}
+    if not (live.get("runners") and result.actual_duration):
+        return None
+    return live["busy_s"] / (live["runners"] * result.actual_duration)
+
+
+def describe_delay(delay_range):
+    """Describe a delay range from :func:`live_delay_p95`, e.g. ``20-50 ms`` or ``over 5 s``."""
+    low, high = delay_range
+    if high == math.inf:
+        return f"over {low:g} s"
+    if high < 1:
+        return f"{low * 1000:.0f}-{high * 1000:.0f} ms"
+    return f"{low:g}-{high:g} s"
 
 
 def queue_wait_p95(result, priority="high"):
@@ -910,8 +971,10 @@ def phase_limit_reasons(phase, limits):
 class LimitBreach:
     """A measure of a test that exceeded its limit; see :func:`limit_breaches`.
 
-    ``measure`` is one of :data:`_ERROR_MEASURES`, ``"wait_timeouts"``,
-    ``"busy_chains"``, ``"p95"``, ``"endpoint_p95"`` or ``"queue"``.
+    ``measure`` is one of :data:`_ERROR_MEASURES` (``"live_failures"`` is
+    live games that failed), ``"wait_timeouts"``,
+    ``"busy_chains"``, ``"p95"``, ``"endpoint_p95"``, ``"queue"`` or
+    ``"live_delay"``.
     ``reason`` describes the value, e.g. ``p95 response time 900 ms``,
     ``limit`` the limit, e.g. ``500 ms``, and ``clause`` both, e.g. ``the p95
     response time was 900 ms, over the 500 ms limit``. ``value`` and
@@ -928,7 +991,7 @@ class LimitBreach:
     server_limit: bool = True
 
 
-_ERROR_MEASURES = ("request_errors", "busy_responses", "bot_errors")
+_ERROR_MEASURES = ("request_errors", "busy_responses", "bot_errors", "live_failures")
 _LOAD_MEASURES = ("p95", "endpoint_p95", "queue", "busy_chains")
 
 
@@ -1042,6 +1105,33 @@ def limit_breaches(result, limits):
                     limits.max_p95_s,
                     f"the p95 response time for {endpoint} was {value}",
                 )
+    games = (result.live_games or {}).get("games", {}).values()
+    started_games = sum(g["games"] for g in games)
+    failed_games = sum(g["failed"] for g in games)
+    if failed_games > limits.max_bot_error_rate * started_games:
+        breach(
+            "live_failures",
+            plural(failed_games, "failed live game"),
+            f"{limits.max_bot_error_rate * 100:g}%",
+            failed_games,
+            limits.max_bot_error_rate * started_games,
+            _of(failed_games, started_games, "live games", "failed"),
+        )
+    max_delay = limits.max_live_delay_p95_s
+    for game in sorted((result.live_games or {}).get("games", {})):
+        for kind, noun in _DELAY_NOUNS.items():
+            delay = live_delay_p95(result, game, kind)
+            if delay is None or delay[1] <= max_delay:
+                continue
+            breach(
+                "live_delay",
+                f"p95 {noun} delay {describe_delay(delay)} in {game}",
+                f"{max_delay * 1000:.0f} ms",
+                delay[0],
+                max_delay,
+                f"the p95 {noun} delay in the live game {game} was "
+                f"{describe_delay(delay)}",
+            )
     queue_wait = queue_wait_p95(result)
     if queue_wait is not None and queue_wait > limits.max_queue_p95_s:
         breach(

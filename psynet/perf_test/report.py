@@ -45,9 +45,11 @@ from psynet.perf_test.results import (
     count_wait_timeouts,
     describe_bot_errors,
     describe_busy_early_finish,
+    describe_delay,
     describe_test,
     exceeded_error_limits,
     limit_breaches,
+    live_delay_p95,
     missing_workers,
     overshoot,
     percent,
@@ -57,6 +59,7 @@ from psynet.perf_test.results import (
     queue_wait_p95,
     recommend_workers,
     retry_bot_count,
+    runner_utilization,
     start_rate_limits,
     tester_lagged,
     top_counts,
@@ -123,6 +126,7 @@ def format_test_results(result):
         *_runtime_lines(result),
         *_request_lines(result),
         *_async_job_lines(result),
+        *_live_game_lines(result),
         *_phase_lines(result),
         *_database_row_lines(result),
     ]
@@ -439,6 +443,94 @@ def _async_job_lines(result):
     return lines
 
 
+def _live_game_lines(result):
+    """Return the LIVE GAMES section, or nothing if the test played no live games."""
+    live = result.live_games or {}
+    if not live:
+        return []
+    runners = live["runners"]
+    utilization = runner_utilization(result)
+    busy = "" if utilization is None else f", busy {utilization:.0%} of the test"
+    rows = []
+    for game, played in sorted(live["games"].items()):
+        delays = [
+            live_delay_p95(result, game, kind)
+            for kind in ("tick_delays", "message_delays")
+        ]
+        rows.append(
+            [
+                game,
+                f"{played['games']:,}",
+                f"{played['failed']:,}",
+                f"{played['passes']:,}",
+                _ms(played["seconds"] / played["passes"] if played["passes"] else None),
+                *(_EMPTY if d is None else describe_delay(d) for d in delays),
+            ]
+        )
+    lines = [
+        *_section(f"LIVE GAMES ({plural(runners, 'game runner')}{busy})"),
+        "  Passes: the runner's turns at a game, each running its due ticks and "
+        "messages and sending views. Delays: how late ticks ran, and how long "
+        "players' messages waited to be applied.",
+        *_table_lines(
+            rows,
+            headers=[
+                "Game",
+                "Games",
+                "Failed",
+                "Passes",
+                "Avg pass",
+                "p95 tick delay",
+                "p95 message delay",
+            ],
+            indent="    ",
+            tablefmt="simple",
+            colalign=("left",) + ("right",) * 6,
+        ),
+        "",
+    ]
+    failed = [
+        f"{g['failed']:,} of {g['games']:,} {game} games"
+        for game, g in sorted(live["games"].items())
+        if g["failed"]
+    ]
+    if failed:
+        lines += [
+            warning(
+                f"  {_and(failed)} failed. The server log has each one's "
+                "error after 'Session <id> of <game> failed'. A game whose "
+                "runner falls far behind can fail by using up its time limit "
+                "while it catches up."
+            ),
+            "",
+        ]
+    if utilization is not None and utilization > MAX_WORKER_UTILIZATION:
+        lines += [
+            warning(
+                f"  The game runners were busy {utilization:.0%} of the test, so "
+                "they can't keep up with many more games. Each worker process "
+                "runs a game runner: add worker processes with worker_processes, "
+                "or make the games' tick and view faster (see "
+                "LocalGame.time_play)."
+            ),
+            "",
+        ]
+    if not _live_messages_measured(result):
+        lines += [
+            "  Bots play live games on the server, without game pages, so the "
+            "test doesn't measure players' messages. To measure them, play "
+            "the game in a browser during a test with --existing.",
+            "",
+        ]
+    return lines
+
+
+def _live_messages_measured(result):
+    """Say whether players' messages reached a live game in ``result``, which takes game pages."""
+    games = (result.live_games or {}).get("games", {})
+    return any(sum(g["message_delays"]) for g in games.values())
+
+
 def _missing_workers_text(result):
     """Warn if fewer async worker processes ran in ``result`` than ``worker_processes`` configures."""
     missing = missing_workers(result)
@@ -482,6 +574,12 @@ _LOCAL_CAVEAT = (
     "with 'performance-test ssh', which deploys its own app there for the "
     "tests; the server's CPU, memory and worker settings decide how many "
     "participants it can handle."
+)
+_LIVE_NOT_MEASURED = (
+    "Not measured for live games: players' messages, because bots play live "
+    "games on the server without pages. Play the game in a browser during a "
+    "test with --existing to measure them, and watch it on the deployed "
+    "server while other groups play."
 )
 _NOT_MEASURED = (
     "Not measured: uploads over participants' own networks (bots upload from "
@@ -571,6 +669,8 @@ def _ms(seconds):
     if seconds is None:
         return _EMPTY
     ms = seconds * 1000
+    if 0 < ms < 0.095:
+        return "<0.1 ms"
     return f"{ms:.1f} ms" if 0 < ms < 9.95 else f"{ms:.0f} ms"
 
 
@@ -624,6 +724,7 @@ def _measures_seen(results):
         "experiment": any(r.participants_failed for r in results),
         "chains": any(r.busy_early_finishes for r in results),
         "waits": any(count_wait_timeouts(r) for r in results),
+        "live": any(_worst_live_delay(r) != _EMPTY for r in results),
     }
     for priority in PRIORITIES:
         seen[priority] = any(queue_wait_p95(r, priority) is not None for r in results)
@@ -705,9 +806,27 @@ def _summary_columns(results, limits):
         for priority in PRIORITIES
         if priority in seen
     ]
+    if "live" in seen:
+        extra.append(
+            (
+                "Live game\ndelay p95",
+                lambda r: _alert(_worst_live_delay(r), over(r, "live_delay")),
+            )
+        )
     if extra:
         extra.insert(0, main[0])
     return main, extra
+
+
+def _worst_live_delay(result):
+    """Describe the longest p95 delay of any live game's ticks or messages in ``result``."""
+    delays = [
+        delay
+        for game in (result.live_games or {}).get("games", {})
+        for kind in ("tick_delays", "message_delays")
+        if (delay := live_delay_p95(result, game, kind)) is not None
+    ]
+    return describe_delay(max(delays)) if delays else _EMPTY
 
 
 def _summary_table(results, columns, outcome):
@@ -752,6 +871,10 @@ def _checked_limits(results, limits):
     if "high" in seen:
         checked.append(
             f"p95 high-priority queue wait under {limits.max_queue_p95_s:g} s"
+        )
+    if "live" in seen:
+        checked.append(
+            f"p95 live game delay under {limits.max_live_delay_p95_s * 1000:g} ms"
         )
     checked.append(f"at most {rate(limits.max_request_error_rate)} of requests failing")
     if "busy" in seen:
@@ -843,6 +966,10 @@ def format_performance_summary(
             None,
         ]
     notes = [_LOCAL_CAVEAT, _NOT_MEASURED] if local else [_NOT_MEASURED]
+    if any(r.live_games for r in results) and not any(
+        _live_messages_measured(r) for r in results
+    ):
+        notes.append(_LIVE_NOT_MEASURED)
     tail += _capacity_renderables(
         results, limits, time_factor, notes, confirmation_planned, open_link
     )

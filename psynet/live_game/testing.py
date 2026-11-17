@@ -1,5 +1,9 @@
 """Helpers for testing a game's rules in Python, without a server."""
 
+import json
+import time
+from dataclasses import dataclass
+
 from dallinger.realtime import RealtimeGame, Reject, Sent
 from dallinger.realtime.game import PLAYER_DONE_REASON, queued_effects
 
@@ -143,6 +147,62 @@ class LocalGame:
         ``reason``."""
         return self.game.answer(self.outcome(reason), reason, player)
 
+    def time_play(self, seconds=60):
+        """Play the game with its bots for ``seconds`` of game time, timing its
+        code, to estimate how many games a game runner can play at once.
+
+        Each turn runs as a runner's would: a ``tick`` if one is due, then
+        each player's bot moves, then each player's ``view``, with the state
+        and the views encoded as JSON, as the runner saves and sends them. A
+        game with a ``tick_rate`` has a turn per tick. One without has a turn
+        at each of its deadlines and a turn a second, as if each player acted
+        about once a second. Play stops early if the game ends.
+
+        ::
+
+            print(LocalGame(Snake, players=4).time_play(30))
+
+        Returns
+        -------
+
+        TimedPlay
+        """
+        tick_rate = self.game.tick_rate
+        step = 1 / tick_rate if tick_rate else 1
+        players = range(len(_psynet_entry(self.state)["participant_ids"]))
+        started_at = _psynet_entry(self.state)["started_at"] or 0
+        turns, code_seconds, slowest = 0, 0.0, 0.0
+        now, steps = 0.0, 0
+        while not self.is_over():
+            due = (steps + 1) * step
+            deadline = None if tick_rate else self.game.next_deadline(self.state)
+            if deadline is not None:
+                due = min(due, max(deadline - started_at, now))
+            if due > seconds:
+                break
+            now = due
+            if now >= (steps + 1) * step:
+                steps += 1
+            began = time.perf_counter()
+            if tick_rate or (deadline is not None and deadline - started_at <= now):
+                self.tick(now)
+            for player in players:
+                if self.is_done(player):
+                    continue
+                message = self.bot(player, now)
+                if message is not None:
+                    try:
+                        self.send(player, message, now)
+                    except Reject:
+                        pass
+            json.dumps([self.view(player) for player in players])
+            json.dumps(self.state)
+            took = time.perf_counter() - began
+            turns += 1
+            code_seconds += took
+            slowest = max(slowest, took)
+        return TimedPlay(type(self.game).__name__, now, turns, code_seconds, slowest)
+
     def _participant(self, player):
         return str(_psynet_entry(self.state)["participant_ids"][player])
 
@@ -170,3 +230,49 @@ def start_game(game, state):
     entry = _psynet_entry(state)
     entry["ready"] = list(range(len(entry["participant_ids"])))
     game._end_ready_step(state, 0)
+
+
+# A game runner is sized to be this busy, as async workers are, leaving room
+# for bursts and for saving games and sending views, which time_play leaves out.
+_TARGET_RUNNER_SHARE = 0.7
+
+
+@dataclass
+class TimedPlay:
+    """How long a game's code took to play, from :meth:`LocalGame.time_play`."""
+
+    #: The game's class name.
+    game: str
+    #: The game time played, in seconds.
+    seconds: float
+    #: The turns played.
+    turns: int
+    #: The seconds the game's code took over all the turns.
+    code_seconds: float
+    #: The seconds the slowest turn took.
+    slowest_turn: float
+
+    @property
+    def runner_share(self):
+        """Return the share of a game runner's time that one game needs."""
+        return self.code_seconds / self.seconds if self.seconds else 0.0
+
+    @property
+    def games_per_runner(self):
+        """Return about how many games one game runner can play at once,
+        leaving it room for bursts and for saving games and sending views."""
+        if not self.runner_share:
+            return None
+        return int(_TARGET_RUNNER_SHARE / self.runner_share)
+
+    def __str__(self):
+        per_turn = self.code_seconds / self.turns * 1000 if self.turns else 0
+        text = (
+            f"{self.game}: {self.turns:,} turns in {self.seconds:g} s of play "
+            f"took {self.code_seconds:.3f} s of game code ({per_turn:.2f} ms a "
+            f"turn on average, {self.slowest_turn * 1000:.2f} ms at most), "
+            f"{self.runner_share:.1%} of a game runner"
+        )
+        if self.games_per_runner is not None:
+            text += f", so one runner can play about {self.games_per_runner:,} games at once"
+        return text + "."

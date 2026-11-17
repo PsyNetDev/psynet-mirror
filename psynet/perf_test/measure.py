@@ -12,6 +12,12 @@ participants keep the status ``approved`` (see :func:`_bot_outcome`). Each
 result also records the row counts of the tables that grow as a study collects
 data (:func:`database_rows`), because capacity can fall as they grow.
 
+Live games are played by Dallinger's game runners rather than in requests or
+async jobs. The runners count what they do in redis, and
+:func:`live_game_snapshot` reads those counts with the newest
+``RealtimeSession`` ID before and after a test, so :func:`live_game_stats`
+covers the test window too.
+
 The functions here only query the database; they neither run bots nor format
 output. Database imports stay inside the functions so that importing
 :mod:`psynet.perf_test` does not need a configured experiment.
@@ -605,6 +611,94 @@ def configured_worker_processes():
     except Exception as e:
         logger.warning(f"Could not read worker_processes: {e}")
         return None
+
+
+def live_game_snapshot():
+    """Return what the live game runners had done so far, for :func:`live_game_stats`.
+
+    Returns ``None`` if the counts can't be read.
+    """
+    try:
+        from dallinger import db
+        from dallinger.models import RealtimeSession
+        from dallinger.realtime import realtime_runner_stats
+        from sqlalchemy import func
+
+        return {
+            "runner_stats": realtime_runner_stats(),
+            "max_session_id": db.session.query(func.max(RealtimeSession.id)).scalar()
+            or 0,
+        }
+    except Exception as e:
+        logger.warning(f"Could not read the live game runners' counts: {e}")
+        return None
+
+
+def live_game_stats(before, after):
+    """Return how the live game runners kept up between two :func:`live_game_snapshot` calls.
+
+    Returns
+    -------
+    dict
+        Empty if the experiment played no live games. Otherwise ``runners``,
+        the runners running at the end; ``busy_s``, the seconds they spent
+        playing games rather than waiting; and ``games``, by each game's
+        channel: the ``games`` that started and how many of those
+        ``failed``, the runner's ``passes`` over them and the ``seconds``
+        those took, and the ``tick_delays`` and ``message_delays``, the
+        ticks and players' messages applied within each range of delay of
+        Dallinger's ``DELAY_BOUNDS``.
+    """
+    if before is None or after is None:
+        return {}
+    from dallinger import db
+    from dallinger.models import RealtimeSession
+    from sqlalchemy import func
+
+    started = {}
+    for channel, status, count in (
+        db.session.query(
+            RealtimeSession.game_type,
+            RealtimeSession.status,
+            func.count(RealtimeSession.id),
+        )
+        .filter(
+            RealtimeSession.id > before["max_session_id"],
+            RealtimeSession.id <= after["max_session_id"],
+        )
+        .group_by(RealtimeSession.game_type, RealtimeSession.status)
+    ):
+        games = started.setdefault(channel, {"games": 0, "failed": 0})
+        games["games"] += count
+        if status == "failed":
+            games["failed"] += count
+    earlier = before["runner_stats"]["games"]
+    games = {}
+    for channel, counts in after["runner_stats"]["games"].items():
+        old = earlier.get(channel, {})
+        played = {key: _subtract(value, old.get(key)) for key, value in counts.items()}
+        if played["passes"] or channel in started:
+            games[channel] = {
+                **started.get(channel, {"games": 0, "failed": 0}),
+                **played,
+            }
+    if not games:
+        return {}
+    from dallinger.realtime.store import DELAY_BOUNDS
+
+    return dict(
+        delay_bounds=[None if math.isinf(b) else b for b in DELAY_BOUNDS],
+        runners=after["runner_stats"]["runners"],
+        busy_s=after["runner_stats"]["busy"] - before["runner_stats"]["busy"],
+        games=games,
+    )
+
+
+def _subtract(value, old):
+    """Return ``value`` less ``old``, element by element for lists of counts."""
+    if isinstance(value, list):
+        return [n - m for n, m in zip(value, old or [0] * len(value))]
+    return value - (old or 0)
 
 
 def worker_load(after_async_job_id, ended_at, boundary, outcomes):

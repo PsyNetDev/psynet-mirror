@@ -107,7 +107,8 @@ removal reason (such as ``late`` or ``group_dissolved``; a bot removed from
 two groups counts twice); these bots may
 still have completed the experiment. Other sections cover
 runtimes, busy chains, requests answered busy or stale (which bots retry),
-wait pages, async job queue waits and worker use, and how the database grew.
+wait pages, async job queue waits and worker use, live games, and how the
+database grew.
 *Start-up vs steady state* splits the measures at the moment the first bot
 finishes, because a study's opening burst is often its hardest moment.
 
@@ -161,6 +162,8 @@ A test passes if:
   500);
 - high-priority async jobs wait under ``--max-queue-p95-s`` (default 5 s)
   for a worker, at the 95th percentile;
+- each live game's ticks run, and its players' messages are applied, at most
+  100 ms late at the 95th percentile (see :ref:`performance_testing_live_games`);
 - at most 1% of participants are failed for waiting too long, and at most
   1% get fewer trials because every chain was busy.
 
@@ -289,6 +292,65 @@ that uses every core, so going higher needs a larger server or cheaper
 jobs. There is no estimate if the test had no steady state or fewer than
 20 worker jobs finished in it. The ``recommend_workers`` docstring in
 ``psynet/perf_test/results.py`` gives the formula.
+
+.. _performance_testing_live_games:
+
+Live games
+----------
+
+:doc:`Live games </code/multiplayer/live_games>` aren't played in requests or
+async jobs. Each worker process runs a game runner beside it, which plays
+its share of the games one after another, running their ticks and the
+players' messages. A runner that can't keep up runs ticks late, and players
+see the game stutter.
+
+Before a performance test, time the game's code with
+:meth:`~psynet.live_game.testing.LocalGame.time_play`. It plays the game with
+its bots for a while, as a runner would, without a server:
+
+.. code-block:: python
+
+    from psynet.live_game.testing import LocalGame
+
+    print(LocalGame(Snake, players=4).time_play(30))
+
+.. code-block:: text
+
+    Snake: 240 turns in 30 s of play took 0.037 s of game code (0.15 ms a turn on average, 1.48 ms at most), 0.1% of a game runner, so one runner can play about 575 games at once.
+
+The estimate leaves out the runner's own work of saving games and sending
+views, so treat it as an upper bound. If it is near the number of groups the
+study will run at once, make the game's ``tick`` and ``view`` cheaper, for
+example by sending less in each view, or plan on more worker processes.
+
+A performance test of an experiment with live games reports them under *Live
+games*::
+
+    LIVE GAMES (1 game runner, busy 3% of the test)
+      Game      Games    Failed    Passes    Avg pass    p95 tick delay    p95 message delay
+      ------  -------  --------  --------  ----------  ----------------  -------------------
+      snake        12         0     4,154      0.4 ms           0-10 ms                    -
+
+A pass is the runner's turn at a game, running the ticks and messages due and
+sending views. The runners count delays in ranges (up to 10, 20, 50, 100,
+200 and 500 ms, then 1, 2 and 5 s), so the 95th percentiles are ranges. A test
+passes only if every game's p95 tick delay, and p95 message delay, is at
+most 100 ms. The report warns when the runners were busy more than 85% of
+the test: raise ``worker_processes`` (see
+:ref:`performance_testing_async_workers`), which adds runners, or make the
+games cheaper.
+
+Bots play live games on the server, through the game's ``bot`` method, and
+open no game pages. So a bot-only test measures the game's code and how late
+its ticks run, but not players' messages. To measure those too, play in a
+browser during the test. For example, start ``psynet debug local``, join the
+game in a browser, and run
+``psynet performance-test local --existing --force`` (``--force`` because
+your participant isn't a bot). The bots share games with you, and the
+*p95 message delay* column then shows how long your moves waited to be
+applied. No test measures the views' trip to the page, so also watch the
+game in a browser on the deployed server
+(see :ref:`performance_testing_server`) while other groups play.
 
 .. _performance_testing_database_size:
 

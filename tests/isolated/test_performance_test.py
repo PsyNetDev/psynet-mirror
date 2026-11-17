@@ -1292,6 +1292,53 @@ def test_only_high_priority_queue_waits_limit_capacity():
     assert "can't keep up" not in text
 
 
+def _live_games(tick_delays, busy_s=10.0, failed=0):
+    return {
+        "delay_bounds": [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, None],
+        "runners": 1,
+        "busy_s": busy_s,
+        "games": {
+            "snake": {
+                "games": 3,
+                "failed": failed,
+                "passes": 1000,
+                "seconds": 0.5,
+                "tick_delays": tick_delays + [0] * (10 - len(tick_delays)),
+                "message_delays": [0] * 10,
+            }
+        },
+    }
+
+
+def test_live_game_delays_are_reported_and_limit_capacity():
+    smooth = _base_result(
+        n_bots=20, actual_duration=100, live_games=_live_games([990, 10])
+    )
+    # 95% of the ticks ran within 200 ms, but not within 100 ms.
+    lagging = _base_result(
+        n_bots=40,
+        actual_duration=100,
+        live_games=_live_games([800, 100, 0, 0, 100], busy_s=95),
+    )
+
+    report = _join(format_test_results(lagging))
+    summary = _join(format_capacity_summary([smooth, lagging], CapacityLimits()))
+
+    assert "LIVE GAMES (1 game runner, busy 95% of the test)" in report
+    assert "The game runners were busy 95% of the test" in report
+    assert "Bots play live games on the server, without game pages" in report
+    assert capacity_failures(smooth) == []
+    assert capacity_failures(lagging) == ["p95 tick delay 100-200 ms in snake"]
+    failing = _base_result(live_games=_live_games([1000], failed=1))
+    assert capacity_failures(failing) == ["1 failed live game"]
+    assert "1 of 3 snake games failed" in _join(format_test_results(failing))
+    assert "the p95 tick delay in the live game snake was 100-200 ms" in summary
+    assert "Not measured for live games" in _join(format_performance_summary([smooth]))
+    smooth.live_games["games"]["snake"]["message_delays"][0] = 5
+    played_in_browsers = _join(format_performance_summary([smooth]))
+    assert "Not measured for live games" not in played_in_browsers
+
+
 def _phase_backlog(backlog):
     return dict(_PHASE, queue_waits={"low": {"q_delay_p95": 1.0, "backlog": backlog}})
 

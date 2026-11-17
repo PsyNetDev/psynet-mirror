@@ -1872,6 +1872,45 @@ def test_a_game_calling_its_own_view_passes_the_player_s_number():
     assert game.outcome() == [10, 20]
 
 
+def test_time_play_takes_a_turn_per_tick_or_at_each_deadline(registry):
+    class Ticking(LiveGame):
+        name = "time_play_ticking"
+        tick_rate = 4
+
+        def initial_state(self, players):
+            return {"ticks": 0}
+
+        def tick(self, state, now):
+            state["ticks"] += 1
+
+        def view(self, state, player):
+            return state
+
+        def bot(self, view, player, now):
+            return None
+
+    class Catches(Ticking):
+        name = "time_play_catches"
+        tick_rate = None
+
+        def next_deadline(self, state):
+            return 2.5 * (state["ticks"] + 1)
+
+        def is_over(self, state):
+            return state["ticks"] == 3
+
+    ticking = LocalGame(Ticking, players=2).time_play(10)
+    game = LocalGame(Catches, players=2)
+    catches = game.time_play(10)
+
+    assert (ticking.turns, ticking.seconds) == (40, 10)
+    assert ticking.games_per_runner > 0
+    # A turn a second, and one at each deadline, until the game is over.
+    assert game.state["ticks"] == 3
+    assert (catches.turns, catches.seconds) == (9, 7.5)
+    assert "9 turns in 7.5 s of play" in str(catches)
+
+
 def test_a_game_with_an_away_timeout_ends_once_too_few_players_are_left():
     class Commons(LiveGame):
         name = "commons"

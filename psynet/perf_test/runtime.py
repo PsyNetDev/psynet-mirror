@@ -47,6 +47,8 @@ from psynet.perf_test.measure import (
     configured_worker_processes,
     count_rq_workers,
     database_rows,
+    live_game_snapshot,
+    live_game_stats,
     phase_stats,
     request_stats,
     wait_for_async_jobs,
@@ -545,6 +547,7 @@ class PerformanceTester:
         max_participant_id = db.session.query(func.max(Participant.id)).scalar() or 0
 
         db_rows = database_rows()
+        live_games = live_game_snapshot()
         # Don't hold locks on the growing tables, which would block
         # autovacuum, for the whole test.
         db.session.rollback()
@@ -553,6 +556,7 @@ class PerformanceTester:
             "max_async_job_id": max_async_job_id,
             "max_participant_id": max_participant_id,
             "db_rows": db_rows,
+            "live_games": live_games,
         }
 
     def _bounded_random_multiplier(self, max_multiplier=3.0):
@@ -901,6 +905,9 @@ class PerformanceTester:
                 result.worker_load = worker_load(
                     initial_state["max_async_job_id"], ended_at, steady_from, outcomes
                 )
+        result.live_games = live_game_stats(
+            initial_state["live_games"], live_game_snapshot()
+        )
         result.n_rq_workers, result.n_rq_job_slots = count_rq_workers()
         result.configured_worker_processes = configured_worker_processes()
         result.server_cores = os.cpu_count()
