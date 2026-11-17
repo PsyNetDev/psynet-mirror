@@ -24,6 +24,7 @@ import numpy as np
 from dominate import tags
 from dominate.dom_tag import dom_tag
 from dominate.util import raw
+from dominate.util import text as dom_text
 from flask import current_app
 from markupsafe import Markup
 
@@ -1196,6 +1197,7 @@ class CheckboxControl(OptionControl):
                         True if answer is not None and choice in answer else False
                     ),
                 )
+                dom_text(" ")
                 tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
@@ -1703,6 +1705,7 @@ class RadioButtonControl(OptionControl):
                     value=choice,
                     checked=(True if choice == answer else False),
                 )
+                dom_text(" ")
                 tags.span(_dominate_label(label))
                 tags.br()
         return html.render()

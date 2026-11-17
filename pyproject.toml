@@ -58,11 +58,8 @@ experiment = [
     "babel",
     # 13.1.0 runs local PostgreSQL 18, which `psynet services ensure` matches.
     "dallinger[docker]>=13.1.0,<14",
-    # Unpin dominate once a new version is released which includes the following
-    # fix for the Python 3.12 event loop warning:
-    # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
     "debugpy",
-    "dominate==2.9.1",
+    "dominate>=3.1",
     "html2text",
     "joblib",
     "jsonpickle",

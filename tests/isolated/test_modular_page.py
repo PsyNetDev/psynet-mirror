@@ -807,6 +807,14 @@ def test_push_button_visualization_highlights_a_numeric_answer(
     assert html.index("btn-success") > html.index('id="1"')
 
 
+@pytest.mark.parametrize("control_class", [CheckboxControl, RadioButtonControl])
+def test_choice_visualization_separates_each_input_from_its_label(control_class):
+    control = control_class(choices=["a", "b"], labels=["A", "B"])
+    html = control.visualize_response(answer="a", response=None, trial=None)
+    assert "> <span>A</span>" in html
+    assert "> <span>B</span>" in html
+
+
 def test_modular_page_accepts_page_css_list():
     page = ModularPage(
         "test",
