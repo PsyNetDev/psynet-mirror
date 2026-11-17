@@ -458,6 +458,9 @@ without a ``duration``. ``send`` returns ``undefined`` once the page's
 connection is closed or refused. ``enableWhilePlaying`` disables its
 elements until the game starts, and again once it ends.
 
+The page leaves the game when the participant moves on, so ``activate``
+doesn't need to return a cleanup function for it.
+
 .. _live-games-status:
 
 The status line
@@ -489,55 +492,30 @@ line is drawn again after each ``send``.
 Smooth play
 ~~~~~~~~~~~
 
-A page draws the game from the views the server sends, and those come with
-two delays that a fast game shows.
+:ref:`The design page <design-live-games>` explains why a fast game needs
+prediction and interpolation, and the tutorial's :ref:`Showing a choice at
+once <live-game-tutorial-predict>` and shared canvas apply them.
 
-The first is the player's own move. The page sends it, the server applies
-it, and the view with the move comes back a round trip later, usually a
-tenth of a second or so, more on a slow connection. Worse, a view caused by
-another player's move can arrive in between, which doesn't have the
-player's move yet, so the page would briefly undo it, such as by enabling
-buttons the player has just used. ``predict`` fixes both. Its callback
-changes a view as the game will once it applies one of the page's messages,
-and ``predictedView()`` returns the newest view with each message the game
-hasn't applied yet applied by the callback. ``onChange`` then gets this
-predicted view, and runs again after each ``send``, so a page that updates
-itself in ``onChange`` shows the player's moves at once. In a game on a
-board:
+``predict(callback)`` takes ``callback(view, type, message, sentAt)``, which
+changes a copy of a view as the game will once it applies one of the page's
+messages, sent with that ``type`` and ``message``. ``onChange`` then gets the
+newest view with each message the game hasn't applied yet applied this way,
+and runs again after each ``send``. The callback runs again for each new
+view until the game has applied the message, and if the game rejects it, the
+prediction goes. ``sentAt`` is the game time when the page sent the message,
+or ``null`` if it wasn't known yet, and stays the same each time, for
+predicting when something happens, such as when a moving boat arrives. Keep
+the callback to what the game will certainly do. ``predictedView()`` returns
+the same predicted view, for drawing at other times, such as in an animation
+loop.
 
-.. code-block:: javascript
-
-    psynet.liveGame.predict((view, type, message) => {
-      if (type === "move") {
-        view.positions[psynet.liveGame.player] = message.to;
-      }
-    });
-
-    psynet.liveGame.onChange(draw);  // gets the predicted view
-
-The callback gets a copy of the view, so it can change it, and runs again
-for each new view until the game has applied the message. A fourth argument,
-``sentAt``, is the game time when the page sent the message (``null`` if it
-wasn't known yet), the same each time, for predicting when something
-happens, such as when a moving boat arrives. If the game rejects the
-message, the prediction goes, and the page draws the view as the game has
-it. Keep the callback to what the game will certainly do, since the game's
-rules decide. To draw at other times, such as in an animation loop, call
-``predictedView()``.
-
-The second delay is between ticks. A game that moves things by itself, with
-a ``tick_rate`` above 0, sends a view at each tick, so other players jump
-from one tick to the next. ``interpolate`` smooths this. Its callback,
-``callback(a, b, fraction)``, returns a new view part of the way between two
-tick views, and must leave ``a`` and ``b`` unchanged, since they're the tick
-views the page keeps. ``interpolatedView()`` returns the game two tick
-intervals in the past, between the tick views either side of that time. Call
-it each time the page draws, about 60 times a second, and draw the player's
-own piece from ``predictedView()``, so it isn't behind. The tutorial's
-shared canvas does both.
-
-The page leaves the game when the participant moves on, so ``activate``
-doesn't need to return a cleanup function for it.
+``interpolate(callback)`` takes ``callback(a, b, fraction)``, which returns a
+new view part of the way between two tick views, for a game whose
+``tick_rate`` is above 0. It must leave ``a`` and ``b`` unchanged, since
+they're the tick views the page keeps. ``interpolatedView()`` returns the
+game two tick intervals in the past, between the tick views either side of
+that time. Call it each time the page draws, and draw the player's own piece
+from ``predictedView()``, so it isn't behind.
 
 .. _live-games-cases:
 
@@ -1045,6 +1023,13 @@ Its ``message`` is the :class:`~psynet.live_game.LiveMessage` the page sent,
 or ``None`` if what the page sent can't be read as one of the game's message
 types, and its ``payload`` holds what the page sent. Each player's
 :class:`~psynet.live_game.PlayerReady` message says when they became ready.
+
+Each message also has ``receive_time``, when it arrived as a date and time;
+``browser_time``, the clock on the participant's own computer when their page
+sent it; ``view_time``, the game time of the view the participant was looking
+at when they acted; and ``status``, whether the game accepted it. In the
+exported ``realtime_event`` table, its ``event_type`` column tells messages
+apart from the game's other events, such as its end.
 
 The record is written a few seconds behind the game, so while a game is
 still running, ``messages`` holds only the messages written so far. By the

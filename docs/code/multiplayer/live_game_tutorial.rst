@@ -574,12 +574,10 @@ view. ``send_views_on_messages = False`` stops the game from also sending the
 player a view after each of their messages, since a turn doesn't change the
 board until the next tick.
 
-``duration = ROUND_SECONDS`` makes the game last 60 seconds. It doesn't
-start the moment the wait ends: there's a **ready step** first, while the
-players' pages open. Each page says its player is ready a moment after it
-opens, and the game starts once every player is ready, or after
-``ready_timeout`` seconds (60 unless the game sets it). The game's clock,
-``now`` in its methods, starts at 0 then. At the end of the duration, PsyNet
+``duration = ROUND_SECONDS`` makes the game last 60 seconds, from when it
+starts, once every player's page has opened (see :ref:`live-games-ready`).
+The game's clock, ``now`` in its methods, starts at 0 then. At the end of the
+duration, PsyNet
 runs the game's ``tick`` one last time, ends the game with the reason
 ``"finished"``, and rejects messages that arrive later. A game with a
 ``duration`` doesn't need a ``timeout``.
@@ -619,9 +617,8 @@ On each tick, ``tick`` calls ``move_snakes``:
 
 It moves every snake before it works out any crashes. If it moved one snake
 and checked it, then moved the next, the snakes moved first would get the
-contested squares. When you design a game for an experiment, look for rules
-like this, where the order in which the server deals with players could
-favor some of them.
+contested squares. :doc:`/design/live_games` says more about rules that the
+order of players' messages could make unfair.
 
 The reward
 ~~~~~~~~~~
@@ -726,9 +723,7 @@ saying which keys were held and for how long:
 ``Field`` limits each move to half a second (``SAVED_MOVEMENT``). A page
 could still claim more time than has passed by sending many moves at once,
 so ``apply`` charges each move against the game's clock. However many moves
-a page sends, its player can't move faster than the rules allow. The general
-point is that a message is a request from the participant's browser, which
-they control, so the game should check anything that matters to the result.
+a page sends, its player can't move faster than the rules allow.
 
 Reference: :ref:`live-games-messages`.
 
@@ -824,22 +819,11 @@ closing one player's window, and pressing keys before the game starts.
 Your data
 ---------
 
-Each game's record is saved with the experiment's data, in Dallinger's
-``realtime_session`` and ``realtime_event`` tables, where Dallinger calls each
-game a session. ``realtime_session`` holds each game's players, outcome and
-final state. ``realtime_event`` holds the game's events. Most are saved
-messages, from pages and bots, each with the participant who sent it and
-whether the game accepted it. Its ``event_type`` column tells these apart
-from other events, such as the game's end. For each message, the table
-records when it arrived, as a date and time. It also records the time on the
-participant's own computer when their page sent the message, and when the
-view the participant was looking at when they acted was made.
-
-In Python, a participant's ``live_games`` gives each game's record, and a
-trial's ``live_game`` the game played in it (see :ref:`live-games-record`),
-with each message's time in seconds since the game started, the clock the
-game's methods use. :doc:`/data/exporting_data` explains how to export
-the experiment's data.
+Each game's record, with its outcome and every message it saved, goes into
+the experiment's exported data (see :doc:`/data/exporting_data`). In Python,
+a participant's ``live_games`` and a trial's ``live_game`` read it back, and
+:ref:`live-games-record` describes what they hold and where Dallinger keeps
+it.
 
 Next steps
 ----------

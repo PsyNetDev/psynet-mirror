@@ -3,12 +3,9 @@
 Live games
 ==========
 
-In most group experiments, members interact by moving through pages: each
-answers on their own page, a barrier waits for all of them, and then everyone
-moves on to a page that shows the result. In a **live game**, the members
-stay on one page, and what one player does reaches the others while they
-play: offers go back and forth in a negotiation, players steer around a
-shared board, or a society fishes on a lake while its members come and go.
+In a **live game**, a group plays together on one page in real time: offers
+go back and forth in a negotiation, players steer around a shared board, or a
+society fishes on a lake while its members come and go.
 
 Two ways for a group to interact
 --------------------------------
@@ -95,8 +92,7 @@ contributions of the round-based ``public_goods``.
 Delay
 ~~~~~
 
-Each move reaches the server and comes back a round trip later. In a fast
-game, the page hides this. It **predicts** the player's own move, showing it
+In a fast game, the page hides the round trip. It **predicts** the player's own move, showing it
 at once, before the server has answered, and **interpolates** other players
 in a game that ticks, drawing them a moment in the past, moving smoothly
 between ticks rather than jumping from one to the next. A prediction repeats
@@ -141,10 +137,8 @@ group step:
   that takes newcomers can't wait for its slowest member, since it can't tell
   a slow member from one who hasn't joined yet, so there each member waits a
   set time and then moves on.
-- **The end** comes when each player's result has been saved, a few seconds
-  after their game ends, and their page moves on by itself. A later barrier
-  counts from then, so a long game doesn't make its players late for the
-  next step.
+- **The end:** a later barrier counts from when each player's result is
+  saved, so a long game doesn't make its players late for the next step.
 - **Games played as trials**: a game can be each player's trial in a round
   of a group's trials, with the round's barrier the game's, each player's
   result their trial's answer, and what differs between games, such as the
