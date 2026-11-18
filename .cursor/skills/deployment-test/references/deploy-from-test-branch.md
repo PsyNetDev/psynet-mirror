@@ -191,11 +191,10 @@ git checkout <previous-deployment-branch> -- tests/deployment/payment_flows_prol
      `estimated_max_reward(wage_per_hour)`; the default wage yielded a CPI of
      ~0.5, which converted poorly) and opens with a short plain-language
      welcome page ("4-minute listening study, headphones required, ...")
-     before consent to reduce voluntary bounces at entry. The experiment
-     also sets the Lucid survey to `complete` via the API once the
-     participant target is reached (`Exp.recruit` override): Lucid does not
-     promptly stop admitting entrants at the quota on its own, and
-     `LucidRecruiter.close_recruitment` is a no-op.
+     before consent to reduce voluntary bounces at entry. It does not
+     close the survey itself: `LucidRecruiter.close_recruitment` pauses
+     entry once finished plus working participants cover the target, and
+     completes the survey when nobody is still working.
    - `audio_gibbs/lucid_recruitment_config.json` carries marketplace
      qualifications that prescreen panelists before they enter PsyNet:
      desktop-only (`MS_is_mobile`/`MS_is_tablet` excluded) and audio

@@ -54,7 +54,7 @@ cd /tmp/psynet-audio-gibbs-lucid-deploy/tests/deployment/audio_gibbs
 cp experiment.py.lucid experiment.py
 cp config.txt.lucid config.txt
 diff -q experiment.py experiment.py.lucid
-test -n "$(rg -n '_stop_lucid_fielding' experiment.py)"
+test -n "$(rg -n 'CulturalFoundationLucidConsent' experiment.py)"
 git add experiment.py && git add -f config.txt
 git commit -m "Switch audio_gibbs to Lucid variant for Lucid deployment"
 git push -u origin deployment-tests/<base-name>-audio-gibbs-lucid
@@ -71,12 +71,13 @@ import inspect
 from dallinger.config import get_config
 from dallinger_experiment.experiment import Exp
 print('recruiter', get_config().get('recruiter'))
-print('has_stop_lucid', '_stop_lucid_fielding' in inspect.getsource(Exp))
+print('lucid_variant', 'CulturalFoundationLucidConsent' in inspect.getsource(inspect.getmodule(Exp)))
 PY"
 ```
 
-   Lucid app must print `recruiter lucid-recruiter` and `has_stop_lucid True`.
-   Prolific app must print `recruiter prolific` and `has_stop_lucid False`.
+   Lucid app must print `recruiter lucid-recruiter` and `lucid_variant True`.
+   Prolific app must print `recruiter prolific` and `lucid_variant False`.
+   `CulturalFoundationLucidConsent` is defined only in `experiment.py.lucid`.
    Each `experiment.py` also aborts in `on_launch` (before recruitment
    opens) unless the configured recruiter matches that file: Lucid
    requires `lucid-recruiter`; the shared Prolific file requires
