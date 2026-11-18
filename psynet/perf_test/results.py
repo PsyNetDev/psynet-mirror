@@ -537,7 +537,7 @@ class CapacityLimits:
         )
         return (
             f"{response}, p95 high-priority async queue wait under "
-            f"{self.max_queue_p95_s:g} s, p95 live game delay under "
+            f"{self.max_queue_p95_s:g} s, p95 delay of any live games under "
             f"{self.max_live_delay_p95_s * 1000:.0f} ms and {errors}"
         )
 
@@ -1169,14 +1169,15 @@ def _live_game_breaches(result, limits, breach):
 
 
 def ran_out_of_time(result, game):
-    """Return whether any of a live game's games failed by running past its ``time_limit``.
+    """Return whether all of a live game's failed games ran past its ``time_limit``.
 
     That is Dallinger's ``TimeLimitExceeded``. It usually means that the
     runner fell far behind, so that a game's overdue ticks didn't fit in the
-    limit, but very slow game code does it too.
+    limit, but very slow game code does it too. A game that failed for other
+    reasons as well reports its errors instead.
     """
     errors = result.live_games["games"][game].get("errors", {})
-    return any("TimeLimitExceeded" in error for error in errors)
+    return bool(errors) and all("TimeLimitExceeded" in error for error in errors)
 
 
 def _busy_early_finish_max(result):

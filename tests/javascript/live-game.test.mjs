@@ -585,7 +585,7 @@ describe("psynet.liveGame", () => {
   });
 
   it("gives each player's label, and asks for a newcomer's at most once a second", async () => {
-    mock.timers.enable({ apis: ["Date"] });
+    mock.timers.enable({ apis: ["Date", "setTimeout"] });
     changePage();
     assert.deepEqual(
       plain(liveGame.players.map((p) => p.label)),
@@ -596,19 +596,18 @@ describe("psynet.liveGame", () => {
     sockets[0].view(view(4));
     assert.deepEqual(fetchedPlayers, []);
     // The server doesn't know the newcomer yet, so the page asks again
-    // a second later, not with each view.
+    // a second later, even without another view, rather than with each view.
     sockets[0].view(view(4, [], null, null, 3));
     await new Promise((resolve) => setImmediate(resolve));
     sockets[0].view(view(4, [], null, null, 3));
     assert.equal(fetchedPlayers.length, 1);
     serverPlayers = [...session.players, { label: "Green otter", you: false }];
     mock.timers.tick(1000);
-    sockets[0].view(view(4, [], null, null, 3));
     assert.equal(fetchedPlayers.length, 2);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(liveGame.players[2].label, "Green otter");
     // The page updates itself again with the newcomer's label.
-    assert.deepEqual(changes, [2, 2, 2, 2, 3]);
+    assert.deepEqual(changes, [2, 2, 2, 3]);
   });
 
   it("has no players without a game", () => {

@@ -183,6 +183,7 @@
           state.away.stop();
           clearTimeout(state.connectionTimer);
           clearTimeout(state.moveOnTimer);
+          clearTimeout(state.playersTimer);
           clearInterval(state.timeLeftTimer);
           page.showNotice(AWAY_NOTICE, null);
         }
@@ -199,6 +200,7 @@
         players: (current.players || []).slice(),
         fetchingPlayers: false,
         playersFetchedAt: -Infinity,
+        playersTimer: null,
         socket: null,
         left: false,
         startedView: null,
@@ -256,9 +258,7 @@
         return;
       }
       state.lastView = view;
-      if ((view.psynet.away_since || []).length > state.players.length) {
-        fetchPlayers(state);
-      }
+      fetchPlayers(state);
       // A page that opens after the end gets no onStarted, which would turn
       // its controls back on.
       if (
@@ -473,17 +473,31 @@
       return number;
     }
 
-    // Asks the server how to show the game's players, once the views show
-    // more than the page knows, and updates the page with them. The server
-    // learns of a newcomer a few seconds after the game does, so the page
-    // asks at most once a second rather than with every view until then.
+    // Asks the server how to show the game's players, while the latest view
+    // shows more than the page knows, and updates the page with them. The
+    // server learns of a newcomer a few seconds after the game does, so the
+    // page asks again at most once a second until then, with or without
+    // new views.
     function fetchPlayers(state) {
-      const now = Date.now();
+      const view = state.lastView;
       if (
+        state.left ||
         state.fetchingPlayers ||
         !page.fetchPlayers ||
-        now - state.playersFetchedAt < 1000
+        view === null ||
+        (view.psynet.away_since || []).length <= state.players.length
       ) {
+        return;
+      }
+      const now = Date.now();
+      const wait = state.playersFetchedAt + 1000 - now;
+      if (wait > 0) {
+        if (state.playersTimer === null) {
+          state.playersTimer = setTimeout(() => {
+            state.playersTimer = null;
+            fetchPlayers(state);
+          }, wait);
+        }
         return;
       }
       state.fetchingPlayers = true;
@@ -503,6 +517,7 @@
         .catch((error) => console.error(error))
         .finally(() => {
           state.fetchingPlayers = false;
+          fetchPlayers(state);
         });
     }
 
@@ -562,7 +577,13 @@
       function show() {
         let text;
         if (state.ended) {
-          text = typeof ended === "function" ? ended(state.lastView) : ended;
+          // A failed game's page may have no view to pass.
+          text =
+            typeof ended !== "function"
+              ? ended
+              : state.lastView === null
+                ? state.session.endedStatus
+                : ended(state.lastView);
         } else if (state.startedView === null) {
           text = waiting;
         } else {

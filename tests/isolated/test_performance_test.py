@@ -1390,6 +1390,18 @@ def test_live_game_delays_are_reported_and_limit_capacity():
         format_test_results(failing)
     )
     assert "the p95 tick delay in the live game snake was 100-200 ms" in summary
+    # A game that also failed for other reasons reports its errors.
+    mixed = _base_result(
+        live_games=_live_games(
+            [1000], errors={"KeyError: 3": 1, "TimeLimitExceeded": 1}
+        )
+    )
+    assert "KeyError: 3 (1x), TimeLimitExceeded (1x)" in _join(
+        format_test_results(mixed)
+    )
+    assert "fix the errors under LIVE GAMES" in _join(
+        format_capacity_summary([mixed], CapacityLimits())
+    )
 
     # Games that the runner failed for falling behind fail their players.
     behind = _base_result(

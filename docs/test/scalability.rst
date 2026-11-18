@@ -162,8 +162,9 @@ A test passes if:
   500);
 - high-priority async jobs wait under ``--max-queue-p95-s`` (default 5 s)
   for a worker, at the 95th percentile;
-- each live game's ticks run, and its players' messages are applied, at most
-  100 ms late at the 95th percentile (see :ref:`performance_testing_live_games`);
+- each live game's ticks run, and its players' messages are applied when the
+  test measures them, at most 100 ms late at the 95th percentile (see
+  :ref:`performance_testing_live_games`);
 - at most 1% of participants are failed for waiting too long, and at most
   1% get fewer trials because every chain was busy.
 
@@ -331,12 +332,14 @@ games*::
       ------  -------  --------  ----------------  -------------------  ----------
       snake        12         0           0-10 ms      (needs browser)      0.4 ms
 
-A pass is the runner's turn at a game, running the ticks and messages due and
-sending views. When games fail, the section says why: for each game, its
-most common errors, or that the runner fell behind. The runners count delays in ranges (up to 10, 20, 50, 100,
+A pass is the runner's turn at a game, and Avg pass is the time it spends
+running the ticks and messages due; saving games and sending views count
+towards how busy the runners were, but not towards Avg pass. When games fail,
+the section says why: for each game, its most common errors, or that the
+runner fell behind. The runners count delays in ranges (up to 10, 20, 50, 100,
 200 and 500 ms, then 1, 2 and 5 s), so the 95th percentiles are ranges. A test
-passes only if every game's p95 tick delay, and p95 message delay, is at
-most 100 ms. The report warns when the runners were busy more than 85% of
+passes only if every game's p95 tick delay, and p95 message delay where it was
+measured, is at most 100 ms. The report warns when the runners were busy more than 85% of
 the test: raise ``worker_processes`` (see
 :ref:`performance_testing_async_workers`), which adds runners, or make the
 games cheaper.
