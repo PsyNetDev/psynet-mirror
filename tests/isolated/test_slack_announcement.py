@@ -65,6 +65,7 @@ def test_build_blocks_release_candidate():
     joined = "\n".join(texts)
 
     assert "Release Candidate" in texts[0]
+    assert texts[1].startswith(":warning: *This is a release candidate.*")
     assert "pip install psynet==13.2.0rc1" in joined
 
     urls = _button_urls(blocks)

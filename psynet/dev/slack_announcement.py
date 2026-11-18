@@ -140,7 +140,7 @@ def build_blocks(version: str, summary: str | None = None) -> tuple[list[dict], 
         )
         final_version = PRERELEASE_RE.sub("", version)
         title = f":test_tube: PsyNet {version} — Release Candidate :test_tube:"
-        subtitle = "A new release candidate is ready for testing!"
+        subtitle = None
         docs_url = f"https://psynetdev.gitlab.io/PsyNet/rc/v{version}/"
         notice = (
             ":warning: *This is a release candidate.* "
@@ -173,9 +173,10 @@ def build_blocks(version: str, summary: str | None = None) -> tuple[list[dict], 
             "type": "header",
             "text": {"type": "plain_text", "text": title, "emoji": True},
         },
-        _mrkdwn_block(f"_{subtitle}_"),
     ]
 
+    if subtitle:
+        blocks.append(_mrkdwn_block(f"_{subtitle}_"))
     if notice:
         blocks.append(_mrkdwn_block(notice))
 
@@ -384,6 +385,9 @@ def announce_command(
             channel=channel,
             text=fallback,
             blocks=blocks,
+            # Otherwise Slack appends preview cards for the summary's first links.
+            unfurl_links=False,
+            unfurl_media=False,
         )
     except SlackApiError as exc:
         raise RuntimeError(f"Slack error: {exc.response['error']}") from exc
