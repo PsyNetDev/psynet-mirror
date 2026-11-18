@@ -211,14 +211,23 @@ def test_is_unambiguous_psynet_requirement_accepts_experiment_extra(requirement)
 # ---------------------------------------------------------------------------
 
 
-def test_generate_constraints_invokes_uv_run_dallinger_script(tmp_path, monkeypatch):
-    """Locking must use ``uv run <dallinger constraints script> generate``."""
+@pytest.mark.parametrize("psynet_pins_exist", [True, False])
+def test_generate_constraints_invokes_uv_run_dallinger_script(
+    tmp_path, monkeypatch, psynet_pins_exist
+):
+    """Locking uses ``uv run <dallinger constraints script> generate``, adding
+    PsyNet's pins for the pinned version when that version has them."""
+    import urllib.error
+    from contextlib import nullcontext
+
     req = tmp_path / "requirements.txt"
-    req.write_text("psynet[experiment]==13.4.0\n")
+    req.write_text("psynet[experiment]==14.1.0\n")
     script = tmp_path / "fake_constraints.py"
     script.write_text("# fake\n")
-
-    import os
+    url = (
+        "https://gitlab.com/api/v4/projects/PsyNetDev%2FPsyNet/repository/files/"
+        "psynet%2Fresources%2Fexperiment_constraints.txt/raw?ref=v14.1.0"
+    )
 
     calls = []
 
@@ -229,24 +238,55 @@ def test_generate_constraints_invokes_uv_run_dallinger_script(tmp_path, monkeypa
         result.returncode = 0
         return result
 
+    def fake_urlopen(requested, timeout):
+        assert requested == url
+        if not psynet_pins_exist:
+            raise urllib.error.HTTPError(url, 404, "Not Found", None, None)
+        return nullcontext()
+
     monkeypatch.setattr("subprocess.run", fake_run)
     monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/uv")
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     monkeypatch.setattr(
         "psynet.constraints_compile._dallinger_constraints_script",
         lambda: script,
     )
+    monkeypatch.chdir(tmp_path)
+    from psynet.constraints_compile import generate_constraints_file
 
-    orig = os.getcwd()
-    try:
-        os.chdir(tmp_path)
-        from psynet.constraints_compile import generate_constraints_file
+    generate_constraints_file()
 
-        generate_constraints_file()
-    finally:
-        os.chdir(orig)
-
-    assert calls == [["uv", "run", str(script), "generate"]]
+    extra_args = ["--constraint", url] if psynet_pins_exist else []
+    assert calls == [["uv", "run", str(script), "generate", *extra_args]]
     assert (tmp_path / "constraints.txt").read_text() == "# locked\n"
+
+
+@pytest.mark.parametrize(
+    "requirement, url",
+    [
+        (
+            "psynet[experiment]==14.1.0",
+            "https://gitlab.com/api/v4/projects/PsyNetDev%2FPsyNet/repository/files/"
+            "psynet%2Fresources%2Fexperiment_constraints.txt/raw?ref=v14.1.0",
+        ),
+        (
+            "psynet[experiment]@git+https://gitlab.com/alice/PsyNet.git@45f31768#egg=psynet",
+            "https://gitlab.com/api/v4/projects/alice%2FPsyNet/repository/files/"
+            "psynet%2Fresources%2Fexperiment_constraints.txt/raw?ref=45f31768",
+        ),
+        (
+            "psynet @ git+ssh://git@github.com/alice/PsyNet@v14.1.0",
+            "https://raw.githubusercontent.com/alice/PsyNet/v14.1.0/"
+            "psynet/resources/experiment_constraints.txt",
+        ),
+        ("psynet", None),
+        ("-e ../PsyNet#egg=psynet[experiment]", None),
+    ],
+)
+def test_psynet_constraints_url_follows_the_pinned_version(requirement, url):
+    from psynet.constraints_compile import psynet_constraints_url
+
+    assert psynet_constraints_url(requirement) == url
 
 
 def test_dallinger_constraints_script_prefers_installed_package(

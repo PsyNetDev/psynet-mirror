@@ -43,7 +43,9 @@ Perform the shared steps, in this order:
    `13.2.0a0` → `13.2.0`)
 3. [Update What's new](shared-steps.md#update-whats-new) when the release has
    experimenter-facing highlights or breaking changes
-4. [Update package translations](shared-steps.md#update-package-translations)
+4. [Upgrade the pinned experiment packages](shared-steps.md#upgrade-the-pinned-experiment-packages)
+   unless a release candidate already did
+5. [Update package translations](shared-steps.md#update-package-translations)
 
 ### 3. Push the release branch
 

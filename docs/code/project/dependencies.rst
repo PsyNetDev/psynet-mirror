@@ -121,9 +121,19 @@ How constraints are generated
 
 ``constraints.txt`` is generated with Dallinger's lock policy: packages are
 resolved against the ``dev-requirements.txt`` that Dallinger tests with, for
-the Dallinger version that the PsyNet pin implies. The file starts with a
-header like this, which records the ``requirements.txt`` it was generated
-from:
+the Dallinger version that the PsyNet pin implies. PsyNet installs some
+packages that Dallinger doesn't pin, such as ``dominate`` and ``polib``. Their
+versions come from PsyNet's own list of tested versions,
+``psynet/resources/experiment_constraints.txt``, read from the PsyNet release
+or commit that ``requirements.txt`` pins. So an experiment pinned to a PsyNet
+release installs the same versions next month as it did today, even after
+new versions of those packages come out. Without such a pin, the installed
+PsyNet's list is used. PsyNet versions before this list was introduced don't
+have one, so packages that Dallinger doesn't pin get their newest compatible
+versions.
+
+The file starts with a header like this, which records the
+``requirements.txt`` it was generated from:
 
 .. code:: text
 

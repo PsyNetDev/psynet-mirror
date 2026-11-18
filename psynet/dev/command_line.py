@@ -60,6 +60,24 @@ def update_dallinger_constraints(skip_compile_check):
     ci_module.update_dallinger_constraints_command(check_compile=not skip_compile_check)
 
 
+@ci.command("update-experiment-constraints")
+@click.option(
+    "--upgrade",
+    is_flag=True,
+    help="Pin the newest versions instead of keeping the current ones.",
+)
+@click.option(
+    "--skip-compile-check",
+    is_flag=True,
+    help="Refresh the pins without validating Docker constraints compilation.",
+)
+def update_experiment_constraints(upgrade, skip_compile_check):
+    """Refresh the pins for experiment packages that Dallinger doesn't pin."""
+    ci_module.update_experiment_constraints_command(
+        upgrade=upgrade, check_compile=not skip_compile_check
+    )
+
+
 @ci.command("run-tests")
 @click.option(
     "--scope",

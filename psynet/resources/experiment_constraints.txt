@@ -1,0 +1,18 @@
+# Tested versions of the psynet[experiment] packages that Dallinger's
+# dev-requirements.txt doesn't pin. Experiments compile constraints.txt
+# against this file as well as Dallinger's pins.
+# Dallinger ref: e97e80eb50b6b381a9d40ed3bdf760767aa80c9a
+# Regenerate with `psynet dev ci update-experiment-constraints`.
+arabic-reshaper==3.1.0
+cloudpickle==3.1.2
+dominate==3.1.0
+html2text==2025.4.15
+joblib==1.6.0
+jsonpickle==4.1.4
+pillow==13.0.0
+polib==1.2.0
+pywin32==312 ; sys_platform == 'win32'
+rpdb==0.2.0
+slack-sdk==3.47.0
+tomlkit==0.15.2
+tqdm==4.70.1

@@ -64,6 +64,25 @@ there. A major release always updates What's new. Commit What's new changes
 with the other release-preparation commits or as their own commit on the
 release branch.
 
+### Upgrade the pinned experiment packages
+
+`psynet/resources/experiment_constraints.txt` pins the `psynet[experiment]`
+packages that Dallinger doesn't pin. Experiments that pin this release read
+the file from its tag, so its versions are the ones they install. Upgrade
+them when cutting the first release candidate of a major or minor release
+(or the release itself when there is no RC), so that CI tests the new
+versions before the final release:
+
+```bash
+psynet dev ci update-experiment-constraints --upgrade
+```
+
+The command also checks that the Docker image's constraints still compile on
+every supported Python version. Commit the file as `Upgrade the pinned
+experiment packages`. Later RCs and patch releases keep the pins, unless a
+fix needs a newer version of one package; for that, edit its line and run
+the command without `--upgrade`.
+
 ### Update package translations
 
 Feature merge requests do not update ``psynet/locales``. On the release

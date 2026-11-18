@@ -46,7 +46,8 @@ using the shared steps with the RC version:
    fragments in `changelog.d/`.
 2. [Bump the version](shared-steps.md#bump-the-version) from `13.2.0a0` to `13.2.0rc1`.
 3. [Update What's new](shared-steps.md#update-whats-new) for experimenter-facing highlights
-   or breaking changes (usually on the first RC of a minor/major).
+   or breaking changes (usually on the first RC of a minor/major), and
+   [upgrade the pinned experiment packages](shared-steps.md#upgrade-the-pinned-experiment-packages).
 4. Push the release branch and tag the RC. RC tags are pushed directly from
    the release branch — there is **no MR** and **no merge to `master`** at
    this stage:

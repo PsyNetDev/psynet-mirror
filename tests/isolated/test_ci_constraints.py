@@ -1,12 +1,29 @@
 import json
 import re
+import shutil
 from pathlib import Path
+
+import pytest
 
 from psynet.dallinger_dependency import dallinger_constraints_github_ref
 from psynet.dev import ci as ci_module
 
 ROOT = Path(__file__).resolve().parents[2]
 DALLINGER_CONSTRAINTS = ROOT / "ci" / "dallinger-dev-requirements.txt"
+EXPERIMENT_CONSTRAINTS = ROOT / "psynet" / "resources" / "experiment_constraints.txt"
+
+
+@pytest.mark.skipif(shutil.which("uv") is None, reason="needs uv")
+def test_experiment_constraints_are_up_to_date(tmp_path):
+    """The lockfile pins exactly the experiment packages Dallinger doesn't."""
+    regenerated = tmp_path / "experiment_constraints.txt"
+    shutil.copy(EXPERIMENT_CONSTRAINTS, regenerated)
+    ci_module.write_experiment_constraints(
+        ROOT / "pyproject.toml", DALLINGER_CONSTRAINTS, regenerated
+    )
+    assert regenerated.read_text() == EXPERIMENT_CONSTRAINTS.read_text(), (
+        "Run `psynet dev ci update-experiment-constraints`."
+    )
 
 
 def test_vendored_dallinger_constraints_match_pyproject_dependency():
@@ -48,13 +65,15 @@ def _run_update_command(tmp_path, monkeypatch, pyproject_text):
     monkeypatch.setattr(ci_module, "PYPROJECT_PATH", pyproject)
     monkeypatch.setattr(ci_module, "DOCKERFILE_PATH", dockerfile)
     monkeypatch.setattr(ci_module, "DALLINGER_CONSTRAINTS_PATH", constraints)
+    monkeypatch.setattr(
+        ci_module, "EXPERIMENT_CONSTRAINTS_PATH", tmp_path / "experiment.txt"
+    )
     monkeypatch.setattr(ci_module, "_download_text", fake_download)
+    monkeypatch.setattr(ci_module, "write_experiment_constraints", lambda *args: None)
     monkeypatch.setattr(
         ci_module,
         "_check_docker_constraints_compile",
-        lambda pyproject_path, constraints_path, dockerfile_path: compile_checks.append(
-            (pyproject_path, constraints_path, dockerfile_path)
-        ),
+        lambda *args: compile_checks.append(args),
     )
 
     assert ci_module.update_dallinger_constraints_command() == 0
@@ -90,7 +109,8 @@ dependencies = [
     )
     assert text.endswith("# Dallinger generated header\nrequests==2.33.1\n")
     constraints = tmp_path / "ci" / "dallinger-dev-requirements.txt"
-    assert compile_checks == [(pyproject, constraints, dockerfile)]
+    experiment = tmp_path / "experiment.txt"
+    assert compile_checks == [(pyproject, constraints, experiment, dockerfile)]
 
 
 def test_update_dallinger_constraints_command_uses_git_sha_pin(tmp_path, monkeypatch):
@@ -115,7 +135,8 @@ experiment = ["dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.gi
         f"# PsyNet CI snapshot for Dallinger ref: {sha}\n# Source: {url}\n"
     )
     constraints = tmp_path / "ci" / "dallinger-dev-requirements.txt"
-    assert compile_checks == [(pyproject, constraints, dockerfile)]
+    experiment = tmp_path / "experiment.txt"
+    assert compile_checks == [(pyproject, constraints, experiment, dockerfile)]
 
 
 def test_render_strips_legacy_and_current_snapshot_headers():
@@ -158,6 +179,8 @@ def test_docker_constraints_compile_checks_all_supported_versions(
     constraints.write_text(
         "# Compiled for Python 3.11.17\nrequests==2.33.1\n", encoding="utf-8"
     )
+    experiment = tmp_path / "experiment_constraints.txt"
+    experiment.write_text("polib==1.2.0\n", encoding="utf-8")
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text("ARG PYTHON_VERSION=3.13\n", encoding="utf-8")
 
@@ -172,7 +195,11 @@ def test_docker_constraints_compile_checks_all_supported_versions(
     )
 
     ci_module._check_docker_constraints_compile(
-        pyproject, constraints, dockerfile, python_versions=("3.11", "3.12", "3.13")
+        pyproject,
+        constraints,
+        experiment,
+        dockerfile,
+        python_versions=("3.11", "3.12", "3.13"),
     )
 
     assert compiled_versions == ["3.11.9", "3.12.9", "3.13.9"]

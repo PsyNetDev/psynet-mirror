@@ -20,6 +20,13 @@ package. Otherwise the script is fetched from the Dallinger release tag that
 matches PsyNet's declared lower bound in ``pyproject.toml`` (never
 ``master``); see :mod:`psynet.dallinger_dependency`.
 
+Dallinger's pins don't cover every package PsyNet installs, so the script also
+compiles against PsyNet's own lockfile (:data:`PSYNET_CONSTRAINTS_PATH`, kept
+by :mod:`psynet.dev.ci`) for the PsyNet version that ``requirements.txt`` pins.
+That lockfile is read from the pinned tag or commit, because the PsyNet running
+``psynet setup`` may differ from the pinned one. Unpinned or local PsyNet
+requirements use the installed PsyNet's lockfile.
+
 Callers
 -------
 - ``psynet.bootstrap_cli`` – ``generate-constraints`` command.
@@ -34,13 +41,18 @@ import importlib.util
 import re
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 from hashlib import md5
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
+from urllib.parse import quote
 
 import click
 
 from psynet.dallinger_dependency import dallinger_constraints_github_ref
+
+PSYNET_CONSTRAINTS_PATH = "psynet/resources/experiment_constraints.txt"
 
 
 def _dallinger_constraints_github_url() -> str:
@@ -114,9 +126,11 @@ def generate_constraints_file() -> None:
         )
 
     script = _dallinger_constraints_script()
+    psynet_constraints = _psynet_constraints()
+    extra_args = ["--constraint", psynet_constraints] if psynet_constraints else []
     try:
         subprocess.run(
-            ["uv", "run", str(script), "generate"],
+            ["uv", "run", str(script), "generate", *extra_args],
             check=True,
         )
     except subprocess.CalledProcessError as exc:
@@ -130,6 +144,79 @@ def generate_constraints_file() -> None:
         raise click.ClickException(
             "Failed to generate a non-empty constraints.txt file."
         )
+
+
+def psynet_constraints_url(requirement: str) -> str | None:
+    """Return the URL of PsyNet's lockfile for a pinned PsyNet requirement.
+
+    Release pins (``psynet==14.0.0``) use the PsyNetDev tag. Git pins on GitLab
+    or GitHub, including forks, use the pinned ref of that repository. Other
+    requirements return ``None``. GitLab URLs use the repository files API,
+    because ``/-/raw/`` answers 403 for full commit SHAs.
+    """
+    git = re.search(
+        r"git\+(?:https://|ssh://git@)(gitlab\.com|github\.com)/"
+        r"([^@#\s]+?)(?:\.git)?@([^@#\s]+)",
+        requirement,
+    )
+    if git is not None:
+        host, repository, ref = git.groups()
+        if host == "github.com":
+            return f"https://raw.githubusercontent.com/{repository}/{ref}/{PSYNET_CONSTRAINTS_PATH}"
+        return _gitlab_file_url(repository, ref)
+    release = re.fullmatch(
+        r"psynet(?:\[[^\]]*\])?\s*==\s*(\S+)", requirement.strip(), re.IGNORECASE
+    )
+    if release is not None:
+        return _gitlab_file_url("PsyNetDev/PsyNet", f"v{release.group(1)}")
+    return None
+
+
+def _gitlab_file_url(repository: str, ref: str) -> str:
+    """Return the GitLab API URL of PsyNet's lockfile at ``ref``."""
+    project = quote(repository, safe="")
+    path = quote(PSYNET_CONSTRAINTS_PATH, safe="")
+    return (
+        f"https://gitlab.com/api/v4/projects/{project}/repository/files/{path}"
+        f"/raw?ref={quote(ref, safe='')}"
+    )
+
+
+def _psynet_constraints() -> str | None:
+    """Return the PsyNet lockfile to compile against, or ``None`` if there is none."""
+    from psynet.experiment_scaffold import get_psynet_requirement
+
+    requirement = get_psynet_requirement()
+    url = psynet_constraints_url(requirement) if requirement else None
+    if url is None:
+        installed = Path(__file__).parents[1] / PSYNET_CONSTRAINTS_PATH
+        if not installed.is_file():
+            return None
+        click.echo(
+            "requirements.txt doesn't pin a PsyNet release or commit, so "
+            f"constraints.txt uses the installed PsyNet's pins ({installed})."
+        )
+        return str(installed)
+
+    try:
+        with urllib.request.urlopen(url, timeout=60):
+            pass
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            raise click.ClickException(
+                f"Could not download PsyNet's pins from {url}: {exc}."
+            ) from exc
+        click.echo(
+            f"PsyNet has no pins at {url} (older versions don't), so "
+            "constraints.txt pins only the packages Dallinger pins."
+        )
+        return None
+    except urllib.error.URLError as exc:
+        raise click.ClickException(
+            f"Could not download PsyNet's pins from {url}: {exc.reason}."
+        ) from exc
+    click.echo(f"Using PsyNet's pins from {url}")
+    return url
 
 
 def _dallinger_constraints_script() -> str:
