@@ -1430,6 +1430,13 @@ def test_live_game_delays_are_reported_and_limit_capacity():
     assert "fix the errors under LIVE GAMES" in _join(
         format_capacity_summary([mixed], CapacityLimits())
     )
+    # A server that is also slow to respond needs fewer bots too.
+    slow = _base_result(
+        p95_response_time=0.9, live_games=_live_games([800, 100, 0, 0, 100])
+    )
+    assert "or add worker_processes or test fewer bots, then test again" in _join(
+        format_capacity_summary([slow], CapacityLimits())
+    )
     # Games that all failed measured no messages, which a browser can't change.
     dead = _base_result(live_games=_live_games([], errors={"KeyError: 3": 3}))
     assert "(needs browser)" not in _join(format_test_results(dead))

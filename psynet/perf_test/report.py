@@ -616,7 +616,7 @@ _LOCAL_CAVEAT = (
 _LIVE_NOT_MEASURED = (
     "Not measured for live games: players' messages, because bots play live "
     "games on the server without pages. Play the game in a browser during a "
-    "test with --existing to measure them, and watch it on the deployed "
+    "test with --existing --force to measure them, and watch it on the deployed "
     "server while other groups play."
 )
 _NOT_MEASURED = (
@@ -1519,11 +1519,14 @@ def _live_advice(result, limits):
     too_slow = "live_delay" in measures or (live_failures and any(out_of_time))
     game_errors = live_failures and not all(out_of_time)
     other_errors = bool(measures & {"request_errors", "busy_responses", "bot_errors"})
+    other_load = bool(measures & {"p95", "endpoint_p95", "queue", "busy_chains"})
     if too_slow:
         fix = ", fix the errors" if game_errors or other_errors else ""
+        fewer = " or test fewer bots" if other_load else ""
         return (
             "; make the games' tick and view faster (time them with "
-            f"LocalGame.time_play) or add worker_processes{fix}, then test again."
+            f"LocalGame.time_play) or add worker_processes{fix}{fewer}, then "
+            "test again."
         )
     if game_errors and not other_errors:
         return "; fix the errors under LIVE GAMES in the test's results."

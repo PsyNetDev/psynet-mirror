@@ -413,9 +413,13 @@ def plural(count, noun):
     return f"{count:,} {noun}{'' if count == 1 else 's'}"
 
 
-def describe_bot_errors(result):
-    """Describe a result's bot errors, naming the most common causes."""
-    text = plural(result.bot_errors, "bot error")
+def describe_bot_errors(result, count=None):
+    """Describe a result's bot errors, naming the most common causes.
+
+    ``count`` replaces the result's number of bot errors, e.g. without those
+    that failed live games caused.
+    """
+    text = plural(result.bot_errors if count is None else count, "bot error")
     kinds = result.bot_error_kinds or {}
     if len(kinds) == 1:
         return f"{text} ({next(iter(kinds))})"
@@ -1070,7 +1074,7 @@ def limit_breaches(result, limits):
         connection_errors = kinds.get(POSTGRES_FULL, 0)
         breach(
             "bot_errors",
-            describe_bot_errors(result),
+            describe_bot_errors(result, bot_errors),
             f"{limits.max_bot_error_rate * 100:g}%",
             bot_errors,
             max_bot_errors,
@@ -1214,7 +1218,7 @@ def capacity_failure_causes(result, limits):
 
 
 def exceeded_error_limits(result, limits=CapacityLimits()):
-    """Return whether ``result`` had too many request errors, busy responses or bot errors."""
+    """Return whether ``result`` had too many request errors, busy responses, bot errors or failed live games."""
     return any(b.measure in _ERROR_MEASURES for b in limit_breaches(result, limits))
 
 

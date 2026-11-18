@@ -686,7 +686,8 @@ def live_game_stats(before, after, errored_bot_ids=(), steady_from=None):
             games["errors"][_last_line(session.error)] += 1
             players = {int(m) for m in session.members} & errored_bot_ids
             errored_players |= players
-            ended = session.end_time
+            # A session that failed to start has no end time.
+            ended = session.end_time or session.start_time
             if steady_from is not None and ended is not None and ended < steady_from:
                 startup_errored_players |= players
     from dallinger.realtime.store import DELAY_BOUNDS
@@ -700,7 +701,8 @@ def live_game_stats(before, after, errored_bot_ids=(), steady_from=None):
     earlier = before["runner_stats"]["games"]
     later = after["runner_stats"]["games"]
     games = {}
-    for channel in started.keys() | later.keys():
+    # Dallinger counts a session it couldn't read under no channel.
+    for channel in (started.keys() | later.keys()) - {""}:
         old = earlier.get(channel, {})
         played = {
             key: _subtract(value, old.get(key))

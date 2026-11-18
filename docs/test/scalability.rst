@@ -344,7 +344,8 @@ runner fell behind. The runners count delays in ranges (up to 10, 20, 50, 100,
 200 and 500 ms, then 1, 2 and 5 s, then more), so the 95th percentiles are ranges. A test
 passes only if every game's p95 tick delay, and p95 message delay where it was
 measured, is at most 100 ms. The report warns when the runners were busy more than 85% of
-the test: raise ``worker_processes`` (see
+the test, on average over the runners, since each plays its own share of
+the games: raise ``worker_processes`` (see
 :ref:`performance_testing_async_workers`), which adds runners, or make the
 games cheaper.
 
