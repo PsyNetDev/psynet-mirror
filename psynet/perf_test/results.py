@@ -421,6 +421,9 @@ def describe_bot_errors(result, count=None):
     """
     text = plural(result.bot_errors if count is None else count, "bot error")
     kinds = result.bot_error_kinds or {}
+    if count is not None and count != result.bot_errors and len(kinds) > 1:
+        # The kinds' counts would add up to more than the count.
+        return f"{text} ({', '.join(list(kinds)[:3])})"
     if len(kinds) == 1:
         return f"{text} ({next(iter(kinds))})"
     return f"{text} ({top_counts(kinds)})" if kinds else text
@@ -1186,23 +1189,6 @@ def ran_out_of_time(result, game):
     """
     errors = result.live_games["games"][game].get("errors", {})
     return bool(errors) and all("TimeLimitExceeded" in error for error in errors)
-
-
-def runner_fell_behind(result, limits=CapacityLimits()):
-    """Return whether ``result``'s live game runners show that they fell behind.
-
-    They did if they were busy for most of the test, or a game's ticks ran
-    late. Otherwise a game that ran past its ``time_limit`` did so because
-    its own code took too long.
-    """
-    utilization = runner_utilization(result)
-    if utilization is not None and utilization > MAX_WORKER_UTILIZATION:
-        return True
-    return any(
-        (delay := live_delay_p95(result, game, "tick_delays")) is not None
-        and delay[1] > limits.max_live_delay_p95_s
-        for game in (result.live_games or {}).get("games", {})
-    )
 
 
 def _busy_early_finish_max(result):

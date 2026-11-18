@@ -339,8 +339,8 @@ Games counts the games started during the test and those already running
 when it started. A pass is the runner's turn at a game, and Avg pass is the time it spends
 running the ticks and messages due; saving games and sending views count
 towards how busy the runners were, but not towards Avg pass. When games fail,
-the section says why: for each game, its most common errors, or that the
-runner fell behind. The runners count delays in ranges (up to 10, 20, 50, 100,
+the section says why: for each game, its most common errors, or that its
+passes ran past the game's ``time_limit``. The runners count delays in ranges (up to 10, 20, 50, 100,
 200 and 500 ms, then 1, 2 and 5 s, then more), so the 95th percentiles are ranges. A test
 passes only if every game's p95 tick delay, and p95 message delay where it was
 measured, is at most 100 ms. The report warns when the runners were busy more than 85% of
@@ -351,14 +351,17 @@ games cheaper.
 
 A runner that falls far behind doesn't just run ticks late. Its next turn
 at a game runs every tick that has come due, and if they take longer than
-the game's ``time_limit`` (1 second) together, the game fails, with
+the game's ``time_limit`` (1 second by default) together, the game fails, with
 ``TimeLimitExceeded`` in the server log. This is deliberate: a game that
 stalled isn't the game its players were meant to play, so it is marked as
 failed rather than kept in the data, and its players fail as for any other
 failed game. The report's *Failed* column counts these games, and a test
 with more failed games than ``max_bot_error_rate`` allows fails. The
 players' bots get an error page, but those errors count only towards the
-failed games, not again as failed requests and bots.
+failed games, not again as failed requests and bots. Game code that takes
+longer than the ``time_limit`` in one pass fails the same way, and failed
+passes save no delays, so the report can't tell the two apart: time the
+game with ``LocalGame.time_play`` to find out.
 
 Bots play live games on the server, through the game's ``bot`` method, and
 open no game pages. So a bot-only test measures the game's code and how late

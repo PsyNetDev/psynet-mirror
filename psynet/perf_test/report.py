@@ -60,7 +60,6 @@ from psynet.perf_test.results import (
     ran_out_of_time,
     recommend_workers,
     retry_bot_count,
-    runner_fell_behind,
     runner_utilization,
     start_rate_limits,
     tester_lagged,
@@ -543,20 +542,14 @@ def _live_failure_texts(result):
             f"{failed} failed: {errors}. The server log has each traceback "
             f"after 'Session <id> of {game} failed'."
         )
-    if out_of_time and runner_fell_behind(result):
+    if out_of_time:
+        # Failed passes save no delays, so the report can't tell which.
         texts.insert(
             0,
             f"{_and(out_of_time)} failed for running past the game's "
-            "time_limit, because the game runner fell behind and failed them "
-            f"rather than play their overdue ticks late. {_LIVE_SPEED_ADVICE}",
-        )
-    elif out_of_time:
-        texts.insert(
-            0,
-            f"{_and(out_of_time)} failed for running past the game's "
-            "time_limit in a single pass while the game runner kept up, so "
-            "the game's own code took too long. Time its tick and view with "
-            "LocalGame.time_play.",
+            "time_limit in a pass: either the game runner fell behind and "
+            "failed them rather than play their overdue ticks late, or the "
+            f"game's own code took too long. {_LIVE_SPEED_ADVICE}",
         )
     if players := live.get("errored_players"):
         texts.append(
@@ -1533,16 +1526,12 @@ def _live_advice(result, limits):
     other_errors = bool(measures & {"request_errors", "busy_responses", "bot_errors"})
     other_load = bool(measures & {"p95", "endpoint_p95", "queue", "busy_chains"})
     if too_slow:
-        workers = (
-            " or add worker_processes"
-            if "live_delay" in measures or runner_fell_behind(result, limits)
-            else ""
-        )
         fix = ", fix the errors" if game_errors or other_errors else ""
         fewer = " or test fewer bots" if other_load else ""
         return (
             "; make the games' tick and view faster (time them with "
-            f"LocalGame.time_play){workers}{fix}{fewer}, then test again."
+            f"LocalGame.time_play) or add worker_processes{fix}{fewer}, then "
+            "test again."
         )
     if game_errors and not other_errors:
         fewer = ", or test fewer bots" if other_load else ""
