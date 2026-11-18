@@ -3,7 +3,8 @@ aws_region = us-east-1
 publish_experiment = true
 
 [Lucid]
-recruiter = lucid-recruiter
+# Archive redeploy of the rc4 Lucid app: hotair makes no Lucid API calls.
+recruiter = hotair
 # DevLucidRecruiter would exercise the Lucid code paths in local debug runs,
 # but it currently breaks `psynet test local`: bots skip the Lucid ad entry
 # flow, so the LucidRID row that get_lucid_rid() expects is never created.

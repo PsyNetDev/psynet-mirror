@@ -181,7 +181,7 @@ class Exp(psynet.experiment.Experiment):
         from dallinger.config import get_config
 
         recruiter = get_config().get("recruiter")
-        if recruiter != "lucid-recruiter":
+        if recruiter not in ("lucid-recruiter", "hotair"):
             raise RuntimeError(
                 f"Lucid experiment.py but recruiter={recruiter!r}. "
                 "Copy experiment.py.lucid with config.txt.lucid before deploy."
