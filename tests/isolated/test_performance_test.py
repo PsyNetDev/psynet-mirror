@@ -1430,6 +1430,12 @@ def test_live_game_delays_are_reported_and_limit_capacity():
     assert "fix the errors under LIVE GAMES" in _join(
         format_capacity_summary([mixed], CapacityLimits())
     )
+    # Games that all failed measured no messages, which a browser can't change.
+    dead = _base_result(live_games=_live_games([], errors={"KeyError: 3": 3}))
+    assert "(needs browser)" not in _join(format_test_results(dead))
+    assert "Not measured for live games" not in _join(
+        format_performance_summary([dead])
+    )
 
     # Games that the runner failed for falling behind fail their players.
     behind = _base_result(

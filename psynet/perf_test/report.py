@@ -454,7 +454,7 @@ def _live_game_lines(result):
     utilization = runner_utilization(result)
     # A runner idles once its games fail, so its busy share means nothing
     # once all have failed.
-    if all(g["failed"] >= g["games"] for g in games.values()):
+    if all(_all_failed(g) for g in games.values()):
         utilization = None
     busy = f", busy {utilization:.0%} of the test" if utilization is not None else ""
     rows = []
@@ -467,14 +467,19 @@ def _live_game_lines(result):
                 f"{played['games']:,}",
                 f"{played['failed']:,}",
                 _EMPTY if ticks is None else describe_delay(ticks),
-                "(needs browser)" if messages is None else describe_delay(messages),
+                # Failed passes measure nothing, even with a browser playing.
+                describe_delay(messages)
+                if messages is not None
+                else _EMPTY
+                if _all_failed(played)
+                else "(needs browser)",
                 _ms(played["seconds"] / played["passes"] if played["passes"] else None),
             ]
         )
     lines = [
         *_section(f"LIVE GAMES ({plural(live['runners'], 'game runner')}{busy})"),
         "  The p95 delays are how late ticks ran and how long players' messages "
-        "waited to be applied; a pass is the runner's turn at one game.",
+        "waited for the pass that applied them; a pass is the runner's turn at one game.",
         *_table_lines(
             rows,
             headers=[
@@ -551,6 +556,11 @@ def _live_failure_texts(result):
             "an error page (under BOT ERRORS above)."
         )
     return texts
+
+
+def _all_failed(played):
+    """Return whether every game of one kind in a test failed, from its ``live_games`` entry."""
+    return played["games"] > 0 and played["failed"] >= played["games"]
 
 
 def _live_messages_measured(result):
@@ -1005,7 +1015,10 @@ def format_performance_summary(
             "as a check of how the experiment ran, not as an estimate of how "
             "many participants it can handle.",
         )
-    if any(r.live_games for r in results) and not any(
+    played = [
+        g for r in results for g in (r.live_games or {}).get("games", {}).values()
+    ]
+    if any(not _all_failed(g) for g in played) and not any(
         _live_messages_measured(r) for r in results
     ):
         notes.append(_LIVE_NOT_MEASURED)

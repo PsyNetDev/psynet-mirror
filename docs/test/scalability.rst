@@ -330,7 +330,7 @@ games*::
 
     LIVE GAMES (1 game runner, busy 3% of the test)
     The p95 delays are how late ticks ran and how long players' messages
-    waited to be applied; a pass is the runner's turn at one game.
+    waited for the pass that applied them; a pass is the runner's turn at one game.
       Game      Games    Failed    p95 tick delay    p95 message delay    Avg pass
       ------  -------  --------  ----------------  -------------------  ----------
       snake        12         0           0-10 ms      (needs browser)      0.4 ms
@@ -341,7 +341,7 @@ running the ticks and messages due; saving games and sending views count
 towards how busy the runners were, but not towards Avg pass. When games fail,
 the section says why: for each game, its most common errors, or that the
 runner fell behind. The runners count delays in ranges (up to 10, 20, 50, 100,
-200 and 500 ms, then 1, 2 and 5 s), so the 95th percentiles are ranges. A test
+200 and 500 ms, then 1, 2 and 5 s, then more), so the 95th percentiles are ranges. A test
 passes only if every game's p95 tick delay, and p95 message delay where it was
 measured, is at most 100 ms. The report warns when the runners were busy more than 85% of
 the test: raise ``worker_processes`` (see

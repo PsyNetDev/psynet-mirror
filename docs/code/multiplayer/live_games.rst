@@ -958,8 +958,9 @@ outcome then. This game pays 0.10 for a win:
             mine, theirs = choices[player], choices[1 - player]
             return 0.10 if mine is not None and BEATS[mine] == theirs else 0
 
-``reason`` is ``"finished"`` when ``is_over`` ended the game or its
-``duration`` ran out, and ``"timeout"`` when its ``timeout`` did.
+``reason`` is ``"finished"`` when ``is_over`` returned ``True`` or the
+game's ``duration`` ran out, the string ``is_over`` returned if it returned
+one, and ``"timeout"`` when its ``timeout`` did.
 Dallinger's `outcome <dallinger-outcome_>`_ lists the other reasons, such as
 ``"not_joined"``. If the game's code raised an error, ``reason`` is
 ``"failed"``, and ``outcome`` is the outcome of the state just before the
@@ -1017,9 +1018,10 @@ A record has:
   until the game's result is saved, then ``"ended"``, or ``"failed"`` if the
   game's code raised an error or its record couldn't be saved, with the
   error in ``error``;
-- ``finished``, whether the game ended normally, through ``is_over`` or at
-  the end of its ``duration``, rather than early, for example because
-  players left;
+- ``finished``, whether the game ended with the reason ``"finished"``,
+  because ``is_over`` returned ``True`` or its ``duration`` ran out, rather
+  than early, for example because players left (a reason string that
+  ``is_over`` returns is only ``end_reason``);
 - ``outcome`` and ``end_reason``, the game's outcome and the ``reason`` it
   ended, both ``None`` until it has ended;
 - ``answer``, the participant's answer on the game page, and ``player``,
