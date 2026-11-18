@@ -185,6 +185,7 @@
           clearTimeout(state.moveOnTimer);
           clearTimeout(state.playersTimer);
           clearInterval(state.timeLeftTimer);
+          state.resultTimers.forEach(clearInterval);
           page.showNotice(AWAY_NOTICE, null);
         }
       };
@@ -219,6 +220,7 @@
         moveOnTimer: null,
         timeLeftTimer: null,
         timeLeftCallbacks: [],
+        resultTimers: [],
         rejectionElements: [],
         statusCallbacks: [],
       };
@@ -552,7 +554,8 @@
     /**
      * Keep ``element`` showing the game's status: the control's
      * ``waiting_status`` until the game starts, what ``playing(view)``
-     * returns for each view while it's played, and the control's
+     * returns for each view while it's played, or nothing if ``playing``
+     * is ``null``, and the control's
      * ``ended_status`` once the player's game has ended. ``texts`` can
      * replace the control's two texts, as ``{waiting, ended}``, and
      * ``ended`` can be a function that gets the final view, for an ending
@@ -566,8 +569,8 @@
      * );
      *
      * @param {HTMLElement} element - Where to show the status
-     * @param {function} playing - Returns the status for a view while the
-     *   game is played
+     * @param {function|null} playing - Returns the status for a view while
+     *   the game is played
      * @param {Object} [texts] - ``waiting`` and ``ended`` texts
      * @returns {Object} ``psynet.liveGame``
      */
@@ -587,6 +590,8 @@
                 : ended(state.lastView);
         } else if (state.startedView === null) {
           text = waiting;
+        } else if (playing === null) {
+          text = "";
         } else {
           let view = state.predict === null ? null : pageSocket().predictedView();
           text = playing(view ?? state.lastView);
@@ -645,6 +650,39 @@
         };
         state.timeLeftTimer = setInterval(tick, TIME_LEFT_INTERVAL_MS);
         tick();
+      }
+      return api;
+    }
+
+    /**
+     * Call ``callback`` with the seconds left before the page moves on by
+     * itself, a few times a second, from when this player's result is
+     * saved until the page moves on, for a countdown on the result: the
+     * control's ``show_result_for`` seconds, counting down to 0. Without
+     * ``show_result_for``, it never runs.
+     *
+     * @example
+     * psynet.liveGame.onResultTimeLeft((left) => {
+     *   next.textContent = `Continuing in ${Math.ceil(left)} s`;
+     * });
+     *
+     * @param {function} callback - Called with the seconds left
+     * @returns {Object} ``psynet.liveGame``
+     */
+    function onResultTimeLeft(callback) {
+      let socket = pageSocket();
+      let state = pageState();
+      let seconds = state.session.showResultFor || 0;
+      if (seconds > 0) {
+        socket.onResultSaved(() => {
+          if (state.left) {
+            return;
+          }
+          let until = Date.now() + seconds * 1000;
+          let tick = () => callback(Math.max(0, (until - Date.now()) / 1000));
+          state.resultTimers.push(setInterval(tick, TIME_LEFT_INTERVAL_MS));
+          tick();
+        });
       }
       return api;
     }
@@ -949,17 +987,6 @@
         return !noGame() && pageState().startedView !== null && !pageState().ended;
       },
       /**
-       * Seconds the page shows the game's result for once it's saved,
-       * before moving on by itself: the control's ``show_result_for``, or 0.
-       * Use it for a countdown. Reading it doesn't join the game.
-       *
-       * @member {number} showResultFor
-       */
-      get showResultFor() {
-        let current = liveGame();
-        return (current && current.showResultFor) || 0;
-      },
-      /**
        * The game's ``duration`` in seconds, once the page has had a view
        * from after the game starts, or ``null``, as for a game without one.
        * Use it with ``secondsLeft()`` for a time bar. Reading it doesn't join the
@@ -980,6 +1007,7 @@
       showRejections: showRejections,
       showStatus: showStatus,
       onTimeLeft: onTimeLeft,
+      onResultTimeLeft: onResultTimeLeft,
       onStarted: onStarted,
       enableWhilePlaying: enableWhilePlaying,
       onChange: onChange,

@@ -19,12 +19,11 @@ from pydantic import Field
 import psynet.experiment
 from psynet.live_game import (
     LiveGame,
-    LiveGameControl,
+    LiveGamePage,
     LiveMessage,
     PlayLiveGame,
     Reject,
 )
-from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
 from psynet.timeline import PageMaker, Timeline
@@ -78,7 +77,7 @@ DIAGONAL = math.sqrt(0.5)
 #: for a moment can catch up, but no more.
 SAVED_MOVEMENT = 0.5
 
-#: When a page stops sending moves while its player is piece, as when it's
+#: When a page stops sending moves while its player is moving, as when it's
 #: closed, no move carries the player on. Each move the game accepts leaves
 #: the player's movement time at most SAVED_MOVEMENT behind the game's clock.
 #: So once a moving player's movement time is COAST_AFTER behind, the game has
@@ -307,8 +306,8 @@ class SharedCanvas(LiveGame):
 
     def answer(self, outcome, reason, player):
         """The player's own part of the outcome, for their result page: the
-        coins they collected, whether it was the most, and the group's total,
-        as in the snake demo."""
+        coins they collected, whether it was the most, and the group's
+        total."""
         coins = outcome["coins"]
         others = coins[:player] + coins[player + 1 :]
         return {
@@ -490,29 +489,25 @@ class Exp(psynet.experiment.Experiment):
             late_after=60,
             late_action="leave_group",
             game_class=SharedCanvas,
-            page=ModularPage(
+            page=LiveGamePage(
                 "shared_canvas_live",
-                Prompt(
-                    tags.div(
-                        tags.h4(id="canvas-status"),
-                        tags.p(
-                            "Time left: ",
-                            tags.span(ROUND_SECONDS, id="canvas-timer"),
-                            id="canvas-time",
-                        ),
-                        tags.canvas(
-                            id="canvas",
-                            width=SIZE,
-                            height=SIZE,
-                            tabindex="0",
-                            aria_label="The canvas you move around",
-                        ),
-                        tags.ul(id="canvas-scores"),
-                        id="canvas-game",
-                        data_live_game=True,
-                    )
+                tags.div(
+                    tags.h4(id="canvas-status"),
+                    tags.p(
+                        "Time left: ",
+                        tags.span(ROUND_SECONDS, id="canvas-timer"),
+                        id="canvas-time",
+                    ),
+                    tags.canvas(
+                        id="canvas",
+                        width=SIZE,
+                        height=SIZE,
+                        tabindex="0",
+                        aria_label="The canvas you move around",
+                    ),
+                    tags.ul(id="canvas-scores"),
+                    id="canvas-game",
                 ),
-                LiveGameControl(),
                 js_page_modules=["/static/shared-canvas.js"],
                 css_links=["/static/shared-canvas.css"],
                 js_vars={"canvas_rules": RULES},

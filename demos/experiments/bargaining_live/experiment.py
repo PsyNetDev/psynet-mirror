@@ -20,6 +20,7 @@ the same cohort and pairing set-up for a one-shot offer.
 
 import random
 
+import pytest
 from dominate import tags
 
 import psynet.experiment
@@ -27,11 +28,11 @@ from psynet.bot import Bot
 from psynet.live_game import (
     LiveGame,
     LiveGameControl,
+    LiveGamePage,
     LiveMessage,
     PlayLiveGame,
     Reject,
 )
-from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
 from psynet.sync import Regrouper, SimpleGrouper, SyncGroupRound, leave_group
 from psynet.timeline import Module, Timeline, join, switch, while_loop
@@ -144,71 +145,67 @@ def choose_stake():
 
 
 def bargaining_page(stake):
-    return ModularPage(
+    return LiveGamePage(
         "bargain",
-        Prompt(
+        tags.div(
             tags.div(
-                tags.div(
-                    tags.span("Joining the game…", id="bargain-status"),
-                    tags.div(tags.div(id="bargain-time-left"), cls="bargain-clock"),
-                    cls="bargain-header",
+                tags.span("Joining the game…", id="bargain-status"),
+                tags.div(tags.div(id="bargain-time-left"), cls="bargain-clock"),
+                cls="bargain-header",
+            ),
+            tags.div(
+                tags.span(tags.span(cls="bargain-coin bargain-coin-you"), "Your coins"),
+                tags.span(
+                    tags.span(cls="bargain-coin bargain-coin-partner"),
+                    "Your partner's coins",
                 ),
-                tags.div(
-                    tags.span(
-                        tags.span(cls="bargain-coin bargain-coin-you"), "Your coins"
+                cls="bargain-key",
+            ),
+            tags.div(
+                tags.section(
+                    tags.h3("Your proposal"),
+                    tags.div(id="bargain-mine-coins", cls="bargain-coins"),
+                    tags.label(
+                        "You keep ",
+                        tags.strong(stake // 2, id="bargain-keep-value"),
+                        f" of {stake} coins",
+                        fr="bargain-keep",
                     ),
-                    tags.span(
-                        tags.span(cls="bargain-coin bargain-coin-partner"),
-                        "Your partner's coins",
+                    tags.input_(
+                        type="range",
+                        id="bargain-keep",
+                        min=0,
+                        max=stake,
+                        value=stake // 2,
                     ),
-                    cls="bargain-key",
+                    tags.button(
+                        "Propose",
+                        type="button",
+                        id="bargain-propose",
+                        cls="btn btn-primary",
+                    ),
+                    tags.p(id="bargain-mine", cls="bargain-note"),
+                    cls="bargain-card",
                 ),
-                tags.div(
-                    tags.section(
-                        tags.h3("Your proposal"),
-                        tags.div(id="bargain-mine-coins", cls="bargain-coins"),
-                        tags.label(
-                            "You keep ",
-                            tags.strong(stake // 2, id="bargain-keep-value"),
-                            f" of {stake} coins",
-                            fr="bargain-keep",
-                        ),
-                        tags.input_(
-                            type="range",
-                            id="bargain-keep",
-                            min=0,
-                            max=stake,
-                            value=stake // 2,
-                        ),
-                        tags.button(
-                            "Propose",
-                            type="button",
-                            id="bargain-propose",
-                            cls="btn btn-primary",
-                        ),
-                        tags.p(id="bargain-mine", cls="bargain-note"),
-                        cls="bargain-card",
+                tags.section(
+                    tags.h3("Your partner's proposal"),
+                    tags.div(id="bargain-theirs-coins", cls="bargain-coins"),
+                    tags.p(id="bargain-theirs", cls="bargain-note"),
+                    tags.button(
+                        "Accept",
+                        type="button",
+                        id="bargain-accept",
+                        cls="btn btn-success",
+                        disabled=True,
                     ),
-                    tags.section(
-                        tags.h3("Your partner's proposal"),
-                        tags.div(id="bargain-theirs-coins", cls="bargain-coins"),
-                        tags.p(id="bargain-theirs", cls="bargain-note"),
-                        tags.button(
-                            "Accept",
-                            type="button",
-                            id="bargain-accept",
-                            cls="btn btn-success",
-                        ),
-                        id="bargain-theirs-card",
-                        cls="bargain-card",
-                    ),
-                    cls="bargain-cards",
+                    id="bargain-theirs-card",
+                    cls="bargain-card",
                 ),
-                tags.div(id="bargain-deal", cls="bargain-deal", hidden=True),
-                tags.p(id="bargain-rejection", cls="bargain-rejection"),
-                id="bargain-game",
-                data_live_game=True,
-            )
+                cls="bargain-cards",
+            ),
+            tags.div(id="bargain-deal", cls="bargain-deal", hidden=True),
+            tags.p(id="bargain-rejection", cls="bargain-rejection"),
+            id="bargain-game",
         ),
         LiveGameControl(
             player_left_message="Your partner has left.",
@@ -367,10 +364,10 @@ class Exp(psynet.experiment.Experiment):
             assert stake in STAKES
             assert trial.coins() in (BOT_GIVES, stake - BOT_GIVES)
             # The game's reward is recorded on the trial it was played in.
-            assert abs(trial.performance_reward - trial.coins() * COIN_VALUE) < 1e-9
+            assert trial.performance_reward == pytest.approx(trial.coins() * COIN_VALUE)
             outcome = trial.live_game.outcome
             assert sorted(outcome["deal"]) == [BOT_GIVES, stake - BOT_GIVES]
         expected = sum(t.coins() for t in trials) * COIN_VALUE
-        assert abs(bot.performance_reward - expected) < 1e-9
+        assert bot.performance_reward == pytest.approx(expected)
         for pair in self.get_basic_data()["pair"]:
             assert pair["stake"] in STAKES and pair["deal_at"] is not None, pair

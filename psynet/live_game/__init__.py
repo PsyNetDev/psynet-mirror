@@ -4,15 +4,14 @@ time, such as a negotiation, a coordination game or a game on a shared board.
 A game is a :class:`LiveGame` subclass, with a :class:`LiveMessage`
 subclass for each kind of message its pages send. A
 :class:`PlayLiveGame` in the timeline starts a game for each
-group that reaches it, and its page, which has a :class:`LiveGameControl`,
-plays it. :doc:`/code/multiplayer/live_game_tutorial` walks through whole
+group that reaches it, and its page, a :class:`LiveGamePage`, plays it. :doc:`/code/multiplayer/live_game_tutorial` walks through whole
 games, and :doc:`the reference </code/multiplayer/live_games>` covers the
 rest.
 """
 
 from dallinger.realtime import Reject
 
-from .control import LiveGameControl
+from .control import LiveGameControl, LiveGamePage
 from .game import LiveGame
 from .history import LiveGameCheckpoint, LiveGameMoment
 from .messages import LiveMessage, SavedMessage
@@ -27,6 +26,7 @@ __all__ = [
     "LiveGameCheckpoint",
     "LiveGameControl",
     "LiveGameMoment",
+    "LiveGamePage",
     "PlayLiveGame",
     "LiveGameFailed",
     "LiveGameRecord",

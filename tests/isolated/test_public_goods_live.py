@@ -36,7 +36,7 @@ class TestPublicGoodsLive:
             demo.ENDOWMENT + share,
         ]
         assert game.answer(2) == {"contributed": 0, "earned": demo.ENDOWMENT + share}
-        assert game.view(0)["others"] == [2, 0]
+        assert game.view(0)["contributions"] == [10, 2, 0]
 
     def test_a_contribution_is_between_none_and_the_endowment(self, demo):
         game = LocalGame(demo.PublicGoods, players=3)

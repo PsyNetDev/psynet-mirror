@@ -18,6 +18,7 @@ from dallinger.realtime.core import new_session, run_pass
 from dallinger.realtime.game import queued_effects
 from dallinger.realtime.runner import Runner
 from dallinger.realtime.store import RUNNING
+from dominate import tags
 from flask import Flask
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from rq import Queue, SimpleWorker
@@ -31,6 +32,7 @@ from psynet.live_game import (
     TIMEOUT,
     LiveGame,
     LiveGameControl,
+    LiveGamePage,
     LiveGameRecord,
     LiveMessage,
     PlayerReady,
@@ -39,7 +41,7 @@ from psynet.live_game import (
 from psynet.live_game import registry as game_registry
 from psynet.live_game.messages import _session_participant_ids
 from psynet.live_game.testing import LocalGame, start_game
-from psynet.modular_page import ModularPage
+from psynet.modular_page import ModularPage, NullControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
@@ -493,8 +495,19 @@ def test_a_play_live_game_needs_a_game_page_of_its_own(pair):
         ValueError, match="already the page of the PlayLiveGame 'first'"
     ):
         _play("second", page)
-    with pytest.raises(TypeError, match="must be a ModularPage with a LiveGameControl"):
+    with pytest.raises(TypeError, match="or a ModularPage with a LiveGameControl"):
         _play("third", InfoPage("Play.", time_estimate=5))
+
+
+def test_a_live_game_page_marks_its_content_and_has_a_live_game_control():
+    page = LiveGamePage("game", tags.p("Play.", id="board"), time_estimate=5)
+
+    assert isinstance(page.control, LiveGameControl)
+    # PsyNet hides what's marked on a page without a game.
+    assert "data-live-game" in str(page.prompt.text)
+    assert _play("first", page).resolve()[-1] is page
+    with pytest.raises(TypeError, match="must be a LiveGameControl"):
+        LiveGamePage("game", "Play.", NullControl(), time_estimate=5)
 
 
 def test_a_live_game_page_has_to_belong_to_a_play_live_game(pair, monkeypatch):

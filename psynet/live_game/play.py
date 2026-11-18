@@ -60,10 +60,9 @@ class PlayLiveGame(EltCollection):
         PlayLiveGame(
             group_type="pair",
             game_class=RockPaperScissors,
-            page=ModularPage(
+            page=LiveGamePage(
                 "rock_paper_scissors",
-                Prompt(tags.div(tags.p(id="status"), ...)),
-                LiveGameControl(),
+                tags.div(tags.p(id="status"), ...),
                 js_page_modules=["/static/rock_paper_scissors.js"],
                 time_estimate=30,
             ),
@@ -86,7 +85,8 @@ class PlayLiveGame(EltCollection):
         ``experiment.py``, not inside a function or another class.
 
     page
-        The game page: a :class:`~psynet.modular_page.ModularPage` with a
+        The game page: a :class:`LiveGamePage`, or another
+        :class:`~psynet.modular_page.ModularPage` with a
         :class:`LiveGameControl`.
 
     settings
@@ -174,8 +174,8 @@ class PlayLiveGame(EltCollection):
             isinstance(page, ModularPage) and isinstance(page.control, LiveGameControl)
         ):
             raise TypeError(
-                f"The page of the PlayLiveGame {id_!r} must be a ModularPage "
-                f"with a LiveGameControl, not {page!r}."
+                f"The page of the PlayLiveGame {id_!r} must be a LiveGamePage, "
+                f"or a ModularPage with a LiveGameControl, not {page!r}."
             )
         if page.control.play_id not in (None, id_):
             raise ValueError(

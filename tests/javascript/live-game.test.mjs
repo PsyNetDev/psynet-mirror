@@ -328,23 +328,29 @@ describe("psynet.liveGame", () => {
   });
 
   it("shows the result for the control's show_result_for seconds before moving on", () => {
-    mock.timers.enable({ apis: ["setTimeout"] });
+    mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
     session = { ...session, showResultFor: 8 };
-    assert.equal(liveGame.showResultFor, 8);
-    liveGame.onChange(() => {});
+    const left = [];
+    liveGame.onResultTimeLeft((seconds) => left.push(seconds));
     sockets[0].fire("onResultSaved");
     mock.timers.tick(7999);
     assert.equal(nextPages, 0);
     mock.timers.tick(1);
     assert.equal(nextPages, 1);
+    // The countdown runs from the result to the move on.
+    assert.equal(left[0], 8);
+    assert.ok(left.slice(1).every((seconds, i) => seconds <= left[i]));
+    assert.equal(left.at(-1), 0);
 
-    // A page that has gone doesn't move the next one on.
+    // A page that has gone doesn't move the next one on, or count down.
     changePage();
-    liveGame.onChange(() => {});
+    const gone = [];
+    liveGame.onResultTimeLeft((seconds) => gone.push(seconds));
     sockets[1].fire("onResultSaved");
     changePage();
     mock.timers.tick(8000);
     assert.equal(nextPages, 1);
+    assert.deepEqual(gone, [8]);
   });
 
   it("counts down to the end of a game with a duration", () => {
@@ -562,6 +568,16 @@ describe("psynet.liveGame", () => {
     });
     sockets[3].view({ ...view(4), deal: true }, "finished");
     assert.equal(deal.textContent, "You made a deal.");
+
+    // Without a playing callback, the status says nothing while the game is played.
+    changePage();
+    const quiet = { textContent: "" };
+    liveGame.showStatus(quiet, null, { waiting: "Waiting" });
+    assert.equal(quiet.textContent, "Waiting");
+    sockets[4].view(view(4));
+    assert.equal(quiet.textContent, "");
+    sockets[4].view(view(4), "finished");
+    assert.equal(quiet.textContent, "Over");
   });
 
   it("gives onChange the predicted view, and again after each send", () => {

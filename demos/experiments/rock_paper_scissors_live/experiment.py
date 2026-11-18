@@ -26,11 +26,11 @@ import psynet.experiment
 from psynet.live_game import (
     LiveGame,
     LiveGameControl,
+    LiveGamePage,
     LiveMessage,
     PlayLiveGame,
     Reject,
 )
-from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
 from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop
@@ -218,38 +218,34 @@ class RockPaperScissorsTrial(Trial):
             # on to the game page without a game.
             late_after=LATE_AFTER,
             late_action="leave_group",
-            page=ModularPage(
+            page=LiveGamePage(
                 "rock_paper_scissors",
-                Prompt(
+                tags.div(
+                    tags.p(
+                        f"Game {game['number']} of {len(GAMES)}, of "
+                        f"{game['throws']} throws. Each throw you win pays "
+                        f"a bonus of ${game['reward_per_win']:.2f}.",
+                        id="rps-stakes",
+                    ),
+                    tags.h4(id="rps-status"),
+                    tags.p(id="rps-partner"),
                     tags.div(
-                        tags.p(
-                            f"Game {game['number']} of {len(GAMES)}, of "
-                            f"{game['throws']} throws. Each throw you win pays "
-                            f"a bonus of ${game['reward_per_win']:.2f}.",
-                            id="rps-stakes",
-                        ),
-                        tags.h4(id="rps-status"),
-                        tags.p(id="rps-partner"),
-                        tags.div(
-                            [
-                                tags.button(
-                                    action.capitalize(),
-                                    type="button",
-                                    cls="btn btn-primary btn-lg rps-action",
-                                    data_action=action,
-                                    disabled=True,
-                                )
-                                for action in ACTIONS
-                            ],
-                            id="rps-actions",
-                        ),
-                        tags.p(id="rps-rejection"),
-                        tags.p(id="rps-score"),
-                        tags.ol(id="rps-results"),
-                        id="rps-game",
-                        # PsyNet hides it on a page without a game.
-                        data_live_game=True,
-                    )
+                        [
+                            tags.button(
+                                action.capitalize(),
+                                type="button",
+                                cls="btn btn-primary btn-lg rps-action",
+                                data_action=action,
+                                disabled=True,
+                            )
+                            for action in ACTIONS
+                        ],
+                        id="rps-actions",
+                    ),
+                    tags.p(id="rps-rejection"),
+                    tags.p(id="rps-score"),
+                    tags.ol(id="rps-results"),
+                    id="rps-game",
                 ),
                 LiveGameControl(
                     player_left_message=(

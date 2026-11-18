@@ -17,12 +17,11 @@ from dominate import tags
 import psynet.experiment
 from psynet.live_game import (
     LiveGame,
-    LiveGameControl,
+    LiveGamePage,
     LiveMessage,
     PlayLiveGame,
     Reject,
 )
-from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
 from psynet.timeline import PageMaker, Timeline
@@ -240,15 +239,13 @@ class Snake(LiveGame):
 
     def answer(self, outcome, reason, player):
         """The player's own part of the outcome, for their result page: the
-        food their snake ate, whether it was the most, the group's total, as
-        in the shared canvas demo, and their crashes."""
+        food their snake ate, whether it was the most, and their crashes."""
         food = outcome["food"]
         others = food[:player] + food[player + 1 :]
         return {
             "finished": reason == "finished",
             "score": food[player],
             "best": all(food[player] > n for n in others),
-            "group_total": sum(food),
             "crashes": outcome["crashes"][player],
         }
 
@@ -362,29 +359,25 @@ class Exp(psynet.experiment.Experiment):
             late_after=60,
             late_action="leave_group",
             game_class=Snake,
-            page=ModularPage(
+            page=LiveGamePage(
                 "snake_live",
-                Prompt(
-                    tags.div(
-                        tags.h4(id="snake-status"),
-                        tags.p(
-                            "Time left: ",
-                            tags.span(ROUND_SECONDS, id="snake-timer"),
-                            id="snake-time",
-                        ),
-                        tags.canvas(
-                            id="snake-board",
-                            width=SIZE * SQUARE,
-                            height=SIZE * SQUARE,
-                            tabindex="0",
-                            aria_label="The board your snake moves around",
-                        ),
-                        tags.ul(id="snake-scores"),
-                        id="snake-game",
-                        data_live_game=True,
-                    )
+                tags.div(
+                    tags.h4(id="snake-status"),
+                    tags.p(
+                        "Time left: ",
+                        tags.span(ROUND_SECONDS, id="snake-timer"),
+                        id="snake-time",
+                    ),
+                    tags.canvas(
+                        id="snake-board",
+                        width=SIZE * SQUARE,
+                        height=SIZE * SQUARE,
+                        tabindex="0",
+                        aria_label="The board your snake moves around",
+                    ),
+                    tags.ul(id="snake-scores"),
+                    id="snake-game",
                 ),
-                LiveGameControl(),
                 js_page_modules=["/static/snake.js"],
                 css_links=["/static/snake.css"],
                 js_vars={"snake_rules": RULES},

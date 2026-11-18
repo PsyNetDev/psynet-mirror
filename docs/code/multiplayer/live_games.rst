@@ -15,8 +15,7 @@ A live game has three pieces:
 1. The game, a subclass of :class:`~psynet.live_game.LiveGame`, with a
    :class:`~psynet.live_game.LiveMessage` subclass for each kind of
    message a page can send.
-2. The game page, a :class:`~psynet.modular_page.ModularPage` with a
-   :class:`~psynet.live_game.LiveGameControl`, and a JavaScript file
+2. The game page, a :class:`~psynet.live_game.LiveGamePage`, and a JavaScript file
    that plays the game through ``psynet.liveGame``.
 3. A :class:`~psynet.live_game.PlayLiveGame` in the timeline, which
    makes each group that reaches it wait for its members, starts a game for
@@ -176,20 +175,15 @@ game, and then shows the group the game page:
             game_class=RockPaperScissors,
             late_after=60,
             late_action="leave_group",
-            page=ModularPage(
+            page=LiveGamePage(
                 "rock_paper_scissors",
-                Prompt(
-                    tags.div(
-                        tags.p(id="status"),
-                        tags.p(id="rejection"),
-                        tags.button("Rock", type="button", id="rock"),
-                        tags.button("Paper", type="button", id="paper"),
-                        tags.button("Scissors", type="button", id="scissors"),
-                        # Hidden on a page without a game.
-                        data_live_game=True,
-                    )
+                tags.div(
+                    tags.p(id="status"),
+                    tags.p(id="rejection"),
+                    tags.button("Rock", type="button", id="rock"),
+                    tags.button("Paper", type="button", id="paper"),
+                    tags.button("Scissors", type="button", id="scissors"),
                 ),
-                LiveGameControl(),
                 js_page_modules=["/static/rock-paper-scissors.js"],
                 time_estimate=30,
             ),
@@ -357,9 +351,13 @@ state`_).
 The game page
 -------------
 
-The game page is the ``ModularPage`` given to the ``PlayLiveGame``, with a
-:class:`~psynet.live_game.LiveGameControl`, as in the example under
-`PlayLiveGame`_. The page's JavaScript goes in a file in the experiment's ``static`` folder,
+The game page is the :class:`~psynet.live_game.LiveGamePage` given to the
+``PlayLiveGame``, as in the example under `PlayLiveGame`_. It shows its
+content and plays the game through a
+:class:`~psynet.live_game.LiveGameControl`, ``LiveGameControl()`` unless
+you give it one with other options, such as the texts below. Another
+:class:`~psynet.modular_page.ModularPage` with a ``LiveGameControl`` also
+works, for a page built some other way. The page's JavaScript goes in a file in the experiment's ``static`` folder,
 listed in the page's ``js_page_modules``. It exports an ``activate``
 function, which PsyNet runs each time the page opens
 (:doc:`/code/pages/custom_front_ends` explains page modules).
@@ -436,8 +434,9 @@ At the end, and when players leave:
 - ``onResultSaved(callback)`` calls ``callback`` once the player's result is
   saved, and ``onRefused(callback)`` if the server refuses the page's
   connection. Either way, the page then moves on by itself.
-- ``showResultFor`` is the control's ``show_result_for``, for a countdown
-  while the page shows the result.
+- ``onResultTimeLeft(callback)`` calls ``callback`` with the seconds left
+  before the page moves on, a few times a second, for a countdown while the
+  page shows the result (see `The end`_).
 - ``onPlayersAway(callback)`` calls ``callback`` with the numbers of the
   players who have left the game page (see `Joining and leaving`_).
 
@@ -502,7 +501,9 @@ The status line
 
 - before the game starts, the control's ``waiting_status``, "Waiting for
   the other players to open the game" by default;
-- while it's played, what ``playing(view)`` returns for each view;
+- while it's played, what ``playing(view)`` returns for each view, or
+  nothing if ``playing`` is ``null``, for a page that shows what's happening
+  some other way;
 - once the player's game has ended, the control's ``ended_status``, "The
   game is over." by default.
 
@@ -561,8 +562,9 @@ A participant can reach the page without one, for example when another
 member was late for the ``PlayLiveGame`` and their group broke up, or when
 their group ended before they reached it. PsyNet tells the participant with
 a notice at the top of the page, "Your group couldn't start the game.",
-which the control's ``no_game_message`` changes or turns off, and hides the
-page's elements marked ``data-live-game``, such as the board. The page's
+which the control's ``no_game_message`` changes or turns off, and hides
+what the :class:`~psynet.live_game.LiveGamePage` shows. On a page of
+your own, it hides the elements marked ``data-live-game``. The page's
 ``psynet.liveGame`` methods then do nothing: ``send`` returns ``undefined``,
 callbacks never run, and ``enableWhilePlaying`` leaves its elements
 disabled. So a page needs no check for this, unless it starts work of its
@@ -623,8 +625,7 @@ To show the result on the game page first, pass the seconds to show it
 for as the control's ``show_result_for``, such as
 ``LiveGameControl(show_result_for=8)``, and draw the result in
 ``onResultSaved``. The page moves on once the seconds are up, and
-``psynet.liveGame.showResultFor`` gives them to the page for a
-countdown. A later :class:`~psynet.sync.GroupBarrier`'s ``late_after``
+``psynet.liveGame.onResultTimeLeft`` counts them down for the page. A later :class:`~psynet.sync.GroupBarrier`'s ``late_after``
 counts from the end of these seconds, so it needn't cover them.
 
 To move on from the page's JavaScript instead, pass ``auto_advance=False``

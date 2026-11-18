@@ -24,6 +24,7 @@ export read the society's history from the lake's ``moments``.
 import random
 from typing import List
 
+import pytest
 from dominate import tags
 
 import psynet.experiment
@@ -31,6 +32,7 @@ from psynet.bot import BotDriver, advance_past_wait_pages, run_bots_to_completio
 from psynet.live_game import (
     LiveGame,
     LiveGameControl,
+    LiveGamePage,
     LiveMessage,
     PlayLiveGame,
     Reject,
@@ -68,6 +70,9 @@ TIPS_SHOWN = 3
 # Members are named by the colour of their boat, and spots by letter.
 COLOURS = ["purple", "green", "pink", "grey", "orange"]
 SPOT_LETTERS = "ABCDEFGH"
+# What the lake page needs to predict a move and draw the clock. The page
+# passes it to static/fishing.js.
+RULES = {"travel_seconds": TRAVEL_SECONDS, "stay_seconds": STAY_SECONDS}
 
 # Why a member's game ended, which is their game's reason.
 RETIRED = "retired"
@@ -162,7 +167,6 @@ class Fishing(LiveGame):
         shown = [p for p in range(len(boats)) if p == player or not boats[p]["left"]]
         who = {p: "you" if p == player else boats[p]["colour"] for p in shown}
         return {
-            "travel_seconds": TRAVEL_SECONDS,
             "boats": [
                 {
                     "who": who[p],
@@ -172,7 +176,6 @@ class Fishing(LiveGame):
                 for p in shown
             ],
             "fish": {who[p]: state["fish"][p] for p in shown},
-            "stay_seconds": STAY_SECONDS,
             "leaves_at": mine["joined_at"] + STAY_SECONDS,
             "left": mine["left"],
             "catch_number": state["latest"]["number"],
@@ -291,29 +294,26 @@ def water():
 
 
 def lake_page():
-    return ModularPage(
+    return LiveGamePage(
         "fish",
-        Prompt(
+        tags.div(
             tags.div(
-                tags.div(
-                    tags.span("The lake", cls="fish-round"),
-                    tags.span("Sailing to the lake…", id="fish-status"),
-                    tags.div(tags.div(id="fish-time-left"), cls="fish-clock"),
-                    tags.span(id="fish-seconds", cls="fish-seconds"),
-                    cls="fish-header",
-                ),
-                water(),
-                tags.p(
-                    "Boats start at the dock. Click a spot to sail your boat "
-                    f"there, which takes {TRAVEL_SECONDS} s. Boats at a spot "
-                    f"catch fish every {CATCH_SECONDS} s.",
-                    cls="fish-help",
-                ),
-                tags.div(id="fish-scores", cls="fish-scores"),
-                tags.p(id="fish-rejection", cls="fish-rejection"),
-                id="fish-game",
-                data_live_game=True,
-            )
+                tags.span("The lake", cls="fish-round"),
+                tags.span("Sailing to the lake…", id="fish-status"),
+                tags.div(tags.div(id="fish-time-left"), cls="fish-clock"),
+                tags.span(id="fish-seconds", cls="fish-seconds"),
+                cls="fish-header",
+            ),
+            water(),
+            tags.p(
+                "Boats start at the dock. Click a spot to sail your boat "
+                f"there, which takes {TRAVEL_SECONDS} s. Boats at a spot "
+                f"catch fish every {CATCH_SECONDS} s.",
+                cls="fish-help",
+            ),
+            tags.div(id="fish-scores", cls="fish-scores"),
+            tags.p(id="fish-rejection", cls="fish-rejection"),
+            id="fish-game",
         ),
         # The page shows the member's results on the lake before moving on.
         LiveGameControl(
@@ -322,6 +322,7 @@ def lake_page():
             waiting_status="Waiting for the others to reach the lake…",
         ),
         js_page_modules=["/static/fishing.js"],
+        js_vars={"fishing_rules": RULES},
         css_links=["/static/fishing.css"],
         time_estimate=STAY_SECONDS + RESULTS_SECONDS,
     )
@@ -555,4 +556,4 @@ class Exp(psynet.experiment.Experiment):
         for bot in bots:
             reward = bot.with_participant(lambda p: p.performance_reward)
             expected = members[bot.id]["fish"] * FISH_VALUE
-            assert abs(reward - expected) < 1e-9, (bot.id, reward, expected)
+            assert reward == pytest.approx(expected), bot.id

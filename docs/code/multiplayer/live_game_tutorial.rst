@@ -240,19 +240,19 @@ Reference: :ref:`live-games-bots`.
 The game page
 ~~~~~~~~~~~~~
 
-The game page is a :class:`~psynet.modular_page.ModularPage`, built in the
+The game page is a :class:`~psynet.live_game.LiveGamePage`, built in the
 demo's trial, which `Playing it as trials`_ below shows in full:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
    :language: python
-   :start-at: page=ModularPage(
+   :start-at: page=LiveGamePage(
    :end-at: time_estimate=60,
    :dedent:
 
-Its prompt holds the page's elements, each with an ``id`` so that the
-JavaScript can find it, and ``data_live_game=True`` marks the game, which
-PsyNet hides on a page without a game. The
-:class:`~psynet.live_game.LiveGameControl` connects the page to the game. Its
+Its content holds the page's elements, each with an ``id`` so that the
+JavaScript can find it. PsyNet hides it on a page without a game. The
+:class:`~psynet.live_game.LiveGameControl` connects the page to the game,
+and a page that doesn't need to change its texts can leave it out. Its
 ``waiting_status`` is what the page says until both pages have opened,
 ``player_left_message`` the notice while the partner is away, and
 ``no_game_message`` the notice on a page without a game.
@@ -398,10 +398,9 @@ then shows each player their score:
             group_type="pair",
             game_class=RockPaperScissors,
             settings={"throws": 5},
-            page=ModularPage(
+            page=LiveGamePage(
                 "rock_paper_scissors",
-                Prompt(tags.div(...)),  # the elements shown above
-                LiveGameControl(),
+                tags.div(...),  # the elements shown above
                 js_page_modules=["/static/rock-paper-scissors.js"],
                 time_estimate=60,
             ),

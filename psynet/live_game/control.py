@@ -1,4 +1,5 @@
-"""LiveGameControl, the control that joins a game page to its game.
+"""LiveGameControl, the control that joins a game page to its game, and
+LiveGamePage, a ModularPage with that control.
 
 The control has the page load ``live-game.js``. Its page code creates
 ``psynet.liveGame`` and leaves the game when the participant leaves
@@ -13,8 +14,9 @@ from datetime import timedelta
 
 from dallinger import db
 from dallinger.models import RealtimeSession, timenow
+from dominate import tags
 
-from ..modular_page import ModularPage, NullControl
+from ..modular_page import ModularPage, NullControl, Prompt
 from ..timeline import ResponseNotReady
 from ..utils import get_translator
 from .messages import _game_channel, _session_game_class, _session_participant_ids
@@ -38,9 +40,8 @@ _NAMES = ("shown", "anonymous")
 
 class LiveGameControl(NullControl):
     """The part of a game page where the participant plays their group's
-    live game. Give the page to a :class:`PlayLiveGame` as its ``page``,
-    and list the JavaScript file that plays the game in the page's
-    ``js_page_modules``, as :class:`PlayLiveGame` shows.
+    live game. A :class:`LiveGamePage` has one, ``LiveGameControl()``
+    unless you give it another, to set the options below.
 
     PsyNet sets the page's answer to what the game's
     :meth:`~LiveGame.answer` returns for the participant, once the
@@ -64,7 +65,8 @@ class LiveGameControl(NullControl):
     show_result_for
         Seconds the page stays once the game's result is saved, before
         it moves on by itself, so that its JavaScript can show the result,
-        for example in ``onResultSaved``. A
+        for example in ``onResultSaved``, with a countdown from
+        ``onResultTimeLeft``. A
         :class:`~psynet.sync.GroupBarrier`'s ``late_after`` counts from the
         end of these seconds, so it needn't cover them. Default: 0. Needs ``auto_advance``.
 
@@ -260,6 +262,62 @@ class LiveGameControl(NullControl):
                 "players": _players(participant, self._play_id()),
             }
         }
+
+
+class LiveGamePage(ModularPage):
+    """A game page: a :class:`~psynet.modular_page.ModularPage` that shows
+    ``content`` and plays the group's game through a
+    :class:`LiveGameControl`. Give it to a :class:`PlayLiveGame` as its
+    ``page``.
+
+    ::
+
+        LiveGamePage(
+            "rock_paper_scissors",
+            tags.div(tags.h4(id="status"), ...),
+            LiveGameControl(waiting_status="Waiting for your partner"),
+            js_page_modules=["/static/rock-paper-scissors.js"],
+            time_estimate=60,
+        )
+
+    The page marks ``content`` with ``data-live-game``, so that PsyNet
+    hides it on a page without a game, where the control's
+    ``no_game_message`` says why instead.
+
+    Parameters
+    ----------
+
+    label
+        The page's label.
+
+    content
+        What the page shows: HTML, such as a ``dominate`` tag, or a list of
+        tags, with the ``id`` of each element that the page's JavaScript
+        finds.
+
+    control
+        The page's :class:`LiveGameControl`. Default: ``LiveGameControl()``.
+
+    **kwargs
+        Any other parameter of :class:`~psynet.modular_page.ModularPage`,
+        such as ``js_page_modules``, ``css_links``, ``js_vars`` and
+        ``time_estimate``.
+    """
+
+    def __init__(self, label, content, control=None, **kwargs):
+        if control is None:
+            control = LiveGameControl()
+        if not isinstance(control, LiveGameControl):
+            raise TypeError(
+                f"The control of the LiveGamePage {label!r} must be a "
+                f"LiveGameControl, not {control!r}."
+            )
+        super().__init__(
+            label,
+            Prompt(tags.div(content, data_live_game=True)),
+            control,
+            **kwargs,
+        )
 
 
 def _latest_end_seconds(session_id):

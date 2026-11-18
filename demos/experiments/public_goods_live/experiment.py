@@ -13,6 +13,7 @@ holds what the player put in and earned; the results page reads the team's
 pot from the trial's ``live_game``.
 """
 
+import pytest
 from dominate import tags
 
 import psynet.experiment
@@ -20,11 +21,11 @@ from psynet.bot import Bot
 from psynet.live_game import (
     LiveGame,
     LiveGameControl,
+    LiveGamePage,
     LiveMessage,
     PlayLiveGame,
     Reject,
 )
-from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
 from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop
@@ -41,6 +42,10 @@ RESULTS_SECONDS = 10
 # ends, so this only has to cover reading the results.
 LATE_AFTER = 15
 GROUPING_WAIT = 20
+
+#: What the game page needs to show the pot. The game page passes it to
+#: static/public-goods.js.
+RULES = {"endowment": ENDOWMENT, "multiplier": MULTIPLIER}
 
 
 class Contribute(LiveMessage):
@@ -65,13 +70,8 @@ class PublicGoods(LiveGame):
         return {"contributions": [0 for player in players]}
 
     def view(self, state, player):
-        contributions = state["contributions"]
-        return {
-            "endowment": ENDOWMENT,
-            "multiplier": MULTIPLIER,
-            "mine": contributions[player],
-            "others": contributions[:player] + contributions[player + 1 :],
-        }
+        # Contributions are public, so every player sees them all.
+        return {"contributions": state["contributions"]}
 
     def outcome(self, state, reason):
         contributions = state["contributions"]
@@ -95,7 +95,7 @@ class PublicGoods(LiveGame):
 
     def bot(self, view, player, now):
         tokens = bot_contribution(player)
-        if view["mine"] == tokens:
+        if view["contributions"][player] == tokens:
             return None
         return Contribute(tokens=tokens)
 
@@ -105,44 +105,40 @@ def bot_contribution(player):
 
 
 def contribution_page(round_number):
-    return ModularPage(
+    return LiveGamePage(
         "contribution",
-        Prompt(
+        tags.div(
             tags.div(
-                tags.div(
-                    tags.span(
-                        f"Round {round_number + 1} of {N_ROUNDS}", cls="pg-round"
-                    ),
-                    tags.span("Joining the game…", id="pg-status"),
-                    tags.div(tags.div(id="pg-time-left"), cls="pg-clock"),
-                    cls="pg-header",
-                ),
-                tags.p(
-                    f"Drag the slider to choose how many of your {ENDOWMENT} "
-                    "tokens to put in the group pot. You can change your mind "
-                    "until the time is up."
-                ),
-                tags.div(id="pg-rows", cls="pg-rows"),
-                tags.input_(
-                    type="range",
-                    id="pg-tokens",
-                    min=0,
-                    max=ENDOWMENT,
-                    value=0,
-                    aria_label="Your contribution",
-                ),
-                tags.div(
-                    tags.div(id="pg-pot", cls="pg-pot"),
-                    tags.p(id="pg-earn", cls="pg-earn"),
-                    cls="pg-summary",
-                ),
-                tags.p(id="pg-rejection", cls="pg-rejection"),
-                id="pg-game",
-                data_live_game=True,
-            )
+                tags.span(f"Round {round_number + 1} of {N_ROUNDS}", cls="pg-round"),
+                tags.span("Joining the game…", id="pg-status"),
+                tags.div(tags.div(id="pg-time-left"), cls="pg-clock"),
+                cls="pg-header",
+            ),
+            tags.p(
+                f"Drag the slider to choose how many of your {ENDOWMENT} "
+                "tokens to put in the group pot. You can change your mind "
+                "until the time is up."
+            ),
+            tags.div(id="pg-rows", cls="pg-rows"),
+            tags.input_(
+                type="range",
+                id="pg-tokens",
+                min=0,
+                max=ENDOWMENT,
+                value=0,
+                aria_label="Your contribution",
+            ),
+            tags.div(
+                tags.div(id="pg-pot", cls="pg-pot"),
+                tags.p(id="pg-earn", cls="pg-earn"),
+                cls="pg-summary",
+            ),
+            tags.p(id="pg-rejection", cls="pg-rejection"),
+            id="pg-game",
         ),
         LiveGameControl(player_left_message="A player has left the game."),
         js_page_modules=["/static/public-goods.js"],
+        js_vars={"public_goods_rules": RULES},
         css_links=["/static/public-goods.css"],
         time_estimate=ROUND_SECONDS,
     )
@@ -268,6 +264,6 @@ class Exp(psynet.experiment.Experiment):
             assert outcome["pot"] == sum(contributions)
             # The game's reward is recorded on the trial it was played in.
             reward = trial.answer["earned"] * TOKEN_VALUE
-            assert abs(trial.performance_reward - reward) < 1e-9
+            assert trial.performance_reward == pytest.approx(reward)
         expected = sum(t.answer["earned"] * TOKEN_VALUE for t in trials)
-        assert abs(bot.performance_reward - expected) < 1e-9
+        assert bot.performance_reward == pytest.approx(expected)

@@ -47,8 +47,9 @@ function byWho(fish) {
   return [...entries.filter(([who]) => who === "you"), ...entries.filter(([who]) => who !== "you")];
 }
 
-export function activate({root, psynet}) {
+export function activate({root, vars, psynet}) {
   let live = psynet.liveGame;
+  let rules = vars.fishing_rules;
   let status = root.querySelector("#fish-status");
   if (!live.hasGame) {
     // PsyNet says why in a notice, and shows the Next button. Without a
@@ -70,14 +71,13 @@ export function activate({root, psynet}) {
   let boats = new Map();
   let view = null;
   let seenCatch = 0;
-  let countdown = null;
   let clock = null;
 
   live.predict((predicted, type, message, sentAt) => {
     if (type === "move") {
       let mine = predicted.boats.find((boat) => boat.who === "you");
       mine.spot = message.spot;
-      mine.arrives_at = sentAt + predicted.travel_seconds;
+      mine.arrives_at = sentAt + rules.travel_seconds;
     }
   });
 
@@ -182,12 +182,11 @@ export function activate({root, psynet}) {
     }
   }
 
-  function endedText() {
-    return LEFT_TEXT[view && view.left] ?? "The lake has closed.";
+  function endedText(final) {
+    return LEFT_TEXT[final.left] ?? "The lake has closed.";
   }
 
-  function showResults(seconds) {
-    status.textContent = endedText();
+  function showResults() {
     let catches = document.createElement("div");
     catches.className = "fish-results-boats";
     let fish = byWho(view ? view.fish : {});
@@ -207,14 +206,10 @@ export function activate({root, psynet}) {
     next.className = "fish-results-next";
     results.replaceChildren(catches, next);
     results.hidden = false;
-    // PsyNet moves the page on once the seconds are up.
-    let until = Date.now() + seconds * 1000;
-    let tell = () => {
-      let left = Math.max(1, Math.ceil((until - Date.now()) / 1000));
-      next.textContent = `Continuing in ${left} s`;
-    };
-    tell();
-    countdown = setInterval(tell, 250);
+    // PsyNet moves the page on once the control's show_result_for is up.
+    live.onResultTimeLeft((left) => {
+      next.textContent = `Continuing in ${Math.max(1, Math.ceil(left))} s`;
+    });
   }
 
   // The member's own time on the lake, which starts when they join it.
@@ -224,27 +219,22 @@ export function activate({root, psynet}) {
       return;
     }
     let left = live.ended ? 0 : Math.max(0, view.leaves_at - now);
-    timeLeft.style.width = `${(left / view.stay_seconds) * 100}%`;
+    timeLeft.style.width = `${(left / rules.stay_seconds) * 100}%`;
     secondsLeft.textContent = `${Math.ceil(left)} s`;
     if (!live.ended) {
       // Redrawn so that boats that have arrived stop sailing.
       render();
     }
   }, 250);
-  let resize = () => view && render({instant: true});
-  window.addEventListener("resize", resize);
+  psynet.addPageEventListener(window, "resize", () => view && render({instant: true}));
 
   live.onChange(() => render());
-  // Once the member's time ends, the page counts their catch until their
-  // result is saved, and then shows why they left.
-  live.showStatus(status, () => "", {
-    ended: () => (results.hidden ? "Counting your catch…" : endedText()),
-  });
+  // The lake shows what's happening, so the status says nothing while the
+  // member fishes, and then why they left.
+  live.showStatus(status, null, {ended: endedText});
   live.showRejections(rejection);
-  live.onResultSaved(() => showResults(live.showResultFor));
+  live.onResultSaved(showResults);
   return () => {
-    clearInterval(countdown);
     clearInterval(clock);
-    window.removeEventListener("resize", resize);
   };
 }

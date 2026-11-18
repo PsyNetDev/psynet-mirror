@@ -29,7 +29,8 @@ export function activate({root, psynet}) {
   let view = null;
   let lastTheirs = null;
 
-  live.enableWhilePlaying(keep, propose, accept);
+  // render enables Accept, once there's a proposal to accept.
+  live.enableWhilePlaying(keep, propose);
   live.predict((predicted, type, message) => {
     if (type === "propose") {
       predicted.mine = message.keep;

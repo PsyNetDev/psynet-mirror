@@ -18,8 +18,9 @@ function tokenRow(name, tokens, endowment, you) {
   return row;
 }
 
-export function activate({root, psynet}) {
+export function activate({root, vars, psynet}) {
   let live = psynet.liveGame;
+  let rules = vars.public_goods_rules;
   let status = root.querySelector("#pg-status");
   let timeLeft = root.querySelector("#pg-time-left");
   let slider = root.querySelector("#pg-tokens");
@@ -27,49 +28,46 @@ export function activate({root, psynet}) {
   let pot = root.querySelector("#pg-pot");
   let earn = root.querySelector("#pg-earn");
   let rejection = root.querySelector("#pg-rejection");
-  let view = null;
 
   live.enableWhilePlaying(slider);
   live.predict((predicted, type, message) => {
     if (type === "contribute") {
-      predicted.mine = message.tokens;
+      predicted.contributions[live.player] = message.tokens;
     }
   });
 
-  // The label of the i-th of the others, who are in player order without
-  // this player: their pseudonym, as the group's other pages show them.
-  function othersLabel(i) {
-    let others = live.players.filter((player) => !player.you);
-    return others[i]?.label ?? "Another player";
-  }
-
-  function render() {
-    view = live.predictedView();
-    if (view === null) {
-      // Before the first view.
-      return;
-    }
+  function render(view) {
+    let contributions = view.contributions;
+    let mine = contributions[live.player];
     if (document.activeElement !== slider) {
-      slider.value = view.mine;
+      slider.value = mine;
     }
     rows.replaceChildren(
-      tokenRow("You", view.mine, view.endowment, true),
-      ...view.others.map((tokens, i) => tokenRow(othersLabel(i), tokens, view.endowment, false))
+      ...contributions.map((tokens, player) =>
+        tokenRow(
+          // "You", or the player's pseudonym, as the group's other pages show them.
+          live.players[player]?.label ?? `Player ${player + 1}`,
+          tokens,
+          rules.endowment,
+          player === live.player
+        )
+      )
     );
-    let total = view.mine + view.others.reduce((a, b) => a + b, 0);
-    let players = view.others.length + 1;
-    let share = (view.multiplier * total) / players;
-    pot.textContent = `Pot: ${total} tokens × ${view.multiplier} = ${+(view.multiplier * total).toFixed(2)}`;
+    let total = contributions.reduce((a, b) => a + b, 0);
+    let share = (rules.multiplier * total) / contributions.length;
+    pot.textContent = `Pot: ${total} tokens × ${rules.multiplier} = ${+(rules.multiplier * total).toFixed(2)}`;
     earn.textContent =
       `If the round ended now, each player would get ${+share.toFixed(2)} tokens ` +
-      `from the pot, and you would earn ${+(view.endowment - view.mine + share).toFixed(2)} tokens.`;
+      `from the pot, and you would earn ${+(rules.endowment - mine + share).toFixed(2)} tokens.`;
   }
 
   live.onTimeLeft((left) => {
     timeLeft.style.width = `${(left / live.duration) * 100}%`;
   });
   live.onChange(render);
-  live.showStatus(status, () => "", { ended: "Time's up." });
+  // The rows show what's happening, so the status says nothing while the
+  // round is played.
+  live.showStatus(status, null, { ended: "Time's up." });
   live.showRejections(rejection);
   slider.addEventListener("input", () => {
     live.send("contribute", {tokens: Number(slider.value)});
