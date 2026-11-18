@@ -537,7 +537,7 @@ def _live_failure_texts(result):
             continue
         errors = ", ".join(
             f"{error} ({n:,}x)" for error, n in list(played["errors"].items())[:3]
-        )
+        ) + (", ..." if len(played["errors"]) > 3 else "")
         texts.append(
             f"{failed} failed: {errors}. The server log has each traceback "
             f"after 'Session <id> of {game} failed'."
@@ -616,10 +616,13 @@ _LOCAL_CAVEAT = (
 )
 _LIVE_NOT_MEASURED = (
     "Not measured for live games: players' messages, because bots play live "
-    "games on the server without pages. Play the game in a browser during a "
-    "test with --existing --force to measure them, and watch it on the deployed "
-    "server while other groups play."
+    "games on the server without pages. To measure them, {how}, and watch "
+    "the game on the deployed server while other groups play."
 )
+_LIVE_BROWSER_HOW = {
+    True: "play the game in a browser during a test run with --existing --force",
+    False: "play the game in a browser on the test's app while the test runs",
+}
 _NOT_MEASURED = (
     "Not measured: uploads over participants' own networks (bots upload from "
     "next to the server), media downloads and bandwidth, the front door (web "
@@ -1022,7 +1025,7 @@ def format_performance_summary(
     if any(g["passes"] and not _all_failed(g) for g in played) and not any(
         _live_messages_measured(r) for r in results
     ):
-        notes.append(_LIVE_NOT_MEASURED)
+        notes.append(_LIVE_NOT_MEASURED.format(how=_LIVE_BROWSER_HOW[bool(local)]))
     tail += _capacity_renderables(
         results, limits, time_factor, notes, confirmation_planned, open_link
     )
