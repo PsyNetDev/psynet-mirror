@@ -1409,10 +1409,14 @@ def _reasons(result, causes, limits):
     return "; ".join(clauses.get(reason, reason) for reason, _ in causes)
 
 
-def _error_kinds_lines(result, causes):
+def _error_kinds_lines(result, causes, limits):
     """Name the kinds of ``result``'s bot errors, if too many bots failed, e.g. ``Errors at 560: 5 x HTTP 500 on /response.``"""
     kinds = list((result.bot_error_kinds or {}).items())
-    if not kinds or describe_bot_errors(result) not in [r for r, _ in causes]:
+    reasons = {r for r, _ in causes}
+    if not kinds or not any(
+        b.measure == "bot_errors" and b.reason in reasons
+        for b in limit_breaches(result, limits)
+    ):
         return []
     named = ", ".join(f"{n:,} x {kind}" for kind, n in kinds[:5])
     more = ", ..." if len(kinds) > 5 else ""
@@ -1498,7 +1502,7 @@ def _capacity_lines(outcome, limits):
     reasons = _reasons(first_fail, outcome.first_causes, limits)
     lines = [
         f"{lead} At {first_fail.n_bots:,}, {unmeasured_text}{reasons}{end}",
-        *_error_kinds_lines(first_fail, outcome.first_causes),
+        *_error_kinds_lines(first_fail, outcome.first_causes, limits),
     ]
     above_fail = [n for n in passed if capacity is None or n > first_fail.n_bots]
     if above_fail and (capacity is None or not unmeasured):
@@ -1529,7 +1533,8 @@ def _live_advice(result, limits):
             "test again."
         )
     if game_errors and not other_errors:
-        return "; fix the errors under LIVE GAMES in the test's results."
+        fewer = ", or test fewer bots" if other_load else ""
+        return f"; fix the errors under LIVE GAMES in the test's results{fewer}."
     # The general advice covers any other errors.
     return None
 
@@ -1601,7 +1606,10 @@ def _check_lines(result, outcome, limits):
     reasons = _reasons(result, causes, limits)
     if not _confirmation_exceeded(result, limits):
         return [f"{test} but could not be tested: {reasons}."]
-    lines = [f"{test} and failed: {reasons}.", *_error_kinds_lines(result, causes)]
+    lines = [
+        f"{test} and failed: {reasons}.",
+        *_error_kinds_lines(result, causes, limits),
+    ]
     if result.steady_state_s is not None:
         startup, steady = _phase_breaches(result, limits)
         lines.append(

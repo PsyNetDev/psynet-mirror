@@ -632,7 +632,7 @@ def live_game_snapshot():
     }
 
 
-def live_game_stats(before, after, errored_bot_ids=(), steady_from=None):
+def live_game_stats(before, after, errored_bot_ids=(), startup_bot_ids=()):
     """Return how the live game runners kept up between two :func:`live_game_snapshot` calls.
 
     Parameters
@@ -641,8 +641,8 @@ def live_game_stats(before, after, errored_bot_ids=(), steady_from=None):
         The snapshots.
     errored_bot_ids : collection of int
         The participant IDs of the bots that raised an error in the test.
-    steady_from : datetime.datetime, optional
-        When the test's steady state began, if it had one.
+    startup_bot_ids : collection of int
+        Those of ``errored_bot_ids`` that raised it before the steady state.
 
     Returns
     -------
@@ -651,8 +651,8 @@ def live_game_stats(before, after, errored_bot_ids=(), steady_from=None):
         the runners running at the end; ``busy_s``, the seconds they spent
         playing games rather than waiting; ``errored_players``, how many of
         ``errored_bot_ids`` played in a failed game, which fails its players,
-        and ``startup_errored_players``, those whose game failed before
-        ``steady_from``;
+        and ``startup_errored_players``, those of them in
+        ``startup_bot_ids``;
         and ``games``, by each game's channel: the ``games`` played, those
         that started in the test or were running when it started, how many
         of those ``failed`` and their ``errors``, the last line of
@@ -686,10 +686,7 @@ def live_game_stats(before, after, errored_bot_ids=(), steady_from=None):
             games["errors"][_last_line(session.error)] += 1
             players = {int(m) for m in session.members} & errored_bot_ids
             errored_players |= players
-            # A session that failed to start has no end time.
-            ended = session.end_time or session.start_time
-            if steady_from is not None and ended is not None and ended < steady_from:
-                startup_errored_players |= players
+            startup_errored_players |= players & set(startup_bot_ids)
     from dallinger.realtime.store import DELAY_BOUNDS
 
     no_passes = {

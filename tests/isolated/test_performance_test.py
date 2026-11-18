@@ -195,8 +195,8 @@ def test_bots_that_fail_count_as_started_and_errored(monkeypatch):
     tester._stop_bots(bot_state, timeout_s=5)
 
     assert bot_state.total_bots_started == bot_state.total_bot_errors >= 2
-    assert 1 not in bot_state.errored_bot_ids
-    assert 2 in bot_state.errored_bot_ids
+    assert 1 not in bot_state.errored_bots
+    assert 2 in bot_state.errored_bots
     kinds = bot_state.bot_error_kinds
     assert kinds["RuntimeError"] == 1
     assert kinds["HTTP 500 on /participant_status"] == bot_state.total_bot_errors - 1
@@ -989,8 +989,6 @@ def test_database_rows_count_new_participants(db_session):
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 def test_live_game_stats_count_the_test_s_games_failures_and_runner_work(db_session):
-    from datetime import datetime
-
     from dallinger import db
     from dallinger.models import RealtimeSession
     from sqlalchemy import func
@@ -1026,7 +1024,6 @@ def test_live_game_stats_count_the_test_s_games_failures_and_runner_work(db_sess
                 members=["3", "4"],
                 status="failed",
                 error="Traceback (most recent call last):\nTimeLimitExceeded: 1 s",
-                end_time=datetime(2026, 1, 1, 12),
             ),
             # The runner hasn't saved its counts for this game yet.
             RealtimeSession(game_type="fishing", members=[5], status="failed"),
@@ -1042,7 +1039,7 @@ def test_live_game_stats_count_the_test_s_games_failures_and_runner_work(db_sess
         before,
         after,
         errored_bot_ids={3, 5, 8, 9},
-        steady_from=datetime(2026, 1, 1, 13),
+        startup_bot_ids={3, 9},
     )
 
     snake, fishing = stats["games"]["snake"], stats["games"]["fishing"]
@@ -1052,7 +1049,7 @@ def test_live_game_stats_count_the_test_s_games_failures_and_runner_work(db_sess
     assert (fishing["games"], fishing["failed"], fishing["passes"]) == (1, 1, 0)
     assert fishing["errors"] == {"no error saved": 1}
     assert stats["errored_players"] == 3
-    # Only the game that ended before the steady state failed bots in the start-up.
+    # Bot 9 errored in the start-up, but not in a game.
     assert stats["startup_errored_players"] == 1
     assert stats["busy_s"] == pytest.approx(0.2)
 
@@ -1470,6 +1467,17 @@ def test_live_game_delays_are_reported_and_limit_capacity():
     assert "over the 1% limit, and 4 bots in them failed too" in verdict
     assert "make the games' tick and view faster" in verdict
     assert "Errors at" not in verdict
+    # Bot errors beyond the failed games' still name their kinds.
+    more = _base_result(
+        n_bots=100,
+        total_bots_started=100,
+        bot_errors=6,
+        bot_error_kinds={"HTTP 500 on /response": 6},
+        live_games=_live_games([1000], errors={"KeyError: 3": 1}, errored_players=4),
+    )
+    assert "Errors at 100: 6 x HTTP 500 on /response." in _join(
+        format_capacity_summary([more])
+    )
     assert "Not measured for live games" in _join(format_performance_summary([smooth]))
     smooth.live_games["games"]["snake"]["message_delays"][0] = 5
     played_in_browsers = _join(format_performance_summary([smooth]))
