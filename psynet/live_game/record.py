@@ -137,20 +137,14 @@ class LiveGameRecord:
         """The participant's answer on the game page, as the game's
         ``answer`` gave it. It's ``None`` until the page has saved it, or if
         no game started."""
-        participant = self._own_participant("answer")
-        return None if self._id is None else _stored_answer(participant, self._id)
+        participant_id = self._own_participant_id("answer")
+        return None if self._id is None else _stored_answer(participant_id, self._id)
 
     @property
     def answers(self) -> List[Any]:
         """Each player's answer, in player order, ``None`` for a player
         whose page hasn't saved one."""
-        from ..participant import Participant
-
-        answers = []
-        for participant_id in self.participant_ids:
-            participant = db.session.get(Participant, participant_id)
-            answers.append(_stored_answer(participant, self._id))
-        return answers
+        return [_stored_answer(pid, self._id) for pid in self.participant_ids]
 
     @property
     def messages(self):
@@ -229,14 +223,19 @@ class LiveGameRecord:
         return row
 
 
-def _stored_answer(participant, game_id):
+def _stored_answer(participant_id, game_id):
     """Return the answer the participant's game page saved for the game
     ``game_id``, or None."""
-    from .play import _live_game_data
+    from ..participant import Participant
 
-    if participant is None:
-        return None
-    for data in _live_game_data(participant).values():
+    # Read from the database, as _row does, not from a copy of the
+    # participant that the caller's database session already loaded.
+    stored = (
+        db.session.query(Participant.live_game_data)
+        .filter_by(id=participant_id)
+        .scalar()
+    )
+    for data in (stored or {}).values():
         for game in data.get("history", []):
             if game["id"] == game_id:
                 return game["answer"]

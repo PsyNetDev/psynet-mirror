@@ -1910,6 +1910,16 @@ def test_time_play_takes_a_turn_per_tick_or_at_each_deadline(registry):
     assert (catches.turns, catches.seconds) == (9, 7.5)
     assert "9 turns in 7.5 s of play" in str(catches)
 
+    class Stuck(Catches):
+        name = "time_play_stuck"
+
+        def next_deadline(self, state):
+            return 1.0
+
+    stuck = LocalGame(Stuck, players=2)
+    assert stuck.time_play(5).turns == 5
+    assert stuck.state["ticks"] == 1
+
 
 def test_a_game_with_an_away_timeout_ends_once_too_few_players_are_left():
     class Commons(LiveGame):

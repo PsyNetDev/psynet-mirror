@@ -1,6 +1,7 @@
 """Helpers for testing a game's rules in Python, without a server."""
 
 import json
+import math
 import time
 from dataclasses import dataclass
 
@@ -173,19 +174,28 @@ class LocalGame:
         started_at = _psynet_entry(self.state)["started_at"] or 0
         turns, code_seconds, slowest = 0, 0.0, 0.0
         now, steps = 0.0, 0
+        # As in Dallinger's runner, a deadline ticks once: a later one must
+        # come after it.
+        last_deadline = -math.inf
         while not self.is_over():
             due = (steps + 1) * step
             deadline = None if tick_rate else self.game.next_deadline(self.state)
             if deadline is not None:
-                due = min(due, max(deadline - started_at, now))
+                deadline -= started_at
+                if deadline <= last_deadline:
+                    deadline = None
+                else:
+                    due = min(due, max(deadline, now))
             if due > seconds:
                 break
             now = due
             if now >= (steps + 1) * step:
                 steps += 1
             began = time.perf_counter()
-            if tick_rate or (deadline is not None and deadline - started_at <= now):
+            if tick_rate or (deadline is not None and deadline <= now):
                 self.tick(now)
+                if deadline is not None:
+                    last_deadline = deadline
             for player in players:
                 if self.is_done(player):
                     continue

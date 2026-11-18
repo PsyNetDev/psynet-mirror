@@ -755,17 +755,18 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         return {group.group_type: group for group in self.sync_groups if group.active}
 
     @property
-    def live_games(self) -> Dict[str, Optional["LiveGameRecord"]]:
+    def live_games(self) -> Dict[str, "LiveGameRecord"]:
         """``{play_id: game}``: the participant's latest game at each
         :class:`~psynet.live_game.PlayLiveGame` they have reached, as a
         :class:`~psynet.live_game.LiveGameRecord`, keyed by the step's
-        ``id_``, which is the game's ``channel`` unless it was given one::
+        ``id_``, which is the game's ``name`` unless it was given one::
 
             game = participant.live_games["rock_paper_scissors"]
             game.answer, game.outcome, game.messages
 
-        The value is ``None`` if their group didn't start a game there, for
-        example because it broke up while it waited. A step they never
+        If their group didn't start a game there, for example because it
+        broke up while it waited, the record's ``status`` is
+        ``"not_started"`` and its ``answer`` is ``None``. A step they never
         reached isn't in it.
         """
         from .live_game.play import _participant_live_games

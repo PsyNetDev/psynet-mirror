@@ -614,24 +614,16 @@ def configured_worker_processes():
 
 
 def live_game_snapshot():
-    """Return what the live game runners had done so far, for :func:`live_game_stats`.
+    """Return what the live game runners had done so far, for :func:`live_game_stats`."""
+    from dallinger import db
+    from dallinger.models import RealtimeSession
+    from dallinger.realtime import realtime_runner_stats
+    from sqlalchemy import func
 
-    Returns ``None`` if the counts can't be read.
-    """
-    try:
-        from dallinger import db
-        from dallinger.models import RealtimeSession
-        from dallinger.realtime import realtime_runner_stats
-        from sqlalchemy import func
-
-        return {
-            "runner_stats": realtime_runner_stats(),
-            "max_session_id": db.session.query(func.max(RealtimeSession.id)).scalar()
-            or 0,
-        }
-    except Exception as e:
-        logger.warning(f"Could not read the live game runners' counts: {e}")
-        return None
+    return {
+        "runner_stats": realtime_runner_stats(),
+        "max_session_id": db.session.query(func.max(RealtimeSession.id)).scalar() or 0,
+    }
 
 
 def live_game_stats(before, after, errored_bot_ids=()):
@@ -639,7 +631,7 @@ def live_game_stats(before, after, errored_bot_ids=()):
 
     Parameters
     ----------
-    before, after : dict or None
+    before, after : dict
         The snapshots.
     errored_bot_ids : collection of int
         The participant IDs of the bots that raised an error in the test.
@@ -658,12 +650,11 @@ def live_game_stats(before, after, errored_bot_ids=()):
         and ``message_delays``, the ticks and players' messages applied
         within each range of delay of Dallinger's ``DELAY_BOUNDS``.
     """
-    if before is None or after is None:
-        return {}
     from dallinger.models import RealtimeSession
 
     started = {}
     errored_players = set()
+    errored_bot_ids = set(errored_bot_ids)
     for session in RealtimeSession.query.filter(
         RealtimeSession.id > before["max_session_id"],
         RealtimeSession.id <= after["max_session_id"],
@@ -675,22 +666,33 @@ def live_game_stats(before, after, errored_bot_ids=()):
         if session.status == "failed":
             games["failed"] += 1
             games["errors"][_last_line(session.error)] += 1
-            errored_players |= set(session.members) & set(errored_bot_ids)
-    for games in started.values():
-        games["errors"] = dict(games["errors"].most_common())
+            errored_players |= {int(m) for m in session.members} & errored_bot_ids
+    from dallinger.realtime.store import DELAY_BOUNDS
+
+    no_passes = {
+        "passes": 0,
+        "seconds": 0.0,
+        "tick_delays": [0] * len(DELAY_BOUNDS),
+        "message_delays": [0] * len(DELAY_BOUNDS),
+    }
     earlier = before["runner_stats"]["games"]
+    later = after["runner_stats"]["games"]
     games = {}
-    for channel, counts in after["runner_stats"]["games"].items():
+    for channel in started.keys() | later.keys():
         old = earlier.get(channel, {})
-        played = {key: _subtract(value, old.get(key)) for key, value in counts.items()}
+        played = {
+            key: _subtract(value, old.get(key))
+            for key, value in later.get(channel, no_passes).items()
+        }
         if played["passes"] or channel in started:
+            sessions = started.get(channel, {"games": 0, "failed": 0, "errors": {}})
             games[channel] = {
-                **started.get(channel, {"games": 0, "failed": 0, "errors": {}}),
+                **sessions,
+                "errors": dict(Counter(sessions["errors"]).most_common()),
                 **played,
             }
     if not games:
         return {}
-    from dallinger.realtime.store import DELAY_BOUNDS
 
     return dict(
         delay_bounds=[None if math.isinf(b) else b for b in DELAY_BOUNDS],

@@ -22,7 +22,7 @@ from psynet.perf_test.measure import (
     phase_stats,
     worker_load,
 )
-from psynet.perf_test.results import recommend_workers, retry_bot_count
+from psynet.perf_test.results import overshoot, recommend_workers, retry_bot_count
 from psynet.perf_test.runtime import _BotState
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -1332,6 +1332,7 @@ def test_live_game_delays_are_reported_and_limit_capacity():
     assert "(needs browser)" in report
     assert capacity_failures(smooth) == []
     assert capacity_failures(lagging) == ["p95 tick delay 100-200 ms in snake"]
+    assert overshoot(lagging, CapacityLimits()) == 2
     failing = _base_result(live_games=_live_games([1000], errors={"KeyError: 3": 1}))
     assert capacity_failures(failing) == ["1 failed live game"]
     assert "1 of 3 snake games failed: KeyError: 3 (1x)." in _join(

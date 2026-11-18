@@ -654,7 +654,8 @@
      * this is for code that reacts to the views arriving, such as a
      * measure of how far behind the page is. The details are ``null`` for a
      * final view that came with the ending, so check ``ended`` and not
-     * ``details.ended``.
+     * ``details.ended``. A failed game sends no final view, so the page
+     * keeps its last one; if it never had one, ``callback`` isn't called.
      *
      * @param {function} callback - Called with each view, and its details,
      *   which can be ``null``

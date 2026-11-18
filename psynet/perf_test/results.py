@@ -995,7 +995,7 @@ class LimitBreach:
 
 
 _ERROR_MEASURES = ("request_errors", "busy_responses", "bot_errors", "live_failures")
-_LOAD_MEASURES = ("p95", "endpoint_p95", "queue", "busy_chains")
+_LOAD_MEASURES = ("p95", "endpoint_p95", "queue", "busy_chains", "live_delay")
 
 
 def percent(share):
@@ -1143,7 +1143,9 @@ def _live_game_breaches(result, limits, breach):
                 "live_delay",
                 f"p95 {noun} delay {describe_delay(delay)} in {game}",
                 f"{max_delay * 1000:.0f} ms",
-                delay[0],
+                # The top of the range, so that overshoot sees how far over
+                # the limit the delay may have been.
+                delay[1] if delay[1] < math.inf else 2 * delay[0],
                 max_delay,
                 f"the p95 {noun} delay in the live game {game} was "
                 f"{describe_delay(delay)}",
@@ -1293,10 +1295,10 @@ _MIN_CONFIRMATION_RETRY_SHARE = 0.5
 def overshoot(result, limits):
     """Return how many times its limit the worst load-dependent measure of ``result`` reached.
 
-    The measures are response times, the high-priority async queue wait
-    and, for each trial maker, the share of bots that got fewer trials
-    because every chain was busy. Returns ``None`` if none exceeded its limit, e.g. when only
-    errors did.
+    The measures are response times, the high-priority async queue wait,
+    for each trial maker, the share of bots that got fewer trials because
+    every chain was busy, and live games' p95 delays. Returns ``None`` if
+    none exceeded its limit, e.g. when only errors did.
     """
     ratios = [
         b.value / b.limit_value
