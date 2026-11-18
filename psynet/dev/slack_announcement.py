@@ -167,6 +167,11 @@ def build_blocks(version: str, summary: str | None = None) -> tuple[list[dict], 
     ]
     if not is_prerelease(version):
         buttons.insert(2, ("Versioned docs", versioned_docs_url))
+    guide_url = _upgrade_guide_url(
+        version, docs_url if is_prerelease(version) else versioned_docs_url
+    )
+    if guide_url:
+        buttons.insert(0, ("Upgrade guide", guide_url))
 
     blocks: list[dict] = [
         {
@@ -227,6 +232,21 @@ def _summary_sections(summary: str) -> list[str]:
     return [s for s in ("\n".join(sec).strip() for sec in sections) if s]
 
 
+MAJOR_RELEASE_RE = re.compile(r"^(\d+)\.0\.0(?:(?:rc|a|b)\d+)?$", re.IGNORECASE)
+DOCS_SOURCE_DIR = Path(__file__).resolve().parents[2] / "docs"
+
+
+def _upgrade_guide_url(version: str, docs_url: str) -> str | None:
+    """Return the upgrade guide URL for a major release that has one."""
+    match = MAJOR_RELEASE_RE.match(version)
+    if not match:
+        return None
+    page = f"whats_new/upgrading_to_psynet_{match.group(1)}"
+    if not (DOCS_SOURCE_DIR / f"{page}.rst").exists():
+        return None
+    return f"{docs_url}{page}.html"
+
+
 def _footer_text(version: str) -> str:
     from datetime import date
 
@@ -238,20 +258,21 @@ def _footer_text(version: str) -> str:
 
 
 def _actions_block(buttons: list[tuple[str, str]]) -> dict:
-    """Render URL buttons. Clicking one opens the link directly; note that
-    Slack may show an 'app cannot handle interactive responses' toast if the
-    posting app has no interactivity endpoint configured."""
-    return {
-        "type": "actions",
-        "elements": [
-            {
-                "type": "button",
-                "text": {"type": "plain_text", "text": label, "emoji": True},
-                "url": url,
-            }
-            for label, url in buttons
-        ],
-    }
+    """Render URL buttons, highlighting the upgrade guide. Clicking one opens
+    the link directly; note that Slack may show an 'app cannot handle
+    interactive responses' toast if the posting app has no interactivity
+    endpoint configured."""
+    elements = []
+    for label, url in buttons:
+        element = {
+            "type": "button",
+            "text": {"type": "plain_text", "text": label, "emoji": True},
+            "url": url,
+        }
+        if label == "Upgrade guide":
+            element["style"] = "primary"
+        elements.append(element)
+    return {"type": "actions", "elements": elements}
 
 
 LOGO_URL = (
