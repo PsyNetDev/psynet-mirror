@@ -255,12 +255,10 @@ _SAVED_MESSAGE_COLUMNS = [
 ]
 
 
-def _saved_messages(session_id, message_types, only_type=None):
+def _saved_messages(session_id, message_types):
     query = db.session.query(*_SAVED_MESSAGE_COLUMNS).filter_by(
         session_id=session_id, event_type="message"
     )
-    if only_type is not None:
-        query = query.filter(RealtimeEvent.payload["type"].astext == only_type)
     started_at = _game_started_at(session_id)
     participant_ids = _session_participant_ids(session_id)
 

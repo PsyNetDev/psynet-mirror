@@ -1145,7 +1145,7 @@ def _live_game_breaches(result, limits, breach):
                 f"{max_delay * 1000:.0f} ms",
                 # The top of the range, so that overshoot sees how far over
                 # the limit the delay may have been.
-                delay[1] if delay[1] < math.inf else 2 * delay[0],
+                delay[1] if delay[1] < math.inf else delay[0],
                 max_delay,
                 f"the p95 {noun} delay in the live game {game} was "
                 f"{describe_delay(delay)}",

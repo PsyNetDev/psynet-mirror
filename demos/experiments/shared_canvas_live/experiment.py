@@ -428,7 +428,7 @@ def coins_text(n):
 
 
 def show_result(participant):
-    # None if the group started no game, or it failed without an outcome.
+    # None if the group started no game.
     answer = participant.live_games["shared_canvas"].answer
     if answer is None:
         return InfoPage("Your group couldn't play the game.", time_estimate=5)

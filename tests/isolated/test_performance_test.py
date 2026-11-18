@@ -983,6 +983,57 @@ def test_database_rows_count_new_participants(db_session):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
+def test_live_game_stats_count_the_test_s_games_failures_and_runner_work(db_session):
+    from dallinger import db
+    from dallinger.models import RealtimeSession
+    from sqlalchemy import func
+
+    from psynet.perf_test.measure import live_game_stats
+
+    def runner_stats(passes):
+        counts = dict(
+            passes=passes,
+            seconds=passes / 1000,
+            tick_delays=[passes] + [0] * 9,
+            message_delays=[0] * 10,
+        )
+        return {"runners": 1, "busy": passes / 100, "games": {"snake": counts}}
+
+    before = {"runner_stats": runner_stats(10), "max_session_id": 0}
+    db.session.add_all(
+        [
+            RealtimeSession(game_type="snake", members=[1, 2]),
+            RealtimeSession(
+                game_type="snake",
+                members=["3", "4"],
+                status="failed",
+                error="Traceback (most recent call last):\nTimeLimitExceeded: 1 s",
+            ),
+            # The runner hasn't saved its counts for this game yet.
+            RealtimeSession(game_type="fishing", members=[5], status="failed"),
+        ]
+    )
+    db.session.flush()
+    after = {
+        "runner_stats": runner_stats(30),
+        "max_session_id": db.session.query(func.max(RealtimeSession.id)).scalar(),
+    }
+
+    stats = live_game_stats(before, after, errored_bot_ids={3, 5, 9})
+
+    snake, fishing = stats["games"]["snake"], stats["games"]["fishing"]
+    assert (snake["games"], snake["failed"], snake["passes"]) == (2, 1, 20)
+    assert snake["errors"] == {"TimeLimitExceeded: 1 s": 1}
+    assert snake["tick_delays"][0] == 20
+    assert (fishing["games"], fishing["failed"], fishing["passes"]) == (1, 1, 0)
+    assert fishing["errors"] == {"no error saved": 1}
+    assert stats["errored_players"] == 2
+    assert stats["busy_s"] == pytest.approx(0.2)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
 def test_report_counts_removals_from_sync_groups_by_reason(db_session):
     from dallinger import db
 

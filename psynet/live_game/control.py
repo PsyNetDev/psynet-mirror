@@ -19,7 +19,7 @@ from ..timeline import ResponseNotReady
 from ..utils import get_translator
 from .messages import _game_channel, _session_game_class, _session_participant_ids
 from .play import _check_reached_game, _live_game_id, _set_live_game_answer
-from .record import LiveGameFailed, LiveGameRecord, _has_outcome, _player_ending
+from .record import LiveGameFailed, LiveGameRecord, _player_ending
 
 # Seconds a page waits before resending a response refused because the
 # game's result isn't saved yet.
@@ -188,12 +188,9 @@ class LiveGameControl(NullControl):
         if ended_early is not None:
             reason, outcome = ended_early
         else:
+            # Not failed: check_ready_for_response raises for a failed game.
             game = LiveGameRecord(session_id)
-            status, outcome = game.status, game.outcome
-            if not _has_outcome(status, outcome):
-                response.answer = None
-                return None
-            reason = game.end_reason
+            outcome, reason = game.outcome, game.end_reason
         participant_ids = _session_participant_ids(session_id)
         if participant.id not in participant_ids:
             # Added to a game that ended before it could add them.

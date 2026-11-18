@@ -159,7 +159,7 @@ class PlayLiveGame(EltCollection):
             )
         if id_ is None:
             id_ = game_class.name
-        if "late_after" not in kwargs and "max_wait_time" not in kwargs:
+        if kwargs.get("late_after") is None and kwargs.get("max_wait_time") is None:
             raise TypeError(
                 f"The PlayLiveGame {id_!r} needs a limit on its wait. Usually "
                 'give it late_after, with late_action="leave_group", which '

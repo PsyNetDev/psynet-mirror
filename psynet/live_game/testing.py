@@ -157,7 +157,9 @@ class LocalGame:
         and the views encoded as JSON, as the runner saves and sends them. A
         game with a ``tick_rate`` has a turn per tick. One without has a turn
         at each of its deadlines and a turn a second, as if each player acted
-        about once a second. Play stops early if the game ends.
+        about once a second. Play stops early if the game ends, and the
+        ``LocalGame`` is left where play stopped, so time a new one each
+        time.
 
         ::
 

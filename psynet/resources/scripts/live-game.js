@@ -198,6 +198,7 @@
         // show players the page doesn't know, such as newcomers.
         players: (current.players || []).slice(),
         fetchingPlayers: false,
+        playersFetchedAt: -Infinity,
         socket: null,
         left: false,
         startedView: null,
@@ -473,12 +474,20 @@
     }
 
     // Asks the server how to show the game's players, once the views show
-    // more than the page knows, and updates the page with them.
+    // more than the page knows, and updates the page with them. The server
+    // learns of a newcomer a few seconds after the game does, so the page
+    // asks at most once a second rather than with every view until then.
     function fetchPlayers(state) {
-      if (state.fetchingPlayers || !page.fetchPlayers) {
+      const now = Date.now();
+      if (
+        state.fetchingPlayers ||
+        !page.fetchPlayers ||
+        now - state.playersFetchedAt < 1000
+      ) {
         return;
       }
       state.fetchingPlayers = true;
+      state.playersFetchedAt = now;
       Promise.resolve(page.fetchPlayers(state.session.playId))
         .then((players) => {
           if (state.left || !Array.isArray(players)) {
