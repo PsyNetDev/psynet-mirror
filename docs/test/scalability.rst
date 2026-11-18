@@ -340,6 +340,15 @@ the test: raise ``worker_processes`` (see
 :ref:`performance_testing_async_workers`), which adds runners, or make the
 games cheaper.
 
+A runner that falls far behind doesn't just run ticks late. Its next turn
+at a game runs every tick that has come due, and if they take longer than
+the game's ``time_limit`` (1 second) together, the game fails, with
+``TimeLimitExceeded`` in the server log. This is deliberate: a game that
+stalled isn't the game its players were meant to play, so it is marked as
+failed rather than kept in the data, and its players fail as for any other
+failed game. The report's *Failed* column counts these games, and a test
+with more failed games than ``max_bot_error_rate`` allows fails.
+
 Bots play live games on the server, through the game's ``bot`` method, and
 open no game pages. So a bot-only test measures the game's code and how late
 its ticks run, but not players' messages. To measure those too, play in a
