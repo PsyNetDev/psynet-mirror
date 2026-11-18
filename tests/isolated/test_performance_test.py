@@ -22,7 +22,12 @@ from psynet.perf_test.measure import (
     phase_stats,
     worker_load,
 )
-from psynet.perf_test.results import overshoot, recommend_workers, retry_bot_count
+from psynet.perf_test.results import (
+    overshoot,
+    phase_limit_reasons,
+    recommend_workers,
+    retry_bot_count,
+)
 from psynet.perf_test.runtime import _BotState
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -999,7 +1004,18 @@ def test_live_game_stats_count_the_test_s_games_failures_and_runner_work(db_sess
         )
         return {"runners": 1, "busy": passes / 100, "games": {"snake": counts}}
 
-    before = {"runner_stats": runner_stats(10), "max_session_id": 0}
+    # A game running when the test started, which fails in it, counts; one
+    # that had ended doesn't.
+    running = RealtimeSession(game_type="snake", members=[8])
+    ended = RealtimeSession(game_type="snake", members=[7], status="ended")
+    db.session.add_all([running, ended])
+    db.session.flush()
+    before = {
+        "runner_stats": runner_stats(10),
+        "max_session_id": ended.id,
+        "running_session_ids": [running.id],
+    }
+    running.status = "failed"
     db.session.add_all(
         [
             RealtimeSession(game_type="snake", members=[1, 2]),
@@ -1019,15 +1035,15 @@ def test_live_game_stats_count_the_test_s_games_failures_and_runner_work(db_sess
         "max_session_id": db.session.query(func.max(RealtimeSession.id)).scalar(),
     }
 
-    stats = live_game_stats(before, after, errored_bot_ids={3, 5, 9})
+    stats = live_game_stats(before, after, errored_bot_ids={3, 5, 8, 9})
 
     snake, fishing = stats["games"]["snake"], stats["games"]["fishing"]
-    assert (snake["games"], snake["failed"], snake["passes"]) == (2, 1, 20)
-    assert snake["errors"] == {"TimeLimitExceeded: 1 s": 1}
+    assert (snake["games"], snake["failed"], snake["passes"]) == (3, 2, 20)
+    assert snake["errors"] == {"TimeLimitExceeded: 1 s": 1, "no error saved": 1}
     assert snake["tick_delays"][0] == 20
     assert (fishing["games"], fishing["failed"], fishing["passes"]) == (1, 1, 0)
     assert fishing["errors"] == {"no error saved": 1}
-    assert stats["errored_players"] == 2
+    assert stats["errored_players"] == 3
     assert stats["busy_s"] == pytest.approx(0.2)
 
 
@@ -1390,15 +1406,17 @@ def test_live_game_delays_are_reported_and_limit_capacity():
         format_test_results(failing)
     )
     assert "the p95 tick delay in the live game snake was 100-200 ms" in summary
-    # A game that also failed for other reasons reports its errors.
+    # A game that also failed for other reasons reports its errors, and how
+    # busy the runner was.
     mixed = _base_result(
+        actual_duration=100,
         live_games=_live_games(
-            [1000], errors={"KeyError: 3": 1, "TimeLimitExceeded": 1}
-        )
+            [1000], busy_s=95, errors={"KeyError: 3": 1, "TimeLimitExceeded": 1}
+        ),
     )
-    assert "KeyError: 3 (1x), TimeLimitExceeded (1x)" in _join(
-        format_test_results(mixed)
-    )
+    report = _join(format_test_results(mixed))
+    assert "KeyError: 3 (1x), TimeLimitExceeded (1x)" in report
+    assert "The game runners were busy 95% of the test" in report
     assert "fix the errors under LIVE GAMES" in _join(
         format_capacity_summary([mixed], CapacityLimits())
     )
@@ -1418,8 +1436,12 @@ def test_live_game_delays_are_reported_and_limit_capacity():
         "p95 tick delay 1-2 s in snake",
         "2 failed live games",
     ]
-    assert "LIVE GAMES (1 game runner)" in report
+    assert "LIVE GAMES (1 game runner, busy" in report
     assert "2 of 3 snake games failed for running past the game's time_limit" in report
+    # Nor do their errors count again in the start-up or steady state.
+    startup = {**_PHASE, "request_errors": 4}
+    assert phase_limit_reasons(startup, CapacityLimits()) != []
+    assert phase_limit_reasons(startup, CapacityLimits(), errored_players=4) == []
     assert "so 4 bots got an error page" in report
     verdict = _join(format_capacity_summary([behind]))
     assert "over the 1% limit, and 4 bots in them failed too" in verdict

@@ -452,12 +452,11 @@ def _live_game_lines(result):
     games = live["games"]
     failed = any(g["failed"] for g in games.values())
     utilization = runner_utilization(result)
-    # Once games fail, their runner idles, so its busy share understates the load.
-    busy = (
-        f", busy {utilization:.0%} of the test"
-        if utilization is not None and not failed
-        else ""
-    )
+    # A runner idles once its games fail, so its busy share means nothing
+    # once all have failed.
+    if all(g["failed"] >= g["games"] for g in games.values()):
+        utilization = None
+    busy = f", busy {utilization:.0%} of the test" if utilization is not None else ""
     rows = []
     for game, played in sorted(games.items()):
         ticks = live_delay_p95(result, game, "tick_delays")
@@ -495,7 +494,12 @@ def _live_game_lines(result):
     if failed:
         lines += [warning(f"  {text}") for text in _live_failure_texts(result)]
         lines.append("")
-    elif utilization is not None and utilization > MAX_WORKER_UTILIZATION:
+    # Games that ran out of time already give the same advice.
+    if (
+        utilization is not None
+        and utilization > MAX_WORKER_UTILIZATION
+        and not any(ran_out_of_time(result, game) for game in games)
+    ):
         lines += [
             warning(
                 f"  The game runners were busy {utilization:.0%} of the test, so "
@@ -1350,9 +1354,10 @@ def _phase_breaches(result, limits):
     """Return the limits that ``result``'s start-up and steady state exceeded, empty without a steady state."""
     if result.steady_state_s is None:
         return [], []
+    errored_players = (result.live_games or {}).get("errored_players", 0)
     return (
-        phase_limit_reasons(result.startup_phase, limits),
-        phase_limit_reasons(result.steady_state_phase, limits),
+        phase_limit_reasons(result.startup_phase, limits, errored_players),
+        phase_limit_reasons(result.steady_state_phase, limits, errored_players),
     )
 
 

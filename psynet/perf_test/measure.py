@@ -623,6 +623,12 @@ def live_game_snapshot():
     return {
         "runner_stats": realtime_runner_stats(),
         "max_session_id": db.session.query(func.max(RealtimeSession.id)).scalar() or 0,
+        "running_session_ids": [
+            id_
+            for (id_,) in db.session.query(RealtimeSession.id).filter_by(
+                status="running"
+            )
+        ],
     }
 
 
@@ -643,21 +649,28 @@ def live_game_stats(before, after, errored_bot_ids=()):
         the runners running at the end; ``busy_s``, the seconds they spent
         playing games rather than waiting; ``errored_players``, how many of
         ``errored_bot_ids`` played in a failed game, which fails its players;
-        and ``games``, by each game's channel: the ``games`` that started,
-        how many of those ``failed`` and their ``errors``, the last line of
+        and ``games``, by each game's channel: the ``games`` played, those
+        that started in the test or were running when it started, how many
+        of those ``failed`` and their ``errors``, the last line of
         each error with how many games it failed, the runner's ``passes``
         over them and the ``seconds`` those took, and the ``tick_delays``
         and ``message_delays``, the ticks and players' messages applied
         within each range of delay of Dallinger's ``DELAY_BOUNDS``.
     """
     from dallinger.models import RealtimeSession
+    from sqlalchemy import and_, or_
 
     started = {}
     errored_players = set()
     errored_bot_ids = set(errored_bot_ids)
     for session in RealtimeSession.query.filter(
-        RealtimeSession.id > before["max_session_id"],
-        RealtimeSession.id <= after["max_session_id"],
+        or_(
+            and_(
+                RealtimeSession.id > before["max_session_id"],
+                RealtimeSession.id <= after["max_session_id"],
+            ),
+            RealtimeSession.id.in_(before["running_session_ids"]),
+        )
     ):
         games = started.setdefault(
             session.game_type, {"games": 0, "failed": 0, "errors": Counter()}

@@ -333,7 +333,8 @@ games*::
       ------  -------  --------  ----------------  -------------------  ----------
       snake        12         0           0-10 ms      (needs browser)      0.4 ms
 
-A pass is the runner's turn at a game, and Avg pass is the time it spends
+Games counts the games started during the test and those already running
+when it started. A pass is the runner's turn at a game, and Avg pass is the time it spends
 running the ticks and messages due; saving games and sending views count
 towards how busy the runners were, but not towards Avg pass. When games fail,
 the section says why: for each game, its most common errors, or that the

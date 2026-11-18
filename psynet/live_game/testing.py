@@ -285,8 +285,13 @@ class TimedPlay:
             f"turn on average, {self.slowest_turn * 1000:.2f} ms at most), "
             f"{self.runner_share:.1%} of a game runner"
         )
-        if self.games_per_runner == 0:
-            text += ", more than one runner should spend on a game, so make it faster"
+        if self.runner_share > 1:
+            text += ", more than a runner has, so make it faster"
+        elif self.games_per_runner == 0:
+            text += (
+                ", so a runner can play only this game, with too little room "
+                "for bursts, saving and sending views"
+            )
         elif self.games_per_runner is not None:
             text += f", so one runner can play about {self.games_per_runner:,} games at once"
         return text + "."

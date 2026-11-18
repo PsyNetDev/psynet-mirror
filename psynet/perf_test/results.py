@@ -959,14 +959,17 @@ def busy_early_finish_cause(result, limits):
     return " and ".join(over) or None
 
 
-def phase_limit_reasons(phase, limits):
+def phase_limit_reasons(phase, limits, errored_players=0):
     """Return the response-time, request-error and queue limits that one phase exceeded.
 
     ``phase`` is :attr:`PerformanceTestResult.startup_phase` or
     :attr:`~PerformanceTestResult.steady_state_phase`, whose keys are the
-    result's field names for those measures.
+    result's field names for those measures. ``errored_players`` are the
+    test's bots that failed live games failed, whose errors count only
+    against the live game limit, as in :func:`limit_breaches`.
     """
     phase_result = PerformanceTestResult.from_dict(phase)
+    phase_result.live_games = {"errored_players": errored_players}
     return [breach.reason for breach in limit_breaches(phase_result, limits)]
 
 
