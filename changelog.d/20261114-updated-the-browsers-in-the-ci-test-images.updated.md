@@ -1,1 +1,0 @@
-Updated the browsers in the CI test images. Chrome and ChromeDriver go from 149.0.7827.54 to 157.0.8103.78, so that the Selenium bot tests run on the Chrome version participants currently use. The Playwright browsers now come from the Ubuntu 24.04 (noble) variant of the Playwright 1.64.1 image instead of the Ubuntu 22.04 (jammy) one, whose standard support ends in April 2027.

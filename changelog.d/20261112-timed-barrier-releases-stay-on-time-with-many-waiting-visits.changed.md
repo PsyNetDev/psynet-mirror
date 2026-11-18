@@ -1,1 +1,0 @@
-Time-based barrier rules (`late_after`, `top_up_wait`, `start_short_after` and `Regrouper` deadlines and `every` ticks) now act within about a second of their time even when hundreds of visits are waiting. Previously the barrier poller reached each waiting visit in turn, so with many visits these rules could act several seconds late.

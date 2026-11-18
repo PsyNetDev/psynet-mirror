@@ -1,1 +1,0 @@
-The `rock_paper_scissors` demo now uses a single node played for three rounds instead of three colour-labelled nodes, and the `unity_autoplay` demo names its between-participant condition (`gain`) and explains that each node is one condition.

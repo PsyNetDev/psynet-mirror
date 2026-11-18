@@ -1,1 +1,0 @@
-`participant.var.get(name)` (and `get` on other variable stores, such as `experiment.var` and `node.var`) now returns `None` for a variable that isn't set, like `dict.get`, instead of raising `KeyError`. Code that relied on the error should use attribute access, as in `participant.var.name`, or `participant.var.has(name)`.

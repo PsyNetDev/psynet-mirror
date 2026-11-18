@@ -1,1 +1,0 @@
-Removed the `psynet[slack]` extra. `slack_sdk` is already part of `psynet[experiment]` (and so of `psynet[dev]`), which is what Slack notifications and `psynet dev release announce` use. Installs that still name `slack` print a warning and continue; drop it from your install command.
