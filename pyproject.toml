@@ -59,7 +59,9 @@ experiment = [
     "boto3",
     "botocore",
     # 13.1.0 runs local PostgreSQL 18, which `psynet services ensure` matches.
-    "dallinger[docker]>=13.1.0,<14",
+    # Temporary pin to Dallinger PR #10433 (`dallinger constraints generate
+    # --constraint`); replace with the release that includes it.
+    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@e97e80eb50b6b381a9d40ed3bdf760767aa80c9a",
     "debugpy",
     "dominate>=3.1",
     "flask",
