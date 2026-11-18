@@ -267,7 +267,14 @@ describe only the current behavior.
 
 Write the file as follows:
 
-- Open with a short **must-know section** just above the first category
+- For a major release and its release candidates, open with a bold line
+  of its own that links the upgrade guide, before anything else:
+
+  ```text
+  :compass: *Upgrading an experiment? Work through the <https://psynetdev.gitlab.io/PsyNet/rc/v14.0.0rc4/whats_new/upgrading_to_psynet_14.html|PsyNet 14 upgrade guide>.* It lists, step by step, what to search for and what to change.
+  ```
+
+- Add a short **must-know section** just above the first category
   header, for changes that every experimenter has to know about: changes
   that break most experiments or silently change their behavior, data or
   payments. Give one bullet per topic, starting with a bold label and
