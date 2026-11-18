@@ -1188,6 +1188,23 @@ def ran_out_of_time(result, game):
     return bool(errors) and all("TimeLimitExceeded" in error for error in errors)
 
 
+def runner_fell_behind(result, limits=CapacityLimits()):
+    """Return whether ``result``'s live game runners show that they fell behind.
+
+    They did if they were busy for most of the test, or a game's ticks ran
+    late. Otherwise a game that ran past its ``time_limit`` did so because
+    its own code took too long.
+    """
+    utilization = runner_utilization(result)
+    if utilization is not None and utilization > MAX_WORKER_UTILIZATION:
+        return True
+    return any(
+        (delay := live_delay_p95(result, game, "tick_delays")) is not None
+        and delay[1] > limits.max_live_delay_p95_s
+        for game in (result.live_games or {}).get("games", {})
+    )
+
+
 def _busy_early_finish_max(result):
     """Return the most bots that got fewer trials in any one trial maker because every chain was busy."""
     return max(

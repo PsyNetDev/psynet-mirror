@@ -60,6 +60,7 @@ from psynet.perf_test.results import (
     ran_out_of_time,
     recommend_workers,
     retry_bot_count,
+    runner_fell_behind,
     runner_utilization,
     start_rate_limits,
     tester_lagged,
@@ -471,7 +472,7 @@ def _live_game_lines(result):
                 describe_delay(messages)
                 if messages is not None
                 else _EMPTY
-                if _all_failed(played)
+                if _all_failed(played) or not played["passes"]
                 else "(needs browser)",
                 _ms(played["seconds"] / played["passes"] if played["passes"] else None),
             ]
@@ -542,13 +543,20 @@ def _live_failure_texts(result):
             f"{failed} failed: {errors}. The server log has each traceback "
             f"after 'Session <id> of {game} failed'."
         )
-    if out_of_time:
+    if out_of_time and runner_fell_behind(result):
         texts.insert(
             0,
-            f"{_and(out_of_time)} failed for running past the "
-            "game's time_limit, usually because the game runner fell behind "
-            "and failed them rather than play their overdue ticks late. "
-            f"{_LIVE_SPEED_ADVICE}",
+            f"{_and(out_of_time)} failed for running past the game's "
+            "time_limit, because the game runner fell behind and failed them "
+            f"rather than play their overdue ticks late. {_LIVE_SPEED_ADVICE}",
+        )
+    elif out_of_time:
+        texts.insert(
+            0,
+            f"{_and(out_of_time)} failed for running past the game's "
+            "time_limit in a single pass while the game runner kept up, so "
+            "the game's own code took too long. Time its tick and view with "
+            "LocalGame.time_play.",
         )
     if players := live.get("errored_players"):
         texts.append(
@@ -1018,7 +1026,7 @@ def format_performance_summary(
     played = [
         g for r in results for g in (r.live_games or {}).get("games", {}).values()
     ]
-    if any(not _all_failed(g) for g in played) and not any(
+    if any(g["passes"] and not _all_failed(g) for g in played) and not any(
         _live_messages_measured(r) for r in results
     ):
         notes.append(_LIVE_NOT_MEASURED)
@@ -1525,12 +1533,16 @@ def _live_advice(result, limits):
     other_errors = bool(measures & {"request_errors", "busy_responses", "bot_errors"})
     other_load = bool(measures & {"p95", "endpoint_p95", "queue", "busy_chains"})
     if too_slow:
+        workers = (
+            " or add worker_processes"
+            if "live_delay" in measures or runner_fell_behind(result, limits)
+            else ""
+        )
         fix = ", fix the errors" if game_errors or other_errors else ""
         fewer = " or test fewer bots" if other_load else ""
         return (
             "; make the games' tick and view faster (time them with "
-            f"LocalGame.time_play) or add worker_processes{fix}{fewer}, then "
-            "test again."
+            f"LocalGame.time_play){workers}{fix}{fewer}, then test again."
         )
     if game_errors and not other_errors:
         fewer = ", or test fewer bots" if other_load else ""

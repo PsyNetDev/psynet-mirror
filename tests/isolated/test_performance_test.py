@@ -1427,6 +1427,15 @@ def test_live_game_delays_are_reported_and_limit_capacity():
     assert "fix the errors under LIVE GAMES" in _join(
         format_capacity_summary([mixed], CapacityLimits())
     )
+    # Games that ran out of time while the runner kept up had slow code.
+    stuck = _base_result(
+        actual_duration=100,
+        live_games=_live_games([1000], errors={"TimeLimitExceeded": 1}),
+    )
+    assert "the game's own code took too long" in _join(format_test_results(stuck))
+    assert "worker_processes" not in _join(
+        format_capacity_summary([stuck], CapacityLimits())
+    )
     # A server that is also slow to respond needs fewer bots too.
     slow = _base_result(
         p95_response_time=0.9, live_games=_live_games([800, 100, 0, 0, 100])
