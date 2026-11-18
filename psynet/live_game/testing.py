@@ -170,31 +170,19 @@ class LocalGame:
 
         TimedPlay
         """
-        tick_rate = self.game.tick_rate
-        step = 1 / tick_rate if tick_rate else 1
         players = range(len(_psynet_entry(self.state)["participant_ids"]))
-        started_at = _psynet_entry(self.state)["started_at"] or 0
         turns, code_seconds, slowest = 0, 0.0, 0.0
-        now, steps = 0.0, 0
+        now = 0.0
         # As in Dallinger's runner, a deadline ticks once: a later one must
         # come after it.
         last_deadline = -math.inf
         while not self.is_over():
-            due = (steps + 1) * step
-            deadline = None if tick_rate else self.game.next_deadline(self.state)
-            if deadline is not None:
-                deadline -= started_at
-                if deadline <= last_deadline:
-                    deadline = None
-                else:
-                    due = min(due, max(deadline, now))
+            due, deadline = self._next_turn(now, last_deadline)
             if due > seconds:
                 break
             now = due
-            if now >= (steps + 1) * step:
-                steps += 1
             began = time.perf_counter()
-            if tick_rate or (deadline is not None and deadline <= now):
+            if self.game.tick_rate or deadline is not None:
                 self.tick(now)
                 if deadline is not None:
                     last_deadline = deadline
@@ -214,6 +202,26 @@ class LocalGame:
             code_seconds += took
             slowest = max(slowest, took)
         return TimedPlay(type(self.game).__name__, now, turns, code_seconds, slowest)
+
+    def _next_turn(self, now, last_deadline):
+        """Return when :meth:`time_play`'s next turn after ``now`` is due, and
+        the game deadline it ticks for, or ``None``.
+
+        A game with a ``tick_rate`` has a turn per tick. One without has a
+        turn on the next whole second, or at its next deadline after
+        ``last_deadline`` if that comes first.
+        """
+        step = 1 / self.game.tick_rate if self.game.tick_rate else 1
+        due = (math.floor(now / step + 1e-9) + 1) * step
+        if self.game.tick_rate:
+            return due, None
+        deadline = self.game.next_deadline(self.state)
+        if deadline is None:
+            return due, None
+        deadline -= _psynet_entry(self.state)["started_at"] or 0
+        if deadline <= last_deadline or deadline > due:
+            return due, None
+        return max(deadline, now), deadline
 
     def _participant(self, player):
         return str(_psynet_entry(self.state)["participant_ids"][player])

@@ -1501,25 +1501,21 @@ def _live_advice(result, limits):
     """Return the end of the verdict for a test that live games failed, or ``None``."""
     measures = {b.measure for b in limit_breaches(result, limits)}
     games = (result.live_games or {}).get("games", {})
-    failed = [n for n, g in games.items() if g["failed"]]
-    behind = any(ran_out_of_time(result, n) for n in failed)
-    non_game_errors = bool(
-        measures & {"request_errors", "busy_responses", "bot_errors"}
-    )
-    if "live_delay" not in measures and not ("live_failures" in measures and behind):
-        if "live_failures" in measures and not non_game_errors:
-            return "; fix the errors under LIVE GAMES in the test's results."
-        # The general advice covers the other errors.
-        return None
-    other_errors = non_game_errors or (
-        "live_failures" in measures
-        and not all(ran_out_of_time(result, n) for n in failed)
-    )
-    fix = ", fix the errors" if other_errors else ""
-    return (
-        "; make the games' tick and view faster (time them with "
-        f"LocalGame.time_play) or add worker_processes{fix}, then test again."
-    )
+    out_of_time = [ran_out_of_time(result, n) for n, g in games.items() if g["failed"]]
+    live_failures = "live_failures" in measures
+    too_slow = "live_delay" in measures or (live_failures and any(out_of_time))
+    game_errors = live_failures and not all(out_of_time)
+    other_errors = bool(measures & {"request_errors", "busy_responses", "bot_errors"})
+    if too_slow:
+        fix = ", fix the errors" if game_errors or other_errors else ""
+        return (
+            "; make the games' tick and view faster (time them with "
+            f"LocalGame.time_play) or add worker_processes{fix}, then test again."
+        )
+    if game_errors and not other_errors:
+        return "; fix the errors under LIVE GAMES in the test's results."
+    # The general advice covers any other errors.
+    return None
 
 
 def _low_priority_lines(result, limits):
