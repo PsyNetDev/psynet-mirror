@@ -64,10 +64,8 @@ coin collected, with who collected it and the time into the game when the
 game counted it. Each player's answer on the game page is their own part
 of it: their score (the coins they collected), whether it was the best, the
 group's total, and whether the game was played to the end. Pages send many
-moves a second, so the game's record keeps only the moves that collected a
-coin. Each of those
-saved moves also says when the participant's page sent it, by the browser's
-clock, for analyses that need the participant's own timing.
+moves a second, so the game's record keeps none of them (see `Move.should_save`):
+the coins collected, with who collected them and when, are in the outcome.
 
 ## Usage
 
