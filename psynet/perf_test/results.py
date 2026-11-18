@@ -578,7 +578,7 @@ def runner_utilization(result):
     live = result.live_games or {}
     if not (live.get("runners") and result.actual_duration):
         return None
-    return live["busy_s"] / (live["runners"] * result.actual_duration)
+    return min(1.0, live["busy_s"] / (live["runners"] * result.actual_duration))
 
 
 def describe_delay(delay_range):

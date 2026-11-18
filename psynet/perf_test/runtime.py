@@ -510,6 +510,7 @@ class PerformanceTester:
                 actual_duration = time.time() - start_time
                 last_request_id = self._max_request_id()
                 ended_at = datetime.datetime.now()
+                live_games = live_game_snapshot()
             finally:
                 self._stop_bots(bot_state)
         self._clear_realtime_status()
@@ -523,6 +524,7 @@ class PerformanceTester:
             bot_state,
             last_request_id,
             ended_at,
+            live_games,
         )
 
     @staticmethod
@@ -836,11 +838,13 @@ class PerformanceTester:
         bot_state,
         last_request_id,
         ended_at,
+        live_games,
     ):
         """Calculate final metrics and report results.
 
         Request statistics cover requests logged up to ``last_request_id``, i.e.
         before the bots were stopped, so that they match ``actual_duration``.
+        Likewise, live games count up to the ``live_games`` snapshot taken then.
         Async jobs count if they started by ``ended_at``. For each priority,
         ``queue_waits`` also records the jobs enqueued during the test that
         were still waiting for a worker at ``ended_at`` and how long the
@@ -908,7 +912,7 @@ class PerformanceTester:
                 )
         result.live_games = live_game_stats(
             initial_state["live_games"],
-            live_game_snapshot(),
+            live_games,
             bot_state.errored_bot_ids,
         )
         result.non_bot_participants = count_non_bot_participants()

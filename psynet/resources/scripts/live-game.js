@@ -477,11 +477,12 @@
     // shows more than the page knows, and updates the page with them. The
     // server learns of a newcomer a few seconds after the game does, so the
     // page asks again at most once a second until then, with or without
-    // new views.
+    // new views, while the game lasts.
     function fetchPlayers(state) {
       const view = state.lastView;
       if (
         state.left ||
+        state.ended ||
         state.fetchingPlayers ||
         !page.fetchPlayers ||
         view === null ||

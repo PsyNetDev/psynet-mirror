@@ -536,9 +536,10 @@ def _live_failure_texts(result):
     if out_of_time:
         texts.insert(
             0,
-            f"The game runner fell behind and failed {_and(out_of_time)} rather "
-            "than play them late: their overdue ticks took longer than the "
-            f"game's time_limit. {_LIVE_SPEED_ADVICE}",
+            f"{_and(out_of_time)} failed for running past the "
+            "game's time_limit, usually because the game runner fell behind "
+            "and failed them rather than play their overdue ticks late. "
+            f"{_LIVE_SPEED_ADVICE}",
         )
     if players := live.get("errored_players"):
         texts.append(
@@ -898,6 +899,9 @@ def _checked_limits(results, limits):
     if "live" in seen:
         checked.append(
             f"p95 live game delay under {limits.max_live_delay_p95_s * 1000:g} ms"
+        )
+        checked.append(
+            f"at most {rate(limits.max_bot_error_rate)} of live games failing"
         )
     checked.append(f"at most {rate(limits.max_request_error_rate)} of requests failing")
     if "busy" in seen:
@@ -1490,17 +1494,21 @@ def _live_advice(result, limits):
     """Return the end of the verdict for a test that live games failed, or ``None``."""
     measures = {b.measure for b in limit_breaches(result, limits)}
     games = (result.live_games or {}).get("games", {})
-    if "live_delay" in measures or (
+    failed = [n for n, g in games.items() if g["failed"]]
+    behind = any(ran_out_of_time(result, n) for n in failed)
+    if "live_delay" not in measures and not ("live_failures" in measures and behind):
+        if "live_failures" in measures:
+            return "; fix the errors under LIVE GAMES in the test's results."
+        return None
+    other_errors = (
         "live_failures" in measures
-        and any(g["failed"] and ran_out_of_time(result, n) for n, g in games.items())
-    ):
-        return (
-            "; make the games' tick and view faster (time them with "
-            "LocalGame.time_play) or add worker_processes, then test again."
-        )
-    if "live_failures" in measures:
-        return "; fix the errors under LIVE GAMES in the test's results."
-    return None
+        and not all(ran_out_of_time(result, n) for n in failed)
+    ) or bool(measures & {"request_errors", "busy_responses", "bot_errors"})
+    fix = ", fix the errors" if other_errors else ""
+    return (
+        "; make the games' tick and view faster (time them with "
+        f"LocalGame.time_play) or add worker_processes{fix}, then test again."
+    )
 
 
 def _low_priority_lines(result, limits):

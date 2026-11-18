@@ -1419,7 +1419,7 @@ def test_live_game_delays_are_reported_and_limit_capacity():
         "2 failed live games",
     ]
     assert "LIVE GAMES (1 game runner)" in report
-    assert "The game runner fell behind and failed 2 of 3 snake games" in report
+    assert "2 of 3 snake games failed for running past the game's time_limit" in report
     assert "so 4 bots got an error page" in report
     verdict = _join(format_capacity_summary([behind]))
     assert "over the 1% limit, and 4 bots in them failed too" in verdict

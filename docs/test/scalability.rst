@@ -164,11 +164,12 @@ A test passes if:
   for a worker, at the 95th percentile;
 - each live game's ticks run, and its players' messages are applied when the
   test measures them, at most 100 ms late at the 95th percentile (see
-  :ref:`performance_testing_live_games`);
+  :ref:`performance_testing_live_games`), and at most 1% of live games fail;
 - at most 1% of participants are failed for waiting too long, and at most
   1% get fewer trials because every chain was busy.
 
-A single stray error doesn't fail a test. Low-priority async jobs, which
+A single stray request error doesn't fail a test, but a single failed live
+game in a test of fewer than 100 games does. Low-priority async jobs, which
 participants don't wait for (see :ref:`async_job_priority`), never fail a
 test. If participants do wait for an
 :meth:`~psynet.trial.main.Trial.async_post_trial` job some other way, for
