@@ -69,8 +69,11 @@ ssh -i <ssh-key> <ssh-user>@<ssh-host> \
   "docker compose -f ~/dallinger/<app-name>/docker-compose.yml exec -T web python - <<'PY'
 import inspect
 from dallinger.config import get_config
-from dallinger_experiment.experiment import Exp
-print('recruiter', get_config().get('recruiter'))
+from dallinger.experiment import load
+config = get_config()
+config.load()
+Exp = load()
+print('recruiter', config.get('recruiter'))
 print('lucid_variant', 'CulturalFoundationLucidConsent' in inspect.getsource(inspect.getmodule(Exp)))
 PY"
 ```
