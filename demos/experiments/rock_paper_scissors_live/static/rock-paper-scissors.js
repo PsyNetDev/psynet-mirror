@@ -11,7 +11,6 @@ export function activate({root, psynet}) {
   let results = root.querySelector("#rps-results");
   let partner = root.querySelector("#rps-partner");
   let rejection = root.querySelector("#rps-rejection");
-  let current = null;
 
   function enableButtons(enabled) {
     buttons.forEach((button) => {
@@ -38,7 +37,6 @@ export function activate({root, psynet}) {
   // Each view holds every throw played so far, so a page that reloads or
   // reconnects shows the whole game again.
   function render(view) {
-    current = view.throw;
     results.replaceChildren(
       ...view.results.map((played) => {
         let item = document.createElement("li");
@@ -53,7 +51,8 @@ export function activate({root, psynet}) {
   }
 
   function choose(action) {
-    psynet.liveGame.send("choose", {throw: current, action: action});
+    let throwNumber = psynet.liveGame.predictedView().throw;
+    psynet.liveGame.send("choose", {throw: throwNumber, action: action});
   }
 
   // render runs whenever the game as this player sees it changes. With the

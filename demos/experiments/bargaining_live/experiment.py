@@ -149,7 +149,7 @@ def bargaining_page(stake):
         "bargain",
         tags.div(
             tags.div(
-                tags.span("Joining the game…", id="bargain-status"),
+                tags.span(id="bargain-status"),
                 tags.div(tags.div(id="bargain-time-left"), cls="bargain-clock"),
                 cls="bargain-header",
             ),

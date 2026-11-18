@@ -313,7 +313,8 @@ Each button sends a ``Choose`` message when it's clicked, through the page's
    :end-before: // render runs whenever
    :dedent:
 
-``current`` is the throw the latest view is on, which ``render`` keeps.
+``predictedView()`` returns the game as the page shows it now, so the
+message is for the throw the page is on.
 
 ``render`` draws the page from a view:
 

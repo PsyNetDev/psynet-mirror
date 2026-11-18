@@ -110,7 +110,7 @@ def contribution_page(round_number):
         tags.div(
             tags.div(
                 tags.span(f"Round {round_number + 1} of {N_ROUNDS}", cls="pg-round"),
-                tags.span("Joining the game…", id="pg-status"),
+                tags.span(id="pg-status"),
                 tags.div(tags.div(id="pg-time-left"), cls="pg-clock"),
                 cls="pg-header",
             ),

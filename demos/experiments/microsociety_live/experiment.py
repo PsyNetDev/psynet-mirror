@@ -156,6 +156,8 @@ class Fishing(LiveGame):
         self.record("left", {"player": player, "why": why})
 
     def is_done(self, state, player):
+        # RETIRED or STAYED once the member has left, which becomes the reason
+        # their game ended, and None while they fish.
         return state["boats"][player]["left"]
 
     def is_over(self, state):
@@ -299,7 +301,7 @@ def lake_page():
         tags.div(
             tags.div(
                 tags.span("The lake", cls="fish-round"),
-                tags.span("Sailing to the lake…", id="fish-status"),
+                tags.span(id="fish-status"),
                 tags.div(tags.div(id="fish-time-left"), cls="fish-clock"),
                 tags.span(id="fish-seconds", cls="fish-seconds"),
                 cls="fish-header",

@@ -49,7 +49,6 @@ export function activate({ root, vars, psynet }) {
   let timer = root.querySelector("#snake-timer");
   let scores = root.querySelector("#snake-scores");
   let shownScores = null;
-  let latest = null;
 
   psynet.addPageEventListener(window, "keydown", (event) => {
     // Leave shortcuts such as Cmd+S alone.
@@ -62,7 +61,8 @@ export function activate({ root, vars, psynet }) {
       event.preventDefault();
       // The page doesn't show the reasons the game rejects a turn, such as a
       // turn back into the snake's neck: the key press just has no effect.
-      let crashed = latest !== null && latest.snakes[live.player].body.length === 0;
+      let view = live.predictedView();
+      let crashed = view !== null && view.snakes[live.player].body.length === 0;
       if (!event.repeat && live.playing && !crashed) {
         live.send("turn", { direction: direction });
       }
@@ -107,7 +107,6 @@ export function activate({ root, vars, psynet }) {
   // The game moves every snake on its ticks, and each tick's view shows the
   // whole board, so the page draws each view as it arrives.
   live.onChange((view) => {
-    latest = view;
     draw(context, rules, view, live.player);
     showScores(view);
   });
