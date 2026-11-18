@@ -257,7 +257,15 @@ to paste the token.
 not generate the changes summary; you supply it via `--summary-file`.
 Read the release's section in `CHANGELOG.md` (for tagged versions:
 `git show vX.Y.Z:CHANGELOG.md`) and write a Slack-mrkdwn highlights
-file, e.g. `/tmp/release-highlights-X.Y.Z.md`:
+file, e.g. `/tmp/release-highlights-X.Y.Z.md`.
+
+Release candidate announcements are cumulative, so that nobody has to
+read the earlier ones: the announcement for `X.Y.ZrcN` covers the
+sections of every earlier release candidate of `X.Y.Z` as well as its
+own. Where a later release candidate renamed or replaced something,
+describe only the current behavior.
+
+Write the file as follows:
 
 - Open with a short **must-know section** just above the first category
   header, for changes that every experimenter has to know about: changes
