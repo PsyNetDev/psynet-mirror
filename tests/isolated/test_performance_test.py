@@ -989,6 +989,8 @@ def test_database_rows_count_new_participants(db_session):
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 def test_live_game_stats_count_the_test_s_games_failures_and_runner_work(db_session):
+    from datetime import datetime
+
     from dallinger import db
     from dallinger.models import RealtimeSession
     from sqlalchemy import func
@@ -1024,6 +1026,7 @@ def test_live_game_stats_count_the_test_s_games_failures_and_runner_work(db_sess
                 members=["3", "4"],
                 status="failed",
                 error="Traceback (most recent call last):\nTimeLimitExceeded: 1 s",
+                end_time=datetime(2026, 1, 1, 12),
             ),
             # The runner hasn't saved its counts for this game yet.
             RealtimeSession(game_type="fishing", members=[5], status="failed"),
@@ -1035,7 +1038,12 @@ def test_live_game_stats_count_the_test_s_games_failures_and_runner_work(db_sess
         "max_session_id": db.session.query(func.max(RealtimeSession.id)).scalar(),
     }
 
-    stats = live_game_stats(before, after, errored_bot_ids={3, 5, 8, 9})
+    stats = live_game_stats(
+        before,
+        after,
+        errored_bot_ids={3, 5, 8, 9},
+        steady_from=datetime(2026, 1, 1, 13),
+    )
 
     snake, fishing = stats["games"]["snake"], stats["games"]["fishing"]
     assert (snake["games"], snake["failed"], snake["passes"]) == (3, 2, 20)
@@ -1044,6 +1052,8 @@ def test_live_game_stats_count_the_test_s_games_failures_and_runner_work(db_sess
     assert (fishing["games"], fishing["failed"], fishing["passes"]) == (1, 1, 0)
     assert fishing["errors"] == {"no error saved": 1}
     assert stats["errored_players"] == 3
+    # Only the game that ended before the steady state failed bots in the start-up.
+    assert stats["startup_errored_players"] == 1
     assert stats["busy_s"] == pytest.approx(0.2)
 
 

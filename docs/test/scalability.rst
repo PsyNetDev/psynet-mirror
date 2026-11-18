@@ -329,6 +329,8 @@ A performance test of an experiment with live games reports them under *Live
 games*::
 
     LIVE GAMES (1 game runner, busy 3% of the test)
+    The p95 delays are how late ticks ran and how long players' messages
+    waited to be applied; a pass is the runner's turn at one game.
       Game      Games    Failed    p95 tick delay    p95 message delay    Avg pass
       ------  -------  --------  ----------------  -------------------  ----------
       snake        12         0           0-10 ms      (needs browser)      0.4 ms

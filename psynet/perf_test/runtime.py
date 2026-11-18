@@ -895,6 +895,7 @@ class PerformanceTester:
             **bot_stats,
             **bot_duration_stats(bot_state.bot_durations, outcomes),
         )
+        steady_from = None
         completed_at = bot_state.first_completed_at
         if completed_at is not None:
             result.first_completion_s = completed_at - start_time
@@ -914,6 +915,7 @@ class PerformanceTester:
             initial_state["live_games"],
             live_games,
             bot_state.errored_bot_ids,
+            steady_from,
         )
         result.non_bot_participants = count_non_bot_participants()
         result.n_rq_workers, result.n_rq_job_slots = count_rq_workers()

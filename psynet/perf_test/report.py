@@ -752,7 +752,7 @@ def _measures_seen(results):
         "experiment": any(r.participants_failed for r in results),
         "chains": any(r.busy_early_finishes for r in results),
         "waits": any(count_wait_timeouts(r) for r in results),
-        "live": any(_worst_live_delay(r) != _EMPTY for r in results),
+        "live": any(r.live_games for r in results),
     }
     for priority in PRIORITIES:
         seen[priority] = any(queue_wait_p95(r, priority) is not None for r in results)
@@ -902,7 +902,7 @@ def _checked_limits(results, limits):
         )
     if "live" in seen:
         checked.append(
-            f"p95 live game delay under {limits.max_live_delay_p95_s * 1000:g} ms"
+            f"p95 live game delay at most {limits.max_live_delay_p95_s * 1000:g} ms"
         )
         checked.append(
             f"at most {rate(limits.max_bot_error_rate)} of live games failing"
@@ -1354,10 +1354,12 @@ def _phase_breaches(result, limits):
     """Return the limits that ``result``'s start-up and steady state exceeded, empty without a steady state."""
     if result.steady_state_s is None:
         return [], []
-    errored_players = (result.live_games or {}).get("errored_players", 0)
+    live = result.live_games or {}
+    startup = live.get("startup_errored_players", 0)
+    steady = live.get("errored_players", 0) - startup
     return (
-        phase_limit_reasons(result.startup_phase, limits, errored_players),
-        phase_limit_reasons(result.steady_state_phase, limits, errored_players),
+        phase_limit_reasons(result.startup_phase, limits, startup),
+        phase_limit_reasons(result.steady_state_phase, limits, steady),
     )
 
 
@@ -1501,14 +1503,18 @@ def _live_advice(result, limits):
     games = (result.live_games or {}).get("games", {})
     failed = [n for n, g in games.items() if g["failed"]]
     behind = any(ran_out_of_time(result, n) for n in failed)
+    non_game_errors = bool(
+        measures & {"request_errors", "busy_responses", "bot_errors"}
+    )
     if "live_delay" not in measures and not ("live_failures" in measures and behind):
-        if "live_failures" in measures:
+        if "live_failures" in measures and not non_game_errors:
             return "; fix the errors under LIVE GAMES in the test's results."
+        # The general advice covers the other errors.
         return None
-    other_errors = (
+    other_errors = non_game_errors or (
         "live_failures" in measures
         and not all(ran_out_of_time(result, n) for n in failed)
-    ) or bool(measures & {"request_errors", "busy_responses", "bot_errors"})
+    )
     fix = ", fix the errors" if other_errors else ""
     return (
         "; make the games' tick and view faster (time them with "

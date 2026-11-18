@@ -528,7 +528,8 @@ class CapacityLimits:
             f"({self.allowed_request_errors} always allowed), "
             f"{self.max_busy_response_rate:.0%} of requests answered busy or stale "
             f"({self.allowed_busy_responses} always allowed), "
-            f"{self.max_bot_error_rate:.0%} of bots failing, "
+            f"{self.max_bot_error_rate:.0%} of bots, and of any live games, "
+            "failing, "
             f"{self.max_wait_timeout_rate:.0%} of participants failed by the "
             "experiment for waiting too long and "
             f"{self.max_busy_early_finish_rate * 100:g}% getting fewer trials "
@@ -537,7 +538,7 @@ class CapacityLimits:
         )
         return (
             f"{response}, p95 high-priority async queue wait under "
-            f"{self.max_queue_p95_s:g} s, p95 delay of any live games under "
+            f"{self.max_queue_p95_s:g} s, p95 delay of any live games at most "
             f"{self.max_live_delay_p95_s * 1000:.0f} ms and {errors}"
         )
 
@@ -965,7 +966,7 @@ def phase_limit_reasons(phase, limits, errored_players=0):
     ``phase`` is :attr:`PerformanceTestResult.startup_phase` or
     :attr:`~PerformanceTestResult.steady_state_phase`, whose keys are the
     result's field names for those measures. ``errored_players`` are the
-    test's bots that failed live games failed, whose errors count only
+    bots that live games failed in the phase, whose errors count only
     against the live game limit, as in :func:`limit_breaches`.
     """
     phase_result = PerformanceTestResult.from_dict(phase)
