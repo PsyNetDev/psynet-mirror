@@ -798,8 +798,8 @@ See :doc:`/code/multiplayer/synchronization`.
 ----------------------
 
 Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
-``personal=``, ``cache=``, ``compile_nodes_from_directory`` and
-``on-demand-asset``.
+``personal=``, ``cache=``, ``compile_nodes_from_directory``,
+``on-demand-asset`` and ``.deposited``.
 
 * Rename ``ExperimentAsset`` and ``CachedAsset`` to ``FileAsset``, and
   ``CachedFunctionAsset`` to ``GeneratedAsset``. The old names still work
@@ -813,6 +813,24 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
   ``psynet.media.static_url_for``; see :doc:`/code/using_stimuli`.
 * ``/on-demand-asset?id=…`` URLs no longer work. Use the asset's ``url``
   attribute instead, which has the form ``/asset/<access_token>``.
+* With the default local asset storage and in-place navigation, audio and
+  video recordings now upload after the page is submitted. A later
+  page that plays back or processes a recording must wait for it and handle a
+  missing one. Replace a ``wait_while`` on ``.deposited`` followed by
+  playback with::
+
+      from psynet.page import InfoPage, wait_for_recording
+
+      wait_for_recording(lambda participant: participant.assets["recording"]),
+      PageMaker(
+          lambda participant: playback(participant)
+          if participant.assets["recording"].deposited
+          else InfoPage("Recording unavailable. Please continue.", time_estimate=5),
+          time_estimate=5,
+      ),
+
+  Trial analysis such as ``analyze_recording`` and trial feedback already
+  wait.
 
 19. Async jobs
 --------------

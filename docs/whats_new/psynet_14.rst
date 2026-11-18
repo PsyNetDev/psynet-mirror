@@ -26,6 +26,11 @@ migrate, ``requires_full_page_reload=True`` exempts a single page and
 ``inplace_timeline_transitions = false`` exempts the whole experiment. See
 :doc:`/code/pages/custom_front_ends`.
 
+**Recordings upload in the background.** Audio and video answers now upload
+after the participant moves on, so slow connections no longer hold up the
+next page. A later page that plays back a recording must wait for it; see
+step 18 of :doc:`upgrading_to_psynet_14`.
+
 **A new default theme.** Pages sit on a content panel with a readable line
 length, a blue accent and a matching footer and progress bar. The theme is
 light by default; ``color_mode = dark`` switches to a dark palette, and
