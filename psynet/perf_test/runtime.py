@@ -45,6 +45,7 @@ from psynet.perf_test.measure import (
     bot_duration_stats,
     bot_outcome_stats,
     configured_worker_processes,
+    count_non_bot_participants,
     count_rq_workers,
     database_rows,
     live_game_snapshot,
@@ -906,8 +907,11 @@ class PerformanceTester:
                     initial_state["max_async_job_id"], ended_at, steady_from, outcomes
                 )
         result.live_games = live_game_stats(
-            initial_state["live_games"], live_game_snapshot()
+            initial_state["live_games"],
+            live_game_snapshot(),
+            bot_state.errored_bot_ids,
         )
+        result.non_bot_participants = count_non_bot_participants()
         result.n_rq_workers, result.n_rq_job_slots = count_rq_workers()
         result.configured_worker_processes = configured_worker_processes()
         result.server_cores = os.cpu_count()

@@ -57,6 +57,7 @@ from psynet.perf_test.results import (
     phase_queue_wait_p95,
     plural,
     queue_wait_p95,
+    ran_out_of_time,
     recommend_workers,
     retry_bot_count,
     runner_utilization,
@@ -123,10 +124,10 @@ def format_test_results(result):
         bold(f"Test results (n={result.n_bots:,} bots)"),
         "",
         *_bot_outcome_lines(result),
+        *_live_game_lines(result),
         *_runtime_lines(result),
         *_request_lines(result),
         *_async_job_lines(result),
-        *_live_game_lines(result),
         *_phase_lines(result),
         *_database_row_lines(result),
     ]
@@ -448,81 +449,103 @@ def _live_game_lines(result):
     live = result.live_games or {}
     if not live:
         return []
-    runners = live["runners"]
+    games = live["games"]
+    failed = any(g["failed"] for g in games.values())
     utilization = runner_utilization(result)
-    busy = "" if utilization is None else f", busy {utilization:.0%} of the test"
+    # Once games fail, their runner idles, so its busy share understates the load.
+    busy = (
+        f", busy {utilization:.0%} of the test"
+        if utilization is not None and not failed
+        else ""
+    )
     rows = []
-    for game, played in sorted(live["games"].items()):
-        delays = [
-            live_delay_p95(result, game, kind)
-            for kind in ("tick_delays", "message_delays")
-        ]
+    for game, played in sorted(games.items()):
+        ticks = live_delay_p95(result, game, "tick_delays")
+        messages = live_delay_p95(result, game, "message_delays")
         rows.append(
             [
                 game,
                 f"{played['games']:,}",
                 f"{played['failed']:,}",
-                f"{played['passes']:,}",
+                _EMPTY if ticks is None else describe_delay(ticks),
+                "(needs browser)" if messages is None else describe_delay(messages),
                 _ms(played["seconds"] / played["passes"] if played["passes"] else None),
-                *(_EMPTY if d is None else describe_delay(d) for d in delays),
             ]
         )
     lines = [
-        *_section(f"LIVE GAMES ({plural(runners, 'game runner')}{busy})"),
-        "  Passes: the runner's turns at a game, each running its due ticks and "
-        "messages and sending views. Delays: how late ticks ran, and how long "
-        "players' messages waited to be applied.",
+        *_section(f"LIVE GAMES ({plural(live['runners'], 'game runner')}{busy})"),
+        "  The p95 delays are how late ticks ran and how long players' messages "
+        "waited to be applied; a pass is the runner's turn at one game.",
         *_table_lines(
             rows,
             headers=[
                 "Game",
                 "Games",
                 "Failed",
-                "Passes",
-                "Avg pass",
                 "p95 tick delay",
                 "p95 message delay",
+                "Avg pass",
             ],
             indent="    ",
             tablefmt="simple",
-            colalign=("left",) + ("right",) * 6,
+            colalign=("left",) + ("right",) * 5,
         ),
         "",
     ]
-    failed = [
-        f"{g['failed']:,} of {g['games']:,} {game} games"
-        for game, g in sorted(live["games"].items())
-        if g["failed"]
-    ]
     if failed:
-        lines += [
-            warning(
-                f"  {_and(failed)} failed. The server log has each one's "
-                "error after 'Session <id> of <game> failed'. A game whose "
-                "runner falls far behind can fail by using up its time limit "
-                "while it catches up."
-            ),
-            "",
-        ]
-    if utilization is not None and utilization > MAX_WORKER_UTILIZATION:
+        lines += [warning(f"  {text}") for text in _live_failure_texts(result)]
+        lines.append("")
+    elif utilization is not None and utilization > MAX_WORKER_UTILIZATION:
         lines += [
             warning(
                 f"  The game runners were busy {utilization:.0%} of the test, so "
-                "they can't keep up with many more games. Each worker process "
-                "runs a game runner: add worker processes with worker_processes, "
-                "or make the games' tick and view faster (see "
-                "LocalGame.time_play)."
+                "they can't keep up with many more games. "
+                f"{_LIVE_SPEED_ADVICE}"
             ),
             "",
         ]
-    if not _live_messages_measured(result):
-        lines += [
-            "  Bots play live games on the server, without game pages, so the "
-            "test doesn't measure players' messages. To measure them, play "
-            "the game in a browser during a test with --existing.",
-            "",
-        ]
     return lines
+
+
+_LIVE_SPEED_ADVICE = (
+    "Make the games' tick and view faster (time them with "
+    "LocalGame.time_play), or add worker processes with worker_processes, "
+    "since each runs a game runner."
+)
+
+
+def _live_failure_texts(result):
+    """Explain the failed live games of ``result``: why they failed and what it did to their players."""
+    live = result.live_games
+    texts = []
+    out_of_time = []
+    for game, played in sorted(live["games"].items()):
+        if not played["failed"]:
+            continue
+        failed = f"{played['failed']:,} of {played['games']:,} {game} games"
+        if ran_out_of_time(result, game):
+            out_of_time.append(failed)
+            continue
+        errors = ", ".join(
+            f"{error} ({n:,}x)" for error, n in list(played["errors"].items())[:3]
+        )
+        texts.append(
+            f"{failed} failed: {errors}. The server log has each traceback "
+            f"after 'Session <id> of {game} failed'."
+        )
+    if out_of_time:
+        texts.insert(
+            0,
+            f"The game runner fell behind and failed {_and(out_of_time)} rather "
+            "than play them late: their overdue ticks took longer than the "
+            f"game's time_limit. {_LIVE_SPEED_ADVICE}",
+        )
+    if players := live.get("errored_players"):
+        texts.append(
+            f"A failed game fails its players, so {plural(players, 'bot')} got "
+            "an error page (under BOT ERRORS above)."
+        )
+    return texts
 
 
 def _live_messages_measured(result):
@@ -788,7 +811,7 @@ def _summary_columns(results, limits):
     if "experiment" in seen:
         extra.append(
             (
-                "Failed by\nexperiment",
+                "Failed by\nthe experiment",
                 count(lambda r: r.participants_failed, started, "wait_timeouts"),
             )
         )
@@ -966,6 +989,14 @@ def format_performance_summary(
             None,
         ]
     notes = [_LOCAL_CAVEAT, _NOT_MEASURED] if local else [_NOT_MEASURED]
+    if others := max(r.non_bot_participants for r in results):
+        notes.insert(
+            0,
+            f"The database had {plural(others, 'participant')} that bots didn't "
+            "create, such as people testing in a browser, so treat these tests "
+            "as a check of how the experiment ran, not as an estimate of how "
+            "many participants it can handle.",
+        )
     if any(r.live_games for r in results) and not any(
         _live_messages_measured(r) for r in results
     ):
@@ -1434,6 +1465,8 @@ def _capacity_lines(outcome, limits):
         end = ". The limit wasn't found."
     elif capacity is not None:
         end = "."
+    elif live_advice := _live_advice(first_fail, limits):
+        end = live_advice
     elif exceeded_error_limits(first_fail, limits):
         end = "; fix the errors or test fewer bots."
     else:
@@ -1451,6 +1484,23 @@ def _capacity_lines(outcome, limits):
             "inconsistent; rerun to confirm."
         )
     return lines
+
+
+def _live_advice(result, limits):
+    """Return the end of the verdict for a test that live games failed, or ``None``."""
+    measures = {b.measure for b in limit_breaches(result, limits)}
+    games = (result.live_games or {}).get("games", {})
+    if "live_delay" in measures or (
+        "live_failures" in measures
+        and any(g["failed"] and ran_out_of_time(result, n) for n, g in games.items())
+    ):
+        return (
+            "; make the games' tick and view faster (time them with "
+            "LocalGame.time_play) or add worker_processes, then test again."
+        )
+    if "live_failures" in measures:
+        return "; fix the errors under LIVE GAMES in the test's results."
+    return None
 
 
 def _low_priority_lines(result, limits):

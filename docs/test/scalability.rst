@@ -327,12 +327,13 @@ A performance test of an experiment with live games reports them under *Live
 games*::
 
     LIVE GAMES (1 game runner, busy 3% of the test)
-      Game      Games    Failed    Passes    Avg pass    p95 tick delay    p95 message delay
-      ------  -------  --------  --------  ----------  ----------------  -------------------
-      snake        12         0     4,154      0.4 ms           0-10 ms                    -
+      Game      Games    Failed    p95 tick delay    p95 message delay    Avg pass
+      ------  -------  --------  ----------------  -------------------  ----------
+      snake        12         0           0-10 ms      (needs browser)      0.4 ms
 
 A pass is the runner's turn at a game, running the ticks and messages due and
-sending views. The runners count delays in ranges (up to 10, 20, 50, 100,
+sending views. When games fail, the section says why: for each game, its
+most common errors, or that the runner fell behind. The runners count delays in ranges (up to 10, 20, 50, 100,
 200 and 500 ms, then 1, 2 and 5 s), so the 95th percentiles are ranges. A test
 passes only if every game's p95 tick delay, and p95 message delay, is at
 most 100 ms. The report warns when the runners were busy more than 85% of
@@ -347,7 +348,9 @@ the game's ``time_limit`` (1 second) together, the game fails, with
 stalled isn't the game its players were meant to play, so it is marked as
 failed rather than kept in the data, and its players fail as for any other
 failed game. The report's *Failed* column counts these games, and a test
-with more failed games than ``max_bot_error_rate`` allows fails.
+with more failed games than ``max_bot_error_rate`` allows fails. The
+players' bots get an error page, but those errors count only towards the
+failed games, not again as failed requests and bots.
 
 Bots play live games on the server, through the game's ``bot`` method, and
 open no game pages. So a bot-only test measures the game's code and how late
@@ -357,7 +360,9 @@ game in a browser, and run
 ``psynet performance-test local --existing --force`` (``--force`` because
 your participant isn't a bot). The bots share games with you, and the
 *p95 message delay* column then shows how long your moves waited to be
-applied. No test measures the views' trip to the page, so also watch the
+applied. Because the database then has a participant that bots didn't
+create, the summary notes that the test checks how the experiment ran
+rather than estimating its capacity. No test measures the views' trip to the page, so also watch the
 game in a browser on the deployed server
 (see :ref:`performance_testing_server`) while other groups play.
 

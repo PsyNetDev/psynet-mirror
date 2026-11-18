@@ -634,44 +634,50 @@ def live_game_snapshot():
         return None
 
 
-def live_game_stats(before, after):
+def live_game_stats(before, after, errored_bot_ids=()):
     """Return how the live game runners kept up between two :func:`live_game_snapshot` calls.
+
+    Parameters
+    ----------
+    before, after : dict or None
+        The snapshots.
+    errored_bot_ids : collection of int
+        The participant IDs of the bots that raised an error in the test.
 
     Returns
     -------
     dict
         Empty if the experiment played no live games. Otherwise ``runners``,
         the runners running at the end; ``busy_s``, the seconds they spent
-        playing games rather than waiting; and ``games``, by each game's
-        channel: the ``games`` that started and how many of those
-        ``failed``, the runner's ``passes`` over them and the ``seconds``
-        those took, and the ``tick_delays`` and ``message_delays``, the
-        ticks and players' messages applied within each range of delay of
-        Dallinger's ``DELAY_BOUNDS``.
+        playing games rather than waiting; ``errored_players``, how many of
+        ``errored_bot_ids`` played in a failed game, which fails its players;
+        and ``games``, by each game's channel: the ``games`` that started,
+        how many of those ``failed`` and their ``errors``, the last line of
+        each error with how many games it failed, the runner's ``passes``
+        over them and the ``seconds`` those took, and the ``tick_delays``
+        and ``message_delays``, the ticks and players' messages applied
+        within each range of delay of Dallinger's ``DELAY_BOUNDS``.
     """
     if before is None or after is None:
         return {}
-    from dallinger import db
     from dallinger.models import RealtimeSession
-    from sqlalchemy import func
 
     started = {}
-    for channel, status, count in (
-        db.session.query(
-            RealtimeSession.game_type,
-            RealtimeSession.status,
-            func.count(RealtimeSession.id),
-        )
-        .filter(
-            RealtimeSession.id > before["max_session_id"],
-            RealtimeSession.id <= after["max_session_id"],
-        )
-        .group_by(RealtimeSession.game_type, RealtimeSession.status)
+    errored_players = set()
+    for session in RealtimeSession.query.filter(
+        RealtimeSession.id > before["max_session_id"],
+        RealtimeSession.id <= after["max_session_id"],
     ):
-        games = started.setdefault(channel, {"games": 0, "failed": 0})
-        games["games"] += count
-        if status == "failed":
-            games["failed"] += count
+        games = started.setdefault(
+            session.game_type, {"games": 0, "failed": 0, "errors": Counter()}
+        )
+        games["games"] += 1
+        if session.status == "failed":
+            games["failed"] += 1
+            games["errors"][_last_line(session.error)] += 1
+            errored_players |= set(session.members) & set(errored_bot_ids)
+    for games in started.values():
+        games["errors"] = dict(games["errors"].most_common())
     earlier = before["runner_stats"]["games"]
     games = {}
     for channel, counts in after["runner_stats"]["games"].items():
@@ -679,7 +685,7 @@ def live_game_stats(before, after):
         played = {key: _subtract(value, old.get(key)) for key, value in counts.items()}
         if played["passes"] or channel in started:
             games[channel] = {
-                **started.get(channel, {"games": 0, "failed": 0}),
+                **started.get(channel, {"games": 0, "failed": 0, "errors": {}}),
                 **played,
             }
     if not games:
@@ -690,8 +696,15 @@ def live_game_stats(before, after):
         delay_bounds=[None if math.isinf(b) else b for b in DELAY_BOUNDS],
         runners=after["runner_stats"]["runners"],
         busy_s=after["runner_stats"]["busy"] - before["runner_stats"]["busy"],
+        errored_players=len(errored_players),
         games=games,
     )
+
+
+def _last_line(error):
+    """Return the last line of a traceback, which names the error, or ``"no error saved"``."""
+    lines = (error or "").strip().splitlines()
+    return lines[-1].strip()[:200] if lines else "no error saved"
 
 
 def _subtract(value, old):

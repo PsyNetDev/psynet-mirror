@@ -270,6 +270,9 @@ class PerformanceTestResult:
     #: (see measure.live_game_stats), with the ``delay_bounds`` of the ranges
     #: that the delays are counted in, ``None`` for the last, unbounded one.
     live_games: dict = field(default_factory=dict)
+    #: Participants in the database at the end that PsyNet bots didn't
+    #: create, such as people testing in a browser with ``--force``.
+    non_bot_participants: int = 0
 
     @property
     def steady_state_s(self):
@@ -1020,18 +1023,24 @@ def limit_breaches(result, limits):
     """
     breaches = []
 
-    def breach(measure, reason, limit, value, limit_value, what=None, **kwargs):
-        clause = f"{what or reason}, over the {limit} limit"
+    def breach(
+        measure, reason, limit, value, limit_value, what=None, then="", **kwargs
+    ):
+        clause = f"{what or reason}, over the {limit} limit{then}"
         breaches.append(
             LimitBreach(measure, reason, limit, value, limit_value, clause, **kwargs)
         )
 
+    _live_game_breaches(result, limits, breach)
+    # A failed live game fails its players, whose bots then get an error
+    # page, so those errors only count against the live game limit.
+    game_errors = (result.live_games or {}).get("errored_players", 0)
     requests = result.key_requests or 0
     started = result.total_bots_started or 0
     for measure, n, rate, allowed, noun, verb in [
         (
             "request_errors",
-            result.request_errors or 0,
+            max((result.request_errors or 0) - game_errors, 0),
             limits.max_request_error_rate,
             limits.allowed_request_errors,
             "request error",
@@ -1050,7 +1059,7 @@ def limit_breaches(result, limits):
         if n > allowed:
             what = _of(n, requests, "requests", verb) if requests else None
             breach(measure, plural(n, noun), f"{rate * 100:g}%", n, allowed, what)
-    bot_errors = result.bot_errors or 0
+    bot_errors = max((result.bot_errors or 0) - game_errors, 0)
     max_bot_errors = limits.max_bot_error_rate * started
     if bot_errors > max_bot_errors:
         kinds = result.bot_error_kinds or {}
@@ -1105,20 +1114,27 @@ def limit_breaches(result, limits):
                     limits.max_p95_s,
                     f"the p95 response time for {endpoint} was {value}",
                 )
-    games = (result.live_games or {}).get("games", {}).values()
-    started_games = sum(g["games"] for g in games)
-    failed_games = sum(g["failed"] for g in games)
-    if failed_games > limits.max_bot_error_rate * started_games:
+    queue_wait = queue_wait_p95(result)
+    if queue_wait is not None and queue_wait > limits.max_queue_p95_s:
         breach(
-            "live_failures",
-            plural(failed_games, "failed live game"),
-            f"{limits.max_bot_error_rate * 100:g}%",
-            failed_games,
-            limits.max_bot_error_rate * started_games,
-            _of(failed_games, started_games, "live games", "failed"),
+            "queue",
+            f"p95 high-priority async queue wait {queue_wait:.2f} s",
+            f"{limits.max_queue_p95_s:g} s",
+            queue_wait,
+            limits.max_queue_p95_s,
+            f"the p95 high-priority async queue wait was {queue_wait:.2f} s",
         )
+    return breaches
+
+
+def _live_game_breaches(result, limits, breach):
+    """Call ``breach`` for each live game limit that ``result`` exceeded, as in :func:`limit_breaches`.
+
+    Delays come first, since a runner that falls far behind fails games.
+    """
+    live = result.live_games or {}
     max_delay = limits.max_live_delay_p95_s
-    for game in sorted((result.live_games or {}).get("games", {})):
+    for game in sorted(live.get("games", {})):
         for kind, noun in _DELAY_NOUNS.items():
             delay = live_delay_p95(result, game, kind)
             if delay is None or delay[1] <= max_delay:
@@ -1132,17 +1148,33 @@ def limit_breaches(result, limits):
                 f"the p95 {noun} delay in the live game {game} was "
                 f"{describe_delay(delay)}",
             )
-    queue_wait = queue_wait_p95(result)
-    if queue_wait is not None and queue_wait > limits.max_queue_p95_s:
+    games = live.get("games", {}).values()
+    started_games = sum(g["games"] for g in games)
+    failed_games = sum(g["failed"] for g in games)
+    if failed_games > limits.max_bot_error_rate * started_games:
+        players = live.get("errored_players", 0)
         breach(
-            "queue",
-            f"p95 high-priority async queue wait {queue_wait:.2f} s",
-            f"{limits.max_queue_p95_s:g} s",
-            queue_wait,
-            limits.max_queue_p95_s,
-            f"the p95 high-priority async queue wait was {queue_wait:.2f} s",
+            "live_failures",
+            plural(failed_games, "failed live game"),
+            f"{limits.max_bot_error_rate * 100:g}%",
+            failed_games,
+            limits.max_bot_error_rate * started_games,
+            _of(failed_games, started_games, "live games", "failed"),
+            then=f", and {plural(players, 'bot')} in them failed too"
+            if players
+            else "",
         )
-    return breaches
+
+
+def ran_out_of_time(result, game):
+    """Return whether any of a live game's games failed by running past its ``time_limit``.
+
+    That is Dallinger's ``TimeLimitExceeded``. It usually means that the
+    runner fell far behind, so that a game's overdue ticks didn't fit in the
+    limit, but very slow game code does it too.
+    """
+    errors = result.live_games["games"][game].get("errors", {})
+    return any("TimeLimitExceeded" in error for error in errors)
 
 
 def _busy_early_finish_max(result):
