@@ -3581,28 +3581,17 @@ def _elt_key(elt, prefix):
 
     Elements get positional ids when the timeline is built, and elements made by
     a page maker get its id plus their index, so the key stays the same each
-    time the page maker rebuilds them. An enclosing ``while_loop`` places copies
-    of its elements in the timeline (see :func:`_copy_elts`), so an element
-    without a position of its own uses that of its first positioned copy.
+    time the page maker rebuilds them. A loop's callbacks find ``elt`` through
+    an attribute of the element running them, not through a closure, because
+    an enclosing ``while_loop`` runs copies of its elements and
+    :func:`_copy_elts` points each copy's attributes at the other copies.
     """
-    position = _timeline_position(elt)
-    if position is None:
+    if elt.id is None:
         raise RuntimeError(
             f"{elt} has no timeline position yet, so its {prefix} state has no key. "
             "Was it left out of the timeline?"
         )
-    return prefix + json.dumps(position, separators=(",", ":"))
-
-
-def _timeline_position(elt):
-    """Return the id of ``elt`` or of its first copy, at any depth, that has one."""
-    if elt.id is not None:
-        return elt.id
-    for elt_copy in getattr(elt, "_copies", ()):
-        position = _timeline_position(elt_copy)
-        if position is not None:
-            return position
-    return None
+    return prefix + json.dumps(elt.id, separators=(",", ":"))
 
 
 def _accepts_deprecated_labels(ignore=(), removed_positional=None):
@@ -3792,48 +3781,50 @@ def while_loop(
 
     logic = multiply_expected_repetitions(_copy_elts(join(logic)), expected_repetitions)
 
-    def condition_wrapped(participant, experiment):
+    def condition_wrapped(participant, experiment, self):
         if _ends_in_released_pass and _in_released_pass(participant):
             return False
         result = call_function_with_context(
-            condition, participant=participant, experiment=experiment
+            condition, participant=participant, experiment=experiment, _elt=self
         )
         logger.debug(f"Evaluating while_loop ({label}) condition: result = {result}")
         return result
 
-    def loop_key():
-        return _elt_key(start_while, "while_loop")
+    def loop_key(elt):
+        return _elt_key(elt._while_loop_start, "while_loop")
 
-    def state_key(key):
-        return _while_loop_state_key(loop_key(), key)
+    def state_key(elt, key):
+        return _while_loop_state_key(loop_key(elt), key)
 
-    def start_loop(participant, experiment):
+    def start_loop(participant, experiment, self):
         """Snapshot the loop's start and runtime budget once per entry."""
-        participant.var.set(state_key("loop_start_time"), serialise(datetime.now()))
+        participant.var.set(
+            state_key(self, "loop_start_time"), serialise(datetime.now())
+        )
         if callable(max_loop_time):
             participant.var.set(
-                state_key("loop_max_time"),
+                state_key(self, "loop_max_time"),
                 call_function_with_context(
                     max_loop_time, participant=participant, experiment=experiment
                 ),
             )
 
-    def max_loop_time_condition(participant, experiment):
+    def max_loop_time_condition(participant, experiment, self):
         """Check elapsed time against the budget saved on entry."""
         if extend_while is not None and call_function_with_context(
             extend_while, participant=participant, experiment=experiment
         ):
             participant.var.set(
-                state_key("loop_start_time"),
+                state_key(self, "loop_start_time"),
                 serialise(datetime.now()),
             )
             return False
         limit = (
-            participant.var.get(state_key("loop_max_time"))
+            participant.var.get(state_key(self, "loop_max_time"))
             if callable(max_loop_time)
             else max_loop_time
         )
-        return _while_loop_timed_out(participant, loop_key(), limit)
+        return _while_loop_timed_out(participant, loop_key(self), limit)
 
     from .page import UnsuccessfulEndPage
 
@@ -3861,25 +3852,22 @@ def while_loop(
 
     # A resolved condition exits before checking timeouts. For example, returning
     # to an inactive browser tab must not time out work that has already finished.
-    conditional_logic = join(
-        conditional(
-            lambda participant, experiment: call_function_with_context(
-                max_loop_time_condition,
-                participant=participant,
-                experiment=experiment,
-            ),
-            after_timeout_logic,
-            # The while loop includes its own progress bounds, so we don't need to bound progress
-            # within this inner component.
-            bound_progress=False,
-            time_estimate=0.0,
-        ),
-        logic,
-        GoTo(start_while),
+    timeout_check = conditional(
+        max_loop_time_condition,
+        after_timeout_logic,
+        # The while loop includes its own progress bounds, so we don't need to bound progress
+        # within this inner component.
+        bound_progress=False,
+        time_estimate=0.0,
     )
+    start_loop_elt = CodeBlock(start_loop)
+    for elt in [start_loop_elt, *timeout_check]:
+        elt._while_loop_start = start_while
+
+    conditional_logic = join(timeout_check, logic, GoTo(start_while))
 
     elts = join(
-        CodeBlock(start_loop),
+        start_loop_elt,
         start_while,
         conditional(
             condition_wrapped,
@@ -4125,8 +4113,6 @@ def _copy_elts(elts: List[Elt]) -> List[Elt]:
     Lets a loop scale its elements' estimates without changing elements that
     are used elsewhere too, or that are resolved again later. An element that
     appears twice gets a copy for each place; references go to the first.
-    Each original remembers its copies, so that :func:`_elt_key` can find the
-    timeline position of an element that only a copy of occupies.
     """
     copies = [copy.copy(elt) for elt in elts]
     first_copy = {}
@@ -4145,9 +4131,6 @@ def _copy_elts(elts: List[Elt]) -> List[Elt]:
     for elt in copies:
         elt.__dict__.update({name: remap(value) for name, value in vars(elt).items()})
         elt.links = dict(getattr(elt, "links", {}))
-        elt._copies = []
-    for original, elt_copy in zip(elts, copies):
-        original.__dict__.setdefault("_copies", []).append(elt_copy)
     return copies
 
 
@@ -4752,10 +4735,10 @@ def for_loop(
                 )
             return len(iterate_over())
 
-    def state_key():
-        return _elt_key(setup_elt, "for_loop")
+    def state_key(elt):
+        return _elt_key(elt._for_loop_setup, "for_loop")
 
-    def setup(experiment, participant):
+    def setup(experiment, participant, self):
         nonlocal iterate_over
         if callable(iterate_over):
             lst = call_function_with_context(
@@ -4765,17 +4748,17 @@ def for_loop(
             )
         else:
             lst = iterate_over
-        participant.for_loops[state_key()] = {"lst": lst, "index": 0}
+        participant.for_loops[state_key(self)] = {"lst": lst, "index": 0}
         flag_modified(participant, "for_loops")
 
-    def wrapup(experiment, participant):
-        del participant.for_loops[state_key()]
+    def wrapup(experiment, participant, self):
+        del participant.for_loops[state_key(self)]
         flag_modified(participant, "for_loops")
 
-    def content(experiment, participant):
+    def content(experiment, participant, self):
         if not callable(logic):
             return logic
-        state = participant.for_loops[state_key()]
+        state = participant.for_loops[state_key(self)]
         lst = state["lst"]
         index = state["index"]
         input = lst[index]
@@ -4786,22 +4769,22 @@ def for_loop(
             participant=participant,
         )
 
-    def should_stay_in_loop(participant, experiment):
-        state = participant.for_loops[state_key()]
+    def should_stay_in_loop(participant, experiment, _elt):
+        state = participant.for_loops[state_key(_elt)]
         if state["index"] >= len(state["lst"]):
             return False
         return stop_if is None or not call_function_with_context(
             stop_if, participant=participant, experiment=experiment
         )
 
-    def increment_counter(participant):
-        state = participant.for_loops[state_key()]
+    def increment_counter(participant, self):
+        state = participant.for_loops[state_key(self)]
         state["index"] += 1
         flag_modified(participant, "for_loops")
 
     setup_elt = CodeBlock(setup)
 
-    return join(
+    elts = join(
         setup_elt,
         while_loop(
             should_stay_in_loop,
@@ -4820,6 +4803,9 @@ def for_loop(
         ),
         CodeBlock(wrapup),
     )
+    for elt in elts:
+        elt._for_loop_setup = setup_elt
+    return elts
 
 
 @_accepts_deprecated_labels(ignore=("label",))

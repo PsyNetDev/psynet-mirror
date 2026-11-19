@@ -288,6 +288,75 @@ def test_loops_inside_a_while_loop_keep_their_state(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+def test_a_loop_reused_in_two_page_makers_keys_each_by_its_own_place(
+    db_session, participant, monkeypatch
+):
+    """Every request uses a fresh timeline, as after a restart or on another worker."""
+    from psynet.page import InfoPage
+    from psynet.timeline import (
+        CodeBlock,
+        PageMaker,
+        Timeline,
+        for_loop,
+        join,
+        while_loop,
+    )
+
+    def build_timeline():
+        letters = for_loop(
+            iterate_over=["a", "b"],
+            logic=lambda letter: InfoPage(letter, time_estimate=1),
+            time_estimate_per_iteration=1,
+        )
+
+        def once(name):
+            return PageMaker(
+                lambda participant: while_loop(
+                    lambda: participant.var.get(name, True),
+                    join(letters, CodeBlock(lambda: participant.var.set(name, False))),
+                    expected_repetitions=1,
+                ),
+                time_estimate=2,
+            )
+
+        return Timeline(once("first"), once("second"), InfoPage("end", time_estimate=0))
+
+    exp = get_experiment()
+    participant.elt_id = ["main", -1]
+    contents = []
+    for _ in range(5):
+        monkeypatch.setattr(exp, "timeline", build_timeline())
+        exp.timeline.advance_page(exp, participant)
+        contents.append(exp.timeline.get_current_elt(exp, participant).content)
+    assert contents == ["a", "b", "a", "b", "end"]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_a_page_maker_does_not_keep_the_loops_it_makes(db_session, participant):
+    import gc
+    import weakref
+
+    from psynet.page import InfoPage
+    from psynet.timeline import PageMaker, Timeline, while_loop
+
+    page = InfoPage("wait", time_estimate=1)
+    maker = PageMaker(
+        lambda: while_loop(lambda: True, page, expected_repetitions=1),
+        time_estimate=1,
+    )
+    Timeline(maker)
+    made = weakref.WeakSet(maker.resolve(get_experiment(), participant, maker.id))
+    gc.collect()
+    assert not made
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
 @pytest.mark.parametrize("expiry_source", ["clock", "poll", "late_poll"])
 @pytest.mark.parametrize("upload_state", ["pending", "processing"])
 def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
