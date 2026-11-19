@@ -377,14 +377,6 @@
   color: var(--psynet-text-muted);
 }
 
-.fish-scores {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  font-weight: 600;
-  min-height: 1.5em;
-}
-
 .fish-rejection {
   min-height: 1.5em;
   color: var(--psynet-danger);

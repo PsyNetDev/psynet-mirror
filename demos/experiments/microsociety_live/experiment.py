@@ -312,7 +312,6 @@ def lake_page():
                 f"catch fish every {CATCH_SECONDS} s.",
                 cls="fish-help",
             ),
-            tags.div(id="fish-scores", cls="fish-scores"),
             tags.p(id="fish-rejection", cls="fish-rejection"),
             id="fish-game",
         ),

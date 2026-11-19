@@ -175,7 +175,7 @@ they end (when the rules say so, or when the time is up):
      - a fixed group
      - time's up
    * - `microsociety_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety_live>`__
-     - ticks
+     - catches, every 3 seconds
      - a society that members join and leave while it plays
      - once nobody's left
 
