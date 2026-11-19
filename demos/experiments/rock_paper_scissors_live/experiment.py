@@ -203,6 +203,49 @@ def show_result(answer, reward):
     )
 
 
+def rock_paper_scissors_page(game):
+    """Return the game page for ``game``, the trial's definition."""
+    return LiveGamePage(
+        "rock_paper_scissors",
+        tags.div(
+            tags.p(
+                f"Game {game['number']} of {len(GAMES)}, of "
+                f"{game['throws']} throws. Each throw you win pays "
+                f"a bonus of ${game['reward_per_win']:.2f}.",
+                id="rps-stakes",
+            ),
+            tags.h4(id="rps-status"),
+            tags.p(id="rps-partner"),
+            tags.div(
+                [
+                    tags.button(
+                        action.capitalize(),
+                        type="button",
+                        cls="btn btn-primary btn-lg rps-action",
+                        data_action=action,
+                        disabled=True,
+                    )
+                    for action in ACTIONS
+                ],
+                id="rps-actions",
+            ),
+            tags.p(id="rps-rejection"),
+            tags.p(id="rps-score"),
+            tags.ol(id="rps-results"),
+            id="rps-game",
+        ),
+        player_left_message=(
+            "Your partner has left the game. If they don't come back "
+            f"within {RockPaperScissors.away_timeout} seconds, it will end."
+        ),
+        no_game_message="This game can't be played without your partner.",
+        waiting_status="Waiting for your partner to open the game",
+        js_page_modules=["/static/rock-paper-scissors.js"],
+        css_links=["/static/rock-paper-scissors.css"],
+        time_estimate=60,
+    )
+
+
 class RockPaperScissorsTrial(Trial):
     """One game between the two participants of a pair. The trial's definition
     says which of the pair's games it is, how many throws it has and what a
@@ -230,45 +273,7 @@ class RockPaperScissorsTrial(Trial):
             # on to the game page without a game.
             late_after=LATE_AFTER,
             late_action="leave_group",
-            page=LiveGamePage(
-                "rock_paper_scissors",
-                tags.div(
-                    tags.p(
-                        f"Game {game['number']} of {len(GAMES)}, of "
-                        f"{game['throws']} throws. Each throw you win pays "
-                        f"a bonus of ${game['reward_per_win']:.2f}.",
-                        id="rps-stakes",
-                    ),
-                    tags.h4(id="rps-status"),
-                    tags.p(id="rps-partner"),
-                    tags.div(
-                        [
-                            tags.button(
-                                action.capitalize(),
-                                type="button",
-                                cls="btn btn-primary btn-lg rps-action",
-                                data_action=action,
-                                disabled=True,
-                            )
-                            for action in ACTIONS
-                        ],
-                        id="rps-actions",
-                    ),
-                    tags.p(id="rps-rejection"),
-                    tags.p(id="rps-score"),
-                    tags.ol(id="rps-results"),
-                    id="rps-game",
-                ),
-                player_left_message=(
-                    "Your partner has left the game. If they don't come back "
-                    f"within {RockPaperScissors.away_timeout} seconds, it will end."
-                ),
-                no_game_message=("This game can't be played without your partner."),
-                waiting_status="Waiting for your partner to open the game",
-                js_page_modules=["/static/rock-paper-scissors.js"],
-                css_links=["/static/rock-paper-scissors.css"],
-                time_estimate=60,
-            ),
+            page=rock_paper_scissors_page(game),
         )
 
     def score_answer(self, answer, definition):

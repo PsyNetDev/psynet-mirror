@@ -240,14 +240,12 @@ Reference: :ref:`live-games-bots`.
 The game page
 ~~~~~~~~~~~~~
 
-The game page is a :class:`~psynet.live_game.LiveGamePage`, built in the
-demo's trial, which `Playing it as trials`_ below shows in full:
+The game page is a :class:`~psynet.live_game.LiveGamePage`. The demo
+builds it in a function that takes the trial's definition, which the trial
+in `Playing it as trials`_ below passes in:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
-   :language: python
-   :start-at: page=LiveGamePage(
-   :end-at: time_estimate=60,
-   :dedent:
+   :pyobject: rock_paper_scissors_page
 
 Its content holds the page's elements, each with an ``id`` so that the
 JavaScript can find it. PsyNet hides it on a page without a game. The other
@@ -465,8 +463,9 @@ then scores the game:
   what a throw won pays from the trial's definition as its settings. Its barrier is the
   :class:`~psynet.sync.GroupBarrier` that a trial a group plays needs, so
   this trial needs no other.
-- The page's first element says which game this is, how many throws it has
-  and what a throw won pays, all from the trial's definition.
+- ``rock_paper_scissors_page``, from `The game page`_ above, builds the
+  page from the trial's definition, so its first element says which game
+  this is, how many throws it has and what a throw won pays.
 - The game page's answer, from the game's ``answer``, becomes the trial's
   answer, and ``trial.live_game`` is the participant's record of the game,
   with the whole pair's outcome.
