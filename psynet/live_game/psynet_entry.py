@@ -116,9 +116,12 @@ def _apply_once_started(self, method, outermost, state, player_id, message, now,
 
 def _tick_once_started(self, method, outermost, state, now):
     entry = _psynet_entry(state)
+    if entry["started_at"] is None and (not outermost or now < self.ready_timeout):
+        return _UNCHANGED
+    if outermost:
+        # Dallinger runs no tick for a deadline at or before its last tick.
+        entry["last_tick"] = now
     if entry["started_at"] is None:
-        if not outermost or now < self.ready_timeout:
-            return _UNCHANGED
         self._end_ready_step(state, now)
         # Dallinger counts this tick as run, so a deadline due by now gets
         # no other.
@@ -248,6 +251,7 @@ def _add_psynet_entry(self, method, outermost, players, *settings):
         "started_at": None,
         "ends_at": None,
         "time_up": False,
+        "last_tick": None,
     }
     return state
 

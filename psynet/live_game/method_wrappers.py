@@ -3,6 +3,7 @@ conversion to JSON, the ready step and the game's duration."""
 
 import contextvars
 import functools
+import math
 
 from dallinger.realtime import Reject
 from pydantic_core import to_jsonable_python
@@ -130,7 +131,18 @@ def _waits_for_start(method):
         if deadline is not None:
             # On the game's clock, as the game's other methods see it.
             deadline += entry["started_at"]
-        deadlines = [deadline, _too_few_players_at(self, state)]
+        too_few_at = _too_few_players_at(self, state)
+        last_tick = entry["last_tick"]
+        # Dallinger ignores a deadline at or before its last tick, which
+        # would hide the later ones.
+        if last_tick is not None:
+            if deadline is not None and deadline <= last_tick:
+                deadline = None
+            if too_few_at is not None:
+                # Too few players are left already, so the next tick ends
+                # the game.
+                too_few_at = max(too_few_at, math.nextafter(last_tick, math.inf))
+        deadlines = [deadline, too_few_at]
         if not entry["time_up"]:
             deadlines.append(entry["ends_at"])
         return min((d for d in deadlines if d is not None), default=None)
@@ -174,9 +186,12 @@ def _shows_psynet_entry(method):
                 "which is PsyNet's. Give it another name."
             )
         # Pages get player numbers only, so no player learns another's
-        # participant id, and with it who they've played before.
+        # participant id, and with it who they've played before. last_tick
+        # would change the view at every tick.
         public = {
-            key: value for key, value in entry.items() if key != "participant_ids"
+            key: value
+            for key, value in entry.items()
+            if key not in ("participant_ids", "last_tick")
         }
         return {**shown, "psynet": {**public, "you": player}}
 

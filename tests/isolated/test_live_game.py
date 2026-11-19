@@ -612,6 +612,7 @@ def _psynet(**fields):
         "started_at": None,
         "ends_at": None,
         "time_up": False,
+        "last_tick": None,
         **fields,
     }
     entry.setdefault("away_since", [None] * len(entry["participant_ids"]))
@@ -628,7 +629,7 @@ def _started_view(**view):
     """The view of player 0, participant 1, in a game they play alone, which
     has started, as Dallinger gives it to a bot."""
     entry = _psynet(ready=[0], started_at=0)
-    del entry["participant_ids"]
+    del entry["participant_ids"], entry["last_tick"]
     return {**view, "psynet": {**entry, "you": 0}}
 
 
@@ -1804,7 +1805,7 @@ def test_the_game_starts_at_the_ready_timeout_without_everyone(relay):
 
     relay.tick(state, 10)
     assert state["psynet"] == _psynet(
-        participant_ids=[1, 2], ready=[0], started_at=10, ends_at=610
+        participant_ids=[1, 2], ready=[0], started_at=10, ends_at=610, last_tick=10
     )
     # The game's clock starts at 0 when the game starts, and a game without
     # ticks doesn't tick before its first deadline.
@@ -1882,7 +1883,7 @@ def test_each_view_shows_who_is_ready_and_which_player_it_is_for(relay):
 
     # Without the participant ids, so a page can't tell who it plays with.
     entry = _psynet(participant_ids=[1, 2], ready=[1])
-    del entry["participant_ids"]
+    del entry["participant_ids"], entry["last_tick"]
     assert relay.view(state, "1") == {"taps": 0, "psynet": {**entry, "you": 0}}
     assert relay.view(state, "2")["psynet"]["you"] == 1
 
@@ -2255,6 +2256,58 @@ def test_a_game_without_a_duration_ends_at_its_timeout(relay):
     # PsyNet's entry.
     assert ended.ended["outcome"] == {"taps": [], "ticks": [30], "deadline": 5}
     assert Patient.max_duration == Patient.ready_timeout + 30 + 30
+
+
+def test_a_handled_deadline_doesn_t_hide_the_game_s_duration(relay):
+    class Turn(type(relay)):
+        name = "turn"
+        duration = 30
+
+        def next_deadline(self, state):
+            # Dallinger lets a game keep returning a deadline it has handled.
+            return 5
+
+    game = Turn()
+    entries = [
+        _session_entry("join", 0, "1"),
+        _session_entry("message", 1, "1", READY),
+    ]
+
+    playing = run_pass(game, new_session(game, ["1"]), entries, 2, CLOCK)
+    ticked = run_pass(game, playing.saved, [], 6, CLOCK)
+    ended = run_pass(game, ticked.saved, [], 35, CLOCK)
+
+    assert ticked.next_due == 31
+    assert ended.ended["reason"] == "finished"
+
+
+def test_a_game_that_has_ticked_ends_when_a_finished_player_leaves_too_few(relay):
+    class Pair(type(relay)):
+        name = "pair_with_ends"
+        min_players = 2
+        away_timeout = 30
+        duration = 60
+
+        def next_deadline(self, state):
+            return None
+
+        def is_done(self, state, player):
+            return any(tapper == player for tapper, _ in state["taps"])
+
+    game = Pair()
+    entries = [
+        _session_entry("join", 0, "1"),
+        _session_entry("join", 0, "2"),
+        _session_entry("message", 1, "1", READY),
+    ]
+
+    # The game starts at its ready_timeout, which Dallinger counts as a tick.
+    started = run_pass(game, new_session(game, ["1", "2"]), entries, 10, CLOCK)
+    tapped = [_session_entry("message", 15, "1", TAP)]
+    ended = run_pass(game, started.saved, tapped, 16, CLOCK)
+
+    assert json.loads(started.saved)["state"]["psynet"]["started_at"] == 10
+    assert ended.ended["reason"] == PLAYERS_LEFT
 
 
 def test_a_game_with_a_duration_rejects_late_messages(relay):
