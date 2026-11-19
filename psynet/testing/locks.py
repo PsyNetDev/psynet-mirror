@@ -197,8 +197,11 @@ def record_isolated_server(directory, env):
     path = _server_record_path(directory)
     record = {"pid": os.getpid(), **{key: env[key] for key in _RECORDED_VARIABLES}}
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, "w") as f:
+            if os.fstat(fd).st_uid != os.getuid():
+                raise PermissionError("the file belongs to another user")
+            f.truncate()
             json.dump(record, f)
     except OSError as e:
         logger.warning(
@@ -244,6 +247,10 @@ def isolated_server_environment(directory):
             record = json.load(f)
         except ValueError:
             return None
+    if not isinstance(record, dict) or not all(
+        key in record for key in _RECORDED_VARIABLES
+    ):
+        return None
     lock_path = _lock_path(os.path.realpath(directory))
     try:
         with isolated_environment.open_lock_file(lock_path) as lock_file:

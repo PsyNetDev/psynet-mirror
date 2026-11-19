@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 
 import pytest
 
+import psynet
+from psynet.bootstrap_cli import _reads_local_database
 from psynet.isolated_environment import (
     DEFAULT_DATABASE_URL,
     DEFAULT_REDIS_URL,
@@ -26,13 +28,16 @@ from psynet.isolated_environment import (
     try_lock,
 )
 from psynet.testing.locks import (
+    _RECORDED_VARIABLES,
     HELD_LOCK_ENV_VAR,
     REMOTE_LAUNCH,
     SERVER,
     TEST_SESSION,
     DirectoryInUseError,
+    _server_record_path,
     check_no_server,
     experiment_directory_lock,
+    isolated_server_environment,
     record_isolated_server,
 )
 
@@ -126,28 +131,70 @@ def test_a_holder_that_records_nothing_is_waited_out_briefly_then_refused(
 def test_local_database_commands_find_an_isolated_server_in_the_directory(
     tmp_path, monkeypatch
 ):
-    """``psynet db`` reads a running isolated server's record, not a stale one."""
+    """``psynet db`` reads a running isolated server's record, not a stale one.
+
+    An explicitly set ``DATABASE_URL`` wins over the record.
+    """
     monkeypatch.delenv(HELD_LOCK_ENV_VAR, raising=False)
     hidden = ("DATABASE_URL", "REDIS_URL", "base_port", READY_ENV_VAR)
     env = {key: value for key, value in os.environ.items() if key not in hidden}
+    package_root = str(Path(psynet.__file__).resolve().parent.parent)
+    env["PYTHONPATH"] = os.pathsep.join(
+        filter(None, [package_root, env.get("PYTHONPATH")])
+    )
     server = {
         "DATABASE_URL": f"{DEFAULT_DATABASE_URL}_test_5990",
         "REDIS_URL": "redis://127.0.0.1:6369",
         "base_port": "5990",
     }
 
-    def psynet_db():
+    def psynet_db(**extra_env):
         code = "from psynet.bootstrap_cli import main; main()"
         command = [sys.executable, "-c", code, "db"]
         result = subprocess.run(
-            command, cwd=tmp_path, env=env, capture_output=True, text=True, check=True
+            command,
+            cwd=tmp_path,
+            env={**env, **extra_env},
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return result.stdout.strip()
 
     with record_isolated_server(tmp_path, server):
         with experiment_directory_lock(tmp_path, export=False, kind=SERVER):
             assert psynet_db() == server["DATABASE_URL"]
+            explicit = f"{DEFAULT_DATABASE_URL}_explicit"
+            assert psynet_db(DATABASE_URL=explicit) == explicit
         assert psynet_db() == DEFAULT_DATABASE_URL
+
+
+@pytest.mark.parametrize("record", ["not json", "[]", '{"pid": %d}' % os.getpid()])
+def test_a_malformed_server_record_is_ignored(tmp_path, monkeypatch, record):
+    monkeypatch.delenv(HELD_LOCK_ENV_VAR, raising=False)
+    with record_isolated_server(tmp_path, {key: "x" for key in _RECORDED_VARIABLES}):
+        with experiment_directory_lock(tmp_path, export=False, kind=SERVER):
+            assert isolated_server_environment(tmp_path) is not None
+            Path(_server_record_path(tmp_path)).write_text(record)
+            assert isolated_server_environment(tmp_path) is None
+
+
+@pytest.mark.parametrize(
+    "args, expected",
+    [
+        (["export", "local"], True),
+        (["export", "heroku"], False),
+        (["run-bot"], True),
+        (["db"], True),
+        (["db", "heroku", "--app", "x"], False),
+        (["db", "ssh"], False),
+        (["experiment-variables"], True),
+        (["experiment-variables", "docker_heroku"], False),
+        (["debug", "local"], False),
+    ],
+)
+def test_which_commands_read_the_local_database(args, expected):
+    assert _reads_local_database(args) is expected
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")

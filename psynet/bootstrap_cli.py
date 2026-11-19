@@ -37,6 +37,7 @@ import os
 import sys
 import traceback
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import click
 
@@ -123,7 +124,7 @@ def _use_isolated_server_database() -> None:
     if env is None:
         return
     os.environ.update(env)
-    database = env["DATABASE_URL"].rsplit("/", 1)[-1]
+    database = urlsplit(env["DATABASE_URL"]).path.lstrip("/")
     click.echo(
         f"Using database {database} of the isolated debug server in this directory.",
         err=True,
