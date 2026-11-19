@@ -6130,6 +6130,7 @@ _SSH_ARGS = ["--app", "test-app", "--server", "lab.example.org"]
         ({"mode": "live"}, [], False, "deployed with `psynet deploy ssh`"),
         ({"mode": "live"}, ["--allow-live"], True, None),
         (ValueError("no deployment info"), [], False, "Could not read how test-app"),
+        ({}, [], False, "Could not read how test-app"),
     ],
 )
 def test_test_ssh_refuses_a_live_app_unless_allowed(

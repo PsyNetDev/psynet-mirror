@@ -6199,8 +6199,9 @@ def _remote_failure_summary(status, recent_lines):
 @click.option(
     "--allow-live",
     is_flag=True,
-    help="Also run the bots against an app deployed with `psynet deploy ssh`. "
-    "They join its live data and can take recruitment places.",
+    help="Run the bots even against an app deployed with `psynet deploy ssh`, "
+    "or one whose deployment mode can't be read. They join its live data and "
+    "can take recruitment places.",
 )
 @click.pass_context
 def test__docker_ssh(
@@ -6252,7 +6253,7 @@ def _refuse_testing_a_live_ssh_app(server, app):
     Bot participants of a live app join its data and can take recruitment places.
     """
     try:
-        mode = _read_running_deployment_info(server, app).get("mode")
+        mode = _read_running_deployment_info(server, app)["mode"]
     except Exception as err:
         raise click.ClickException(
             f"Could not read how {app} on {server} was deployed ({err!r}). Check "
