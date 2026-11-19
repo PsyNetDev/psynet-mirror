@@ -1,8 +1,8 @@
 """Client for the Lucid (Cint) Marketplace API used by the Lucid recruiters.
 
 :class:`LucidService` wraps the HTTP API. :class:`DevLucidService` simulates
-it for ``dev-lucid-recruiter``, so that recruiter never reaches Lucid. That
-guarantee depends on every Lucid HTTP request going through
+it for ``dev-lucid-recruiter``, so the server never sends that recruiter's
+requests to Lucid. That guarantee depends on every Lucid HTTP request going through
 :meth:`LucidService._request`, which the development service overrides to
 raise. Don't call ``requests`` directly from new service methods; if
 ``dev-lucid-recruiter`` needs a new call, simulate it in
@@ -860,7 +860,7 @@ class LucidService(object):
 
 
 class DevLucidService(LucidService):
-    """A :class:`LucidService` that logs survey requests instead of sending them.
+    """A :class:`LucidService` that simulates the Lucid API instead of calling it.
 
     ``dev-lucid-recruiter`` uses it, so that local runs and deployments with
     that recruiter never create, change or close a Lucid survey, and the

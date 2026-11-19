@@ -2279,6 +2279,12 @@ def test_dev_lucid_recruiter_never_calls_the_lucid_api():
         patch("psynet.recruiters.admin_notifier"),
         patch("psynet.experiment.get_experiment", return_value=experiment),
         patch("requests.Session.request") as http_request,
+        patch.object(
+            DevLucidService,
+            "_request",
+            autospec=True,
+            side_effect=DevLucidService._request,
+        ) as unsimulated_request,
     ):
         recruiter = DevLucidRecruiter(store=_FakeRedisStore())
         opened = recruiter.open_recruitment(n=5)
@@ -2294,6 +2300,7 @@ def test_dev_lucid_recruiter_never_calls_the_lucid_api():
             recruiter.change_lucid_status("paused")
         assert recruiter.lucidservice.send_complete_request("rid-1").ok
         assert recruiter.lucidservice.send_terminate_request("rid-1").ok
+        unsimulated_request.assert_not_called()
         with pytest.raises(LucidServiceException, match="does not simulate"):
             recruiter.lucidservice.list_studies()
 
