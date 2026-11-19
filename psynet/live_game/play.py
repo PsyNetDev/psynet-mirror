@@ -59,10 +59,11 @@ class PlayLiveGame(EltCollection):
         PlayLiveGame(
             group_type="pair",
             game_class=RockPaperScissors,
+            settings={"throws": 5, "reward_per_win": 0.05},
             page=LiveGamePage(
                 "rock_paper_scissors",
                 tags.div(tags.p(id="status"), ...),
-                js_page_modules=["/static/rock_paper_scissors.js"],
+                js_page_modules=["/static/rock-paper-scissors.js"],
                 time_estimate=30,
             ),
             late_after=30,
