@@ -573,6 +573,18 @@ view. ``send_views_on_messages = False`` stops the game from also sending the
 player a view after each of their messages, since a turn doesn't change the
 board until the next tick.
 
+``tick`` gets the state and ``now``, the seconds since the game started, and
+changes the state in place:
+
+.. literalinclude:: ../../../demos/experiments/snake_live/experiment.py
+   :pyobject: Snake.tick
+   :dedent:
+
+It moves the snakes, brings back each crashed snake once ``now`` has passed
+its ``back_at``, two seconds after it crashed, and tops up the food. Every
+page then gets a view of the new board. Like a message's ``apply``, ``tick``
+returns nothing: what it changes in the state is what the game remembers.
+
 ``duration = ROUND_SECONDS`` makes the game last 60 seconds, from when it
 starts, once every player's page has opened (see :ref:`live-games-ready`).
 The game's clock, ``now`` in its methods, starts at 0 then. At the end of the
@@ -608,7 +620,7 @@ crashed.
 Moving every snake fairly
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-On each tick, ``tick`` calls ``move_snakes``:
+``tick`` starts with ``move_snakes``:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/experiment.py
    :pyobject: move_snakes
@@ -741,14 +753,33 @@ lag a fraction of a second behind their key presses. The page avoids both:
 
 ``predict`` works as in `Showing a choice at once`_, the board example there
 in particular. Here, it moves the player's own piece at once, using ``advance``, which repeats the arithmetic of the
-game's own ``advance`` in ``experiment.py``. ``interpolate`` takes the views
-of two ticks and returns a view part of the way between them:
+game's own ``advance`` in ``experiment.py``.
+
+``interpolate`` handles the other players. Between two ticks the page doesn't
+know where they are, so it shows them a moment in the past, where it has a
+view on either side. Each time the page draws, ``interpolatedView()`` takes
+the time two tick intervals ago, a tenth of a second here, finds the views
+of the ticks before and after it, ``a`` and ``b``, and calls the page's
+callback with them and ``fraction``, how far that time is from ``a`` to ``b``,
+from 0 to 1. It looks two intervals back, not one, so that ``b`` has usually
+arrived even when a view comes a little late. The callback returns the view
+to draw:
 
 .. literalinclude:: ../../../demos/experiments/shared_canvas_live/static/shared-canvas.js
    :language: javascript
    :start-at: // Places each player between two tick views.
    :end-before: function drawCircle(
    :dedent:
+
+It moves each player in a straight line from where they were in ``a`` to
+where they are in ``b``, and copies everything else from ``b``. It builds new
+objects with ``...``, JavaScript's spread, rather than changing ``a`` and
+``b``, since the page keeps those views to interpolate between again. A game
+interpolates only what moves smoothly: something that changes in a step,
+such as a score, is best taken from ``b`` as it is. The price is that the
+other players are shown that tenth of a second behind, on top of the network
+delay, which is why the player's own piece is drawn from the prediction
+instead.
 
 The page draws about 60 times a second. Each time, it draws the player's own
 piece from ``live.predictedView()``, moved on by the movement that the page
