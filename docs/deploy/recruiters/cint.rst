@@ -66,8 +66,9 @@ and ``show_reward`` to ``False``; CINT recruitment fails with
    information (default ``False``).
 -  ``debug_recruiter``: set to ``True`` only for local testing. ``psynet
    debug local`` then uses ``dev-lucid-recruiter``, which runs the CINT
-   recruitment code but logs the requests to CINT instead of sending them,
-   so no survey is created.
+   recruitment code but logs the server's requests to CINT instead of
+   sending them, so no survey is created. At the end, the participant's
+   browser is still sent to CINT, which shows an error page.
 
 .. code:: python
 

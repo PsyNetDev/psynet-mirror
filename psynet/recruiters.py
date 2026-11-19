@@ -2636,7 +2636,7 @@ class LucidRecruitmentStatus(RecruitmentStatus):
     earnings_per_click: float
     system_conversion: int
     termination_loi: int
-    last_complete_date: datetime
+    last_complete_date: datetime | None
     config: dict
 
 
