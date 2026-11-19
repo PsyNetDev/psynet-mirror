@@ -622,8 +622,9 @@ contributes everything the page needs through the component hooks:
   show a game page load it;
 * ``get_js_page_code`` calls ``PsyNetLiveGame.activatePage``, which creates
   ``psynet.liveGame`` for the first game page a document shows, shows the
-  no-game notice, and returns the cleanup that closes the page's game
-  socket;
+  no-game notice, opens the page's game socket at ``timelinePageReady`` if
+  the page's own JavaScript hasn't already, and returns the cleanup that
+  closes it;
 * ``get_participant_js_vars`` adds the game's id and channel to the page's
   ``js_vars`` each time the page renders. It raises an error for a participant
   who hasn't reached the barrier of the ``PlayLiveGame`` the page belongs to.

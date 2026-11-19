@@ -653,11 +653,13 @@ own, such as an animation loop, which it can skip when
 Joining in time
 ~~~~~~~~~~~~~~~
 
-The page joins the game when its JavaScript first uses
-``psynet.liveGame``, so call ``onChange`` or ``showStatus`` in ``activate``.
-If none of the group has opened the page by the game's ``ready_timeout``,
-60 seconds after the wait ends unless the game sets it, the game ends with
-the reason ``"not_joined"`` (see `The ready step`_).
+The page joins the game once it has loaded, or earlier, when its JavaScript
+first uses ``psynet.liveGame``, so even a page without JavaScript of its own
+counts as ready. Set up the page's callbacks in ``activate``, so the page
+doesn't miss the first view. If none of the group has opened the page by
+the game's ``ready_timeout``, 60 seconds after the wait ends unless the game
+sets it, the game ends with the reason ``"not_joined"`` (see `The ready
+step`_).
 
 Rejected messages
 ~~~~~~~~~~~~~~~~~

@@ -106,6 +106,7 @@ beforeEach(() => {
   events = new EventTarget();
   context = {
     addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
     // Looked up at each call, so a test's mocked timers apply.
     // Unreferenced, so a page's repeating connection check doesn't keep the
     // test process alive.
@@ -179,6 +180,22 @@ describe("psynet.liveGame", () => {
     assert.equal(liveGame.socket, sockets[0]);
     assert.ok(!Object.keys(liveGame).includes("socket"));
     assert.ok(!Object.keys(liveGame).includes("activatePage"));
+  });
+
+  it("joins once the page is ready, for a page whose JavaScript doesn't use it", () => {
+    events.dispatchEvent(new Event("timelinePageReady"));
+    assert.equal(sockets.length, 1);
+    events.dispatchEvent(new Event("timelinePageReady"));
+    liveGame.onChange(() => {});
+    assert.equal(sockets.length, 1);
+
+    // Not for a page that has gone, or one without a game.
+    changePage();
+    leavePage();
+    session = { playId: "pick_numbers", liveGameId: null, gameChannel: null };
+    leavePage = liveGame.activatePage();
+    events.dispatchEvent(new Event("timelinePageReady"));
+    assert.equal(sockets.length, 1);
   });
 
   it("is created by the control's page code, once for the pages a document shows", () => {

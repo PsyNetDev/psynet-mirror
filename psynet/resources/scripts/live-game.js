@@ -145,17 +145,23 @@
       return state.socket;
     }
 
-    // Run as each LiveGamePage activates. Returns the
-    // page's cleanup, which leaves the game.
+    // Run as each LiveGamePage activates, before the page's own JavaScript.
+    // Joins the game once the page is ready, if the page's JavaScript
+    // hasn't already, so a page without any still counts as ready. Returns
+    // the page's cleanup, which leaves the game.
     function activatePage() {
       let control = liveGame();
+      let join = () => pageSocket();
       if (control.liveGameId == null) {
         if (control.noGameMessage) {
           page.showNotice(NO_GAME_NOTICE, control.noGameMessage);
         }
         page.hideGame();
+      } else {
+        window.addEventListener("timelinePageReady", join, { once: true });
       }
       return () => {
+        window.removeEventListener("timelinePageReady", join);
         page.showNotice(NO_GAME_NOTICE, null);
         let state = currentPage;
         currentPage = null;
