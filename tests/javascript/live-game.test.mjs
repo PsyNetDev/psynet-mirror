@@ -547,7 +547,8 @@ describe("psynet.liveGame", () => {
     changePage();
     const status = { textContent: "" };
     liveGame.showStatus(status, (v) => `Playing ${v.n}`);
-    assert.equal(status.textContent, "Waiting");
+    // Nothing until the first view, which may show the game already started.
+    assert.equal(status.textContent, "");
     sockets[0].view({ ...view(null), n: 1 });
     assert.equal(status.textContent, "Waiting");
     sockets[0].view({ ...view(4), n: 2 });
@@ -573,6 +574,7 @@ describe("psynet.liveGame", () => {
     changePage();
     const own = { textContent: "" };
     liveGame.showStatus(own, () => "Playing", { waiting: "Waiting for your partner" });
+    sockets[2].view(view(null));
     assert.equal(own.textContent, "Waiting for your partner");
     // A game that failed before the page had a view still ends.
     sockets[2].fire("onEnded", "failed", null);
@@ -591,6 +593,7 @@ describe("psynet.liveGame", () => {
     changePage();
     const quiet = { textContent: "" };
     liveGame.showStatus(quiet, null, { waiting: "Waiting" });
+    sockets[4].view(view(null));
     assert.equal(quiet.textContent, "Waiting");
     sockets[4].view(view(4));
     assert.equal(quiet.textContent, "");

@@ -504,6 +504,8 @@ The status line
 
 ``showStatus(element, playing)`` keeps ``element`` saying what's happening:
 
+- nothing until the page's first view, which may show the game already
+  running, as it does for a player who comes back to the page;
 - before the game starts, the page's ``waiting_status``, "Waiting for
   the other players to open the game" by default;
 - while it's played, what ``playing(view)`` returns for each view, or

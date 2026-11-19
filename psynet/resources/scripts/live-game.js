@@ -549,7 +549,8 @@
     }
 
     /**
-     * Keep ``element`` showing the game's status: the page's
+     * Keep ``element`` showing the game's status: nothing until the
+     * page's first view, the page's
      * ``waiting_status`` until the game starts, what ``playing(view)``
      * returns for each view while it's played, or nothing if ``playing``
      * is ``null``, and the page's
@@ -585,6 +586,10 @@
               : state.lastView === null
                 ? state.session.endedStatus
                 : ended(state.lastView);
+        } else if (state.lastView === null) {
+          // Until the first view, the page doesn't know whether the game
+          // has started, as it has for a player who rejoins.
+          text = "";
         } else if (state.startedView === null) {
           text = waiting;
         } else if (playing === null) {
