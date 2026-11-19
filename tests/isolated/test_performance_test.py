@@ -1860,8 +1860,12 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
             n_bots=n, key_requests=47_000, total_bots_started=3_000, **overrides
         )
 
+    live_games = _live_games([1000], errors={"KeyError: 3": 1})
+    live_games["games"]["snake"]["games"] = 1_000
     results = [
-        result(640, request_errors=1, busy_responses=3, bot_errors=1),
+        result(
+            640, request_errors=1, busy_responses=3, bot_errors=1, live_games=live_games
+        ),
         result(2000, request_errors=60, queue_waits={"high": {"q_delay_p95": 36.9}}),
     ]
 
@@ -1872,8 +1876,8 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
         in text
     )
     assert (
-        "The 640-bot test had 1 request error, 3 busy/stale responses and 1 bot error"
-        in text
+        "The 640-bot test had 1 request error, 3 busy/stale responses, 1 bot error "
+        "and 1 failed live game, within the limits" in text
     )
     assert (
         "for one of the 2 worker processes, up to 40 jobs at once. No estimate "

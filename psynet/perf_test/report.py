@@ -1766,6 +1766,9 @@ def _capacity_test_notes(capacity_result, time_factor, validated=False):
         f"{trial_maker_id} because every {stats.get('candidate') or 'chain'} was busy"
         for trial_maker_id, stats in (capacity_result.busy_early_finishes or {}).items()
     ]
+    live_games = (capacity_result.live_games or {}).get("games", {})
+    if failed_games := sum(played["failed"] for played in live_games.values()):
+        tolerated.append(plural(failed_games, "failed live game"))
     if tolerated:
         found = " and ".join(filter(None, [", ".join(tolerated[:-1]), tolerated[-1]]))
         notes.append(
