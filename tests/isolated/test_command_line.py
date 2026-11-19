@@ -953,7 +953,8 @@ def test_reloader_ignores_only_other_develop_folders(own):
         assert not any(fnmatch(path, p) for p in patterns), path
 
 
-@pytest.mark.parametrize("isolated, no_browsers", [(True, True), (False, False)])
+@pytest.mark.parametrize("isolated", [True, False])
+@pytest.mark.parametrize("no_browsers", [True, False])
 def test_debug_auto_reload_adds_the_isolated_session_row(
     monkeypatch, isolated, no_browsers
 ):
