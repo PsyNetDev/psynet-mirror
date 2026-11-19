@@ -37,6 +37,7 @@ class PlayerReady(LiveMessage):
     :attr:`~LiveGame.messages`. PsyNet handles it before the game's
     ``apply``, so the game never receives it, even in an ``apply`` of its
     own. A game reads who is ready from ``state["psynet"]["ready"]``,
+    which also lists the players added once the game has started,
     and reacts to the game starting in :meth:`~LiveGame.on_start`.
     A game record's :attr:`~LiveGameRecord.messages` include when each
     player became ready.
@@ -177,6 +178,10 @@ def _record_add(self, method, outermost, state, player_id, now):
     # never arrives. A bot joins at once.
     entry["away"].append(player)
     entry["away_since"].append(now)
+    # Once the game has started there is no ready step to wait for, so a
+    # newcomer who never arrives is away rather than a no-show.
+    if entry["started_at"] is not None:
+        entry["ready"].append(player)
     return method(self, state, player, _game_time(entry["started_at"], now))
 
 

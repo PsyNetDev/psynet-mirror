@@ -2798,10 +2798,11 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
     assert other.sync_group_links[0].page_deadline == row.end_time
 
 
-def _save_ending(session_id, ready, away=(), ended_at=0):
+def _save_ending(session_id, ready=(), away=(), ended_at=0, entry=None):
     """Save the game's ending, as Dallinger does once it has started at 0,
     with the players of ``ready`` ready and those of ``away``, ``(player,
-    since)``, away, then run its ending handler."""
+    since)``, away, or with the psynet ``entry`` of a game played
+    elsewhere, then run its ending handler."""
     row = db.session.get(RealtimeSession, session_id)
     ids = [int(member) for member in row.members]
     away_since = [None] * len(ids)
@@ -2809,15 +2810,14 @@ def _save_ending(session_id, ready, away=(), ended_at=0):
         away_since[player] = since
     row.status, row.end_reason, row.outcome = "ended", "finished", [None, None]
     row.end_time = timenow()
-    row.final_state = {
-        "psynet": _psynet(
-            participant_ids=ids,
-            ready=ready,
+    if entry is None:
+        entry = _psynet(
+            ready=list(ready),
             away=[player for player, _ in away],
             away_since=away_since,
             started_at=0,
         )
-    }
+    row.final_state = {"psynet": {**entry, "participant_ids": ids}}
     db.session.add(
         RealtimeEvent(
             session_id=session_id,
@@ -2895,6 +2895,28 @@ def test_a_player_away_for_the_away_timeout_when_the_game_ends_left_it(
 
     left = db.session.get(Participant, ids[1])
     assert left.sync_group_removal_reason("pair") == reason
+
+
+@pytest.mark.parametrize("ended_at, reason", [(60, None), (119, "left_game")])
+def test_a_player_added_to_the_running_game_leaves_only_once_away_for_long(
+    pair, ended_at, reason
+):
+    members, _ = pair
+    play = _play("absent", absent_action="leave_group")
+    for member in members:
+        _arrive(play.barrier, member)
+    game = LocalGame(_growing_picks(), players=1)
+    # Added a second before a minute's game ends, and never opens the page.
+    game.game.on_add(game.state, "2", 59)
+
+    ids = _save_ending(
+        _game_id(members[0], "absent"),
+        ended_at=ended_at,
+        entry=game.state["psynet"],
+    )
+
+    added = db.session.get(Participant, ids[1])
+    assert added.sync_group_removal_reason("pair") == reason
 
 
 def test_absent_action_needs_groups_that_carry_on_without_a_player():

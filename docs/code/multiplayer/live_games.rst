@@ -383,6 +383,9 @@ back. It removes two kinds of player:
   back. Their reason is ``"no_show"``.
 - with the game's ``away_timeout``, a player who has been away from the game
   page for that long when the game ends. Their reason is ``"left_game"``.
+  A player added by ``join_running_game`` once the game has started has no
+  ready step, so they count as ready, and leave only this way, away from
+  when they were added.
 
 They leave the ``PlayLiveGame``'s group, and the groups of the types in its
 ``also_leave``, which also applies to ``late_action``. The groupers of those
