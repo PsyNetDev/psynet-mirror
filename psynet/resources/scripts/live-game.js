@@ -738,8 +738,10 @@
      * left the game page and not come back, each time that list changes,
      * including to an empty list when they're all back or the game ends.
      * A player counts once they've been away for a few seconds, so a reload
-     * doesn't. A player who hasn't opened the game page yet hasn't left. A
-     * callback added while players are away gets them at once.
+     * doesn't. One of the game's first players who hasn't opened the game
+     * page yet hasn't left, but a player added while the game runs counts
+     * as away until their page opens. A callback added while players are
+     * away gets them at once.
      *
      * PsyNet shows the page's ``player_left_message`` in a notice while
      * anyone is away, so use this for a display of your own, with

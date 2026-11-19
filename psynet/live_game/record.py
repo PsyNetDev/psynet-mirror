@@ -74,9 +74,11 @@ class LiveGameRecord:
 
     @property
     def finished(self) -> bool:
-        """Whether the game ended normally, through its ``is_over`` or at the
-        end of its ``duration``, rather than early, such as because players
-        left or it reached its ``timeout``."""
+        """Whether the game ended with the reason ``"finished"``: through an
+        ``is_over`` that returned ``True``, or at the end of its
+        ``duration``. It's ``False`` for a game that ended early, such as
+        because players left or it reached its ``timeout``, and for one
+        whose ``is_over`` returned a reason of its own, such as ``"deal"``."""
         row = self._row()
         return (
             row is not None and row.status == "ended" and row.end_reason == "finished"
@@ -249,10 +251,13 @@ class LiveGameFailed(RuntimeError):
     game's own, and fails the participant with an error-recovery exit."""
 
     def __init__(self, game):
+        from .messages import _session_channel
+
         self.game_id = game.id
         error = game.error or "Its record couldn't be saved."
+        # The game's name, since a game can fail because its class is gone.
         super().__init__(
-            f"Live game {game.id} ({game.game_class.__name__}) failed, so its "
+            f"Live game {game.id} ({_session_channel(game.id)}) failed, so its "
             f"players can't go on with it. The game's error:\n\n{error}"
         )
 

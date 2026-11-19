@@ -2611,6 +2611,7 @@ def test_a_failed_game_fails_its_players_as_any_error_does(
     assert participant.failed
     (record,) = db.session.query(ErrorRecord).filter_by(participant_id=participant.id)
     assert record.kind == "LiveGameFailed"
+    assert "(pick_numbers) failed" in record.message
     assert "Traceback (most recent call last): ..." in record.message
     assert notified
     assert _accepted_answers(participant) == []
@@ -2978,6 +2979,12 @@ def test_max_players_must_be_a_whole_number_of_at_least_min_players(
     with pytest.raises(ValueError, match="max_players must be None or a whole"):
         # Defining the subclass checks it.
         type("TooFew", (LiveGame,), {"max_players": max_players})
+
+
+@pytest.mark.parametrize("min_players", [0, 1.0, True])
+def test_min_players_must_be_a_whole_number_of_1_or_more(registry, min_players):
+    with pytest.raises(ValueError, match="min_players must be a whole number"):
+        type("Odd", (LiveGame,), {"min_players": min_players})
 
 
 def test_a_group_larger_than_the_game_s_max_players_starts_no_game(

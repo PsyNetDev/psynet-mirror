@@ -904,7 +904,10 @@ The game itself still ends through its ``is_over``, ``duration`` or
 ``timeout``, and the players still playing then get their results from the
 outcome at the end. A game in which every player finishes in their own
 time can end once nobody is left, with an ``is_over`` that returns whether
-every player is done.
+every player is done. Give it ``min_players = 1``, or no ``away_timeout``:
+otherwise, once fewer than ``min_players`` players are still playing, the
+game ends with the reason ``"players_left"``, however many of them are on
+the page.
 
 :class:`~psynet.live_game.testing.LocalGame` plays both:
 ``game.add(now=10)`` adds a player and returns their number, and
@@ -1260,7 +1263,8 @@ in the state or a view. The parts a game can use are:
   in views.
 - ``ready``, the numbers of the players who are ready
 - ``away``, the numbers of the players who have left the game page and not
-  come back. A player who hasn't opened it yet isn't in it.
+  come back. One of the game's first players who hasn't opened it yet isn't
+  in it, but a player added while the game runs is, until their page opens.
 - in a view, ``you``, the number of the player it's for, which the page
   reads as ``psynet.liveGame.player``
 

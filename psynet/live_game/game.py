@@ -171,7 +171,11 @@ class LiveGame(RealtimeGame):
                 method, "_psynet_wrapper", False
             ):
                 setattr(cls, name, wrap(method))
-        if not (isinstance(cls.min_players, int) and cls.min_players >= 1):
+        if not (
+            isinstance(cls.min_players, int)
+            and not isinstance(cls.min_players, bool)
+            and cls.min_players >= 1
+        ):
             raise ValueError(
                 f"{cls.__name__}'s min_players must be a whole number of 1 or more."
             )
