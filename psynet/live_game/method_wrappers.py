@@ -63,7 +63,7 @@ def _runs_game_code(method):
 
 
 def _converts_outermost_call(method, name, convert):
-    """Wrap the state method ``name`` so that ``convert(self, result, args)``
+    """Wrap the state method ``name`` so that ``convert(self, result, args, kwargs)``
     runs after the outermost call only, and each call to the game's ``name``,
     as opposed to a ``super()`` call, goes through its entry in
     ``_SESSION_BOOKKEEPING``, if it has one."""
@@ -83,7 +83,7 @@ def _converts_outermost_call(method, name, convert):
             return result
         if not self.convert_state_to_json:
             return result
-        return convert(self, result, args)
+        return convert(self, result, args, kwargs)
 
     wrapper._psynet_wrapper = True
     return wrapper
@@ -92,8 +92,8 @@ def _converts_outermost_call(method, name, convert):
 def _stores_json(method, name=None):
     name = name or method.__name__
 
-    def convert_in_place(self, result, args):
-        state = args[0]
+    def convert_in_place(self, result, args, kwargs):
+        state = args[0] if args else kwargs["state"]
         converted = _to_json(state, f"{type(self).__name__}.{name}")
         # Changed in place, since Dallinger keeps the state object.
         state.clear()
@@ -106,11 +106,13 @@ def _reads_state(method, name):
     """Wrap a method that only reads the state, such as ``is_done``, so
     that its outermost call goes through its entry in
     ``_SESSION_BOOKKEEPING``."""
-    return _converts_outermost_call(method, name, lambda self, result, args: result)
+    return _converts_outermost_call(
+        method, name, lambda self, result, args, kwargs: result
+    )
 
 
 def _returns_json(method, name):
-    def convert_returned(self, state, args):
+    def convert_returned(self, state, args, kwargs):
         return _to_json(state, f"{type(self).__name__}.{name}")
 
     return _converts_outermost_call(method, name, convert_returned)

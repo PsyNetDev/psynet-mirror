@@ -395,6 +395,9 @@ def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
         f"'{game_barrier.id}', whose game page",
     ):
         _rendered_js_vars(page, members[0], monkeypatch)
+    # A bot that doesn't render its pages is stopped too.
+    with pytest.raises(ValueError, match="hasn't reached the PlayLiveGame"):
+        page.control.check_ready_for_response(get_experiment(), members[0])
     _reach(game_barrier, members[0])
     assert _rendered_js_vars(page, members[0], monkeypatch)["liveGame"] == {
         "playId": game_barrier.id,
@@ -2140,6 +2143,15 @@ def test_a_deadline_due_by_the_ready_timeout_runs_when_the_game_starts(relay):
     assert waiting.next_due == 10
     assert ended.ended["reason"] == "finished"
     assert json.loads(ended.saved)["state"]["ticks"] == [0]
+
+
+def test_a_game_s_state_can_be_passed_by_keyword(relay):
+    state = relay.initial_state(["1"])
+    start_game(relay, state)
+
+    relay.tick(state=state, now=3)
+
+    assert state["ticks"] == [3]
 
 
 def test_the_testing_helper_starts_the_game(relay):

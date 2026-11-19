@@ -84,6 +84,7 @@ class LiveGameControl(NullControl):
         self.names = names
 
     def check_ready_for_response(self, experiment, participant):
+        _check_reached_game(participant, self._play_id())
         session_id = _live_game_id(participant, self._play_id())
         if session_id is None:
             return None
