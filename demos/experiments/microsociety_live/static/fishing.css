@@ -140,9 +140,10 @@
   margin-top: 1.25rem;
 }
 
-/* The dock where boats wait before their first move. */
+/* The dock where boats wait before their first move, tall enough for a
+   boat centred on it and its catch below. */
 .fish-dock {
-  height: 3.5rem;
+  height: 5.25rem;
   margin: 1rem -1.25rem 0;
   background:
     repeating-linear-gradient(90deg, #a47148 0 1.6rem, #8a5a35 1.6rem 1.7rem);
