@@ -43,6 +43,7 @@ from ..bot import Bot
 from ..sync import (
     BarrierBehaviorMismatch,
     GroupBarrier,
+    ParticipantLinkSyncGroup,
     _round_trial,
     _validate_group_timeouts,
 )
@@ -338,7 +339,12 @@ class _LiveGameBarrier(GroupBarrier):
             return
         # Locked, so players added at the same time are counted against
         # max_players one after the other.
-        row = _running_game_query(members, self.id).with_for_update().first()
+        row = (
+            _running_game_query(members, self.id)
+            .with_for_update()
+            .populate_existing()
+            .first()
+        )
         if row is None:
             return
         if participant.id in row.members:
@@ -349,10 +355,9 @@ class _LiveGameBarrier(GroupBarrier):
             return
         max_players = self.game_class.max_players
         # The row lists a newcomer only once their addition is written, a few
-        # seconds later, so the members playing it count too.
-        players = set(row.members) | {
-            member.id for member in members if _live_game_id(member, self.id) == row.id
-        }
+        # seconds later, so the members playing it count too, read once the
+        # row is locked to see those whom other requests have just added.
+        players = set(row.members) | _members_playing(group, self.id, row.id)
         if max_players is not None and len(players) >= max_players:
             return
         add_realtime_player(row.id, participant, bot=isinstance(participant, Bot))
@@ -593,6 +598,33 @@ def _running_game_query(members, play_id):
         )
         .order_by(RealtimeSession.id.desc())
     )
+
+
+def _members_playing(group, play_id, game_id):
+    """Return the ids of the group's working members whose latest game at the
+    PlayLiveGame ``play_id`` is ``game_id``, read from the database rather
+    than from the members the caller's database session already loaded."""
+    from ..participant import Participant
+
+    rows = (
+        db.session.query(Participant.id, Participant.live_game_data)
+        .join(
+            ParticipantLinkSyncGroup,
+            ParticipantLinkSyncGroup.participant_id == Participant.id,
+        )
+        .filter(
+            ParticipantLinkSyncGroup.sync_group_id == group.id,
+            ParticipantLinkSyncGroup.active.is_(True),
+            ParticipantLinkSyncGroup.admitted_at.isnot(None),
+            Participant.status == "working",
+            Participant.failed.is_(False),
+        )
+    )
+    return {
+        participant_id
+        for participant_id, data in rows
+        if ((data or {}).get(play_id) or {}).get("id") == game_id
+    }
 
 
 def _running_live_games(group):

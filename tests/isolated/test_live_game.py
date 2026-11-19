@@ -3277,3 +3277,48 @@ def test_a_newcomer_joins_the_group_s_running_game_and_finishes_before_it(
         "picks": [3, 5, 4],
         "pick_reward": 0,
     }
+
+
+def test_a_newcomer_waits_at_the_barrier_once_the_running_game_is_full(
+    db_session, monkeypatch
+):
+    from sqlalchemy.orm.attributes import set_committed_value
+
+    monkeypatch.setattr(_growing_picks(), "max_players", 3)
+    experiment = get_experiment()
+    members = [new_participant(experiment) for _ in range(4)]
+    group = SimpleSyncGroup(
+        group_type="pair",
+        initial_group_size=2,
+        max_group_size=4,
+        quorum=1,
+        n_active_participants=2,
+        below_quorum="continue_without_group",
+    )
+    db_session.add(group)
+    for member in members[:2]:
+        member.status = "working"
+        group.add_participant(member)
+    group.leader = members[0]
+    db_session.commit()
+    page = LiveGamePage("growing", "Play.", time_estimate=5)
+    barrier = _play(
+        "growing", page, game_class=_growing_picks(), join_running_game=True
+    ).barrier
+    for member in members[:2]:
+        _arrive(barrier, member)
+    session_id = _game_id(members[0], "growing")
+    for member in members[2:]:
+        member.status = "working"
+        group.add_participant(member)
+    db.session.commit()
+
+    _reach(barrier, members[2])
+    db.session.commit()
+    # As in a request that loaded the third player before they joined.
+    set_committed_value(members[2], "live_game_data", None)
+    _reach(barrier, members[3])
+    db.session.commit()
+
+    assert _game_id(members[2], "growing") == session_id
+    assert _game_id(members[3], "growing") is None
