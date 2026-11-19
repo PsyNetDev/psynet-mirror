@@ -174,7 +174,7 @@ def test_uncommitted_files_prompt_only_interactive_live_deploys(
     monkeypatch.setenv("SKIP_VERSION_CHECK", "1")
     monkeypatch.setattr(command_line, "_stdin_is_interactive", lambda: tty)
     monkeypatch.setattr(
-        command_line, "user_confirms", lambda q: questions.append(q) or True
+        command_line, "user_confirms", lambda q, **k: questions.append(q) or True
     )
     with working_directory(tmp_path):
         _git("init", "--quiet")

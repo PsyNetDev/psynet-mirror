@@ -2164,25 +2164,16 @@ def _check_ssh_update(server, app, mode, confirm=True):
             f"{app} was created with `{original}`. Update it with "
             f"`{original} --app {app} --update`."
         )
-    if confirm:
-        try:
-            confirmed = user_confirms(
-                f"This rebuilds and restarts {app} on {server}, keeping its database. "
-                "Participants may see a short interruption. New assets are not "
-                "deposited, and networks and pre-deploy routines are not run again. "
-                "Don't change the timeline while participants are still taking "
-                "part. Continue?",
-                default=mode != "live",
-            )
-        except click.Abort:
-            if _stdin_is_interactive():
-                raise
-            raise click.ClickException(
-                f"Confirmation needed to rebuild and restart {app} on {server}, "
-                "keeping its database; re-run with --yes."
-            ) from None
-        if not confirmed:
-            raise click.Abort
+    if confirm and not user_confirms(
+        f"This rebuilds and restarts {app} on {server}, keeping its database. "
+        "Participants may see a short interruption. New assets are not "
+        "deposited, and networks and pre-deploy routines are not run again. "
+        "Don't change the timeline while participants are still taking "
+        "part. Continue?",
+        default=mode != "live",
+        unattended="To update it without being asked, re-run with --yes.",
+    ):
+        raise click.Abort
     deployment_info.write(
         deployment_id=identity["deployment_id"],
         secret=identity["secret"],
@@ -5115,52 +5106,64 @@ def destroy__heroku(ctx, app):
         raise click.Abort()
 
 
-def user_confirms(question, default=False):
+def user_confirms(question, default=False, unattended=None):
     """
     Like click.confirm but safe for using within our wrapped Docker commands.
 
-    A piped answer isn't echoed, so the prompt line is ended here instead.
+    Without a terminal the answer is read from stdin, so that
+    ``yes | psynet deploy ...`` works; a stdin that is open but never sends
+    anything waits for an answer. A piped answer isn't echoed, so the prompt
+    line is ended here instead.
+
+    Parameters
+    ----------
+    question : str
+        The question.
+    default : bool
+        The answer if the user just presses Enter.
+    unattended : str, optional
+        How to go ahead without being asked, given in the error when stdin
+        ends without an answer.
+
+    Raises
+    ------
+    click.Abort
+        If the user aborts the question in a terminal.
+    click.ClickException
+        If stdin is not a terminal and ends without an answer.
     """
     print(question)
+    interactive = _stdin_is_interactive()
     try:
         return click.confirm("", default=default)
+    except click.Abort:
+        if interactive:
+            raise
+        raise click.ClickException(
+            "The question above needs an answer, but stdin ended without one. "
+            + (unattended or "Answer it in a terminal, or pipe the answer in.")
+        ) from None
     finally:
-        if not _stdin_is_interactive():
+        if not interactive:
             click.echo()
 
 
 def _confirm_deployment(question, unattended=None):
     """Ask ``question`` before a deployment and cancel it if the user declines.
 
-    Without a terminal the answer is read from stdin, so that
-    ``yes | psynet deploy ...`` works; a stdin that is open but never sends
-    anything waits for an answer.
-
     Parameters
     ----------
     question : str
         The question.
     unattended : str, optional
-        How to deploy without being asked, given in the error when stdin ends
-        without an answer.
+        How to deploy without being asked; see :func:`user_confirms`.
 
     Raises
     ------
     click.exceptions.Exit
         With exit code 1 if the user declines.
-    click.ClickException
-        If stdin ends without an answer.
     """
-    try:
-        confirmed = user_confirms(question)
-    except click.Abort:
-        if _stdin_is_interactive():
-            raise
-        raise click.ClickException(
-            "The question above needs an answer, but stdin ended without one. "
-            + (unattended or "Answer it in a terminal, or pipe the answer in.")
-        ) from None
-    if not confirmed:
+    if not user_confirms(question, unattended=unattended):
         click.echo("Deployment cancelled.", err=True)
         raise click.exceptions.Exit(1)
 

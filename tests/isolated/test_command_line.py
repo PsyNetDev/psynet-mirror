@@ -2320,7 +2320,7 @@ def test_heroku_pre_checks_do_not_prompt_to_unignore_deploy(tmp_path, monkeypatc
 
     prompts = []
 
-    def fake_confirm(message):
+    def fake_confirm(message, **kwargs):
         prompts.append(message)
         return True
 
@@ -2375,7 +2375,7 @@ def test_only_heroku_docker_needs_a_pushable_image_base_name(
     config.get.side_effect = lambda key, default=None: settings.get(key) or default
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
     monkeypatch.setattr("psynet.command_line.check_dockerfile", Mock())
-    monkeypatch.setattr("psynet.command_line.user_confirms", lambda *args: True)
+    monkeypatch.setattr("psynet.command_line.user_confirms", lambda *a, **k: True)
     monkeypatch.setattr("psynet.utils.check_todos_before_deployment", Mock())
     monkeypatch.setattr("psynet.command_line.run_pre_checks_sandbox", Mock())
     monkeypatch.setattr(shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
@@ -2682,10 +2682,26 @@ def test_ssh_update_reads_a_piped_answer(tmp_path, monkeypatch, capsys, answer):
         with pytest.raises(click.ClickException) as error:
             _check_ssh_update("musix", "consonance", "sandbox")
         assert error.value.message == (
-            "Confirmation needed to rebuild and restart consonance on musix, "
-            "keeping its database; re-run with --yes."
+            "The question above needs an answer, but stdin ended without one. "
+            "To update it without being asked, re-run with --yes."
         )
     assert capsys.readouterr().out.endswith("[Y/n]: \n")
+
+
+@pytest.mark.parametrize("interactive", [False, True])
+def test_a_question_without_an_answer_gives_advice_unless_in_a_terminal(
+    monkeypatch, interactive
+):
+    from psynet import command_line
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    monkeypatch.setattr(command_line, "_stdin_is_interactive", lambda: interactive)
+    if interactive:
+        with pytest.raises(click.Abort):
+            command_line.user_confirms("Overwrite?")
+    else:
+        with pytest.raises(click.ClickException, match="Answer it in a terminal"):
+            command_line.user_confirms("Overwrite?")
 
 
 def test_scripts_update_installs_managed_skills_and_preserves_user_skills():

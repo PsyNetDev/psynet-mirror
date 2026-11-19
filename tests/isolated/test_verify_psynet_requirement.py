@@ -398,7 +398,7 @@ def test_live_deploys_ask_before_installing_a_development_psynet(
     Path("requirements.txt").write_text(f"{requirement}\n")
     questions = []
     monkeypatch.setattr(
-        command_line, "user_confirms", lambda q: questions.append(q) or False
+        command_line, "user_confirms", lambda q, **k: questions.append(q) or False
     )
 
     if is_release:
