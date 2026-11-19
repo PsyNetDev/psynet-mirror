@@ -54,6 +54,7 @@ test("a cohort of four bargains live in pairs, and a proposal that changed can't
     // random.
     const stake = Number(await first.locator("#bargain-keep").getAttribute("max"));
     expect([10, 20]).toContain(stake);
+    const yours = stake - 9 === 1 ? "1 coin" : `${stake - 9} coins`;
     const old = 5 + partnerOf[0];
     await propose(partner, 9);
     await expect(first.locator("#bargain-theirs")).toHaveText(
@@ -71,7 +72,7 @@ test("a cohort of four bargains live in pairs, and a proposal that changed can't
       await expect(player.locator("#bargain-deal")).toBeVisible();
     }
     await expect(first.locator("#bargain-deal")).toHaveText(
-      `Deal! You get ${stake - 9} coins and your partner gets 9.`
+      `Deal! You get ${yours} and your partner gets 9.`
     );
     await checkLayoutAndScreenshot(first, "bargaining_live_deal");
 
@@ -79,7 +80,7 @@ test("a cohort of four bargains live in pairs, and a proposal that changed can't
     const others = cohort.filter((player) => player !== first && player !== partner);
     await others[0].getByRole("button", { name: "Accept" }).click();
     await expect(first.locator("#main-body")).toContainText(
-      `You made a deal: you get ${stake - 9} coins and your partner gets 9.`,
+      `You made a deal: you get ${yours} and your partner gets 9.`,
       { timeout: STEP_TIMEOUT_MS }
     );
     for (const player of cohort) {

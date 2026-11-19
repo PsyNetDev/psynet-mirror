@@ -122,17 +122,30 @@ class Bargain(LiveGame):
     def view(self, state, player):
         # Read again, as in outcome, for the final view of a game that
         # nobody opened. The page shows it only once the game has ended.
-        no_shows = _no_shows(state)
         return {
             "stake": state["stake"],
             "mine": state["offers"][player],
             "theirs": state["offers"][1 - player],
             "deal": None if state["deal"] is None else state["deal"][player],
             # Who didn't arrive, if anyone: "you" or "partner".
-            "no_show": (
-                "you" if player in no_shows else "partner" if no_shows else None
-            ),
+            "no_show": _you_or_partner(player, _no_shows(state)),
+            # Who left the game for good, which ended it, if anyone.
+            "left": _you_or_partner(player, self._left(state)),
         }
+
+    def _left(self, state):
+        """Return the players who had been away for the away_timeout when
+        the game ended because too few players were left. A player whose
+        page was only briefly away then, as for a reload, hasn't left."""
+        entry = state["psynet"]
+        if not entry["players_left"]:
+            return []
+        return [
+            player
+            for player in entry["away"]
+            if max(entry["away_since"][player], entry["started_at"]) + self.away_timeout
+            <= entry["last_tick"]
+        ]
 
     def is_over(self, state):
         return state["deal"] is not None or bool(state["no_shows"])
@@ -175,6 +188,17 @@ def _no_shows(state):
     """Return the players who didn't open the game page in time to play."""
     ready = state["psynet"]["ready"]
     return [player for player in (0, 1) if player not in ready]
+
+
+def _you_or_partner(player, players):
+    """Return ``"you"`` if ``player`` is one of ``players``, ``"partner"``
+    if only their partner is, or None."""
+    return "you" if player in players else "partner" if players else None
+
+
+def coins_text(n):
+    """Return ``n`` coins as text, such as "1 coin" or "3 coins"."""
+    return f"{n} coin" if n == 1 else f"{n} coins"
 
 
 def choose_stake():
@@ -292,7 +316,7 @@ class BargainTrial(Trial):
         else:
             mine = self.coins()
             text = (
-                f"You made a deal: you get {mine} coins and your partner "
+                f"You made a deal: you get {coins_text(mine)} and your partner "
                 f"gets {self.definition['stake'] - mine}."
             )
         return InfoPage(text, time_estimate=5)

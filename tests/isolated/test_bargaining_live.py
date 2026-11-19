@@ -9,7 +9,7 @@ import pytest
 from dallinger.realtime import Reject
 
 from psynet.experiment import get_experiment, import_local_experiment
-from psynet.live_game import PlayerReady
+from psynet.live_game import PLAYERS_LEFT, PlayerReady
 from psynet.live_game.testing import LocalGame
 from psynet.pytest_psynet import path_to_demo_experiment
 from psynet.sync import SimpleSyncGroup, leave_group
@@ -114,6 +114,19 @@ class TestBargainingLive:
             )
             assert game.view(player)["no_show"] == "you"
         assert game.outcome(reason)["no_shows"] == [0, 1]
+
+    @pytest.mark.parametrize("reloading", [False, True])
+    def test_a_partner_away_for_the_away_timeout_left_the_game(
+        self, demo, game, reloading
+    ):
+        game.leave(1, now=10)
+        if reloading:
+            # The other player's page reloads as the away_timeout runs out.
+            game.leave(0, now=10 + demo.Bargain.away_timeout - 1)
+        game.tick(10 + demo.Bargain.away_timeout)
+
+        assert game.is_over() == PLAYERS_LEFT
+        assert [game.view(player)["left"] for player in (0, 1)] == ["partner", "you"]
 
     def test_accepting_a_proposal_makes_the_deal_it_offered(self, demo, game):
         game.send(0, demo.Propose(keep=7))
