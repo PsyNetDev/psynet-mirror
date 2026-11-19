@@ -601,9 +601,14 @@ def _running_game_query(members, play_id):
 
 
 def _members_playing(group, play_id, game_id):
-    """Return the ids of the group's working members whose latest game at the
+    """Return the ids of the group's members whose latest game at the
     PlayLiveGame ``play_id`` is ``game_id``, read from the database rather
-    than from the members the caller's database session already loaded."""
+    than from the members the caller's database session already loaded.
+
+    Members who have since failed or left the group still count: they were
+    added to the game, and Dallinger counts them against ``max_players``
+    once it writes them to the game's ``members``.
+    """
     from ..participant import Participant
 
     rows = (
@@ -612,13 +617,7 @@ def _members_playing(group, play_id, game_id):
             ParticipantLinkSyncGroup,
             ParticipantLinkSyncGroup.participant_id == Participant.id,
         )
-        .filter(
-            ParticipantLinkSyncGroup.sync_group_id == group.id,
-            ParticipantLinkSyncGroup.active.is_(True),
-            ParticipantLinkSyncGroup.admitted_at.isnot(None),
-            Participant.status == "working",
-            Participant.failed.is_(False),
-        )
+        .filter(ParticipantLinkSyncGroup.sync_group_id == group.id)
     )
     return {
         participant_id

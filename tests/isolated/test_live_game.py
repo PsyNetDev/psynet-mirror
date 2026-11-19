@@ -3279,8 +3279,9 @@ def test_a_newcomer_joins_the_group_s_running_game_and_finishes_before_it(
     }
 
 
+@pytest.mark.parametrize("third_player", ["loaded_before_joining", "failed"])
 def test_a_newcomer_waits_at_the_barrier_once_the_running_game_is_full(
-    db_session, monkeypatch
+    db_session, monkeypatch, third_player
 ):
     from sqlalchemy.orm.attributes import set_committed_value
 
@@ -3315,8 +3316,12 @@ def test_a_newcomer_waits_at_the_barrier_once_the_running_game_is_full(
 
     _reach(barrier, members[2])
     db.session.commit()
-    # As in a request that loaded the third player before they joined.
-    set_committed_value(members[2], "live_game_data", None)
+    if third_player == "failed":
+        members[2].failed = True
+        db.session.commit()
+    else:
+        # As in a request that loaded the third player before they joined.
+        set_committed_value(members[2], "live_game_data", None)
     _reach(barrier, members[3])
     db.session.commit()
 
