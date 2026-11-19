@@ -459,6 +459,8 @@ then scores the game:
 - ``sync_group_type`` says that a group plays the trial, here the pair.
   Each player has a trial of their own, and the two trials share a
   definition.
+- ``live_game_class`` names the game the trial plays, so that PsyNet can
+  check the two together when the experiment loads.
 - ``show_trial`` returns the ``PlayLiveGame``, with the number of throws and
   what a throw won pays from the trial's definition as its settings. Its barrier is the
   :class:`~psynet.sync.GroupBarrier` that a trial a group plays needs, so
@@ -487,6 +489,8 @@ player who has closed the page for good, and records it on each player's
 trial, so the experiment's data shows what each game paid. A trial could
 pay through its own ``compute_performance_reward`` instead, but that runs
 only when the player's own page submits (see :ref:`live-games-rewards`).
+Paying in both would pay each player twice, so with ``live_game_class``
+set, the experiment raises an error when it loads.
 
 The timeline forms the pairs, and then gives each player their trials:
 

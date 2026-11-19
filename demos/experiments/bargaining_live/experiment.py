@@ -223,6 +223,7 @@ def bargaining_page(stake):
 
 class BargainTrial(Trial):
     sync_group_type = "pair"
+    live_game_class = Bargain
     time_estimate = BARGAIN_SECONDS + 10
 
     def show_trial(self, experiment, participant):

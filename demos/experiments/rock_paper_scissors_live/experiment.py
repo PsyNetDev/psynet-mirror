@@ -211,6 +211,7 @@ class RockPaperScissorsTrial(Trial):
     trial."""
 
     sync_group_type = "pair"
+    live_game_class = RockPaperScissors
     time_estimate = 65
 
     def show_trial(self, experiment, participant):

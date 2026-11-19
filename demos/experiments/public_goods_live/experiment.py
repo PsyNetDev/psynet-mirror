@@ -145,6 +145,7 @@ def contribution_page(round_number):
 
 class ContributionTrial(Trial):
     sync_group_type = "team"
+    live_game_class = PublicGoods
     time_estimate = ROUND_SECONDS + RESULTS_SECONDS
 
     def show_trial(self, experiment, participant):

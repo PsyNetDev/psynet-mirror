@@ -333,10 +333,13 @@ def test_a_game_and_the_trial_it_s_played_in_can_t_both_pay():
     from psynet.trial.main import Trial
 
     class PaysPerWin:
+        live_game_class = None
+
         def compute_performance_reward(self, score):
             return score * 0.1
 
     class PaysNothing:
+        live_game_class = None
         compute_performance_reward = Trial.compute_performance_reward
 
     # The pick-numbers game pays through its performance_reward.
@@ -349,6 +352,29 @@ def test_a_game_and_the_trial_it_s_played_in_can_t_both_pay():
     # performance_reward PsyNet still wraps.
     assert UnpaidGame.performance_reward is not LiveGame.performance_reward
     _play("unpaid_game", game_class=UnpaidGame).barrier._check_trial(PaysPerWin())
+
+    # A trial that plays a game other than the one its class names.
+    PaysNothing.live_game_class = UnpaidGame
+    with pytest.raises(TypeError, match="live_game_class is UnpaidGame"):
+        barrier._check_trial(PaysNothing())
+
+
+def test_a_trial_class_that_names_a_paying_game_can_t_pay_too():
+    from psynet.trial.main import Trial
+
+    # Raised when the experiment's module defines the class.
+    with pytest.raises(TypeError, match="PaysToo pays through compute_performance"):
+
+        class PaysToo(Trial):
+            live_game_class = type(_pick_numbers())
+
+            def compute_performance_reward(self, score):
+                return score * 0.1
+
+    with pytest.raises(TypeError, match="NoGame.live_game_class: game_class must"):
+
+        class NoGame(Trial):
+            live_game_class = int
 
 
 def test_the_members_of_a_group_must_arrive_with_the_same_settings(pair):

@@ -317,6 +317,19 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         usually means the cue needs a :func:`~psynet.timeline.conditional`
         on ``participant.in_sync_group(...)``.
 
+    live_game_class : type or None
+        Set this class attribute to the :class:`~psynet.live_game.LiveGame`
+        subclass that :meth:`show_trial` plays with a
+        :class:`~psynet.live_game.PlayLiveGame`, so that PsyNet checks the
+        two together when the experiment loads, rather than when it first
+        builds the trial's pages: a game that pays through its
+        ``performance_reward`` in a trial class that also defines
+        :meth:`compute_performance_reward`, which would pay each player
+        twice, raises an error, as does a game that can't be played, such
+        as one without a ``name``. A trial whose ``show_trial`` then plays
+        another game raises an error too. ``None`` (default) leaves these
+        checks to when the pages are built.
+
     time_credit_before_trial: float
         Reports the amount of time credit that the participant had before they started the trial (in seconds).
 
@@ -612,6 +625,14 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     accumulate_answers = False
     sync_group_type = None
     sync_group_optional = False
+    live_game_class = None
+
+    def __init_subclass__(cls, **kwargs):
+        if cls.live_game_class is not None:
+            from ..live_game.play import _check_trial_class
+
+            _check_trial_class(cls)
+        super().__init_subclass__(**kwargs)
 
     # Back-compat alias: older code referred to the creating node as ``origin``.
     @property

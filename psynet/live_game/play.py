@@ -236,28 +236,17 @@ class _LiveGameBarrier(GroupBarrier):
             ) from None
 
     def _check_trial(self, trial):
-        """Raise an error if both the game and the trial it's played in pay
-        for the game, which would pay each player twice."""
-        from ..trial.main import Trial
-
-        # Unwrapped, since PsyNet wraps each game's methods, its inherited
-        # default included.
-        game_pays = inspect.unwrap(self.game_class.performance_reward) is not (
-            inspect.unwrap(LiveGame.performance_reward)
-        )
-        trial_pays = (
-            type(trial).compute_performance_reward
-            is not Trial.compute_performance_reward
-        )
-        if game_pays and trial_pays:
+        """Raise an error if the trial plays a game other than the one its
+        class names, or if both the game and the trial pay for the game."""
+        trial_class = type(trial)
+        named = trial_class.live_game_class
+        if named is not None and named is not self.game_class:
             raise TypeError(
-                f"{type(trial).__name__} pays through compute_performance_reward, "
-                f"and its game, {self.game_class.__name__}, through "
-                "performance_reward, so each player would be paid twice. Pay "
-                "in one of them, preferably the game, which also pays a "
-                "player who leaves the game page for good. Pass any of the "
-                "trial's definition the reward needs in the game's settings."
+                f"{trial_class.__name__}.live_game_class is {named.__name__}, "
+                f"but its show_trial plays {self.game_class.__name__}. Set "
+                "live_game_class to the game the trial plays."
             )
+        _check_paid_once(trial_class, self.game_class)
 
     def receive_participant(self, participant):
         try:
@@ -410,6 +399,41 @@ def _check_game_class(game_class):
             f"{game_class.__name__} has no bot method, so its bots, such as "
             "those of psynet test, would never move. Define bot to return "
             "a bot's next message."
+        )
+
+
+def _check_trial_class(trial_class):
+    """Check the game a trial class names in its ``live_game_class``, when
+    the class is defined."""
+    game_class = trial_class.live_game_class
+    try:
+        _check_game_class(game_class)
+    except TypeError as error:
+        raise TypeError(f"{trial_class.__name__}.live_game_class: {error}") from None
+    _check_paid_once(trial_class, game_class)
+
+
+def _check_paid_once(trial_class, game_class):
+    """Raise an error if both a trial class and the game played in its
+    trials pay for the game, which would pay each player twice."""
+    from ..trial.main import Trial
+
+    # Unwrapped, since PsyNet wraps each game's methods, its inherited
+    # default included.
+    game_pays = inspect.unwrap(game_class.performance_reward) is not (
+        inspect.unwrap(LiveGame.performance_reward)
+    )
+    trial_pays = (
+        trial_class.compute_performance_reward is not Trial.compute_performance_reward
+    )
+    if game_pays and trial_pays:
+        raise TypeError(
+            f"{trial_class.__name__} pays through compute_performance_reward, "
+            f"and its game, {game_class.__name__}, through "
+            "performance_reward, so each player would be paid twice. Pay "
+            "in one of them, preferably the game, which also pays a "
+            "player who leaves the game page for good. Pass any of the "
+            "trial's definition the reward needs in the game's settings."
         )
 
 

@@ -298,6 +298,7 @@ trial's ``show_trial``, and pass the trial's ``definition`` as the settings:
 
     class RockPaperScissorsTrial(Trial):
         sync_group_type = "pair"
+        live_game_class = RockPaperScissors
 
         def show_trial(self, experiment, participant):
             return PlayLiveGame(
@@ -316,6 +317,13 @@ definition, so set ``sync_group_type`` on the trial class and cue one trial
 per player (see :ref:`rounds-cued-trials`). The ``bargaining_live`` demo
 draws each pair's stake this way, with a function as the definition that
 ``cue`` calls once for the pair.
+
+The trial class's ``live_game_class`` names the game the trial plays (see
+:class:`~psynet.trial.main.Trial`). PsyNet can't see inside ``show_trial`` until it builds a trial's
+pages, so naming the game lets it check the game and the trial class
+together when the experiment loads, such as that they don't both pay for
+the game (see :ref:`live-games-rewards`). A trial that then plays another
+game raises an error.
 
 A trial played in a group needs a :class:`~psynet.sync.GroupBarrier` in its
 ``show_trial``, and the barrier of the ``PlayLiveGame`` is one. Each trial's
@@ -1015,7 +1023,10 @@ player's own game page submits its answer. A player who closes the game
 page and never comes back isn't paid that way, while the game's rewards
 reach them. The two would add up, paying each player twice, so a game with
 a ``performance_reward`` played in a trial with a
-``compute_performance_reward`` raises an error.
+``compute_performance_reward`` raises an error: when the experiment loads
+if the trial class names the game in ``live_game_class``, and otherwise
+when PsyNet builds the trial's pages, which ``psynet test local`` shows
+only as the bots' failed requests.
 
 A game that fails (see `The end`_) still pays its ``performance_reward`` from
 the outcome of the state before the error, unless the record couldn't be
