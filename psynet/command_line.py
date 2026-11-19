@@ -1777,7 +1777,7 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     # Lets `psynet services list` see the port in the Flask and worker processes.
     os.environ["base_port"] = str(port)
     # Replaced rather than extended: an inherited value can come from another
-    # debug server and exclude this one's development folder.
+    # server's environment and exclude files this server should watch.
     os.environ["FLASK_RUN_EXCLUDE_PATTERNS"] = os.pathsep.join(
         _reloader_exclude_patterns()
     )
