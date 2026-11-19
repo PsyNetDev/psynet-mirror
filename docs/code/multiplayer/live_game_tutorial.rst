@@ -826,7 +826,20 @@ Testing your game
 -----------------
 
 Run ``psynet test local`` in a demo's folder to play the experiment with
-bots. Each demo checks each bot's result at the end of the test. Rock, paper,
+bots. The bots play each game through the game's ``bot`` method, as
+`Bots`_ in Part 1 showed: the game asks each bot for its next message after
+every change in a game without ticks, such as rock, paper, scissors, and on
+every tick in a game with ticks, such as snake, whose bots head for the
+nearest food. A group's bots have to reach the game together, so the demos
+run their bots at the same time, with ``test_mode = "parallel"``, and set
+``test_n_bots`` to a multiple of the group size:
+
+.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
+   :start-at: test_n_bots = 2
+   :end-at: test_mode = "parallel"
+   :dedent:
+
+Each demo checks each bot's result at the end of the test. Rock, paper,
 scissors checks that its last game finished and is its last trial's game, that
 each of the bot's games had the number of throws in its trial's definition,
 and that each trial's score and reward match the throws the bot won:
