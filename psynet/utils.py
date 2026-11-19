@@ -533,6 +533,7 @@ def md5_update_from_dir(directory: Union[str, Path], hash: Hash) -> Hash:
 
 
 def serialise_datetime(x):
+    """Return a datetime as an ISO 8601 string, or ``None`` for ``None``."""
     if x is None:
         return None
     return x.isoformat()

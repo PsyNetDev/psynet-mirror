@@ -15,12 +15,13 @@ and platform docs when a study is near deployment.
   that request so the group does not wait for the 0.5 s poller; lock contention
   falls back to the poller. Arrival notices are on by default: a pill on the
   progress bar for members who have not arrived yet, plus remaining-not-ready
-  hold copy in groups of three or more. Pair holds keep the title only. Keep
-  `on_arrival_message` notice copy to a short sentence. Set
-  `notify_arrivals=False` to disable them, or customize copy with
-  `on_arrival_message`.
-  It checks `min_group_size`, can wait for top-ups, can fail under-quota groups,
-  and accepts `on_release(group, participants)` for atomic shared updates.
+  hold copy in groups of three or more. Pair holds keep the title only. Pass
+  `on_arrival_message=None` to disable them, or a function to customize the
+  copy.
+  It checks the group's `quorum` (a group below it waits for top-ups or is
+  dissolved; see "Groups below quorum" in the synchronization docs),
+  and accepts `on_release(group, participants, trials, group_round, leader, left, admitted, barrier)`
+  (any subset) for atomic shared updates.
   The `barrier` argument is reconstructed; see
   `docs/code/multiplayer/synchronization.rst` (published at https://psynetdev.gitlab.io/PsyNet/code/multiplayer/synchronization.html) ("Release callbacks").
 - `psynet.sync.SimpleGrouper` creates `SyncGroup`s by waiting for `batch_size`
@@ -28,18 +29,20 @@ and platform docs when a study is near deployment.
   The last arrival runs the same framework-owned evaluation in that request so
   pairing does not wait for the 0.5 s poller; lock contention falls back to the
   poller.
-  `min_group_size`, `max_group_size`, `join_existing_groups`, and
-  `join_criterion` control top-up behavior.
+  `quorum` (how many members a group needs to keep going), `max_group_size`,
+  `join_existing_groups`, `join_criterion` (who may join) and `top_up_wait`
+  control top-up behavior; groups accept top-ups until they are stopped
+  explicitly (see "Groups below quorum" in the synchronization docs).
 - `psynet.sync.GroupCloser` closes a group before participants are regrouped
   with the same `group_type`.
 - `participant.sync_group` is convenient when the participant has one active
-  group. Use `participant.active_sync_groups[group_type]` when multiple group
-  namespaces may be active.
+  group. Use `participant.active_sync_groups.get(group_type)` when multiple
+  group namespaces may be active; it is `None` once the participant has left.
 - Trial makers support `sync_group_type`. When it is set, the leader's ordinary
   node allocation drives the group and followers receive matching trials.
 - Trial-maker synchronization uses internal `GroupBarrier`s namespaced with
-  the trial-maker id (for example `{id}__init_participant` and
-  `{id}__prepare_trial`); `sync_group_max_wait_time` defaults to 45 seconds.
+  the trial-maker id (`{id}__prepare_trial`, which also initializes members
+  and admits pending ones); `sync_group_max_wait_time` defaults to 45 seconds.
 - `wait_while` and `WaitPage` are useful for single-participant waits or
   background readiness, but they do not replace group barriers.
 - `RecruitmentCriterion`, `recruit_mode`, `target_n_participants`, and
@@ -55,10 +58,11 @@ and platform docs when a study is near deployment.
   `SimpleGrouper`, role assignment with `GroupBarrier(on_release=...)`,
   `GroupCloser`, then a second group.
 - `create_rate_sync` shows a group-of-three create/rate/reveal flow with
-  barriers after creation and rating, partner state read from
-  `participant.sync_group.participants`, and shared output written in
-  `on_release`.
-- `rock_paper_scissors` shows dyadic synchronized static trials, barriers inside
+  barriers after creation and rating. Each barrier's `on_release` reads the
+  members' `trial.answer` and stores the creations, votes, winner and result
+  (`"winner"`, `"tie"` or `"no_votes"`) in each member's `trial.var` for the
+  next page.
+- `rock_paper_scissors` shows a fixed pair playing cued trials, barriers inside
   `show_trial`, server-side scoring in `on_release`, and a `ChatRoom` scoped to
   `self.sync_group.id` for communication after the round.
 - `sync_quorum` shows a waiting-room/quorum pattern where participants complete
@@ -66,6 +70,10 @@ and platform docs when a study is near deployment.
 - `gibbs_within_sync` shows `GibbsTrialMaker(sync_group_type=...)`,
   `join_existing_groups=True`, a task-specific `join_criterion`, dropout
   simulation, and a top-up participant joining a still-active group.
+- `ultimatum_pairing` shows a game played in rounds
+  with a `Regrouper`: one `Trial.cue` per player per round on a trial class
+  with `sync_group_type`, group results on the shared `SyncGroupRound`,
+  per-player results on the trial, and basic data read from trials and rounds.
 
 ## Practical group-search findings
 

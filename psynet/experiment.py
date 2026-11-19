@@ -119,7 +119,7 @@ from .error import ErrorRecord
 from .field import ImmutableVarStore, PythonDict
 from .graphics import PsyNetLogo
 from .notifier import Notifier
-from .page import InfoPage
+from .page import InfoPage, WaitPage
 from .participant import (
     BONUS_PAY_IN_PROGRESS,
     BONUS_STATUS_CAPPED,
@@ -130,6 +130,7 @@ from .participant import (
     Participant,
     _load_participant_for_update,
     _lock_and_load_participant,
+    _unique_ids_allowed_to_fail,
     bonus_is_settled,
     bonus_needs_review,
     bonus_transfer_already_claimed,
@@ -169,8 +170,10 @@ from .timeline import (
     Response,
     Timeline,
     WebSocketElt,
+    _ending_released_pass,
     _is_timeline_hold,
     _timeline_step_name,
+    _trial_owning_page,
     new_page_uuid,
 )
 from .translation.check import check_translations
@@ -182,6 +185,7 @@ from .trial.record import (  # noqa -- this is to make sure the SQLAlchemy class
 )
 from .utils import (
     NoArgumentProvided,
+    as_plain_text,
     call_function,
     call_function_with_context,
     disable_logger,
@@ -981,9 +985,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     css_links = []
 
     pseudonym_scheme = PseudonymScheme()
-    """How participants are named to each other, for example in chat rooms.
+    """How participants are named to each other in groups and chat rooms.
 
-    See :class:`~psynet.pseudonym.PseudonymScheme`.
+    See :class:`~psynet.pseudonym.PseudonymScheme` and
+    :doc:`/code/multiplayer/pseudonyms`.
     """
 
     variables = {}
@@ -2192,7 +2197,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             self.test_check_bot(b)
 
     def test_check_bot(self, bot: Bot, **kwargs):
-        assert not bot.failed
+        """Check one bot at the end of the test.
+
+        By default, the bot must not have failed, unless it dropped out with
+        :meth:`~psynet.participant.ParticipantDriver.drop_out` or the test
+        called :meth:`~psynet.participant.ParticipantDriver.allow_failure`
+        for it, for example for group members failed because a partner
+        dropped out. Override this for other checks.
+        """
+        assert (
+            not bot.failed
+            or bot.status == "returned"
+            or bot.unique_id in _unique_ids_allowed_to_fail
+        ), f"Bot {bot.id} failed (failure tags: {bot.failure_tags})."
 
     @classmethod
     def error_page(
@@ -4344,16 +4361,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     page=page,
                 )
             if interrupted:
-                from .sync import released_waiting_barrier
+                from .sync import _end_waiting_page, released_waiting_barrier
 
-                if released_waiting_barrier(event, participant) is None:
+                released = released_waiting_barrier(event, participant)
+                if released is None:
                     return ResponseResult(
                         payload={"submission": "rejected", "message": ""}
                     )
                 Experiment._record_interrupted_response(event, participant, metadata)
+                _end_waiting_page(participant)
                 participant.inc_time_credit(event.time_estimate)
                 participant.inc_progress(event.time_estimate)
-                self.timeline.advance_page(self, participant)
+                with _ending_released_pass(released.id):
+                    self.timeline.advance_page(self, participant)
                 page = self._advance_past_ready_holds(
                     participant, self.timeline.get_current_elt(self, participant)
                 )
@@ -4476,26 +4496,37 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         A ``while_loop`` only checks its condition before each pass, so the
         pages left in the current pass would otherwise each show briefly
-        and then be interrupted. Skipped pages were never seen, so they get
-        no response, time credit or progress.
+        and then be interrupted. Instead the participant is advanced through
+        the rest of the pass without seeing it, until they leave the
+        barrier's waiting loop. Each ``while_loop`` in the pass ends at its
+        next check, because its condition may wait for answers that skipped
+        pages never give. Code blocks, ``for_loop`` iterations and the ends
+        of modules, loops and fixed time credit run as usual. Skipped pages
+        get no response, time credit or progress, and the trial owning each
+        page, including trials created during the walk, is failed.
+        ``participant.answer`` is marked as not fresh, as after an interrupt.
         """
         from .sync import (
-            _MAX_BARRIER_WALK_PASSES,
-            _barrier_walk_budget,
+            _MAX_RELEASE_WALK_STEPS,
+            _end_waiting_page,
             released_waiting_barrier,
         )
 
-        for can_work in _barrier_walk_budget():
+        participant.answer_is_fresh = False
+        for step in range(_MAX_RELEASE_WALK_STEPS + 1):
             page = self.timeline.get_current_elt(self, participant)
             released = released_waiting_barrier(page, participant)
             if released is None or released.id != barrier.id:
                 return page
-            if not can_work:
+            if step == _MAX_RELEASE_WALK_STEPS:
                 break
-            self.timeline.advance_page(self, participant)
+            _end_waiting_page(participant)
+            with _ending_released_pass(barrier.id):
+                self.timeline.advance_page(self, participant)
         raise RuntimeError(
-            f"Skipping the waiting pages of barrier '{barrier.id}' did not settle "
-            f"after {_MAX_BARRIER_WALK_PASSES} steps."
+            f"Skipping the waiting pages of barrier '{barrier.id}' did not leave "
+            f"its waiting loop after {_MAX_RELEASE_WALK_STEPS} pages; is there "
+            "a very long for_loop or sequence in waiting_logic?"
         )
 
     @staticmethod
@@ -4506,12 +4537,18 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         not updated, but is marked as not fresh.
         """
         participant.answer_is_fresh = False
+        trial = _trial_owning_page(participant)
         response = Response(
             participant=participant,
             label=page.label,
             page_type=type(page).__name__,
+            trial=trial,
         )
+        if trial is not None:
+            trial.response = response
         response.answer = None
+        # Only the server may say that a time limit ran out.
+        metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
         response.metadata = {**metadata, "interrupted": True}
         response.successful_validation = True
         db.session.add(response)
@@ -4645,8 +4682,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         the lock stops other sessions from moving the cursor, so ``page`` is
         still the live hold when it is not ready. Consecutive holds can share
         a ``hold_id`` (every ``wait_while`` does), so an id is not a visit
-        identity. After the last allowed skip, this walk observes the landing
-        page so settling on the cap still succeeds.
+        identity. The rest of a released barrier's waiting pass counts as one
+        step, so after a nested barrier's pass the enclosing barrier's pass,
+        if also released, is skipped as well. After the last allowed skip,
+        this walk observes the landing page so settling on the cap still
+        succeeds.
         """
         from .sync import (
             _MAX_BARRIER_WALK_PASSES,
@@ -4658,7 +4698,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         for can_work in _barrier_walk_budget():
             released = released_waiting_barrier(page, participant)
             if released is not None:
+                if not can_work:
+                    break
                 page = self._skip_released_waiting_pages(participant, released)
+                continue
             if not _is_timeline_hold(page):
                 return page
             if not page.prepare_resume_if_ready(self, participant):
@@ -6675,10 +6718,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not cls._is_transient_transaction_error(error):
                 raise
             db.session.rollback()
-            logger.warning(
-                "Timeline request hit transient database contention for participant %s.",
-                unique_id,
-                exc_info=True,
+            cls._log_transient_contention(
+                "Timeline request",
+                participant_id if participant_id is not None else unique_id,
+                error,
             )
             response = cls.busy_response()
         return cls._apply_timeline_timing(
@@ -6723,22 +6766,30 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not isinstance(bot_response, BotResponse):
                 bot_response = BotResponse(answer=bot_response)
 
-            shown_page = current_page
+            text = current_page.plain_text
             if _is_timeline_hold(current_page):
-                shown_page = (
-                    current_page.waiting_screen_page(participant) or current_page
+                waiting_screen = current_page.waiting_screen_page(participant)
+                text = (
+                    waiting_screen.plain_text
+                    if waiting_screen is not None
+                    else as_plain_text(current_page.overlay_html(participant))
                 )
             status["page"] = {
                 "id": current_page.id,
                 "label": current_page.label,
-                "text": shown_page.plain_text,
+                "text": text,
                 "time_estimate": current_page.time_estimate,
                 "min_duration": current_page.min_duration,
                 "is_timeline_hold": _is_timeline_hold(current_page),
+                "is_wait_page": isinstance(current_page, WaitPage),
+                "barrier_id": getattr(current_page, "barrier_id", None),
                 "bot_response": bot_response.__json__(),
             }
             if _is_timeline_hold(current_page):
                 status["page"]["check_interval"] = current_page.check_interval
+                status["page"]["can_resume"] = current_page.is_ready_to_resume(
+                    experiment, participant
+                )
         else:
             bot_response = None
         status["page_uuid"] = participant.page_uuid
@@ -6867,13 +6918,27 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if not cls._is_transient_transaction_error(error):
             return None
         db.session.rollback()
-        logger.warning(
-            "%s hit transient database contention for participant %s.",
-            context,
-            participant_id,
-            exc_info=True,
-        )
+        cls._log_transient_contention(context, participant_id, error)
         return cls.busy_response()
+
+    @staticmethod
+    def _log_transient_contention(context, participant, error):
+        """Log retryable contention that is answered with HTTP 503 as one line.
+
+        The client retries these requests, so a traceback adds noise without
+        helping to diagnose anything.
+        """
+        route = (
+            f"{request.method} {request.path}" if has_request_context() else "no route"
+        )
+        logger.warning(
+            "%s (%s) hit transient database contention for participant %s "
+            "and was answered with HTTP 503 for the client to retry: %s.",
+            context,
+            route,
+            participant,
+            type(getattr(error, "orig", None) or error).__name__,
+        )
 
     @classmethod
     def _route_timeline(cls, experiment, participant, mode, *, close_phase=None):
@@ -7554,13 +7619,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def _run_queued_barrier_checks(cls, checks, *, wait=True):
-        """Run queued checks, retrying waiter ``NOWAIT`` immediately once.
+        """Run queued checks, retrying a waiter or top-up group ``NOWAIT`` miss immediately once.
 
         Each attempt tries the extra-connection instance claim, then waits
         only if ``wait`` is true and another worker already holds it. Waiter
-        rows stay ``NOWAIT``. A blocking claim wait that times out raises
-        (HTTP 503). The second attempt does not wait for a partner transaction
-        to commit; it only retries waiter ``NOWAIT``. Reinstall
+        and top-up group rows stay ``NOWAIT``. A blocking claim wait that
+        times out raises (HTTP 503). The second attempt does not wait for a
+        partner transaction to commit; it only retries the waiter or top-up
+        group ``NOWAIT``. Reinstall
         ``lock_timeout`` before that retry because ``SET LOCAL`` ends at the
         check commit. If those misses continue, the caller first-paints the
         live cursor. Partners catch up on overlay wake; the 0.5s poller skips

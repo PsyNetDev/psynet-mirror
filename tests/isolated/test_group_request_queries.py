@@ -1,10 +1,14 @@
-"""SQL budgets for grouped participant requests.
+"""SQL budgets for grouped participant requests, leaving or dissolving a group, and the pollers.
 
 ``test_barrier_arrival_queries`` pins the post-commit barrier check. These
-tests pin the requests around it, such as arriving at a barrier from a page
-(``POST /response``) and the hold poll while waiting. Each compares two group
-sizes, so a statement that runs once per member fails. See "Grouped request
-budgets" in ``docs/developer/sqlalchemy_performance.rst``.
+tests drive real ``/timeline`` and ``/response`` requests from a cold session
+to form a group, then pin the requests around the barrier (arriving from a
+page and the hold poll while waiting), what it costs for a member to leave,
+for a group to dissolve, and for one idle sweep of each poller. Arriving and
+leaving compare two group sizes, so a statement that runs once per member
+fails; dissolving and the sweeps pin their per-member or per-group slope. Fewer statements are an
+improvement: lower the numbers here and in
+``docs/developer/sqlalchemy_performance.rst`` (Grouped request budgets).
 """
 
 import json
@@ -15,6 +19,7 @@ import pytest
 from dallinger import db
 from flask import Flask
 
+from psynet import sync
 from psynet.experiment import Experiment, get_experiment
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.participant import Participant
@@ -36,10 +41,32 @@ pytestmark = [
 _APP = Flask(__name__)
 
 # A request commits several times, and rows it drops from the weak identity
-# map in between, such as its sync group, are loaded again on next use. That
-# moves a count by a statement or two between runs, so "does not grow" allows
-# this much; a statement per member adds at least four between sizes 3 and 7.
+# map in between are loaded again on next use. That moves a count by a
+# statement or two between runs; a statement per member adds at least four.
 _JITTER = 2
+
+# Ceiling: dissolving fails each remaining member with their own loads, lock
+# refresh, trial lock, hold lookup and flushes (about 10 each). Lower is better.
+_DISSOLVE_PER_MEMBER = 14
+
+# Snapshot: each sweep fully re-checks every waiting visit, even when nothing
+# changed. Lower is better. check_sync_groups locks no idle group.
+_SWEEP_PER_VISIT = 15
+_SYNC_GROUPS_PER_GROUP = 0
+
+
+def _timeline(group_size, quorum=None):
+    return Timeline(
+        SimpleGrouper(
+            "room",
+            initial_group_size=group_size,
+            quorum=quorum or group_size,
+            below_quorum="fail",
+        ),
+        ModularPage("choose", "Choose", PushButtonControl(["a", "b"]), time_estimate=1),
+        GroupBarrier(id_="room_gate", group_type="room"),
+        ModularPage("result", "Result", time_estimate=1),
+    )
 
 
 def _get(participant_id):
@@ -74,6 +101,18 @@ def _post(participant_id, raw_answer=None, *, resume=False):
         assert Experiment.route_response().status_code == 200
 
 
+def _fail(participant_id):
+    participant = (
+        get_experiment()
+        ._participant_request_query()
+        .with_for_update(of=Participant)
+        .populate_existing()
+        .get(participant_id)
+    )
+    participant.fail("left")
+    db.session.commit()
+
+
 def _count(fn):
     db.session.remove()
     with sqlalchemy_profile(db.engine) as profiler:
@@ -89,12 +128,68 @@ def _released_count(barrier_id):
     ).count()
 
 
+def _group_on_choose_page(exp, group_size):
+    """Form a group through real requests; everyone ends on the choose page."""
+    ids = [p.id for p in _working_participants(exp, group_size)]
+    for participant_id in ids:
+        _get(participant_id)
+    for participant_id in ids[:-1]:
+        _post(participant_id, resume=True)
+    return ids
+
+
 @pytest.fixture
-def exp(db_session, deployment_info):
+def exp(db_session, deployment_info, monkeypatch):
     experiment = get_experiment()
+    monkeypatch.setattr(
+        experiment.pseudonym_scheme, "_deployment_seed", "budget", raising=False
+    )
     original = experiment.timeline
     yield experiment
     experiment.timeline = original
+
+
+def test_leaving_a_group_does_not_load_every_member(exp):
+    """The leader failing leaves a group above quorum in the same statements for 4 and 8."""
+    counts = {}
+    for group_size in (4, 8):
+        db.session.remove()
+        exp.timeline = _timeline(group_size, quorum=2)
+        ids = _group_on_choose_page(exp, group_size)
+        leader_id = Participant.query.get(ids[0]).sync_group.leader_id
+        counts[group_size] = _count(lambda: _fail(leader_id))
+    assert counts[8] <= counts[4] + _JITTER, counts
+
+
+def test_dissolving_a_group_costs_a_fixed_amount_per_member(exp):
+    """A member failing below quorum dissolves the group at a pinned cost per member."""
+    counts = {}
+    for group_size in (4, 8):
+        db.session.remove()
+        exp.timeline = _timeline(group_size)
+        ids = _group_on_choose_page(exp, group_size)
+        counts[group_size] = _count(lambda: _fail(ids[-1]))
+        failed = Participant.query.filter(Participant.id.in_(ids), Participant.failed)
+        assert failed.count() == group_size
+    assert all(
+        count <= _DISSOLVE_PER_MEMBER * size for size, count in counts.items()
+    ), counts
+
+
+def test_poller_sweeps_cost_a_fixed_amount_per_group(exp, monkeypatch):
+    """Idle sweeps of check_barriers and check_sync_groups scale with groups, not members."""
+    monkeypatch.setattr(sync, "_POLLER_SWEEP_BUDGET_SECONDS", 60)
+    exp.timeline = _timeline(2)
+    barriers, groups = {}, {}
+    for n_groups, new_groups in ((1, 1), (3, 2)):
+        for _ in range(new_groups):
+            ids = _group_on_choose_page(exp, 2)
+            _post(ids[0], "a")
+        sync.check_barriers()
+        barriers[n_groups] = _count(sync.check_barriers)
+        groups[n_groups] = _count(sync.check_sync_groups)
+    assert barriers[3] - barriers[1] == 2 * _SWEEP_PER_VISIT, barriers
+    assert groups[3] - groups[1] == 2 * _SYNC_GROUPS_PER_GROUP, groups
 
 
 def test_barrier_requests_do_not_grow_with_group_size(exp):
@@ -107,7 +202,10 @@ def test_barrier_requests_do_not_grow_with_group_size(exp):
         # No hold timeouts, so slow profiled requests cannot dissolve the group.
         exp.timeline = Timeline(
             SimpleGrouper(
-                group_type, initial_group_size=group_size, max_wait_time=None
+                group_type,
+                initial_group_size=group_size,
+                quorum=group_size,
+                max_wait_time=None,
             ),
             ModularPage(
                 "choose", "Choose", PushButtonControl(["a", "b"]), time_estimate=1

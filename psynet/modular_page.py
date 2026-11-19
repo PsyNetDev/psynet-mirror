@@ -2503,6 +2503,11 @@ class ModularPage(Page):
         self.prompt.pre_render()
         self.control.pre_render()
 
+    def render(self, experiment, participant, partial_mode=False):
+        if self.chatroom is not None:
+            self.chatroom.check_enabled(experiment)
+        return super().render(experiment, participant, partial_mode=partial_mode)
+
     def get_bot_response(self, experiment, bot):
         page = self
         prompt = self.prompt

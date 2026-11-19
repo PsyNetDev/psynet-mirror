@@ -77,6 +77,7 @@ def _page_participant(**overrides):
         failed=False,
         active_barriers={},
         active_sync_groups={},
+        waiting_barrier_id=None,
     )
     participant.__dict__.update(overrides)
     return participant
