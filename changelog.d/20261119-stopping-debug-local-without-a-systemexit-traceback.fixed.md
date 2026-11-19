@@ -1,0 +1,1 @@
+Fixed `psynet debug local` printing an `Exception ignored on threading shutdown ... SystemExit: 0` traceback when stopped, for example with Ctrl+C or with `pkill`, which signals an `--isolated` session twice. The local server now gets a single SIGTERM.

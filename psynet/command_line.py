@@ -1599,31 +1599,29 @@ def _stop_child_processes_on_signal():
     Ctrl-C in a terminal reaches the whole foreground process group, but a
     signal sent to the ``psynet`` PID alone would otherwise leave the
     ``flask run`` server started by ``dallinger develop debug`` running.
+    Children in another session, like that server, are left to the code that
+    the signal interrupts, and only those still running when the block exits
+    are terminated: Dallinger stops its server's process group itself, and a
+    second SIGTERM during the server's shutdown prints a ``SystemExit``
+    traceback. Repeats of the signal are ignored once the shutdown has started.
     Must be entered from the main thread.
     """
+    stopping = False
 
     def handler(signum, frame):
-        # Multiprocessing's helpers ignore these signals and exit with this
-        # process, so waiting for them would only delay the shutdown.
+        nonlocal stopping
+        if stopping:
+            return
+        stopping = True
         children = [
-            child
-            for child in psutil.Process().children(recursive=True)
-            if not _is_multiprocessing_helper(child)
+            child for child in _stoppable_children() if _in_own_process_group(child)
         ]
         if signum == signal.SIGINT:
-            # A terminal Ctrl-C has usually reached the children in this
-            # process group already, and a second signal makes Dallinger's
-            # worker do a cold shutdown, which prints a traceback. Children in
-            # their own session, like Dallinger's server, don't get it, so they are stopped straight away.
-            reached = [child for child in children if _in_own_process_group(child)]
-            _, still_running = psutil.wait_procs(reached, timeout=3)
-            children = still_running + [c for c in children if c not in reached]
-        for child in children:
-            try:
-                child.terminate()
-            except psutil.NoSuchProcess:
-                pass
-        psutil.wait_procs(children, timeout=5)
+            # A terminal Ctrl-C has usually reached these children already, and
+            # a second signal makes Dallinger's worker do a cold shutdown,
+            # which prints a traceback.
+            _, children = psutil.wait_procs(children, timeout=3)
+        _terminate_and_wait(children)
         if signum == signal.SIGINT:
             raise KeyboardInterrupt
         raise SystemExit(128 + signum)
@@ -1633,8 +1631,33 @@ def _stop_child_processes_on_signal():
     try:
         yield
     finally:
+        if stopping:
+            _terminate_and_wait(_stoppable_children())
         for sig, previous_handler in previous.items():
             signal.signal(sig, previous_handler)
+
+
+def _stoppable_children():
+    """Return this process's descendants, apart from ``multiprocessing`` helpers.
+
+    The helpers ignore stop signals and exit with this process, so waiting for
+    them would only delay the shutdown.
+    """
+    return [
+        child
+        for child in psutil.Process().children(recursive=True)
+        if not _is_multiprocessing_helper(child)
+    ]
+
+
+def _terminate_and_wait(processes, timeout=5):
+    """Send SIGTERM to ``processes`` and wait up to ``timeout`` seconds for them to exit."""
+    for process in processes:
+        try:
+            process.terminate()
+        except psutil.NoSuchProcess:
+            pass
+    psutil.wait_procs(processes, timeout=timeout)
 
 
 def _in_own_process_group(process):

@@ -7839,6 +7839,49 @@ def test_ctrl_c_stops_a_server_in_its_own_session_without_waiting(tmp_path):
     )
 
 
+def test_a_server_stopped_by_the_interrupted_code_gets_one_sigterm(tmp_path):
+    """Like Dallinger's server, which prints a traceback on a second SIGTERM."""
+    import signal
+    import sys
+    import time
+
+    ready_file = tmp_path / "ready"
+    sigterm_log = tmp_path / "sigterms"
+    server = (
+        "import signal, sys, time\n"
+        "def stop(signum, frame):\n"
+        f"    open({str(sigterm_log)!r}, 'a').write('x')\n"
+        "    time.sleep(1)\n"
+        "    sys.exit(0)\n"
+        "signal.signal(signal.SIGTERM, stop)\n"
+        f"open({str(ready_file)!r}, 'w').write('ready')\n"
+        "time.sleep(60)\n"
+    )
+    script = (
+        "import subprocess, sys\n"
+        "from psynet.command_line import _stop_child_processes_on_signal\n"
+        "with _stop_child_processes_on_signal():\n"
+        f"    server = subprocess.Popen([sys.executable, '-c', {server!r}], start_new_session=True)\n"
+        "    try:\n"
+        "        server.wait()\n"
+        "    except KeyboardInterrupt:\n"
+        "        server.terminate()\n"
+        "        server.wait()\n"
+    )
+    parent = subprocess.Popen([sys.executable, "-c", script])
+    deadline = time.monotonic() + 60
+    while not ready_file.exists():
+        assert time.monotonic() < deadline, "server did not start"
+        time.sleep(0.1)
+
+    # `pkill -f "psynet debug local --isolated"` signals the session twice.
+    parent.send_signal(signal.SIGINT)
+    time.sleep(0.3)
+    parent.send_signal(signal.SIGINT)
+    assert parent.wait(timeout=30) == 0
+    assert sigterm_log.read_text() == "x"
+
+
 @pytest.mark.skipif(os.name == "nt", reason="needs POSIX signals")
 @pytest.mark.parametrize("signum, status", [("SIGINT", 1), ("SIGTERM", 143)])
 def test_a_signalled_command_that_imports_the_experiment_fails(signum, status):
