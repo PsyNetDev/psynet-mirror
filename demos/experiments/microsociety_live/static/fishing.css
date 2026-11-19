@@ -34,7 +34,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The lake: a shore of sand and grass around animated water. */
+/* The lake: a shore of sand and grass around the water. */
 .fish-lake {
   position: relative;
   padding: 1.25rem 1.25rem 0;
@@ -47,24 +47,6 @@
     linear-gradient(160deg, #3d93c9, #22618f);
   box-shadow: inset 0 0 2rem rgba(0, 0, 0, 0.3);
   overflow: hidden;
-  isolation: isolate;
-}
-
-.fish-lake::before {
-  content: "";
-  position: absolute;
-  inset: -50%;
-  z-index: -1;
-  background: repeating-linear-gradient(
-    170deg,
-    rgba(255, 255, 255, 0.07) 0 4px,
-    transparent 4px 22px
-  );
-  animation: fish-water 12s linear infinite;
-}
-
-@keyframes fish-water {
-  to { transform: translate(-22px, 44px); }
 }
 
 .fish-spots {
@@ -147,17 +129,11 @@
   line-height: 1;
   color: rgba(255, 255, 255, 0.2);
   filter: blur(0.6px);
-  animation: fish-underwater 5s ease-in-out infinite alternate;
   pointer-events: none;
 }
 
 .fish-playing .fish-spot:hover .fish-spot-number {
   color: rgba(255, 255, 255, 0.35);
-}
-
-@keyframes fish-underwater {
-  from { transform: skewX(-2deg) scaleY(0.97); }
-  to { transform: skewX(2deg) scaleY(1.03); }
 }
 
 .fish-tip-intro {
@@ -198,38 +174,6 @@
 
 .fish-facing-left {
   transform: scaleX(-1);
-}
-
-.fish-boat-wrapper::after {
-  content: "";
-  position: absolute;
-  left: 15%;
-  right: 15%;
-  bottom: -0.15rem;
-  height: 0.3rem;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.35);
-  opacity: 0;
-  transition: opacity 0.3s;
-}
-
-.fish-sailing::after {
-  opacity: 1;
-  animation: fish-wake 0.6s ease-in-out infinite alternate;
-}
-
-.fish-sailing .fish-boat {
-  animation: fish-rock 0.8s ease-in-out infinite alternate;
-}
-
-@keyframes fish-rock {
-  from { rotate: -5deg; }
-  to { rotate: 5deg; }
-}
-
-@keyframes fish-wake {
-  from { transform: scaleX(0.8); }
-  to { transform: scaleX(1.2); }
 }
 
 /* A boat's catch, in a pill of the boat's colour just below it. */
@@ -295,11 +239,10 @@
   animation: fish-float 1.8s ease-out forwards;
 }
 
+/* fishing.js removes a catch at the end of its animation. */
 @keyframes fish-float {
-  from { opacity: 0; transform: translateY(0.75rem) scale(0.6); }
-  15% { opacity: 1; transform: translateY(0) scale(1.1); }
-  25% { transform: scale(1); }
-  70% { opacity: 1; }
+  from { opacity: 0; transform: translateY(0.75rem); }
+  15%, 70% { opacity: 1; }
   to { opacity: 0; transform: translateY(-2.5rem); }
 }
 
@@ -317,7 +260,6 @@
   box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.35);
   transform: translate(-50%, -50%);
   text-align: center;
-  animation: fish-results-in 0.4s ease-out;
 }
 
 .fish-results-boats {
@@ -342,15 +284,6 @@
   margin-bottom: -0.6rem;
 }
 
-.fish-crown:not(:empty) {
-  animation: fish-crown-in 0.6s ease-out 0.3s backwards;
-}
-
-@keyframes fish-crown-in {
-  from { opacity: 0; transform: translateY(-0.75rem) scale(0.5); }
-  60% { transform: translateY(0) scale(1.2); }
-}
-
 .fish-results-boat .fish-boat {
   width: 5rem;
   height: 4rem;
@@ -366,10 +299,6 @@
 .fish-results-next {
   margin: 0;
   color: var(--psynet-text-muted);
-}
-
-@keyframes fish-results-in {
-  from { opacity: 0; transform: translate(-50%, -40%); }
 }
 
 .fish-help {
