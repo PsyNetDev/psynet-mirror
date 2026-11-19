@@ -65,8 +65,10 @@ assignments in lambdas:
     participant.var.color = "red"
     CodeBlock(lambda participant: participant.var.set("color", "red"))
 
-Use ``participant.var.get("score", default=0)`` when a variable may not be
-set yet.
+Use ``participant.var.get("score")`` when a variable may not be set yet: like
+``dict.get``, it returns ``None``, or the default you pass, as in
+``participant.var.get("score", default=0)``. Attribute access, as in
+``participant.var.score``, raises ``KeyError`` for a variable that isn't set.
 
 A page's answer is stored in a variable when the page is given
 ``save_answer``. In the demo above, the first page saves its answer as
@@ -145,9 +147,10 @@ preceding page:
 ``expected_repetitions`` iterations, however many they actually do.
 ``max_loop_time`` limits the time in the loop in seconds; participants who
 reach it while the condition still holds are sent to the unsuccessful end
-unless ``fail_on_timeout=False``. ``extend_while`` pauses that limit while it
-returns ``True``, for example while a participant's recording is still
-uploading.
+unless ``fail_on_timeout=False``. ``extend_while`` is checked at the start of
+each pass through the loop; whenever it returns ``True``, the
+``max_loop_time`` clock restarts from zero, for example while a
+participant's recording is still uploading.
 :func:`~psynet.timeline.conditional` takes a label, a ``condition``, and
 ``logic_if_true`` and ``logic_if_false``. This loop repeats until the random
 score is above 5, with feedback that depends on the score:
@@ -169,6 +172,30 @@ score is above 5, with feedback that depends on the score:
    :end-at: expected_repetitions=
    :dedent: 8
    :append: ),
+
+To stop early, pass ``stop_if``, a function of ``participant`` and/or
+``experiment``. ``for_loop`` checks it before each iteration, and
+:func:`~psynet.timeline.join` checks it before each of its arguments; once
+it returns ``True``, the participant skips the rest. Neither interrupts an
+iteration or argument that has started, so wrap steps that belong together
+in their own ``join``. To show something to the participants who stopped,
+follow with a ``conditional``:
+
+.. code-block:: python
+
+    def left_pair(participant):
+        return not participant.in_sync_group("pair")
+
+    join(
+        for_loop(
+            label="rounds",
+            iterate_over=lambda: range(5),
+            logic=lambda n: join(choice_page(n), outcome_page(n)),
+            time_estimate_per_iteration=20,
+            stop_if=left_pair,
+        ),
+        conditional("explain", left_pair, InfoPage("Your partner left.")),
+    )
 
 Organizing a long timeline
 --------------------------
@@ -220,6 +247,119 @@ branch of end logic, which you can replace with keyword arguments to
 ``Timeline``, for example ``Timeline(..., unsuccessful_end=MyEndLogic())``.
 See :class:`~psynet.end.SuccessfulEndLogic` and
 :class:`~psynet.end.UnsuccessfulEndLogic`.
+
+When PsyNet ends a multiplayer session itself (a participant waited too long
+at a barrier, was too slow to reach the next one, or their group became too
+small), the unsuccessful end page says why, for example "We waited too long
+for other participants, so we ended your session." Other endings, such as
+failing a prescreen, get no such line. To explain your own reasons, pass a
+function of the participant that returns a line, or ``None`` to keep
+PsyNet's:
+
+.. code-block:: python
+
+    def failure_message(participant):
+        if "performance_check" in participant.failure_tags:
+            return "Your answers suggest that your headphones aren't working."
+        return None
+
+    Timeline(..., unsuccessful_end=UnsuccessfulEndLogic(failure_message=failure_message))
+
+You can also pass a plain string, but it replaces PsyNet's own lines for
+every participant, including the multiplayer ones. Returning ``""`` shows no
+line at all.
+
+To end without waiting for a click on Finish, for example in a multiplayer
+game, pass ``time_limit``. The page then adds "This page continues by itself
+in 3 s." and counts down:
+
+.. code-block:: python
+
+    Timeline(
+        ...,
+        successful_end=SuccessfulEndLogic(time_limit=3),
+        unsuccessful_end=UnsuccessfulEndLogic(time_limit=3),
+    )
+
+The rejected-consent page has no Finish button, so
+:class:`~psynet.end.RejectedConsentLogic` does not take ``time_limit``.
+
+Time limits
+-----------
+
+Pass ``time_limit`` to any :class:`~psynet.timeline.Page` to allow only that
+many seconds on it. The page shows "15 s left" at the top, where waiting
+messages also appear, counting down, and when time runs out it submits
+``time_limit_answer`` for the participant:
+
+.. code-block:: python
+
+    ModularPage(
+        "offer",
+        "How many coins do you offer?",
+        PushButtonControl(choices=list(range(11))),
+        time_limit=15,
+        time_limit_answer="timeout",
+        time_estimate=15,
+    )
+
+The server counts the time from when the participant reached the page, so
+reloading the page does not restart the countdown. The time includes any
+wait before the participant can answer, such as audio that must finish
+before the Next button is enabled, so allow for it in ``time_limit``. The
+server also treats an answer that arrives more than 5 seconds after the
+limit as timed out, so a tampered or stalled page cannot take longer: it
+records ``time_limit_answer``, or with ``CURRENT_ANSWER`` the late answer
+itself, unvalidated and with ``time_limit_reached`` set. A timed page cannot have a ``session_id``. To place the countdown
+yourself, put an element with the attribute ``data-psynet-seconds-left`` in
+the page's content, for example
+``<p>Answer within <span data-psynet-seconds-left></span> seconds.</p>``.
+
+Answers given because of the time limit skip validation, and their
+:attr:`~psynet.timeline.Response.time_limit_reached` is ``True``. A later page
+maker or code block can check the previous page with
+``participant.response.time_limit_reached``.
+
+In a group experiment, a time limit covers only its page. A following
+:class:`~psynet.sync.GroupBarrier` with ``late_after`` waits for a member
+who has started a timed page since the group's previous barrier until the
+page's time limit has run out plus 10 seconds, which is enough for an answer
+sent at the deadline to arrive. This also holds once they have answered and
+moved on to untimed pages, so finishing early never makes a member late. So
+give decision pages a ``time_limit``, and the barrier after them
+``late_after`` rather than a long ``max_wait_time``; see
+:ref:`rounds-slow-players` for a worked example.
+
+To keep what the participant has entered instead of a fixed answer, pass
+:data:`~psynet.timeline.CURRENT_ANSWER`:
+
+.. code-block:: python
+
+    from psynet.timeline import CURRENT_ANSWER
+
+    ModularPage(
+        "story",
+        "Write a short story.",
+        TextControl(),
+        time_limit=120,
+        time_limit_answer=CURRENT_ANSWER,
+        time_estimate=120,
+    )
+
+The page then submits its controls' current answer, for example a half-written
+text, which is formatted as usual but not validated. If the page has no answer
+to submit, ``None`` is recorded. Just before a timed page submits itself, the
+browser dispatches a ``psynet:timeLimitReached`` event on ``document``, so
+custom JavaScript can stage its state first:
+
+.. code-block:: javascript
+
+    document.addEventListener("psynet:timeLimitReached", () => {
+        psynet.response.staged.rawAnswer = currentDrawing();
+    });
+
+With ``CURRENT_ANSWER``, a page with a built-in control submits that
+control's answer; other pages submit ``psynet.response.staged``.
 
 Time estimates
 --------------

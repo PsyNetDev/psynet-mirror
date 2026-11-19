@@ -1,0 +1,1 @@
+`GroupBarrier`'s `notify_arrivals`, from the 14.0 release candidates, is replaced by `on_arrival_message=None`, and passing it raises a `TypeError`; replace `notify_arrivals=False` with `on_arrival_message=None`. Longer arrival notices now wrap onto at most two lines, then ellipsize, instead of ellipsizing on one line.

@@ -1,0 +1,1 @@
+The agent instructions now say that several `psynet test local` runs can go at once, and that runs in the same experiment directory wait for each other, so agents don't queue tests behind their own locks. Rerun `psynet scripts update` to refresh an experiment's copy.

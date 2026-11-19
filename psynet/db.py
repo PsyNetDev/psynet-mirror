@@ -641,6 +641,27 @@ def _set_transaction_lock_timeout(seconds, session=None):
 
 
 @contextmanager
+def _lock_timeout(seconds, session=None):
+    """Bound PostgreSQL lock waits inside the block, in a savepoint.
+
+    The bound is set with ``SET LOCAL`` semantics, which survive a released
+    savepoint but not a rolled-back one. So the previous bound is restored
+    explicitly when the block succeeds, and by the savepoint's rollback when
+    it raises, for example on a lock timeout, leaving the transaction usable.
+    """
+    if session is None:
+        session = dallinger.db.session
+    previous = session.execute(text("SELECT current_setting('lock_timeout')")).scalar()
+    with session.begin_nested():
+        _set_transaction_lock_timeout(seconds, session=session)
+        yield
+        session.execute(
+            text("SELECT set_config('lock_timeout', :timeout, true)"),
+            {"timeout": previous},
+        )
+
+
+@contextmanager
 def read_only_transaction():
     """Run rendering in a fresh read-only transaction on the scoped session."""
     session = dallinger.db.session()

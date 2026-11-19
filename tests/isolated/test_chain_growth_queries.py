@@ -1386,7 +1386,7 @@ def test_busy_block_counts_once_for_every_sync_group_member(db_session, particip
         group_type="main",
         initial_group_size=2,
         max_group_size=2,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=2,
         accepts_top_ups=False,
     )

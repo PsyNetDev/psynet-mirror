@@ -61,7 +61,8 @@ required:
   `code/pages/event_management`: a `GraphicPrompt` that gates the response
   until the stimulus frame, `KeyboardPushButtonControl`, and a
   `format_answer` that computes the latency from the event log. Store the
-  latency in each trial's answer.
+  latency in each trial's answer, and set `restrict_to_choices = False` on
+  the control, because the answer is no longer one of its choices.
 - Write custom timing JavaScript only if that pattern cannot express the
   design, keep it isolated, and trigger it from PsyNet events.
 - Give bots a synthetic event log as that section describes, so simulated

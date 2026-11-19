@@ -1,0 +1,1 @@
+Documented how to build one row per player per round for games that re-pair players with a `Regrouper`, in "Games with a regrouper" under basic data, with a `get_basic_data` example in the `ultimatum_pairing` demo. Also documented that a `PageMaker` builds its page again on submit, when the participant may have left their group.
