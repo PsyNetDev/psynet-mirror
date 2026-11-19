@@ -778,8 +778,8 @@ objects with ``...``, JavaScript's spread, rather than changing ``a`` and
 interpolates only what moves smoothly: something that changes in a step,
 such as a score, is best taken from ``b`` as it is. The price is that the
 other players are shown that tenth of a second behind, on top of the network
-delay, which is why the player's own piece is drawn from the prediction
-instead.
+delay. The player's own piece isn't interpolated, so it isn't behind: the
+page draws it from the prediction, where the player has just moved it.
 
 The page draws about 60 times a second. Each time, it draws the player's own
 piece from ``live.predictedView()``, moved on by the movement that the page
