@@ -741,9 +741,13 @@ Reference: :ref:`live-games-messages`.
 Smooth movement on the page
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The game ticks 20 times a second. Drawn as it arrives, each tick's view would
-make the players jump a little at each tick, and the player's own piece would
-lag a fraction of a second behind their key presses. The page avoids both:
+The game ticks 20 times a second, but the page draws about 60 times a
+second. If it simply drew each view as it arrived, two things would look
+wrong. The player's own piece would move only once their move had reached
+the server and come back in a view, a fraction of a second after the key
+press. And the other players would stand still between ticks, then jump.
+The page fixes the first with **prediction** and the second with
+**interpolation**, which it sets up when it opens:
 
 .. literalinclude:: ../../../demos/experiments/shared_canvas_live/static/shared-canvas.js
    :language: javascript
@@ -751,19 +755,23 @@ lag a fraction of a second behind their key presses. The page avoids both:
    :end-at: live.interpolate(interpolate);
    :dedent:
 
-``predict`` works as in `Showing a choice at once`_, the board example there
-in particular. Here, it moves the player's own piece at once, using ``advance``, which repeats the arithmetic of the
-game's own ``advance`` in ``experiment.py``.
+The player's own piece is predicted, as in `Showing a choice at once`_, the
+board example there in particular. Each move the page sends is applied to
+the latest view at once, by ``advance``, which repeats the arithmetic of the
+game's own ``advance`` in ``experiment.py``. The page also has movement it
+hasn't sent yet, since it sends a move only about 30 times a second, and the
+demo's ``shownView`` function adds that too. So the player's own piece is
+drawn where they have just moved it.
 
-``interpolate`` handles the other players. Between two ticks the page doesn't
-know where they are, so it shows them a moment in the past, where it has a
-view on either side. Each time the page draws, ``interpolatedView()`` takes
-the time two tick intervals ago, a tenth of a second here, finds the views
-of the ticks before and after it, ``a`` and ``b``, and calls the page's
-callback with them and ``fraction``, how far that time is from ``a`` to ``b``,
-from 0 to 1. It looks two intervals back, not one, so that ``b`` has usually
-arrived even when a view comes a little late. The callback returns the view
-to draw:
+The page can't predict the other players, since it learns where they are
+only from each tick's view. Instead, it draws them a moment in the past,
+where it has a view on either side, part of the way between the two. Each
+time the page draws, ``interpolatedView()`` takes the time two tick
+intervals ago, a tenth of a second here, finds the views of the ticks before
+and after it, ``a`` and ``b``, and calls the page's callback with them and
+``fraction``, from 0 at ``a`` to 1 at ``b``. It looks two intervals back,
+not one, so that ``b`` has usually arrived even when a view comes a little
+late. The callback returns the view to draw:
 
 .. literalinclude:: ../../../demos/experiments/shared_canvas_live/static/shared-canvas.js
    :language: javascript
@@ -774,18 +782,22 @@ to draw:
 It moves each player in a straight line from where they were in ``a`` to
 where they are in ``b``, and copies everything else from ``b``. It builds new
 objects with ``...``, JavaScript's spread, rather than changing ``a`` and
-``b``, since the page keeps those views to interpolate between again. A game
-interpolates only what moves smoothly: something that changes in a step,
-such as a score, is best taken from ``b`` as it is. The price is that the
-other players are shown that tenth of a second behind, on top of the network
-delay. The player's own piece isn't interpolated, so it isn't behind: the
-page draws it from the prediction, where the player has just moved it.
+``b``, since the page keeps those views to interpolate between again.
+Interpolate only what moves smoothly: something that changes in a step,
+such as a score, is best taken from ``b`` as it is.
 
-The page draws about 60 times a second. Each time, it draws the player's own
-piece from ``live.predictedView()``, moved on by the movement that the page
-hasn't sent yet, which the demo's ``shownView`` function adds. It draws the
-other players from ``live.interpolatedView()``, which shows them a little in
-the past, moving smoothly between two ticks.
+Each time it draws, the page puts the two together:
+
+.. literalinclude:: ../../../demos/experiments/shared_canvas_live/static/shared-canvas.js
+   :language: javascript
+   :start-at: shown = shownView();
+   :end-before: if (live.ended) {
+   :dedent:
+
+``draw`` takes the coins and the player's own piece from ``shown``, the
+predicted view, and the other players from the interpolated view. The other
+players are shown a tenth of a second behind, on top of the network delay,
+but they move smoothly. The player's own piece is never behind.
 
 Reference: :ref:`live-games-smooth-play`.
 
