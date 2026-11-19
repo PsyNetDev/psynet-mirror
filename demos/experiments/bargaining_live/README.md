@@ -19,7 +19,16 @@ rejected rather than accepted by mistake.
 A player who hasn't reached the game 30 seconds after being paired has
 probably closed their page. They leave the cohort as well as the pair, so
 the next pairing doesn't wait for them, and their partner goes on to a game
-page without a game.
+page without a game. If they come back, the last page tells them they
+didn't arrive in time. A player who reached the game but hasn't opened its
+page 30 seconds later, for example because they closed their page just as
+the pair formed, isn't coming either: the game ends at once without a deal,
+and the feedback tells their partner that they didn't arrive.
+
+A round can take up to 30 seconds for the partner to arrive, a minute of
+bargaining and the result and feedback pages, so a pair that finishes early
+waits up to two minutes from the last pairing for the other pair to come
+back, rather than being paired with each other again.
 
 ## Usage
 

@@ -34,7 +34,7 @@ from psynet.live_game import (
 )
 from psynet.page import InfoPage
 from psynet.sync import Regrouper, SimpleGrouper, SyncGroupRound, leave_group
-from psynet.timeline import Module, Timeline, join, switch, while_loop
+from psynet.timeline import Module, PageMaker, Timeline, join, switch, while_loop
 from psynet.trial.main import Trial
 
 COHORT_SIZE = 4
@@ -42,14 +42,16 @@ N_ROUNDS = 2
 # The coins a pair bargains over, chosen at random for each pair.
 STAKES = [10, 20]
 BARGAIN_SECONDS = 60
-# Seconds a player can keep their new partner waiting for the game.
+# Seconds a player can keep their new partner waiting, first for the game
+# and then for opening its page.
 LATE_AFTER = 30
 # How long the game page shows the deal before the feedback page.
 RESULT_SECONDS = 5
-# Longer than a round takes, with the game's start, its result and the
-# feedback page, so a pair that makes a quick deal waits for the other pair
-# to come back rather than being paired with each other again.
-ROUND_DEADLINE_SECONDS = BARGAIN_SECONDS + RESULT_SECONDS + 25
+# Longer than a round takes, even one whose partner arrives just in time,
+# with the game's start, its result and the feedback page, so a pair that
+# makes a quick deal waits for the other pair to come back rather than being
+# paired with each other again.
+ROUND_DEADLINE_SECONDS = LATE_AFTER + BARGAIN_SECONDS + RESULT_SECONDS + 25
 COIN_VALUE = 0.05
 # Bots open with a proposal that gives their partner this many coins, and
 # accept any proposal that gives them at least as many.
@@ -95,6 +97,10 @@ class Bargain(LiveGame):
     messages = [Propose, Accept]
     min_players = max_players = 2
     duration = BARGAIN_SECONDS
+    # A player who hasn't opened the game by then, for example because they
+    # closed their page as the pair formed, isn't coming, so the game starts
+    # and ends at once, without a deal.
+    ready_timeout = LATE_AFTER
 
     def initial_state(self, players, settings):
         return {
@@ -104,7 +110,13 @@ class Bargain(LiveGame):
             "n_proposals": 0,
             "deal": None,
             "deal_at": None,
+            # The players who hadn't opened the game when it started.
+            "no_shows": [],
         }
+
+    def on_start(self, state):
+        ready = state["psynet"]["ready"]
+        state["no_shows"] = [player for player in (0, 1) if player not in ready]
 
     def view(self, state, player):
         return {
@@ -112,16 +124,18 @@ class Bargain(LiveGame):
             "mine": state["offers"][player],
             "theirs": state["offers"][1 - player],
             "deal": None if state["deal"] is None else state["deal"][player],
+            "no_show": bool(state["no_shows"]),
         }
 
     def is_over(self, state):
-        return state["deal"] is not None
+        return state["deal"] is not None or bool(state["no_shows"])
 
     def outcome(self, state, reason):
         return {
             "deal": state["deal"],
             "deal_at": state["deal_at"],
             "n_proposals": state["n_proposals"],
+            "no_shows": state["no_shows"],
         }
 
     def answer(self, outcome, reason, player):
@@ -129,6 +143,8 @@ class Bargain(LiveGame):
         return {
             "deal": deal is not None,
             "coins": 0 if deal is None else deal[player],
+            "arrived": player not in outcome["no_shows"],
+            "partner_arrived": 1 - player not in outcome["no_shows"],
         }
 
     def performance_reward(self, outcome, reason, player):
@@ -216,6 +232,7 @@ def bargaining_page(stake):
         ),
         show_result_for=RESULT_SECONDS,
         player_left_message="Your partner has left.",
+        no_game_message="Your partner didn't arrive.",
         waiting_status="Waiting for your partner to open the game",
         js_page_modules=["/static/bargaining.js"],
         css_links=["/static/bargaining.css"],
@@ -248,10 +265,10 @@ class BargainTrial(Trial):
         return (self.answer or {}).get("coins", 0)
 
     def show_feedback(self, experiment, participant):
-        if self.sync_group_outcome == "late":
-            text = "You didn't arrive in time, so the game is over for you."
-        elif self.answer is None:
+        if self.answer is None or not self.answer["partner_arrived"]:
             text = "Your partner didn't arrive, so there was no game this round."
+        elif not self.answer["arrived"]:
+            text = "You didn't arrive in time, so there was no game this round."
         elif not self.answer["deal"]:
             text = "You didn't reach a deal in time, so nobody was paid."
         else:
@@ -293,6 +310,16 @@ def round_status(participant):
     return "no_cohort"
 
 
+def end_of_game(participant):
+    """Return the last page, which tells a player who reached the game too
+    late, and so left the cohort without a game, why it ended for them."""
+    if participant.sync_group_removal_reason("cohort") == "late":
+        text = "You didn't arrive in time, so the game is over for you."
+    else:
+        text = "That's the end of the game."
+    return InfoPage(text, time_estimate=5)
+
+
 def get_timeline():
     return Timeline(
         InfoPage(
@@ -330,7 +357,7 @@ def get_timeline():
             ),
         ),
         leave_group("cohort"),
-        InfoPage("That's the end of the game.", time_estimate=5),
+        PageMaker(end_of_game, time_estimate=5),
     )
 
 
