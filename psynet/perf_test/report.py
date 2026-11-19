@@ -537,10 +537,14 @@ def _share(fraction):
     return "<1%" if 0 < fraction < 0.005 else f"{fraction:.0%}"
 
 
+# What to do about live games too slow for the load, in a sentence and at
+# the end of the verdict.
+_FASTER_GAMES = (
+    "make the games' tick and view faster (time them with LocalGame.time_play)"
+)
 _LIVE_SPEED_ADVICE = (
-    "Make the games' tick and view faster (time them with "
-    "LocalGame.time_play), or add worker processes with worker_processes, "
-    "since each runs a game runner."
+    f"To fix it, {_FASTER_GAMES}, or add worker processes with "
+    "worker_processes, since each runs a game runner."
 )
 
 
@@ -1557,9 +1561,7 @@ def _live_advice(result, limits):
         fix = ", fix the errors" if game_errors or other_errors else ""
         fewer = " or test fewer bots" if other_load else ""
         return (
-            "; make the games' tick and view faster (time them with "
-            f"LocalGame.time_play) or add worker_processes{fix}{fewer}, then "
-            "test again."
+            f"; {_FASTER_GAMES} or add worker_processes{fix}{fewer}, then test again."
         )
     if game_errors and not other_errors:
         fewer = ", or test fewer bots" if other_load else ""
