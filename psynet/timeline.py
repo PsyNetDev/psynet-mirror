@@ -3611,8 +3611,11 @@ def _accepts_deprecated_labels(ignore=(), removed_positional=None):
     A string first argument, the old positional label, is passed on as
     ``label=``. Keyword arguments named in ``ignore`` (possibly including
     ``label``) are dropped. ``removed_positional`` maps an argument name to
-    its old position after the label; when a call with a positional label
-    reaches that position, the argument there is dropped too.
+    its old position after the label. The argument at that position is
+    dropped if the call passed a positional label, or if it is a ``bool``,
+    which the old call passed there before its label was deleted. Each call
+    gives one warning naming everything it dropped, because Dallinger shows
+    only one warning per line.
     """
 
     def decorator(func):
@@ -3627,28 +3630,35 @@ def _accepts_deprecated_labels(ignore=(), removed_positional=None):
 
         @wraps(func)
         def wrapper(*args, **kwargs):
-            if args and isinstance(args[0], str):
+            dropped = []
+            positional_label = bool(args) and isinstance(args[0], str)
+            if positional_label:
                 if "label" in kwargs:
                     raise TypeError(f"{name}() got two labels.")
                 if "label" in ignore:
-                    warn(
-                        f"{name}() no longer takes a label; delete the first argument."
-                    )
+                    dropped.append("a label as its first argument")
                 else:
                     kwargs["label"] = args[0]
                     warn(
-                        f"Passing a label as the first argument of {name}() is deprecated; "
+                        f"{name}() no longer takes a label as its first argument; "
                         f"delete it, or pass it as {name}(..., label=...)."
                     )
                 args = args[1:]
-                for arg, position in (removed_positional or {}).items():
-                    if len(args) > position:
-                        args = args[:position] + args[position + 1 :]
-                        warn(f"{name}() no longer uses {arg}; delete it.")
+            for arg, position in (removed_positional or {}).items():
+                if len(args) > position and (
+                    positional_label or isinstance(args[position], bool)
+                ):
+                    args = args[:position] + args[position + 1 :]
+                    dropped.append(arg)
             for arg in ignore:
                 if arg in kwargs:
                     del kwargs[arg]
-                    warn(f"{name}() no longer uses {arg}; delete it.")
+                    dropped.append(f"{arg}=")
+            if dropped:
+                warn(
+                    f"{name}() no longer takes {' or '.join(dropped)}; "
+                    f"delete {'it' if len(dropped) == 1 else 'them'}."
+                )
             return func(*args, **kwargs)
 
         return wrapper
@@ -4062,20 +4072,6 @@ def conditional(
         bound_progress=bound_progress,
         time_estimate=time_estimate,
     )
-
-
-class ConditionalElt(Elt):
-    def __init__(self, label: str):
-        super().__init__()
-        self.label = label
-
-
-class StartConditional(ConditionalElt):
-    pass
-
-
-class EndConditional(ConditionalElt):
-    pass
 
 
 def with_fixed_progress(elts: List[Elt], time_credit: float):

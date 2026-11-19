@@ -40,6 +40,8 @@ from psynet.timeline import (
     conditional,
     for_loop,
     join,
+    randomize,
+    sequence,
     switch,
     while_loop,
 )
@@ -1732,19 +1734,29 @@ def test_deprecated_label_arguments_warn_and_are_ignored():
     with pytest.warns(FutureWarning, match="conditional\\(\\) no longer takes a label"):
         legacy = conditional("is_adult", lambda: True, page)
     assert len(legacy) == len(conditional(lambda: True, page))
-    with pytest.warns(FutureWarning, match="no longer uses log_chosen_branch"):
-        switch(lambda: "a", {"a": page}, log_chosen_branch=False)
-    # The old positional log_chosen_branch must not become time_estimate.
+    # Dallinger shows one warning per line, so one warning names both.
+    with pytest.warns(FutureWarning) as record:
+        conditional("x", lambda: True, page, log_chosen_branch=False)
+    assert len(record) == 1
+    assert "label as its first argument or log_chosen_branch=" in str(record[0].message)
+    # The old positional log_chosen_branch must not become time_estimate,
+    # with or without the label in front of it.
     for legacy, time in [
         (lambda: conditional("l", lambda: True, page, None, False, True, False), 1),
+        (lambda: conditional(lambda: True, page, None, True, True, False), 1),
         (lambda: switch("s", lambda: "a", {"a": page}, False, True, False, 3), 3),
+        (lambda: switch(lambda: "a", {"a": page}, True, True, False), 1),
     ]:
-        with pytest.warns(FutureWarning) as record:
+        with pytest.warns(FutureWarning, match="log_chosen_branch"):
             elts = legacy()
-        assert "no longer uses log_chosen_branch" in str(record[-1].message)
         assert CreditEstimate(elts).get_max("time") == time
-    with pytest.warns(FutureWarning, match="for_loop\\(\\) no longer uses label"):
-        for_loop(label="letters", iterate_over=["a"], logic=page)
+    for construct, kwargs in [
+        (for_loop, {"iterate_over": ["a"]}),
+        (sequence, {"function": lambda: [0]}),
+        (randomize, {}),
+    ]:
+        with pytest.warns(FutureWarning, match="no longer takes label="):
+            construct(label="x", logic=[page], **kwargs)
     with pytest.warns(FutureWarning, match="pass it as while_loop"):
         loop = while_loop("rounds", lambda: True, page, expected_repetitions=1)
     assert any(isinstance(elt, StartWhile) and elt.label == "rounds" for elt in loop)
