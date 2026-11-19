@@ -1,6 +1,7 @@
 import collections
 import datetime
 import difflib
+import fcntl
 import functools
 import glob
 import hashlib
@@ -637,6 +638,7 @@ def _connection_refused_message(location, db_uri, app, server):
 def get_db_uri(location, app=None, server=None):
     match location:
         case "local":
+            _refuse_shared_database_beside_isolated_session()
             yield db.db_url
         case "heroku" | "docker_heroku":
             if app is None:
@@ -1593,32 +1595,31 @@ def _isolated_session_export_line(env):
 
 
 @contextmanager
-def _record_isolated_session(env, pids):
+def _record_isolated_session(env):
     """Record how to reach this isolated debug session while the block runs.
 
-    The record names the session's processes ``pids`` (this process and the
-    server it runs) by PID and start time: the server can outlive a killed
-    parent, and a record left by a killed session mustn't be mistaken for a
-    later process with the same PID. If it can't be written, the session runs
-    without it. See :func:`_refuse_shared_database_beside_isolated_session`.
+    Yields the open record file, to be passed on to the session's server
+    process, or None if the record couldn't be written; the session then runs
+    without it. The file stays locked while any process has it open, so a
+    record left behind by a killed session isn't taken for a running one,
+    while a server that outlived its killed parent still counts. See
+    :func:`_refuse_shared_database_beside_isolated_session`.
     """
     from .testing.locks import isolated_session_path
 
     path = isolated_session_path(os.getcwd())
-    processes = []
-    for pid in pids:
-        with suppress(psutil.NoSuchProcess):
-            processes.append([pid, psutil.Process(pid).create_time()])
-    session = {"processes": processes, "export": _isolated_session_export_line(env)}
     try:
         # mkstemp makes the file readable only by this user, as the URL holds
         # the session's password; the rename stops readers seeing it half-written.
         fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path))
+        record = os.fdopen(fd, "w")
         try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(session, f)
+            record.write(_isolated_session_export_line(env))
+            record.flush()
+            fcntl.flock(record, fcntl.LOCK_EX)
             os.replace(temporary, path)
         except BaseException:
+            record.close()
             os.remove(temporary)
             raise
     except OSError as err:
@@ -1627,22 +1628,23 @@ def _record_isolated_session(env, pids):
             f"({err}), so `psynet export local` and similar commands won't "
             "refuse the shared database while it runs."
         )
-        yield
+        yield None
         return
     try:
-        yield
+        yield record
     finally:
         with suppress(FileNotFoundError):
             os.remove(path)
+        record.close()
 
 
-def _refuse_shared_database_beside_isolated_session(command):
+def _refuse_shared_database_beside_isolated_session():
     """Refuse to use the shared database while an isolated debug session serves this directory.
 
-    Without ``DATABASE_URL``, ``command`` would read or change another
+    Without ``DATABASE_URL``, the current command would read or change another
     experiment's data in the shared database, not the session's. A set
-    ``DATABASE_URL`` is respected. A record whose processes have exited, or
-    whose PIDs now belong to other processes, is ignored.
+    ``DATABASE_URL`` is respected. A record that no running process holds
+    locked (see :func:`_record_isolated_session`) is ignored.
     """
     from .isolated_environment import DEFAULT_DATABASE_URL
     from .testing.locks import isolated_session_path
@@ -1651,32 +1653,27 @@ def _refuse_shared_database_beside_isolated_session(command):
         return
     path = isolated_session_path(os.getcwd())
     try:
-        with open(path) as f:
-            session = json.load(f)
-        processes, export_line = session["processes"], session["export"]
-        running = [pid for pid, started in processes if _is_running(pid, started)]
+        with open(path) as record:
+            try:
+                fcntl.flock(record, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError:
+                export_line = record.read()
+            else:
+                return
     except FileNotFoundError:
         return
-    except (OSError, ValueError, KeyError, TypeError) as err:
-        log(f"Warning: could not read the isolated debug session file {path}: {err!r}")
+    except OSError as err:
+        log(f"Warning: could not read the isolated debug session file {path}: {err}")
         return
-    if not running:
-        return
+    ctx = click.get_current_context(silent=True)
+    command = f"`{ctx.command_path}`" if ctx else "this command"
     raise click.ClickException(
-        f"An isolated debug session (PID {running[0]}) is serving this experiment with "
-        f"its own database, but `{command}` would use the shared one. To use the "
+        "An isolated debug session is serving this experiment with its own "
+        f"database, but {command} would use the shared one. To use the "
         f"session's, run this first:\n  {export_line}\n"
         "To use the shared database anyway, set DATABASE_URL to it, for "
         f"example:\n  export DATABASE_URL={DEFAULT_DATABASE_URL}"
     )
-
-
-def _is_running(pid, started):
-    """Return whether process ``pid`` is running and was started at ``started``."""
-    try:
-        return psutil.Process(pid).create_time() == started
-    except psutil.Error:
-        return False
 
 
 @contextmanager
@@ -2099,7 +2096,7 @@ def run_bot(ctx, time_factor=0.0, dashboard_user=None, dashboard_password=None):
     by running ``psynet debug local``. You can then call ``psynet run-bot``
     multiple times to simulate multiple bots being run through the experiment.
     """
-    _refuse_shared_database_beside_isolated_session("psynet run-bot")
+    _refuse_shared_database_beside_isolated_session()
     _run_bot(time_factor, dashboard_user, dashboard_password)
 
 
@@ -4313,7 +4310,7 @@ def export__local(ctx=None, **kwargs):
     """
     Export the experiment locally.
     """
-    _refuse_shared_database_beside_isolated_session("psynet export local")
+    _refuse_shared_database_beside_isolated_session()
     export_(
         ctx,
         get_exp_variables=lambda: _read_experiment_variables("local"),
@@ -5916,9 +5913,7 @@ def _in_isolated_test_environment(func):
 
         _handle_sigint_even_if_ignored()
         if kwargs.get("existing"):
-            ctx = click.get_current_context(silent=True)
-            command = ctx.command_path if ctx else "psynet"
-            _refuse_shared_database_beside_isolated_session(f"{command} --existing")
+            _refuse_shared_database_beside_isolated_session()
         else:
             try:
                 isolate = should_isolate()
@@ -6062,7 +6057,8 @@ def _rerun_in_isolated_environment(mode="test"):
     env = {**environment.env, SERVICES_CHECKED_ENV_VAR: "1"}
     exit_code = 130
     interrupted = None
-    with _exit_on_termination_signal(), environment, ExitStack() as stack:
+    record = _record_isolated_session(env) if mode == "debug" else nullcontext()
+    with _exit_on_termination_signal(), environment, record as session_record:
         log(environment.describe())
         # On macOS framework builds, sys.orig_argv[0] is the framework's own
         # interpreter, which runs outside the virtual environment.
@@ -6074,11 +6070,9 @@ def _rerun_in_isolated_environment(mode="test"):
             [sys.executable, *sys.orig_argv[1:]],
             env=env,
             process_group=0 if own_group else None,
+            # So that the record stays locked for as long as the server runs.
+            pass_fds=[session_record.fileno()] if session_record else (),
         )
-        if mode == "debug":
-            stack.enter_context(
-                _record_isolated_session(env, [os.getpid(), process.pid])
-            )
         while True:
             try:
                 exit_code = process.wait()

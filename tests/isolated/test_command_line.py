@@ -1274,35 +1274,90 @@ def test_commands_beside_an_isolated_debug_session_need_its_database(
         "REDIS_URL": "redis://127.0.0.1:6479",
         "base_port": "5100",
     }
-    refuse = command_line._refuse_shared_database_beside_isolated_session
-
-    with command_line._record_isolated_session(env, [os.getpid()]):
-        with pytest.raises(click.ClickException) as error:
-            refuse("psynet export local")
-        assert "`psynet export local` would use the shared one" in error.value.message
-        assert command_line._isolated_session_export_line(env) in error.value.message
-        monkeypatch.setenv("DATABASE_URL", env["DATABASE_URL"])
-        refuse("psynet export local")
-        monkeypatch.delenv("DATABASE_URL")
-
-    refuse("psynet export local")
-
-    # A killed session's record, whose PID now belongs to another process.
     path = isolated_session_path(str(tmp_path))
-    with open(path, "w") as f:
-        json.dump({"processes": [[os.getpid(), 0.0]], "export": "export X=1"}, f)
+    backup = f"{path}.backup"
+    (tmp_path / "experiment.py").touch()
+
+    def refused(args):
+        result = CliRunner().invoke(command_line.psynet, args)
+        return "would use the shared one" in result.output
+
+    with command_line._record_isolated_session(env) as record:
+        result = CliRunner().invoke(command_line.psynet, ["db"])
+        assert result.exit_code == 1
+        assert "`psynet db` would use the shared one" in result.output
+        assert command_line._isolated_session_export_line(env) in result.output
+        for args in (
+            ["experiment-variables"],
+            ["export", "local"],
+            ["run-bot"],
+            ["test", "local", "--existing"],
+            ["performance-test", "local", "--existing"],
+        ):
+            assert refused(args), args
+        monkeypatch.setenv("DATABASE_URL", env["DATABASE_URL"])
+        assert not refused(["db"])
+        monkeypatch.delenv("DATABASE_URL")
+        # A session killed before it could remove its record, whose server
+        # still runs and then stops.
+        server = subprocess.Popen(["sleep", "60"], pass_fds=[record.fileno()])
+        os.link(path, backup)
+
     try:
-        refuse("psynet export local")
+        assert not refused(["db"])
+        os.rename(backup, path)
+        assert refused(["db"])
+        server.kill()
+        server.wait()
+        assert not refused(["db"])
     finally:
+        server.kill()
         os.remove(path)
 
     # A session that can't write its record still runs.
     os.mkdir(path)
     try:
-        with command_line._record_isolated_session(env, [os.getpid()]):
-            pass
+        with command_line._record_isolated_session(env) as record:
+            assert record is None
     finally:
         os.rmdir(path)
+
+
+def test_isolated_debug_session_passes_its_record_to_the_server(tmp_path, monkeypatch):
+    from psynet import command_line
+
+    monkeypatch.setattr("psynet.command_line._check_experiment_directory", Mock())
+    monkeypatch.setattr("psynet.services.ensure_local_services", Mock())
+    env = {
+        "DATABASE_URL": "postgresql://x/y",
+        "REDIS_URL": "redis://z",
+        "base_port": "1",
+    }
+    environment = MagicMock(env=env)
+    monkeypatch.setattr(
+        "psynet.isolated_environment.IsolatedEnvironment.start",
+        Mock(return_value=environment),
+    )
+    held = []
+
+    def popen(args, pass_fds, **kwargs):
+        (fd,) = pass_fds
+        os.fstat(fd)
+        with pytest.raises(
+            click.ClickException, match="export DATABASE_URL=postgresql://x/y"
+        ):
+            command_line._refuse_shared_database_beside_isolated_session()
+        held.append(fd)
+        return Mock(**{"wait.return_value": 0})
+
+    monkeypatch.setattr("subprocess.Popen", popen)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with working_directory(tmp_path), pytest.raises(SystemExit, match="0"):
+        command_line._rerun_in_isolated_environment("debug")
+
+    assert held
+    with working_directory(tmp_path):
+        command_line._refuse_shared_database_beside_isolated_session()
 
 
 # @pytest.mark.parametrize("experiment_directory", [path_to_test_experiment("timeline")], indirect=True)
