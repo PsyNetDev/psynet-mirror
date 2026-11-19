@@ -36,6 +36,7 @@ from psynet.live_game import (
     LiveMessage,
     PlayerReady,
     PlayLiveGame,
+    live_game_classes,
 )
 from psynet.live_game import registry as game_registry
 from psynet.live_game.control import LiveGameControl
@@ -73,6 +74,17 @@ pytestmark = [
     ),
     pytest.mark.usefixtures("in_experiment_directory"),
 ]
+
+
+class _Game(LiveGame):
+    """A game whose state starts empty and is its view, for a test game to
+    extend with only what the test exercises."""
+
+    def initial_state(self, players):
+        return {}
+
+    def view(self, state, player_id):
+        return state
 
 
 @pytest.fixture
@@ -224,11 +236,8 @@ def test_a_game_starts_from_its_game_barrier_s_settings(pair):
 
 
 def test_an_game_barrier_s_settings_must_be_json_the_game_takes(registry, monkeypatch):
-    class Fixed(LiveGame):
+    class Fixed(_Game):
         name = "fixed"
-
-        def initial_state(self, players):
-            return {}
 
         def view(self, state, player_id):
             return {}
@@ -320,13 +329,10 @@ def test_on_release_runs_when_the_group_s_game_is_created(
     assert _releases == [(sorted(m.id for m in members), game_id)]
 
 
-class UnpaidGame(LiveGame):
+class UnpaidGame(_Game):
     """A game that pays nothing itself, for a trial that pays."""
 
     name = "unpaid_game"
-
-    def initial_state(self, players):
-        return {}
 
     def view(self, state, player):
         return {}
@@ -832,10 +838,17 @@ def played(pair):
 READY = {"type": "psynet_ready", "message": {}}
 
 
+def _played_pick_numbers():
+    """Return the PickNumbers class that PsyNet plays, which isn't the
+    experiment module's when Dallinger's test fixtures run experiment.py
+    again."""
+    (game_class,) = [g for g in live_game_classes() if g.name == "pick_numbers"]
+    return game_class
+
+
 def _pick(number):
-    return game_registry._live_game_classes["pick_numbers"]._message_types["pick"](
-        number=number
-    )
+    (pick,) = _played_pick_numbers().messages
+    return pick(number=number)
 
 
 def test_the_game_plays_for_a_group_s_bots_once_they_are_ready(bot_and_person):
@@ -916,7 +929,7 @@ def test_a_game_s_messages_of_one_type_are_picked_out_by_their_type(
     played, monkeypatch
 ):
     session_id, first, second, _, _ = played
-    pick = game_registry._live_game_classes["pick_numbers"]._message_types["pick"]
+    (pick,) = _played_pick_numbers().messages
     # As when Dallinger's test fixtures run experiment.py again, so the
     # caller's class isn't the one the game lists.
     pick_again = type(
@@ -932,7 +945,7 @@ def test_a_game_s_messages_of_one_type_are_picked_out_by_their_type(
     )
 
     monkeypatch.setitem(
-        game_registry._live_game_classes["pick_numbers"]._message_types,
+        _played_pick_numbers()._message_types,
         "pick",
         pick_again,
     )
@@ -956,7 +969,7 @@ def test_a_message_its_type_can_no_longer_read_comes_back_without_it(
     played, monkeypatch, caplog
 ):
     session_id, first, second, _, _ = played
-    game_class = game_registry._live_game_classes["pick_numbers"]
+    game_class = _played_pick_numbers()
 
     class Pick(LiveMessage):
         type = "pick"
@@ -1035,15 +1048,9 @@ class Place(LiveMessage):
 
 @pytest.fixture
 def walk(registry):
-    class Walk(LiveGame):
+    class Walk(_Game):
         name = "walk"
         messages = [Move, Place]
-
-        def initial_state(self, players):
-            return {}
-
-        def view(self, state, player_id):
-            return state
 
     return Walk()
 
@@ -1077,15 +1084,9 @@ class Jump(LiveMessage):
 
 @pytest.fixture
 def hop(registry):
-    class Hop(LiveGame):
+    class Hop(_Game):
         name = "hop"
         messages = [Jump]
-
-        def initial_state(self, players):
-            return {}
-
-        def view(self, state, player_id):
-            return state
 
         def bot(self, view, player_id, now):
             return Jump(**{"from": 1, "to": (2, 3)})
@@ -1149,15 +1150,9 @@ class Stray(Aim):
 def test_a_bot_message_the_game_can_t_read_as_it_is_fails_loudly(
     registry, listed, returned, problem
 ):
-    class Archery(LiveGame):
+    class Archery(_Game):
         name = "archery"
         messages = [listed]
-
-        def initial_state(self, players):
-            return {}
-
-        def view(self, state, player_id):
-            return state
 
         def bot(self, view, player_id, now):
             return returned
@@ -1179,14 +1174,8 @@ def test_a_rejection_lists_at_most_five_problems(registry):
         def apply(self, game, state, player_id, now):
             pass
 
-    class Counting(LiveGame):
+    class Counting(_Game):
         messages = [Many]
-
-        def initial_state(self, players):
-            return {}
-
-        def view(self, state, player_id):
-            return state
 
     message = {"type": "many", "message": {"numbers": ["a"] * 8}}
 
@@ -1448,15 +1437,12 @@ class Thing:
 def test_the_state_is_converted_to_json_after_each_method_that_changes_it(
     registry, value, converted
 ):
-    class Store(LiveGame):
+    class Store(_Game):
         # A game for one, as the test plays it.
         away_timeout = None
 
         def initial_state(self, players):
             return {"value": value}
-
-        def view(self, state, player_id):
-            return state
 
         def tick(self, state, now):
             state["value"] = value
@@ -1484,12 +1470,9 @@ def test_the_state_is_converted_to_json_after_each_method_that_changes_it(
 
 
 def test_a_state_with_a_key_that_isnt_a_string_is_refused(registry):
-    class Numbered(LiveGame):
+    class Numbered(_Game):
         def initial_state(self, players):
             return {"scores": {player: 0 for player in players}}
-
-        def view(self, state, player):
-            return state
 
     # It would read back as "0" after a save, and state["scores"][0] would fail.
     with pytest.raises(ValueError, match="the key 0, of type int.*read back as '0'"):
@@ -1497,14 +1480,11 @@ def test_a_state_with_a_key_that_isnt_a_string_is_refused(registry):
 
 
 def test_an_overridden_apply_is_converted(registry):
-    class Overridden(LiveGame):
+    class Overridden(_Game):
         messages = [Move]
 
         def initial_state(self, players):
             return {"moves": []}
-
-        def view(self, state, player_id):
-            return state
 
         def apply(self, state, player_id, message, now, sent):
             state["moves"].append(self.parse_message(message).to)
@@ -1547,12 +1527,9 @@ def test_a_method_from_a_mixin_is_converted(registry):
 def test_a_method_that_calls_another_keeps_its_references_until_it_returns(
     registry,
 ):
-    class Nested(LiveGame):
+    class Nested(_Game):
         def initial_state(self, players):
             return {"joins": []}
-
-        def view(self, state, player):
-            return state
 
         def tick(self, state, now):
             state["ticked"] = (now,)
@@ -1572,16 +1549,13 @@ def test_a_method_that_calls_another_keeps_its_references_until_it_returns(
 def test_initial_state_keeps_its_references_while_it_calls_a_state_method(
     registry,
 ):
-    class Joining(LiveGame):
+    class Joining(_Game):
         def initial_state(self, players):
             state = {"scores": []}
             scores = state["scores"]
             for player in players:
                 self.on_join(state, player, None)
                 scores.append((0,))
-            return state
-
-        def view(self, state, player):
             return state
 
         def on_join(self, state, player, now):
@@ -1621,16 +1595,10 @@ def test_a_game_that_inherits_apply_keeps_the_order_of_its_bases(registry):
 
 
 def test_the_state_is_converted_after_a_rejected_message(registry):
-    class Ticking(LiveGame):
+    class Ticking(_Game):
         # A game for one, as the test plays it.
         away_timeout = None
         messages = [Move]
-
-        def initial_state(self, players):
-            return {}
-
-        def view(self, state, player_id):
-            return state
 
         def tick(self, state, now):
             state["ticked"] = (now,)
@@ -1655,14 +1623,8 @@ class Paint(LiveMessage):
 
 
 def test_an_effect_s_payload_is_converted_to_json(registry):
-    class Painting(LiveGame):
+    class Painting(_Game):
         messages = [Paint]
-
-        def initial_state(self, players):
-            return {}
-
-        def view(self, state, player_id):
-            return state
 
     message = {
         "type": "paint",
@@ -1681,16 +1643,13 @@ def test_an_effect_s_payload_is_converted_to_json(registry):
 
 
 def test_a_game_can_turn_the_conversion_off(registry):
-    class Converted(LiveGame):
+    class Converted(_Game):
         # A game for one, as the test plays it.
         away_timeout = None
         messages = [Move]
 
         def initial_state(self, players):
             return {"start": (0, 0)}
-
-        def view(self, state, player_id):
-            return state
 
         def tick(self, state, now):
             state["ticked"] = (1, 1)
@@ -1713,15 +1672,12 @@ def test_a_game_can_turn_the_conversion_off(registry):
 
 
 def test_a_state_that_can_t_be_converted_fails_loudly(registry):
-    class Keep(LiveGame):
+    class Keep(_Game):
         # A game for one, as the test plays it.
         away_timeout = None
 
         def initial_state(self, players):
             return {"thing": Thing()}
-
-        def view(self, state, player_id):
-            return state
 
         def tick(self, state, now):
             state["thing"] = Thing()
@@ -1959,7 +1915,7 @@ def test_a_game_calling_its_own_view_passes_the_player_s_number():
 
 
 def test_time_play_takes_a_turn_per_tick_or_at_each_deadline(registry):
-    class Ticking(LiveGame):
+    class Ticking(_Game):
         name = "time_play_ticking"
         tick_rate = 4
 
@@ -1968,9 +1924,6 @@ def test_time_play_takes_a_turn_per_tick_or_at_each_deadline(registry):
 
         def tick(self, state, now):
             state["ticks"] += 1
-
-        def view(self, state, player):
-            return state
 
         def bot(self, view, player, now):
             return None
@@ -2015,13 +1968,10 @@ def test_time_play_takes_a_turn_per_tick_or_at_each_deadline(registry):
 
 
 def test_a_game_with_an_away_timeout_ends_once_too_few_players_are_left():
-    class Commons(LiveGame):
+    class Commons(_Game):
         name = "commons"
         min_players = 2
         away_timeout = 30
-
-        def initial_state(self, players):
-            return {}
 
         def view(self, state, player):
             return {}
@@ -2383,12 +2333,24 @@ def test_a_game_with_a_duration_rejects_late_messages(relay):
     [
         ({"duration": 0}, "Game's duration must be None or a positive number"),
         ({"timeout": "10"}, "Game's timeout must be None or a positive number"),
+        ({"away_timeout": 0}, "Game's away_timeout must be None or a positive"),
         ({"max_duration": 120}, "Game sets max_duration, which PsyNet sets"),
+        ({"join_timeout": 5}, "Game sets join_timeout, which PsyNet sets"),
+        *(
+            ({"ready_timeout": value}, "Game's ready_timeout must be a positive")
+            for value in [None, 0, -1, "30", float("inf")]
+        ),
+        *(
+            ({"max_players": value}, "max_players must be None or a whole")
+            for value in [0, 1, 2.0, True]
+        ),
+        *(
+            ({"min_players": value}, "min_players must be a whole number")
+            for value in [0, 1.0, True]
+        ),
     ],
 )
-def test_a_duration_and_timeout_are_positive_and_max_duration_is_psynet_s(
-    registry, attributes, error
-):
+def test_a_game_s_settings_are_checked_when_it_is_defined(registry, attributes, error):
     with pytest.raises((TypeError, ValueError), match=error):
         type("Game", (LiveGame,), attributes)
 
@@ -2440,12 +2402,6 @@ def test_the_state_and_views_are_dicts_without_psynet_s_entry(
     with pytest.raises((TypeError, ValueError), match=error):
         game = Game()
         game.view(game.initial_state(["1"]), "1")
-
-
-@pytest.mark.parametrize("ready_timeout", [None, 0, -1, "30", float("inf")])
-def test_a_ready_timeout_is_a_positive_number(registry, ready_timeout):
-    with pytest.raises(ValueError, match="Game's ready_timeout must be a positive"):
-        type("Game", (LiveGame,), {"ready_timeout": ready_timeout})
 
 
 def _game_page():
@@ -2702,7 +2658,7 @@ def test_the_ending_pays_each_player_s_reward_if_there_is_an_outcome(
     row = db.session.get(RealtimeSession, session_id)
     row.status, row.end_reason, row.outcome = status, "failed", outcome
     rewards = []
-    game_class = game_registry._live_game_classes["pick_numbers"]
+    game_class = _played_pick_numbers()
     # A game that computes rewards with NumPy returns a NumPy number.
     monkeypatch.setattr(
         game_class,
@@ -2730,7 +2686,7 @@ def test_an_ending_handler_that_calls_super_pays_each_player_once(pair):
     row.status, row.end_reason, row.outcome = "ended", "finished", [1, 1]
     players_ended = []
 
-    class PaysOnce(game_registry._live_game_classes["pick_numbers"]):
+    class PaysOnce(_played_pick_numbers()):
         name = "pays_once"
 
         def performance_reward(self, outcome, reason, player):
@@ -2769,7 +2725,7 @@ def test_the_game_page_answer_can_be_the_player_s_part_of_the_outcome(
             "outcome": ["first player's", "second player's"],
         }
     )
-    game_class = game_registry._live_game_classes["pick_numbers"]
+    game_class = _played_pick_numbers()
     monkeypatch.setattr(
         game_class,
         "answer",
@@ -2802,7 +2758,7 @@ def test_the_ending_copies_the_outcome_to_the_round_and_ends_the_game_page_deadl
     row.status, row.end_reason = "ended", "finished"
     row.outcome = [4, 4]
     row.end_time = timenow()
-    game_class = game_registry._live_game_classes["pick_numbers"]
+    game_class = _played_pick_numbers()
 
     game_class().handle_ending(row)
 
@@ -2836,7 +2792,7 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
     row.status, row.end_reason, row.outcome = "ended", "finished", [4, 4]
     row.end_time = timenow()
 
-    game_registry._live_game_classes["pick_numbers"]().handle_ending(row)
+    _played_pick_numbers()().handle_ending(row)
 
     assert early.sync_group_links[0].page_deadline == later
     assert other.sync_group_links[0].page_deadline == row.end_time
@@ -2870,7 +2826,7 @@ def _save_ending(session_id, ready, away=(), ended_at=0):
             session_time=ended_at,
         )
     )
-    game_registry._live_game_classes["pick_numbers"]().handle_ending(row)
+    _played_pick_numbers()().handle_ending(row)
     db.session.commit()
     return ids
 
@@ -2974,7 +2930,7 @@ def test_a_reward_is_a_number_0_or_more(pair, monkeypatch, amount):
     db.session.query(RealtimeSession).filter_by(id=session_id).update(
         {"status": "ended", "end_reason": "finished", "outcome": {}}
     )
-    game_class = game_registry._live_game_classes["pick_numbers"]
+    game_class = _played_pick_numbers()
     monkeypatch.setattr(game_class, "performance_reward", lambda self, *args: amount)
 
     with pytest.raises(
@@ -3133,21 +3089,6 @@ def test_psynet_s_ready_messages_are_saved_whatever_the_game_says(registry):
     state = _started(target=3)
     assert Quiet().save_message(state, "1", READY, None) is True
     assert Quiet().save_message(state, "1", _shot(3), None) is False
-
-
-@pytest.mark.parametrize("max_players", [0, 1, 2.0, True])
-def test_max_players_must_be_a_whole_number_of_at_least_min_players(
-    registry, max_players
-):
-    with pytest.raises(ValueError, match="max_players must be None or a whole"):
-        # Defining the subclass checks it.
-        type("TooFew", (LiveGame,), {"max_players": max_players})
-
-
-@pytest.mark.parametrize("min_players", [0, 1.0, True])
-def test_min_players_must_be_a_whole_number_of_1_or_more(registry, min_players):
-    with pytest.raises(ValueError, match="min_players must be a whole number"):
-        type("Odd", (LiveGame,), {"min_players": min_players})
 
 
 def test_a_group_larger_than_the_game_s_max_players_starts_no_game(
