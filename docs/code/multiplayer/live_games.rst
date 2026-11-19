@@ -587,12 +587,18 @@ The status line
 
 The default texts are translated. A third argument, ``{waiting, ended}``,
 replaces the page's texts, and ``ended`` can be a function of
-the final view:
+the final view and the reason the game ended, such as ``"players_left"``
+(see `Time limits`_):
 
 .. code-block:: javascript
 
     psynet.liveGame.showStatus(status, (view) => `Offer: ${view.offer}`, {
-      ended: (view) => (view.deal ? "You made a deal." : "Time's up: no deal."),
+      ended: (view, reason) =>
+        view.deal
+          ? "You made a deal."
+          : reason === "players_left"
+            ? "A player left: no deal."
+            : "Time's up: no deal.",
     });
 
 With a ``predict`` callback, ``playing`` gets the predicted view, and the

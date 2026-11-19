@@ -607,15 +607,29 @@ describe("psynet.liveGame", () => {
     sockets[3].view({ ...view(4), deal: true }, "finished");
     assert.equal(deal.textContent, "You made a deal.");
 
+    // And on Dallinger's reason, whether it came with the view or the ending.
+    for (const end of ["view", "ending"]) {
+      changePage();
+      const why = { textContent: "" };
+      liveGame.showStatus(why, () => "Playing", { ended: (v, reason) => reason });
+      const socket = sockets[sockets.length - 1];
+      if (end === "view") {
+        socket.view(view(4), "players_left");
+      } else {
+        socket.fire("onEnded", "players_left", view(4));
+      }
+      assert.equal(why.textContent, "players_left");
+    }
+
     // Without a playing callback, the status says nothing while the game is played.
     changePage();
     const quiet = { textContent: "" };
     liveGame.showStatus(quiet, null, { waiting: "Waiting" });
-    sockets[4].view(view(null));
+    sockets.at(-1).view(view(null));
     assert.equal(quiet.textContent, "Waiting");
-    sockets[4].view(view(4));
+    sockets.at(-1).view(view(4));
     assert.equal(quiet.textContent, "");
-    sockets[4].view(view(4), "finished");
+    sockets.at(-1).view(view(4), "finished");
     assert.equal(quiet.textContent, "Over");
 
     // A game that failed before the page had a view still ends, with the

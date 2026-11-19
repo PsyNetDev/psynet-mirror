@@ -76,10 +76,15 @@ export function activate({root, psynet}) {
   });
   live.onChange(render);
   live.showStatus(status, () => "Propose a split, or accept your partner's.", {
-    ended: (final) => {
+    ended: (final, reason) => {
       if (final.deal !== null) return "You made a deal.";
       if (final.no_show === "you") return "You didn't arrive in time.";
       if (final.no_show === "partner") return "Your partner didn't arrive.";
+      if (reason === "players_left") {
+        return final.psynet.away.includes(final.psynet.you)
+          ? "You left the game: no deal."
+          : "Your partner left the game: no deal.";
+      }
       return "Time's up: no deal.";
     },
   });

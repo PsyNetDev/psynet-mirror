@@ -198,6 +198,9 @@
         startedCallbacks: [],
         playingElements: [],
         ended: false,
+        // Dallinger's reason this player's game ended, such as
+        // "players_left", once it has.
+        endReason: null,
         predict: null,
         interpolate: null,
         receiveCallbacks: [],
@@ -372,6 +375,7 @@
           return;
         }
         state.ended = details.ended !== null;
+        state.endReason = details.ended;
         receive(state, view, details);
       });
       // The ending carries the final view, which can arrive before the view
@@ -379,6 +383,7 @@
       socket.onEnded((reason, view) => {
         if (!state.ended) {
           state.ended = true;
+          state.endReason = reason;
           receive(state, view, null);
         }
       });
@@ -529,7 +534,8 @@
      * @param {function|null} playing - Returns the status for a view while
      *   the game is played
      * @param {Object} [texts] - ``waiting`` and ``ended`` texts, to replace
-     *   the page's; ``ended`` can be a function of the final view
+     *   the page's; ``ended`` can be a function of the final view and
+     *   Dallinger's reason the game ended (see ``onEnded``)
      * @returns {Object} ``psynet.liveGame``
      */
     function showStatus(element, playing, texts = {}) {
@@ -545,7 +551,7 @@
               ? ended
               : state.lastView === null
                 ? state.session.endedStatus
-                : ended(state.lastView);
+                : ended(state.lastView, state.endReason);
         } else if (state.lastView === null) {
           // Until the first view, the page doesn't know whether the game
           // has started, as it has for a player who rejoins.
