@@ -1338,15 +1338,10 @@ def test_a_game_s_name_is_its_channel(registry):
     class Named(LiveGame):
         name = "named"
 
-    class OldStyle(LiveGame):
-        channel = "old_style"
-
     assert (Named.name, Named.channel) == ("named", "named")
-    assert (OldStyle.name, OldStyle.channel) == ("old_style", "old_style")
-    with pytest.raises(TypeError, match="Both sets both a name and a channel"):
+    with pytest.raises(TypeError, match="Channelled sets a channel"):
 
-        class Both(LiveGame):
-            name = "both"
+        class Channelled(LiveGame):
             channel = "other"
 
 

@@ -499,20 +499,14 @@ class LiveGame(RealtimeGame):
 
 
 def _set_name(game_class):
-    """Set a game's Dallinger channel from its name, or its name from a
-    channel it set itself."""
-    own = vars(game_class)
-    if "name" in own and "channel" in own and own["name"] != own["channel"]:
+    """Set a game's Dallinger channel from its name."""
+    if "channel" in vars(game_class):
         raise TypeError(
-            f"{game_class.__name__} sets both a name and a channel. Set only its name."
+            f"{game_class.__name__} sets a channel, which PsyNet sets from "
+            "its name. Set its name instead."
         )
-    if "name" in own:
-        game_class.channel = own["name"]
-    elif "channel" in own:
-        game_class.name = own["channel"]
-    elif game_class.name is not None:
-        # A subclass of a named game, which needs a name of its own; the
-        # registry says so.
+    # A subclass of a named game needs a name of its own; the registry says so.
+    if game_class.name is not None:
         game_class.channel = game_class.name
 
 
