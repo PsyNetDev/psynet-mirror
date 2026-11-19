@@ -42,6 +42,12 @@ N_ROUNDS = 2
 # The coins a pair bargains over, chosen at random for each pair.
 STAKES = [10, 20]
 BARGAIN_SECONDS = 60
+# How long the game page shows the deal before the feedback page.
+RESULT_SECONDS = 5
+# Longer than a round takes, with the game's start, its result and the
+# feedback page, so a pair that makes a quick deal waits for the other pair
+# to come back rather than being paired with each other again.
+ROUND_DEADLINE_SECONDS = BARGAIN_SECONDS + RESULT_SECONDS + 25
 COIN_VALUE = 0.05
 # Bots open with a proposal that gives their partner this many coins, and
 # accept any proposal that gives them at least as many.
@@ -206,6 +212,7 @@ def bargaining_page(stake):
             tags.p(id="bargain-rejection", cls="bargain-rejection"),
             id="bargain-game",
         ),
+        show_result_for=RESULT_SECONDS,
         player_left_message="Your partner has left.",
         waiting_status="Waiting for your partner to open the game",
         js_page_modules=["/static/bargaining.js"],
@@ -247,7 +254,11 @@ class BargainTrial(Trial):
 
 
 pairing = Regrouper(
-    group_type="pair", within="cohort", group_size=2, left_over="sit_out", deadline=30
+    group_type="pair",
+    within="cohort",
+    group_size=2,
+    left_over="sit_out",
+    deadline=ROUND_DEADLINE_SECONDS,
 )
 
 
@@ -275,7 +286,7 @@ def round_status(participant):
 def get_timeline():
     return Timeline(
         InfoPage(
-            "You will bargain live with other players, a different one each round.",
+            "You will bargain live with other players, paired at random each round.",
             time_estimate=5,
         ),
         SimpleGrouper(

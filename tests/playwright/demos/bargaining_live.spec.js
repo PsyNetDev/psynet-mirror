@@ -70,6 +70,8 @@ test("a cohort of four bargains live in pairs, and a proposal that changed can't
       "Your partner has just changed their proposal."
     );
 
+    // The game page shows the deal for the page's show_result_for, 5 s,
+    // before the feedback page.
     await first.getByRole("button", { name: "Accept" }).click();
     for (const player of [first, partner]) {
       await expect(player.locator("#bargain-deal")).toBeVisible();
