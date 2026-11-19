@@ -77,6 +77,9 @@ class CustomTrial(ImitationChainTrial):
 
         return [page_1, page_2, page_3]
 
+    def show_feedback(self, experiment, participant):
+        return InfoPage("Thank you.", time_estimate=2)
+
 
 class CustomNetwork(ImitationChainNetwork):
     pass

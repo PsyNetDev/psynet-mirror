@@ -45,7 +45,7 @@ class Exp(psynet.experiment.Experiment):
                 CodeBlock(
                     lambda participant: participant.var.set(
                         "multiplied_number",
-                        int(participant.var.get("number_to_multiply")) * 2,
+                        participant.var.get("number_to_multiply") * 2,
                     )
                 ),
                 InfoPage(

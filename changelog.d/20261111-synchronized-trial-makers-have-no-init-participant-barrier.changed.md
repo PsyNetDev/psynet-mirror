@@ -1,0 +1,1 @@
+Synchronized trial makers no longer wait at a `{id}__init_participant` group barrier before their first trial. They initialize their members when the trial preparation barrier, `{id}__prepare_trial`, first releases them, so code, tests or dashboards that looked for the `__init_participant` barrier should look for `__prepare_trial` instead.

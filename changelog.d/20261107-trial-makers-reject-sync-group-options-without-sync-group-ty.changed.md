@@ -1,0 +1,1 @@
+Trial makers now warn when `sync_group_max_wait_time` is passed without `sync_group_type`, since it only applies to synchronized trial makers and was silently ignored. The other `sync_group_*` options, which are new, raise an error in that case.

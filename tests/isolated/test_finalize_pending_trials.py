@@ -117,6 +117,42 @@ def test_while_loop_budget_is_fixed_and_a_cleared_condition_exits_normally(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+def test_a_timed_out_while_loop_finishes_its_pass(db_session, participant, monkeypatch):
+    """A timeout ends the loop between passes, so a trial in it is never cut short."""
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    import psynet.timeline as timeline_module
+    from psynet.page import InfoPage
+    from psynet.timeline import Timeline, while_loop
+
+    now = datetime.now()
+    monkeypatch.setattr(timeline_module, "datetime", SimpleNamespace(now=lambda: now))
+    timeline = Timeline(
+        while_loop(
+            lambda: True,
+            [InfoPage("First", time_estimate=1), InfoPage("Second", time_estimate=1)],
+            expected_repetitions=1,
+            max_loop_time=10,
+            fail_on_timeout=False,
+        ),
+        InfoPage("Continue", time_estimate=0),
+    )
+    exp = get_experiment()
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+    pages = []
+    for seconds in [0, 30, 0]:
+        now += timedelta(seconds=seconds)
+        timeline.advance_page(exp, participant)
+        pages.append(timeline.get_current_elt(exp, participant).content)
+    assert pages == ["First", "Second", "Continue"]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
 def test_while_loop_timer_restarts_after_extend_while_clears(
     db_session, participant, monkeypatch
 ):
@@ -208,6 +244,44 @@ def test_while_loop_in_for_loop_times_each_iteration(
     assert not advance(6)
     assert timeouts == [1, 2]
     assert timeline.get_current_elt(exp, participant).content == "Continue"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_loops_inside_a_while_loop_keep_their_state(
+    db_session, participant, monkeypatch
+):
+    """A while loop places copies of its logic in the timeline; nested loops still find their state."""
+    from psynet.page import InfoPage
+    from psynet.timeline import CodeBlock, Timeline, for_loop, join, while_loop
+
+    rounds = []
+    timeline = Timeline(
+        while_loop(
+            lambda: len(rounds) < 2,
+            join(
+                CodeBlock(lambda: rounds.append(1)),
+                for_loop(
+                    iterate_over=["a", "b"],
+                    logic=lambda letter: InfoPage(letter, time_estimate=1),
+                    time_estimate_per_iteration=1,
+                ),
+            ),
+            expected_repetitions=2,
+        ),
+        InfoPage("Continue", time_estimate=0),
+    )
+    exp = get_experiment()
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+
+    contents = []
+    for _ in range(5):
+        timeline.advance_page(exp, participant)
+        contents.append(timeline.get_current_elt(exp, participant).content)
+    assert contents == ["a", "b", "a", "b", "Continue"]
 
 
 @pytest.mark.parametrize(

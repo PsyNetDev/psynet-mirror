@@ -4,7 +4,7 @@ from dallinger.experiment_server.utils import error_response, success_response
 from flask import render_template
 from sqlalchemy.orm import joinedload
 
-from psynet.participant import Participant
+from psynet.participant import Participant, _lock_and_load_participant
 from psynet.sync import (
     Grouper,
     ParticipantLinkBarrier,
@@ -121,16 +121,14 @@ def _kick_sync_group_participant(participant_id, sync_group_id, kick_reason):
     if participant.failed or participant.status != "working":
         raise ValueError("Only active working participants can be kicked manually.")
 
-    active_group_link.sync_group.remove_participant(participant)
+    active_group_link.sync_group.remove_participant(
+        participant, reason="removed_by_experimenter"
+    )
     return participant
 
 
 def _get_active_sync_group_participant_link(participant_id, sync_group_id):
-    participant = (
-        Participant.query.with_for_update(of=Participant)
-        .populate_existing()
-        .get(participant_id)
-    )
+    participant = _lock_and_load_participant(Participant.query, participant_id)
     if participant is None:
         raise ValueError(f"No participant found with ID {participant_id}.")
 
@@ -174,7 +172,7 @@ def report_sync_groups():
     )
 
     group_rows = [_group_row(group, waiting_by_participant) for group in groups]
-    has_simple_groups = any(r["min_group_size"] is not None for r in group_rows)
+    has_simple_groups = any(r["quorum"] is not None for r in group_rows)
 
     return render_template(
         TEMPLATE_NAME,
@@ -243,17 +241,19 @@ def _simple_group_fields(group):
     """Return SimpleSyncGroup-only dashboard fields."""
     if not isinstance(group, SimpleSyncGroup):
         return {
-            "min_group_size": None,
+            "quorum": None,
             "max_group_size": None,
             "initial_group_size": None,
             "accepts_top_ups": None,
+            "top_ups_stopped_at": None,
         }
 
     return {
-        "min_group_size": group.min_group_size,
+        "quorum": group.quorum,
         "max_group_size": group.max_group_size,
         "initial_group_size": group.initial_group_size,
         "accepts_top_ups": group.accepts_top_ups,
+        "top_ups_stopped_at": group.top_ups_stopped_at,
     }
 
 

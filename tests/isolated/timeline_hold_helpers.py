@@ -45,17 +45,18 @@ def _stacked_partner_timeline(
         SimpleGrouper(
             group_type=group_type,
             initial_group_size=group_size,
-            content=hold_content,
+            quorum=group_size,
+            waiting_message=hold_content,
         ),
         GroupBarrier(
             id_=f"{group_type}_init",
             group_type=group_type,
-            content=hold_content,
+            waiting_message=hold_content,
         ),
         GroupBarrier(
             id_=f"{group_type}_prepare",
             group_type=group_type,
-            content=hold_content,
+            waiting_message=hold_content,
         ),
         ModularPage("choose_action", "Choose your action", time_estimate=1),
     )
@@ -90,7 +91,9 @@ def _json_timeline_via_route(participant):
         return Experiment.route_timeline()
 
 
-def _process_response(exp, participant, page_uuid, *, timeline_hold_resume=False):
+def _process_response(
+    exp, participant, page_uuid, *, raw_answer=None, timeline_hold_resume=False
+):
     """Run ``process_response`` for ``participant`` in a request context."""
     with Flask(__name__).test_request_context(
         "/response",
@@ -98,7 +101,7 @@ def _process_response(exp, participant, page_uuid, *, timeline_hold_resume=False
     ):
         return exp.process_response(
             participant.id,
-            None,
+            raw_answer,
             {},
             {},
             page_uuid,
@@ -107,16 +110,20 @@ def _process_response(exp, participant, page_uuid, *, timeline_hold_resume=False
         )
 
 
-def _route_approved_response(participant, *, raw_answer=True):
-    """POST ``/response`` as an ordinary Next, including last-arrival finalize."""
+def _route_approved_response(participant, *, raw_answer=True, app=None):
+    """POST ``/response`` as an ordinary Next, including last-arrival finalize.
+
+    Pass the experiment server ``app`` to also render the in-place fragment
+    for the next page.
+    """
     payload = {
         "participant_id": participant.id,
         "page_uuid": participant.page_uuid,
         "raw_answer": raw_answer,
         "metadata": {"time_taken": 1},
-        "include_timeline_fragment": False,
+        "include_timeline_fragment": app is not None,
     }
-    with Flask(__name__).test_request_context(
+    with (app or Flask(__name__)).test_request_context(
         "/response",
         method="POST",
         data={"json": json.dumps(payload)},
