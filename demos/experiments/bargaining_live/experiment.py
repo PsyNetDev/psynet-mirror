@@ -101,6 +101,8 @@ class Bargain(LiveGame):
     # closed their page as the pair formed, isn't coming, so the game starts
     # and ends at once, without a deal.
     ready_timeout = LATE_AFTER
+    # A player away from the game for this long has left it, which ends it.
+    away_timeout = LATE_AFTER
 
     def initial_state(self, players, settings):
         return {
@@ -115,16 +117,19 @@ class Bargain(LiveGame):
         }
 
     def on_start(self, state):
-        ready = state["psynet"]["ready"]
-        state["no_shows"] = [player for player in (0, 1) if player not in ready]
+        state["no_shows"] = _no_shows(state)
 
     def view(self, state, player):
+        no_shows = state["no_shows"]
         return {
             "stake": state["stake"],
             "mine": state["offers"][player],
             "theirs": state["offers"][1 - player],
             "deal": None if state["deal"] is None else state["deal"][player],
-            "no_show": bool(state["no_shows"]),
+            # Who didn't arrive, if anyone: "you" or "partner".
+            "no_show": (
+                "you" if player in no_shows else "partner" if no_shows else None
+            ),
         }
 
     def is_over(self, state):
@@ -135,7 +140,9 @@ class Bargain(LiveGame):
             "deal": state["deal"],
             "deal_at": state["deal_at"],
             "n_proposals": state["n_proposals"],
-            "no_shows": state["no_shows"],
+            # Read again here, since a game that nobody opened ends without
+            # starting.
+            "no_shows": _no_shows(state),
         }
 
     def answer(self, outcome, reason, player):
@@ -160,6 +167,12 @@ class Bargain(LiveGame):
         if view["mine"] is None and player == 0:
             return Propose(keep=view["stake"] - BOT_GIVES)
         return None
+
+
+def _no_shows(state):
+    """Return the players who didn't open the game page in time to play."""
+    ready = state["psynet"]["ready"]
+    return [player for player in (0, 1) if player not in ready]
 
 
 def choose_stake():
@@ -257,6 +270,9 @@ class BargainTrial(Trial):
             # waiting goes on to the game page without a game.
             late_after=LATE_AFTER,
             late_action="leave_group",
+            # So does a partner who reached the game but never opened it, or
+            # left it for good, once the game's result is saved.
+            absent_action="leave_group",
             also_leave=["cohort"],
         )
 
@@ -265,10 +281,10 @@ class BargainTrial(Trial):
         return (self.answer or {}).get("coins", 0)
 
     def show_feedback(self, experiment, participant):
-        if self.answer is None or not self.answer["partner_arrived"]:
-            text = "Your partner didn't arrive, so there was no game this round."
-        elif not self.answer["arrived"]:
+        if self.answer is not None and not self.answer["arrived"]:
             text = "You didn't arrive in time, so there was no game this round."
+        elif self.answer is None or not self.answer["partner_arrived"]:
+            text = "Your partner didn't arrive, so there was no game this round."
         elif not self.answer["deal"]:
             text = "You didn't reach a deal in time, so nobody was paid."
         else:
@@ -310,13 +326,18 @@ def round_status(participant):
     return "no_cohort"
 
 
+END_OF_GAME_TEXTS = {
+    "late": "You didn't arrive in time, so the game is over for you.",
+    "no_show": "You didn't arrive in time, so the game is over for you.",
+    "left_game": "You left the game, so it's over for you.",
+}
+
+
 def end_of_game(participant):
-    """Return the last page, which tells a player who reached the game too
-    late, and so left the cohort without a game, why it ended for them."""
-    if participant.sync_group_removal_reason("cohort") == "late":
-        text = "You didn't arrive in time, so the game is over for you."
-    else:
-        text = "That's the end of the game."
+    """Return the last page, which tells a player who left the cohort
+    without playing why the game ended for them."""
+    reason = participant.sync_group_removal_reason("cohort")
+    text = END_OF_GAME_TEXTS.get(reason, "That's the end of the game.")
     return InfoPage(text, time_estimate=5)
 
 
@@ -361,6 +382,21 @@ def get_timeline():
     )
 
 
+def _pair_row(group_round):
+    """Return a pair's row of the export, with None for the game's columns
+    if the pair had no game, because a player didn't reach it."""
+    outcome = group_round.live_game_outcome
+    return {
+        "pair_id": group_round.sync_group_id,
+        "stake": group_round.definition["stake"],
+        "deal_at": None if outcome is None else outcome["deal_at"],
+        "n_proposals": None if outcome is None else outcome["n_proposals"],
+        # The players who didn't open the game in time, which then ended
+        # at once, so 0 for a pair that bargained.
+        "n_no_shows": None if outcome is None else len(outcome["no_shows"]),
+    }
+
+
 class Exp(psynet.experiment.Experiment):
     label = "Live bargaining demo"
 
@@ -383,20 +419,17 @@ class Exp(psynet.experiment.Experiment):
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
                     "round": t.position,
+                    # All three are None for a player whose partner didn't
+                    # reach the game, so who had no game. A game that a
+                    # player didn't open in time has no deal.
                     "deal": (t.answer or {}).get("deal"),
+                    "arrived": (t.answer or {}).get("arrived"),
+                    "partner_arrived": (t.answer or {}).get("partner_arrived"),
                     "coins": t.coins(),
                 }
                 for t in trials
             ],
-            "pair": [
-                {
-                    "pair_id": r.sync_group_id,
-                    "stake": r.definition["stake"],
-                    "deal_at": (r.live_game_outcome or {}).get("deal_at"),
-                    "n_proposals": (r.live_game_outcome or {}).get("n_proposals"),
-                }
-                for r in pairs
-            ],
+            "pair": [_pair_row(r) for r in pairs],
         }
 
     def test_check_bot(self, bot: Bot, **kwargs):

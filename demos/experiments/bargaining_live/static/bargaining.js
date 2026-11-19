@@ -78,7 +78,9 @@ export function activate({root, psynet}) {
   live.showStatus(status, () => "Propose a split, or accept your partner's.", {
     ended: (final) => {
       if (final.deal !== null) return "You made a deal.";
-      return final.no_show ? "No game: a player didn't arrive." : "Time's up: no deal.";
+      if (final.no_show === "you") return "You didn't arrive in time.";
+      if (final.no_show === "partner") return "Your partner didn't arrive.";
+      return "Time's up: no deal.";
     },
   });
   live.showRejections(rejection);

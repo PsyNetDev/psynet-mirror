@@ -23,7 +23,14 @@ page without a game. If they come back, the last page tells them they
 didn't arrive in time. A player who reached the game but hasn't opened its
 page 30 seconds later, for example because they closed their page just as
 the pair formed, isn't coming either: the game ends at once without a deal,
-and the feedback tells their partner that they didn't arrive.
+and the feedback tells their partner that they didn't arrive. A player who
+leaves the game page for 30 seconds has left the game, which then ends. In
+both cases the `PlayLiveGame`'s `absent_action="leave_group"` takes the
+absent player out of the cohort when the game's result is saved, so the
+next pairing doesn't wait for them either, and the last page tells them why
+the game is over for them if they come back. The export's `arrived`,
+`partner_arrived` and `n_no_shows` columns tell these rounds apart from
+pairs that bargained without a deal.
 
 A round can take up to 30 seconds for the partner to arrive, a minute of
 bargaining and the result and feedback pages, so a pair that finishes early
