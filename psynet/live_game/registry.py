@@ -1,6 +1,6 @@
-"""The live games defined so far, by channel."""
+"""The live games defined so far, by name."""
 
-# Every LiveGame subclass that sets a channel, by channel. It is one
+# Every LiveGame subclass that sets a name, by name (Dallinger's channel). It is one
 # registry for the whole process, because a PlayLiveGame built in a trial's
 # show_trial isn't known when the experiment class is created.
 _live_game_classes = {}

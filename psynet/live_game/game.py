@@ -385,7 +385,8 @@ class LiveGame(RealtimeGame):
         game was played in, if any, as
         :attr:`~psynet.sync.SyncGroupRound.live_game_outcome`, and, for a
         :class:`PlayLiveGame` with ``absent_action``, removes the players who
-        didn't play from their groups, before this method runs.
+        didn't play from their groups (unless the game failed), before this
+        method runs.
         """
         return super().handle_ending(session_row)
 

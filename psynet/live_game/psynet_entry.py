@@ -40,7 +40,8 @@ class PlayerReady(LiveMessage):
     which also lists the players added once the game has started,
     and reacts to the game starting in :meth:`~LiveGame.on_start`.
     A game record's :attr:`~LiveGameRecord.messages` include when each
-    player became ready.
+    player who was there when the game started became ready; players
+    added later never send it.
     """
 
     type = "psynet_ready"
