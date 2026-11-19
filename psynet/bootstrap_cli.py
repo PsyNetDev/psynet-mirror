@@ -99,6 +99,8 @@ def _has_version_flag() -> bool:
 
 def _reads_local_database(args: list[str]) -> bool:
     """Return whether ``psynet <args>`` reads the local experiment database."""
+    if "--help" in args or "-h" in args:
+        return False
     if args[:2] == ["export", "local"] or args[:1] == ["run-bot"]:
         return True
     remote = ("heroku", "docker_heroku", "ssh")
@@ -114,11 +116,18 @@ def _use_isolated_server_database() -> None:
     and prints an ``export`` line for other terminals; this applies that line
     automatically in the server's directory. Dallinger reads ``DATABASE_URL``
     and ``REDIS_URL`` when it is first imported, so this must run before the
-    full CLI is imported. An explicitly set ``DATABASE_URL`` wins.
+    full CLI is imported. If any of the exported variables is already set,
+    the record is not used, so explicit settings are never mixed with it.
     """
-    if "DATABASE_URL" in os.environ or not _reads_local_database(sys.argv[1:]):
+    if not _reads_local_database(sys.argv[1:]):
         return
-    from psynet.testing.locks import isolated_server_environment
+    from psynet.testing.locks import (
+        ISOLATED_SESSION_VARIABLES,
+        isolated_server_environment,
+    )
+
+    if any(key in os.environ for key in ISOLATED_SESSION_VARIABLES):
+        return
 
     env = isolated_server_environment(os.getcwd())
     if env is None:

@@ -78,7 +78,8 @@ In the same experiment directory, ``psynet export local``, ``psynet run-bot``,
 ``psynet db`` and ``psynet experiment-variables`` find the server by
 themselves and say which database they use. For other commands, or from
 another directory, run the ``Other terminals`` line in that terminal first.
-A ``DATABASE_URL`` you set yourself always takes precedence.
+If you set ``DATABASE_URL``, ``REDIS_URL`` or ``base_port`` yourself, they
+don't look for the server and use your settings instead.
 
 Like a test session, the server then gets a free port from 5100 upwards, a
 fresh database and its own Redis server (or, without ``redis-server`` on

@@ -33,6 +33,7 @@ import hashlib
 import json
 import logging
 import os
+import stat
 import time
 from contextlib import contextmanager, suppress
 
@@ -172,7 +173,8 @@ def experiment_directory_lock(directory, export=True, *, kind=TEST_SESSION):
             fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
-_RECORDED_VARIABLES = ("DATABASE_URL", "REDIS_URL", "base_port")
+#: The variables that point a command at an isolated session's data.
+ISOLATED_SESSION_VARIABLES = ("DATABASE_URL", "REDIS_URL", "base_port")
 
 
 def _server_record_path(directory):
@@ -195,12 +197,20 @@ def record_isolated_server(directory, env):
         ``base_port``.
     """
     path = _server_record_path(directory)
-    record = {"pid": os.getpid(), **{key: env[key] for key in _RECORDED_VARIABLES}}
+    record = {
+        "pid": os.getpid(),
+        **{key: env[key] for key in ISOLATED_SESSION_VARIABLES},
+    }
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK
+        fd = os.open(path, flags, 0o600)
         with os.fdopen(fd, "w") as f:
-            if os.fstat(fd).st_uid != os.getuid():
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                raise OSError("it is not a regular file")
+            if st.st_uid != os.getuid():
                 raise PermissionError("the file belongs to another user")
+            os.fchmod(fd, 0o600)
             f.truncate()
             json.dump(record, f)
     except OSError as e:
@@ -240,15 +250,18 @@ def isolated_server_environment(directory):
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError:
         return None
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
+        os.close(fd)
+        return None
     with os.fdopen(fd) as f:
-        if os.fstat(fd).st_uid != os.getuid():
-            return None
         try:
             record = json.load(f)
-        except ValueError:
+        except (OSError, ValueError):
             return None
     if not isinstance(record, dict) or not all(
-        key in record for key in _RECORDED_VARIABLES
+        isinstance(record.get(key), str) and record[key]
+        for key in ISOLATED_SESSION_VARIABLES
     ):
         return None
     lock_path = _lock_path(os.path.realpath(directory))
@@ -259,7 +272,7 @@ def isolated_server_environment(directory):
         return None
     if holder != (str(record.get("pid")), SERVER):
         return None
-    return {key: record[key] for key in _RECORDED_VARIABLES}
+    return {key: record[key] for key in ISOLATED_SESSION_VARIABLES}
 
 
 def check_no_server(directory):

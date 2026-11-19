@@ -28,8 +28,8 @@ from psynet.isolated_environment import (
     try_lock,
 )
 from psynet.testing.locks import (
-    _RECORDED_VARIABLES,
     HELD_LOCK_ENV_VAR,
+    ISOLATED_SESSION_VARIABLES,
     REMOTE_LAUNCH,
     SERVER,
     TEST_SESSION,
@@ -166,13 +166,25 @@ def test_local_database_commands_find_an_isolated_server_in_the_directory(
             assert psynet_db() == server["DATABASE_URL"]
             explicit = f"{DEFAULT_DATABASE_URL}_explicit"
             assert psynet_db(DATABASE_URL=explicit) == explicit
+            assert psynet_db(base_port="5100") == DEFAULT_DATABASE_URL
         assert psynet_db() == DEFAULT_DATABASE_URL
 
 
-@pytest.mark.parametrize("record", ["not json", "[]", '{"pid": %d}' % os.getpid()])
+@pytest.mark.parametrize(
+    "record",
+    [
+        "not json",
+        "[]",
+        '{"pid": %d}' % os.getpid(),
+        '{"pid": %d, "DATABASE_URL": null, "REDIS_URL": "x", "base_port": ""}'
+        % os.getpid(),
+    ],
+)
 def test_a_malformed_server_record_is_ignored(tmp_path, monkeypatch, record):
     monkeypatch.delenv(HELD_LOCK_ENV_VAR, raising=False)
-    with record_isolated_server(tmp_path, {key: "x" for key in _RECORDED_VARIABLES}):
+    with record_isolated_server(
+        tmp_path, {key: "x" for key in ISOLATED_SESSION_VARIABLES}
+    ):
         with experiment_directory_lock(tmp_path, export=False, kind=SERVER):
             assert isolated_server_environment(tmp_path) is not None
             Path(_server_record_path(tmp_path)).write_text(record)
@@ -191,6 +203,7 @@ def test_a_malformed_server_record_is_ignored(tmp_path, monkeypatch, record):
         (["experiment-variables"], True),
         (["experiment-variables", "docker_heroku"], False),
         (["debug", "local"], False),
+        (["export", "local", "--help"], False),
     ],
 )
 def test_which_commands_read_the_local_database(args, expected):

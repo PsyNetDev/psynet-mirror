@@ -1586,9 +1586,10 @@ def _launch_app_and_report(port, auth=None):
 
 def _isolated_session_export_line(env):
     """Return the ``export`` command that points another terminal at an isolated session."""
+    from .testing.locks import ISOLATED_SESSION_VARIABLES
+
     return "export " + " ".join(
-        f"{key}={shlex.quote(env[key])}"
-        for key in ("DATABASE_URL", "REDIS_URL", "base_port")
+        f"{key}={shlex.quote(env[key])}" for key in ISOLATED_SESSION_VARIABLES
     )
 
 
