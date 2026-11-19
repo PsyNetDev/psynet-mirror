@@ -433,8 +433,9 @@ class LiveGame(RealtimeGame):
         ``handle_ending``. PsyNet pays each player's
         :meth:`performance_reward`, and copies the outcome to the round the
         game was played in, if any, as
-        :attr:`~psynet.sync.SyncGroupRound.live_game_outcome`, before this
-        method runs.
+        :attr:`~psynet.sync.SyncGroupRound.live_game_outcome`, and, for a
+        :class:`PlayLiveGame` with ``absent_action``, removes the players who
+        didn't play from their groups, before this method runs.
         """
         return super().handle_ending(session_row)
 

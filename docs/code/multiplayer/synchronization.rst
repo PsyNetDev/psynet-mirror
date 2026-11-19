@@ -1730,7 +1730,8 @@ For the rest of the timeline:
   needs another room, or none, then.
 - ``participant.sync_group_removal_reason("pair")`` says why they left:
   ``"late"``, ``"waited_too_long"``, ``"no_group_formed"`` (a grouper found
-  them no group in time), ``"group_dissolved"``, ``"moved_on"`` (a
+  them no group in time), ``"no_show"`` or ``"left_game"`` (they didn't play
+  a live game, see :ref:`live-games-absent`), ``"group_dissolved"``, ``"moved_on"`` (a
   :class:`~psynet.sync.Regrouper` took them out of their previous group, and
   they are waiting there or sitting the round out),
   ``"finished"``, ``"not_admitted"`` (they were turned away before an

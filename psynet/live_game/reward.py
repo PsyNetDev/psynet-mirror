@@ -2,7 +2,9 @@
 rewards from add_performance_reward, paid by effects queued during the game,
 the reward from the outcome of a player whose game ends before the game
 does, and, once the result is saved, the other players' rewards from the
-outcome and the copy of the outcome on the game's round. A reward is also recorded on the trial
+outcome, the copy of the outcome on the game's round, and the removal of
+players who didn't play from their groups, for a PlayLiveGame with
+``absent_action``. A reward is also recorded on the trial
 the game was played in, if any. All run in the job that writes the game's
 record, so each runs once, whether or not the players are still on the game
 page."""
@@ -131,10 +133,13 @@ def _handles_ending(method):
             for participant in _locked_players(session_row)
             if participant.id not in ended_early
         ]
+        from .play import _remove_absent_players
+
         if _has_outcome(session_row.status, session_row.outcome):
             _pay_outcome_rewards(self, session_row, players)
             _record_outcome_on_round(session_row)
         _end_game_page_deadlines(session_row, players, session_row.end_time)
+        _remove_absent_players(self, session_row, players)
         return _as_ending_handler(method, self, session_row)
 
     handle_ending._psynet_wrapper = True

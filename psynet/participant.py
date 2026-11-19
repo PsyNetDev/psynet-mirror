@@ -821,7 +821,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         type before. Otherwise returns why they left their latest group of
         that type: ``"late"`` (removed by a barrier's
         ``late_after``, with any ``late_action``, from its group or a group
-        listed in its ``also_leave``), ``"waited_too_long"`` (waited at a
+        listed in its ``also_leave``), ``"no_show"`` or ``"left_game"``
+        (didn't play a :class:`~psynet.live_game.PlayLiveGame`'s game, or
+        left it for good, with its ``absent_action="leave_group"``),
+        ``"waited_too_long"`` (waited at a
         barrier for longer than its ``max_wait_time``, with any
         ``max_wait_action``), ``"group_dissolved"`` (still in the group when it was
         dissolved below its quorum, with any ``below_quorum``), ``"moved_on"`` (a

@@ -362,6 +362,63 @@ The messages that say a player is ready are PsyNet's, so a message's
 ``state["psynet"]["ready"]`` from the view (see `PsyNet's entry in the
 state`_).
 
+.. _live-games-absent:
+
+Players who don't play
+~~~~~~~~~~~~~~~~~~~~~~
+
+A member who reaches the ``PlayLiveGame`` but then never opens the game
+page, for example because they closed their page as the group formed, is
+past the wait, so its ``late_after`` no longer covers them. By default they
+stay in their groups, so the group's next barrier, such as the pairing for
+the next round, waits for them until its own limit. The same goes for a
+player who leaves the game page for good.
+
+``absent_action="leave_group"`` removes them instead, when the game's
+result is saved, a few seconds after the game ends, even if they never come
+back. It removes two kinds of player:
+
+- a no-show: a player who isn't ready when the game ends, because they never
+  opened the game page, or closed it before the game started and didn't come
+  back. Their reason is ``"no_show"``.
+- with the game's ``away_timeout``, a player who has been away from the game
+  page for that long when the game ends. Their reason is ``"left_game"``.
+
+They leave the ``PlayLiveGame``'s group, and the groups of the types in its
+``also_leave``, which also applies to ``late_action``. The groupers of those
+groups need ``below_quorum="continue_without_group"``. A later page can
+explain the end with
+:meth:`~psynet.participant.Participant.sync_group_removal_reason`. The
+``bargaining_live`` demo removes a partner who doesn't play from the cohort
+as well as the pair, so the next pairing goes on without them:
+
+.. code-block:: python
+
+    PlayLiveGame(
+        group_type="pair",
+        game_class=Bargain,
+        page=bargaining_page(self.definition["stake"]),
+        settings=self.definition,
+        late_after=30,
+        late_action="leave_group",
+        absent_action="leave_group",
+        also_leave=["cohort"],
+    )
+
+and its last page tells a returning player why the game ended for them:
+
+.. code-block:: python
+
+    def end_of_game(participant):
+        reason = participant.sync_group_removal_reason("cohort")
+        text = END_OF_GAME_TEXTS.get(reason, "That's the end of the game.")
+        return InfoPage(text, time_estimate=5)
+
+A game in which a no-show leaves the others without a game, such as one for
+two, can end at the start, as the ``bargaining_live`` game does: its
+``on_start`` notes who isn't ready, and its ``is_over`` then returns
+``True``.
+
 .. _live-games-page:
 
 The game page

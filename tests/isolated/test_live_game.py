@@ -46,10 +46,13 @@ from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
+    GroupBarrier,
+    SimpleGrouper,
     SimpleSyncGroup,
     SyncGroupRound,
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
+    check_group_dropout_policies,
 )
 from psynet.timeline import Response, Timeline
 from psynet.trial.main import Trial
@@ -57,7 +60,10 @@ from psynet.trial.main import Trial
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
     sys.path.insert(0, str(_ISOLATED_DIR))
-from timeline_hold_helpers import new_participant  # noqa: E402
+from timeline_hold_helpers import (  # noqa: E402
+    _barrier_link_released,
+    new_participant,
+)
 
 pytestmark = [
     pytest.mark.parametrize(
@@ -2839,6 +2845,118 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
 
     assert early.sync_group_links[0].page_deadline == later
     assert other.sync_group_links[0].page_deadline == row.end_time
+
+
+def _save_ending(session_id, ready, away=(), ended_at=0):
+    """Save the game's ending, as Dallinger does once it has started at 0,
+    with the players of ``ready`` ready and those of ``away``, ``(player,
+    since)``, away, then run its ending handler."""
+    row = db.session.get(RealtimeSession, session_id)
+    ids = [int(member) for member in row.members]
+    away_since = [None] * len(ids)
+    for player, since in away:
+        away_since[player] = since
+    row.status, row.end_reason, row.outcome = "ended", "finished", [None, None]
+    row.end_time = timenow()
+    row.final_state = {
+        "psynet": _psynet(
+            participant_ids=ids,
+            ready=ready,
+            away=[player for player, _ in away],
+            away_since=away_since,
+            started_at=0,
+        )
+    }
+    db.session.add(
+        RealtimeEvent(
+            session_id=session_id,
+            sequence=99,
+            event_type="end",
+            session_time=ended_at,
+        )
+    )
+    game_registry._live_game_classes["pick_numbers"]().handle_ending(row)
+    db.session.commit()
+    return ids
+
+
+def test_a_no_show_leaves_the_game_s_groups_so_the_next_barrier_doesn_t_wait(pair):
+    members, _ = pair
+    third = new_participant(get_experiment())
+    third.status = "working"
+    cohort = SimpleSyncGroup(
+        group_type="cohort",
+        initial_group_size=3,
+        max_group_size=3,
+        quorum=2,
+        n_active_participants=3,
+        accepts_top_ups=False,
+        below_quorum="continue_without_group",
+    )
+    db.session.add(cohort)
+    for member in [*members, third]:
+        cohort.add_participant(member)
+    db.session.commit()
+    play = _play("absent", absent_action="leave_group", also_leave=["cohort"])
+    for member in members:
+        _arrive(play.barrier, member)
+    played, no_show = members
+
+    ids = _save_ending(_game_id(played, "absent"), ready=[0])
+    if ids[0] != played.id:
+        played, no_show = no_show, played
+
+    assert no_show.sync_group_removal_reason("pair") == "no_show"
+    assert no_show.sync_group_removal_reason("cohort") == "no_show"
+    assert played.in_sync_group("cohort")
+    # The cohort's next barrier releases the players still in it.
+    after = GroupBarrier(id_="after_the_game", group_type="cohort", max_wait_time=60)
+    for member in (played, third):
+        after.receive_participant(member)
+        after.waiting_logic.consume(get_experiment(), member)
+        db.session.commit()
+        _run_pending_barrier_checks(_take_pending_barrier_checks())
+        db.session.commit()
+    assert _barrier_link_released(played.id, "after_the_game")
+
+
+@pytest.mark.parametrize(
+    "absent_action, ended_at, reason",
+    [
+        ("leave_group", 70, "left_game"),
+        # Back within the away_timeout, or without absent_action.
+        ("leave_group", 69, None),
+        (None, 70, None),
+    ],
+)
+def test_a_player_away_for_the_away_timeout_when_the_game_ends_left_it(
+    pair, absent_action, ended_at, reason
+):
+    members, _ = pair
+    play = _play("absent", absent_action=absent_action)
+    for member in members:
+        _arrive(play.barrier, member)
+
+    # The second player has been away since 10 s, and the away_timeout is 60.
+    ids = _save_ending(
+        _game_id(members[0], "absent"), ready=[0, 1], away=[(1, 10)], ended_at=ended_at
+    )
+
+    left = db.session.get(Participant, ids[1])
+    assert left.sync_group_removal_reason("pair") == reason
+
+
+def test_absent_action_needs_groups_that_carry_on_without_a_player():
+    with pytest.raises(ValueError, match="absent_action must be 'leave_group'"):
+        _play(absent_action="fail")
+    play = _play(absent_action="leave_group", also_leave=["cohort"])
+    assert play.barrier.absent_leave == ["pair", "cohort"]
+    assert play.barrier.also_leave == []
+    cohort = SimpleGrouper(
+        group_type="cohort", initial_group_size=4, quorum=2, below_quorum="fail"
+    )
+    with pytest.raises(ValueError, match="has absent_action='leave_group'"):
+        check_group_dropout_policies([cohort, play.barrier])
 
 
 def test_a_game_page_without_a_game_moves_on_with_no_answer(pair):

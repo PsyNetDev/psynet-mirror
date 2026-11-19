@@ -15,6 +15,10 @@ LiveGameRecord objects.
 With ``join_running_game``, a participant whose group is playing a game
 from the step is added to that game instead, and skips the barrier.
 
+With ``absent_action``, the record also keeps the group types a player who
+doesn't play the game leaves, which the job that saves the game's ending
+reads, since the absent player may never make another request.
+
 A PlayLiveGame in a trial also records the id on the trial's
 SyncGroupRound, as ``live_game_id``, beside the outcome. That record
 lasts, so it's the one to use in an analysis, while ``live_game_data`` holds
@@ -24,9 +28,10 @@ for a game played outside a trial, which has no round.
 
 import inspect
 import json
+from typing import Optional
 
 from dallinger import db
-from dallinger.models import RealtimeSession
+from dallinger.models import RealtimeEvent, RealtimeSession
 from dallinger.realtime import (
     RealtimeGame,
     add_realtime_player,
@@ -35,7 +40,12 @@ from dallinger.realtime import (
 
 from ..barrier_spec import BarrierSpecError, barrier_spec_json
 from ..bot import Bot
-from ..sync import BarrierBehaviorMismatch, GroupBarrier, _round_trial
+from ..sync import (
+    BarrierBehaviorMismatch,
+    GroupBarrier,
+    _round_trial,
+    _validate_group_timeouts,
+)
 from ..timeline import CodeBlock, EltCollection, conditional, join
 from ..utils import get_logger
 from .game import LiveGame
@@ -119,6 +129,22 @@ class PlayLiveGame(EltCollection):
         ``join_existing_groups=True``. A game played in a trial can't take
         newcomers, since its round is already under way. Default: ``False``.
 
+    absent_action
+        What happens to a player who didn't play the game: a no-show, who
+        never opened the game page or left it before the game started and
+        didn't come back, and, with the game's
+        :attr:`~LiveGame.away_timeout`, a player who left the game for good,
+        away from it for that long when it ended. With ``"leave_group"``,
+        they leave the step's group, and the groups of the types in
+        ``also_leave``, when the game's result is saved, even if they never
+        come back, so the barriers of those groups after the game don't
+        wait for them. Their
+        :meth:`~psynet.participant.Participant.sync_group_removal_reason`
+        is then ``"no_show"`` or ``"left_game"``, for a later page to
+        explain. The groupers of those groups need
+        ``below_quorum="continue_without_group"``. Default: ``None``, which
+        leaves them in their groups.
+
     id_
         A name for this step, the game's ``name`` unless given, which
         keys the participant's :attr:`~psynet.participant.Participant.live_games`
@@ -134,7 +160,8 @@ class PlayLiveGame(EltCollection):
         Give the wait a limit, either ``late_after``, with ``late_action``,
         or ``max_wait_time``, as :ref:`the guide <live-games-wait>` explains. A
         participant who has left the group passes the wait and reaches the
-        game page without a game.
+        game page without a game. Its ``also_leave`` applies to
+        ``absent_action`` as well as to ``late_action``.
     """
 
     def __init__(
@@ -145,12 +172,25 @@ class PlayLiveGame(EltCollection):
         settings=None,
         on_release=None,
         join_running_game: bool = False,
+        absent_action: Optional[str] = None,
         id_: str = None,
         **kwargs,
     ):
         from .control import LiveGamePage
 
         _check_game_class(game_class)
+        if absent_action not in (None, "leave_group"):
+            raise ValueError(
+                f"absent_action must be 'leave_group' or None, not {absent_action!r}."
+            )
+        also_leave = kwargs.get("also_leave") or []
+        if absent_action is not None and kwargs.get("late_action") != "leave_group":
+            # Only the players who don't play leave those groups, so the
+            # barrier, which would refuse them, doesn't get them.
+            kwargs.pop("also_leave", None)
+            _validate_group_timeouts(
+                "fail", None, "leave_group", also_leave, group_type
+            )
         if join_running_game and game_class.on_add is RealtimeGame.on_add:
             raise TypeError(
                 f"{game_class.__name__} has no on_add method, so players can't "
@@ -190,6 +230,9 @@ class PlayLiveGame(EltCollection):
             on_release,
             join_running_game=join_running_game,
             names=page.control.names,
+            absent_leave=(
+                [group_type, *also_leave] if absent_action == "leave_group" else []
+            ),
             **kwargs,
         )
         self.page = page
@@ -212,6 +255,7 @@ class _LiveGameBarrier(GroupBarrier):
         on_release=None,
         join_running_game=False,
         names="shown",
+        absent_leave=(),
         **kwargs,
     ):
         settings = _checked_settings(game_class, settings)
@@ -228,6 +272,9 @@ class _LiveGameBarrier(GroupBarrier):
         # The game page's names, kept with each member's game, so that the
         # players route sends pseudonyms only to pages that show them.
         self.names = names
+        # The group types a player who doesn't play the game leaves, kept with
+        # each member's game too, for the job that saves the game's result.
+        self.absent_leave = list(absent_leave)
         try:
             barrier_spec_json(self)
         except BarrierSpecError as error:
@@ -277,7 +324,13 @@ class _LiveGameBarrier(GroupBarrier):
         )
 
     def _arrive(self, participant):
-        _set_live_game_id(participant, self.id, None, names=self.names)
+        _set_live_game_id(
+            participant,
+            self.id,
+            None,
+            names=self.names,
+            absent_leave=self.absent_leave,
+        )
         if self.join_running_game:
             self._join_running_game(participant)
 
@@ -485,18 +538,30 @@ def _live_game_data(participant):
     """Return what PsyNet stored about each PlayLiveGame the participant
     reached, keyed by its id: the ``id`` of their latest game there, or None
     if their group didn't start one, the ``history`` of every game they
-    played there, as ``{"id": game_id, "answer": answer}``, oldest first, and
-    its game page's ``names``, ``"shown"`` or ``"anonymous"``."""
+    played there, as ``{"id": game_id, "answer": answer}``, oldest first, its
+    game page's ``names``, ``"shown"`` or ``"anonymous"``, and the group types
+    a player who doesn't play leaves, its ``absent_leave``."""
     return participant.live_game_data or {}
 
 
-def _set_live_game_id(participant, play_id, game_id, names=None):
+def _set_live_game_id(participant, play_id, game_id, names=None, absent_leave=None):
     data = _live_game_data(participant).get(play_id, {})
     history = list(data.get("history", []))
     if game_id is not None and all(game["id"] != game_id for game in history):
         history.append({"id": game_id, "answer": None})
     names = names or data.get("names", "shown")
-    _set_data(participant, play_id, {"id": game_id, "history": history, "names": names})
+    if absent_leave is None:
+        absent_leave = data.get("absent_leave", [])
+    _set_data(
+        participant,
+        play_id,
+        {
+            "id": game_id,
+            "history": history,
+            "names": names,
+            "absent_leave": absent_leave,
+        },
+    )
 
 
 def _set_live_game_answer(participant, play_id, answer):
@@ -561,3 +626,65 @@ def _running_live_games(group):
         if row is not None:
             running[play_id] = LiveGameRecord(row.id)
     return running
+
+
+def _remove_absent_players(game, session_row, players):
+    """Remove the ``players`` who didn't play the game from the groups their
+    PlayLiveGame's ``absent_action`` names, as ``"no_show"`` or
+    ``"left_game"``.
+
+    Called as the game's ending is saved, with the players' rows locked. They
+    all leave before any group is dissolved below its quorum, so a pair of
+    no-shows both leave as no-shows.
+    """
+    entry = (session_row.final_state or {}).get("psynet")
+    if entry is None:
+        return
+    left = {}
+    end = None
+    for participant in players:
+        leaves = _absent_leave(participant, session_row.id)
+        if not leaves:
+            continue
+        player = entry["participant_ids"].index(participant.id)
+        if player not in entry["ready"]:
+            reason = "no_show"
+        elif (
+            game.away_timeout is not None
+            and entry["started_at"] is not None
+            and player in entry["away"]
+        ):
+            if end is None:
+                end = _session_end_time(session_row.id)
+            away_since = max(entry["away_since"][player], entry["started_at"])
+            if end is None or end < away_since + game.away_timeout:
+                continue
+            reason = "left_game"
+        else:
+            continue
+        groups = participant.active_sync_groups
+        for group_type in leaves:
+            group = groups.get(group_type)
+            if group is not None:
+                group._remove_without_quorum_check(participant, reason)
+                left[group.id] = group
+    for group in left.values():
+        group.dissolve_if_below_quorum()
+
+
+def _absent_leave(participant, game_id):
+    """Return the group types the participant leaves if they don't play the
+    game ``game_id``, from the PlayLiveGame that started it."""
+    for data in _live_game_data(participant).values():
+        if any(game["id"] == game_id for game in data.get("history", [])):
+            return data.get("absent_leave", [])
+    return []
+
+
+def _session_end_time(game_id):
+    """Return when the game ended, on Dallinger's session clock, or None."""
+    return (
+        db.session.query(RealtimeEvent.session_time)
+        .filter_by(session_id=game_id, event_type="end")
+        .scalar()
+    )

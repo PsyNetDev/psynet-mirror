@@ -1834,6 +1834,8 @@ RemovalReason = Literal[
     "removed_by_experimenter",
     "left_experiment",
     "late",
+    "no_show",
+    "left_game",
     "waited_too_long",
     "group_dissolved",
     "moved_on",
@@ -4651,6 +4653,13 @@ def check_group_dropout_policies(barriers):
                 )
         if barrier.stop_top_ups:
             top_ups_stopped.add(barrier.group_type)
+        for group_type in getattr(barrier, "absent_leave", []):
+            for grouper in groupers.get(group_type, []):
+                _check_absent_leave(
+                    barrier,
+                    grouper.below_quorum or "fail",
+                    f"SimpleGrouper '{grouper.id}'",
+                )
         if barrier.late_after is None:
             continue
         for group_type in [barrier.group_type, *barrier.also_leave]:
@@ -4693,10 +4702,21 @@ def check_late_removal_policies(barriers, participant):
     """
     groups = None
     for barrier in barriers:
-        if not isinstance(barrier, GroupBarrier) or barrier.late_after is None:
+        if not isinstance(barrier, GroupBarrier):
+            continue
+        absent_leave = getattr(barrier, "absent_leave", [])
+        if barrier.late_after is None and not absent_leave:
             continue
         if groups is None:
             groups = participant.active_sync_groups
+        for group_type in absent_leave:
+            group = groups.get(group_type)
+            if isinstance(group, SimpleSyncGroup):
+                _check_absent_leave(
+                    barrier, group.below_quorum or "fail", f"the '{group_type}' grouper"
+                )
+        if barrier.late_after is None:
+            continue
         group = groups.get(barrier.group_type)
         if isinstance(group, SimpleSyncGroup):
             _check_top_up_wait(
@@ -4743,6 +4763,17 @@ def _check_late_action(barrier, below_quorum, grouper_label):
             f"{grouper_label} has below_quorum='fail', so a late member would "
             "carry on alone while the members who were on time are failed. "
             "Pass below_quorum='continue_without_group', or late_action='fail'."
+        )
+
+
+def _check_absent_leave(barrier, below_quorum, grouper_label):
+    """Reject a PlayLiveGame's ``absent_action="leave_group"`` on a group whose ``below_quorum`` is ``"fail"``."""
+    if below_quorum == "fail":
+        raise ValueError(
+            f"The PlayLiveGame '{barrier.id}' has absent_action='leave_group', "
+            f"but {grouper_label} has below_quorum='fail', so a player who "
+            "didn't play its game could leave the group below its quorum and "
+            "fail the players who did. Pass below_quorum='continue_without_group'."
         )
 
 
@@ -5201,6 +5232,9 @@ class SyncGroup(SQLBase, SQLMixin):
               ``"group_dissolved"``: they dropped out.
             - ``"late"``: a barrier removed them for being late (with any
               ``late_action``).
+            - ``"no_show"`` or ``"left_game"``: they didn't play a
+              :class:`~psynet.live_game.PlayLiveGame`'s game, or left it for
+              good, and its ``absent_action="leave_group"`` removed them.
             - ``"moved_on"``: for a member who left at a :class:`Regrouper`,
               for their next group or to sit the round out. A pair a :class:`SimpleGrouper`
               formed isn't dissolved, failing the partner, when the first
