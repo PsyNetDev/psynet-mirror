@@ -1,11 +1,15 @@
 """Tests for psynet.field module."""
 
+import json
+
 import pytest
+from sqlalchemy.orm import configure_mappers
 
 from psynet.experiment import get_experiment
 from psynet.field import _PythonDict, _PythonList, claim_var
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
+from psynet.trial.main import Trial
 
 
 class TestSerialize:
@@ -58,3 +62,15 @@ def test_participant_var_keeps_integer_keys(in_experiment_directory, db_session)
 
     reloaded = Participant.query.get(participant.id)
     assert reloaded.var.choice_by_player == {12: "rock", 15: "paper"}
+
+
+def test_trial_json_turns_answer_and_definition_keys_into_strings():
+    configure_mappers()
+    trial = Trial._sa_class_manager.new_instance()
+    trial.definition = {12: "rock"}
+    trial.answer = {(1, 2): "x", None: "y"}
+
+    data = trial.__json__()
+
+    assert {"12", "(1, 2)", "None"} <= data.keys()
+    json.dumps(data, sort_keys=True)
