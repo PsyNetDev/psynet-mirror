@@ -1738,16 +1738,19 @@ def test_deprecated_label_arguments_warn_and_are_ignored():
     with pytest.warns(FutureWarning) as record:
         conditional("x", lambda: True, page, log_chosen_branch=False)
     assert len(record) == 1
-    assert "label as its first argument or log_chosen_branch=" in str(record[0].message)
+    assert "a label (positional argument 1) or log_chosen_branch=; delete both" in str(
+        record[0].message
+    )
     # The old positional log_chosen_branch must not become time_estimate,
     # with or without the label in front of it.
-    for legacy, time in [
-        (lambda: conditional("l", lambda: True, page, None, False, True, False), 1),
-        (lambda: conditional(lambda: True, page, None, True, True, False), 1),
-        (lambda: switch("s", lambda: "a", {"a": page}, False, True, False, 3), 3),
-        (lambda: switch(lambda: "a", {"a": page}, True, True, False), 1),
+    for legacy, time, number in [
+        (lambda: conditional("l", lambda: True, page, None, False, True, False), 1, 7),
+        (lambda: conditional(lambda: True, page, None, True, True, False), 1, 6),
+        (lambda: switch("s", lambda: "a", {"a": page}, False, True, False, 3), 3, 6),
+        (lambda: switch(lambda: "a", {"a": page}, True, True, False), 1, 5),
     ]:
-        with pytest.warns(FutureWarning, match="log_chosen_branch"):
+        message = f"log_chosen_branch \\(positional argument {number}, False\\)"
+        with pytest.warns(FutureWarning, match=message):
             elts = legacy()
         assert CreditEstimate(elts).get_max("time") == time
     for construct, kwargs in [

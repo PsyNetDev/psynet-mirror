@@ -490,7 +490,11 @@ Search for ``def fail_participant``, ``data_check_failed``,
   as ``while_loop:lambda@experiment.py:42``, which changes when the file is
   edited.
 * ``participant.branch_log`` is gone, and ``log_chosen_branch`` is ignored
-  with a warning; delete it, whether passed by keyword or by position. If an
+  with a warning; delete it, whether passed by keyword or by position. By
+  position it is the third ``True``/``False`` after the branches, so
+  ``conditional(condition, a, b, True, True, False, 7)`` becomes
+  ``conditional(condition, a, b, True, True, 7)``; the warning names its
+  position and value. If an
   analysis needs to know which branch a participant took, store it with
   ``participant.var`` in a ``CodeBlock``.
 

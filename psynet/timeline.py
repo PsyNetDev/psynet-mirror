@@ -3625,7 +3625,7 @@ def _accepts_deprecated_labels(ignore=(), removed_positional=None):
                 if "label" in kwargs:
                     raise TypeError(f"{name}() got two labels.")
                 if "label" in ignore:
-                    dropped.append("a label as its first argument")
+                    dropped.append("a label (positional argument 1)")
                 else:
                     kwargs["label"] = args[0]
                     warn(
@@ -3637,16 +3637,20 @@ def _accepts_deprecated_labels(ignore=(), removed_positional=None):
                 if len(args) > position and (
                     positional_label or isinstance(args[position], bool)
                 ):
+                    number = position + 1 + positional_label
+                    dropped.append(
+                        f"{arg} (positional argument {number}, {args[position]!r})"
+                    )
                     args = args[:position] + args[position + 1 :]
-                    dropped.append(arg)
             for arg in ignore:
                 if arg in kwargs:
                     del kwargs[arg]
                     dropped.append(f"{arg}=")
             if dropped:
+                pronoun = {1: "it", 2: "both"}.get(len(dropped), "them")
                 warn(
                     f"{name}() no longer takes {' or '.join(dropped)}; "
-                    f"delete {'it' if len(dropped) == 1 else 'them'}."
+                    f"delete {pronoun}."
                 )
             return func(*args, **kwargs)
 
