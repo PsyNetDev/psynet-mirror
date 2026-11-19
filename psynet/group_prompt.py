@@ -118,8 +118,7 @@ class GroupPrompt(Prompt):
         Optional ``{participant_id: style}``. ``"winner"`` and
         ``"duplicate"`` have built-in styles; any other style becomes the
         CSS class ``psynet-group-member--<style>``. In both dictionaries the
-        IDs may be strings, as in a dictionary read back from a participant
-        variable.
+        IDs may be integers or strings.
     note
         Optional short text shown below the group, for example
         "1 was picked twice". Like the group, it is hidden when there is no
