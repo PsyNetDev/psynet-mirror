@@ -371,7 +371,17 @@ def test_a_trial_class_that_names_a_paying_game_can_t_pay_too():
             def compute_performance_reward(self, score):
                 return score * 0.1
 
-    with pytest.raises(TypeError, match="NoGame.live_game_class: game_class must"):
+    class PlaysPickNumbers:
+        live_game_class = type(_pick_numbers())
+
+    # Also when the class inherits the game it names.
+    with pytest.raises(TypeError, match="AlsoPays pays through compute_performance"):
+
+        class AlsoPays(PlaysPickNumbers, Trial):
+            def compute_performance_reward(self, score):
+                return score * 0.1
+
+    with pytest.raises(TypeError, match="NoGame.live_game_class must be a LiveGame"):
 
         class NoGame(Trial):
             live_game_class = int

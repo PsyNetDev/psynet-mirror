@@ -386,9 +386,11 @@ class _LiveGameBarrier(GroupBarrier):
         return session_id
 
 
-def _check_game_class(game_class):
+def _check_game_class(game_class, label="game_class"):
+    """Check that ``game_class``, named ``label`` in errors, is a game that can
+    be played."""
     if not (isinstance(game_class, type) and issubclass(game_class, LiveGame)):
-        raise TypeError(f"game_class must be a LiveGame subclass, not {game_class!r}.")
+        raise TypeError(f"{label} must be a LiveGame subclass, not {game_class!r}.")
     if game_class.name is None:
         raise TypeError(
             f"{game_class.__name__} has no name, so it can't be played. "
@@ -406,10 +408,7 @@ def _check_trial_class(trial_class):
     """Check the game a trial class names in its ``live_game_class``, when
     the class is defined."""
     game_class = trial_class.live_game_class
-    try:
-        _check_game_class(game_class)
-    except TypeError as error:
-        raise TypeError(f"{trial_class.__name__}.live_game_class: {error}") from None
+    _check_game_class(game_class, label=f"{trial_class.__name__}.live_game_class")
     _check_paid_once(trial_class, game_class)
 
 
