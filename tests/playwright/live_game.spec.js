@@ -157,7 +157,7 @@ test("a game page open in two tabs moves the participant on once", { tag: "@both
   }
 });
 
-test("participants whose pair breaks up at the game barrier see the no-game notice and can move on", { tag: "@both" }, async ({
+test("participants whose pair breaks up at the game barrier see one notice saying why and can move on", { tag: "@both" }, async ({
   browser
 }) => {
   const experiment = startExperiment(path.resolve("tests/experiments/live_game"));
@@ -182,10 +182,11 @@ test("participants whose pair breaks up at the game barrier see the no-game noti
     // the pair.
     await clickNextAndWait(first);
 
-    await expect(first.locator("#psynet-no-game-notice")).toHaveText(
-      "Your group couldn't start the game.",
-      { timeout: STEP_TIMEOUT_MS }
-    );
+    // The barrier's notice says why, so the page adds no notice of its own.
+    await expect(
+      first.getByRole("status").filter({ hasText: "Your partner didn't arrive in time." })
+    ).toBeVisible({ timeout: STEP_TIMEOUT_MS });
+    await expect(first.locator("#psynet-no-game-notice")).toHaveCount(0);
     await expect(first.locator("#game-status")).toHaveText("Joining...");
     expect(await first.evaluate(() => psynet.liveGame.hasGame)).toBe(false);
 
@@ -194,15 +195,18 @@ test("participants whose pair breaks up at the game barrier see the no-game noti
     await expect(first.locator("#main-body")).toContainText("The page after the game.", {
       timeout: STEP_TIMEOUT_MS
     });
-    await expect(first.locator("#psynet-no-game-notice")).toHaveCount(0);
+    await expect(
+      first.getByRole("status").filter({ hasText: "Your partner didn't arrive in time." })
+    ).toHaveCount(0);
 
     // The partner, whose pair has ended, passes the game barrier without
     // waiting and has no game either.
     await clickNextAndWait(second);
-    await expect(second.locator("#psynet-no-game-notice")).toHaveText(
-      "Your group couldn't start the game.",
-      { timeout: STEP_TIMEOUT_MS }
-    );
+    await expect(
+      second.getByRole("status").filter({ hasText: "Your partner is no longer in your group." })
+    ).toBeVisible({ timeout: STEP_TIMEOUT_MS });
+    await expect(second.locator("#psynet-no-game-notice")).toHaveCount(0);
+    expect(await second.evaluate(() => psynet.liveGame.hasGame)).toBe(false);
     for (const participant of participants) {
       await assertNoBackendError(participant);
     }
