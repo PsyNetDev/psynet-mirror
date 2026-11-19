@@ -7024,6 +7024,38 @@ def test_make_late_now_needs_a_waiting_bot_and_late_after(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_make_late_now_makes_a_member_on_a_timed_page_late(
+    in_experiment_directory, db_session, monkeypatch
+):
+    monkeypatch.setattr(psynet.bot, "advance_past_wait_pages", lambda *a, **k: None)
+    exp = get_experiment()
+    waiter, quiet = [new_participant(exp) for _ in range(2)]
+    group = SimpleSyncGroup(group_type="main", initial_group_size=2)
+    db_session.add(group)
+    for p in (waiter, quiet):
+        p.status = "working"
+        group.add_participant(p)
+    group.last_barrier_pass_time = timenow()
+    (quiet_link,) = [
+        link for link in group.participant_links if link.participant is quiet
+    ]
+    quiet_link.page_deadline = timenow() + timedelta(seconds=20)
+    barrier = GroupBarrier(
+        "round", group_type="main", late_after=30, late_action="fail"
+    )
+    _arrive_at_group_barrier(exp, barrier, waiter)
+    db_session.commit()
+    group_id, waiter_id, quiet_id = group.id, waiter.id, quiet.id
+
+    make_late_now([SimpleNamespace(id=waiter_id)], "round")
+
+    late = barrier._late_between_barriers(SyncGroup.query.get(group_id), {waiter_id})
+    assert [p.id for p in late] == [quiet_id]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 @pytest.mark.parametrize("passed_before", [True, False])
 def test_make_late_now_keeps_who_left_since_the_last_pass(
     in_experiment_directory, db_session, monkeypatch, passed_before
