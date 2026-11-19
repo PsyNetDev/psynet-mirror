@@ -166,33 +166,7 @@ class LiveGame(RealtimeGame):
                 method, "_psynet_wrapper", False
             ):
                 setattr(cls, name, wrap(method))
-        if not (
-            isinstance(cls.min_players, int)
-            and not isinstance(cls.min_players, bool)
-            and cls.min_players >= 1
-        ):
-            raise ValueError(
-                f"{cls.__name__}'s min_players must be a whole number of 1 or more."
-            )
-        if cls.max_players is not None and not (
-            isinstance(cls.max_players, int)
-            and not isinstance(cls.max_players, bool)
-            and cls.max_players >= cls.min_players
-        ):
-            raise ValueError(
-                f"{cls.__name__}'s max_players must be None or a whole number of "
-                f"at least its min_players, {cls.min_players}."
-            )
-        if not is_number(cls.ready_timeout) or cls.ready_timeout <= 0:
-            raise ValueError(
-                f"{cls.__name__}'s ready_timeout must be a positive number."
-            )
-        if cls.away_timeout is not None and (
-            not is_number(cls.away_timeout) or cls.away_timeout <= 0
-        ):
-            raise ValueError(
-                f"{cls.__name__}'s away_timeout must be None or a positive number."
-            )
+        _check_settings(cls)
         _set_max_duration(cls)
         cls._message_types = _index_message_types(cls)
         if cls.channel is not None:
@@ -548,21 +522,49 @@ def _set_name(game_class):
 _MAX_DURATION_MARGIN = 30
 
 
-def _set_max_duration(game_class):
-    """Check a game's duration and time limit, and set Dallinger's
-    max_duration from them."""
+def _check_settings(game_class):
+    """Check a game's player counts and times, and refuse the Dallinger
+    settings that PsyNet sets itself."""
     name = game_class.__name__
-    if "max_duration" in vars(game_class) and not vars(game_class).get(
-        "_psynet_max_duration"
-    ):
+    own = vars(game_class)
+    if "max_duration" in own:
         raise TypeError(
             f"{name} sets max_duration, which PsyNet sets itself. Set its "
             "timeout instead, in seconds from when the game starts."
         )
-    for what in ("duration", "timeout"):
+    if "join_timeout" in own:
+        raise TypeError(
+            f"{name} sets join_timeout, which PsyNet sets itself, to the "
+            "game's ready_timeout. Set its ready_timeout instead."
+        )
+    min_players = game_class.min_players
+    if not _is_whole_number(min_players, 1):
+        raise ValueError(f"{name}'s min_players must be a whole number of 1 or more.")
+    max_players = game_class.max_players
+    if max_players is not None and not _is_whole_number(max_players, min_players):
+        raise ValueError(
+            f"{name}'s max_players must be None or a whole number of "
+            f"at least its min_players, {min_players}."
+        )
+    for what in ("ready_timeout", "away_timeout", "duration", "timeout"):
         value = getattr(game_class, what)
-        if value is not None and (not is_number(value) or value <= 0):
-            raise ValueError(f"{name}'s {what} must be None or a positive number.")
+        if what == "ready_timeout":
+            allowed = "a positive number"
+        elif value is None:
+            continue
+        else:
+            allowed = "None or a positive number"
+        if not is_number(value) or value <= 0:
+            raise ValueError(f"{name}'s {what} must be {allowed}.")
+
+
+def _is_whole_number(value, least):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= least
+
+
+def _set_max_duration(game_class):
+    """Set Dallinger's max_duration and join_timeout from a game's
+    duration, time limit and ready_timeout."""
     limit = (
         game_class.duration if game_class.duration is not None else game_class.timeout
     )
@@ -571,17 +573,8 @@ def _set_max_duration(game_class):
         if limit is None
         else game_class.ready_timeout + limit + _MAX_DURATION_MARGIN
     )
-    game_class._psynet_max_duration = True
-    if "join_timeout" in vars(game_class) and not vars(game_class).get(
-        "_psynet_join_timeout"
-    ):
-        raise TypeError(
-            f"{name} sets join_timeout, which PsyNet sets itself, to the "
-            "game's ready_timeout. Set its ready_timeout instead."
-        )
     # A game that nobody has opened by the ready timeout ends then.
     game_class.join_timeout = game_class.ready_timeout
-    game_class._psynet_join_timeout = True
 
 
 def _index_message_types(game_class):
