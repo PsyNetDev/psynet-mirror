@@ -1,5 +1,6 @@
 import json
 from contextlib import contextmanager
+from dataclasses import asdict
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, PropertyMock, patch
@@ -46,6 +47,7 @@ from psynet.recruiters import (
     PROLIFIC_UNSUCCESSFUL_CODE_TYPE,
     BaseLabRecruiter,
     BaseLucidRecruiter,
+    DevLucidRecruiter,
     DevProlificRecruiter,
     HotAirRecruiter,
     ProlificRecruiter,
@@ -2253,6 +2255,49 @@ def _lucid_recruiter_with_live_survey(quantity=10, completes=1):
     service.get_survey_status.return_value = "live"
     service.get_survey_quantity_and_completes.return_value = (quantity, completes)
     return recruiter
+
+
+def test_dev_lucid_recruiter_never_calls_the_lucid_api():
+    config = FakeConfig(
+        id="exp",
+        title="Dev Lucid",
+        publish_experiment=True,
+        wage_per_hour=9.0,
+        lucid_recruitment_config=json.dumps(
+            {"survey": {"CountryLanguageID": 9}, "qualifications": [{"Name": "A"}]}
+        ),
+    )
+    experiment = MagicMock()
+    experiment.estimated_completion_time.return_value = 600
+    experiment.estimated_max_reward.return_value = 1.5
+
+    with (
+        patch("psynet.recruiters.get_config", return_value=config),
+        patch("psynet.utils.get_config", return_value=config),
+        patch("dallinger.recruiters.get_config", return_value=config),
+        patch("psynet.recruiters.get_mailer"),
+        patch("psynet.recruiters.admin_notifier"),
+        patch("psynet.experiment.get_experiment", return_value=experiment),
+        patch("requests.Session.request") as http_request,
+    ):
+        recruiter = DevLucidRecruiter(store=_FakeRedisStore())
+        opened = recruiter.open_recruitment(n=5)
+        recruiter.recruit(n=1)
+        recruiter.close_recruitment()
+        json.dumps(asdict(recruiter.get_status()))
+        recruiter.run_checks()
+        with (
+            patch("psynet.recruiters.LucidStatus") as lucid_status,
+            patch("psynet.recruiters._commit_external_call_state"),
+        ):
+            lucid_status.query.order_by.return_value.first.return_value = None
+            recruiter.change_lucid_status("paused")
+        assert recruiter.lucidservice.send_complete_request("rid-1").ok
+        assert recruiter.lucidservice.send_terminate_request("rid-1").ok
+
+    assert "nothing was created on Lucid" in opened["message"]
+    assert recruiter.current_survey_number() is not None
+    http_request.assert_not_called()
 
 
 def test_lucid_close_recruitment_pauses_entry_until_nobody_is_working():

@@ -838,6 +838,88 @@ class LucidService(object):
         return result
 
 
+class DevLucidService(LucidService):
+    """A :class:`LucidService` that logs survey requests instead of sending them.
+
+    ``dev-lucid-recruiter`` uses it, so that local runs and deployments with
+    that recruiter never create, change or close a Lucid survey, and never
+    send respondent completions or terminations to Lucid. The simulated survey
+    stays ``awarded``, like a created survey that is not yet live.
+    """
+
+    SURVEY_NUMBER = 123456789
+    SURVEY_SID = "DEV-LUCID-SID"
+
+    def __init__(self, recruitment_config, exp_config=None):
+        super().__init__(
+            api_key="dev-lucid-api-key",
+            sha1_hashing_key="dev-lucid-sha1-hashing-key",
+            exp_config=exp_config,
+            recruitment_config=recruitment_config,
+        )
+
+    @classmethod
+    def log(cls, text):
+        logger.info(f"DEV LUCID RECRUITER (simulated, nothing sent to Lucid): {text}")
+
+    def create_survey(
+        self,
+        publish_experiment,
+        bid_length_of_interview,
+        live_url,
+        name,
+        quota,
+        quota_cpi,
+    ):
+        """Return a simulated survey."""
+        self.log(
+            f"Create survey '{name}' with quota {quota}, CPI {quota_cpi} and "
+            f"entry link {live_url}."
+        )
+        return {
+            "SurveyNumber": self.SURVEY_NUMBER,
+            "SurveySID": self.SURVEY_SID,
+            "ClientSurveyLiveURL": live_url,
+        }
+
+    def remove_default_qualifications_from_survey(self, survey_number):
+        """Log the removal of Lucid's default qualifications."""
+        self.log(f"Remove default qualifications from survey {survey_number}.")
+
+    def add_qualifications_to_survey(self, survey_number):
+        """Log the qualifications that would be added."""
+        qualifications = self.recruitment_config.get("qualifications") or []
+        self.log(f"Add {len(qualifications)} qualifications to survey {survey_number}.")
+
+    def get_submissions(self, survey_number, days_lookback=90):
+        """Return no sessions, as nobody enters a simulated survey through Lucid."""
+        _check_external_call_allowed()
+        return []
+
+    def _get_survey_fields(self, survey_number, fields):
+        values = {
+            "status": "awarded",
+            "quantity": 0,
+            "total_completes": 0,
+            "total_screens": 0,
+            "last_complete_date": None,
+        }
+        return [values[field] for field in fields]
+
+    def _patch_survey(self, survey_number, data):
+        self.log(f"Update survey {survey_number} with {data}.")
+        return {}
+
+    def send_exit_request(self, rid, ris):
+        """Log the callback and return a successful response."""
+        self.log(
+            f"Exit request for RID '{rid}': {self.generate_submit_url(ris=ris, rid=rid)}"
+        )
+        response = requests.Response()
+        response.status_code = 200
+        return response
+
+
 def get_lucid_service(config=None, recruitment_config=None):
     """
     Create a :class:`LucidService` client for the Lucid (Cint) API.

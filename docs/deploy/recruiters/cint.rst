@@ -64,7 +64,10 @@ and ``show_reward`` to ``False``; CINT recruitment fails with
    early.
 -  ``collects_pii``: whether the survey collects personally identifiable
    information (default ``False``).
--  ``debug_recruiter``: set to ``True`` only for local testing.
+-  ``debug_recruiter``: set to ``True`` only for local testing. ``psynet
+   debug local`` then uses ``dev-lucid-recruiter``, which runs the CINT
+   recruitment code but logs the requests to CINT instead of sending them,
+   so no survey is created.
 
 .. code:: python
 

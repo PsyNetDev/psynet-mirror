@@ -12,3 +12,5 @@ Helpers for recruiting through Cint (formerly Lucid). See
 .. autofunction:: psynet.lucid.get_lucid_service
 
 .. autoclass:: psynet.lucid.LucidService
+
+.. autoclass:: psynet.lucid.DevLucidService
