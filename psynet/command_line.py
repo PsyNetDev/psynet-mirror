@@ -1593,19 +1593,42 @@ def _isolated_session_export_line(env):
 
 
 @contextmanager
-def _record_isolated_session(env):
+def _record_isolated_session(env, pids):
     """Record how to reach this isolated debug session while the block runs.
 
-    See :func:`_refuse_shared_database_beside_isolated_session`.
+    The record names the session's processes ``pids`` (this process and the
+    server it runs) by PID and start time: the server can outlive a killed
+    parent, and a record left by a killed session mustn't be mistaken for a
+    later process with the same PID. If it can't be written, the session runs
+    without it. See :func:`_refuse_shared_database_beside_isolated_session`.
     """
     from .testing.locks import isolated_session_path
 
     path = isolated_session_path(os.getcwd())
-    session = {"pid": os.getpid(), "export": _isolated_session_export_line(env)}
-    # The URL holds the session's password, so only this user may read it.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(session, f)
+    processes = []
+    for pid in pids:
+        with suppress(psutil.NoSuchProcess):
+            processes.append([pid, psutil.Process(pid).create_time()])
+    session = {"processes": processes, "export": _isolated_session_export_line(env)}
+    try:
+        # mkstemp makes the file readable only by this user, as the URL holds
+        # the session's password; the rename stops readers seeing it half-written.
+        fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path))
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(session, f)
+            os.replace(temporary, path)
+        except BaseException:
+            os.remove(temporary)
+            raise
+    except OSError as err:
+        log(
+            f"Warning: could not record the isolated debug session in {path} "
+            f"({err}), so `psynet export local` and similar commands won't "
+            "refuse the shared database while it runs."
+        )
+        yield
+        return
     try:
         yield
     finally:
@@ -1618,8 +1641,10 @@ def _refuse_shared_database_beside_isolated_session(command):
 
     Without ``DATABASE_URL``, ``command`` would read or change another
     experiment's data in the shared database, not the session's. A set
-    ``DATABASE_URL`` is respected.
+    ``DATABASE_URL`` is respected. A record whose processes have exited, or
+    whose PIDs now belong to other processes, is ignored.
     """
+    from .isolated_environment import DEFAULT_DATABASE_URL
     from .testing.locks import isolated_session_path
 
     if "DATABASE_URL" in os.environ:
@@ -1628,20 +1653,30 @@ def _refuse_shared_database_beside_isolated_session(command):
     try:
         with open(path) as f:
             session = json.load(f)
-        pid, export_line = session["pid"], session["export"]
+        processes, export_line = session["processes"], session["export"]
+        running = [pid for pid, started in processes if _is_running(pid, started)]
     except FileNotFoundError:
         return
     except (OSError, ValueError, KeyError, TypeError) as err:
         log(f"Warning: could not read the isolated debug session file {path}: {err!r}")
         return
-    if not psutil.pid_exists(pid):
+    if not running:
         return
     raise click.ClickException(
-        f"An isolated debug session (PID {pid}) is serving this experiment with "
+        f"An isolated debug session (PID {running[0]}) is serving this experiment with "
         f"its own database, but `{command}` would use the shared one. To use the "
         f"session's, run this first:\n  {export_line}\n"
-        "To use the shared database anyway, set DATABASE_URL."
+        "To use the shared database anyway, set DATABASE_URL to it, for "
+        f"example:\n  export DATABASE_URL={DEFAULT_DATABASE_URL}"
     )
+
+
+def _is_running(pid, started):
+    """Return whether process ``pid`` is running and was started at ``started``."""
+    try:
+        return psutil.Process(pid).create_time() == started
+    except psutil.Error:
+        return False
 
 
 @contextmanager
@@ -6035,13 +6070,15 @@ def _rerun_in_isolated_environment(mode="test"):
         # short. A terminal's Ctrl+C reaches it in this process group. Otherwise
         # it gets a group of its own, which only the SIGINT passed on below reaches.
         own_group = not _ctrl_c_reaches_this_process_group()
-        if mode == "debug":
-            stack.enter_context(_record_isolated_session(env))
         process = subprocess.Popen(
             [sys.executable, *sys.orig_argv[1:]],
             env=env,
             process_group=0 if own_group else None,
         )
+        if mode == "debug":
+            stack.enter_context(
+                _record_isolated_session(env, [os.getpid(), process.pid])
+            )
         while True:
             try:
                 exit_code = process.wait()

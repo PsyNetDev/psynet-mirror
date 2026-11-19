@@ -1264,9 +1264,8 @@ def test_debug_local_isolated_reruns_in_its_own_environment(
 def test_commands_beside_an_isolated_debug_session_need_its_database(
     tmp_path, monkeypatch
 ):
-    import click
-
     from psynet import command_line
+    from psynet.testing.locks import isolated_session_path
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("DATABASE_URL", raising=False)
@@ -1277,7 +1276,7 @@ def test_commands_beside_an_isolated_debug_session_need_its_database(
     }
     refuse = command_line._refuse_shared_database_beside_isolated_session
 
-    with command_line._record_isolated_session(env):
+    with command_line._record_isolated_session(env, [os.getpid()]):
         with pytest.raises(click.ClickException) as error:
             refuse("psynet export local")
         assert "`psynet export local` would use the shared one" in error.value.message
@@ -1287,6 +1286,23 @@ def test_commands_beside_an_isolated_debug_session_need_its_database(
         monkeypatch.delenv("DATABASE_URL")
 
     refuse("psynet export local")
+
+    # A killed session's record, whose PID now belongs to another process.
+    path = isolated_session_path(str(tmp_path))
+    with open(path, "w") as f:
+        json.dump({"processes": [[os.getpid(), 0.0]], "export": "export X=1"}, f)
+    try:
+        refuse("psynet export local")
+    finally:
+        os.remove(path)
+
+    # A session that can't write its record still runs.
+    os.mkdir(path)
+    try:
+        with command_line._record_isolated_session(env, [os.getpid()]):
+            pass
+    finally:
+        os.rmdir(path)
 
 
 # @pytest.mark.parametrize("experiment_directory", [path_to_test_experiment("timeline")], indirect=True)
