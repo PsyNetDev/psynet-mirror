@@ -94,6 +94,7 @@ def _run_remote_export(
     *,
     preflight=None,
     assets="none",
+    path=None,
 ):
     """Run a server-built SSH export against stubbed dashboard responses."""
     experiment_class = Mock(
@@ -135,6 +136,33 @@ def _run_remote_export(
             server="example.test",
             docker_ssh=True,
             assets=assets,
+            path=path,
+        )
+
+
+def test_export_refuses_a_path_holding_other_files(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    folder = tmp_path / "thesis"
+    folder.mkdir()
+    (folder / "notes.txt").write_text("mine")
+
+    with pytest.raises(click.ClickException, match="not a PsyNet export"):
+        _run_remote_export(
+            Mock(), _StreamedResponse(content=_export_zip()), path=str(folder)
+        )
+
+    assert [p.name for p in tmp_path.iterdir()] == ["thesis"]
+    assert (folder / "notes.txt").read_text() == "mine"
+
+
+def test_export_reports_a_removed_asset_selection_as_a_usage_error(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(click.BadParameter, match="'all' has been removed"):
+        _run_remote_export(
+            Mock(), _StreamedResponse(content=_export_zip()), assets="all"
         )
 
 

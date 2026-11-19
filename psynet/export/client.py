@@ -321,6 +321,27 @@ def staging_path_for(destination: str) -> Path:
     return destination.with_name(f".{destination.name}.incoming-{os.getpid()}")
 
 
+def check_export_destination(destination: str) -> None:
+    """Refuse a destination that holds anything other than a previous PsyNet export.
+
+    Publishing replaces the destination as a whole, so whatever else is there
+    would be deleted.
+    """
+    target = Path(os.path.expanduser(destination)).absolute()
+    if not target.exists():
+        return
+    if target.is_dir():
+        is_export = (target / "manifest.json").is_file() and (
+            target / "database"
+        ).is_dir()
+        if is_export or not any(target.iterdir()):
+            return
+    raise TransferError(
+        f"{target} already exists and is not a PsyNet export, so exporting there "
+        "would delete it. Choose a new or empty folder."
+    )
+
+
 def publish_export(
     staging_dir: str,
     destination: str,
@@ -336,7 +357,8 @@ def publish_export(
         and returns where it was moved to (see
         :meth:`psynet.experiment.Experiment.rotate_export_history`). When
         omitted, an existing destination is displaced to a temporary sibling and
-        removed only once the new export is in place.
+        removed only once the new export is in place; a destination that is
+        not a previous export is refused (see :func:`check_export_destination`).
 
     Notes
     -----
@@ -357,6 +379,7 @@ def publish_export(
         if rotate_history is not None:
             rotated = rotate_history(str(target))
         else:
+            check_export_destination(str(target))
             displaced = target.with_name(f".{target.name}.superseded-{os.getpid()}")
             shutil.rmtree(displaced, ignore_errors=True)
             target.rename(displaced)

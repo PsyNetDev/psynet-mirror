@@ -4146,7 +4146,14 @@ def _warn_deprecated_export_options(
 
 def export_arguments(func):
     args = [
-        click.option("--path", default=None, help="Path to export directory"),
+        click.option(
+            "--path",
+            default=None,
+            help=(
+                "Folder to export into instead of exports/latest. It must be new, "
+                "empty or a previous export, which is replaced."
+            ),
+        ),
         click.option(
             "--assets",
             default="collected",
@@ -4369,7 +4376,10 @@ def export_(
 
     from .export.service import validate_asset_mode
 
-    assets = validate_asset_mode(assets)
+    try:
+        assets = validate_asset_mode(assets)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc), param_hint="'--assets'") from exc
 
     experiment_class = import_local_experiment()["class"]
 
@@ -4388,7 +4398,18 @@ def export_(
     rotate_history = experiment_class.rotate_export_history if path is None else None
     path = experiment_class.export_path() if path is None else os.path.expanduser(path)
 
-    from .export.client import TransferError, publish_export, staging_path_for
+    from .export.client import (
+        TransferError,
+        check_export_destination,
+        publish_export,
+        staging_path_for,
+    )
+
+    if rotate_history is None:
+        try:
+            check_export_destination(path)
+        except TransferError as exc:
+            raise click.ClickException(str(exc)) from exc
 
     staging = staging_path_for(path)
     shutil.rmtree(staging, ignore_errors=True)

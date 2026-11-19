@@ -325,7 +325,7 @@ def test_publishing_replaces_the_destination_atomically(tmp_path):
     staging.mkdir()
     (staging / "manifest.json").write_text("new")
     destination = tmp_path / "exports" / "latest"
-    destination.mkdir(parents=True)
+    (destination / "database").mkdir(parents=True)
     (destination / "manifest.json").write_text("old")
 
     published = publish_export(str(staging), str(destination))
@@ -334,6 +334,25 @@ def test_publishing_replaces_the_destination_atomically(tmp_path):
     assert (destination / "manifest.json").read_text() == "new"
     assert not staging.exists()
     assert list(tmp_path.joinpath("exports").iterdir()) == [destination]
+
+
+def test_publishing_refuses_a_destination_with_other_files(tmp_path):
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "manifest.json").write_text("new")
+    folder = tmp_path / "thesis"
+    folder.mkdir()
+    (folder / "notes.txt").write_text("mine")
+    file = tmp_path / "notes.txt"
+    file.write_text("mine")
+
+    for destination in (folder, file):
+        with pytest.raises(TransferError, match="would delete"):
+            publish_export(str(staging), str(destination))
+
+    assert (folder / "notes.txt").read_text() == "mine"
+    assert file.read_text() == "mine"
+    assert (staging / "manifest.json").read_text() == "new"
 
 
 def test_publishing_uses_the_history_rotation_hook_when_provided(tmp_path):
@@ -528,7 +547,7 @@ def test_publishing_keeps_the_previous_export_if_restore_also_fails(tmp_path):
     staging.mkdir()
     (staging / "manifest.json").write_text("new")
     destination = tmp_path / "latest"
-    destination.mkdir()
+    (destination / "database").mkdir(parents=True)
     (destination / "manifest.json").write_text("old")
 
     def fail_replace(src, dst):

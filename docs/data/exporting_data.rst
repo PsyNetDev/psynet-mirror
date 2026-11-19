@@ -41,7 +41,9 @@ Useful options:
 A new export is assembled in a temporary directory and moved into place only
 once it is complete and validated. The previous ``exports/latest/`` then
 moves to ``exports/history/<timestamp>/``. With ``--path``, the previous
-export at that path is replaced, not moved to history. A failed or
+export at that path is replaced, not moved to history. The path must be new,
+empty or hold a previous export: PsyNet refuses any other existing file or
+folder instead of deleting it. A failed or
 interrupted export leaves the previous export intact; if both publishing the
 new export and restoring the old one fail, the previous export stays at its
 recovery path and the error names both locations. ``exports/`` is
