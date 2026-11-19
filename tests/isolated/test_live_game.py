@@ -1787,8 +1787,9 @@ def test_the_game_starts_at_the_ready_timeout_without_everyone(relay):
     assert state["psynet"] == _psynet(
         participant_ids=[1, 2], ready=[0], started_at=10, ends_at=610
     )
-    # The game's clock starts at 0 when the game starts.
-    assert (state["ticks"], state["deadline"]) == ([0], 5)
+    # The game's clock starts at 0 when the game starts, and a game without
+    # ticks doesn't tick before its first deadline.
+    assert (state["ticks"], state["deadline"]) == ([], 5)
     # The game's deadline, 99 seconds into the game, on Dallinger's clock.
     assert relay.next_deadline(state) == 109
     relay.apply(state, "2", READY, 11, Sent())

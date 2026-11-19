@@ -124,6 +124,12 @@ def _tick_once_started(self, method, outermost, state, now):
         # no other.
         if self.is_over(state):
             return None
+        if not self.tick_rate:
+            # A game without ticks runs its tick only at its deadlines, and
+            # its clock is at 0.
+            deadline = self.next_deadline(state)
+            if deadline is None or deadline > 0:
+                return None
     if outermost:
         too_few_at = _too_few_players_at(self, state)
         if too_few_at is not None and now >= too_few_at:
