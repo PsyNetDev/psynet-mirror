@@ -433,6 +433,15 @@ async function assertNoBackendError(page) {
   );
 }
 
+// Checks that the page fits its layout, and saves a screenshot of it as
+// <name>.png in ARTIFACT_DIR, if set.
+async function checkLayoutAndScreenshot(page, name) {
+  expect(await page.evaluate(() => window.psynetLayout.check()), name).toEqual([]);
+  if (process.env.ARTIFACT_DIR) {
+    await page.screenshot({ path: `${process.env.ARTIFACT_DIR}/${name}.png`, fullPage: true });
+  }
+}
+
 async function getPageUuid(page) {
   try {
     return await page.evaluate(() => window.pageUuid);
@@ -1741,6 +1750,7 @@ module.exports = {
   advanceUntilPromptContains,
   assertNoBackendError,
   beginExperiment,
+  checkLayoutAndScreenshot,
   captureFirstTimelineAfterGateway,
   enterTimelineAfterGateway,
   installTimelineHoldReleaseProbe,

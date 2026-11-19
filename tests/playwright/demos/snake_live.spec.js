@@ -3,6 +3,7 @@ const { test, expect } = require("../fixtures");
 
 const {
   assertNoBackendError,
+  checkLayoutAndScreenshot,
   startExperiment,
   startParticipantsTogether,
   stopExperiment
@@ -10,12 +11,6 @@ const {
 
 const STEP_TIMEOUT_MS = 120000;
 
-async function screenshot(page, name) {
-  expect(await page.evaluate(() => window.psynetLayout.check()), name).toEqual([]);
-  if (process.env.ARTIFACT_DIR) {
-    await page.screenshot({ path: `${process.env.ARTIFACT_DIR}/${name}.png`, fullPage: true });
-  }
-}
 // The game's SIZE.
 const SIZE = 30;
 const KEYS = { up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight" };
@@ -143,7 +138,7 @@ test("players steer snakes in snake_live, eat food, crash and come back, and fin
       new RegExp(`${escaped}: [1-9]\\d* food`),
       { timeout: STEP_TIMEOUT_MS }
     );
-    await screenshot(second, "snake_live_board");
+    await checkLayoutAndScreenshot(second, "snake_live_board");
 
     // A reloaded page draws the game as it stands.
     await first.reload();
@@ -166,7 +161,7 @@ test("players steer snakes in snake_live, eat food, crash and come back, and fin
     await expect(first.locator("#main-body")).toContainText("Your snake ate", {
       timeout: STEP_TIMEOUT_MS
     });
-    await screenshot(first, "snake_live_result");
+    await checkLayoutAndScreenshot(first, "snake_live_result");
     await assertNoBackendError(first);
   } finally {
     for (const context of contexts) {

@@ -3,6 +3,7 @@ const { test, expect } = require("../fixtures");
 
 const {
   assertNoBackendError,
+  checkLayoutAndScreenshot,
   startExperiment,
   startParticipantsTogether,
   stopExperiment
@@ -10,12 +11,6 @@ const {
 
 const STEP_TIMEOUT_MS = 120000;
 
-async function screenshot(page, name) {
-  expect(await page.evaluate(() => window.psynetLayout.check()), name).toEqual([]);
-  if (process.env.ARTIFACT_DIR) {
-    await page.screenshot({ path: `${process.env.ARTIFACT_DIR}/${name}.png`, fullPage: true });
-  }
-}
 const SIZE = 640;
 // The game seconds the leaving player's check needs: AWAY_DELAY_MS in
 // live-game.js, the game's COAST_AFTER and time for the views to arrive.
@@ -260,7 +255,7 @@ test("players move around shared_canvas_live with prediction and interpolation, 
       `${label}: ${collector.coins}`,
       { timeout: STEP_TIMEOUT_MS }
     );
-    await screenshot(second, "shared_canvas_live_board");
+    await checkLayoutAndScreenshot(second, "shared_canvas_live_board");
 
     // The views that arrived while the first player went for the coin and
     // coasted never moved their piece from where the page predicted it.
@@ -319,7 +314,7 @@ test("players move around shared_canvas_live with prediction and interpolation, 
       `You collected ${collector.coins} ${collector.coins === 1 ? "coin" : "coins"}`,
       { timeout: STEP_TIMEOUT_MS }
     );
-    await screenshot(first, "shared_canvas_live_result");
+    await checkLayoutAndScreenshot(first, "shared_canvas_live_result");
     await assertNoBackendError(first);
   } finally {
     for (const context of contexts) {

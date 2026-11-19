@@ -3,6 +3,7 @@ const { test, expect } = require("../fixtures");
 
 const {
   assertNoBackendError,
+  checkLayoutAndScreenshot,
   clickNextAndWait,
   startExperiment,
   startParticipantsTogether,
@@ -11,13 +12,6 @@ const {
 } = require("../psynetHarness");
 
 const STEP_TIMEOUT_MS = 120000;
-
-async function screenshot(page, name) {
-  expect(await page.evaluate(() => window.psynetLayout.check()), name).toEqual([]);
-  if (process.env.ARTIFACT_DIR) {
-    await page.screenshot({ path: `${process.env.ARTIFACT_DIR}/${name}.png`, fullPage: true });
-  }
-}
 
 function spot(player, number) {
   return player.getByRole("button", { name: `Spot ${"ABCDEFGH"[number - 1]}`, exact: true });
@@ -68,7 +62,7 @@ test("a newcomer sails onto the lake while the founders fish, and fishes on afte
     );
     const [newcomer] = await startParticipantsTogether(contexts.slice(2), url, "microsociety_live_newcomer");
     await waitForPromptContains(newcomer, "The others are already fishing");
-    await screenshot(newcomer, "microsociety_live_history");
+    await checkLayoutAndScreenshot(newcomer, "microsociety_live_history");
     await clickNextAndWait(newcomer);
     await expect(spot(newcomer, 1)).toBeEnabled({ timeout: STEP_TIMEOUT_MS });
     await spot(newcomer, 6).click();
@@ -78,7 +72,7 @@ test("a newcomer sails onto the lake while the founders fish, and fishes on afte
     await expect(newcomer.locator(".fish-boat-wrapper .fish-count")).toHaveCount(3);
     await expect(newcomer.locator(".fish-boat-wrapper .fish-count.fish-who-you")).toHaveText(/^You 🐟 \d+$/);
     await newcomer.locator(".fish-catch").first().waitFor({ timeout: 10000 }).catch(() => {});
-    await screenshot(newcomer, "microsociety_live_lake");
+    await checkLayoutAndScreenshot(newcomer, "microsociety_live_lake");
 
     // The founders' time on the lake ends first: each sees their results,
     // then leaves a tip, while the newcomer fishes on alone.
@@ -91,7 +85,7 @@ test("a newcomer sails onto the lake while the founders fish, and fishes on afte
     await first
       .locator("#fish-results")
       .evaluate((panel) => Promise.all(panel.getAnimations().map((animation) => animation.finished)));
-    await screenshot(first, "microsociety_live_results");
+    await checkLayoutAndScreenshot(first, "microsociety_live_results");
     await expect(newcomer.locator(".fish-boat-wrapper")).toHaveCount(1, { timeout: STEP_TIMEOUT_MS });
     await expect(spot(newcomer, 1)).toBeEnabled();
     for (const player of founders) {

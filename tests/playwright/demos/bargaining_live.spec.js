@@ -3,19 +3,13 @@ const { test, expect } = require("../fixtures");
 
 const {
   assertNoBackendError,
+  checkLayoutAndScreenshot,
   startExperiment,
   startParticipantsTogether,
   stopExperiment
 } = require("../psynetHarness");
 
 const STEP_TIMEOUT_MS = 120000;
-
-async function screenshot(page, name) {
-  expect(await page.evaluate(() => window.psynetLayout.check()), name).toEqual([]);
-  if (process.env.ARTIFACT_DIR) {
-    await page.screenshot({ path: `${process.env.ARTIFACT_DIR}/${name}.png`, fullPage: true });
-  }
-}
 
 async function propose(player, keep) {
   await player.locator("#bargain-keep").fill(String(keep));
@@ -52,7 +46,7 @@ test("a cohort of four bargains live in pairs, and a proposal that changed can't
     const partner = cohort[partnerOf[0]];
     expect(partnerOf[partnerOf[0]]).toBe(0);
     await expect(first.locator("#bargain-mine-coins .bargain-coin-you")).toHaveCount(5);
-    await screenshot(first, "bargaining_live_proposals");
+    await checkLayoutAndScreenshot(first, "bargaining_live_proposals");
 
     // The partner changes their proposal, to one that no player opened
     // with, just before the first player accepts the old one, so the game
@@ -79,7 +73,7 @@ test("a cohort of four bargains live in pairs, and a proposal that changed can't
     await expect(first.locator("#bargain-deal")).toHaveText(
       `Deal! You get ${stake - 9} coins and your partner gets 9.`
     );
-    await screenshot(first, "bargaining_live_deal");
+    await checkLayoutAndScreenshot(first, "bargaining_live_deal");
 
     // The other pair makes a deal too, and everyone sees their results.
     const others = cohort.filter((player) => player !== first && player !== partner);
