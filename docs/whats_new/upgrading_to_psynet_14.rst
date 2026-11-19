@@ -591,10 +591,13 @@ templates that changes the database.
     together. ``int(key)`` while iterating works for both.
   * A dictionary with both string and non-string keys keeps its key types
     but not its key order: string keys come first.
-  * Flask's ``jsonify`` and Jinja's ``tojson`` sort keys, so they raise
-    ``TypeError`` for a dictionary with both integer and string keys, and
-    ``json.dumps`` raises it for tuple keys. Convert the keys of such a
-    dictionary before sending it to the browser:
+  * JSON turns integer, float, boolean and ``None`` keys into strings, so
+    pages, routes and bot responses receive ``{"12": "rock"}``. Flask's JSON
+    responses and Jinja's ``tojson`` no longer sort keys, so mixed key types
+    work there. Tuple keys make any conversion to JSON raise ``TypeError``,
+    and so do keys that cannot be compared, such as an integer and a string
+    or an integer and ``None``, when your own code sorts keys, for example
+    with ``json.dumps(value, sort_keys=True)``. Convert the keys first:
 
     .. code:: python
 
