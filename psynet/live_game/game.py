@@ -487,8 +487,7 @@ def _set_name(game_class):
             "its name. Set its name instead."
         )
     # A subclass of a named game needs a name of its own; the registry says so.
-    if game_class.name is not None:
-        game_class.channel = game_class.name
+    game_class.channel = game_class.name
 
 
 # Seconds that Dallinger's max_duration leaves after the latest moment the

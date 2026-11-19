@@ -1322,6 +1322,11 @@ def test_a_subclass_with_its_parent_s_name_is_refused(registry):
         class Child(Parent):
             pass
 
+    class Abstract(Parent):
+        name = None
+
+    assert Abstract.channel is None
+
 
 def test_a_game_s_name_is_its_channel(registry):
     class Named(LiveGame):
@@ -2798,7 +2803,7 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
     assert other.sync_group_links[0].page_deadline == row.end_time
 
 
-def _save_ending(session_id, ready=(), away=(), ended_at=0, entry=None):
+def _save_ending(session_id, ready=(), away=(), ended_at=0, entry=None, status="ended"):
     """Save the game's ending, as Dallinger does once it has started at 0,
     with the players of ``ready`` ready and those of ``away``, ``(player,
     since)``, away, or with the psynet ``entry`` of a game played
@@ -2808,7 +2813,7 @@ def _save_ending(session_id, ready=(), away=(), ended_at=0, entry=None):
     away_since = [None] * len(ids)
     for player, since in away:
         away_since[player] = since
-    row.status, row.end_reason, row.outcome = "ended", "finished", [None, None]
+    row.status, row.end_reason, row.outcome = status, "finished", [None, None]
     row.end_time = timenow()
     if entry is None:
         entry = _psynet(
@@ -2917,6 +2922,18 @@ def test_a_player_added_to_the_running_game_leaves_only_once_away_for_long(
 
     added = db.session.get(Participant, ids[1])
     assert added.sync_group_removal_reason("pair") == reason
+
+
+def test_the_players_of_a_failed_game_stay_in_their_groups(pair):
+    members, _ = pair
+    play = _play("absent", absent_action="leave_group")
+    for member in members:
+        _arrive(play.barrier, member)
+
+    _save_ending(_game_id(members[0], "absent"), status="failed")
+
+    for member in members:
+        assert member.sync_group_removal_reason("pair") is None
 
 
 def test_absent_action_needs_groups_that_carry_on_without_a_player():

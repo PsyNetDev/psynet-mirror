@@ -128,7 +128,8 @@ def _handles_ending(method):
             _pay_outcome_rewards(self, session_row, players)
             _record_outcome_on_round(session_row)
         _end_game_page_deadlines(session_row, players, session_row.end_time)
-        _remove_absent_players(self, session_row, players)
+        if session_row.status != "failed":
+            _remove_absent_players(self, session_row, players)
         return _as_game_code(method, self, session_row)
 
     handle_ending._psynet_wrapper = True

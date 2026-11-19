@@ -7,7 +7,7 @@ _live_game_classes = {}
 
 
 def live_game_classes():
-    """Return every :class:`LiveGame` subclass that has a ``channel``,
+    """Return every :class:`LiveGame` subclass that has a ``name``,
     which PsyNet adds to the experiment's ``realtime_games``."""
     return list(_live_game_classes.values())
 

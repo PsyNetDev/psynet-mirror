@@ -399,7 +399,7 @@ def _reject_overridden_fail_participant(cls):
 
 class _RealtimeGames:
     """The experiment's ``realtime_games``: the games it lists, then every
-    :class:`~psynet.live_game.LiveGame` with a ``channel``. Worked out
+    :class:`~psynet.live_game.LiveGame` with a ``name``. Worked out
     each time it's read, so a game can be defined anywhere in
     ``experiment.py``, before or after the experiment class."""
 
@@ -976,7 +976,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     realtime_games : ``list``
         The game types of the experiment's live games (see
         :mod:`psynet.live_game`). PsyNet adds every
-        :class:`~psynet.live_game.LiveGame` with a ``channel``, whichever
+        :class:`~psynet.live_game.LiveGame` with a ``name``, whichever
         module defines it, so list only other game types the experiment
         plays.
         Default: ``[]``.

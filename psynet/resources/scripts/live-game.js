@@ -549,8 +549,7 @@
         } else if (playing === null) {
           text = "";
         } else {
-          let view = state.predict === null ? null : pageSocket().predictedView();
-          text = playing(view ?? state.lastView);
+          text = playing(shownView(state, state.lastView));
         }
         if (element.textContent !== text) {
           element.textContent = text;
