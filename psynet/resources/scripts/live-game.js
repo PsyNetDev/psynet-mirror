@@ -310,10 +310,10 @@
     function hideNextButtonWhileConnected(state, socket) {
       function down() {
         if (state.connectionTimer === null && !state.left) {
-          state.connectionTimer = setTimeout(
-            () => page.setNextButtonHidden(false),
-            DISCONNECTED_DELAY_MS,
-          );
+          state.connectionTimer = setTimeout(() => {
+            state.connectionTimer = null;
+            page.setNextButtonHidden(false);
+          }, DISCONNECTED_DELAY_MS);
         }
       }
       page.setNextButtonHidden(true);
@@ -321,6 +321,7 @@
       socket.raw.addEventListener("open", () => {
         clearTimeout(state.connectionTimer);
         state.connectionTimer = null;
+        if (state.left) return;
         page.setNextButtonHidden(true);
       });
       socket.raw.addEventListener("close", down);

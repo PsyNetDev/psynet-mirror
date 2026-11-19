@@ -432,6 +432,7 @@ describe("psynet.liveGame", () => {
     changePage();
     sockets[1].raw.dispatchEvent(new Event("close"));
     mock.timers.tick(60000);
+    sockets[1].raw.dispatchEvent(new Event("open"));
     assert.equal(nextButtonHidden.length, shown);
   });
 
