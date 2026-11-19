@@ -90,8 +90,17 @@ def _untag_key(key):
 
 
 def _untag_keys(value):
+    """Untag the dictionary keys in ``value``, recursively.
+
+    A tagged key keeps its tag when its untagged name is already a key of the
+    same dictionary, so ``{"12": ..., "json://12": ...}`` keeps both keys.
+    """
     if isinstance(value, dict):
-        return {_untag_key(k): _untag_keys(v) for k, v in value.items()}
+        untagged = {}
+        for key, item in value.items():
+            name = _untag_key(key)
+            untagged[key if name in value else name] = _untag_keys(item)
+        return untagged
     if isinstance(value, list):
         return [_untag_keys(v) for v in value]
     return value
@@ -110,6 +119,8 @@ def unpack_json_column(
     columns are never overwritten unless ``overwrite`` is true. Dictionary
     keys that PsyNet stored with a ``json://`` tag lose the tag, so the
     integer key ``12`` becomes the column ``12`` rather than ``json://12``.
+    If the same dictionary also has the string key ``"12"``, that key gets
+    the column ``12`` and the integer key keeps the column ``json://12``.
     """
     if column not in data_frame.columns:
         raise KeyError(column)

@@ -54,7 +54,9 @@ Reading the tables
 
 In JSON columns, PsyNet tags dictionary keys that are not strings with
 ``json://``, so ``{12: "rock"}`` is stored as ``{"json://12": "rock"}``.
-``unpack_json_column`` removes the tag and names the column ``12``.
+``unpack_json_column`` removes the tag and names the column ``12``. If the
+same dictionary also has the string key ``"12"``, the integer key keeps its
+tag, so the two become the columns ``12`` and ``json://12``.
 
 An unfinished trial, abandoned or still running when the export was made,
 can have an ``answer``: the answer given so far, before ``format_answer``
