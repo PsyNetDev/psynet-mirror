@@ -116,12 +116,12 @@ def test_unpack_json_column_names_columns_after_untagged_keys():
 def test_unpack_json_column_keeps_int_and_string_keys_apart():
     from psynet.serialize import serialize
 
-    value = {12: "int", "12": "str", "choice": {15: "int", "15": "str"}}
+    value = {12: "int", "12": "str", "choice": {15: "int", "15": "str"}, "json://x": 1}
     frame = pd.DataFrame({"var": [serialize(value)]})
 
     row = unpack_json_column(frame, "var").iloc[0]
 
-    assert (row["12"], row["json://12"]) == ("str", "int")
+    assert (row["12"], row["json://12"], row["json://x"]) == ("str", "int", 1)
     assert (row["choice.15"], row["choice.json://15"]) == ("str", "int")
 
 

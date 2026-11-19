@@ -105,6 +105,10 @@ def test_unserialize_decodes_plain_json_without_jsonpickle(monkeypatch):
         "a": [1, 2.5, None, True, "py"]
     }
     assert math.isnan(unserialize("NaN"))
+    assert unserialize(serialize({12: "rock", "json://k": "v"})) == {
+        12: "rock",
+        "json://k": "v",
+    }
 
 
 def _score(group, question):

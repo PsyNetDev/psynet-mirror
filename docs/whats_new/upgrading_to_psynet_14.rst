@@ -580,23 +580,25 @@ templates that changes the database.
 * Dictionaries stored in the database, such as ``participant.var``,
   ``trial.var``, ``node.var``, answers and definitions, now keep the type of
   their keys: ``{12: "rock"}`` reads back as ``{12: "rock"}``, not
-  ``{"12": "rock"}``. Look up keys with the type you stored them with. If
-  your code stores integer keys, such as ``{participant.id: choice}``, but
-  reads them with string-converted keys, such as
-  ``choices[str(participant.id)]``, use the original key:
-  ``choices[participant.id]``. If it stores string keys, such as
-  ``{str(participant.id): choice}``, keep reading ``str(participant.id)``, or
-  change the write and the read together. ``int(key)`` while iterating
-  works for both. A dictionary with both string and non-string
-  keys keeps its key types but not its key order: string keys come first.
-  Flask's ``jsonify`` and Jinja's ``tojson`` sort keys, so they raise
-  ``TypeError`` for a dictionary with both integer and string keys, and
-  ``json.dumps`` raises it for tuple keys. Convert the keys of such a
-  dictionary before sending it to the browser:
+  ``{"12": "rock"}``.
 
-  .. code:: python
+  * Look up keys with the type you stored them with. If your code stores
+    integer keys, such as ``{participant.id: choice}``, but reads them with
+    string-converted keys, such as ``choices[str(participant.id)]``, use the
+    original key: ``choices[participant.id]``.
+  * If it stores string keys, such as ``{str(participant.id): choice}``, keep
+    reading ``str(participant.id)``, or change the write and the read
+    together. ``int(key)`` while iterating works for both.
+  * A dictionary with both string and non-string keys keeps its key types
+    but not its key order: string keys come first.
+  * Flask's ``jsonify`` and Jinja's ``tojson`` sort keys, so they raise
+    ``TypeError`` for a dictionary with both integer and string keys, and
+    ``json.dumps`` raises it for tuple keys. Convert the keys of such a
+    dictionary before sending it to the browser:
 
-      choices = {str(k): v for k, v in participant.var.choice_by_player.items()}
+    .. code:: python
+
+        choices = {str(k): v for k, v in participant.var.choice_by_player.items()}
 * ``LanguageVocabularyTrial`` answers are now screen positions (``"1"`` to
   ``"4"``) rather than ``"correct"``. A custom subclass that compares an
   answer with ``"correct"`` should compare it with
@@ -819,8 +821,9 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
   example ``{"json://12": "rock"}`` for ``{12: "rock"}``.
   ``unpack_json_column`` removes the tag, so this becomes a column named
   ``12``, unless the same dictionary also has the string key ``"12"``; then
-  the integer key keeps the column ``json://12``. Scripts that parse these columns themselves, for example with
-  ``json.loads``, must remove the tag too.
+  the integer key keeps the column ``json://12``. Scripts that parse these
+  columns themselves, for example with ``json.loads``, must remove the tag
+  too.
 * Search experiment code for ``copy_expert``, ``copy_from``, ``copy_to`` and
   ``COPY``. In a web request or background job, PostgreSQL ``COPY`` must run
   inside :func:`psynet.db.blocking_psycopg`, or psycopg2 raises

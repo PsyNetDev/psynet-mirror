@@ -8,6 +8,7 @@ import zipfile
 from typing import Optional, Union
 
 import pandas as pd
+from jsonpickle.tags import JSON_KEY
 
 from .paths import (
     find_table_member_in_zip,
@@ -70,18 +71,15 @@ def load_export_table(
     return _read_table_csv(path)
 
 
-_JSON_KEY = "json://"
-
-
 def _untag_key(key):
     """Return a column-friendly name for a dictionary key tagged with ``json://``.
 
     PsyNet writes non-string keys such as ``12`` as ``"json://12"``; this
     returns ``"12"``. A tagged string key, ``json://"json://x"``, returns ``"json://x"``.
     """
-    if not isinstance(key, str) or not key.startswith(_JSON_KEY):
+    if not isinstance(key, str) or not key.startswith(JSON_KEY):
         return key
-    text = key[len(_JSON_KEY) :]
+    text = key[len(JSON_KEY) :]
     try:
         decoded = json.loads(text)
     except ValueError:
@@ -121,6 +119,9 @@ def unpack_json_column(
     integer key ``12`` becomes the column ``12`` rather than ``json://12``.
     If the same dictionary also has the string key ``"12"``, that key gets
     the column ``12`` and the integer key keeps the column ``json://12``.
+    This is decided row by row, not across the column. Column names can
+    also clash: the float key ``1.5`` and the nested keys ``{1: {5: ...}}``
+    both become the column ``1.5``.
     """
     if column not in data_frame.columns:
         raise KeyError(column)
