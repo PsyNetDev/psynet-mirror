@@ -20,7 +20,17 @@ moving on.
 import inspect
 import random
 from dataclasses import dataclass
-from typing import Any, Iterable, List, Literal, Optional, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Type,
+    Union,
+)
 
 from dallinger import db
 from dallinger.models import Node, Vector
@@ -48,9 +58,10 @@ from ..db import forbid_commits
 from ..field import PythonList, PythonObject, VarStore
 from ..page import wait_while
 from ..participant import Participant
-from ..sync import SyncGroup
+from ..sync import LateAction, SyncGroup
 from ..timeline import is_list_of
 from ..utils import (
+    NoArgumentProvided,
     call_function_with_context,
     deep_copy,
     get_logger,
@@ -59,7 +70,6 @@ from ..utils import (
     negate,
 )
 from .main import (
-    _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
     NetworkTrialMaker,
     NetworkTrialMakerState,
     Selection,
@@ -793,7 +803,6 @@ class ChainNode(TrialNode):
     child_id = Column(Integer, ForeignKey("node.id"), index=True)
     parent_id = Column(Integer, ForeignKey("node.id"), index=True)
     seed = Column(PythonObject, default=lambda: {})
-    definition = Column(PythonObject, default=lambda: {})
     context = Column(PythonObject)
     participant_group = Column(String, index=True)
     block = Column(String, index=True)
@@ -1521,30 +1530,47 @@ class ChainTrialMaker(NetworkTrialMaker):
         When this is set, then the ordinary node allocation logic will only apply to the 'leader'
         of each SyncGroup. The other members of this SyncGroup will follow that leader around,
         so that in every given trial the SyncGroup works on the same node together.
+        The other ``sync_group_*`` options raise an error without it.
 
     sync_group_max_wait_time
-        The maximum time that the participant will be allowed to wait for the SyncGroup to be ready.
-        If this time is exceeded, the participant is either failed or kicked (see ``sync_group_max_wait_action``).
-        Defaults to 45 seconds, or to 20 seconds more than ``sync_group_timeout_between_barriers_time`` if that is longer; ``None`` waits indefinitely. A value you pass must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
+        Acts on members waiting for their group at the trial maker's own barriers: the longest
+        each may wait, in seconds, counted from their arrival, before
+        ``sync_group_max_wait_action`` is applied to them. Defaults to 45 seconds, or to no limit
+        with ``sync_group_late_after``, which then moves slow members on; passing a number or a
+        function together with ``sync_group_late_after`` raises an error. ``None`` means no limit.
 
     sync_group_max_wait_action
-        When ``sync_group_max_wait_time`` is exceeded: ``"fail"`` fails the participant; ``"kick"`` removes them
-        from the group and lets them continue. Defaults to ``"fail"``.
+        What happens to a member who waits longer than ``sync_group_max_wait_time``: ``"fail"``
+        (default) fails them and sends them to the end of the experiment; ``"leave_group"`` removes them
+        from the group, and they get no more trials from this trial maker, or skip the rest of it if
+        they haven't finished a trial (see :ref:`sync-leaving-a-group`).
 
-    sync_group_timeout_between_barriers_time
-        Optional timeout in seconds (since the group's last barrier pass, or since the participant joined the group if that is later) after which a participant
-        is considered too slow. When ``None`` (default), no between-barrier timeout is applied.
+    sync_group_late_after
+        Acts on members who haven't reached the trial maker's barrier yet: the longest each may
+        take to reach it, in seconds, counted from the group's previous barrier pass or from when
+        they joined the group, whichever is later, before ``sync_group_late_action`` is applied
+        to them. ``None`` (default) never treats anyone as late. See ``late_after`` in
+        :class:`~psynet.sync.GroupBarrier`.
 
-    sync_group_timeout_between_barriers_action
-        When ``sync_group_timeout_between_barriers_time`` is set: ``"kick"`` removes the participant from the group so
-        the rest can proceed, or ``"fail"`` fails the participant. Defaults to ``"fail"``.
+    sync_group_late_action
+        What happens to a member who is later than ``sync_group_late_after``, which requires it:
+        ``"fail"`` fails them; ``"leave_group"`` removes them from the group, so the rest can go on
+        without them (see :ref:`sync-leaving-a-group`). See ``late_action`` in
+        :class:`~psynet.sync.GroupBarrier`.
 
-    sync_group_wait_content
-        Message shown by the trial maker's own sync-group waits (initialization and
-        trial preparation). If omitted, participants see "Waiting for other
-        participants…". Author-defined :class:`~psynet.sync.Grouper` and
-        :class:`~psynet.sync.GroupBarrier` waits still use their own ``content``;
-        pass the same string on those constructs if they should match.
+    sync_group_also_leave
+        With ``sync_group_late_action="leave_group"``, the other group types a late member also
+        leaves, for example ``["cohort"]``. See ``also_leave`` in :class:`~psynet.sync.GroupBarrier`.
+
+    sync_group_waiting_message
+        Message on the waiting indicator at the trial maker's own sync-group wait
+        (trial preparation). If omitted, participants see "Waiting for other
+        participants…". :class:`~psynet.sync.Grouper` and :class:`~psynet.sync.GroupBarrier`
+        elements use their own ``waiting_message``; pass the same text to them if the messages
+        should match.
+
+    sync_group_newcomer_max_wait
+        See :class:`~psynet.trial.main.TrialMaker`.
 
     Attributes
     ----------
@@ -1627,11 +1653,13 @@ class ChainTrialMaker(NetworkTrialMaker):
         assets=None,
         choose_participant_group: Optional[callable] = None,
         sync_group_type: Optional[str] = None,
-        sync_group_max_wait_time: Optional[float] = _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
-        sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
-        sync_group_timeout_between_barriers_time: Optional[float] = None,
-        sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
-        sync_group_wait_content=None,
+        sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
+        sync_group_max_wait_action: Literal["fail", "leave_group"] = "fail",
+        sync_group_late_after: Optional[float] = None,
+        sync_group_late_action: Optional[LateAction] = None,
+        sync_group_also_leave: Optional[Sequence[str]] = None,
+        sync_group_waiting_message=None,
+        sync_group_newcomer_max_wait: Optional[float] = None,
     ):
         if network_class is None:
             network_class = self.default_network_class
@@ -1795,9 +1823,11 @@ class ChainTrialMaker(NetworkTrialMaker):
             sync_group_type=sync_group_type,
             sync_group_max_wait_time=sync_group_max_wait_time,
             sync_group_max_wait_action=sync_group_max_wait_action,
-            sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
-            sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
-            sync_group_wait_content=sync_group_wait_content,
+            sync_group_late_after=sync_group_late_after,
+            sync_group_late_action=sync_group_late_action,
+            sync_group_also_leave=sync_group_also_leave,
+            sync_group_waiting_message=sync_group_waiting_message,
+            sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
             n_participants_completion=n_participants_completion,
         )
 
@@ -1949,8 +1979,10 @@ class ChainTrialMaker(NetworkTrialMaker):
             # so they need no networks or block order.
             return
         is_follower = participant != sync_group.leader if sync_group else False
+        _, run = self._group_run(participant)
+        copies_block_order = run is not None and "block_order" in run
 
-        if not is_follower:
+        if not (is_follower and copies_block_order):
             if self.chain_type == "within":
                 networks = self.create_networks_within(experiment, participant)
                 rows = [(n.block, n.participant_group) for n in networks]
@@ -1974,13 +2006,19 @@ class ChainTrialMaker(NetworkTrialMaker):
                     )
             self.check_participant_groups({group for _, group in rows})
 
+        if copies_block_order:
+            participant.module_state.block_order = list(run["block_order"])
+            participant.module_state.set_block_position(run["block_position"])
+        else:
             # Blocks are in network creation order, which "listed" block orders follow.
             blocks = list(dict.fromkeys(block for block, _ in rows))
             self.init_block_order(experiment, participant, blocks)
-        else:
-            leader_state = self._leader_state(sync_group)
-            participant.module_state.block_order = leader_state.block_order
-            participant.module_state.set_block_position(leader_state.block_position)
+            if run is not None:
+                self._update_group_run(
+                    sync_group,
+                    block_order=list(participant.module_state.block_order),
+                    block_position=0,
+                )
 
     def init_block_order(self, experiment, participant, blocks):
         """Choose and store the participant's block order.
@@ -3032,6 +3070,11 @@ class ChainTrialMaker(NetworkTrialMaker):
     def _go_to_next_block(self, participant):
         for state in self._group_states(participant):
             state.set_block_position(state.block_position + 1)
+        group, run = self._group_run(participant)
+        if run is not None:
+            self._update_group_run(
+                group, block_position=participant.module_state.block_position
+            )
         logger.debug(
             "Participant %i moved to block %r.",
             participant.id,

@@ -1,0 +1,1 @@
+Added `participant.latest_sync_group(group_type)`, which returns the participant's latest group of that type even after they left it or it ended, and `participant.sync_group_link(group_type)`, which returns their membership of it, with when they were admitted (`admitted_at`) and how many admission points they have passed (`admission_points_passed`).

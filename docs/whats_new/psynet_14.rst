@@ -71,6 +71,23 @@ agent how to plan, build, test and deploy it. ``psynet audit`` keeps a
 record of the work, from the original request to test evidence, for you to
 review. See :doc:`/code/project/agentic_programming` and :doc:`/test/audits`.
 
+Timeline code
+-------------
+
+**Variables and conditions.** ``participant.var.get(name)``, and ``get`` on
+the other variable stores, now returns ``None`` for a variable that isn't
+set, like ``dict.get``, instead of raising ``KeyError``; code that relied on
+the error should use ``participant.var.has(name)``.
+:func:`~psynet.timeline.conditional` now accepts any truthy or falsy value
+from its condition, such as a list, instead of raising an error. Both
+affect code in almost any experiment, so check them first: see step 12 of
+:doc:`upgrading_to_psynet_14`.
+
+**Time limits.** Any page can take a ``time_limit``: it shows a countdown
+and submits ``time_limit_answer`` when time runs out, counted on the server
+so that a reload doesn't restart the clock. See "Time limits" in
+:doc:`/code/writing_a_timeline`.
+
 Trials and groups
 -----------------
 
@@ -90,13 +107,39 @@ participant leaves or fails, their unfinished trials fail and their
 submitted trials are kept.
 
 **Groups.** Barriers can time out participants who wait too long, and
-groupers can let the remaining members continue when a group becomes too
-small (``fail_participants_below_min_size``). A new dashboard page shows
+groupers can let the remaining members continue when a group is dissolved
+for becoming too small (``below_quorum``; see :ref:`groups_below_quorum`). A new dashboard page shows
 active groups and waiting participants, and participants see when their
 partners are ready. Group membership changes through
 ``SyncGroup.add_participant()`` and ``remove_participant()``, and custom
 barriers implement ``check_waiting_participants()`` and
 ``choose_who_to_release()``. See :doc:`/code/multiplayer/synchronization`.
+Pages shown from a barrier's ``waiting_logic``, such as filler trials, now
+end when the barrier releases the participant instead of running to their
+end, and an unfinished filler trial fails; pass ``release_grace=None`` to
+keep the old behavior (see :ref:`sync-waiting-pages`).
+
+**Newcomers and seeing the group.** With
+``use_admission_points=True``, a group takes newcomers during a
+game without anyone waiting for them: a newcomer holds a seat but takes
+part only from the group's next admission point, such as the start of a
+round (see :ref:`sync-admission-points`). Participants see each other by
+pseudonym, such as "Blue fox", instead of by ID (see
+:doc:`/code/multiplayer/pseudonyms`), and
+:class:`~psynet.group_prompt.GroupPrompt` shows a group's members, ticks
+them off as they answer and then shows everyone's answers (see
+:ref:`sync-showing-the-group`).
+
+**Round-based games.** A ``Regrouper`` forms new groups every round, for
+example new pairs within a cohort, and lets a slow player miss a round
+instead of holding up or failing the others. Each round can be one
+``Trial.cue`` per player: with ``sync_group_type`` on the trial class, the
+trials of a group's round share a round record
+(:class:`~psynet.sync.SyncGroupRound`) that holds the group's results, and
+every trial records its group, the player's role, the round and how the
+round ended for the player. A trial maker with ``sync_group_type`` makes
+such a round each time it prepares the group's trials. See
+:doc:`/code/multiplayer/writing_a_round_based_experiment`.
 
 Stimuli and assets
 ------------------

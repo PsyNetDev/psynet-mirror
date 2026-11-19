@@ -218,7 +218,7 @@ def test_a_locked_request_that_waited_reads_the_trial_the_lock_holder_wrote(
         group_type="main",
         initial_group_size=1,
         max_group_size=1,
-        min_group_size=1,
+        quorum=1,
         n_active_participants=1,
         accepts_top_ups=False,
     )

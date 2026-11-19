@@ -9,6 +9,7 @@ from dallinger import db
 
 from psynet.chatroom import ChatMessage, ChatRoom, ChatRoomMember, EnableChatrooms
 from psynet.experiment import get_experiment
+from psynet.modular_page import ModularPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -71,12 +72,14 @@ class TestHandleMessage:
         return EnableChatrooms(), _mock_experiment()
 
     @staticmethod
-    def _send(handler, exp, participant, payload, node=None, page_room=None):
+    def _send(
+        handler, exp, participant, payload, node=None, page_room=None, names="shown"
+    ):
         """Send ``payload``; a join comes from a page showing ``page_room``, by default the joined room."""
         if payload.get("type") == "join_room":
             room = page_room if page_room is not None else payload.get("room_id")
             exp.timeline.get_current_elt.return_value = SimpleNamespace(
-                chatroom=ChatRoom(room_id=room)
+                chatroom=ChatRoom(room_id=room, names=names)
             )
         time = datetime.now(UTC)
         handler.handle_message(
@@ -390,6 +393,56 @@ class TestHandleMessage:
         ]
         assert _recipients(exp) == [{str(sender.id), str(member.id)}]
 
+    def test_anonymous_pages_are_not_sent_pseudonyms(
+        self, in_experiment_directory, db_session
+    ):
+        handler, exp = self._handler_and_exp()
+        experiment = get_experiment()
+        hidden, named = _new_participant(experiment), _new_participant(experiment)
+        db.session.flush()
+        room = _random_id()
+        join = {"type": "join_room", "room_id": room}
+        self._send(handler, exp, hidden, join, names="anonymous")
+        self._send(handler, exp, named, join)
+        exp.publish_to_participants.reset_mock()
+
+        self._send(
+            handler, exp, named, {"type": "message", "room_id": room, "content": "hi"}
+        )
+        self._send(handler, exp, hidden, {"type": "request_state", "room_id": room})
+
+        to_named, to_hidden, history = _published_payloads(exp)
+        assert _recipients(exp) == [{str(named.id)}, {str(hidden.id)}, {str(hidden.id)}]
+        assert to_named["sender_pseudonym"] == named.pseudonym.to_dict()
+        assert to_hidden["sender_pseudonym"] is None
+        assert history["messages"][0]["sender_pseudonym"] is None
+        # Nor their IDs: others appear under per-room aliases.
+        assert to_named["sender"] == str(named.id)
+        assert to_hidden["sender"] == history["messages"][0]["sender"] == "member-2"
+        exp.publish_to_participants.reset_mock()
+        self._send(handler, exp, hidden, join, names="anonymous")
+        occupancy = {
+            str(ids): payload["participants"]
+            for payload, ids in zip(_published_payloads(exp), _recipients(exp))
+        }
+        assert set(occupancy[str({str(hidden.id)})]) == {str(hidden.id), "member-2"}
+        assert set(occupancy[str({str(named.id)})]) == {str(hidden.id), str(named.id)}
+        exp.publish_to_participants.reset_mock()
+        self._send(
+            handler, exp, hidden, {"type": "message", "room_id": room, "content": "yo"}
+        )
+        assert [p["sender"] for p in _published_payloads(exp)] == [str(hidden.id)] * 2
+        with pytest.raises(RuntimeError, match="EnableChatrooms"):
+            ModularPage("chat", "Hi", chatroom=ChatRoom(room_id=room)).render(
+                experiment, hidden
+            )
+        config = ChatRoom(room_id=room, names="anonymous").get_js_vars()
+        assert config["chatroom_config"]["names"] == "anonymous"
+        assert config["chatroom_config"]["partner_label"] == "Your partner"
+        assert config["chatroom_config"]["other_label"] == "Another player"
+        with pytest.raises(ValueError, match="hover"):
+            ChatRoom(room_id=room, names="on_hover")
+
     def test_a_room_the_page_does_not_show_cannot_be_joined(
         self, in_experiment_directory, db_session
     ):
@@ -544,12 +597,12 @@ class TestOccupantIds:
         # p3 is not subscribed
         db.session.commit()
 
-        ids_X = handler._occupant_ids("room_X")
+        ids_X = list(handler._occupants("room_X"))
         assert str(p1.id) in ids_X
         assert str(p2.id) not in ids_X
         assert str(p3.id) not in ids_X
 
-        ids_Y = handler._occupant_ids("room_Y")
+        ids_Y = list(handler._occupants("room_Y"))
         assert str(p2.id) in ids_Y
         assert str(p1.id) not in ids_Y
 
@@ -573,7 +626,7 @@ class TestOccupantIds:
         )
         db.session.commit()
 
-        assert handler._occupant_ids("room_Z") == []
+        assert list(handler._occupants("room_Z")) == []
 
     def test_excludes_failed_participants(self, in_experiment_directory, db_session):
         """Participants marked failed are excluded even if their record is active."""
@@ -595,7 +648,7 @@ class TestOccupantIds:
         p.failed = True
         db.session.commit()
 
-        assert handler._occupant_ids("room_Z2") == []
+        assert list(handler._occupants("room_Z2")) == []
 
     def test_deduplicates_participant_with_multiple_active_records(
         self, in_experiment_directory, db_session
@@ -627,7 +680,7 @@ class TestOccupantIds:
         )
         db.session.commit()
 
-        ids = handler._occupant_ids("room_Z3")
+        ids = list(handler._occupants("room_Z3"))
         assert ids.count(str(p.id)) == 1
 
     def test_returns_empty_when_no_subscribers(
@@ -639,7 +692,7 @@ class TestOccupantIds:
         db.session.flush()
         db.session.commit()
 
-        assert handler._occupant_ids("room_empty") == []
+        assert list(handler._occupants("room_empty")) == []
 
 
 @pytest.mark.parametrize(

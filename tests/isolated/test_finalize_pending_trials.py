@@ -118,6 +118,43 @@ def test_while_loop_budget_is_fixed_and_a_cleared_condition_exits_normally(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+def test_a_timed_out_while_loop_finishes_its_pass(db_session, participant, monkeypatch):
+    """A timeout ends the loop between passes, so a trial in it is never cut short."""
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    import psynet.timeline as timeline_module
+    from psynet.page import InfoPage
+    from psynet.timeline import Timeline, while_loop
+
+    now = datetime.now()
+    monkeypatch.setattr(timeline_module, "datetime", SimpleNamespace(now=lambda: now))
+    timeline = Timeline(
+        while_loop(
+            "kicked",
+            lambda: True,
+            [InfoPage("First", time_estimate=1), InfoPage("Second", time_estimate=1)],
+            expected_repetitions=1,
+            max_loop_time=10,
+            fail_on_timeout=False,
+        ),
+        InfoPage("Continue", time_estimate=0),
+    )
+    exp = get_experiment()
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+    pages = []
+    for seconds in [0, 30, 0]:
+        now += timedelta(seconds=seconds)
+        timeline.advance_page(exp, participant)
+        pages.append(timeline.get_current_elt(exp, participant).content)
+    assert pages == ["First", "Second", "Continue"]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
 def test_while_loop_timer_restarts_after_extend_while_clears(
     db_session, participant, monkeypatch
 ):

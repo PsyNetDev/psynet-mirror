@@ -26,7 +26,13 @@ from .timeline import (
     join,
     while_loop,
 )
-from .utils import call_function, call_function_with_context, get_logger, get_translator
+from .utils import (
+    as_plain_text,
+    call_function,
+    call_function_with_context,
+    get_logger,
+    get_translator,
+)
 
 logger = get_logger()
 # Other packages' deprecation warnings are for their maintainers; PsyNet's,
@@ -55,6 +61,10 @@ class InfoPage(ModularPage):
     time_estimate:
         Time estimated for the page.
 
+    label:
+        The page's label, for example to find the page in a bot test with
+        ``bot.current_page_label``. Defaults to ``"info"``.
+
     **kwargs:
         Further arguments to pass to :class:`psynet.modular_page.ModularPage`.
     """
@@ -63,11 +73,12 @@ class InfoPage(ModularPage):
         self,
         content: Union[str, Markup, dom_tag],
         time_estimate: Optional[float] = None,
+        label: str = "info",
         **kwargs,
     ):
         self.content = content
         super().__init__(
-            label="info",
+            label=label,
             prompt=content,
             time_estimate=time_estimate,
             save_answer=False,
@@ -242,6 +253,13 @@ class WaitPage(Page):
     def metadata(self, **kwargs):
         return {"wait_time": self.wait_time}
 
+    @property
+    def plain_text(self):
+        content = self.content
+        if isinstance(content, str):
+            content = Markup.escape(content)
+        return as_plain_text(content)
+
     def get_bot_response(self, experiment, bot):
         return None
 
@@ -259,7 +277,7 @@ def wait_while(
     log_message: Optional[str] = None,
     fail_on_timeout=True,
     fix_time_credit: Optional[bool] = None,
-    content: Union[str, Markup, dom_tag, Callable, None] = None,
+    waiting_message: Union[str, Markup, dom_tag, Callable, None] = None,
     on_timeout: Optional[Callable] = None,
     waiting_screen=None,
 ):
@@ -312,12 +330,13 @@ def wait_while(
         waiting time. Defaults to ``False`` for timeline holds and ``True`` for
         explicit page-based waiting.
 
-    content
+    waiting_message
         Message displayed by the timeline hold. Only used when ``wait_page`` is
         omitted. Plain strings are shown as text; pass ``markupsafe.Markup``
         or a dominate tag for HTML. A module-level function of
         ``participant`` returning one of these shows each participant their
-        own message, for example by role.
+        own message, for example by role. There is no ``{SECONDS}``
+        countdown here, so a string containing it raises an error.
 
     on_timeout
         Optional function called with ``participant=...`` when
@@ -328,8 +347,11 @@ def wait_while(
         What to show in place of the current page while the participant
         waits, as for :class:`~psynet.sync.Barrier`: text, a prompt, a
         :class:`~psynet.modular_page.ModularPage` that nothing submits, or a
-        module-level function of the participant returning one of these (or
-        ``None`` to keep the current page). ``content`` still sets the
+        module-level function returning one of these (or ``None`` to keep
+        the current page). The function may take ``participant``, ``trial``
+        (their ``current_trial``, which stays their previous trial until the
+        next one is cued) and ``group_round`` (that trial's
+        :class:`~psynet.sync.SyncGroupRound`, or ``None``). ``waiting_message`` still sets the
         waiting indicator shown on top. Only used when ``wait_page`` is
         omitted.
 
@@ -343,10 +365,13 @@ def wait_while(
     assert check_interval > 0
     label = "wait_while"
     uses_timeline_hold = wait_page is None
-    if wait_page is not None and content is not None:
-        raise ValueError("content only applies when wait_page is omitted.")
+    if wait_page is not None and waiting_message is not None:
+        raise ValueError("waiting_message only applies when wait_page is omitted.")
     if wait_page is not None and waiting_screen is not None:
         raise ValueError("waiting_screen only applies when wait_page is omitted.")
+    from psynet.timeline_hold import _reject_countdown
+
+    _reject_countdown(waiting_message, "wait_while")
     if fix_time_credit is None:
         fix_time_credit = not uses_timeline_hold
 
@@ -376,8 +401,8 @@ def wait_while(
             max_wait_time=max_wait_time,
             fix_time_credit=fix_time_credit,
             check_interval=check_interval,
-            content=content,
-            message_kind="generic" if content is None else None,
+            waiting_message=waiting_message,
+            message_kind="generic" if waiting_message is None else None,
             fail_on_timeout=fail_on_timeout,
             on_timeout=on_timeout,
             waiting_screen=waiting_screen,

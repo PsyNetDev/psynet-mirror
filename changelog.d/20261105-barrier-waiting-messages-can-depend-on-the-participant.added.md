@@ -1,1 +1,1 @@
-The waiting message (`content`) of a `wait_while` hold can now be a module-level function of the participant, as for barriers, so that participants waiting at the same point can see different messages, for example by role.
+The `waiting_message` of a `wait_while` hold can now be a module-level function of the participant, as for barriers, so that participants waiting at the same point can see different messages, for example by role.

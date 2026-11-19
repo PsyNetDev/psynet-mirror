@@ -374,8 +374,9 @@ Trials without a trial maker
 
 :meth:`~psynet.trial.main.Trial.cue` puts a single trial into the timeline,
 with no trial maker. You then choose the trials yourself with timeline
-constructs such as :func:`~psynet.timeline.for_loop`. The argument is either
-the trial's definition or a node. In ``demos/experiments/trial``, each
+constructs such as :func:`~psynet.timeline.for_loop`. The argument is the
+trial's definition as a ``dict``, a function returning one, or a
+:class:`~psynet.trial.chain.ChainNode`. In ``demos/experiments/trial``, each
 participant rates three randomly sampled words:
 
 .. literalinclude:: ../../demos/experiments/trial/experiment.py
@@ -409,6 +410,16 @@ raises an error. ``demos/features/trial_cue_adaptive`` uses this for a
 participant-level staircase inside a :func:`~psynet.timeline.while_loop`; the
 :doc:`/skills/make-experiment-adaptive` skill describes the recommended
 approach to adaptive designs.
+
+In group games, cued trials can be the rounds. Set ``sync_group_type`` on
+the trial class and cue it inside a :class:`~psynet.timeline.Module`:
+``cue`` numbers each group's rounds by itself, and the trials that the
+members of a group cue in one round share one
+:class:`~psynet.sync.SyncGroupRound`, whose ``var`` holds the group's
+results. Each trial records the group, the player's role and the round.
+``definition`` can then be a function of ``group`` and ``round``, called
+once per group and round. ``round=`` overrides the automatic round in the
+rare cases that need it. See :ref:`rounds-cued-trials`.
 
 A trial maker is the better choice when trials should be balanced across
 nodes or participants, when chains develop across participants, or when you

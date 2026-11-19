@@ -3,8 +3,7 @@
     margin: 1em auto;
 }
 
-.psynet-group-members,
-.psynet-group-clusters {
+.psynet-group-members {
     list-style: none;
     margin: 0 auto;
     padding: 0;
@@ -68,30 +67,6 @@
     margin-top: 1.2em;
 }
 
-.psynet-group-clusters {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 1em;
-}
-
-.psynet-group-cluster {
-    min-width: 0;
-    max-width: 100%;
-    padding: 0.6em 1em;
-    border-radius: 1.2em;
-    background: rgb(108 117 125 / 0.08);
-}
-
-/* Zigzag subgroups share the width rather than stacking. */
-.psynet-group-cluster:has(.psynet-group-members--zigzag) {
-    flex: 1 1 16em;
-}
-
-.psynet-group-prompt--with-viewer .psynet-group-cluster:first-child {
-    background: rgb(13 110 253 / 0.08);
-}
-
 .psynet-group-member {
     position: relative;
     display: flex;
@@ -140,7 +115,8 @@
     font-weight: bold;
 }
 
-.psynet-group-tick {
+.psynet-group-tick,
+.psynet-group-dash {
     visibility: hidden;
     position: absolute;
     top: -0.1em;
@@ -156,6 +132,15 @@
 }
 
 .psynet-group-member--answered .psynet-group-tick {
+    visibility: visible;
+}
+
+/* A member who reached the barrier because their time limit ran out. */
+.psynet-group-dash {
+    background: #6c757d;
+}
+
+.psynet-group-member--ran-out-of-time .psynet-group-dash {
     visibility: visible;
 }
 
@@ -256,10 +241,6 @@
 
     .psynet-group-member .psynet-pseudonym-sticker {
         font-size: 0.85em;
-    }
-
-    .psynet-group-cluster {
-        padding: 0.4em 0.5em;
     }
 
     .psynet-group-bubble {

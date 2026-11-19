@@ -206,7 +206,7 @@ def _queue_countdown_update(participant_id, release_time, *, hold_message=None):
     """Queue a new ``{SECONDS}`` countdown target (epoch seconds, or ``None``) after the next commit.
 
     ``hold_message`` is the hold copy re-rendered for the new target, for
-    ``content`` functions whose text depends on it.
+    ``waiting_message`` functions whose text depends on it.
     """
     release_in_ms = (
         None if release_time is None else round((release_time - time.time()) * 1000)
@@ -229,20 +229,35 @@ def _queue_countdown_update(participant_id, release_time, *, hold_message=None):
 def default_group_barrier_arrival_message(
     *, kind, waiting_count, group_size, **_kwargs
 ):
-    """Return default GroupBarrier arrival copy for one recipient.
+    """Return default GroupBarrier arrival copy for one participant.
 
     Notices tell people still on an earlier page that partners are already
-    waiting, and ``"removed"`` tells someone who was too slow that their group
-    went on without them.
+    waiting, ``"late"`` tells someone who was too slow that their group
+    went on without them, ``"waited_too_long"`` tells someone who waited
+    too long that the others didn't arrive, and ``"not_admitted"`` tells a
+    pending member that the group did not admit them.
     """
     _p = get_translator(context=True)
-    if kind == "removed":
+    if kind == "not_admitted":
+        return _p(
+            "timeline_hold", "We couldn't add you to a group in time. Please continue."
+        )
+    if kind == "waited_too_long":
+        if group_size <= 2:
+            return _p(
+                "timeline_hold", "Your partner didn't arrive in time. Please continue."
+            )
+        return _p(
+            "timeline_hold",
+            "Not everyone in your group arrived in time. Please continue.",
+        )
+    if kind == "late":
         if group_size <= 2:
             return _p(
                 "timeline_hold", "Your partner went on without you. Please continue."
             )
         return _p("timeline_hold", "Your group went on without you. Please continue.")
-    if group_size == 2:
+    if group_size <= 2:
         return _p("timeline_hold", "Your partner is ready.")
     return _p("timeline_hold", "{ARRIVED}/{TOTAL} of your group are ready.").format(
         ARRIVED=waiting_count,
@@ -250,9 +265,20 @@ def default_group_barrier_arrival_message(
     )
 
 
-def _is_content_function(content):
-    """Return whether hold ``content`` is a function of the participant (dominate tags are callable too)."""
-    return callable(content) and not isinstance(content, dom_tag)
+def _is_message_function(message):
+    """Return whether a hold ``waiting_message`` is a function of the participant (dominate tags are callable too)."""
+    return callable(message) and not isinstance(message, dom_tag)
+
+
+def _reject_countdown(waiting_message, owner, argument="waiting_message"):
+    """Raise if a plain ``waiting_message`` has a ``{SECONDS}`` countdown that ``owner`` can't fill in."""
+    if not _is_message_function(waiting_message) and "{SECONDS}" in str(
+        waiting_message or ""
+    ):
+        raise ValueError(
+            f"{owner} has no release time to count down to, so its {argument} "
+            "would only ever show '…' for {SECONDS}. Remove the placeholder."
+        )
 
 
 def default_hold_progress(waiting_count, group_size):
@@ -520,7 +546,7 @@ class _TimelineHoldPage(Page):
         max_wait_time,
         fix_time_credit,
         check_interval,
-        content=None,
+        waiting_message=None,
         message_kind=None,
         fail_on_timeout=True,
         on_timeout=None,
@@ -531,7 +557,7 @@ class _TimelineHoldPage(Page):
         self.max_wait_time = max_wait_time
         self.fix_time_credit = fix_time_credit
         self.check_interval = check_interval
-        self.content = content
+        self.waiting_message = waiting_message
         self.message_kind = message_kind
         self.waiting_screen = waiting_screen
         self._fail_on_timeout = fail_on_timeout
@@ -700,7 +726,7 @@ class _TimelineHoldPage(Page):
         record = self.get_hold_record(participant)
         return bool(record is not None and record.silent)
 
-    def translated_content(self, participant):
+    def translated_waiting_message(self, participant):
         """Return the hold message for this participant, translating framework-provided ones."""
         _p = get_translator(context=True)
         if self.message_kind == "barrier":
@@ -710,9 +736,11 @@ class _TimelineHoldPage(Page):
                 "timeline_hold",
                 "Please wait, the experiment should continue shortly...",
             )
-        if _is_content_function(self.content):
-            return call_function_with_context(self.content, participant=participant)
-        return self.content
+        if _is_message_function(self.waiting_message):
+            return call_function_with_context(
+                self.waiting_message, participant=participant
+            )
+        return self.waiting_message
 
     def overlay_html(self, participant):
         """Return hold copy as HTML for both Jinja and the dynamic overlay.
@@ -723,7 +751,8 @@ class _TimelineHoldPage(Page):
         if self._is_silent_for(participant):
             return compose_hold_overlay_html("", None)
         return compose_hold_overlay_html(
-            self.translated_content(participant), self.hold_progress_text(participant)
+            self.translated_waiting_message(participant),
+            self.hold_progress_text(participant),
         )
 
     def hold_progress_text(self, participant):
@@ -803,7 +832,13 @@ class _TimelineHoldPage(Page):
 
         screen = self.waiting_screen
         if callable(screen) and not isinstance(screen, dom_tag):
-            screen = call_function_with_context(screen, participant=participant)
+            trial = getattr(participant, "current_trial", None)
+            screen = call_function_with_context(
+                screen,
+                participant=participant,
+                trial=trial,
+                group_round=getattr(trial, "group_round", None),
+            )
         if screen is None:
             return None
         if not isinstance(screen, Page):

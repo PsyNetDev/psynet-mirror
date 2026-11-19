@@ -94,7 +94,16 @@ bot took one trial per node:
         super().test_check_bot(bot, **kwargs)
         assert len(bot.alive_trials) == len(nodes)
 
-The base implementation asserts that the bot didn't fail.
+The base implementation asserts that the bot didn't fail, unless it
+dropped out or the test said it may fail (see :ref:`bots_that_drop_out`).
+
+PsyNet imports ``experiment.py`` before pytest starts, so a failed ``assert``
+there reports only the line, not the values it compared. Give the assert a
+message that shows them:
+
+.. code-block:: python
+
+    assert bot.current_page_text == "Round 2.", bot.current_page_text
 
 To check something across all bots, such as how trials were shared between
 them, override ``Experiment.test_check_bots``. It runs once after every bot
@@ -133,8 +142,9 @@ bots play against each other and check each result:
             assert "You chose paper, your partner chose rock. You won!" in bots[1].current_page_text
 
 Each element of ``bots`` is a :class:`~psynet.bot.BotDriver`. Its methods and
-properties, such as ``take_page``, ``current_page_label`` and
-``current_page_text``, are documented under
+properties, such as ``take_page``, ``current_page_label``,
+``current_page_text`` and ``is_waiting`` (whether the bot is on a waiting
+page, for example at a barrier), are documented under
 :class:`~psynet.participant.ParticipantDriver`.
 
 Bots that fail a prescreener
@@ -173,6 +183,81 @@ PsyNet finish the run:
 ``response`` is saved as the final answer, like a plain ``bot_response``
 value. Find the page label and the answer format in the prescreener's source
 code or in the ``response`` table of a previous test run.
+
+.. _bots_that_drop_out:
+
+Bots that drop out
+------------------
+
+In a group experiment, test what happens when a member leaves. Call
+:meth:`~psynet.participant.ParticipantDriver.drop_out` for a participant who
+returns the study on the recruitment platform, and stop taking pages for a
+bot to simulate one who closes the tab, so that the barriers' timeouts deal
+with them. Then check the others with ``bot.failed``, ``current_page_text``
+and :attr:`~psynet.participant.ParticipantDriver.current_notice`, the notice
+on their progress bar:
+
+.. code-block:: python
+
+    def test_serial_run_bots(self, bots: List[BotDriver]):
+        quitter, stayer = bots
+        for bot in bots:
+            bot.take_page()
+        advance_past_wait_pages(bots)
+
+        quitter.drop_out()
+        stayer.take_page()
+        advance_past_wait_pages([stayer])
+        assert stayer.current_notice == (
+            "Your partner is no longer in your group. Please continue."
+        )
+        stayer.run_to_completion()
+
+The default ``test_check_bot`` accepts bots that dropped out, but not others
+that failed, such as a partner failed under the grouper's
+``below_quorum="fail"``. Call
+:meth:`~psynet.participant.ParticipantDriver.allow_failure` for those bots.
+See :ref:`groups_below_quorum` for what happens to the members who stay.
+
+Other helpers ask about a bot's group or act in it:
+
+- :meth:`~psynet.participant.ParticipantDriver.with_participant` calls a
+  function with the bot's participant, for example
+  ``bot.with_participant(lambda p: p.current_trial.sync_group_role)`` for
+  its role in the current round of a :class:`~psynet.sync.Regrouper`, or
+  ``bot.with_participant(lambda p: p.sync_group_removal_reason("pair"))`` for
+  why it left its pair.
+- :meth:`~psynet.participant.ParticipantDriver.send_chat_message` posts a
+  message to the :class:`~psynet.chatroom.ChatRoom` on the bot's current page.
+- :meth:`~psynet.participant.ParticipantDriver.run_out_of_time` waits until
+  the time limit of the bot's current page has passed and submits no answer,
+  as a participant who leaves a timed page open does.
+- :func:`~psynet.bot.bots_by_sync_group` sorts bots into their current groups
+  of a type, for example ``for first, second in bots_by_sync_group(bots,
+  "pair")``, since a grouper can pair them in any order.
+- :func:`~psynet.bot.run_bots_to_completion` takes pages for several bots in
+  turn until all have finished. Use it instead of ``run_to_completion`` on
+  each bot while they still wait for each other, as players a
+  :class:`~psynet.sync.Regrouper` keeps pairing do: one bot run to the end
+  alone would wait at the next barrier for the others.
+- :func:`~psynet.bot.regroup_now` makes a
+  :class:`~psynet.sync.Regrouper` split the bots' pools as its ``deadline``
+  or next ``every`` tick would, then advances them, so the test doesn't
+  wait for it, for example ``regroup_now(bots[:3], pairing)`` to start a
+  round without a fourth player who is still reading their results.
+- :func:`~psynet.bot.make_late_now` makes the members who haven't reached a
+  :class:`~psynet.sync.GroupBarrier` late, as its ``late_after`` would,
+  then advances the bots waiting there, so a test of a player who goes
+  quiet doesn't wait in real time, for example
+  ``make_late_now(bots, "round_finished")`` after two of three players
+  have answered.
+
+When several groups play in one test, finish one group's story before driving
+the next: a barrier's ``late_after`` clock keeps running for a group while the
+test drives another, and a group still accepting top-ups takes the next bot
+that reaches the grouper. A :class:`~psynet.sync.Regrouper` forms new groups at each
+split and never dissolves them, so make a bot drop out before the split you
+want it to miss.
 
 .. _parallel_bot_tests:
 

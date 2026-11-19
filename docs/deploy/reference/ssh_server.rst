@@ -202,7 +202,10 @@ also skips the sandbox checks on that package's pin, so bundled demos, whose
 ``requirements.txt`` lists plain ``psynet``, can be deployed with
 ``--use-local-psynet``. The options need the experiment's ``Dockerfile`` from
 this PsyNet version; run ``psynet scripts update`` if PsyNet says it is out of
-date.
+date. ``--use-local-psynet`` stops if the command runs PsyNet from another
+checkout than the editable one it would build, for example a git worktree on
+``PYTHONPATH``; install that checkout in editable mode in its own virtual
+environment instead.
 
 Services
 ^^^^^^^^

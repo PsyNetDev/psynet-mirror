@@ -123,8 +123,8 @@ can run one directly by typing ``/`` and its name, for example
    * - :doc:`basic-data`
      - Define the experiment's basic data for analysis.
      - :doc:`/data/basic_data`
-   * - :doc:`basic-data-dyadic-experiment`
-     - Flatten data from two-participant experiments for analysis.
+   * - :doc:`basic-data-group-experiment`
+     - Turn data from experiments where participants play in groups into a table for analysis.
      - :doc:`/data/basic_data`
    * - **Previewing**
      -
