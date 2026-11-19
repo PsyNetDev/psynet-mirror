@@ -66,11 +66,13 @@
 
 {% macro timeline_hold_region() %}
     <div id="timeline-hold-region">
-        {% if page.is_timeline_hold %}
+        {# Keyed off the hold attributes, which a waiting screen shares with its hold. #}
+        {% set hold = attributes(participant).get("timeline_hold") %}
+        {% if hold %}
             <div id="psynet-timeline-hold-indicator"
                  role="status" aria-live="polite">
                 <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-                <span class="psynet-timeline-hold-message">{{ page.overlay_html(participant) }}</span>
+                <span class="psynet-timeline-hold-message">{{ hold.message }}</span>
             </div>
         {% endif %}
     </div>

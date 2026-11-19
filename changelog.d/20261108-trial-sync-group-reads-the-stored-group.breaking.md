@@ -1,0 +1,1 @@
+`Trial.sync_group` now returns the group the trial was played in (`trial.sync_group_id`), also after the participant has left it, instead of the participant's current group of the trial maker's type. It also works for cued trials, where it used to raise `AttributeError`.

@@ -382,3 +382,8 @@
     <div id="abcScore"></div>
 
 {% endmacro %}
+
+{% macro group(params) %}
+    {{ simple(params) }}
+    {{ params.group_html }}
+{% endmacro %}

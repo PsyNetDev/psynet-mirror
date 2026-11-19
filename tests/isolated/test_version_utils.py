@@ -51,7 +51,7 @@ def test_is_development_version(version, expected):
 
 
 def test_pinned_dallinger_version_is_recommended(monkeypatch):
-    """Accept the Dallinger series required by the deployment-plan API."""
-    monkeypatch.setattr("dallinger.version.__version__", "12.4.0a1")
+    """Accept the Dallinger series that PsyNet requires."""
+    monkeypatch.setattr("dallinger.version.__version__", "13.0.0")
 
     check_installed_dallinger_version_is_recommended()

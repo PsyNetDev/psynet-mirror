@@ -52,30 +52,48 @@ Reading the tables
         "participant_identifiers.csv",
     )
 
-In group experiments, join trials to their groups through
-``participant_link_sync_group`` (see :ref:`basic_data_groups`). This example
-pairs each trial with the trials of the other group members in the same
-round:
+An unfinished trial, abandoned or still running when the export was made,
+can have an ``answer``: the answer given so far, before ``format_answer``
+has run. So filter trials on ``complete`` as well as ``failed`` before
+analysing their answers:
 
 .. code:: python
 
-    groups = load_export_table("export.zip", "sync_group")
-    links = load_export_table("export.zip", "participant_link_sync_group")
+    finished = trials[trials["complete"] & ~trials["failed"]]
+
+In group experiments, each synchronized trial records its group and round
+in ``sync_group_id`` and ``sync_group_round`` (see :ref:`basic_data_groups`).
+This example pairs each trial with the trials of the other group members in
+the same round:
+
+.. code:: python
+
     trials = load_export_table("export.zip", "trial")
+    trials = trials[
+        trials["sync_group_id"].notna() & trials["complete"] & ~trials["failed"]
+    ]
 
-    groups = groups.rename(columns={"id": "sync_group_id"})
-    members = links.merge(groups[["sync_group_id", "group_type"]], on="sync_group_id")
-    members = members[members["group_type"] == "rock_paper_scissors"]
-
-    trials = trials[(trials["trial_maker_id"] == "rock_paper_scissors") & ~trials["failed"]]
-    trials = trials.merge(members[["participant_id", "sync_group_id"]], on="participant_id")
-    partners = trials[["sync_group_id", "position", "participant_id", "answer"]].rename(
+    round_ = ["sync_group_id", "sync_group_round"]
+    partners = trials[round_ + ["participant_id", "answer"]].rename(
         columns={"participant_id": "partner_id", "answer": "partner_answer"}
     )
-    player_rounds = trials.merge(partners, on=["sync_group_id", "position"])
+    player_rounds = trials.merge(partners, on=round_)
     player_rounds = player_rounds[
         player_rounds["participant_id"] != player_rounds["partner_id"]
     ]
+
+A player who timed out has no answer of their own: in the
+``rock_paper_scissors`` demo their ``answer`` is ``None``. The move actually played,
+including the random one given to a player who timed out, is in each
+trial's vars (``action``), as the demo's basic data shows (see
+:ref:`basic_data_groups`).
+
+Group details such as ``group_type`` are in the ``sync_group`` table, and
+each member's role and removal reason in ``participant_link_sync_group``.
+The group's results for each round are in the ``sync_group_round`` table:
+each trial's ``sync_group_round_id`` points to its row, whose
+``sync_group_id`` and ``number`` match the trial's ``sync_group_id`` and
+``sync_group_round``.
 
 Loading an export into a local database
 ---------------------------------------
