@@ -5510,7 +5510,7 @@ class SyncGroupRound(SQLBase, SQLMixin):
     definition = Column(PythonObject)
     closed_at = Column(DateTime)
     dissolved_at = Column(DateTime)
-    live_game_id = Column(Integer)
+    live_game_id = Column(Integer, index=True)
     live_game_outcome = Column(JSONB)
 
     trials = relationship(
@@ -6234,7 +6234,8 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     removed_on_page = Column(String)
     # The member's role in the group (see ``Regrouper(roles=...)``).
     role = Column(String)
-    # The deadline of the latest timed page the member started outside
+    # The deadline of the latest page with a deadline, a timed page or one
+    # whose ``Page.ends_by`` gives one, that the member started outside
     # waiting logic since the group's last barrier pass; see
     # ``GroupBarrier.late_after``.
     page_deadline = Column(DateTime)
