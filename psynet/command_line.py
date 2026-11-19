@@ -311,10 +311,6 @@ def _suppress_dallinger_header():
     dallinger.command_line.header = ""
     dallinger.command_line.utils.header = ""
 
-    # We need to use importlib here to avoid confusion with the command group of the same name
-    develop_module = importlib.import_module("dallinger.command_line.develop")
-    develop_module.header = ""
-
 
 _suppress_dallinger_header()
 
