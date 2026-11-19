@@ -111,6 +111,17 @@ dallinger ec2 provision \
   --type m7i.xlarge
 ```
 
+Before provisioning or registering a server, check (without printing values)
+that `~/.dallingerconfig` sets a real `contact_email_on_error`. Server
+commands ignore the experiment's `config.txt` and reject its template
+placeholder `XXX@gmail.com`; ask the user for the address rather than
+inventing one. `dallinger ec2 provision` also needs `dashboard_password`, and
+`server_pem` holding the same unencrypted private key as
+`~/.ssh/<ec2_default_pem>.pem`.
+
+Provisioning also starts the shared Caddy, Postgres and Dozzle services and
+prints the Dozzle password once; record that it exists, not its value.
+
 Deploy:
 
 ```bash
@@ -133,8 +144,14 @@ Destroy and teardown:
 
 ```bash
 psynet destroy ssh --app <app-name> --server <server-name>.cap-experiments.com
-dallinger ec2 teardown --name <server-name> --region <region> --dns-host <server-name>.cap-experiments.com
+dallinger ec2 teardown --name <server-name> --region <region>
 ```
+
+Teardown finds the DNS name only in the server record that `ec2 provision`
+saved on this computer. On another computer, after a provision finished with
+the printed `servers add` commands, or for an instance provisioned by an
+older Dallinger, add the `--dns-host` it was provisioned with, or its DNS
+records stay behind.
 
 ## Common failure modes
 
@@ -148,6 +165,26 @@ dallinger ec2 teardown --name <server-name> --region <region> --dns-host <server
 - Deployed Docker environment lacks local files, broken symlink targets, or
   external assets.
 - App/server/DNS names diverge between logs, commands, and config files.
+- A classic deploy stops before the build with "is not set up for this
+  classic-ingress deploy" or "An older Dallinger version has rewritten the
+  shared files". Run the command the message names. If it suggests saving the
+  DNS name the server already serves (`servers add --host <ip> --dns-host
+  <name>`), try that first; it restarts nothing. `dallinger
+  docker-ssh servers upgrade --host <server>` briefly restarts the shared
+  services, so on a server with other experiments, ask the user first.
+- `dallinger ec2 provision` fails after launching the instance: it keeps
+  running and costs money. Fix the printed problem, then run either the
+  printed `servers add` commands that finish the setup (and `servers upgrade`
+  if `servers add` says it left the shared files unchanged) or the printed
+  `ec2 teardown`; teardown is irreversible, so ask the user first.
+- A deploy stops with "No Let's Encrypt contact email": save one with
+  `dallinger docker-ssh servers add --host <server> --contact-email <email>`
+  (restarts nothing; other saved settings are kept), using an address the
+  user gives.
+- A deploy fails with `PermissionError: [Errno 13] Permission denied` on
+  `dallinger/docker-compose.yml`: the installed Dallinger predates
+  `servers upgrade`, and the server's shared files are read-only. Update the
+  PsyNet pin; never `chmod` the shared files.
 - Export exists for one app but teardown is being planned for another.
 - SSL/TLS errors during first launch can be transient cold-start issues; retry
   after a short wait before changing code.

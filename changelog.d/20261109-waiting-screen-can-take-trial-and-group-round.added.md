@@ -1,0 +1,1 @@
+A `waiting_screen` function can now take `trial`, the participant's current trial, and `group_round`, that trial's `SyncGroupRound`, so a barrier inside a cued trial can show the round's state without going through `participant.current_trial`.

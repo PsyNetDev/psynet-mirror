@@ -386,7 +386,7 @@ spending, errors, server resources and individual participants; see
 
 **Logs.** On servers with classic ingress, Dozzle shows the live logs of
 every container on the server. Its URL is printed at launch
-(``https://logs.your-server.example.org`` for servers that use subdomains);
+(``https://logs.your-server.example.org``);
 the login is described in :doc:`/deploy/setting_up_a_server`. Servers with
 Cloudflare ingress, such as lab computers, have no Dozzle (see
 :ref:`ssh_server_cloudflare`); run the log command printed at launch instead.
@@ -516,13 +516,17 @@ When the target number of participants is reached:
 
 If the server was provisioned only for this study, tear it down as well;
 see :doc:`/deploy/setting_up_a_server`. For an EC2 server created with
-``dallinger ec2 provision``, pass the same ``--dns-host`` so that the DNS
-records and the server registration are removed:
+``dallinger ec2 provision``, teardown also removes its DNS records and server
+registrations:
 
 .. code:: bash
 
-   dallinger ec2 teardown --name my-server --region us-east-1 \
-       --dns-host my-server.your-domain.org
+   dallinger ec2 teardown --name my-server --region us-east-1
+
+On a computer other than the one that provisioned the server, after a
+provision you finished with the printed ``servers add`` commands, or for a
+server provisioned by an older Dallinger, add the ``--dns-host`` it was
+provisioned with.
 
 Once an EC2 server is terminated, anything on it that was not exported is
 lost.

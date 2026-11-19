@@ -18,16 +18,19 @@ class Exp(psynet.experiment.Experiment):
         SimpleGrouper(
             group_type="stack",
             initial_group_size=GROUP_SIZE,
-            content=WAIT,
+            quorum=GROUP_SIZE,
+            waiting_message=WAIT,
         ),
-        GroupBarrier(id_="stack_init", group_type="stack", content=WAIT),
-        GroupBarrier(id_="stack_prepare", group_type="stack", content=WAIT),
+        GroupBarrier(id_="stack_init", group_type="stack", waiting_message=WAIT),
+        GroupBarrier(id_="stack_prepare", group_type="stack", waiting_message=WAIT),
         ModularPage(
             "choose_action",
             "Choose your action",
             PushButtonControl(choices=["go"]),
             time_estimate=1,
         ),
-        GroupBarrier(id_="stack_after_choice", group_type="stack", content=WAIT),
+        GroupBarrier(
+            id_="stack_after_choice", group_type="stack", waiting_message=WAIT
+        ),
         ModularPage("results", "Everyone is ready", time_estimate=1),
     )

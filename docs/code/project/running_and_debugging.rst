@@ -47,7 +47,9 @@ Run several experiments at once
 
 ``psynet test local`` runs in its own database, Redis server and port
 automatically, so you can run tests while ``psynet debug local`` is serving
-another experiment, and run several test sessions at once.
+another experiment, and run several test sessions at once. Test sessions in
+the same experiment directory wait for each other, because both would
+replace its generated files.
 
 By default every ``psynet debug local`` uses port 5000, the ``dallinger``
 PostgreSQL database, the Redis server on port 6379 and the

@@ -1,0 +1,1 @@
+`--use-local-psynet` now stops with an explanation when the command runs PsyNet from another checkout than the editable one it would build (for example a git worktree on `PYTHONPATH`), instead of silently deploying the editable checkout.

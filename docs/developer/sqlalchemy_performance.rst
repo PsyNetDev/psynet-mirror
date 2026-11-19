@@ -66,6 +66,31 @@ detached and should retain their established eager-loading behavior.
 Barrier last-arrival checks are the opposite problem: one request locks many
 waiters. See :ref:`barrier-arrival-sql-budgets`.
 
+.. _sqlalchemy-lock-participant-row-first:
+
+Lock the participant row before loading it
+------------------------------------------
+
+An ORM load of ``Participant`` (including a join to it, as in the barrier
+waiter query) joins ``_current_trial``, which is ``lazy="joined"``. Under
+READ COMMITTED, a statement that waited for a row lock re-reads only the
+rows it locks, so a single ``with_for_update(of=Participant)`` load that
+queued behind a barrier release would join the trial as it was before the
+release. Blocking participant loads in PsyNet therefore go through
+``psynet.participant._load_participant_for_update`` (or its by-id form
+``_lock_and_load_participant``). The helper first locks the bare row with a
+``select(Participant.id)`` statement, which joins nothing, and then runs the
+``FOR UPDATE`` load with ``populate_existing``. That costs one extra
+statement per locked load. Loads that use ``NOWAIT`` never wait, so the
+helper skips the extra lock for them. The public getters
+(``get_participant_from_*`` and ``psynet.participant.get_participant`` with
+``for_update=True``) use it too. The barrier waiter query
+(``psynet.sync._get_waiting_participants``) follows the same pattern when a
+caller passes ``for_update=True`` to ``get_waiting_participants``: it locks
+the link and participant ids in a bare statement, then loads those links
+with ``NOWAIT``. Barrier checks already lock waiters with ``NOWAIT``, so they
+take no extra statement.
+
 Filter before ORM hydration
 ---------------------------
 
@@ -361,8 +386,9 @@ Fewer statements, fewer commits, or fewer per-waiter lazy loads are
 improvements: update the expected numbers in that test and in this section.
 
 Use the profiler as a statement-count gate, not a duration gate. Do not put
-these budgets on Playwright or the full ``/timeline`` / ``/response`` stack.
-See :ref:`sqlalchemy_profiling`.
+these absolute budgets on Playwright or the full ``/timeline`` /
+``/response`` stack; the relative budget in `Grouped request budgets`_ is
+the exception. See :ref:`sqlalchemy_profiling`.
 
 Profile with a cold session, as a real request has: expunge the session so it
 holds none of the waiters before the profiled window. A test that keeps every
@@ -396,24 +422,26 @@ statement kind repeats per member.
 Check window (one GroupBarrier, group already formed)
 -----------------------------------------------------
 
-18 statements for the filled visit, plus extra-connection and ORM
-``lock_timeout`` SETs, so ``20`` total (no per-waiter skip-after-commit):
+16 statements for the filled visit, plus the ORM ``lock_timeout`` SET, so
+``17`` total (no per-waiter skip-after-commit):
 
-* extra-connection ``lock_timeout`` and ``pg_try_advisory_xact_lock`` (the ORM
-  session does not take that same key; last-arrival only issues a blocking
-  ``pg_advisory_xact_lock`` when the try misses);
+* extra-connection ``pg_try_advisory_xact_lock`` (the ORM session does not
+  take that same key; a try-lock never waits, so this connection sets no
+  ``lock_timeout``; last-arrival only issues a ``lock_timeout`` and a
+  blocking ``pg_advisory_xact_lock`` when the try misses);
 * ORM ``lock_timeout`` for the check/commit on ``db.session``;
-* instance PK, SAVEPOINT, deferred ``spec``
-  load, one waiter ``FOR UPDATE NOWAIT`` join (this already inner-joins
+* instance PK with its ``spec`` undeferred, SAVEPOINT, one waiter
+  ``FOR UPDATE NOWAIT`` join (this already inner-joins
   ``participant``). The visit-claim peek drops its reconstructed barrier
-  after rolling back, so this check still loads ``spec`` once instead of
-  reusing in-memory peek state;
+  after rolling back, so this check still reconstructs it from ``spec``
+  instead of reusing in-memory peek state;
 * ``timeline_hold`` select-in and ``module_state`` select-in;
 * one explicit ``active_barriers`` ``IN`` query and one explicit
   ``sync_group_links`` ``IN`` query (both populated with
   ``set_committed_value``; loader options on those relationships either reset
   the waiter links or make later arrival-notice walks lazy-load per member);
-* ``sync_group`` PK, group-membership load, deferred group-size columns;
+* ``sync_group`` PK (it includes the :class:`~psynet.sync.SimpleSyncGroup`
+  columns, such as the group sizes), group-membership load;
 * three ``executemany`` UPDATEs (link release, hold ``released_at``,
   participant wait credit), group UPDATE, instance UPDATE, RELEASE SAVEPOINT.
 
@@ -427,15 +455,18 @@ Finalize window (same check, then relock the last arriver)
 ----------------------------------------------------------
 
 The check, plus two ``lock_timeout`` SETs and the relock: a participant
-``FOR UPDATE`` without ``NOWAIT`` (its lazy collections load only if the next
-page reads them). Grand total: ``23``. Profiler commits: ``4`` (check + extra
-connection + queued + relock).
+``FOR UPDATE`` without ``NOWAIT`` on the bare row, then the participant load
+with its joined ``_current_trial`` (its lazy collections load only if the next
+page reads them). The lock comes first, in a statement of its own (see
+`Lock the participant row before loading it`_). Grand total: ``21``. Profiler commits: ``4`` (check +
+extra connection + queued + relock).
 The check commit is on ``_evaluate_held_instance``; the
 relock commit is on ``Experiment._relock_arriver_after_barrier_check``.
 The budget's ``finalize_commits`` count includes
 ``_attempt_queued_barrier_checks`` (the queued-check commit) and
 ``_relock_arriver_after_barrier_check``.
-Waiter-join ``NOWAIT`` stays 1. Relock ``FOR UPDATE`` stays 1.
+Waiter-join ``NOWAIT`` stays 1. Relock ``FOR UPDATE`` is now 2 (it was 1
+before the bare-row lock).
 
 Arrival notice (recipient already loaded, *N* - 1 waiters)
 ----------------------------------------------------------
@@ -482,3 +513,45 @@ Leftover inactive visits are outside this budget. Last-arrival keeps
 second pool on that path. Migrating waiters onto the live visit is extra SQL
 only when the instance is already inactive. See
 :ref:`timeline-hold-resume-protocol`.
+
+Grouped request budgets
+-----------------------
+
+``tests/isolated/test_group_request_queries.py`` forms groups through real
+``/timeline`` and ``/response`` requests from a cold session and pins what
+happens around the barrier check:
+
+* ``test_barrier_requests_do_not_grow_with_group_size`` covers an arrival
+  ``POST /response`` from a page, the hold poll while waiting, the last
+  arrival and the poll after release, and requires each to issue the same
+  number of statements for groups of three and seven, give or take two. The
+  test disables hold timeouts and checks that the last arrival releases the
+  whole group, so a slow run cannot measure failed participants instead of
+  the hold.
+* A member leaving a group above quorum costs the same for groups of four
+  and eight (``16`` statements when the leader leaves, including choosing a
+  new leader). Removal compares link ids before identity, so it does not
+  load every member.
+* Dissolving a group fails each remaining member separately: their refresh,
+  ``fail()``, trial lock, hold lookup and flushes cost about 10–12
+  statements per member. The test sets a ceiling of 14 per member.
+* An idle ``check_barriers`` sweep fully re-checks every waiting visit (15
+  statements each), even when nothing changed. ``check_sync_groups`` counts
+  every active group's members in one statement, and locks and recounts only
+  the groups whose stored counts are stale or that may close, so idle groups
+  cost it nothing. Neither depends on group size. A ``check_barriers`` sweep that found waiting visits then looks for
+  diverged groups in one more statement (``_divergence_candidates``), and
+  runs the full check (``_divergence_message``) only for a group whose members all wait at two or more of its
+  barriers and that has no divergence record for those barriers yet.
+
+The size comparisons allow two statements of tolerance for internal commits:
+one can drop a row such as the sync group from the weak identity map, and
+loading it again moves a count by a statement or two between runs. A
+statement per member adds at least four. The dissolve and poller numbers are
+snapshots of work that could be batched or skipped; lower them when it is.
+
+An arrival rebuilds every waiting member's hold overlay.
+``GroupBarrier._notify_arrivals`` counts the group once and passes the counts
+to each overlay, because recounting per member lazy-loads each member's
+``sync_group_links``. Do not batch-load those links instead:
+``_populate_sync_group_links`` can drop links that are not flushed yet.

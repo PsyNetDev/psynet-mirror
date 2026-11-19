@@ -1,1 +1,0 @@
-Timeline hold overlay content and the `content` of `Barrier`, `GroupBarrier` and `Grouper` now accept `dominate` tags as well as `markupsafe.Markup`, and `psynet.utils.finalize_template_value`, which marks a `dominate` tag as safe HTML for a template, is now public.

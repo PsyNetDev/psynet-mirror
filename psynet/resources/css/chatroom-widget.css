@@ -31,6 +31,7 @@
 
 #chatroom-participants li {
     padding: 0.2rem 0;
+    overflow-wrap: anywhere;
 }
 
 #chatroom-main {
@@ -62,4 +63,10 @@
 
 #chatroom-chat-input {
     flex: 1;
+}
+
+/* The sender's animal, about twice the height of the name beside it. */
+.chatroom-sender-sticker {
+    font-size: 0.6em;
+    margin-inline-end: 0.5em;
 }
