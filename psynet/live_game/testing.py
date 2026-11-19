@@ -291,7 +291,7 @@ class TimedPlay:
             f"{self.game}: {self.turns:,} turns in {self.seconds:g} s of play "
             f"took {self.code_seconds:.3f} s of game code ({per_turn:.2f} ms a "
             f"turn on average, {self.slowest_turn * 1000:.2f} ms at most), "
-            f"{self.runner_share:.1%} of a game runner"
+            f"{_percent(self.runner_share)} of a game runner"
         )
         if self.runner_share > 1:
             text += ", more than a runner has, so make it faster"
@@ -303,3 +303,10 @@ class TimedPlay:
         elif self.games_per_runner is not None:
             text += f", so one runner can play about {self.games_per_runner:,} games at once"
         return text + "."
+
+
+def _percent(share):
+    """Format ``share`` as a percentage with two significant figures, so that
+    small shares still differ, such as 0.059% and 0.12%."""
+    percent = share * 100
+    return f"{percent:.0f}%" if percent >= 10 else f"{percent:.2g}%"

@@ -331,7 +331,7 @@ its bots for a while, as a runner would, without a server:
 
 .. code-block:: text
 
-    Snake: 240 turns in 30 s of play took 0.037 s of game code (0.15 ms a turn on average, 1.48 ms at most), 0.1% of a game runner, so one runner can play about 575 games at once.
+    Snake: 240 turns in 30 s of play took 0.037 s of game code (0.15 ms a turn on average, 1.48 ms at most), 0.12% of a game runner, so one runner can play about 575 games at once.
 
 The number of games keeps the runner about 70% busy, as the worker estimate
 above does. It leaves out the runner's own work of saving games and sending
