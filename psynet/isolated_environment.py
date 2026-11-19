@@ -243,7 +243,7 @@ class IsolatedEnvironment:
     """Environment variables for an isolated test session, plus its Redis server.
 
     Use :meth:`start` to create one and :meth:`close` (or a ``with`` block) to
-    stop its Redis server.
+    stop its Redis server and remove its private development folder.
     """
 
     def __init__(self, env, port_lock=None, redis_process=None, develop_parent=None):
@@ -345,7 +345,10 @@ class IsolatedEnvironment:
         )
 
     def close(self):
-        """Stop or empty the session's Redis and drop its database."""
+        """Stop the session's Redis, remove its development folder and drop its database.
+
+        A session on the shared Redis server has its Redis database emptied instead.
+        """
         if self._redis_process is not None:
             _stop_process(self._redis_process)
             self._redis_process = None
