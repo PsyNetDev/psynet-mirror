@@ -79,7 +79,8 @@ class LocalGame:
 
         ~psynet.live_game.Reject
             If the game rejects the message, or the player's game has ended,
-            by the game's ``is_done``.
+            by the game's ``is_done``. As in a live game, the state is then
+            as it was before the message.
         """
         if self.is_done(player):
             raise Reject(PLAYER_DONE_REASON)
@@ -88,9 +89,14 @@ class LocalGame:
                 "type": message.type,
                 "message": message.model_dump(mode="json", by_alias=True),
             }
-        self.game.apply(
-            self.state, self._participant(player), message, self._clock(now), Sent()
-        )
+        before = json.dumps(self.state)
+        try:
+            self.game.apply(
+                self.state, self._participant(player), message, self._clock(now), Sent()
+            )
+        except Reject:
+            self.state = json.loads(before)
+            raise
 
     def tick(self, now):
         """Run the game's ``tick``, ``now`` seconds into the game."""

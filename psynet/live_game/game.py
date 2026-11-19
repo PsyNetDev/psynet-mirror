@@ -244,10 +244,11 @@ class LiveGame(RealtimeGame):
 
     def _players_done(self, state):
         """Return the numbers of the players whose game has ended, by the
-        game's ``is_done``."""
-        if type(self).is_done is RealtimeGame.is_done:
+        game's ``is_done``, which is asked only once the game has started."""
+        entry = _psynet_entry(state)
+        if type(self).is_done is RealtimeGame.is_done or entry["started_at"] is None:
             return []
-        n_players = len(_psynet_entry(state)["participant_ids"])
+        n_players = len(entry["participant_ids"])
         return _as_game_code(
             lambda: [
                 player for player in range(n_players) if self.is_done(state, player)

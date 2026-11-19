@@ -1789,6 +1789,19 @@ def test_messages_are_rejected_until_every_player_is_ready(relay):
     }
 
 
+def test_a_page_opening_before_the_start_and_a_repeat_ready_change_nothing(relay):
+    # So that a game without ticks doesn't send the same views again.
+    state = relay.initial_state(["1"])
+    before = json.loads(json.dumps(state))
+    relay.on_join(state, "1", 1)
+    assert state == before
+
+    relay.apply(state, "1", READY, 2, Sent())
+    started = json.loads(json.dumps(state))
+    relay.apply(state, "1", READY, 3, Sent())
+    assert state == started
+
+
 def test_an_overridden_apply_gets_only_the_game_s_messages_after_the_start(relay):
     class Counted(type(relay)):
         name = "counted"
@@ -2817,11 +2830,14 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
     assert other.sync_group_links[0].page_deadline == row.end_time
 
 
-def _save_ending(session_id, ready=(), away=(), ended_at=0, entry=None, status="ended"):
+def _save_ending(
+    session_id, ready=(), away=(), ended_at=0, entry=None, status="ended", game=None
+):
     """Save the game's ending at ``ended_at``, as Dallinger does once it has
     started at 0, with the players of ``ready`` ready and those of ``away``,
     ``(player, since)``, away, or with the psynet ``entry`` of a game played
-    elsewhere, then run its ending handler."""
+    elsewhere, then run the ending handler of ``game``, by default the
+    pick-numbers game."""
     row = db.session.get(RealtimeSession, session_id)
     ids = [int(member) for member in row.members]
     away_since = [None] * len(ids)
@@ -2839,7 +2855,8 @@ def _save_ending(session_id, ready=(), away=(), ended_at=0, entry=None, status="
     row.final_state = {
         "psynet": {**entry, "participant_ids": ids, "last_event": ended_at}
     }
-    game = _played_pick_numbers()()
+    if game is None:
+        game = _played_pick_numbers()()
     _without_commits("handle_ending", lambda: game.handle_ending(row))
     db.session.commit()
     return ids
@@ -3010,6 +3027,29 @@ def test_absences_say_which_players_didn_t_play_and_why(monkeypatch):
     game.tick(35)
 
     assert game.game.absences(game.state) == [None, "left_game", "no_show", "left_game"]
+
+
+def test_a_game_nobody_joined_has_only_no_shows_even_if_is_done_needs_on_start(
+    pair,
+):
+    class Finishing(_Game):
+        def on_start(self, state):
+            state["finished"] = [False, False]
+
+        def is_done(self, state, player):
+            return state["finished"][player]
+
+    unstarted = LocalGame(Finishing, players=2, start=False)
+    assert unstarted.game.absences(unstarted.state) == ["no_show", "no_show"]
+    members, _ = pair
+    play = _play("absent", absent_action="leave_group")
+    for member in members:
+        _arrive(play.barrier, member)
+
+    _save_ending(_game_id(members[0], "absent"), entry=_psynet(), game=Finishing())
+
+    for member in members:
+        assert member.sync_group_removal_reason("pair") == "no_show"
 
 
 def test_the_players_of_a_failed_game_stay_in_their_groups(pair):
@@ -3265,6 +3305,29 @@ def test_a_player_added_to_a_game_gets_the_next_number_and_can_finish_first():
     with pytest.raises(Reject, match="Your game has ended"):
         game.send(2, _pick(5))
     assert game.answer(2) == [None, None, 4]
+
+
+def test_a_local_game_keeps_its_state_when_it_rejects_a_message():
+    class Spend(LiveMessage):
+        type = "spend"
+
+        def apply(self, game, state, player, now):
+            state["coins"] -= 1
+            if state["coins"] < 0:
+                raise Reject("No coins left.")
+
+    class Purse(_Game):
+        messages = [Spend]
+
+        def initial_state(self, players):
+            return {"coins": 0}
+
+    game = LocalGame(Purse, players=1)
+    before = json.loads(json.dumps(game.state))
+
+    with pytest.raises(Reject, match="No coins left."):
+        game.send(0, Spend(), now=3)
+    assert game.state == before
 
 
 def test_players_whose_game_has_ended_leave_too_few_for_the_game(monkeypatch):

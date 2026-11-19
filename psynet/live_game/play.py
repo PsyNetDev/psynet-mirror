@@ -659,10 +659,15 @@ def _remove_absent_players(game, session_row, players):
     state = session_row.final_state
     if (state or {}).get("psynet") is None:
         return
+    leaves_by_player = [
+        (participant, _absent_leave(participant, session_row.id))
+        for participant in players
+    ]
+    if not any(leaves for _, leaves in leaves_by_player):
+        return
     absences = game.absences(state)
     leaving = []
-    for participant in players:
-        leaves = _absent_leave(participant, session_row.id)
+    for participant, leaves in leaves_by_player:
         reason = absences[state["psynet"]["participant_ids"].index(participant.id)]
         if not leaves or reason is None:
             continue
