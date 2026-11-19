@@ -11,30 +11,6 @@ processes they need.
 
 Run it once :doc:`back-end tests <backend>` pass.
 
-Measuring async job CPU
------------------------
-
-At the end of ``psynet test local``, PsyNet logs how much CPU each kind of
-async job used, grouped by where the job runs, label and
-:ref:`priority <async_job_priority>`:
-
-.. code-block:: text
-
-    Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
-      Runs in  Label           Priority  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
-      worker   AsyncCodeBlock  high          2         0.027        0.052          0.085         no
-
-``worker`` rows are :class:`~psynet.async_job.WorkerAsyncJob` jobs, which run
-in worker processes. ``web`` rows are :class:`~psynet.async_job.LocalAsyncJob`
-jobs, such as asset deposits, which run in a thread of the web process. A
-CPU-heavy worker job keeps a core busy while it runs, so as load grows it
-needs more worker processes and a server with a core for each (see
-:ref:`performance_testing_async_workers`). An I/O-bound job, such as an API
-call, mostly waits and doesn't need more cores. Per-job values are in the
-``cpu_time`` column of ``database/async_job.csv`` in the export. The
-:doc:`/skills/plan-server-resources` Agent Skill turns these numbers into a
-worker estimate; confirm it with a performance test.
-
 Running a test
 --------------
 
@@ -107,8 +83,9 @@ removal reason (such as ``late`` or ``group_dissolved``; a bot removed from
 two groups counts twice); these bots may
 still have completed the experiment. Other sections cover
 runtimes, busy chains, requests answered busy or stale (which bots retry),
-wait pages, async job queue waits and worker use, live games, and how the
-database grew.
+wait pages, async job queue waits and worker use,
+:ref:`live games <performance_testing_live_games>`, and how the database
+grew.
 *Start-up vs steady state* splits the measures at the moment the first bot
 finishes, because a study's opening burst is often its hardest moment.
 
@@ -141,6 +118,30 @@ about 500 participants waiting. Neither is released yet.
 If response times are high, profile the database queries with ``psynet test
 local --sql-profile``; see :doc:`/test/sqlalchemy_profiling`.
 
+Measuring async job CPU
+-----------------------
+
+At the end of ``psynet test local``, PsyNet logs how much CPU each kind of
+async job used, grouped by where the job runs, label and
+:ref:`priority <async_job_priority>`:
+
+.. code-block:: text
+
+    Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
+      Runs in  Label           Priority  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
+      worker   AsyncCodeBlock  high          2         0.027        0.052          0.085         no
+
+``worker`` rows are :class:`~psynet.async_job.WorkerAsyncJob` jobs, which run
+in worker processes. ``web`` rows are :class:`~psynet.async_job.LocalAsyncJob`
+jobs, such as asset deposits, which run in a thread of the web process. A
+CPU-heavy worker job keeps a core busy while it runs, so as load grows it
+needs more worker processes and a server with a core for each (see
+:ref:`performance_testing_async_workers`). An I/O-bound job, such as an API
+call, mostly waits and doesn't need more cores. Per-job values are in the
+``cpu_time`` column of ``database/async_job.csv`` in the export. The
+:doc:`/skills/plan-server-resources` Agent Skill turns these numbers into a
+worker estimate; confirm it with a performance test.
+
 .. _performance_testing_capacity:
 
 Finding the server's capacity
@@ -162,9 +163,9 @@ A test passes if:
   500);
 - high-priority async jobs wait under ``--max-queue-p95-s`` (default 5 s)
   for a worker, at the 95th percentile;
-- each live game's ticks run, and its players' messages are applied when the
-  test measures them, at most 100 ms late at the 95th percentile (see
-  :ref:`performance_testing_live_games`), and at most 1% of live games fail;
+- live games' ticks, and players' messages where the test measures them,
+  run at most 100 ms late at the 95th percentile, and at most 1% of the
+  games fail (see :ref:`performance_testing_live_games`);
 - at most 1% of participants are failed for waiting too long, and at most
   1% get fewer trials because every chain was busy.
 
@@ -300,11 +301,23 @@ jobs. There is no estimate if the test had no steady state or fewer than
 Live games
 ----------
 
-:doc:`Live games </code/multiplayer/live_games>` aren't played in requests or
-async jobs. Each worker process runs a game runner beside it, which plays
-its share of the games one after another, running their ticks and the
+:doc:`Live games </design/live_games>` aren't played in requests or async
+jobs. Each worker process runs a *game runner* beside it, which plays its
+share of the games one after another, running their ticks and applying the
 players' messages. A runner that can't keep up runs ticks late, and players
 see the game stutter.
+
+Bots play live games on the server, through the game's ``bot`` method, and
+open no game pages. So a test with bots alone measures the game's code and
+how late its ticks run, but not players' messages, nor views on their way
+to the pages; see `Playing during a test`_ for those.
+
+Test a multiple of the group size, for longer than one game, as for any
+group experiment (see :ref:`performance_testing_capacity`): bots left over
+wait for a group, and a test that stops mid-game leaves groups unfinished.
+
+Timing the game's code
+~~~~~~~~~~~~~~~~~~~~~~
 
 Before a performance test, time the game's code with
 :meth:`~psynet.live_game.testing.LocalGame.time_play`. It plays the game with
@@ -320,10 +333,14 @@ its bots for a while, as a runner would, without a server:
 
     Snake: 240 turns in 30 s of play took 0.037 s of game code (0.15 ms a turn on average, 1.48 ms at most), 0.1% of a game runner, so one runner can play about 575 games at once.
 
-The estimate leaves out the runner's own work of saving games and sending
+The number of games keeps the runner about 70% busy, as the worker estimate
+above does. It leaves out the runner's own work of saving games and sending
 views, so treat it as an upper bound. If it is near the number of groups the
 study will run at once, make the game's ``tick`` and ``view`` cheaper, for
 example by sending less in each view, or plan on more worker processes.
+
+Reading the report
+~~~~~~~~~~~~~~~~~~
 
 A performance test of an experiment with live games reports them under *Live
 games*::
@@ -335,48 +352,43 @@ games*::
       ------  -------  --------  ----------------  -------------------  ----------
       snake        12         0           0-10 ms      (needs browser)      0.4 ms
 
-Games counts the games started during the test and those already running
-when it started. A pass is the runner's turn at a game, and Avg pass is the time it spends
-running the ticks and messages due, including passes that failed; saving
-games and sending views count
-towards how busy the runners were, but not towards Avg pass. When games fail,
-the section says why: for each game, its most common errors, or that its
-passes ran past the game's ``time_limit``. The runners count delays in ranges (up to 10, 20, 50, 100,
-200 and 500 ms, then 1, 2 and 5 s, then more), so the 95th percentiles are ranges. A test
-passes only if every game's p95 tick delay, and p95 message delay where it was
-measured, is at most 100 ms. The report warns when the runners were busy more than 85% of
-the test, on average over the runners, since each plays its own share of
-the games: raise ``worker_processes`` (see
-:ref:`performance_testing_async_workers`), which adds runners, or make the
-games cheaper.
+*Games* counts the games started during the test and those already running
+when it started, and *Avg pass* is the time the game's code took in a pass.
+The runners count delays in ranges, so the 95th percentiles are ranges. When
+games fail, the section gives each game's most common errors. The report
+warns when the runners were busy for more than 85% of the test: raise
+``worker_processes`` (see :ref:`performance_testing_async_workers`), which
+adds runners, or make the games cheaper.
+
+When games fail
+~~~~~~~~~~~~~~~
 
 A runner that falls far behind doesn't just run ticks late. Its next turn
-at a game runs every tick that has come due, and if they take longer than
-the game's ``time_limit`` (1 second by default) together, the game fails, with
-``TimeLimitExceeded`` in the server log. This is deliberate: a game that
-stalled isn't the game its players were meant to play, so it is marked as
-failed rather than kept in the data, and its players fail as for any other
-failed game. The report's *Failed* column counts these games, and a test
-with more failed games than ``max_bot_error_rate`` allows fails. The
-players' bots get an error page, but those errors count only towards the
-failed games, not again as failed requests and bots. Game code that takes
-longer than the ``time_limit`` in one pass fails the same way, and failed
-passes save no delays, so the report can't tell the two apart: time the
-game with ``LocalGame.time_play`` to find out.
+at a game runs every tick that has come due, and if together they take
+longer than the game's :ref:`time_limit <live-games-time-limit>`, 1 second
+by default, the game fails, with ``TimeLimitExceeded`` in the server log.
+This is deliberate: a game that stalled isn't the game its players were
+meant to play, so it fails like any other failed game rather than being
+kept in the data. The report's *Failed* column counts these games. Game code
+that is slow in itself fails the same way, and the report can't tell the
+two apart, so time the game with ``LocalGame.time_play`` to find out which
+it was.
 
-Bots play live games on the server, through the game's ``bot`` method, and
-open no game pages. So a bot-only test measures the game's code and how late
-its ticks run, but not players' messages. To measure those too, play in a
-browser during the test. For example, start ``psynet debug local``, join the
-game in a browser, and run
+Playing during a test
+~~~~~~~~~~~~~~~~~~~~~
+
+To measure how long players' messages wait, play in a browser during the
+test. For example, start ``psynet debug local --legacy`` (``--legacy``
+because the development server delivers a ticking game's views in bursts),
+join the game in a browser, and run
 ``psynet performance-test local --existing --force`` (``--force`` because
-your participant isn't a bot). The bots share games with you, and the
-*p95 message delay* column then shows how long your moves waited to be
-applied. Because the database then has a participant that bots didn't
-create, the summary notes that the test checks how the experiment ran
-rather than estimating its capacity. No test measures the views' trip to the page, so also watch the
-game in a browser on the deployed server
-(see :ref:`performance_testing_server`) while other groups play.
+your participant isn't a bot). The bots share games with you, and the *p95
+message delay* column shows how long your moves waited to be applied. The
+test then reports no capacity, since it didn't run on bots alone.
+
+No test measures the views' trip to the page, so also watch the game in a
+browser on the deployed server (see :ref:`performance_testing_server`) while
+other groups play.
 
 .. _performance_testing_database_size:
 

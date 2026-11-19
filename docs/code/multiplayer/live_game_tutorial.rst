@@ -250,10 +250,9 @@ demo's trial, which `Playing it as trials`_ below shows in full:
    :dedent:
 
 Its content holds the page's elements, each with an ``id`` so that the
-JavaScript can find it. PsyNet hides it on a page without a game. The
-:class:`~psynet.live_game.LiveGameControl` connects the page to the game,
-and a page that doesn't need to change its texts can leave it out. Its
-``waiting_status`` is what the page says until both pages have opened,
+JavaScript can find it. PsyNet hides it on a page without a game. To change
+the page's texts, give it a :class:`~psynet.live_game.LiveGameControl`,
+which connects the page to the game: its ``waiting_status`` is what the page says until both pages have opened,
 ``player_left_message`` the notice while the partner is away, and
 ``no_game_message`` the notice on a page without a game.
 ``js_page_modules`` lists the page's JavaScript.

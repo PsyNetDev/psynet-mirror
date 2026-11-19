@@ -353,12 +353,12 @@ The game page
 
 The game page is the :class:`~psynet.live_game.LiveGamePage` given to the
 ``PlayLiveGame``, as in the example under `PlayLiveGame`_. It shows its
-content and plays the game through a
-:class:`~psynet.live_game.LiveGameControl`, ``LiveGameControl()`` unless
-you give it one with other options, such as the texts below. Another
+content and plays the game through its ``control``, a
+:class:`~psynet.live_game.LiveGameControl`, ``LiveGameControl()`` by
+default; give it one of your own to change the texts below. Another
 :class:`~psynet.modular_page.ModularPage` with a ``LiveGameControl`` also
-works, for a page built some other way. The page's JavaScript goes in a file in the experiment's ``static`` folder,
-listed in the page's ``js_page_modules``. It exports an ``activate``
+works, for a page built some other way. The page's JavaScript goes in a
+file in the experiment's ``static`` folder, listed in the page's ``js_page_modules``. It exports an ``activate``
 function, which PsyNet runs each time the page opens
 (:doc:`/code/pages/custom_front_ends` explains page modules).
 ``static/rock-paper-scissors.js``:
@@ -600,8 +600,8 @@ outcome and saved, which this page calls the player's result.
 ``onChange`` gets the final view with ``ended`` set, and ``onEnded`` runs,
 and the game ignores any message sent after that.
 
-A game fails when its code raises an error, or when its record can't be
-saved. Its pages keep the view they had, which comes again with ``ended``
+A game fails when its code raises an error or runs past the game's
+`time_limit <live-games-time-limit_>`_, or when its record can't be saved. Its pages keep the view they had, which comes again with ``ended``
 set, and once the failure is saved, each player's game page raises
 :class:`~psynet.live_game.LiveGameFailed`, with the game's own error. PsyNet
 then handles it as any other error in the experiment: it records the error
@@ -734,6 +734,10 @@ the ``PlayLiveGame``'s, and the others are the game's:
      - A player who has been away that long is gone, and once fewer than
        ``min_players`` players aren't, the game ends with the reason
        ``"players_left"`` (see `Joining and leaving`_).
+   * - ``time_limit``
+     - 1 second
+     - The game's code has run that long in one of the runner's turns at
+       the game, and the game fails (see below).
 
 A game that lasts a fixed time sets ``duration``, in seconds. PsyNet runs
 the game's ``tick`` at the end, if it has one, and then ends the game with
@@ -762,6 +766,16 @@ in seconds since the game started, from ``next_deadline``. Its ``tick`` runs
 at each one, and at the end of its ``duration``. A tick that runs late gets
 the end as ``now``, so a game that counts things on a schedule, such as
 catches every few seconds, counts none after the end.
+
+.. _live-games-time-limit:
+
+The game's own ``time_limit`` is not a page's ``time_limit``: it limits how
+long the game's code may run in one of the game runner's turns at it, the
+ticks and messages that have come due since its last turn. It stops game
+code that never finishes, and the game then fails (see `The end`_).
+Game code should take far less, since a runner plays its games in turn.
+It can also run out when the runner falls far behind, with many ticks due at
+once (see :ref:`performance_testing_live_games`).
 
 If a game is still running more than a minute after it should have ended,
 for example because the worker that runs the experiment's games has stopped,
@@ -960,8 +974,9 @@ outcome then. This game pays 0.10 for a win:
             return 0.10 if mine is not None and BEATS[mine] == theirs else 0
 
 ``reason`` is ``"finished"`` when ``is_over`` returned ``True`` or the
-game's ``duration`` ran out, the string ``is_over`` returned if it returned
-one, and ``"timeout"`` when its ``timeout`` did.
+game's ``duration`` ran out, and ``"timeout"`` when its ``timeout`` did. An
+``is_over`` that returns a string instead, such as ``"deal"``, ends the
+game with that string as its reason, which then isn't ``"finished"``.
 Dallinger's `outcome <dallinger-outcome_>`_ lists the other reasons, such as
 ``"not_joined"``. If the game's code raised an error, ``reason`` is
 ``"failed"``, and ``outcome`` is the outcome of the state just before the
@@ -1019,10 +1034,8 @@ A record has:
   until the game's result is saved, then ``"ended"``, or ``"failed"`` if the
   game's code raised an error or its record couldn't be saved, with the
   error in ``error``;
-- ``finished``, whether the game ended with the reason ``"finished"``,
-  because ``is_over`` returned ``True`` or its ``duration`` ran out, rather
-  than early, for example because players left (a reason string that
-  ``is_over`` returns is only ``end_reason``);
+- ``finished``, whether ``end_reason`` is ``"finished"`` (see `Rewards`_ for
+  the reasons), rather than early, for example because players left;
 - ``outcome`` and ``end_reason``, the game's outcome and the ``reason`` it
   ended, both ``None`` until it has ended;
 - ``answer``, the participant's answer on the game page, and ``player``,
@@ -1213,22 +1226,10 @@ scissors game:
 reason the game ended when it has one, such as ``"players_left"``.
 
 Each of the experiment's worker processes runs a game runner, which plays
-the games given to it one after another, so slow game code in one game
-delays the others. ``time_play`` plays a game with its bots for a while, as
-a runner would, and says how many games one runner can play at once:
-
-.. code-block:: python
-
-    print(LocalGame(Snake, players=4).time_play(30))
-
-.. code-block:: text
-
-    Snake: 240 turns in 30 s of play took 0.037 s of game code (0.15 ms a turn on average, 1.48 ms at most), 0.1% of a game runner, so one runner can play about 575 games at once.
-
-Before running many groups at once, run a performance test, which reports
-how late each game's ticks ran (see :ref:`performance_testing_live_games`).
-The worker also logs a warning, naming the slowest games, when it falls
-behind.
+its games one after another, so slow game code in one game delays the
+others. To check that a game's code keeps up with many games at once, time
+it with ``LocalGame.time_play`` and run a performance test (see
+:ref:`performance_testing_live_games`).
 
 To play a game yourself, run ``psynet debug local`` and open the participant
 link in a browser window for each player. For a game with ticks, run
@@ -1263,4 +1264,3 @@ on Dallinger's clock rather than the game's. Use ``now`` and the page's
 .. _dallinger-outcome: https://dallinger.readthedocs.io/latest/realtime_games.html#dallinger.realtime.RealtimeGame.outcome
 .. _dallinger-save-message: https://dallinger.readthedocs.io/latest/realtime_games.html#dallinger.realtime.RealtimeGame.save_message
 .. _dallinger-bot: https://dallinger.readthedocs.io/latest/realtime_games.html#dallinger.realtime.RealtimeGame.bot
-.. _dallinger-running-games: https://dallinger.readthedocs.io/latest/realtime_games.html#running-games

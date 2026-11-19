@@ -232,6 +232,7 @@ What to check when reviewing live games
   always end?
 - Is what the analysis needs in the outcome, the moments or the messages?
 - Will the game's code keep up with as many games as will run at once?
+  :ref:`Testing live games <performance_testing_live_games>` says how to check.
 - Has someone played the game in several browser windows, reloading one
   and closing another during the game?
 
