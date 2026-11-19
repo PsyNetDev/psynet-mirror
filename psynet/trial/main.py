@@ -327,7 +327,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         :meth:`compute_performance_reward`, which would pay each player
         twice, raises an error, as does a game that can't be played, such
         as one without a ``name``. A trial whose ``show_trial`` then plays
-        another game raises an error too. ``None`` (default) leaves these
+        another game raises an error too, when the trial's pages are
+        built. ``None`` (default) leaves these
         checks to when the pages are built.
 
     time_credit_before_trial: float

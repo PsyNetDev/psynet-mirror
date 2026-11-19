@@ -393,14 +393,14 @@ def _check_game_class(game_class, label="game_class"):
         raise TypeError(f"{label} must be a LiveGame subclass, not {game_class!r}.")
     if game_class.name is None:
         raise TypeError(
-            f"{game_class.__name__} has no name, so it can't be played. "
-            'Set its name, such as name = "rock_paper_scissors".'
+            f"{label} is {game_class.__name__}, which has no name, so it can't "
+            'be played. Set its name, such as name = "rock_paper_scissors".'
         )
     if game_class.bot is RealtimeGame.bot:
         raise TypeError(
-            f"{game_class.__name__} has no bot method, so its bots, such as "
-            "those of psynet test, would never move. Define bot to return "
-            "a bot's next message."
+            f"{label} is {game_class.__name__}, which has no bot method, so "
+            "its bots, such as those of psynet test, would never move. "
+            "Define bot to return a bot's next message."
         )
 
 

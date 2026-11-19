@@ -1387,10 +1387,17 @@ def test_a_game_class_must_be_a_live_game_with_a_name_and_a_bot(
 
     with pytest.raises(TypeError, match="game_class must be a LiveGame subclass"):
         _play("plain", game_class=Plain)
-    with pytest.raises(TypeError, match="Unnamed has no name"):
+    with pytest.raises(TypeError, match="game_class is Unnamed, which has no name"):
         _play("unnamed", game_class=Unnamed)
-    with pytest.raises(TypeError, match="Botless has no bot method"):
+    with pytest.raises(TypeError, match="game_class is Botless, which has no bot"):
         _play("botless", game_class=Botless)
+
+    with pytest.raises(
+        TypeError, match="NoBotTrial.live_game_class is Botless, which has no bot"
+    ):
+
+        class NoBotTrial(Trial):
+            live_game_class = Botless
 
 
 @pytest.mark.parametrize(

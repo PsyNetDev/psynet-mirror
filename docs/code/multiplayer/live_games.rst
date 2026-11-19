@@ -236,8 +236,10 @@ takes newcomers:
   ``late_after``. Instead each member waits ``max_wait_time`` seconds from
   when they arrive, and then leaves the group themselves.
 
-Here and below, ``rock_paper_scissors_page()`` returns a new game page like
-the one above:
+Here and below, ``game_page()`` stands for a function of your own that
+returns a new game page like the one above. The tutorial's demo builds its
+page in ``rock_paper_scissors_page(game)``, from the trial's definition
+(see :doc:`live_game_tutorial`):
 
 .. code-block:: python
 
@@ -246,7 +248,7 @@ the one above:
         group_type="pair",
         game_class=RockPaperScissors,
         settings={"throws": 5, "reward_per_win": 0.05},
-        page=rock_paper_scissors_page(),
+        page=game_page(),
         late_after=20,  # counts from 10 s after the instructions' 90 s are up
         late_action="leave_group",
     ),
@@ -277,7 +279,7 @@ since they get only the state:
     PlayLiveGame(
         group_type="pair",
         game_class=RockPaperScissors,
-        page=rock_paper_scissors_page(),
+        page=game_page(),
         settings={"throws": 3, "reward_per_win": 0.10},
         late_after=60,
         late_action="leave_group",
@@ -304,7 +306,7 @@ trial's ``show_trial``, and pass the trial's ``definition`` as the settings:
             return PlayLiveGame(
                 group_type="pair",
                 game_class=RockPaperScissors,
-                page=rock_paper_scissors_page(),
+                page=game_page(),
                 settings=self.definition,
                 late_after=60,
                 late_action="leave_group",
@@ -323,7 +325,7 @@ The trial class's ``live_game_class`` names the game the trial plays (see
 pages, so naming the game lets it check the game and the trial class
 together when the experiment loads, such as that they don't both pay for
 the game (see :ref:`live-games-rewards`). A trial that then plays another
-game raises an error.
+game raises an error too, but only when the trial's pages are built.
 
 A trial played in a group needs a :class:`~psynet.sync.GroupBarrier` in its
 ``show_trial``, and the barrier of the ``PlayLiveGame`` is one. Each trial's
