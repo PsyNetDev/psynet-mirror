@@ -5123,14 +5123,15 @@ def user_confirms(question, default=False, unattended=None):
         The answer if the user just presses Enter.
     unattended : str, optional
         How to go ahead without being asked, given in the error when stdin
-        ends without an answer.
+        gives no answer.
 
     Raises
     ------
     click.Abort
         If the user aborts the question in a terminal.
     click.ClickException
-        If stdin is not a terminal and ends without an answer.
+        If stdin is not a terminal and gives no answer, because it ended or
+        the command was interrupted while waiting.
     """
     print(question)
     interactive = _stdin_is_interactive()
@@ -5140,7 +5141,7 @@ def user_confirms(question, default=False, unattended=None):
         if interactive:
             raise
         raise click.ClickException(
-            "The question above needs an answer, but stdin ended without one. "
+            "The question above got no answer from stdin. "
             + (unattended or "Answer it in a terminal, or pipe the answer in.")
         ) from None
     finally:

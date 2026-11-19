@@ -2682,26 +2682,38 @@ def test_ssh_update_reads_a_piped_answer(tmp_path, monkeypatch, capsys, answer):
         with pytest.raises(click.ClickException) as error:
             _check_ssh_update("musix", "consonance", "sandbox")
         assert error.value.message == (
-            "The question above needs an answer, but stdin ended without one. "
+            "The question above got no answer from stdin. "
             "To update it without being asked, re-run with --yes."
         )
     assert capsys.readouterr().out.endswith("[Y/n]: \n")
 
 
+class _InterruptedStdin(io.StringIO):
+    """A stdin that is open but silent until the user presses Ctrl+C."""
+
+    def readline(self, *args):
+        raise KeyboardInterrupt
+
+
 @pytest.mark.parametrize("interactive", [False, True])
+@pytest.mark.parametrize("stdin", [io.StringIO, _InterruptedStdin])
 def test_a_question_without_an_answer_gives_advice_unless_in_a_terminal(
-    monkeypatch, interactive
+    monkeypatch, interactive, stdin
 ):
     from psynet import command_line
 
-    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    monkeypatch.setattr("sys.stdin", stdin(""))
     monkeypatch.setattr(command_line, "_stdin_is_interactive", lambda: interactive)
     if interactive:
         with pytest.raises(click.Abort):
             command_line.user_confirms("Overwrite?")
     else:
-        with pytest.raises(click.ClickException, match="Answer it in a terminal"):
+        with pytest.raises(click.ClickException) as error:
             command_line.user_confirms("Overwrite?")
+        assert error.value.message == (
+            "The question above got no answer from stdin. "
+            "Answer it in a terminal, or pipe the answer in."
+        )
 
 
 def test_scripts_update_installs_managed_skills_and_preserves_user_skills():

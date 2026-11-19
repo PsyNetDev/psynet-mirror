@@ -432,6 +432,6 @@ def test_a_development_psynet_deploy_without_an_answer_says_how_to_skip_it(
     Path("requirements.txt").write_text("psynet[experiment]==14.1.0a2\n")
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
 
-    with pytest.raises(click.ClickException, match="stdin ended without one") as err:
+    with pytest.raises(click.ClickException, match="got no answer from stdin") as err:
         command_line.confirm_deploying_development_psynet()
     assert "set SKIP_CHECK_PSYNET_VERSION_REQUIREMENT=1" in err.value.message
