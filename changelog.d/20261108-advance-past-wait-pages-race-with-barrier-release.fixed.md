@@ -1,0 +1,1 @@
+Fixed `advance_past_wait_pages` occasionally leaving a bot on a stale waiting page when a barrier released it mid-check, which made its next `take_page()` resubmit the waiting page instead of answering the page it had moved on to. Bot status now reports `is_wait_page` and `barrier_id`.

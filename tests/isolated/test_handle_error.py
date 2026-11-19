@@ -560,6 +560,7 @@ def test_fatal_response_failure_returns_json_and_prepares_tracked_recovery():
     )
     event = MagicMock()
     event.is_timeline_hold = False
+    event._time_limit_seconds_to_wait.return_value = None
     event.process_response.side_effect = ValueError("boom")
     experiment = MagicMock()
     experiment.HandledError = Experiment.HandledError

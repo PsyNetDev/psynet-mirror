@@ -1,0 +1,1 @@
+Added "Late, slow and leaving players: case studies", which follows group designs (a fixed pair, members who leave, a slow reader between runs, an odd player out, a barrier's maximum wait running out and a group dissolving mid-round) and says what each player sees, whom they wait for and when they move on, each checked by a test.

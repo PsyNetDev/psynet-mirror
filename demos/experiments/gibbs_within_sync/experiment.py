@@ -1,22 +1,42 @@
+"""Gibbs sampling with chains shared by groups of three.
+
+A :class:`~psynet.sync.SimpleGrouper` forms groups of three, and the
+:class:`~psynet.trial.gibbs.GibbsTrialMaker` has ``sync_group_type=GROUP``
+and ``chain_type="within"``, so each group follows one chain together: on
+each step every member sets the same colour slider for the same target word,
+and the members' answers are summarized into the next node.
+
+Each slider page shows the group with a :class:`~psynet.group_prompt.GroupPrompt`,
+ticking members off as they submit, and from the second step on a page first
+shows each member's colour and slider value from the step before.
+
+A member who drops out can be replaced: ``join_existing_groups`` with
+``join_criterion=is_group_joinable`` lets a newcomer join while the group's
+leader has more than one trial left. With
+``use_admission_points=True`` the newcomer is a pending member
+until the trial maker prepares the group's next step, which admits them, so
+the group's current step doesn't wait for them. A newcomer still waiting
+after ``sync_group_newcomer_max_wait`` seconds is turned away.
+"""
+
 import random
-from typing import List, Union
+from typing import List
 
 from dominate import tags
 from markupsafe import Markup
 
 import psynet.experiment
 from psynet.bot import Bot, BotDriver, advance_past_wait_pages
-from psynet.experiment import get_trial_maker
+from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, Prompt, SliderControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.sync import SimpleGrouper, SyncGroup
 from psynet.timeline import Timeline, join
 from psynet.trial.gibbs import GibbsNode, GibbsTrial, GibbsTrialMaker
-from psynet.utils import as_plain_text, get_logger
+from psynet.utils import as_plain_text
 
-logger = get_logger()
-
+GROUP = "gibbs"
 TARGETS = ["tree", "rock", "carrot", "banana"]
 COLORS = ["red", "green", "blue"]
 
@@ -25,16 +45,14 @@ class ColorSliderPage(ModularPage):
     def __init__(
         self,
         label: str,
-        prompt: Union[str, Markup],
+        prompt: Prompt,
         selected_idx: int,
         starting_values: List[int],
         reverse_scale: bool,
         directional: bool,
         time_estimate=None,
-        **kwargs,
     ):
         assert 0 <= selected_idx < len(COLORS)
-        self.prompt = prompt
         self.selected_idx = selected_idx
         self.starting_values = starting_values
 
@@ -43,12 +61,9 @@ class ColorSliderPage(ModularPage):
         not_selected_colors = [COLORS[i] for i in not_selected_idxs]
         not_selected_values = [starting_values[i] for i in not_selected_idxs]
         hidden_inputs = dict(zip(not_selected_colors, not_selected_values))
-        kwargs["template_arg"] = {
-            "hidden_inputs": hidden_inputs,
-        }
         super().__init__(
             label,
-            Prompt(prompt),
+            prompt,
             control=SliderControl(
                 start_value=starting_values[selected_idx],
                 min_value=0,
@@ -75,10 +90,10 @@ class CustomTrial(GibbsTrial):
     def show_trial(self, experiment, participant):
         return join(
             self.see_last_trial_responses(participant) if self.degree > 0 else None,
-            self.choose_response(),
+            self.choose_response(participant),
         )
 
-    def choose_response(self):
+    def choose_response(self, participant: Participant):
         target = self.context["target"]
 
         prompt = tags.span()
@@ -90,7 +105,8 @@ class CustomTrial(GibbsTrial):
 
         return ColorSliderPage(
             "color_trial",
-            prompt,
+            # Ticks appear as the others submit.
+            GroupPrompt(prompt, group=self.sync_group, participant=participant),
             starting_values=self.initial_vector,
             selected_idx=self.active_index,
             reverse_scale=self.reverse_scale,
@@ -99,31 +115,32 @@ class CustomTrial(GibbsTrial):
 
     def see_last_trial_responses(self, participant: Participant):
         last_node = self.node.parent
-        last_trials = last_node.alive_trials
-        last_trials.sort(key=lambda t: t.participant_id)
-        try:
-            participant_answer = [
-                t.answer for t in last_trials if t.participant == participant
-            ][0]
-        except IndexError:
-            participant_answer = None
-        other_participant_answers = [
-            t.answer for t in last_trials if t.participant != participant
-        ]
+        # Members who joined since have no answer, so they get no bubble.
+        answers = {
+            t.participant_id: _color_answer(t.updated_vector, t.answer)
+            for t in last_node.alive_trials
+        }
+        color = COLORS[last_node.active_index]
+        return ModularPage(
+            "last_responses",
+            GroupPrompt(
+                f"Here is how your group set the {color} slider. "
+                f"The summarized response was {round(last_node.var.summarize_trials_output)}.",
+                group=self.sync_group,
+                participant=participant,
+                answers=answers,
+            ),
+        )
 
-        html = tags.span()
-        with html:
-            if participant_answer is not None:
-                tags.p(f"You chose: {participant_answer}")
-            tags.p("Other participants chose:")
-            with tags.ul():
-                for response in other_participant_answers:
-                    tags.li(response)
-            tags.p(
-                f"The summarized response was {last_node.var.summarize_trials_output}."
-            )
 
-        return InfoPage(html)
+def _color_answer(vector, value):
+    """Return a speech bubble showing the colour a member chose and its slider value."""
+    r, g, b = (round(x) for x in vector)
+    return Markup(
+        '<span style="display: inline-block; width: 1em; height: 1em;'
+        " vertical-align: middle; border-radius: 0.2em;"
+        ' background: rgb({}, {}, {});"></span> {}'
+    ).format(r, g, b, round(value))
 
 
 class CustomNode(GibbsNode):
@@ -135,8 +152,8 @@ class CustomNode(GibbsNode):
 
 trial_maker = GibbsTrialMaker(
     id_="gibbs_demo",
-    start_nodes=lambda: [CustomNode(context={"target": random.sample(TARGETS, 1)[0]})],
-    sync_group_type="gibbs",
+    start_nodes=lambda: [CustomNode(context={"target": random.choice(TARGETS)})],
+    sync_group_type=GROUP,
     trial_class=CustomTrial,
     node_class=CustomNode,
     chain_type="within",
@@ -151,27 +168,20 @@ trial_maker = GibbsTrialMaker(
     # but if we want to make maximum use of participant trials, we can set propagate_failure=False.
     propagate_failure=False,
     wait_for_networks=True,
-    sync_group_wait_content="Waiting for more people to join your group",
+    sync_group_waiting_message="Waiting for the rest of your group",
+    sync_group_newcomer_max_wait=300,
 )
 
 
 def is_group_joinable(group: SyncGroup, participant: Participant):
-    trial_maker_id = "gibbs_demo"
-
+    """Let a newcomer join while the group's leader has more than one trial left."""
     leader = group.leader
-    leader_still_in_trial_maker = leader.module_id == trial_maker_id
-    if not leader_still_in_trial_maker:
+    if leader.module_id != trial_maker.id:
         return False
-
-    leader_n_trials_in_trial_maker = len(
-        [t for t in leader.all_trials if t.trial_maker_id == trial_maker_id]
+    n_trials_left = trial_maker.max_trials_per_participant - len(
+        trial_maker.get_participant_trials(leader)
     )
-    leader_n_trials_left = (
-        get_trial_maker(trial_maker_id).max_trials_per_participant
-        - leader_n_trials_in_trial_maker
-    )
-
-    return leader_n_trials_left > 1
+    return n_trials_left > 1
 
 
 class Exp(psynet.experiment.Experiment):
@@ -180,11 +190,14 @@ class Exp(psynet.experiment.Experiment):
     timeline = Timeline(
         InfoPage("Welcome to the experiment!", time_estimate=5),
         SimpleGrouper(
-            group_type="gibbs",
+            group_type=GROUP,
             initial_group_size=3,
+            quorum=3,
             join_existing_groups=True,
+            use_admission_points=True,
+            target_group_size=3,
             join_criterion=is_group_joinable,
-            content="Waiting for more people to join your group",
+            waiting_message="Waiting for more people to join your group",
         ),
         trial_maker,
     )
@@ -209,17 +222,18 @@ class Exp(psynet.experiment.Experiment):
 
         # Going now to the next trial;
         # Trial 2 (degree = 1)
-        advance_past_wait_pages(original_bots, max_iterations=30)
+        advance_past_wait_pages(original_bots)
 
         # Check that the trials have been aggregated appropriately
         page = bots[0].get_current_page()
-        info_message = "You chose: 100 Other participants chose: * 110 * 120 The summarized response was 110."
-        assert as_plain_text(page.prompt.text) == info_message
+        assert "The summarized response was 110." in as_plain_text(page.prompt.text)
+        answers = [as_plain_text(page.prompt.answers[bot.id]) for bot in original_bots]
+        assert [a.strip() for a in answers] == ["100", "110", "120"]
 
-        # Now we make one of the bots fail during a trial
-        bots[0].fail(reason="simulated_failure")
+        # Now one of the bots drops out during a trial
+        bots[0].drop_out()
         group = SyncGroup.query.one()
-        assert group.n_active_participants < group.min_group_size
+        assert group.n_active_participants < group.quorum
 
         # Bring in a new bot to replace the failed one
         new_bot = bots[3]
@@ -232,15 +246,17 @@ class Exp(psynet.experiment.Experiment):
         group = SyncGroup.query.one()
         assert Bot.query.get(new_bot.id) in group.participants
 
-        # Now the participant should be waiting at the prepare_trial barrier.
+        # Now the participant should be waiting, still pending, at the
+        # prepare_trial barrier, which will admit them.
+        assert group.pending_participants == [Bot.query.get(new_bot.id)]
         # The other two bots need to finish the previous trial before this new trial can begin
-        assert new_bot.get_current_page().is_timeline_hold
+        assert new_bot.is_waiting
         assert trial_maker.with_namespace("prepare_trial") in new_bot.active_barriers
 
         # Let's have them finish the trial, then
         for bot in [bots[1], bots[2]]:
             page = bot.get_current_page()
-            assert isinstance(page, InfoPage)
+            assert page.label == "last_responses"
             bot.take_page()
 
             page = bot.get_current_page()
@@ -251,11 +267,11 @@ class Exp(psynet.experiment.Experiment):
         # Trial 3 (degree = 2)
         bots = [bots[1], bots[2], new_bot]
 
-        advance_past_wait_pages(bots, max_iterations=30)
+        advance_past_wait_pages(bots)
 
         for bot in bots:
             assert bot.current_trial is not None
-            assert isinstance(bot.get_current_page(), InfoPage)
+            assert bot.get_current_page().label == "last_responses"
 
         # They should all be assigned to the same node
         assert len(set([bot.current_node.id for bot in bots])) == 1
@@ -268,33 +284,17 @@ class Exp(psynet.experiment.Experiment):
         for remaining_nodes in range(2):
             for bot in bots:
                 page = bot.get_current_page()
-                assert isinstance(page, InfoPage), (
-                    f"Bot {bot.id} unexpectedly saw {page} instead of an InfoPage, on remaining_nodes = {remaining_nodes}."
+                assert page.label == "last_responses", (
+                    f"Bot {bot.id} unexpectedly saw {page} instead of the last responses, on remaining_nodes = {remaining_nodes}."
                 )
                 bot.take_page()
 
                 page = bot.get_current_page()
                 assert page.label == "color_trial"
                 bot.take_page()
-            advance_past_wait_pages(bots, max_iterations=30)
+            advance_past_wait_pages(bots)
 
         for bot in bots:
             page = bot.get_current_page()
             text = as_plain_text(page.prompt.text)
             assert "That's the end!" in text
-
-    def test_check_bot(self, bot: Bot, **kwargs):
-        assert not bot.failed or bot.failed_reason == "simulated_failure"
-
-    # Uncomment the following to run bots in the background of the experiment.
-    # @staticmethod
-    # @scheduled_task("interval", seconds=1.0, max_instances=1)
-    # def bot_launcher():
-    #     from psynet.experiment import get_experiment, is_experiment_launched
-
-    #     n_bots = Bot.query.filter_by(status="working").count()
-    #     if is_experiment_launched() and n_bots < 3:  # allow only fixed number of bots
-    #         WorkerAsyncJob(
-    #             function=get_experiment().run_bot, arguments={"time_factor": 0.9}
-    #         ).enqueue()
-    #         db.session.commit()

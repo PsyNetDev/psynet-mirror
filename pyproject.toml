@@ -56,17 +56,10 @@ dependencies = [
 # this runtime.
 experiment = [
     "babel",
-    # TODO: Replace this Git pin with a released dallinger[docker] version once
-    # Dallinger#10065 (worker_processes), #10086 (worker_startup_timeout),
-    # #10087 (no croniter at worker start-up), #10166 (docker_image_base_name
-    # optional for server-only docker-ssh builds), the real-time engine
-    # (#10100, #10229), check_recruiter_exit (#10239) and check_worker_status
-    # (#10268) are on PyPI. The SHA is the head of #10287's branch, which is
-    # stacked on #10281; move it to Dallinger master once they merge.
-    # #10287 (participant socket admission and scope check) is a security
-    # requirement for directed timeline-hold wakes: never move this pin to a
-    # Dallinger without it.
-    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@6c70ab23142a69f10fe95a7aba34b2917bc8b205",
+    # Dallinger#10287 (participant socket admission and scope check), first
+    # released in 13.0.0, is a security requirement for directed timeline-hold
+    # wakes: never lower this bound below it.
+    "dallinger[docker]>=13.0.0,<14",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf

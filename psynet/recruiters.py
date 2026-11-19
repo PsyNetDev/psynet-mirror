@@ -76,7 +76,7 @@ from dallinger.recruiters import (
 )
 from dallinger.utils import get_base_url
 from markupsafe import Markup
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, select
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 from sqlalchemy.sql import func
@@ -94,6 +94,7 @@ from .participant import (
     BONUS_STATUS_UNCONFIRMED,
     NO_BONUS_ATTEMPT_RESULT,
     Participant,
+    _lock_and_load_participant,
     bonus_is_settled,
     bonus_needs_review,
     bonus_transfer_already_claimed,
@@ -180,9 +181,8 @@ def _without_matching_bonus_entry(bonus_payments, amount):
 def _fetch_prolific_submission(prolificservice, assignment_id: str) -> dict | None:
     """Quiet raw submission GET via Dallinger.
 
-    Requires ``ProlificService.get_participant_submission(..., translate=False)``
-    (Dallinger PR #9779, or the first release that includes it). That
-    path goes through ``_req``, so ``DevProlificService`` can mock it,
+    Uses ``ProlificService.get_participant_submission(..., translate=False)``.
+    That path goes through ``_req``, so ``DevProlificService`` can mock it,
     keeps ``bonus_payments``, and returns ``None`` on a miss.
     """
     return prolificservice.get_participant_submission(assignment_id, translate=False)
@@ -223,12 +223,24 @@ def _latest_participant_for_worker_id(worker_id, for_update=False):
     """Return the most recent participant with this worker id, or ``None``."""
     if not worker_id:
         return None
-    query = Participant.query.filter_by(worker_id=worker_id).order_by(
-        Participant.id.desc()
-    )
-    if for_update:
-        query = query.with_for_update(of=Participant).populate_existing()
-    return query.first()
+    if not for_update:
+        return (
+            Participant.query.filter_by(worker_id=worker_id)
+            .order_by(Participant.id.desc())
+            .first()
+        )
+    locked_id = db.session.execute(
+        select(Participant.id)
+        .where(Participant.worker_id == worker_id)
+        .order_by(Participant.id.desc())
+        .limit(1)
+        .with_for_update()
+    ).scalar()
+    if locked_id is None:
+        return None
+    # This transaction already holds the row, so NOWAIT cannot fail and the
+    # helper skips a second lock.
+    return _lock_and_load_participant(Participant.query, locked_id, nowait=True)
 
 
 def _prolific_error_status(error: ProlificServiceException):
@@ -246,16 +258,10 @@ def _prolific_error_status(error: ProlificServiceException):
 def _prolific_lookup_error_is_retriable(error: Exception) -> bool:
     """Return whether a failed Prolific lookup is worth retrying.
 
-    Connection errors and timeouts reach PsyNet as ``requests`` exceptions
-    from Dallinger releases without Dallinger PR #10008
-    (https://github.com/Dallinger/Dallinger/pull/10008), and as a
+    Connection errors and timeouts reach PsyNet as a
     ``ProlificServiceException`` whose payload has an ``error`` but no
-    ``response`` from releases with it. Once PsyNet's minimum Dallinger
-    version includes that PR, drop the ``requests.RequestException``
-    handling here and at the call sites that mention this function.
+    ``response``.
     """
-    if isinstance(error, requests.RequestException):
-        return True
     try:
         payload = json.loads(str(error))
     except json.JSONDecodeError:
@@ -1749,8 +1755,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                 endpoint=f"/submissions/{assignment_id}/transition/",
                 json={"action": "COMPLETE", "completion_code": code},
             )
-        # requests.RequestException: see _prolific_lookup_error_is_retriable.
-        except (ProlificServiceException, requests.RequestException) as ex:
+        except ProlificServiceException as ex:
             handle_recruitment_error(ex)
             return False
         logger.info(
@@ -2082,8 +2087,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             submission = recruiter.prolificservice.get_participant_submission(
                 participant.assignment_id
             )
-        # requests.RequestException: see _prolific_lookup_error_is_retriable.
-        except (ProlificServiceException, requests.RequestException) as error:
+        except ProlificServiceException as error:
             if not _prolific_lookup_error_is_retriable(error):
                 logger.error(
                     "Could not check Prolific submission status for assignment %s "
