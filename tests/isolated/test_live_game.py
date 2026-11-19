@@ -16,12 +16,14 @@ from dallinger.models import RealtimeEvent, RealtimeSession, timenow
 from dallinger.realtime import RealtimeGame, Reject, Sent, store
 from dallinger.realtime.core import new_session, run_pass
 from dallinger.realtime.game import queued_effects
+from dallinger.realtime.jobs import _without_commits
 from dallinger.realtime.runner import Runner
 from dallinger.realtime.store import RUNNING
 from dominate import tags
 from flask import Flask
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from rq import Queue, SimpleWorker
+from sqlalchemy import select, update
 
 import psynet
 from psynet.bot import Bot
@@ -48,6 +50,7 @@ from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     GroupBarrier,
+    ParticipantLinkSyncGroup,
     SimpleGrouper,
     SimpleSyncGroup,
     SyncGroupRound,
@@ -2831,7 +2834,8 @@ def _save_ending(session_id, ready=(), away=(), ended_at=0, entry=None, status="
             session_time=ended_at,
         )
     )
-    _played_pick_numbers()().handle_ending(row)
+    game = _played_pick_numbers()()
+    _without_commits("handle_ending", lambda: game.handle_ending(row))
     db.session.commit()
     return ids
 
@@ -2874,6 +2878,68 @@ def test_a_no_show_leaves_the_game_s_groups_so_the_next_barrier_doesn_t_wait(pai
         _run_pending_barrier_checks(_take_pending_barrier_checks())
         db.session.commit()
     assert _barrier_link_released(played.id, "after_the_game")
+
+
+@pytest.mark.parametrize("busy_sibling", [False, True])
+def test_no_shows_leave_a_shared_group_as_it_is_now_not_as_first_loaded(
+    pair, busy_sibling
+):
+    members, _ = pair
+    siblings = [new_participant(get_experiment()) for _ in range(2)]
+    cohort = SimpleSyncGroup(
+        group_type="cohort",
+        initial_group_size=4,
+        max_group_size=4,
+        quorum=3 if busy_sibling else 2,
+        n_active_participants=4,
+        accepts_top_ups=False,
+        below_quorum="continue_without_group",
+    )
+    db.session.add(cohort)
+    for member in [*members, *siblings]:
+        member.status = "working"
+        cohort.add_participant(member)
+    db.session.commit()
+    play = _play("absent", absent_action="leave_group", also_leave=["cohort"])
+    for member in members:
+        _arrive(play.barrier, member)
+    # The job has loaded the cohort when a sibling game's ending job, in
+    # another transaction, removes that game's no-shows from it.
+    loaded_links = list(cohort.participant_links)
+    assert sum(link.active for link in loaded_links) == 4
+    gone = siblings[:1] if busy_sibling else siblings
+    db.session.execute(
+        update(ParticipantLinkSyncGroup)
+        .where(
+            ParticipantLinkSyncGroup.sync_group_id == cohort.id,
+            ParticipantLinkSyncGroup.participant_id.in_([s.id for s in gone]),
+        )
+        .values(active=False, removal_reason="no_show"),
+        execution_options={"synchronize_session": False},
+    )
+
+    with db.engine.connect() as other:
+        transaction = other.begin()
+        try:
+            if busy_sibling:
+                # The remaining sibling's own request holds their row.
+                other.execute(
+                    select(Participant.id)
+                    .where(Participant.id == siblings[1].id)
+                    .with_for_update()
+                )
+            ids = _save_ending(_game_id(members[0], "absent"), ready=[0])
+        finally:
+            transaction.rollback()
+
+    played, no_show = (db.session.get(Participant, id_) for id_ in ids)
+    assert no_show.sync_group_removal_reason("cohort") == "no_show"
+    if busy_sibling:
+        # The barrier poller dissolves it once the sibling's request ends.
+        db.session.refresh(cohort)
+        assert cohort.dissolving and played.in_sync_group("cohort")
+    else:
+        assert played.sync_group_removal_reason("cohort") == "group_dissolved"
 
 
 @pytest.mark.parametrize(

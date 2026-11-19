@@ -44,6 +44,7 @@ from ..sync import (
     BarrierBehaviorMismatch,
     GroupBarrier,
     ParticipantLinkSyncGroup,
+    _lock_sync_group,
     _round_trial,
     _validate_group_timeouts,
 )
@@ -651,12 +652,14 @@ def _remove_absent_players(game, session_row, players):
 
     Called as the game's ending is saved, with the players' rows locked. They
     all leave before any group is dissolved below its quorum, so a pair of
-    no-shows both leave as no-shows.
+    no-shows both leave as no-shows. Each group's row is locked, in id
+    order, and its members reloaded first, so that sibling games sharing a
+    group (``also_leave``) and ending at once each count the other's leavers.
     """
     entry = (session_row.final_state or {}).get("psynet")
     if entry is None:
         return
-    left = {}
+    leaving = []
     end = None
     for participant in players:
         leaves = _absent_leave(participant, session_row.id)
@@ -680,12 +683,33 @@ def _remove_absent_players(game, session_row, players):
             continue
         groups = participant.active_sync_groups
         for group_type in leaves:
-            group = groups.get(group_type)
-            if group is not None:
-                group._remove_without_quorum_check(participant, reason)
-                left[group.id] = group
+            if group_type in groups:
+                leaving.append((participant, reason, groups[group_type].id))
+    groups = {
+        group_id: _lock_sync_group_and_links(group_id)
+        for group_id in sorted({group_id for _, _, group_id in leaving})
+    }
+    left = {}
+    for participant, reason, group_id in leaving:
+        group = groups[group_id]
+        if group.active and group._active_link(participant) is not None:
+            group._remove_without_quorum_check(participant, reason)
+            left[group_id] = group
     for group in left.values():
         group.dissolve_if_below_quorum()
+
+
+def _lock_sync_group_and_links(group_id):
+    """Lock a sync group's row and reload its member links, which this
+    transaction may have loaded before another committed changes to them."""
+    group = _lock_sync_group(group_id)
+    (
+        db.session.query(ParticipantLinkSyncGroup)
+        .filter_by(sync_group_id=group_id)
+        .populate_existing()
+        .all()
+    )
+    return group
 
 
 def _absent_leave(participant, game_id):

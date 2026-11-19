@@ -77,6 +77,10 @@ Barrier checks and participant requests take their locks in this order:
    ``NOWAIT``, so that a busy group defers the check. A newcomer's own
    request waits up to a second for an open group (see below). A member who leaves or fails changes the group
    with an ``UPDATE``, which waits up to ``timeline_lock_timeout_seconds``.
+   A live game's ending job removing absent players (``absent_action``)
+   locks the rows of the groups they leave in id order, waiting, and reloads
+   their member links, so sibling games sharing a group count each other's
+   leavers.
    A synchronized trial maker recording a run's choices in the group's
    ``trial_maker_runs`` also waits for the row, after locking any
    participant rows it needs.
