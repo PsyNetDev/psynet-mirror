@@ -169,10 +169,15 @@ game, and then shows the group the game page:
 .. code-block:: python
 
     timeline = Timeline(
-        SimpleGrouper(group_type="pair", initial_group_size=2),
+        SimpleGrouper(
+            group_type="pair",
+            initial_group_size=2,
+            below_quorum="continue_without_group",
+        ),
         PlayLiveGame(
             group_type="pair",
             game_class=RockPaperScissors,
+            settings={"throws": 5},
             late_after=60,
             late_action="leave_group",
             page=LiveGamePage(

@@ -393,7 +393,11 @@ then shows each player their score:
 .. code-block:: python
 
     timeline = Timeline(
-        SimpleGrouper(group_type="pair", initial_group_size=2),
+        SimpleGrouper(
+            group_type="pair",
+            initial_group_size=2,
+            below_quorum="continue_without_group",
+        ),
         PlayLiveGame(
             group_type="pair",
             game_class=RockPaperScissors,
@@ -426,8 +430,9 @@ then shows each player their score:
 - ``late_after`` limits that wait. A partner who keeps the other player
   waiting more than 20 seconds is late, and with
   ``late_action="leave_group"`` leaves the pair. The player who was on time
-  then goes on to the game page without a game. Every ``PlayLiveGame`` needs
-  a limit like this.
+  then goes on to the game page without a game, as the grouper's
+  ``below_quorum="continue_without_group"`` says. Every ``PlayLiveGame``
+  needs a limit like this.
 - ``page`` is the game page, as in `The game page`_ above.
 - On the next page, ``participant.live_games`` has the participant's record
   of the game, keyed by the game's ``name``. Its ``answer`` is what the
