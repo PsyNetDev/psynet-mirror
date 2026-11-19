@@ -150,7 +150,6 @@ export function activate({root, vars, psynet}) {
         place(boat, target, sailing ? Math.max(remaining, SHUFFLE_SECONDS) : SHUFFLE_SECONDS, sailing ? "linear" : "ease");
       }
       boat.spot = spot;
-      boat.element.classList.toggle("fish-sailing", sailing);
     }
   }
 
@@ -221,10 +220,6 @@ export function activate({root, vars, psynet}) {
     let left = live.ended ? 0 : Math.max(0, view.leaves_at - now);
     timeLeft.style.width = `${(left / rules.stay_seconds) * 100}%`;
     secondsLeft.textContent = `${Math.ceil(left)} s`;
-    if (!live.ended) {
-      // Redrawn so that boats that have arrived stop sailing.
-      render();
-    }
   }, 250);
   psynet.addPageEventListener(window, "resize", () => view && render({instant: true}));
 

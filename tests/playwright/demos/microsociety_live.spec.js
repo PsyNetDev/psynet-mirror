@@ -82,9 +82,6 @@ test("a newcomer sails onto the lake while the founders fish, and fishes on afte
       });
       await expect(player.locator("#fish-status")).toHaveText("Your time on the lake is up.");
     }
-    await first
-      .locator("#fish-results")
-      .evaluate((panel) => Promise.all(panel.getAnimations().map((animation) => animation.finished)));
     await checkLayoutAndScreenshot(first, "microsociety_live_results");
     await expect(newcomer.locator(".fish-boat-wrapper")).toHaveCount(1, { timeout: STEP_TIMEOUT_MS });
     await expect(spot(newcomer, 1)).toBeEnabled();
