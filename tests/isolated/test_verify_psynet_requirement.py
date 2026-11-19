@@ -416,3 +416,22 @@ def test_live_deploys_ask_before_installing_a_development_psynet(
     command_line.confirm_deploying_development_psynet()
     assert len(questions) == 1
     assert "development version of PsyNet" in capsys.readouterr().err
+
+
+def test_a_development_psynet_deploy_without_an_answer_says_how_to_skip_it(
+    tmp_path, monkeypatch
+):
+    import io
+
+    import click
+
+    from psynet import command_line
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT", raising=False)
+    Path("requirements.txt").write_text("psynet[experiment]==14.1.0a2\n")
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+
+    with pytest.raises(click.ClickException, match="stdin ended without one") as err:
+        command_line.confirm_deploying_development_psynet()
+    assert "set SKIP_CHECK_PSYNET_VERSION_REQUIREMENT=1" in err.value.message

@@ -65,7 +65,10 @@ prints an ad page URL such as
 walk through the experiment in the browser. When you start the server from a
 non-interactive background shell, keep stdin open
 (`tail -f /dev/null | psynet debug local`); otherwise it can stop without a
-log line.
+log line. Do this only for `debug local`: other commands, such as
+`psynet deploy ssh`, read the answers to their questions from stdin and would
+wait forever. Give them `< /dev/null`, so that a question fails with advice
+instead.
 
 The `demos/index` page describes each PsyNet demo. `psynet docs demos` prints
 the folder holding their code for the installed version (without media).

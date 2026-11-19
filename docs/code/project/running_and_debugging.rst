@@ -31,7 +31,11 @@ Press :kbd:`Ctrl+C` in the terminal to stop it.
 When a script or a coding agent starts ``psynet debug local`` in a
 background shell without a terminal, keep its standard input open, for
 example ``tail -f /dev/null | psynet debug local``. Otherwise the server can
-stop without a log message when standard input closes.
+stop without a log message when standard input closes. Don't do this for other
+commands: without a terminal, commands such as ``psynet deploy ssh`` read the
+answers to their questions from standard input, so an open but silent input
+makes them wait forever. Give them ``< /dev/null`` instead; a question then
+fails with an error that says how to go ahead without it.
 
 Most code changes, such as editing a page, adding timeline elements or
 changing code block logic, take effect when you save the file and refresh the

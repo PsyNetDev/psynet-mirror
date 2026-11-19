@@ -3949,7 +3949,8 @@ def confirm_deploying_development_psynet():
         return
     _confirm_deployment(
         f"{message}\nDeploy it anyway? (Set SKIP_CHECK_PSYNET_VERSION_REQUIREMENT=1 "
-        "to skip this question.)"
+        "to skip this question.)",
+        unattended="To deploy it anyway, set SKIP_CHECK_PSYNET_VERSION_REQUIREMENT=1.",
     )
 
 
@@ -5128,15 +5129,38 @@ def user_confirms(question, default=False):
             click.echo()
 
 
-def _confirm_deployment(question):
+def _confirm_deployment(question, unattended=None):
     """Ask ``question`` before a deployment and cancel it if the user declines.
+
+    Without a terminal the answer is read from stdin, so that
+    ``yes | psynet deploy ...`` works; a stdin that is open but never sends
+    anything waits for an answer.
+
+    Parameters
+    ----------
+    question : str
+        The question.
+    unattended : str, optional
+        How to deploy without being asked, given in the error when stdin ends
+        without an answer.
 
     Raises
     ------
     click.exceptions.Exit
         With exit code 1 if the user declines.
+    click.ClickException
+        If stdin ends without an answer.
     """
-    if not user_confirms(question):
+    try:
+        confirmed = user_confirms(question)
+    except click.Abort:
+        if _stdin_is_interactive():
+            raise
+        raise click.ClickException(
+            "The question above needs an answer, but stdin ended without one. "
+            + (unattended or "Answer it in a terminal, or pipe the answer in.")
+        ) from None
+    if not confirmed:
         click.echo("Deployment cancelled.", err=True)
         raise click.exceptions.Exit(1)
 
