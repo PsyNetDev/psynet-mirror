@@ -1625,10 +1625,12 @@ _JOIN_LOCK_WAIT_SECONDS = 1
 def _lock_sync_group(
     group_id, *, session=None, skip_locked=False, nowait=False, wait_seconds=None
 ) -> Optional["SyncGroup"]:
-    """Lock a sync group's row ``FOR NO KEY UPDATE`` and reload it, with its member links.
+    """Lock a sync group's row ``FOR NO KEY UPDATE`` and reload it.
 
-    ``populate_existing`` also reloads the member links this session has
-    loaded, so they include members who joined or left in other requests.
+    ``populate_existing`` refreshes the group's row and which links it has,
+    but link objects this session has already loaded keep their old
+    ``active`` and ``admitted_at``. Read the members after the lock, or
+    reload the links, to see members who joined or left in other requests.
     See the lock order in :doc:`/developer/synchronization_internals`.
 
     Parameters
