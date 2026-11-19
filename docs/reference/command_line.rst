@@ -59,7 +59,8 @@ virtual environment active. ``psynet <command> --help`` lists every option.
      - Run the experiment's automated tests with bots; see
        :doc:`/test/backend`.
    * - ``psynet test ssh``
-     - Run bots against a debug deployment (experimental); see
+     - Run bots against a debug deployment (experimental); it refuses an app
+       deployed with ``psynet deploy ssh`` unless given ``--allow-live``. See
        :doc:`/test/backend`.
    * - ``psynet performance-test local`` / ``ssh``
      - Measure how the server copes with many participants; see

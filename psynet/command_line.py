@@ -6196,6 +6196,12 @@ def _remote_failure_summary(status, recent_lines):
 @_test_options["serial"]
 @_test_options["stagger"]
 @_test_options["time_factor"]
+@click.option(
+    "--allow-live",
+    is_flag=True,
+    help="Also run the bots against an app deployed with `psynet deploy ssh`. "
+    "They join its live data and can take recruitment places.",
+)
 @click.pass_context
 def test__docker_ssh(
     ctx,
@@ -6206,10 +6212,12 @@ def test__docker_ssh(
     serial=None,
     stagger=None,
     time_factor=None,
+    allow_live=False,
 ):
     """
     Runs experiment tests on the remote server.
     Assumes that the app has already been launched on the remote server using ``psynet debug ssh``.
+    An app deployed with ``psynet deploy ssh`` is refused unless ``--allow-live`` is given.
 
     Running this command will not reset the database to a vanilla state, but will instead just use the state
     that exists already. This may cause strange results if the tests are run multiple times.
@@ -6233,7 +6241,29 @@ def test__docker_ssh(
     if time_factor:
         cmd += f" --time-factor {time_factor}"
 
+    if not allow_live:
+        _refuse_testing_a_live_ssh_app(server, app)
     run_remote_experiment_command(_ssh_executor(server), app, cmd)
+
+
+def _refuse_testing_a_live_ssh_app(server, app):
+    """Refuse to run bots against an app that isn't known to be a debug deployment.
+
+    Bot participants of a live app join its data and can take recruitment places.
+    """
+    try:
+        mode = _read_running_deployment_info(server, app).get("mode")
+    except Exception as err:
+        raise click.ClickException(
+            f"Could not read how {app} on {server} was deployed ({err!r}). Check "
+            "that it is running, or pass --allow-live to run the bots anyway."
+        ) from err
+    if mode == "live":
+        raise click.ClickException(
+            f"{app} was deployed with `psynet deploy ssh`, so its bots would join "
+            "the live data and could take recruitment places. Pass --allow-live "
+            "to run them anyway."
+        )
 
 
 def _validate_performance_n_bots(ctx, param, value):

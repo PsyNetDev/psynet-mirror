@@ -1,0 +1,1 @@
+`psynet test ssh` refuses to run bots against an app deployed with `psynet deploy ssh`, whose live data they would join and whose recruitment places they could take, unless given `--allow-live`. It also stops when it can't read how the app was deployed.

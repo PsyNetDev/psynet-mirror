@@ -6124,6 +6124,41 @@ _SSH_ARGS = ["--app", "test-app", "--server", "lab.example.org"]
 
 
 @pytest.mark.parametrize(
+    "running, args, runs, message",
+    [
+        ({"mode": "sandbox"}, [], True, None),
+        ({"mode": "live"}, [], False, "deployed with `psynet deploy ssh`"),
+        ({"mode": "live"}, ["--allow-live"], True, None),
+        (ValueError("no deployment info"), [], False, "Could not read how test-app"),
+    ],
+)
+def test_test_ssh_refuses_a_live_app_unless_allowed(
+    monkeypatch, running, args, runs, message
+):
+    from psynet import command_line
+
+    def read(server, app):
+        if isinstance(running, Exception):
+            raise running
+        return running
+
+    monkeypatch.setattr(command_line, "_read_running_deployment_info", read)
+    monkeypatch.setattr(command_line, "_ssh_executor", Mock())
+    run = Mock()
+    monkeypatch.setattr(command_line, "run_remote_experiment_command", run)
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    hosts = {"lab.example.org": {"host": "lab"}}
+    monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: hosts)
+
+    result = CliRunner().invoke(command_line.test__docker_ssh, [*_SSH_ARGS, *args])
+
+    assert run.called == runs, result.output
+    assert result.exit_code == (0 if runs else 1), result.output
+    if message:
+        assert message in result.output
+
+
+@pytest.mark.parametrize(
     "command, args",
     [
         ("deploy__heroku", ["--app", "test-app"]),
