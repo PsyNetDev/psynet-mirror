@@ -245,6 +245,7 @@ the one above:
     PlayLiveGame(
         group_type="pair",
         game_class=RockPaperScissors,
+        settings={"throws": 5, "reward_per_win": 0.05},
         page=rock_paper_scissors_page(),
         late_after=20,  # counts from 10 s after the instructions' 90 s are up
         late_action="leave_group",

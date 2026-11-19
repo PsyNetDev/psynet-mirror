@@ -22,8 +22,10 @@ class LocalGame:
 
         from psynet.live_game.testing import LocalGame
 
-        game = LocalGame(RockPaperScissors, players=2, settings={"rounds": 3})
-        game.send(0, Choose(round=1, action="rock"))
+        game = LocalGame(
+            RockPaperScissors, players=2, settings={"throws": 3, "reward_per_win": 0.10}
+        )
+        game.send(0, Choose(throw=1, action="rock"))
         assert game.view(1)["partner_chosen"]
 
     The rewards that the game adds with
