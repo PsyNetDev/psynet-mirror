@@ -1738,8 +1738,9 @@ def test_deprecated_label_arguments_warn_and_are_ignored():
     with pytest.warns(FutureWarning) as record:
         conditional("x", lambda: True, page, log_chosen_branch=False)
     assert len(record) == 1
-    assert "a label (positional argument 1) or log_chosen_branch=; delete both" in str(
-        record[0].message
+    assert (
+        "a label (positional argument 1, 'x') or log_chosen_branch=; delete both"
+        in str(record[0].message)
     )
     # The old positional log_chosen_branch must not become time_estimate,
     # with or without the label in front of it.

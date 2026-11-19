@@ -3625,12 +3625,12 @@ def _accepts_deprecated_labels(ignore=(), removed_positional=None):
                 if "label" in kwargs:
                     raise TypeError(f"{name}() got two labels.")
                 if "label" in ignore:
-                    dropped.append("a label (positional argument 1)")
+                    dropped.append(f"a label (positional argument 1, {args[0]!r})")
                 else:
                     kwargs["label"] = args[0]
                     warn(
-                        f"{name}() no longer takes a label as its first argument; "
-                        f"delete it, or pass it as {name}(..., label=...)."
+                        f"{name}() no longer takes a label (positional argument 1, "
+                        f"{args[0]!r}); delete it, or pass it as {name}(..., label=...)."
                     )
                 args = args[1:]
             for arg, position in (removed_positional or {}).items():
