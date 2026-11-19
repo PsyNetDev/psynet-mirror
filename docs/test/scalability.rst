@@ -358,7 +358,7 @@ when it started, and *Avg pass* is the time the game's code took in a pass.
 The runners count delays in ranges, so the 95th percentiles are ranges. A
 game without a ``tick_rate`` shows *no ticks* for its tick delay, and the
 summary checks the delay limit only for the delays a test measured. Such a
-game runs only when a message arrives, so with bots, whose messages can all
+game runs only when a message or one of its deadlines arrives, so with bots, whose messages can all
 arrive at once, a pass can be a whole game. When
 games fail, the section gives each game's most common errors. The report
 warns when the runners were busy for more than 85% of the test: raise

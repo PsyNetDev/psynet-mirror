@@ -1931,6 +1931,8 @@ def test_time_play_takes_a_turn_per_tick_or_at_each_deadline(registry):
         def bot(self, view, player, now):
             return None
 
+    bots_saw = []
+
     class Catches(Ticking):
         name = "time_play_catches"
         tick_rate = None
@@ -1940,6 +1942,9 @@ def test_time_play_takes_a_turn_per_tick_or_at_each_deadline(registry):
 
         def is_over(self, state):
             return state["ticks"] == 3
+
+        def bot(self, view, player, now):
+            bots_saw.append(view["ticks"])
 
     ticking = LocalGame(Ticking, players=2).time_play(10)
     game = LocalGame(Catches, players=2)
@@ -1951,6 +1956,8 @@ def test_time_play_takes_a_turn_per_tick_or_at_each_deadline(registry):
     assert game.state["ticks"] == 3
     assert (catches.turns, catches.seconds) == (9, 7.5)
     assert "9 turns in 7.5 s of play" in str(catches)
+    # No bot plays once the game is over.
+    assert max(bots_saw) == 2
 
     class Stuck(Catches):
         name = "time_play_stuck"

@@ -186,7 +186,10 @@ class LocalGame:
                 self.tick(now)
                 if deadline is not None:
                     last_deadline = deadline
+            # As in Dallinger, bots don't play after a tick ends the game.
             for player in players:
+                if self.is_over():
+                    break
                 if self.is_done(player):
                     continue
                 message = self.bot(player, now)
