@@ -832,10 +832,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         reward = self.compute_performance_reward(score=self.score)
         assert isinstance(reward, (float, int))
         self._log_performance_reward(reward)
-        # A live game played in the trial may have recorded its rewards since
-        # this trial was loaded, so add to the stored value, under the row lock
-        # that the game's record job also takes.
-        if inspect(self).persistent:
+        # A live game played in the trial, which needs a group round, may have
+        # recorded its rewards since this trial was loaded, so add to the
+        # stored value, under the row lock that the game's record job also
+        # takes.
+        if self.sync_group_round_id is not None and inspect(self).persistent:
             db.session.refresh(
                 self, attribute_names=["performance_reward"], with_for_update=True
             )
