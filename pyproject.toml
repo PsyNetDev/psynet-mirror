@@ -60,7 +60,7 @@ experiment = [
     # released in 13.0.0, is a security requirement for directed timeline-hold
     # wakes: never lower this bound below it. Pinned to the head of
     # Dallinger#10431 (live game runner stats) until it is released.
-    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@8fe2f20d0e116524d4f55ab31bb16f694506c648",
+    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@5c1e755980dacdbd6464f3af88a34db969c5b3e3",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
