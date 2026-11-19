@@ -1945,6 +1945,9 @@ class Page(Elt):
                 "page_uuid": participant.page_uuid,
                 "text": notice["text"],
             }
+        # A barrier's late_after counts from this deadline: the time_limit's
+        # if there is one, otherwise ends_by's. Pages shown in waiting logic
+        # don't set it, since a member waiting at a barrier isn't late.
         if self.time_limit is not None:
             participant.page_deadline = timenow() + timedelta(seconds=self.time_limit)
             deadline = participant.page_deadline

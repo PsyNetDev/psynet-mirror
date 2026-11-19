@@ -22,6 +22,10 @@ class TestBargainingLive:
     def game(self, demo):
         return LocalGame(demo.Bargain, players=2, settings={"stake": 10})
 
+    def test_a_quick_pair_waits_for_the_other_pair_to_finish_its_round(self, demo):
+        round_takes = demo.BargainTrial.time_estimate + demo.RESULT_SECONDS + 5
+        assert demo.ROUND_DEADLINE_SECONDS > round_takes
+
     def test_accepting_a_proposal_makes_the_deal_it_offered(self, demo, game):
         game.send(0, demo.Propose(keep=7))
         game.send(1, demo.Accept(keep=7), now=12.5)

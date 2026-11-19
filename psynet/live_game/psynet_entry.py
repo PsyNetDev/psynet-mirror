@@ -120,6 +120,8 @@ def _tick_once_started(self, method, outermost, state, now):
         return _UNCHANGED
     if outermost:
         # Dallinger runs no tick for a deadline at or before its last tick.
+        # Recorded before the tick_rate == 0 start path below returns, which
+        # also counts as a tick, or next_deadline keeps a handled deadline.
         entry["last_tick"] = now
     if entry["started_at"] is None:
         self._end_ready_step(state, now)
