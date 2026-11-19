@@ -222,7 +222,7 @@ What to check when reviewing group experiments
 - Can players recognise each other from one group or round to the next, and
   should they?
 
-:doc:`rounds` and :doc:`live_games` have checks of their own.
+:doc:`rounds` has checks of its own.
 
 .. seealso::
 

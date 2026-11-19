@@ -213,28 +213,9 @@ Each game's record is saved with the experiment's data:
 When planning the analysis, check that the outcome holds how each game ended,
 and that what happened along the way is in its moments or its messages.
 
-.. _design-live-games-checks:
-
-What to check when reviewing live games
----------------------------------------
-
-- Do players need to react to each other as they act? If not, a round of
-  trials is simpler.
-- Can a player see anything in their view that's meant only for others?
-- Does each rule check what a player's message could get wrong, or claim
-  falsely?
-- Is anything decided by speed, and so partly by each player's connection?
-- What happens to the others when a player leaves, and how long does the
-  game wait for them to come back?
-- Does the wait before the game have a limit, and does the game itself
-  always end?
-- Is what the analysis needs in the outcome, the moments or the messages?
-- Will the game's code keep up with as many games as will run at once?
-  :ref:`Testing live games <performance_testing_live_games>` says how to check.
-- Has someone played the game in several browser windows, reloading one
-  and closing another during the game?
-
 .. seealso::
 
    :doc:`/code/multiplayer/live_game_tutorial` builds three of the demos step
    by step, and :doc:`the reference </code/multiplayer/live_games>` is for looking things up.
+   :ref:`Testing live games <performance_testing_live_games>` checks that the
+   server keeps up with as many games as will run at once.
