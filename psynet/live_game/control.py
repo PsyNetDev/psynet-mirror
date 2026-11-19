@@ -160,13 +160,13 @@ class LiveGameControl(NullControl):
             or type(page).validate is not ModularPage.validate
         ):
             raise TypeError(
-                f"The LiveGamePage {page.label!r} has a validate function of "
+                f"The game page {page.label!r} has a validate function of "
                 "its own, which would replace the one that waits for the "
                 "game's result. Remove the page's validate."
             )
         if page.time_limit is not None:
             raise TypeError(
-                f"The LiveGamePage {page.label!r} can't have a time_limit: a "
+                f"The game page {page.label!r} can't have a time_limit: a "
                 "page that runs out of time skips the validate that saves the "
                 "player's answer. Limit the game instead, with its duration "
                 "or timeout."
