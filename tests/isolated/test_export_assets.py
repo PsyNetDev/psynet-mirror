@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 
+import click
 import pytest
 from click import Context
 from dallinger import db
@@ -115,10 +116,10 @@ class TestAssetExport:
         bot_driver.take_experiment()
 
         with tempfile.TemporaryDirectory() as tempdir:
-            with pytest.raises(ValueError, match="must be one of"):
+            with pytest.raises(click.BadParameter, match="must be one of"):
                 ctx.invoke(export__local, path=tempdir, assets="asdasdoj")
             with pytest.raises(
-                ValueError, match="asset selection 'all' has been removed"
+                click.BadParameter, match="asset selection 'all' has been removed"
             ):
                 ctx.invoke(export__local, path=tempdir, assets="all")
 
