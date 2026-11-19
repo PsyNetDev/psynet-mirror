@@ -197,7 +197,7 @@ test("participants whose pair breaks up at the game barrier see the no-game noti
     await expect(first.locator("#psynet-no-game-notice")).toHaveCount(0);
 
     // The partner, whose pair has ended, passes the game barrier without
-    // waiting and has no session either.
+    // waiting and has no game either.
     await clickNextAndWait(second);
     await expect(second.locator("#psynet-no-game-notice")).toHaveText(
       "Your group couldn't start the game.",

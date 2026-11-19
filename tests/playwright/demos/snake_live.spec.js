@@ -130,14 +130,17 @@ test("players steer snakes in snake_live, eat food, crash and come back, and fin
       )
       .toBe("down");
 
+    // The snake keeps moving, so it may eat another piece before the pages
+    // show the first, and the scores are checked for at least one.
     await eatAPiece(first);
     const eater = await snakeOf(first);
-    await expect(first.locator("#snake-scores")).toContainText(`You: ${eater.food} food`);
+    await expect(first.locator("#snake-scores")).toContainText(/You: [1-9]\d* food/);
     // The other page shows the eater by their pseudonym.
     const label = await second.evaluate((player) => psynet.liveGame.players[player].label, id);
     expect(label).not.toBe("You");
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     await expect(second.locator("#snake-scores")).toContainText(
-      `${label}: ${eater.food} food`,
+      new RegExp(`${escaped}: [1-9]\\d* food`),
       { timeout: STEP_TIMEOUT_MS }
     );
     await screenshot(second, "snake_live_board");

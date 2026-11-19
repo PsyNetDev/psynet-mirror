@@ -215,7 +215,7 @@ test("two participants play rock_paper_scissors_live to the end, with rejected c
       await assertNoBackendError(participant);
     }
 
-    // The second game is a new trial for each player, with a new session
+    // The second game is a new trial for each player, with a new game
     // and the throws and stakes of its own definition.
     await Promise.all(participants.map((participant) => clickNextAndWait(participant)));
     for (const participant of participants) {

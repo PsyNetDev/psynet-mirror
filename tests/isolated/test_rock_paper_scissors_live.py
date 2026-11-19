@@ -208,6 +208,10 @@ class TestRockPaperScissorsLive:
             return str(demo.no_more_games(participant).content)
 
         assert {reason: text(reason) for reason in demo.NO_PARTNER_TEXTS} == {
+            "no_group_formed": (
+                "We couldn't find you a partner, so there are no games. "
+                "Your bonus is $0.25."
+            ),
             "late": (
                 "You didn't come back in time for the next game. Your bonus is $0.25."
             ),

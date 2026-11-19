@@ -281,6 +281,8 @@ def left_pair(participant):
 
 # Why a participant isn't in a pair, as sync_group_removal_reason returns it.
 NO_PARTNER_TEXTS = {
+    # With the grouper's max_wait_action="continue_without_group".
+    "no_group_formed": "We couldn't find you a partner, so there are no games.",
     "late": "You didn't come back in time for the next game.",
     "group_dissolved": "Your partner has left, so there are no more games.",
     "removed_by_experimenter": "You were removed from the game.",

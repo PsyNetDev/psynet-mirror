@@ -19,6 +19,9 @@ and `on_add`), in which each player can finish before the others
 
 ## Usage
 
-Run `psynet debug local` and open the participant link in two browser
-windows, and in more windows later to join as newcomers. `psynet test local`
+Run `psynet debug local --legacy` and open the participant link in two
+browser windows, and in more windows later to join as newcomers. `--legacy`
+runs gunicorn, the web server deployed experiments use, instead of the
+auto-reloading development server, under which the lake's catches can show
+late. `psynet test local`
 plays with bots, which follow whoever catches the most.

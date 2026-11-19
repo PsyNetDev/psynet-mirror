@@ -89,3 +89,24 @@ class TestMicrosocietyLive:
         assert game.answer(0, reason="timeout")["left"] == demo.STAYED
         # The newcomer joined later, so their time wasn't up.
         assert game.answer(2, reason="timeout")["left"] == "timeout"
+
+    def test_a_newcomer_reads_the_tips_of_members_who_have_left(self, demo, db_session):
+        from timeline_hold_helpers import new_participant
+
+        from psynet.experiment import get_experiment
+        from psynet.sync import SimpleSyncGroup
+
+        founder, stayer, newcomer = [
+            new_participant(get_experiment()) for _ in range(3)
+        ]
+        society = SimpleSyncGroup(group_type="society", initial_group_size=3)
+        db_session.add(society)
+        for member in (founder, stayer, newcomer):
+            member.status = "working"
+            society.add_participant(member)
+        db_session.commit()
+        # As the timeline does: the founder leaves the society, then tips.
+        society.remove_participant(founder, reason="finished")
+        founder.var.tip = "Spot C is good."
+
+        assert "Spot C is good." in str(demo.history_page(newcomer).content)

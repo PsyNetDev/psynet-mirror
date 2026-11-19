@@ -42,7 +42,8 @@ function boatsAt(player, number, selector = ".fish-boat-wrapper") {
 test("a newcomer sails onto the lake while the founders fish, and fishes on after they leave", { tag: "@both" }, async ({
   browser
 }) => {
-  const experiment = startExperiment(path.resolve("demos/experiments/microsociety_live"));
+  // The lake ticks, so it runs on gunicorn, as a deployed experiment does.
+  const experiment = startExperiment(path.resolve("demos/experiments/microsociety_live"), { legacy: true });
   const contexts = await Promise.all([0, 1, 2].map(() => browser.newContext()));
   try {
     const url = await experiment.urlPromise;

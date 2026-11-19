@@ -87,6 +87,20 @@ class TestSharedCanvasLive:
         # gets.
         assert move(10.2) == pytest.approx(10.2)
 
+    def test_a_player_whose_page_stops_sending_moves_coasts_to_a_stop(self, demo):
+        game = LocalGame(demo.SharedCanvas, players=2)
+        game.send(0, demo.Move(dx=1, dy=0, seconds=0.5), now=1)
+        moved = dict(game.state["players"][0])
+        assert moved["vx"] > 0
+
+        # Until COAST_AFTER has passed, the game waits for the page's moves.
+        game.tick(now=1 + demo.COAST_AFTER - 0.1)
+        assert game.state["players"][0]["x"] == moved["x"]
+        # Then its ticks carry the player on until they stop.
+        game.tick(now=10)
+        coasted = game.state["players"][0]
+        assert coasted["vx"] == 0 and coasted["x"] > moved["x"]
+
     def test_the_page_moves_players_exactly_as_the_game_does(self, demo, tmp_path):
         node = shutil.which("node")
         assert node, "node is required to run the page's moves"
