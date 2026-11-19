@@ -70,7 +70,7 @@ different experiments on one machine, add ``--isolated``:
     Ready.
       Participant link: http://127.0.0.1:5100/ad?recruiter=hotair&generate_tokens=1&mode=debug
       Dashboard:        http://127.0.0.1:5100/dashboard (user admin, password ...)
-      Full log:         /tmp/psynet_develop_5100/dallinger_develop/logs.jsonl
+      Full log:         /tmp/psynet_develop_5100_k2x9q1ab/dallinger_develop/logs.jsonl
       Other terminals:  export DATABASE_URL=... REDIS_URL=... base_port=5100
     Press Ctrl+C to stop.
 
@@ -82,7 +82,9 @@ fresh database and its own Redis server (or, without ``redis-server`` on
 your ``PATH``, a spare database number on the shared one). These are
 temporary: stopping the server with :kbd:`Ctrl+C` drops the database,
 stops or empties Redis and removes the development folder, so export any
-data you want to keep while it runs.
+data you want to keep while it runs. The development folder's parent gets
+a random suffix and only you can open it, so other users' files in ``/tmp``
+can't get in its way.
 ``--isolated`` doesn't work with ``--docker``, which always uses port 5000.
 
 To keep a second server's data between runs, give its terminal its own

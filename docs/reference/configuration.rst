@@ -161,8 +161,9 @@ General
 ``dallinger_develop_directory`` *str* |dlgr-icon|
     The directory on your computer to be used to hold files and symlinks
     when running ``psynet debug local``. PsyNet experiments default to
-    ``/tmp/psynet_develop/dallinger_develop``, and ``--isolated`` servers use
-    ``/tmp/psynet_develop_<port>/dallinger_develop``. Keep it inside a folder
+    ``/tmp/psynet_develop/dallinger_develop``, and each ``--isolated`` server
+    uses ``dallinger_develop`` inside a new private folder
+    ``/tmp/psynet_develop_<port>_<random>``. Keep it inside a folder
     that holds nothing else, because the auto-reloader watches every Python
     file under its parent folder.
 

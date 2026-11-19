@@ -99,7 +99,7 @@ from .capacity import (
     refuse_new_participant_if_full,
     usable_participant_limit,
 )
-from .command_line import export_launch_data
+from .command_line import DEFAULT_DEVELOP_PARENT, export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
     _call_after_commit,
@@ -118,7 +118,6 @@ from .end import RejectedConsentLogic, SuccessfulEndLogic, UnsuccessfulEndLogic
 from .error import ErrorRecord
 from .field import ImmutableVarStore, PythonDict
 from .graphics import PsyNetLogo
-from .isolated_environment import DEVELOP_FOLDERS_PARENT
 from .notifier import Notifier
 from .page import InfoPage, WaitPage
 from .participant import (
@@ -2632,7 +2631,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "currency": "$",
             # Not Dallinger's /tmp/dallinger_develop: Flask's reloader watches
             # every .py file in the development folder's parent.
-            "dallinger_develop_directory": f"{DEVELOP_FOLDERS_PARENT}/dallinger_develop",
+            "dallinger_develop_directory": f"{DEFAULT_DEVELOP_PARENT}/dallinger_develop",
             "default_translator": "chat_gpt",
             "disable_browser_autotranslate": True,
             "disable_when_duration_exceeded": False,

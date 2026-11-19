@@ -19,11 +19,13 @@ An isolated environment gives the test session:
   stopped when the session ends (Redis delivers live notifications to every
   database on a server, so a database number on the shared server, emptied
   when the session ends, is only a fallback);
-- its own ``dallinger_develop_directory``, ``/tmp/psynet_develop_<port>/dallinger_develop``,
-  removed with its parent when the session ends. Flask's reloader watches
-  every ``.py`` file in the development folder's parent, so a parent of its
-  own keeps a session from restarting when another session's experiment
-  changes.
+- its own ``dallinger_develop_directory``, ``dallinger_develop`` inside a
+  new private folder ``/tmp/psynet_develop_<port>_<random>``, removed when
+  the session ends. Flask's reloader watches every ``.py`` file in the
+  development folder's parent, so a parent of its own keeps a session from
+  restarting when another session's experiment changes; creating it afresh
+  with ``tempfile.mkdtemp`` means another user's leftover folder or planted
+  symlink in ``/tmp`` can't take its place.
 
 PsyNet's process cleanup already only targets processes that use the current
 ``DATABASE_URL`` (see ``psynet.command_line.list_psynet_worker_processes``), so once
@@ -86,10 +88,6 @@ READY_ENV_VAR = "_PSYNET_TEST_ENVIRONMENT_READY"
 
 DEFAULT_DATABASE_URL = "postgresql://dallinger:dallinger@localhost/dallinger"
 DEFAULT_REDIS_URL = "redis://localhost:6379"
-#: Parent of PsyNet's default development folder. Flask puts a development
-#: folder's parent on ``sys.path``, and its reloader then watches every
-#: ``.py`` file under it, so this folder should hold that folder only.
-DEVELOP_FOLDERS_PARENT = "/tmp/psynet_develop"
 _DEFAULT_BASE_PORT = 5000
 _PORT_OFFSET = 100
 
@@ -248,10 +246,11 @@ class IsolatedEnvironment:
     stop its Redis server.
     """
 
-    def __init__(self, env, port_lock=None, redis_process=None):
+    def __init__(self, env, port_lock=None, redis_process=None, develop_parent=None):
         self.env = env
         self._port_lock = port_lock
         self._redis_process = redis_process
+        self._develop_parent = develop_parent
 
     @classmethod
     def start(cls, environ=None):
@@ -292,7 +291,13 @@ class IsolatedEnvironment:
             also_free=redis_port if private_redis else None,
         )
         session_database_url = None
+        develop_parent = None
         try:
+            # Private (mode 0700) and newly created, so another user's leftover
+            # folder or planted symlink can't take its place.
+            develop_parent = tempfile.mkdtemp(
+                prefix=f"psynet_develop_{base_port}_", dir=_shared_tmp()
+            )
             session_database_url = create_database(
                 database_url, suffix=f"_test_{base_port}"
             )
@@ -301,8 +306,8 @@ class IsolatedEnvironment:
                 READY_ENV_VAR: "1",
                 "DATABASE_URL": session_database_url,
                 "base_port": str(base_port),
-                "dallinger_develop_directory": (
-                    f"/tmp/psynet_develop_{base_port}/dallinger_develop"
+                "dallinger_develop_directory": os.path.join(
+                    develop_parent, "dallinger_develop"
                 ),
             }
             if not private_redis:
@@ -315,16 +320,18 @@ class IsolatedEnvironment:
                     "reach a local debug server's participants.",
                     file=sys.stderr,
                 )
-                return cls(env, port_lock)
+                return cls(env, port_lock, develop_parent=develop_parent)
 
             process = start_redis_server(redis_port(base_port))
         except BaseException:
             if session_database_url is not None:
                 _drop_session_database(session_database_url)
+            if develop_parent is not None:
+                shutil.rmtree(develop_parent, ignore_errors=True)
             port_lock.close()
             raise
         env["REDIS_URL"] = f"redis://127.0.0.1:{redis_port(base_port)}"
-        return cls(env, port_lock, process)
+        return cls(env, port_lock, process, develop_parent)
 
     def describe(self):
         """Return a one-line summary of where the session's services are."""
@@ -344,12 +351,11 @@ class IsolatedEnvironment:
             self._redis_process = None
         elif self._port_lock is not None:
             _flush_redis_database(self.env["REDIS_URL"])
+        if self._develop_parent is not None:
+            shutil.rmtree(self._develop_parent, ignore_errors=True)
+            self._develop_parent = None
         if self._port_lock is not None:
             # While the port is still claimed, so no new session is using it yet.
-            shutil.rmtree(
-                os.path.dirname(self.env["dallinger_develop_directory"]),
-                ignore_errors=True,
-            )
             _drop_session_database(self.env["DATABASE_URL"])
             self._port_lock.close()
             self._port_lock = None
@@ -505,6 +511,11 @@ def _port_is_free(port):
         return True
 
 
+def _shared_tmp():
+    """Return ``/tmp`` if it is writable, otherwise the temporary directory."""
+    return "/tmp" if os.access("/tmp", os.W_OK) else tempfile.gettempdir()
+
+
 def lock_path(name):
     """Return the path of the lock file ``<name>.lock``.
 
@@ -512,8 +523,7 @@ def lock_path(name):
     temporary directories still see each other's claims, like the
     development folders that are also under ``/tmp``.
     """
-    root = "/tmp" if os.access("/tmp", os.W_OK) else tempfile.gettempdir()
-    return os.path.join(root, f"{name}.lock")
+    return os.path.join(_shared_tmp(), f"{name}.lock")
 
 
 def port_lock_path(port):

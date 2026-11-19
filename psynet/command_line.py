@@ -1390,13 +1390,20 @@ def _develop_path(config):
         raise click.ClickException(" ".join(str(err).split())) from err
 
 
-def _ensure_develop_folders_parent(path):
-    """Create the shared parent of development folders so every user can add to it.
+#: Parent of PsyNet's default development folder. Flask puts a development
+#: folder's parent on ``sys.path``, and its reloader then watches every
+#: ``.py`` file under it, so this folder should hold that folder only.
+DEFAULT_DEVELOP_PARENT = "/tmp/psynet_develop"
 
-    Like ``/tmp``, it is world-writable with the sticky bit set, so users
-    can't remove each other's folders. Otherwise the first user to create it
-    would own it with mode ``0755`` and other users couldn't start a debug
-    server.
+
+def _ensure_default_develop_parent(path):
+    """Create the parent of the default development folder so any user can use it.
+
+    Like ``/tmp``, it is world-writable with the sticky bit set, so whichever
+    user runs the default debug server can create the development folder in
+    it, and users can't remove each other's folders. Otherwise the first user
+    to create it would own it with mode ``0755`` and other users couldn't
+    start a debug server.
 
     Raises
     ------
@@ -1433,7 +1440,6 @@ def run_pre_auto_reload_checks():
         config.load()
 
     from .experiment_scaffold import get_editable_psynet_source
-    from .isolated_environment import DEVELOP_FOLDERS_PARENT
 
     develop_path = _develop_path(config)
     if "." in str(develop_path):
@@ -1443,8 +1449,8 @@ def run_pre_auto_reload_checks():
             "~/.dallingerconfig, for example "
             "dallinger_develop_directory = /tmp/psynet_develop/dallinger_develop"
         )
-    if str(develop_path.parent) == DEVELOP_FOLDERS_PARENT:
-        _ensure_develop_folders_parent(DEVELOP_FOLDERS_PARENT)
+    if str(develop_path.parent) == DEFAULT_DEVELOP_PARENT:
+        _ensure_default_develop_parent(DEFAULT_DEVELOP_PARENT)
 
     if get_editable_psynet_source() is not None:
         root_dir = str(psynet_dir())

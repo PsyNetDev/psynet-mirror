@@ -142,10 +142,11 @@ def test_isolated_environment_uses_its_own_services():
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
         develop_directory = Path(first.env["dallinger_develop_directory"])
         # Flask's reloader watches the parent, so each session needs its own.
-        assert develop_directory == Path(
-            f"/tmp/psynet_develop_{port}/dallinger_develop"
-        )
-        develop_directory.mkdir(parents=True, exist_ok=True)
+        assert develop_directory.name == "dallinger_develop"
+        assert develop_directory.parent.parent == Path("/tmp")
+        assert develop_directory.parent.name.startswith(f"psynet_develop_{port}_")
+        assert develop_directory.parent.stat().st_mode & 0o777 == 0o700
+        develop_directory.mkdir()
 
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
@@ -259,10 +260,14 @@ def test_a_failed_start_explains_how_to_opt_out(tmp_path, monkeypatch):
         "psynet.isolated_environment.port_lock_path",
         lambda port: str(tmp_path / f"{port}.lock"),
     )
+    monkeypatch.setattr("psynet.isolated_environment._shared_tmp", lambda: tmp_path)
 
     environ = {**os.environ, "DATABASE_URL": unreachable}
     free_port, lock = _claim_port(int(environ.get("base_port", 5000)) + 100)
     lock.close()
+    # Like another user's crashed session: it must neither be used nor removed.
+    leftover = tmp_path / f"psynet_develop_{free_port}"
+    leftover.mkdir()
 
     with pytest.raises(IsolationError, match=f"{ENV_VAR}=shared") as error:
         IsolatedEnvironment.start(environ)
@@ -271,6 +276,7 @@ def test_a_failed_start_explains_how_to_opt_out(tmp_path, monkeypatch):
     port, lock = _claim_port(free_port)
     lock.close()
     assert port == free_port, "the failed start kept its port claim"
+    assert list(tmp_path.glob("psynet_develop_*")) == [leftover]
 
 
 @pytest.mark.parametrize(
