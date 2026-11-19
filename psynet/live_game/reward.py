@@ -124,7 +124,14 @@ def _handles_ending(method):
     def handle_ending(self, session_row):
         if _in_ending_handler.get():
             return method(self, session_row)
-        players = _locked_players(session_row)
+        # Players whose own game ended early were paid then, and may be on
+        # a later page whose deadline isn't the game's.
+        ended_early = _players_ended_early(session_row.id)
+        players = [
+            participant
+            for participant in _locked_players(session_row)
+            if participant.id not in ended_early
+        ]
         if _has_outcome(session_row.status, session_row.outcome):
             _pay_outcome_rewards(self, session_row, players)
             _record_outcome_on_round(session_row)
@@ -161,11 +168,7 @@ def _participant_ids(session_row):
 def _pay_outcome_rewards(game, session_row, players):
     what = f"{type(game).__name__}.performance_reward"
     participant_ids = _participant_ids(session_row)
-    # Paid when their own game ended.
-    ended_early = _players_ended_early(session_row.id)
     for participant in players:
-        if participant.id in ended_early:
-            continue
         amount = game.performance_reward(
             session_row.outcome,
             session_row.end_reason,

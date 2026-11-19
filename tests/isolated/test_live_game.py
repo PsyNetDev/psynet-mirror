@@ -12,7 +12,7 @@ import numpy
 import pytest
 from dallinger import db
 from dallinger.db import redis_conn
-from dallinger.models import RealtimeSession, timenow
+from dallinger.models import RealtimeEvent, RealtimeSession, timenow
 from dallinger.realtime import RealtimeGame, Reject, Sent, store
 from dallinger.realtime.core import new_session, run_pass
 from dallinger.realtime.game import queued_effects
@@ -2760,6 +2760,34 @@ def test_the_ending_copies_the_outcome_to_the_round_and_ends_the_game_page_deadl
     # the result.
     shown_until = row.end_time + datetime.timedelta(seconds=show_result_for)
     assert [m.sync_group_links[0].page_deadline for m in members] == [shown_until] * 2
+
+
+def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    for member in members:
+        member.waiting_barrier_id = None
+        _game_page().consume(get_experiment(), member)
+    early, other = sorted(members, key=lambda member: member.id)
+    db.session.add(
+        RealtimeEvent(
+            session_id=session_id,
+            sequence=1,
+            event_type="player_end",
+            participant_id=early.id,
+        )
+    )
+    # The deadline of a later timed page the early finisher has opened.
+    later = other.sync_group_links[0].page_deadline + datetime.timedelta(hours=1)
+    early.sync_group_links[0].page_deadline = later
+    row = db.session.get(RealtimeSession, session_id)
+    row.status, row.end_reason, row.outcome = "ended", "finished", [4, 4]
+    row.end_time = timenow()
+
+    game_registry._live_game_classes["pick_numbers"]().handle_ending(row)
+
+    assert early.sync_group_links[0].page_deadline == later
+    assert other.sync_group_links[0].page_deadline == row.end_time
 
 
 def test_a_game_page_without_a_game_moves_on_with_no_answer(pair):
