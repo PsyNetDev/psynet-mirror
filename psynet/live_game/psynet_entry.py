@@ -9,7 +9,8 @@ away_timeout can end once too few players are left. A player added while
 the game runs gets the next number, and players whose game has ended, by
 the game's is_done, don't count towards min_players. ``last_event``, the
 time of the latest event the game handled once it started, other than
-rejected and repeated ready messages, is when a started game ended,
+rejected messages and ready messages, which can't end a started game, is
+when a started game ended,
 unless Dallinger's max_duration, which is only a safety net, ended it. Ending
 jobs and final views read absences at that time, so they agree on who didn't
 play.

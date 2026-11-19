@@ -224,7 +224,8 @@ class LiveGame(RealtimeGame):
         """Return which players didn't play the game, and why, in player
         order. Call it with the state, such as in ``outcome`` or ``view``.
         Once the game has ended, it's as of the end; before, as of the
-        latest message, tick or page opening or closing. Each player's entry
+        latest message, tick, page opening or closing, or added player.
+        Each player's entry
         is:
 
         - ``"no_show"`` for a player who isn't ready, because they never
