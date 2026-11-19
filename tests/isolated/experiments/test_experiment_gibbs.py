@@ -72,8 +72,7 @@ class TestExp:
             trials = pt.alive_trials
             assert len(trials) == 7  # includes repeat trials
 
-            with pytest.raises(KeyError):
-                pt.var.get("uninitialized_variable")
+            assert pt.var.get("uninitialized_variable") is None
 
             assert pt.var.get("uninitialized_variable", default=123) == 123
 

@@ -1,0 +1,1 @@
+Clarified in the multiplayer docs that groups accept top-ups until they are stopped explicitly, with `group.stop_top_ups()`, `GroupBarrier(stop_top_ups=True)`, `Regrouper(stop_top_ups_after_rounds=n)` or the grouper's `top_up_wait`, and that a `join_criterion` only turns newcomers away.

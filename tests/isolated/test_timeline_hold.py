@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -178,26 +179,68 @@ def test_wait_while_can_fix_timeline_hold_credit():
     assert any(isinstance(elt, StartFixTimeCredit) for elt in logic)
 
 
-def test_wait_while_accepts_custom_hold_content():
+def test_wait_while_accepts_custom_waiting_message():
     logic = wait_while(
         lambda: True,
         expected_wait=1,
-        content="Custom hold message",
+        waiting_message="Custom hold message",
     )
     hold = next(elt for elt in logic if getattr(elt, "is_timeline_hold", False))
 
-    assert hold.content == "Custom hold message"
+    assert hold.waiting_message == "Custom hold message"
 
 
-def test_wait_while_rejects_content_with_wait_page():
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda message: wait_while(
+            lambda: True, expected_wait=1, waiting_message=message
+        ),
+        lambda message: GroupBarrier("pair", "pair", waiting_message=message).resolve(),
+    ],
+    ids=["wait_while", "GroupBarrier"],
+)
+def test_countdown_without_a_release_time_raises(make):
+    with pytest.raises(ValueError, match="no release time"):
+        make("Moving on in {SECONDS} s")
+
+
+def _waiting_for_role(participant):
+    return f"Waiting for the {participant.var.role}"
+
+
+def test_wait_while_waiting_message_can_depend_on_the_participant():
+    logic = wait_while(lambda: True, expected_wait=1, waiting_message=_waiting_for_role)
+    hold = next(elt for elt in logic if getattr(elt, "is_timeline_hold", False))
+    participant = SimpleNamespace(
+        var=SimpleNamespace(role="proposer"), module_state=None
+    )
+
+    assert hold.translated_waiting_message(participant) == "Waiting for the proposer"
+
+
+def test_wait_while_can_show_a_waiting_screen():
+    logic = wait_while(lambda: True, expected_wait=1, waiting_screen=_waiting_screen)
+    hold = next(elt for elt in logic if getattr(elt, "is_timeline_hold", False))
+
+    screen = hold.waiting_screen_page(_waiting_participant(False))
+    assert screen.prompt.text == "You offered 5 coins."
+    assert hold.waiting_screen_page(_waiting_participant(True)) is None
+    with pytest.raises(ValueError, match="waiting_screen only applies"):
+        wait_while(
+            lambda: True, expected_wait=1, wait_page=WaitPage, waiting_screen="Hi"
+        )
+
+
+def test_wait_while_rejects_waiting_message_with_wait_page():
     with pytest.raises(
-        ValueError, match="content only applies when wait_page is omitted"
+        ValueError, match="waiting_message only applies when wait_page is omitted"
     ):
         wait_while(
             lambda: True,
             expected_wait=1,
             wait_page=WaitPage,
-            content="Waiting…",
+            waiting_message="Waiting…",
         )
 
 
@@ -205,17 +248,17 @@ def _async_placeholder(participant):
     return None
 
 
-def test_async_code_block_passes_content_to_hold():
+def test_async_code_block_passes_waiting_message_to_hold():
     block = AsyncCodeBlock(
         _async_placeholder,
         wait=True,
         expected_wait=1,
-        content="Working…",
+        waiting_message="Working…",
     )
     hold = next(
         elt for elt in block.resolve() if getattr(elt, "is_timeline_hold", False)
     )
-    assert hold.content == "Working…"
+    assert hold.waiting_message == "Working…"
 
 
 @pytest.mark.parametrize(
@@ -249,7 +292,7 @@ def test_hold_overlay_html_matches_markup_and_plain_text():
     plain = next(
         elt
         for elt in wait_while(
-            lambda: True, expected_wait=1, content="<strong>Waiting</strong>"
+            lambda: True, expected_wait=1, waiting_message="<strong>Waiting</strong>"
         )
         if getattr(elt, "is_timeline_hold", False)
     )
@@ -258,18 +301,18 @@ def test_hold_overlay_html_matches_markup_and_plain_text():
         for elt in wait_while(
             lambda: True,
             expected_wait=1,
-            content=Markup("<strong>Waiting</strong>"),
+            waiting_message=Markup("<strong>Waiting</strong>"),
         )
         if getattr(elt, "is_timeline_hold", False)
     )
 
-    assert plain.overlay_html() == (
+    assert plain.overlay_html(None) == (
         '<span class="psynet-timeline-hold-title">'
         f"{escape('<strong>Waiting</strong>')}"
         "</span>"
     )
     assert (
-        trusted.overlay_html()
+        trusted.overlay_html(None)
         == '<span class="psynet-timeline-hold-title"><strong>Waiting</strong></span>'
     )
 
@@ -446,6 +489,88 @@ def test_timeline_hold_payload_is_omitted_without_a_record():
     assert page.timeline_hold_payload(participant) is None
 
 
+def _waiting_screen(participant):
+    return None if participant.var.keep_page else "You offered 5 coins."
+
+
+def _waiting_participant(keep_page):
+    return SimpleNamespace(
+        var=SimpleNamespace(keep_page=keep_page), module_state=None, page_uuid="a"
+    )
+
+
+def test_expected_wait_sets_how_often_waiting_logic_repeats():
+    from psynet.page import InfoPage
+    from psynet.timeline import estimate_duration
+
+    def barrier(**kwargs):
+        filler = InfoPage("Filler", time_estimate=2)
+        return GroupBarrier("filler", group_type="pair", waiting_logic=filler, **kwargs)
+
+    assert estimate_duration(barrier(expected_wait=9)) == 10
+    assert estimate_duration(barrier()) == 6
+    with pytest.warns(FutureWarning, match="pass expected_wait") as warned:
+        legacy = barrier(waiting_logic_expected_repetitions=4)
+    assert Path(warned[0].filename).resolve() == Path(__file__).resolve()
+    assert estimate_duration(legacy) == 8
+    with pytest.raises(ValueError, match="not both"), pytest.warns(FutureWarning):
+        barrier(expected_wait=9, waiting_logic_expected_repetitions=4)
+
+
+def test_barriers_can_share_waiting_logic():
+    from psynet.page import InfoPage, SuccessfulEndPage
+    from psynet.timeline import Timeline, estimate_duration
+
+    filler = InfoPage("Filler", time_estimate=2)
+    first = GroupBarrier("first", group_type="pair", waiting_logic=filler)
+    second = GroupBarrier("second", group_type="pair", waiting_logic=filler)
+
+    # Estimating again doesn't scale the shared filler a second time.
+    assert estimate_duration(first) == estimate_duration(first) == 6
+    Timeline(first, second, SuccessfulEndPage())
+    assert estimate_duration(second) == 6
+
+
+def test_barrier_waiting_screen_replaces_the_page_unless_it_returns_none():
+    from psynet.modular_page import ModularPage, NullControl, PushButtonControl
+
+    def hold(waiting_screen):
+        return GroupBarrier(
+            "decided", group_type="pair", waiting_screen=waiting_screen
+        ).waiting_logic
+
+    screen = hold(_waiting_screen).waiting_screen_page(_waiting_participant(False))
+    assert isinstance(screen, ModularPage)
+    assert screen.prompt.text == "You offered 5 coins."
+    assert not screen.buttons
+    assert hold(_waiting_screen).waiting_screen_page(_waiting_participant(True)) is None
+    constant = hold("Getting the next round ready.")
+    assert constant.waiting_screen_page(_waiting_participant(False)).prompt.text == (
+        "Getting the next round ready."
+    )
+    page = ModularPage(
+        "markup", Markup("<b>Wait</b>"), NullControl(show_next_button=False)
+    )
+    assert hold(page).waiting_screen_page(_waiting_participant(False)).label == (
+        "markup"
+    )
+    with pytest.raises(ValueError, match="shows a Next button"):
+        hold(ModularPage("next", "Wait")).waiting_screen_page(
+            _waiting_participant(False)
+        )
+    with pytest.raises(ValueError, match="PushButtonControl that submits it"):
+        hold(
+            ModularPage("push", "Wait", PushButtonControl(["OK"]))
+        ).waiting_screen_page(_waiting_participant(False))
+    with pytest.raises(ValueError, match="waiting_screen only applies"):
+        GroupBarrier(
+            "decided",
+            group_type="pair",
+            waiting_logic=WaitPage(1),
+            waiting_screen=_waiting_screen,
+        )
+
+
 def test_compose_hold_overlay_html_always_emits_the_title_span():
     assert (
         compose_hold_overlay_html("Waiting for your partner")
@@ -455,6 +580,9 @@ def test_compose_hold_overlay_html_always_emits_the_title_span():
     assert 'class="psynet-timeline-hold-title"' in html
     assert 'class="psynet-timeline-hold-progress"' in html
     assert "1 of 3 not ready yet" in html
+    assert compose_hold_overlay_html("") == (
+        '<span class="psynet-timeline-hold-title"></span>'
+    )
     assert "progress" not in compose_hold_overlay_html(
         hold_message("Waiting for your group"), "1 of 3 not ready yet"
     )

@@ -13,7 +13,7 @@ class ErrorRecord(SQLBase, SQLMixin):
     failed_reason = None
     time_of_death = None
 
-    token = Column(String)
+    token = Column(String, index=True)
     kind = Column(String)
     message = Column(String)
     traceback = Column(String)

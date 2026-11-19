@@ -1,0 +1,1 @@
+Added the bot helper `psynet.bot.make_late_now(bots, barrier_id)`, which makes the members who haven't reached a `GroupBarrier` late as its `late_after` would, then advances the bots waiting there, so a bot test of a player who goes quiet doesn't wait in real time. The `public_goods` demo's bot test uses it.
