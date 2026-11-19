@@ -367,6 +367,19 @@ describe("psynet.liveGame", () => {
     assert.equal(liveGame.secondsLeft(), 0);
   });
 
+  it("counts down to 0 on a page that opens after the game has ended", () => {
+    mock.timers.enable({ apis: ["setInterval"] });
+    const left = [];
+    liveGame.onTimeLeft((seconds) => left.push(seconds));
+    sockets[0].fire("onEnded", "finished", view(5, [], 45, 40));
+    sockets[0].time = 60;
+    assert.equal(liveGame.secondsLeft(), 0);
+    assert.equal(liveGame.duration, 40);
+    assert.equal(liveGame.started, false);
+    mock.timers.tick(250);
+    assert.deepEqual(left, [0]);
+  });
+
   it("shows the latest rejection until the page sends again", () => {
     const element = { textContent: "" };
     assert.equal(liveGame.showRejections(element), liveGame);
@@ -518,6 +531,7 @@ describe("psynet.liveGame", () => {
     assert.equal(liveGame.send("pick", { number: 7 }), undefined);
     assert.equal(liveGame.predictedView(), null);
     assert.equal(liveGame.gameTime(), null);
+    assert.equal(liveGame.socket, null);
     assert.deepEqual(
       [liveGame.started, liveGame.ended, liveGame.playing, liveGame.player, liveGame.duration],
       [false, false, false, null, null]

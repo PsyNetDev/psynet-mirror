@@ -865,9 +865,12 @@
       return sessionTime - started;
     }
 
-    // The started view's PsyNet entry, if the game has a duration.
+    // The started view's PsyNet entry, if the game has a duration. A page
+    // that opened after the end has no started view, so it uses the final
+    // view.
     function startedTimes() {
-      let view = pageState().startedView;
+      let state = pageState();
+      let view = state.startedView ?? (state.ended ? state.lastView : null);
       return view === null || view.psynet.duration == null ? null : view.psynet;
     }
 
@@ -1053,9 +1056,9 @@
     };
     /**
      * The page's Dallinger socket for the session, for anything else, such
-     * as ``serverTime`` or ``sessionTime``.
+     * as ``serverTime`` or ``sessionTime``, or ``null`` without a game.
      *
-     * @member {dallinger.Socket} socket
+     * @member {dallinger.Socket|null} socket
      */
     // Without a game, each method does nothing, so a page needn't check
     // hasGame first. What a method returns then, if not psynet.liveGame.
@@ -1084,7 +1087,9 @@
       };
     }
     // Not enumerable, since reading it joins the game.
-    Object.defineProperty(api, "socket", { get: pageSocket });
+    Object.defineProperty(api, "socket", {
+      get: () => (noGame() ? null : pageSocket()),
+    });
     // For PsyNetLiveGame.activatePage, not for pages.
     Object.defineProperty(api, "activatePage", { value: activatePage });
     return api;
