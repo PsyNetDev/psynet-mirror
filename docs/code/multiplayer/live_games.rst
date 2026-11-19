@@ -177,7 +177,7 @@ game, and then shows the group the game page:
         PlayLiveGame(
             group_type="pair",
             game_class=RockPaperScissors,
-            settings={"throws": 5},
+            settings={"throws": 5, "reward_per_win": 0.05},
             late_after=60,
             late_action="leave_group",
             page=LiveGamePage(
@@ -277,7 +277,7 @@ since they get only the state:
         group_type="pair",
         game_class=RockPaperScissors,
         page=rock_paper_scissors_page(),
-        settings={"throws": 3},
+        settings={"throws": 3, "reward_per_win": 0.10},
         late_after=60,
         late_action="leave_group",
     )
@@ -1231,7 +1231,7 @@ scissors game:
     from psynet.live_game import Reject
     from psynet.live_game.testing import LocalGame
 
-    game = LocalGame(RockPaperScissors, players=2, settings={"throws": 1})
+    game = LocalGame(RockPaperScissors, players=2, settings={"throws": 1, "reward_per_win": 0.05})
     game.send(0, Choose(throw=1, action="rock"))
     assert game.view(0)["chosen"] and not game.is_over()
     assert game.bot(0) is None

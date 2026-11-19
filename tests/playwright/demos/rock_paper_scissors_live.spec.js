@@ -204,7 +204,7 @@ test("two participants play rock_paper_scissors_live to the end, with rejected c
     await expect(second.locator("#main-body")).toContainText(
       "You won 1 of the 5 throws played, and your partner won 3."
     );
-    // The trial pays its definition's bonus for each throw won.
+    // The game pays its bonus for each throw won.
     await expect(first.locator("#main-body")).toContainText(
       "Your bonus for this game is $0.15."
     );

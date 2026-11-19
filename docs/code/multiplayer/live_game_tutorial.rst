@@ -199,7 +199,7 @@ player's answer is:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
    :start-at: def is_over(
-   :end-before: def bot(
+   :end-before: def performance_reward(
    :dedent:
 
 The game checks ``is_over`` after every change to the state, and ends the
@@ -401,7 +401,7 @@ then shows each player their score:
         PlayLiveGame(
             group_type="pair",
             game_class=RockPaperScissors,
-            settings={"throws": 5},
+            settings={"throws": 5, "reward_per_win": 0.05},
             page=LiveGamePage(
                 "rock_paper_scissors",
                 tags.div(...),  # the elements shown above
@@ -879,7 +879,7 @@ methods as PsyNet does. The demos' rule tests, such as
 
 .. code-block:: python
 
-    game = LocalGame(RockPaperScissors, players=2, settings={"throws": 3})
+    game = LocalGame(RockPaperScissors, players=2, settings={"throws": 3, "reward_per_win": 0.10})
     game.send(0, Choose(throw=1, action="rock"))
     assert game.view(1)["partner_chosen"]
 
