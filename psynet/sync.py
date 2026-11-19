@@ -819,7 +819,11 @@ class _BarrierHoldPage(_TimelineHoldPage):
                 self.hold_progress_text(participant, counts),
             )
         if release_time is NoArgumentProvided:
-            release_time = self._expected_release_time(participant)
+            release_time = (
+                None
+                if participant is None
+                else _expected_release_time(self.barrier, participant)
+            )
         remaining_ms = (
             None if release_time is None else round((release_time - time.time()) * 1000)
         )
@@ -866,33 +870,6 @@ class _BarrierHoldPage(_TimelineHoldPage):
                 '<span class="visually-hidden">{}</span>'
             ).format(remaining_ms, seconds, seconds)
         return Markup(html.replace("{SECONDS}", countdown))
-
-    def _expected_release_time(self, participant):
-        """Return the barrier's release estimate, or ``None`` if it cannot be computed.
-
-        The estimate only feeds the waiting message, so in sandbox and live
-        deployments a failure shows an unknown countdown instead of failing
-        the participant. Tests and debug runs re-raise it so the bug is seen.
-        Errors that leave the transaction unusable always propagate:
-        database errors, and any error raised during an automatic flush.
-        """
-        if participant is None:
-            return None
-        try:
-            return self.barrier.expected_release_time(participant)
-        except SQLAlchemyError:
-            raise
-        except Exception:
-            if not db.session.is_active or is_test_or_debug_run():
-                raise
-            logger.warning(
-                "Could not estimate when barrier '%s' releases participant %s; "
-                "showing an unknown countdown.",
-                self.barrier_id,
-                participant.id,
-                exc_info=True,
-            )
-            return None
 
     def prepare_to_resume(self, participant):
         if (
@@ -6788,10 +6765,36 @@ def waiting_status_payload(unique_id, barrier_id):
     release_in_ms = None
     barrier = _reconstructed_arrival_barrier(link, {})
     if barrier is not None:
-        release_time = barrier.expected_release_time(participant)
+        release_time = _expected_release_time(barrier, participant)
         if release_time is not None:
             release_in_ms = max(0, round((release_time - time.time()) * 1000))
     return {"released": False, "ends_page": False, "release_in_ms": release_in_ms}
+
+
+def _expected_release_time(barrier, participant):
+    """Return the barrier's release estimate, or ``None`` if it cannot be computed.
+
+    The estimate only feeds waiting messages and countdowns, so in sandbox
+    and live deployments a failure shows an unknown countdown instead of
+    failing the participant. Tests and debug runs re-raise it so the bug is
+    seen. Errors that leave the transaction unusable always propagate:
+    database errors, and any error raised during an automatic flush.
+    """
+    try:
+        return barrier.expected_release_time(participant)
+    except SQLAlchemyError:
+        raise
+    except Exception:
+        if not db.session.is_active or is_test_or_debug_run():
+            raise
+        logger.warning(
+            "Could not estimate when barrier '%s' releases participant %s; "
+            "showing an unknown countdown.",
+            barrier.id,
+            participant.id,
+            exc_info=True,
+        )
+        return None
 
 
 def _reconstructed_arrival_barrier(link, reconstructed):

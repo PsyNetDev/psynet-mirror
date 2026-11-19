@@ -244,31 +244,6 @@ def test_waiter_timeline_get_splits_a_due_every_regrouper_pool(
         exp.timeline = original
 
 
-@in_consents_experiment
-def test_regrouper_countdown_after_a_concurrent_release(
-    in_experiment_directory, db_session, monkeypatch
-):
-    """Another request can put a waiter into a group while their countdown is drawn."""
-    exp = get_experiment()
-    rooms = Regrouper("room", group_size=3, deadline=30, left_over="sit_out")
-    participants = _working_participants(exp, 2)
-    _arrive(exp, rooms, participants)
-    populate = sync._populate_active_barriers
-
-    def release_first_then_populate(waiters):
-        db.session.execute(
-            text(
-                "UPDATE participant_link_barrier SET released = true"
-                " WHERE participant_id = :id"
-            ),
-            {"id": participants[0].id},
-        )
-        populate(waiters)
-
-    monkeypatch.setattr(sync, "_populate_active_barriers", release_first_then_populate)
-    assert rooms.expected_release_time(participants[0]) is None
-
-
 def _put_first_member_in_two_groups(members, **_):
     return [members, members[:1]]
 
@@ -318,27 +293,33 @@ def test_regrouper_cohorts_have_their_own_deadlines(
 
 @in_consents_experiment
 @pytest.mark.parametrize(
-    "make_barrier",
+    "make_barrier, unknown_countdown",
     [
-        lambda: Regrouper(
-            "pair",
-            group_size=2,
-            deadline=30,
-            waiting_message="Next round in {SECONDS} s",
+        (
+            lambda: Regrouper(
+                "pair",
+                group_size=2,
+                deadline=30,
+                waiting_message="Next round in {SECONDS} s",
+            ),
+            'countdown">…<',
         ),
-        lambda: SimpleGrouper(
-            "lobby",
-            initial_group_size=4,
-            start_short_after=10,
-            start_short_with=2,
-            below_quorum="fail",
-            waiting_message="Starting in {SECONDS} s",
+        (
+            lambda: SimpleGrouper(
+                "lobby",
+                initial_group_size=4,
+                start_short_after=10,
+                start_short_with=2,
+                below_quorum="fail",
+                waiting_message="Starting in {SECONDS} s",
+            ),
+            "Waiting for other participants…",
         ),
     ],
     ids=["Regrouper", "SimpleGrouper"],
 )
 def test_countdown_is_unknown_after_a_concurrent_release(
-    in_experiment_directory, db_session, monkeypatch, make_barrier
+    in_experiment_directory, db_session, monkeypatch, make_barrier, unknown_countdown
 ):
     exp = get_experiment()
     barrier = make_barrier()
@@ -361,7 +342,9 @@ def test_countdown_is_unknown_after_a_concurrent_release(
 
     monkeypatch.setattr(sync, "_populate_active_barriers", release_by_another_request)
     assert barrier.expected_release_time(participant) is None
-    assert "data-release-in-ms" not in barrier.waiting_logic.overlay_html(participant)
+    overlay = barrier.waiting_logic.overlay_html(participant)
+    assert "data-release-in-ms" not in overlay
+    assert unknown_countdown in overlay
 
 
 def _pairs_with_failing_estimate(monkeypatch, error):
