@@ -97,22 +97,17 @@ class LiveGame(RealtimeGame):
     #: the game ends instead, with the reason ``"not_joined"``.
     ready_timeout = 60
 
-    #: Seconds the game lasts once it starts, or ``None``, the default, for a
-    #: game that ends by itself, through ``is_over``.
-    #:
-    #: At the end, PsyNet runs the game's ``tick`` with the end as ``now``,
-    #: even if the tick runs late. It then ends the game with the reason
-    #: ``"finished"``, unless ``is_over`` has ended it already, and rejects
-    #: any later messages. A page reads the time left from
-    #: ``psynet.liveGame.secondsLeft()``, and the duration from
-    #: ``psynet.liveGame.duration``.
+    #: Seconds the game lasts once it starts, after which it ends with the
+    #: reason ``"finished"``, or ``None``, the default, for a game that ends
+    #: by itself, through ``is_over``. :ref:`live-games-time-limits`
+    #: explains this and the other limits.
     duration = None
 
     #: Seconds after it starts at which a game without a :attr:`duration`
     #: ends with the reason ``"timeout"``, if ``is_over`` hasn't ended it
-    #: already, so that it ends even if a player walks away. Players can't
-    #: leave the game page until the game ends, so set it to ``None``, for no
-    #: limit, only if the game always ends by itself. Default: 600.
+    #: already. Players can't leave the game page until the game ends, so set
+    #: it to ``None``, for no limit, only if the game always ends by itself.
+    #: Default: 600.
     timeout = 600
 
     #: The fewest players a game needs. A group that reaches the
@@ -132,11 +127,9 @@ class LiveGame(RealtimeGame):
 
     #: Seconds a player can be away, with none of their game pages open,
     #: before they count as gone. Once fewer than :attr:`min_players` players
-    #: aren't gone, the game ends with the reason ``"players_left"``, so the
-    #: players left behind can move on. A player away when the game starts
-    #: counts from the start. A reload or a dropped connection makes a player
-    #: away for a moment, so allow for one, with 30 seconds or more. Set it to
-    #: ``None`` for a game that carries on however many players are away.
+    #: aren't gone, the game ends with the reason ``"players_left"``. Allow
+    #: 30 seconds or more, for a reload. Set it to ``None`` for a game that
+    #: carries on however many players are away (see :ref:`live-games-leaving`).
     #: Default: 60.
     away_timeout = 60
 
@@ -292,13 +285,11 @@ class LiveGame(RealtimeGame):
 
     def answer(self, outcome, reason, player):
         """Return a player's answer on the game page, which is also their
-        trial's answer when the game is played as a trial. It covers the
-        player's time in the game. By default, it's the whole outcome. Return only the player's part, such as
-        ``outcome["payoffs"][player]``, so the trial doesn't hold the
-        other players' data and code reading it doesn't need the player's
-        number.
-        It isn't called for a game that failed without an outcome, whose
-        answer is ``None``.
+        trial's answer when the game is played as a trial. By default, it's
+        the whole outcome. Return only the player's part, such as
+        ``outcome["payoffs"][player]``, so the trial doesn't hold the other
+        players' data. It isn't called for a game that failed without an
+        outcome, whose answer is ``None``.
 
         Parameters
         ----------
@@ -336,18 +327,8 @@ class LiveGame(RealtimeGame):
         Parameters
         ----------
 
-        outcome
-            What the game's ``outcome`` returned when the player's game
-            ended: when the game ended, or earlier if the game's
-            ``is_done`` ended it for that player.
-
-        reason
-            Why the player's game ended. It's the ``reason`` that the
-            game's ``outcome`` received.
-
-        player
-            The player's number: 0 for the first player, 1 for the next,
-            and so on.
+        outcome, reason, player
+            As for :meth:`answer`.
 
         Returns
         -------

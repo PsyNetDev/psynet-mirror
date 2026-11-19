@@ -236,16 +236,12 @@ class LiveGamePage(ModularPage):
             time_estimate=60,
         )
 
-    PsyNet sets the page's answer to what the game's
-    :meth:`~LiveGame.answer` returns for the participant, once the
-    game's result is saved, which is also when it pays the game's
-    :meth:`~LiveGame.performance_reward`. If the game fails, the page raises
-    :class:`LiveGameFailed`, which PsyNet handles as any other error in the
-    experiment. The page can't have a ``validate`` of its own.
-    PsyNet hides ``content`` on a page without a game, where
-    ``no_game_message`` says why instead.
-    :doc:`/code/multiplayer/live_games` explains how to write the page's
-    JavaScript.
+    The page's answer is what the game's :meth:`~LiveGame.answer` returns
+    for the participant, once the game's result is saved. If the game fails,
+    the page raises :class:`LiveGameFailed`. The page can't have a
+    ``validate`` or a ``time_limit`` of its own. :ref:`live-games-page`
+    explains how to write the page's JavaScript, and
+    :ref:`live-games-cases` when the page moves on.
 
     Parameters
     ----------
@@ -260,33 +256,24 @@ class LiveGamePage(ModularPage):
 
     auto_advance
         Whether the page moves on by itself once the game's result is
-        saved, with its Next button hidden until then. A participant
-        without a game still sees the button, and so does one whose page
-        has been disconnected for ten seconds. Set it to ``False`` to
-        move on from the page's JavaScript instead.
+        saved, with its Next button hidden until then. Set it to ``False``
+        to move on from the page's JavaScript instead.
 
     show_result_for
         Seconds the page stays once the game's result is saved, before
-        it moves on by itself, so that its JavaScript can show the result,
-        for example in ``onResultSaved``, with a countdown from
-        ``onResultTimeLeft``. A
-        :class:`~psynet.sync.GroupBarrier`'s ``late_after`` counts from the
-        end of these seconds, so it needn't cover them. Default: 0. Needs
-        ``auto_advance``.
+        it moves on by itself, so that its JavaScript can show the result.
+        Default: 0. Needs ``auto_advance``.
 
     player_left_message
         What a notice at the top of the page says while another player has
-        left the game page and not come back, such as "Your partner has
-        left." By default it says "Another player has left the game." Set it
-        to ``None`` for no notice, for a page that shows this its own way.
+        left the game page and not come back. By default it says "Another
+        player has left the game." Set it to ``None`` for no notice.
 
     no_game_message
         What a notice at the top of the page says to a participant whose
-        group didn't start a game, for example because they were removed
-        from a group that took too long to arrive. By default it says "Your
-        group couldn't start the game." Set it to ``None`` for no notice.
-        It isn't shown when the page already has a notice saying that the
-        participant's group left them.
+        group didn't start a game. By default it says "Your group couldn't
+        start the game." Set it to ``None`` for no notice. It isn't shown
+        when the page already says that the participant's group left them.
 
     waiting_status
         What ``psynet.liveGame.showStatus`` says before the game starts. By
@@ -299,10 +286,9 @@ class LiveGamePage(ModularPage):
     names
         How the page shows the other players, through
         ``psynet.liveGame.players``: ``"shown"``, the default, by their
-        pseudonym, such as "Pink koala", as the group's other pages show
-        them, or ``"anonymous"``, all as the same neutral figure, so players
-        can't recognise each other from one game to the next. A page that's
-        anonymous is never sent the others' pseudonyms.
+        pseudonym, such as "Pink koala", or ``"anonymous"``, all as the same
+        neutral figure, without sending the page the others' pseudonyms
+        (see :ref:`live-games-whos-who`).
 
     **kwargs
         Any other parameter of :class:`~psynet.modular_page.ModularPage`,

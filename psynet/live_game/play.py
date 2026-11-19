@@ -101,67 +101,52 @@ class PlayLiveGame(EltCollection):
 
     settings
         Settings for the games this step starts, such as the number of
-        rounds: a dict, or any other value that can be saved as JSON. The
-        game's ``initial_state`` gets it as a second argument, so define
-        that as ``initial_state(self, players, settings)``. In a trial's
-        ``show_trial``, pass the trial's ``definition`` to play each trial's
-        game with that trial's settings. The members of a group must all
-        arrive with the same settings, so give the trial class, or its trial
-        maker, the group's ``sync_group_type``, which gives them the same
-        trial.
+        rounds: any value that can be saved as JSON, which the game's
+        ``initial_state(self, players, settings)`` gets. In a trial's
+        ``show_trial``, pass the trial's ``definition``. The members of a
+        group must all arrive with the same settings.
 
     on_release
         Optional function called when the wait ends and the group's game
         has been created, before its players' pages open, with the arguments
         that a :class:`~psynet.sync.GroupBarrier`'s ``on_release`` can take,
         such as ``trials`` and ``group_round``, and also ``live_game``,
-        the new game's :class:`LiveGameRecord`. Use it for group bookkeeping
-        at the start of a round, such as choosing who retires after it. The
-        record's ``status`` is ``"not_started"`` if no game started, because
-        the group has fewer members than the game's ``min_players``.
+        the new game's :class:`LiveGameRecord`, whose ``status`` is
+        ``"not_started"`` if no game started.
 
     join_running_game
         Whether a member who reaches the step while their group is playing
-        a game from it joins that game, rather than waiting at the barrier
-        for the group's next game. The game must define ``on_add``, as
-        :ref:`live-games-join-and-finish` explains. Newcomers join a group,
-        and so its game, only with a :class:`~psynet.sync.Grouper` that has
-        ``join_existing_groups=True``. A game played in a trial can't take
-        newcomers, since its round is already under way. Default: ``False``.
+        a game from it joins that game, rather than waiting for the group's
+        next game. The game must define ``on_add``, and the group's
+        :class:`~psynet.sync.Grouper` needs ``join_existing_groups=True``. A
+        game played in a trial can't take newcomers
+        (see :ref:`live-games-join-and-finish`). Default: ``False``.
 
     absent_action
-        What happens to a player who didn't play the game: a no-show, who
-        never opened the game page or left it before the game started and
-        didn't come back, and, with the game's
-        :attr:`~LiveGame.away_timeout`, a player who left the game for good,
-        away from it for that long when it ended. With ``"leave_group"``,
-        they leave the step's group, and the groups of the types in
-        ``also_leave``, when the game's result is saved, even if they never
-        come back, so the barriers of those groups after the game don't
-        wait for them. Their
+        ``"leave_group"`` to remove a player who didn't play the game, a
+        no-show or, with the game's :attr:`~LiveGame.away_timeout`, one who
+        left it for good, from the step's group and the groups in
+        ``also_leave`` once the game's result is saved. Their
         :meth:`~psynet.participant.Participant.sync_group_removal_reason`
-        is then ``"no_show"`` or ``"left_game"``, for a later page to
-        explain. The groupers of those groups need
-        ``below_quorum="continue_without_group"``. Default: ``None``, which
-        leaves them in their groups.
+        is then ``"no_show"`` or ``"left_game"``. Those groups' groupers
+        need ``below_quorum="continue_without_group"``
+        (see :ref:`live-games-absent`). Default: ``None``, which leaves them
+        in their groups.
 
     id_
         A name for this step, the game's ``name`` unless given, which
         keys the participant's :attr:`~psynet.participant.Participant.live_games`
-        and :attr:`~psynet.participant.Participant.live_game_history`, for example to read the game's
-        answer on a later page. Steps with the same id share their wait,
-        like barriers with the same id, so give a game that the timeline
-        plays in two places, such as a practice game and the main game, a
-        different id in each.
+        and :attr:`~psynet.participant.Participant.live_game_history`. Steps
+        with the same id share their wait, like barriers with the same id, so
+        give a game that the timeline plays in two places a different id in
+        each.
 
     **kwargs
         Any other parameter of :class:`~psynet.sync.GroupBarrier`, for the
         wait before the game, such as ``late_after`` or ``waiting_message``.
-        Give the wait a limit, either ``late_after``, with ``late_action``,
-        or ``max_wait_time``, as :ref:`the guide <live-games-wait>` explains. A
-        participant who has left the group passes the wait and reaches the
-        game page without a game. Its ``also_leave`` applies to
-        ``absent_action`` as well as to ``late_action``.
+        Give the wait a limit, ``late_after`` with ``late_action``, or
+        ``max_wait_time`` (see :ref:`live-games-wait`). Its ``also_leave``
+        applies to ``absent_action`` as well as to ``late_action``.
     """
 
     def __init__(
