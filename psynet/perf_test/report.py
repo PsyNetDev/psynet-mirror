@@ -508,8 +508,8 @@ def _live_game_lines(result):
     if untimed:
         lines += [
             "  A game without ticks runs only when a message arrives or one of its",
-            "  deadlines is due, and bots' messages can all arrive at once, so its",
-            "  Avg pass can be a whole game.",
+            "  deadlines is due. Bots' messages can all arrive at once, so one pass",
+            "  can play many of them.",
             "",
         ]
     if failed:

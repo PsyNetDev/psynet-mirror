@@ -1446,7 +1446,7 @@ def test_live_game_delays_are_reported_and_limit_capacity():
     untimed = _base_result(actual_duration=100, live_games=_live_games([], busy_s=0.1))
     report = _join(format_test_results(untimed))
     assert "busy <1% of the test" in report and "no ticks" in report
-    assert "its Avg pass can be a whole game" in report
+    assert "one pass" in report and "can play many of them" in report
     summary = _join(format_performance_summary([untimed]))
     assert "live game delay" not in summary.lower()
     assert "of live games failing" in summary
