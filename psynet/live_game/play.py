@@ -253,8 +253,9 @@ class _LiveGameBarrier(GroupBarrier):
                 f"{type(trial).__name__} pays through compute_performance_reward, "
                 f"and its game, {self.game_class.__name__}, through "
                 "performance_reward, so each player would be paid twice. Pay "
-                "in one of them: in the trial when what the game pays depends "
-                "on the trial's definition, and otherwise in the game."
+                "in one of them, preferably the game, which also pays a "
+                "player who leaves the game page for good. Pass any of the "
+                "trial's definition the reward needs in the game's settings."
             )
 
     def receive_participant(self, participant):

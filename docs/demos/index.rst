@@ -441,7 +441,7 @@ Groups
     Pairs play two live games of rock, paper, scissors, each on one page.
     Each game is a cued trial per player, whose answer is the player's part
     of the game's outcome. The trial's definition sets how many throws the
-    game has and the bonus that the trial pays for a throw won. Part 1 of
+    game has and the bonus that the game pays for a throw won. Part 1 of
     :doc:`/code/multiplayer/live_game_tutorial`.
 
 `experiments/snake_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/snake_live>`__

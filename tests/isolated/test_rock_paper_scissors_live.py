@@ -35,9 +35,11 @@ class TestRockPaperScissorsLive:
 
     @pytest.fixture
     def new_game(self, demo):
-        def new_game(throws=5):
+        def new_game(throws=5, reward_per_win=0.05):
             return LocalGame(
-                demo.RockPaperScissors, players=2, settings={"throws": throws}
+                demo.RockPaperScissors,
+                players=2,
+                settings={"throws": throws, "reward_per_win": reward_per_win},
             )
 
         return new_game
@@ -93,7 +95,8 @@ class TestRockPaperScissorsLive:
     def test_the_game_has_the_throws_its_settings_say(self, new_game, finished):
         assert new_game(throws=3).view(0)["n_throws"] == 3
         assert finished.outcome() == {
-            "throws": [["paper", "rock"], ["paper", "rock"], ["paper", "paper"]]
+            "throws": [["paper", "rock"], ["paper", "rock"], ["paper", "paper"]],
+            "reward_per_win": 0.05,
         }
 
     def test_each_player_s_answer_is_their_part_of_the_outcome(self, finished):
@@ -108,19 +111,25 @@ class TestRockPaperScissorsLive:
             "partner_wins": 2,
         }
 
-    def test_the_trial_scores_the_throws_won_and_pays_its_definition_s_reward(
-        self, demo, finished
-    ):
+    def test_the_trial_scores_the_throws_won(self, demo, finished):
         score = demo.RockPaperScissorsTrial.score_answer
         assert score(None, finished.answer(0), None) == 2
         assert score(None, finished.answer(1), None) == 0
         # A trial whose pair didn't start a game has no answer.
         assert score(None, None, None) == 0
-        # Two throws won, at the 0.1 a throw that the trial's definition says.
-        paid = SimpleNamespace(definition={"reward_per_win": 0.1})
-        assert demo.RockPaperScissorsTrial.compute_performance_reward(
-            paid, 2
-        ) == pytest.approx(0.2)
+
+    def test_the_game_pays_each_player_s_wins_even_if_they_left(self, demo, new_game):
+        game = new_game(reward_per_win=0.1)
+        _choose(game, 0, 1, "rock")
+        _choose(game, 1, 1, "paper")
+        # Player 1 closes the page for good, and the game ends without them.
+        game.leave(1, now=1)
+        game.tick(now=1 + demo.RockPaperScissors.away_timeout)
+        reason = game.is_over()
+        assert reason == "players_left"
+        reward = game.game.performance_reward
+        assert reward(game.outcome(reason), reason, 0) == 0
+        assert reward(game.outcome(reason), reason, 1) == pytest.approx(0.1)
 
     @pytest.mark.parametrize(
         "case, player, summary, score",

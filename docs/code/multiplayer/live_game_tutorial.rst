@@ -129,8 +129,8 @@ Here, ``choices`` holds each player's choice in the current throw, ``None``
 until they choose, and ``throws`` the choices of each throw played so far.
 
 The settings are what differs from one play of the game to another. Here,
-they say how many throws the game has, which differs between the demo's two
-games, as "Playing it as trials" below shows. The game's other methods
+they say how many throws the game has and what a throw won pays, which
+differ between the demo's two games, as "Playing it as trials" below shows. The game's other methods
 receive the state but not the settings, so ``initial_state`` puts what they
 need into the state. A game that is always played the same way can leave
 ``settings`` out of ``initial_state``.
@@ -450,7 +450,7 @@ throw won, more in the second game. So each game is a trial: the player's
 answer on the game page is saved as the trial's answer, like any other
 trial's, and what differs between the two games is in the trial's
 definition. The trial starts a game for the pair, shows the game page, and
-then scores and pays for the game:
+then scores the game:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
    :pyobject: RockPaperScissorsTrial
@@ -459,8 +459,8 @@ then scores and pays for the game:
 - ``sync_group_type`` says that a group plays the trial, here the pair.
   Each player has a trial of their own, and the two trials share a
   definition.
-- ``show_trial`` returns the ``PlayLiveGame``, with the number of throws from
-  the trial's definition as its settings. Its barrier is the
+- ``show_trial`` returns the ``PlayLiveGame``, with the number of throws and
+  what a throw won pays from the trial's definition as its settings. Its barrier is the
   :class:`~psynet.sync.GroupBarrier` that a trial a group plays needs, so
   this trial needs no other.
 - The page's first element says which game this is, how many throws it has
@@ -469,17 +469,24 @@ then scores and pays for the game:
   answer, and ``trial.live_game`` is the participant's record of the game,
   with the whole pair's outcome.
 - ``score_answer`` returns the trial's score, here the number of throws the
-  player won. ``compute_performance_reward`` turns the score into the
-  player's reward, at the rate in the trial's definition. PsyNet saves both
-  on the trial, so the experiment's data shows what each game paid. A trial
-  whose pair didn't start a game has no answer, and scores 0.
+  player won. A trial whose pair didn't start a game has no answer, and
+  scores 0.
 - The game page moves on by itself once the game's result is saved, a few
   seconds after the game ends, to the trial's ``show_feedback`` page, which
   ``gives_feedback`` leaves out for a trial without an answer.
 
-A game can also pay rewards itself, as the snake demo in Part 2 does. This
-demo lets the trial pay instead, because what a throw won pays is in the
-trial's definition. Pay in one place only (see :ref:`live-games-rewards`).
+The game pays for the throws each player won, in its
+``performance_reward``, at the rate in its settings:
+
+.. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
+   :pyobject: RockPaperScissors.performance_reward
+   :dedent:
+
+PsyNet pays it to both players when the game's result is saved, also to a
+player who has closed the page for good, and records it on each player's
+trial, so the experiment's data shows what each game paid. A trial could
+pay through its own ``compute_performance_reward`` instead, but that runs
+only when the player's own page submits (see :ref:`live-games-rewards`).
 
 The timeline forms the pairs, and then gives each player their trials:
 
@@ -499,7 +506,7 @@ The timeline forms the pairs, and then gives each player their trials:
   to reach the game together, so the bots run in parallel.
 
 The trial's ``show_feedback`` passes the trial's answer, and the reward that
-the trial paid, to ``show_result``:
+the game paid, as recorded on the trial, to ``show_result``:
 
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
    :pyobject: show_result
@@ -645,7 +652,7 @@ order of players' messages could make unfair.
 The reward
 ~~~~~~~~~~
 
-Snake isn't played in a trial, so the game pays the reward itself, through its
+Like rock, paper, scissors, snake pays the reward through its game's
 ``performance_reward`` method:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/experiment.py

@@ -6,11 +6,12 @@ players as soon as they have both chosen.
 
 Each game is one cued ``RockPaperScissorsTrial`` per player. The trial's
 definition says how many throws the game has and what a throw won pays. The
-trial starts the pair's game, with the number of throws as its settings,
-and shows the game page. The game's ``answer`` gives each player their own
-part of the outcome, which is the trial's answer: the trial scores it as the
-throws the player won and pays the reward for them, and its feedback page
-shows the final score. The whole pair's outcome is on the trial's
+trial starts the pair's game, with these as its settings, and shows the
+game page. The game's ``answer`` gives each player their own part of the
+outcome, which is the trial's answer: the trial scores it as the throws the
+player won, and its feedback page shows the final score. The game pays the
+reward for the throws each player won, so a player who closes the page and
+never comes back is paid too. The whole pair's outcome is on the trial's
 ``group_round``.
 
 A player whose partner leaves plays no more games; see ``README.md``.
@@ -102,8 +103,8 @@ class Choose(LiveMessage):
 class RockPaperScissors(LiveGame):
     """A game of rock, paper, scissors between two players, 0 and 1.
 
-    The state holds the number of throws, from the game's settings, each
-    player's choice in the current throw, ``None`` until they choose, and
+    The state holds the number of throws and what a throw won pays, from
+    the game's settings, each player's choice in the current throw, ``None`` until they choose, and
     both players' choices in each throw played so far. A player's view says
     whether their partner has chosen in the current throw, and shows the
     partner's choice only once the throw is over.
@@ -122,6 +123,7 @@ class RockPaperScissors(LiveGame):
     def initial_state(self, players, settings):
         return {
             "n_throws": settings["throws"],
+            "reward_per_win": settings["reward_per_win"],
             "choices": [None, None],
             "throws": [],
         }
@@ -142,7 +144,7 @@ class RockPaperScissors(LiveGame):
         return len(state["throws"]) == state["n_throws"]
 
     def outcome(self, state, reason):
-        return {"throws": state["throws"]}
+        return {"throws": state["throws"], "reward_per_win": state["reward_per_win"]}
 
     def answer(self, outcome, reason, player):
         """The player's own part of the outcome: their throws, each with both
@@ -155,6 +157,12 @@ class RockPaperScissors(LiveGame):
             "wins": count(results, "win"),
             "partner_wins": count(results, "loss"),
         }
+
+    def performance_reward(self, outcome, reason, player):
+        """Pay for the throws the player won, also when the game ended
+        early."""
+        wins = count(throws_seen_by(player, outcome["throws"]), "win")
+        return wins * outcome["reward_per_win"]
 
     def bot(self, view, player, now):
         if view["chosen"]:
@@ -199,7 +207,8 @@ class RockPaperScissorsTrial(Trial):
     """One game between the two participants of a pair. The trial's definition
     says which of the pair's games it is, how many throws it has and what a
     throw won pays, and the trial's answer is the player's part of the game's
-    outcome."""
+    outcome. The game pays the player, and PsyNet records what it paid on the
+    trial."""
 
     sync_group_type = "pair"
     time_estimate = 65
@@ -211,7 +220,10 @@ class RockPaperScissorsTrial(Trial):
         return PlayLiveGame(
             group_type="pair",
             game_class=RockPaperScissors,
-            settings={"throws": game["throws"]},
+            settings={
+                "throws": game["throws"],
+                "reward_per_win": game["reward_per_win"],
+            },
             # A partner who hasn't arrived LATE_AFTER seconds after their
             # result page ran out leaves the pair, and the player waiting goes
             # on to the game page without a game.
@@ -264,9 +276,6 @@ class RockPaperScissorsTrial(Trial):
             # The pair didn't start a game.
             return 0
         return answer["wins"]
-
-    def compute_performance_reward(self, score):
-        return score * self.definition["reward_per_win"]
 
     def gives_feedback(self, experiment, participant):
         return self.answer is not None
@@ -360,7 +369,8 @@ class Exp(psynet.experiment.Experiment):
             assert len(throws) == trial.definition["throws"]
             wins = sum(played["result"] == "win" for played in throws)
             assert trial.score == trial.answer["wins"] == wins
-            # The trial pays what its definition says for each throw won.
+            # The game pays what the trial's definition says for each throw
+            # won, which PsyNet records on the trial.
             trial_reward = wins * trial.definition["reward_per_win"]
             assert trial.performance_reward == pytest.approx(trial_reward)
             reward += trial_reward

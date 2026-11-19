@@ -1004,11 +1004,16 @@ leave early.
 
 When the game is played as a trial, PsyNet also records both kinds of
 reward on the player's trial, adding them to its ``performance_reward``, so
-each trial shows what its game paid. A trial can pay through its own
-``score_answer`` and ``compute_performance_reward`` instead, as the
-``rock_paper_scissors_live`` demo does, when what a game pays depends on the
-trial's definition. The two would add up, paying each player twice, so a
-game with a ``performance_reward`` played in a trial with a
+each trial shows what its game paid. When what a game pays depends on the
+trial's definition, pass it in the game's settings, as the
+``rock_paper_scissors_live`` demo does with what a throw won pays.
+
+A trial can pay through its own ``score_answer`` and
+``compute_performance_reward`` instead, but that runs only when the
+player's own game page submits its answer. A player who closes the game
+page and never comes back isn't paid that way, while the game's rewards
+reach them. The two would add up, paying each player twice, so a game with
+a ``performance_reward`` played in a trial with a
 ``compute_performance_reward`` raises an error.
 
 A game that fails (see `The end`_) still pays its ``performance_reward`` from
