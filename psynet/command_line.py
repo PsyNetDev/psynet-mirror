@@ -2,7 +2,6 @@ import collections
 import datetime
 import difflib
 import functools
-import glob
 import hashlib
 import importlib
 import itertools
@@ -1698,28 +1697,21 @@ def _is_multiprocessing_helper(process):
 
 
 def _reloader_exclude_patterns():
-    """Return reloader exclusions for checkout demos, tests and docs and other debug servers.
+    """Return reloader exclusions for checkout demos, tests and docs.
 
     Flask's reloader watches every ``.py`` file under each non-system
     ``sys.path`` entry, and an editable install puts the whole PsyNet (or
     Dallinger) checkout there. Without these patterns, editing a test or
     scaffolding a demo restarts every debug server. The served experiment is
-    watched through Dallinger's development folder, so it is unaffected, but
-    other debug servers' development folders are excluded.
+    watched through Dallinger's development folder, so it is unaffected.
+    Other debug servers need no patterns: each development folder has a
+    parent of its own, and that parent is the ``sys.path`` entry Flask adds.
     """
     import dallinger
 
     import psynet
 
-    config = get_config()
-    if not config.ready:
-        config.load()
-    develop_path = _develop_path(config)
-    # The reloader may watch the resolved path, e.g. /private/tmp on macOS.
-    own_paths = list(dict.fromkeys([develop_path, develop_path.resolve()]))
     patterns = []
-    for path in own_paths:
-        patterns += _other_develop_folder_patterns(path)
     for package in (psynet, dallinger):
         root = Path(package.__file__).resolve().parent.parent
         if not (root / "pyproject.toml").exists():
@@ -1727,32 +1719,6 @@ def _reloader_exclude_patterns():
         for folder in ("demos", "tests", "docs"):
             if (root / folder).is_dir():
                 patterns.append(f"{root / folder}{os.sep}*")
-    return patterns
-
-
-def _other_develop_folder_patterns(develop_path):
-    """Return reloader exclusions for the other debug servers' development folders.
-
-    ``flask run`` puts the parent of the development folder on ``sys.path``,
-    so without these patterns each debug server would also watch, and restart
-    for, the folders that other debug servers write next to it. PsyNet's
-    default parent holds only development folders; a development folder set
-    directly in ``/tmp`` still makes the reloader scan all of ``/tmp``.
-    ``fnmatch`` has no negation, so the patterns match every
-    ``dallinger_develop*`` name that differs from this server's own folder at
-    some character, plus every longer name.
-    """
-    develop_path = Path(develop_path)
-    parent = glob.escape(str(develop_path.parent)) + os.sep
-    prefix = "dallinger_develop"
-    name = develop_path.name
-    if not name.startswith(prefix):
-        return [f"{parent}{prefix}*"]
-    patterns = [
-        f"{parent}{glob.escape(name[:i])}[!{name[i]}]*"
-        for i in range(len(prefix), len(name))
-    ]
-    patterns.append(f"{parent}{glob.escape(name)}[!{os.sep}]*")
     return patterns
 
 

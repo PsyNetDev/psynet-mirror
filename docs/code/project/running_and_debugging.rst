@@ -70,7 +70,7 @@ different experiments on one machine, add ``--isolated``:
     Ready.
       Participant link: http://127.0.0.1:5100/ad?recruiter=hotair&generate_tokens=1&mode=debug
       Dashboard:        http://127.0.0.1:5100/dashboard (user admin, password ...)
-      Full log:         /tmp/psynet_develop/dallinger_develop_5100/logs.jsonl
+      Full log:         /tmp/psynet_develop_5100/dallinger_develop/logs.jsonl
       Other terminals:  export DATABASE_URL=... REDIS_URL=... base_port=5100
     Press Ctrl+C to stop.
 
@@ -80,8 +80,9 @@ there, for example with ``psynet export local`` or ``psynet run-bot``.
 Like a test session, the server then gets a free port from 5100 upwards, a
 fresh database and its own Redis server (or, without ``redis-server`` on
 your ``PATH``, a spare database number on the shared one). These are
-temporary: stopping the server with :kbd:`Ctrl+C` drops the database and
-stops or empties Redis, so export any data you want to keep while it runs.
+temporary: stopping the server with :kbd:`Ctrl+C` drops the database,
+stops or empties Redis and removes the development folder, so export any
+data you want to keep while it runs.
 ``--isolated`` doesn't work with ``--docker``, which always uses port 5000.
 
 To keep a second server's data between runs, give its terminal its own
@@ -95,16 +96,17 @@ database, Redis server, port and development folder instead:
     export DATABASE_URL=postgresql://dallinger:dallinger@localhost/dallinger_2
     export REDIS_URL=redis://localhost:6381
     export base_port=5010
-    export dallinger_develop_directory=/tmp/psynet_develop/dallinger_develop_2
+    export dallinger_develop_directory=/tmp/psynet_develop_2/dallinger_develop
 
 ``psynet debug local`` in that terminal then serves on port 5010 and leaves
 the other experiment's processes and browsers alone. Change all four
 settings: the startup check only catches a shared port or database, and two
-runs that share a development folder overwrite each other's files. Keep
-development folders in a folder of their own, such as
-``/tmp/psynet_develop``, not directly in ``/tmp``: the auto-reloader watches
-every Python file next to the development folder, so other projects there
-would slow it down and restart the server when they change.
+runs that share a development folder overwrite each other's files. Give
+each development folder a parent folder that holds nothing else, such as
+``/tmp/psynet_develop_2``, not ``/tmp`` itself: the auto-reloader scans
+every Python file under that parent, including other servers' development
+folders (which link to their experiments' files), so anything else there
+slows it down and restarts the server when it changes.
 Use a separate Redis server rather than another database number on the same
 server: Redis delivers PsyNet's live notifications (for example waking a
 participant who waits on a page) to every database on a server, so two

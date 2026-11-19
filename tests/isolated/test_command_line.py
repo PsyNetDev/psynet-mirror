@@ -938,31 +938,13 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     ]
 
 
-@pytest.mark.parametrize("own", ["dallinger_develop", "dallinger_develop_5100"])
-def test_reloader_ignores_only_other_develop_folders(own):
-    """A debug server watches its own development folder but not its neighbours'."""
-    from fnmatch import fnmatch
-
-    from psynet.command_line import _other_develop_folder_patterns
-
-    patterns = _other_develop_folder_patterns(f"/tmp/{own}")
-    names = {"", "_5100", "_51", "_51000", "_5200"}
-    for name in {f"dallinger_develop{suffix}" for suffix in names} - {own}:
-        assert any(fnmatch(f"/tmp/{name}/app.py", p) for p in patterns), name
-    for path in (f"/tmp/{own}/app.py", "/tmp/review/psynet/psynet/experiment.py"):
-        assert not any(fnmatch(path, p) for p in patterns), path
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
-)
-@pytest.mark.usefixtures("in_experiment_directory")
 def test_develop_folder_defaults_to_a_parent_of_its_own():
     """The reloader watches the development folder's parent, so keep it out of /tmp."""
     from dallinger.config import get_config
 
     from psynet.experiment import Experiment
 
+    # Registers PsyNet's configuration keys, which config_defaults() checks.
     config = get_config()
     if not config.ready:
         config.load()
@@ -7968,14 +7950,14 @@ def test_debug_reloader_skips_checkout_tests_demos_and_docs():
 
 
 def test_debug_reports_an_unusable_develop_directory_in_one_line(monkeypatch):
-    from psynet.command_line import _reloader_exclude_patterns
+    from psynet.command_line import run_pre_auto_reload_checks
 
     config = Mock(ready=True)
     config.get.return_value = "/tmp/not-an-identifier"
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
 
     with pytest.raises(click.ClickException) as error:
-        _reloader_exclude_patterns()
+        run_pre_auto_reload_checks()
 
     assert "dallinger_develop_directory" in error.value.message
     assert "\n" not in error.value.message

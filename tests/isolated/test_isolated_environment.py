@@ -7,7 +7,6 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from psynet.command_line import _ensure_develop_folders_parent
 from psynet.isolated_environment import (
     DEFAULT_DATABASE_URL,
     DEFAULT_REDIS_URL,
@@ -142,15 +141,15 @@ def test_isolated_environment_uses_its_own_services():
         redis_port = int(first.env["REDIS_URL"].rsplit(":", 1)[1])
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
         develop_directory = Path(first.env["dallinger_develop_directory"])
+        # Flask's reloader watches the parent, so each session needs its own.
         assert develop_directory == Path(
-            f"/tmp/psynet_develop/dallinger_develop_{port}"
+            f"/tmp/psynet_develop_{port}/dallinger_develop"
         )
-        _ensure_develop_folders_parent(str(develop_directory.parent))
-        develop_directory.mkdir(exist_ok=True)
+        develop_directory.mkdir(parents=True, exist_ok=True)
 
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
-    assert not develop_directory.exists()
+    assert not develop_directory.parent.exists()
     assert not _database_exists(first.env["DATABASE_URL"])
 
 

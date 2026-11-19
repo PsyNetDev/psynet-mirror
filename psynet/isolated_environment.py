@@ -19,7 +19,11 @@ An isolated environment gives the test session:
   stopped when the session ends (Redis delivers live notifications to every
   database on a server, so a database number on the shared server, emptied
   when the session ends, is only a fallback);
-- its own ``dallinger_develop_directory``.
+- its own ``dallinger_develop_directory``, ``/tmp/psynet_develop_<port>/dallinger_develop``,
+  removed with its parent when the session ends. Flask's reloader watches
+  every ``.py`` file in the development folder's parent, so a parent of its
+  own keeps a session from restarting when another session's experiment
+  changes.
 
 PsyNet's process cleanup already only targets processes that use the current
 ``DATABASE_URL`` (see ``psynet.command_line.list_psynet_worker_processes``), so once
@@ -82,9 +86,9 @@ READY_ENV_VAR = "_PSYNET_TEST_ENVIRONMENT_READY"
 
 DEFAULT_DATABASE_URL = "postgresql://dallinger:dallinger@localhost/dallinger"
 DEFAULT_REDIS_URL = "redis://localhost:6379"
-#: Parent of PsyNet's default development folders. Flask puts a development
+#: Parent of PsyNet's default development folder. Flask puts a development
 #: folder's parent on ``sys.path``, and its reloader then watches every
-#: ``.py`` file there, so this folder should hold development folders only.
+#: ``.py`` file under it, so this folder should hold that folder only.
 DEVELOP_FOLDERS_PARENT = "/tmp/psynet_develop"
 _DEFAULT_BASE_PORT = 5000
 _PORT_OFFSET = 100
@@ -298,7 +302,7 @@ class IsolatedEnvironment:
                 "DATABASE_URL": session_database_url,
                 "base_port": str(base_port),
                 "dallinger_develop_directory": (
-                    f"{DEVELOP_FOLDERS_PARENT}/dallinger_develop_{base_port}"
+                    f"/tmp/psynet_develop_{base_port}/dallinger_develop"
                 ),
             }
             if not private_redis:
@@ -342,7 +346,10 @@ class IsolatedEnvironment:
             _flush_redis_database(self.env["REDIS_URL"])
         if self._port_lock is not None:
             # While the port is still claimed, so no new session is using it yet.
-            shutil.rmtree(self.env["dallinger_develop_directory"], ignore_errors=True)
+            shutil.rmtree(
+                os.path.dirname(self.env["dallinger_develop_directory"]),
+                ignore_errors=True,
+            )
             _drop_session_database(self.env["DATABASE_URL"])
             self._port_lock.close()
             self._port_lock = None
