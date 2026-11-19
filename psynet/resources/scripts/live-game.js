@@ -243,6 +243,7 @@
       }
       if (view !== null) {
         state.lastView = view;
+        state.player = view.psynet.you;
         fetchPlayers(state);
         // A page that opens after the end gets no onStarted, which would
         // turn its controls back on.
@@ -254,7 +255,6 @@
           state.startedView = view;
           callEach(state.startedCallbacks.splice(0), view);
         }
-        state.player = view.psynet.you;
         callEach(state.receiveCallbacks, view, details);
         notifyChange(state);
       } else if (!state.ended) {

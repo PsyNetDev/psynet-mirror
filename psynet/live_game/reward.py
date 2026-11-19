@@ -115,13 +115,16 @@ def _handles_ending(method):
         if _in_game_code.get():
             return method(self, session_row)
         # Players whose own game ended early were paid then, and may be on
-        # a later page whose deadline isn't the game's.
+        # a later page whose deadline isn't the game's. They aren't locked,
+        # as one back at a PlayLiveGame holds their row while waiting for
+        # this game's.
         ended_early = _players_ended_early(session_row.id)
-        players = [
-            participant
-            for participant in _locked_players(session_row)
-            if participant.id not in ended_early
+        remaining = [
+            participant_id
+            for participant_id in session_row.members
+            if participant_id not in ended_early
         ]
+        players = _locked_players(session_row, remaining) if remaining else []
         from .play import _remove_absent_players
 
         if _has_outcome(session_row.status, session_row.outcome):

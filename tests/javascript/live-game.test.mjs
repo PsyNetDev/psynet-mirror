@@ -272,6 +272,17 @@ describe("psynet.liveGame", () => {
     assert.deepEqual(errors, ["a page's mistake"]);
   });
 
+  it("knows the player in onStarted when the first view is already started", () => {
+    let player;
+    liveGame.onStarted(() => {
+      player = liveGame.player;
+    });
+    const first = view(4);
+    first.psynet.you = 1;
+    sockets[0].view(first);
+    assert.equal(player, 1);
+  });
+
   it("enables elements only while the game is played", () => {
     const pick = { disabled: false };
     const pass = { disabled: false };

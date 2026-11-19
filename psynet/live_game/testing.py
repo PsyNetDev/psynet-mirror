@@ -95,7 +95,9 @@ class LocalGame:
                 self.state, self._participant(player), message, self._clock(now), Sent()
             )
         except Reject:
-            self.state = json.loads(before)
+            # In place, so a caller holding game.state still sees the game.
+            self.state.clear()
+            self.state.update(json.loads(before))
             raise
 
     def tick(self, now):
