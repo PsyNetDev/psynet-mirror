@@ -144,52 +144,48 @@ Kinds of live game
 
 Live games differ in what moves them on (only the players' messages, or a
 clock too), who plays (a fixed group, or one whose members change), and how
-they end (when the rules say so, or when the time is up):
+they end (when the rules say so, or when the time is up). Start from the
+demo closest to your game:
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 24 26 20
+   :widths: 24 18 20 14 24
 
    * - Demo
      - What moves it on
      - Who plays
      - How it ends
+     - Start from it for
    * - `rock_paper_scissors_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/rock_paper_scissors_live>`__
      - players' choices
      - a fixed pair
      - after its throws
+     - hidden choices revealed together, played as trials
    * - `bargaining_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/bargaining_live>`__
      - players' offers
      - pairs from a cohort, new each round
      - a deal, or time's up
+     - players responding to each other against a deadline
    * - `public_goods_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods_live>`__
      - players' contributions
      - a team that carries on if one leaves
      - time's up
+     - the same, for a team of three or more
    * - `snake_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/snake_live>`__
      - ticks, 8 a second
      - a fixed group
      - time's up
+     - a game that moves by itself
    * - `shared_canvas_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/shared_canvas_live>`__
      - ticks, 20 a second
      - a fixed group
      - time's up
+     - smooth movement, with prediction and interpolation
    * - `microsociety_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety_live>`__
      - catches, every 3 seconds
      - a society that members join and leave while it plays
      - once nobody's left
-
-Start from:
-
-- ``rock_paper_scissors_live`` for a game of hidden choices revealed
-  together, played as trials;
-- ``bargaining_live`` or ``public_goods_live`` for players responding to each
-  other against a deadline;
-- ``snake_live`` for a game that moves by itself;
-- ``shared_canvas_live`` for smooth movement, with prediction and
-  interpolation;
-- ``microsociety_live`` for a game that players join and leave while it
-  runs, recording what happens along the way.
+     - players joining and leaving while it runs, recording what happens
 
 Where the data goes
 -------------------
